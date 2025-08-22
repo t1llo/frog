@@ -22,3 +22,8 @@ To run the project in dev:
 To Build the project', run:
 
 `wails build`
+
+## Todos
+
+- clean UI
+- get api call to work
