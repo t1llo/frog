@@ -1,79 +1,80 @@
 <script lang="ts">
-  import logo from './assets/images/logo-universal.png'
-  import {Greet} from '../wailsjs/go/main/App.js'
+  import Sidebar from './components/Sidebar.svelte';
+  import TextProcessor from './components/TextProcessor.svelte';
+  import ModelManager from './components/ModelManager.svelte';
+  import ShortcutsManager from './components/ShortcutsManager.svelte';
+  import Settings from './components/Settings.svelte';
+  import Notification from './components/Notification.svelte';
+  import { currentView } from './stores/app';
+  import { EventsOn } from '../wailsjs/runtime/runtime';
+  import { onMount } from 'svelte';
 
-  let resultText: string = "Please enter your name below 👇"
-  let name: string
+  let textProcessorRef: TextProcessor;
 
-  function greet(): void {
-    Greet(name).then(result => resultText = result)
-  }
+  onMount(() => {
+    // Listen for menu bar action events
+    EventsOn('action:correct', () => {
+      currentView.set('text');
+      if (textProcessorRef) textProcessorRef.setAction('correct');
+    });
+    EventsOn('action:email', () => {
+      currentView.set('text');
+      if (textProcessorRef) textProcessorRef.setAction('email');
+    });
+    EventsOn('action:outline', () => {
+      currentView.set('text');
+      if (textProcessorRef) textProcessorRef.setAction('outline');
+    });
+    EventsOn('action:summarize', () => {
+      currentView.set('text');
+      if (textProcessorRef) textProcessorRef.setAction('summarize');
+    });
+    EventsOn('action:translate', () => {
+      currentView.set('text');
+      if (textProcessorRef) textProcessorRef.setAction('translate');
+    });
+    EventsOn('action:paste-clipboard', () => {
+      currentView.set('text');
+      if (textProcessorRef) textProcessorRef.pasteFromClipboard();
+    });
+  });
 </script>
 
-<main>
-  <img alt="Wails logo" id="logo" src="{logo}">
-  <div class="result" id="result">{resultText}</div>
-  <div class="input-box" id="input">
-    <input autocomplete="off" bind:value={name} class="input" id="name" type="text"/>
-    <button class="btn" on:click={greet}>Greet</button>
-  </div>
-</main>
+<div class="app-layout">
+  <Sidebar />
+  <main class="main-content">
+    <div class="titlebar-spacer"></div>
+    {#if $currentView === 'text'}
+      <TextProcessor bind:this={textProcessorRef} />
+    {:else if $currentView === 'models'}
+      <ModelManager />
+    {:else if $currentView === 'shortcuts'}
+      <ShortcutsManager />
+    {:else if $currentView === 'settings'}
+      <Settings />
+    {/if}
+  </main>
+  <Notification />
+</div>
 
 <style>
-
-  #logo {
-    display: block;
-    width: 50%;
-    height: 50%;
-    margin: auto;
-    padding: 10% 0 0;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: 100% 100%;
-    background-origin: content-box;
+  .app-layout {
+    display: flex;
+    height: 100%;
+    overflow: hidden;
   }
 
-  .result {
-    height: 20px;
-    line-height: 20px;
-    margin: 1.5rem auto;
+  .main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
   }
 
-  .input-box .btn {
-    width: 60px;
-    height: 30px;
-    line-height: 30px;
-    border-radius: 3px;
-    border: none;
-    margin: 0 0 0 20px;
-    padding: 0 8px;
-    cursor: pointer;
+  .titlebar-spacer {
+    height: 38px;
+    flex-shrink: 0;
+    --wails-draggable: drag;
   }
-
-  .input-box .btn:hover {
-    background-image: linear-gradient(to top, #cfd9df 0%, #e2ebf0 100%);
-    color: #333333;
-  }
-
-  .input-box .input {
-    border: none;
-    border-radius: 3px;
-    outline: none;
-    height: 30px;
-    line-height: 30px;
-    padding: 0 10px;
-    background-color: rgba(240, 240, 240, 1);
-    -webkit-font-smoothing: antialiased;
-  }
-
-  .input-box .input:hover {
-    border: none;
-    background-color: rgba(255, 255, 255, 1);
-  }
-
-  .input-box .input:focus {
-    border: none;
-    background-color: rgba(255, 255, 255, 1);
-  }
-
 </style>
