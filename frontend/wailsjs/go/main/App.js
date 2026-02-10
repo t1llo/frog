@@ -6,6 +6,10 @@ export function CancelDownload(arg1) {
   return window['go']['main']['App']['CancelDownload'](arg1);
 }
 
+export function CopyToClipboard(arg1) {
+  return window['go']['main']['App']['CopyToClipboard'](arg1);
+}
+
 export function DeleteAction(arg1) {
   return window['go']['main']['App']['DeleteAction'](arg1);
 }
@@ -110,12 +114,20 @@ export function OpenApplication(arg1, arg2) {
   return window['go']['main']['App']['OpenApplication'](arg1, arg2);
 }
 
+export function PasteBelowCursor(arg1) {
+  return window['go']['main']['App']['PasteBelowCursor'](arg1);
+}
+
 export function ProcessText(arg1, arg2, arg3) {
   return window['go']['main']['App']['ProcessText'](arg1, arg2, arg3);
 }
 
 export function Quit() {
   return window['go']['main']['App']['Quit']();
+}
+
+export function ReplaceSelectedText(arg1) {
+  return window['go']['main']['App']['ReplaceSelectedText'](arg1);
 }
 
 export function SaveAction(arg1) {

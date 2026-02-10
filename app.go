@@ -82,9 +82,14 @@ func (a *App) Quit() {
 
 // registerGlobalHotkeys sets up system-wide hotkey bindings from config
 func (a *App) registerGlobalHotkeys() {
-	hkConfigs := a.config.GetGlobalHotkeys()
+	// Unregister existing hotkeys before re-registering
+	a.hotkeyManager.Unregister()
+
 	var bindings []globalhotkey.Binding
 
+	// Register global hotkeys from config
+	hkConfigs := a.config.GetGlobalHotkeys()
+	shortcuts := a.config.GetShortcuts()
 	for _, hk := range hkConfigs {
 		if !hk.Enabled || hk.Hotkey == "" {
 			continue
@@ -95,14 +100,104 @@ func (a *App) registerGlobalHotkeys() {
 			ID:     hkCopy.ID,
 			Hotkey: hkCopy.Hotkey,
 			Action: func() {
-				switch hkCopy.Action {
-				case "show":
+				switch hkCopy.Category {
+				case "system":
+					// System actions: show window and emit event
 					wailsruntime.WindowShow(a.ctx)
 					wailsruntime.WindowUnminimise(a.ctx)
 					wailsruntime.WindowSetAlwaysOnTop(a.ctx, true)
 					wailsruntime.WindowSetAlwaysOnTop(a.ctx, false)
+					wailsruntime.EventsEmit(a.ctx, "action:"+hkCopy.Action)
+
+				case "text":
+					// Text actions: grab selected text, process with LLM, emit popup:result
+					go func() {
+						// Get selected text from any app
+						originalText, err := keysim.GrabSelectedText()
+						if err != nil {
+							log.Printf("Failed to grab selected text: %v", err)
+							wailsruntime.EventsEmit(a.ctx, "notification", map[string]string{
+								"type":    "error",
+								"message": "Failed to grab selected text",
+							})
+							return
+						}
+
+						if originalText == "" {
+							wailsruntime.EventsEmit(a.ctx, "notification", map[string]string{
+								"type":    "warning",
+								"message": "No text selected",
+							})
+							return
+						}
+
+						// Prepare options for processing
+						opts := make(map[string]string)
+						if hkCopy.Action == "translate" {
+							opts["targetLanguage"] = a.config.TextProcessing.TranslateTo
+						}
+
+						// Process text with LLM
+						processedText, err := a.processor.Process(a.ctx, hkCopy.Action, originalText, opts)
+						if err != nil {
+							log.Printf("Failed to process text: %v", err)
+							wailsruntime.EventsEmit(a.ctx, "notification", map[string]string{
+								"type":    "error",
+								"message": "Failed to process text: " + err.Error(),
+							})
+							return
+						}
+
+						// Emit popup:result event with all necessary data
+						result := map[string]interface{}{
+							"actionID":       hkCopy.Action,
+							"originalText":   originalText,
+							"processedText":  processedText,
+							"targetLanguage": opts["targetLanguage"],
+						}
+						wailsruntime.EventsEmit(a.ctx, "popup:result", result)
+					}()
+
+				case "app":
+					// App actions: find shortcut by action ID and open the app
+					go func() {
+						// Look up shortcut matching the action ID
+						var targetShortcut *config.ShortcutConfig
+						for i := range shortcuts {
+							if shortcuts[i].ID == hkCopy.Action {
+								targetShortcut = &shortcuts[i]
+								break
+							}
+						}
+
+						if targetShortcut == nil {
+							log.Printf("App shortcut not found for action: %s", hkCopy.Action)
+							wailsruntime.EventsEmit(a.ctx, "notification", map[string]string{
+								"type":    "error",
+								"message": "App shortcut not found",
+							})
+							return
+						}
+
+						// Open/focus the app
+						if err := a.shortcutManager.OpenApp(targetShortcut.AppPath, targetShortcut.BundleID); err != nil {
+							log.Printf("Failed to open app: %v", err)
+							wailsruntime.EventsEmit(a.ctx, "notification", map[string]string{
+								"type":    "error",
+								"message": "Failed to open app: " + err.Error(),
+							})
+							return
+						}
+
+						// Show success notification
+						wailsruntime.EventsEmit(a.ctx, "notification", map[string]string{
+							"type":    "success",
+							"message": "Opened " + targetShortcut.Name,
+						})
+					}()
+
 				default:
-					// Text action or custom action — show window and emit event
+					// Unknown category: fallback to showing window
 					wailsruntime.WindowShow(a.ctx)
 					wailsruntime.EventsEmit(a.ctx, "action:"+hkCopy.Action)
 				}
@@ -429,9 +524,13 @@ func (a *App) GetShortcuts() []config.ShortcutConfig {
 	return a.config.GetShortcuts()
 }
 
-// SaveShortcuts updates the shortcuts configuration
+// SaveShortcuts updates the shortcuts configuration and re-registers global hotkeys
 func (a *App) SaveShortcuts(s []config.ShortcutConfig) error {
-	return a.config.UpdateShortcuts(s)
+	if err := a.config.UpdateShortcuts(s); err != nil {
+		return err
+	}
+	a.registerGlobalHotkeys()
+	return nil
 }
 
 // GetTextProcessingConfig returns text processing config
@@ -450,4 +549,43 @@ func (a *App) GetActiveProviderName() string {
 		return "None"
 	}
 	return a.currentProvider.Name()
+}
+
+// --- Popup Action Methods ---
+
+// ReplaceSelectedText replaces the currently selected text with the provided text
+// by copying the text to clipboard and simulating Cmd+V paste
+func (a *App) ReplaceSelectedText(text string) error {
+	if err := keysim.PasteText(text); err != nil {
+		return fmt.Errorf("failed to replace selected text: %w", err)
+	}
+	return nil
+}
+
+// PasteBelowCursor moves cursor to end of line, inserts a newline, and pastes the text
+func (a *App) PasteBelowCursor(text string) error {
+	// Move to end of line (Cmd+Right)
+	if err := keysim.SimulateKeys("cmd+right"); err != nil {
+		return fmt.Errorf("failed to move to end of line: %w", err)
+	}
+
+	// Press Return to create new line
+	if err := keysim.SimulateKeys("return"); err != nil {
+		return fmt.Errorf("failed to insert newline: %w", err)
+	}
+
+	// Paste the text
+	if err := keysim.PasteText(text); err != nil {
+		return fmt.Errorf("failed to paste text below cursor: %w", err)
+	}
+
+	return nil
+}
+
+// CopyToClipboard copies the provided text to the system clipboard
+func (a *App) CopyToClipboard(text string) error {
+	if err := clipboard.Write(text); err != nil {
+		return fmt.Errorf("failed to copy text to clipboard: %w", err)
+	}
+	return nil
 }

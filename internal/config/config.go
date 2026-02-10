@@ -57,6 +57,7 @@ type ShortcutConfig struct {
 	AppPath     string `json:"appPath"`
 	BundleID    string `json:"bundleId"`
 	Description string `json:"description"`
+	Enabled     bool   `json:"enabled"`
 }
 
 // TextProcessingConfig holds default text processing settings

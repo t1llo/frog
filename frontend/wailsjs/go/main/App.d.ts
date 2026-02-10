@@ -6,6 +6,8 @@ import {shortcuts} from '../models';
 
 export function CancelDownload(arg1:string):Promise<void>;
 
+export function CopyToClipboard(arg1:string):Promise<void>;
+
 export function DeleteAction(arg1:string):Promise<void>;
 
 export function DeleteLocalModel(arg1:string):Promise<void>;
@@ -58,9 +60,13 @@ export function ListInstalledApps():Promise<Array<shortcuts.AppInfo>>;
 
 export function OpenApplication(arg1:string,arg2:string):Promise<void>;
 
+export function PasteBelowCursor(arg1:string):Promise<void>;
+
 export function ProcessText(arg1:string,arg2:string,arg3:Record<string, string>):Promise<string>;
 
 export function Quit():Promise<void>;
+
+export function ReplaceSelectedText(arg1:string):Promise<void>;
 
 export function SaveAction(arg1:config.ActionConfig):Promise<void>;
 

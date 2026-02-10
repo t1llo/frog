@@ -85,6 +85,7 @@ export namespace config {
 	    appPath: string;
 	    bundleId: string;
 	    description: string;
+	    enabled: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ShortcutConfig(source);
@@ -98,6 +99,7 @@ export namespace config {
 	        this.appPath = source["appPath"];
 	        this.bundleId = source["bundleId"];
 	        this.description = source["description"];
+	        this.enabled = source["enabled"];
 	    }
 	}
 	export class RemoteProviderConfig {

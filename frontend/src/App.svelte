@@ -5,11 +5,20 @@
   import ShortcutsManager from './components/ShortcutsManager.svelte';
   import Settings from './components/Settings.svelte';
   import Notification from './components/Notification.svelte';
+  import PopupResult from './components/PopupResult.svelte';
   import { currentView } from './stores/app';
   import { EventsOn } from '../wailsjs/runtime/runtime';
   import { onMount } from 'svelte';
 
   let textProcessorRef: TextProcessor;
+
+  // Popup state
+  let popupVisible = false;
+  let popupActionName = '';
+  let popupOriginalText = '';
+  let popupProcessedText = '';
+  let popupLoading = false;
+  let popupError: string | null = null;
 
   onMount(() => {
     // Listen for menu bar action events
@@ -37,6 +46,16 @@
       currentView.set('text');
       if (textProcessorRef) textProcessorRef.pasteFromClipboard();
     });
+
+    // Listen for popup result events
+    EventsOn('popup:result', (data: { actionName: string; originalText: string; processedText: string }) => {
+      popupActionName = data.actionName;
+      popupOriginalText = data.originalText;
+      popupProcessedText = data.processedText;
+      popupVisible = true;
+      popupLoading = false;
+      popupError = null;
+    });
   });
 </script>
 
@@ -55,6 +74,19 @@
     {/if}
   </main>
   <Notification />
+  
+  {#if popupVisible}
+    <div class="popup-overlay">
+      <PopupResult
+        actionName={popupActionName}
+        originalText={popupOriginalText}
+        processedText={popupProcessedText}
+        loading={popupLoading}
+        error={popupError}
+        on:close={() => popupVisible = false}
+      />
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -76,5 +108,18 @@
     height: 38px;
     flex-shrink: 0;
     --wails-draggable: drag;
+  }
+
+  .popup-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 9999;
   }
 </style>
