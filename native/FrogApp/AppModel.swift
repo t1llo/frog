@@ -165,7 +165,11 @@ final class AppModel: ObservableObject {
         guard let url = URL(string: provider.endpoint), let host = url.host, !host.isEmpty,
               ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.user == nil, url.password == nil,
               url.query == nil, url.fragment == nil else { throw FrogError.message("Enter an HTTP(S) API base URL without credentials, query parameters or fragments.") }
-        if url.scheme == "http" && !["localhost", "127.0.0.1", "::1"].contains(host) {
+        let scheme = url.scheme?.lowercased()
+        if [.openAI, .anthropic, .gemini].contains(provider.kind), scheme != "https" {
+            throw FrogError.message("Cloud providers require an HTTPS endpoint.")
+        }
+        if scheme == "http" && !["localhost", "127.0.0.1", "::1", "[::1]"].contains(host.lowercased()) {
             throw FrogError.message("Use HTTPS for remote providers. HTTP is supported only for localhost model services.")
         }
     }

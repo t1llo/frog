@@ -18,5 +18,7 @@ cp native/Info.plist "$app/Contents/Info.plist"
 chmod +x "$app/Contents/MacOS/Frog"
 codesign --force --options runtime --sign "${FROG_SIGN_IDENTITY:--}" "$app"
 codesign --verify --strict "$app"
+ditto -c -k --sequesterRsrc --keepParent "$app" dist/Frog-macOS.zip
 echo "Built $app"
+echo "Packaged dist/Frog-macOS.zip"
 echo "Move Frog.app to /Applications before enabling Start at Login."

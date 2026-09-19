@@ -1,6 +1,6 @@
 # 02: Configurable rules and providers
 
-**Status:** in-progress
+**Status:** superseded by the native SwiftUI plan in `docs/work-items.md`; the former work plan is preserved in `archive/planning/work-items.md`.
 
 **Blocked by:** 01 for integrated acceptance; configuration and UI can proceed concurrently.
 

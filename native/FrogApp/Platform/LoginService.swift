@@ -2,7 +2,10 @@ import ServiceManagement
 
 @MainActor
 enum LoginService {
-    static var isEnabled: Bool { SMAppService.mainApp.status == .enabled }
+    static var isEnabled: Bool {
+        let status = SMAppService.mainApp.status
+        return status == .enabled || status == .requiresApproval
+    }
     static var statusText: String {
         switch SMAppService.mainApp.status {
         case .enabled: return "Frog starts at login."

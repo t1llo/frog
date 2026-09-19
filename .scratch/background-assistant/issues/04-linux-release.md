@@ -1,6 +1,6 @@
 # 04: Linux support and verified releases
 
-**Status:** in-progress
+**Status:** superseded. The user replaced Linux/Go/Wails scope with a native macOS-only SwiftUI app. See `docs/work-items.md`.
 
 **Blocked by:** 01, 02, 03 for full release acceptance; platform integration can proceed concurrently.
 

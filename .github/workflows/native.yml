@@ -23,4 +23,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Frog-macOS
-          path: dist/Frog.app
+          path: dist/Frog-macOS.zip

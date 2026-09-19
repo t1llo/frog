@@ -31,17 +31,27 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
     private var window: NSWindow?
     private var observer: NSObjectProtocol?
     private var launchedAtLogin = false
+    private var applicationLaunched = false
+    private var started = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
         let event = NSAppleEventManager.shared().currentAppleEvent
         launchedAtLogin = event?.eventID == kAEOpenApplication && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
+        applicationLaunched = true
+        startIfReady()
     }
 
     func install(model: AppModel) {
         guard self.model == nil else { return }
         self.model = model
         model.openSettings = { [weak self] in self?.showWindow() }
+        startIfReady()
+    }
+
+    private func startIfReady() {
+        guard applicationLaunched, !started, let model else { return }
+        started = true
         model.start()
         observer = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak model] _ in
             Task { @MainActor in model?.refreshSystemStatus() }

@@ -1,6 +1,6 @@
 # 03: Optional local processing history
 
-**Status:** in-progress
+**Status:** superseded by the native SwiftUI plan in `docs/work-items.md`; the former work plan is preserved in `archive/planning/work-items.md`.
 
 **Blocked by:** 01 for execution outcomes; persistence and UI can proceed concurrently.
 
