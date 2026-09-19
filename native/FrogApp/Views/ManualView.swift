@@ -14,24 +14,32 @@ struct ManualView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            EditorHeading(title: "Try text", subtitle: "Run a rule here without switching apps. Your result appears below.")
-                .padding(-16)
-            HStack {
-                Picker("Rule", selection: $ruleID) {
-                    Text("Select a rule").tag(UUID?.none)
-                    ForEach(model.configuration.rules) { rule in
-                        Text(rule.name + (rule.enabled ? "" : " (disabled)")).tag(Optional(rule.id))
-                    }
-                }.frame(maxWidth: 460).disabled(model.isProcessing)
-                Spacer()
+        PageScroll {
+            PageHeader(title: "Room to play with words.", subtitle: "Drop in a draft. Pick a rule. See what happens.") {
                 if model.isProcessing {
-                    Button("Cancel") { model.cancelProcessing() }
+                    Button("Cancel request") { model.cancelProcessing() }
                 } else {
-                    Button { run() } label: { Label("Process text", systemImage: "sparkles") }
+                    Button { run() } label: { Label("Transform", systemImage: "sparkles") }
+                        .buttonStyle(FrogButtonStyle(primary: true))
                         .keyboardShortcut(.return, modifiers: .command)
                         .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedRule?.enabled != true || !providerAvailable)
                         .help("Process text (Command–Return)")
+                }
+            }
+            FrogCard {
+                HStack(spacing: 16) {
+                    SymbolTile(symbol: "wand.and.stars")
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Give it a direction").font(.system(size: 13, weight: .semibold))
+                        Text("Your rule brings the instructions.").font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
+                    }
+                    Spacer()
+                    Picker("Writing rule", selection: $ruleID) {
+                        Text("Select a rule").tag(UUID?.none)
+                        ForEach(model.configuration.rules) { rule in
+                            Text(rule.name + (rule.enabled ? "" : " (disabled)")).tag(Optional(rule.id))
+                        }
+                    }.labelsHidden().frame(width: 220).disabled(model.isProcessing)
                 }
             }
             if model.configuration.rules.isEmpty {
@@ -41,39 +49,63 @@ struct ManualView: View {
             } else if selectedRule != nil && !providerAvailable {
                 InlineIssue(message: "Choose a default provider in Providers, or assign a provider to this rule.")
             }
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Input").font(.headline)
-                    Spacer()
-                    Text("\(text.count) characters").font(.caption).foregroundStyle(.secondary)
-                    Button("Clear") { text = "" }.disabled(text.isEmpty || model.isProcessing)
+            VStack(spacing: 16) {
+                FrogCard(padding: 0) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack {
+                            SectionCaption(text: "Your draft")
+                            Spacer()
+                            Text("\(text.count) characters").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                            Button("Clear") { text = "" }.buttonStyle(.plain).foregroundStyle(FrogStyle.muted)
+                                .disabled(text.isEmpty || model.isProcessing).padding(.leading, 10)
+                        }.padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 12)
+                        ZStack(alignment: .topLeading) {
+                            if text.isEmpty {
+                                Text("A rough draft, a tricky sentence, an email that needs a little care…")
+                                    .font(.system(size: 14)).foregroundStyle(FrogStyle.muted).padding(.horizontal, 5).padding(.top, 1)
+                                    .allowsHitTesting(false).accessibilityHidden(true)
+                            }
+                            TextEditor(text: $text).font(.system(size: 14)).lineSpacing(5).scrollContentBackground(.hidden)
+                                .frame(minHeight: 155).accessibilityLabel("Text to process").disabled(model.isProcessing)
+                        }.padding(.horizontal, 16).padding(.bottom, 20)
+                    }
                 }
-                TextEditor(text: $text).font(.body).padding(6)
-                    .background(.background).clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(.separator))
-                    .accessibilityLabel("Text to process").disabled(model.isProcessing)
-            }.frame(minHeight: 150, maxHeight: .infinity)
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Result").font(.headline)
-                    Spacer()
-                    Button(copied ? "Copied" : "Copy result") { ViewActions.copy(model.manualResult); copied = true }
-                        .disabled(model.manualResult.isEmpty)
-                    Button("Use as input") { text = model.manualResult }
-                        .disabled(model.manualResult.isEmpty || model.isProcessing)
+                FrogCard(padding: 0) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack {
+                            HStack(spacing: 8) {
+                                Image(systemName: "sparkles").foregroundStyle(FrogStyle.accent)
+                                SectionCaption(text: "A fresh take")
+                                if model.isProcessing { ProgressView().controlSize(.mini) }
+                            }
+                            Spacer()
+                            if !model.manualResult.isEmpty {
+                                Button("Use as input") { text = model.manualResult }.disabled(model.isProcessing)
+                                Button(copied ? "Copied" : "Copy result", systemImage: copied ? "checkmark" : "doc.on.doc") {
+                                    ViewActions.copy(model.manualResult); copied = true
+                                }
+                            }
+                        }.padding(20)
+                        if model.manualResult.isEmpty {
+                            VStack(spacing: 10) {
+                                Image(systemName: "text.alignleft").font(.system(size: 24, weight: .light))
+                                Text(model.isProcessing ? "Finding the right words…" : "Your transformed text will land here.").font(.system(size: 13))
+                            }.foregroundStyle(FrogStyle.muted).frame(maxWidth: .infinity, minHeight: 130).padding(.bottom, 20)
+                        } else {
+                            Text(model.manualResult).font(.system(size: 14)).lineSpacing(5).textSelection(.enabled)
+                                .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
+                                .padding(.horizontal, 20).padding(.bottom, 20).accessibilityLabel("Processed result: \(model.manualResult)")
+                        }
+                    }
                 }
-                ScrollView {
-                    Text(model.manualResult.isEmpty ? "Processed text will appear here." : model.manualResult)
-                        .foregroundStyle(model.manualResult.isEmpty ? .secondary : .primary)
-                        .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .topLeading).padding(12)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.quaternary.opacity(0.4)).clipShape(RoundedRectangle(cornerRadius: 6))
-                .accessibilityLabel("Processed result")
-            }.frame(minHeight: 150, maxHeight: .infinity)
-            Text(model.configuration.preferences.historyEnabled ? "History recording is on. Successful requests are saved locally." : "History recording is off. This request will not be added to local history.")
-                .font(.caption).foregroundStyle(.secondary)
-        }.padding(24)
+            }
+            HStack {
+                Label(model.configuration.preferences.historyEnabled ? "Saved to your local history" : "History is off. This draft won’t be saved.", systemImage: model.configuration.preferences.historyEnabled ? "clock" : "lock")
+                Spacer()
+                ShortcutBadge(text: "⌘ ↩")
+                Text("to transform")
+            }.font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+        }
         .onAppear { selectInitialRule() }
         .onChange(of: model.configuration.rules) { _, _ in selectInitialRule() }
         .onChange(of: model.manualResult) { _, _ in copied = false }
