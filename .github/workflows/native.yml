@@ -1,0 +1,26 @@
+name: Native macOS
+on:
+  push:
+    branches: [main, feat/background-writing-assistant]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Build and test native app
+        run: swift test
+      - name: Package application
+        run: bash scripts/build-app.sh
+      - name: Build Xcode project
+        run: xcodebuild -project native/Frog.xcodeproj -scheme Frog-macOS -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/xcode build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Frog-macOS
+          path: dist/Frog.app
