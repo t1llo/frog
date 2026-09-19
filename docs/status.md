@@ -17,6 +17,7 @@ The Handy-inspired visual redesign is integrated across all sections: adaptive l
 ## Verification evidence (2026-09-19)
 
 - Integrated `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test`: **28 tests passed** (21 core protocol/persistence/configuration-file tests + 7 application processing/import tests), including save/export consistency and rejection without changing existing settings.
+- [GitHub Actions on macOS 15 / Xcode 26.3](https://github.com/t1llo/frog/actions/runs/35432041905) passed tests, universal packaging, Xcode build and artifact upload. The older XCTest runner initially aborted at synchronous `@MainActor` test entry; async test entry points fixed it with the same assertions. Local Xcode 27 also passes.
 - Release `.app` built and its ad-hoc signature verified through `scripts/build-app.sh`.
 - Universal release build passed; `lipo -info` confirms **arm64 + x86_64**, and `vtool -show-build` confirms a **macOS 14.0 minimum** for both slices. Xcode 27 emits an Intel deprecation warning, but the produced binary retains the requested macOS 14 deployment target. The zip preserves app permissions and bundle structure.
 - Xcode **Frog-macOS** Debug build passed. Initial multi-architecture Debug module mismatch was fixed by building only the active architecture for Debug.
