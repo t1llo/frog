@@ -29,6 +29,7 @@ final class AppModel: ObservableObject {
     private var processingTask: Task<Void, Never>?
     private var historyEpoch = UUID()
     private var configurationLoadError: Error?
+    private var isRecordingShortcut = false
 
     init(dataDirectory: URL? = nil, registerShortcuts: Bool = true,
          complete: ((String, Rule, ProviderConfiguration, String?) async throws -> String)? = nil,
@@ -75,8 +76,9 @@ final class AppModel: ObservableObject {
 
     private func persist(_ candidate: Configuration) throws {
         if let error = configurationLoadError {
-            throw FrogError.message("Settings could not be loaded, so they have not been overwritten. Repair or move the settings file in \(configurationStore.directory.path), then relaunch Frog. \(error.localizedDescription)")
+            throw FrogError.message("Settings could not be loaded, so they have not been overwritten. Import a valid configuration in Settings, or repair the file in \(configurationStore.directory.path) and relaunch Frog. \(error.localizedDescription)")
         }
+        try ConfigurationFile.validate(candidate)
         try configurationStore.save(candidate)
         configuration = candidate
     }
@@ -91,6 +93,9 @@ final class AppModel: ObservableObject {
         }
         if let providerID = rule.providerID, !configuration.providers.contains(where: { $0.id == providerID }) {
             throw FrogError.message("The rule's provider no longer exists. Choose another provider.")
+        }
+        if let hotkey = rule.hotkey, let issue = HotkeyManager.validationError(hotkey) {
+            throw FrogError.message(issue)
         }
         if rule.enabled, let hotkey = rule.hotkey,
            let conflict = configuration.rules.first(where: { $0.id != rule.id && $0.enabled && $0.hotkey == hotkey }) {
@@ -113,7 +118,7 @@ final class AppModel: ObservableObject {
     func hasAPIKey(_ id: UUID) -> Bool { ((try? keychain.read(providerID: id)) ?? "").isEmpty == false }
 
     func saveProvider(_ provider: ProviderConfiguration, apiKey: String?, clearKey: Bool) throws {
-        try validateProvider(provider)
+        try ConfigurationFile.validate(provider: provider)
         var candidate = configuration
         if let index = candidate.providers.firstIndex(where: { $0.id == provider.id }) { candidate.providers[index] = provider }
         else { candidate.providers.append(provider) }
@@ -159,24 +164,9 @@ final class AppModel: ObservableObject {
         try persist(candidate)
     }
 
-    private func validateProvider(_ provider: ProviderConfiguration) throws {
-        guard !provider.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !provider.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("Provider name and model are required.") }
-        guard let url = URL(string: provider.endpoint), let host = url.host, !host.isEmpty,
-              ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.user == nil, url.password == nil,
-              url.query == nil, url.fragment == nil else { throw FrogError.message("Enter an HTTP(S) API base URL without credentials, query parameters or fragments.") }
-        let scheme = url.scheme?.lowercased()
-        if [.openAI, .anthropic, .gemini].contains(provider.kind), scheme != "https" {
-            throw FrogError.message("Cloud providers require an HTTPS endpoint.")
-        }
-        if scheme == "http" && !["localhost", "127.0.0.1", "::1", "[::1]"].contains(host.lowercased()) {
-            throw FrogError.message("Use HTTPS for remote providers. HTTP is supported only for localhost model services.")
-        }
-    }
-
     func testProvider(_ provider: ProviderConfiguration, apiKey: String?) async throws -> String {
         guard !isTestingProvider else { throw FrogError.message("A provider test is already running.") }
-        try validateProvider(provider)
+        try ConfigurationFile.validate(provider: provider)
         isTestingProvider = true
         defer { isTestingProvider = false }
         let key = (apiKey?.isEmpty == false) ? apiKey : try keychain.read(providerID: provider.id)
@@ -201,8 +191,54 @@ final class AppModel: ObservableObject {
     func deleteHistory(id: UUID) throws { try historyStore.delete(id: id); refreshHistory() }
     func clearHistory() throws { try historyStore.clear(); historyEpoch = UUID(); refreshHistory() }
 
+    func exportConfiguration(to url: URL) throws {
+        guard configurationLoadError == nil else { throw FrogError.message("Repair the saved settings before exporting them.") }
+        try ConfigurationFile.write(configuration, to: url)
+        status = "Configuration exported. API keys and history were not included."
+    }
+
+    func importConfiguration(_ imported: Configuration) throws {
+        guard !isProcessing, !isTestingProvider else { throw FrogError.message("Finish or cancel the current request before importing a configuration.") }
+        try ConfigurationFile.validate(imported)
+        for rule in imported.rules {
+            if let hotkey = rule.hotkey, let issue = HotkeyManager.validationError(hotkey) { throw FrogError.message(issue) }
+        }
+        var candidate = imported
+        var remapped: [UUID: UUID] = [:]
+        for index in candidate.providers.indices {
+            let incoming = candidate.providers[index]
+            // Reuse keys only for an already-known connection with the same service and endpoint.
+            let matchesExisting = configuration.providers.contains {
+                $0.id == incoming.id && $0.kind == incoming.kind && $0.endpoint == incoming.endpoint
+            }
+            if !matchesExisting {
+                let newID = UUID()
+                remapped[incoming.id] = newID
+                candidate.providers[index].id = newID
+            }
+        }
+        if let id = candidate.defaultProviderID { candidate.defaultProviderID = remapped[id] ?? id }
+        for index in candidate.rules.indices {
+            if let id = candidate.rules[index].providerID { candidate.rules[index].providerID = remapped[id] ?? id }
+        }
+        try configurationStore.replaceFromImport(candidate)
+        configuration = candidate
+        configurationLoadError = nil
+        errorMessage = nil
+        historyEpoch = UUID()
+        registerHotkeys()
+        refreshHistory()
+        status = "Configuration imported. Check provider credentials and shortcut status."
+    }
+
+    func setShortcutRecording(_ recording: Bool) {
+        isRecordingShortcut = recording
+        if recording { hotkeys.unregister() }
+        else { registerHotkeys() }
+    }
+
     private func registerHotkeys() {
-        guard registerShortcuts else { return }
+        guard registerShortcuts, !isRecordingShortcut else { return }
         hotkeyErrors = hotkeys.register(rules: configuration.rules) { [weak self] id in self?.processSelection(ruleID: id) }
     }
 
@@ -212,7 +248,7 @@ final class AppModel: ObservableObject {
             throw FrogError.message("Choose a provider for \(rule.name), or set a default provider in Settings.")
         }
         if !rule.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { provider.model = rule.model }
-        try validateProvider(provider)
+        try ConfigurationFile.validate(provider: provider)
         return provider
     }
 

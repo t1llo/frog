@@ -19,6 +19,8 @@ chmod +x "$app/Contents/MacOS/Frog"
 codesign --force --options runtime --sign "${FROG_SIGN_IDENTITY:--}" "$app"
 codesign --verify --strict "$app"
 ditto -c -k --sequesterRsrc --keepParent "$app" dist/Frog-macOS.zip
+(cd dist && shasum -a 256 Frog-macOS.zip > SHA256SUMS)
 echo "Built $app"
 echo "Packaged dist/Frog-macOS.zip"
+echo "Checksum: dist/SHA256SUMS"
 echo "Move Frog.app to /Applications before enabling Start at Login."

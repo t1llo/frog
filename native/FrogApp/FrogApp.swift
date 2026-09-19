@@ -72,8 +72,8 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
             created.toolbarStyle = .unified
             created.backgroundColor = .windowBackgroundColor
             created.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-            created.setContentSize(NSSize(width: 1000, height: 720))
-            created.minSize = NSSize(width: 760, height: 560)
+            created.setContentSize(NSSize(width: 1080, height: 760))
+            created.contentMinSize = NSSize(width: 940, height: 660)
             created.isReleasedWhenClosed = false
             created.delegate = self
             created.center()

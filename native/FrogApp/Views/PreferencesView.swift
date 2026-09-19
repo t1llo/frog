@@ -1,9 +1,13 @@
 import SwiftUI
+import AppKit
 import FrogCore
+import UniformTypeIdentifiers
 
 struct PreferencesView: View {
     @EnvironmentObject private var model: AppModel
     @State private var notificationRequested = false
+    @State private var pendingConfiguration: Configuration?
+    @State private var showingImportConfirmation = false
 
     var body: some View {
         PageScroll {
@@ -19,6 +23,21 @@ struct PreferencesView: View {
                         Label(model.loginStatus, systemImage: "power").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
                         Spacer()
                     }
+                }
+            }
+            SectionCaption(text: "Your setup, to go")
+            FrogCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    SettingRow(title: "Configuration files", description: "Back up your setup or move it to another Mac. Plain JSON, ready to edit or share.") {
+                        Image(systemName: "doc.badge.gearshape").font(.system(size: 22)).foregroundStyle(FrogStyle.accent)
+                    }
+                    HStack(spacing: 10) {
+                        Button("Export…", systemImage: "square.and.arrow.up") { exportConfiguration() }
+                        Button("Import…", systemImage: "square.and.arrow.down") { chooseConfiguration() }
+                            .disabled(model.isProcessing || model.isTestingProvider)
+                    }
+                    Text("Includes rules, shortcuts, provider settings, and preferences. API keys and text history are never included. Login and macOS permissions are set up separately on each Mac.")
+                        .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
                 }
             }
             SectionCaption(text: "A little memory")
@@ -88,12 +107,48 @@ struct PreferencesView: View {
                         .foregroundStyle(FrogStyle.accent)
                     Text("Results are copied to the clipboard. If your original selection changes or can’t be safely edited, you can paste the result yourself.")
                     Text("Cloud providers receive your selected text and rule instructions. Choose a local endpoint to process on your own server.")
+                    Text("No analytics, telemetry, or usage tracking. Frog makes no requests to a Frog server.")
                 }.font(.system(size: 12)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
             }
         }.onAppear { model.refreshSystemStatus() }
+        .confirmationDialog("Import this configuration?", isPresented: $showingImportConfirmation, titleVisibility: .visible) {
+            Button("Replace configuration") {
+                guard let pendingConfiguration else { return }
+                do { try model.importConfiguration(pendingConfiguration) } catch { model.report(error) }
+                self.pendingConfiguration = nil
+            }
+            Button("Cancel", role: .cancel) { pendingConfiguration = nil }
+        } message: {
+            if let pendingConfiguration {
+                Text("Replace your current setup with \(pendingConfiguration.rules.count) rules and \(pendingConfiguration.providers.count) providers. The current file is backed up first. Matching connections keep their saved keys; others need keys entered again. History recording will be \(pendingConfiguration.preferences.historyEnabled ? "on" : "off"), and imported retention limits apply to existing history.")
+            }
+        }
     }
 
     private var ruleDivider: some View { Rectangle().fill(FrogStyle.border).frame(height: 1) }
+
+    private func exportConfiguration() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "Frog-configuration.json"
+        panel.title = "Export Frog configuration"
+        panel.message = "API keys and text history are not included."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try model.exportConfiguration(to: url) } catch { model.report(error) }
+    }
+
+    private func chooseConfiguration() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.title = "Import Frog configuration"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            pendingConfiguration = try ConfigurationFile.read(from: url)
+            showingImportConfirmation = true
+        } catch { model.report(error) }
+    }
 
     private var historyLimit: some View {
         VStack(alignment: .leading, spacing: 8) {

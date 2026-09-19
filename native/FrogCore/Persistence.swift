@@ -97,6 +97,21 @@ public final class ConfigurationStore: @unchecked Sendable {
         try PrivateFile.write(data, to: file)
     }
 
+    /// Explicit import can recover unreadable settings without discarding the previous file.
+    @discardableResult
+    public func replaceFromImport(_ configuration: Configuration) throws -> URL? {
+        persistenceLock.lock(); defer { persistenceLock.unlock() }
+        let data = try ConfigurationFile.encode(configuration)
+        var backup: URL?
+        if let previous = try PrivateFile.read(file, maximumBytes: ConfigurationFile.maximumBytes) {
+            let url = directory.appendingPathComponent("configuration-backup-\(UUID().uuidString).json")
+            try PrivateFile.write(previous, to: url)
+            backup = url
+        }
+        try PrivateFile.write(data, to: file)
+        return backup
+    }
+
     private func validate(_ configuration: Configuration) throws {
         guard configuration.version == 1 else { throw FrogError.message("Unsupported configuration version. The original file was preserved.") }
         guard Set(configuration.providers.map(\.id)).count == configuration.providers.count,

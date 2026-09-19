@@ -4,6 +4,7 @@ import FrogCore
 
 /// A focused native control consumes recording keystrokes without installing a global or local monitor.
 struct HotkeyRecorder: View {
+    @EnvironmentObject private var model: AppModel
     @Binding var hotkey: Hotkey?
     @State private var recording = false
     @State private var hint: String?
@@ -23,7 +24,8 @@ struct HotkeyRecorder: View {
                 KeyCapture(recording: $recording, hotkey: $hotkey, hint: $hint)
                     .frame(width: 1, height: 1).accessibilityHidden(true)
             }
-        }
+        }.onChange(of: recording) { _, value in model.setShortcutRecording(value) }
+            .onDisappear { if recording { model.setShortcutRecording(false) } }
         if let hint { InlineIssue(message: hint) }
     }
 }

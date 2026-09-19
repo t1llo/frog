@@ -18,9 +18,13 @@ jobs:
         run: swift test
       - name: Package application
         run: bash scripts/build-app.sh
+        env:
+          FROG_UNIVERSAL: "1"
       - name: Build Xcode project
         run: xcodebuild -project native/Frog.xcodeproj -scheme Frog-macOS -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath .build/xcode build
       - uses: actions/upload-artifact@v4
         with:
           name: Frog-macOS
-          path: dist/Frog-macOS.zip
+          path: |
+            dist/Frog-macOS.zip
+            dist/SHA256SUMS

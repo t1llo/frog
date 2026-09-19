@@ -2,7 +2,7 @@
 
 ## Automated and build checks
 
-The native implementation is being integrated. Record actual command results in `status.md`; do not treat a successful build as proof of external text replacement or login startup.
+The native app builds through Swift Package Manager and Xcode. Actual evidence is recorded in `status.md`; a successful build is separate from external text replacement or login startup.
 
 Commands:
 
@@ -25,6 +25,7 @@ Use an installed signed app and a disposable document. Record macOS version, arc
 - Trigger multiple shortcuts rapidly, cancel an in-flight request, and quit while processing. Requests must not cross-apply results.
 - Test invalid/duplicate/occupied global hotkeys and remove or disable a rule; registration state must match the UI.
 - Enable history, process manually and by hotkey, relaunch, inspect/copy/delete/clear records. Disable recording during a request; its result must not be recorded. Verify configured bounds/expiry.
+- Export a configuration, edit a rule and import it again. Verify the replacement summary, backup file, provider routing and shortcut registration. Invalid JSON/references/shortcuts leave current settings untouched. Exported JSON contains neither API keys nor text history. Re-enter keys for new/changed connections on import.
 - Enable Start at Login for `/Applications/Frog.app`, inspect Login Items approval, log out/in and confirm the menu icon appears without the settings window. Disable startup and confirm removal.
 - Deny notification permission; processing failures remain visible from the menu/settings. Allow notifications and verify useful messages without including selected text.
 - Measure idle CPU/RSS after startup and with settings closed; verify no inference engine is launched by Frog. Resource budgets are measured evidence, not a hard-coded marketing claim.

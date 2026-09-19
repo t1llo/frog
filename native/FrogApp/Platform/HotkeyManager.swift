@@ -106,7 +106,7 @@ final class HotkeyManager {
         return result + (specialKeys[hotkey.keyCode] ?? layoutLabel(hotkey.keyCode) ?? "Key \(hotkey.keyCode)")
     }
 
-    private static func validationError(_ hotkey: Hotkey) -> String? {
+    static func validationError(_ hotkey: Hotkey) -> String? {
         let allowed = UInt32(cmdKey | optionKey | controlKey | shiftKey)
         guard hotkey.modifiers & ~allowed == 0 else { return "The shortcut contains unsupported modifier flags." }
         guard hotkey.modifiers & UInt32(cmdKey | optionKey | controlKey) != 0 else {

@@ -88,4 +88,60 @@ final class ProcessingTests: XCTestCase {
         try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
         XCTAssertThrowsError(try model.saveRule(Rule(providerID: UUID())))
     }
+
+    func testImportReplacesSettingsAndRemapsUnrecognizedCredentialIdentities() throws {
+        let directory = try directory()
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil }, writeClipboard: { _ in })
+        let existing = ProviderConfiguration(name: "Existing", kind: .ollama)
+        try model.saveProvider(existing, apiKey: nil, clearKey: false)
+        var imported = model.configuration
+        // A changed endpoint must not inherit the saved connection's credential identity.
+        imported.providers[0].endpoint = "http://localhost:11435"
+        imported.rules = [Rule(name: "Imported rule", providerID: existing.id)]
+        imported.preferences.historyLimit = 25
+        try model.importConfiguration(imported)
+        let provider = try XCTUnwrap(model.configuration.providers.first)
+        XCTAssertNotEqual(provider.id, existing.id)
+        XCTAssertEqual(model.configuration.defaultProviderID, provider.id)
+        XCTAssertEqual(model.configuration.rules[0].providerID, provider.id)
+        XCTAssertEqual(model.configuration.preferences.historyLimit, 25)
+        XCTAssertEqual(try ConfigurationStore(directory: directory).load(), model.configuration)
+        let unchanged = model.configuration
+        try model.importConfiguration(unchanged)
+        XCTAssertEqual(model.configuration, unchanged, "An unchanged known connection can keep its Keychain identity")
+    }
+
+    func testInvalidImportLeavesCurrentSettingsAndFileUntouched() throws {
+        let directory = try directory()
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil }, writeClipboard: { _ in })
+        try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
+        let original = model.configuration
+        let file = directory.appendingPathComponent("configuration.json")
+        let bytes = try Data(contentsOf: file)
+        var invalid = original
+        invalid.rules[0].hotkey = Hotkey(keyCode: 999, modifiers: 0)
+        XCTAssertThrowsError(try model.importConfiguration(invalid))
+        XCTAssertEqual(model.configuration, original)
+        XCTAssertEqual(try Data(contentsOf: file), bytes)
+    }
+
+    func testInvalidRuleCannotMakeConfigurationUnexportable() throws {
+        let directory = try directory()
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil }, writeClipboard: { _ in })
+        try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
+        let original = model.configuration
+        let file = directory.appendingPathComponent("configuration.json")
+        let bytes = try Data(contentsOf: file)
+        let invalidRules = [
+            Rule(instructions: String(repeating: "x", count: 100_001)),
+            Rule(model: "model\nname"),
+            Rule(hotkey: Hotkey(keyCode: 999, modifiers: 0))
+        ]
+        for rule in invalidRules { XCTAssertThrowsError(try model.saveRule(rule)) }
+        XCTAssertEqual(model.configuration, original)
+        XCTAssertEqual(try Data(contentsOf: file), bytes)
+        let exported = directory.appendingPathComponent("exported.json")
+        try model.exportConfiguration(to: exported)
+        XCTAssertEqual(try ConfigurationFile.read(from: exported), original)
+    }
 }
