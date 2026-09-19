@@ -10,81 +10,132 @@ struct HistoryView: View {
     private var entry: HistoryEntry? { model.history.first { $0.id == selectedID } }
 
     var body: some View {
-        VStack(spacing: 0) {
-            EditorHeading(title: "Local history", subtitle: model.configuration.preferences.historyEnabled
-                          ? "Successful transformations are saved on this Mac, within your history limits."
-                          : "Recording is off. Existing entries remain until deleted or expired.")
+        VStack(alignment: .leading, spacing: 24) {
+            PageHeader(title: "Words worth keeping.", subtitle: "A little look back at your writing. Stored on this Mac.") {
+                Menu {
+                    Button("Refresh history") { refresh() }
+                    Button("Clear all history…", role: .destructive) { confirmClear = true }.disabled(model.history.isEmpty)
+                } label: { Label("Manage", systemImage: "ellipsis") }.fixedSize()
+            }
+            HStack(spacing: 10) {
+                SectionCaption(text: "\(model.history.count) saved \(model.history.count == 1 ? "entry" : "entries")")
+                Spacer()
+                FrogBadge(text: model.configuration.preferences.historyEnabled ? "Recording on" : "Recording off", active: model.configuration.preferences.historyEnabled)
+            }
             if model.history.isEmpty {
-                ContentUnavailableView(model.configuration.preferences.historyEnabled ? "No history yet" : "History recording is off",
-                                       systemImage: "clock",
-                                       description: Text(model.configuration.preferences.historyEnabled
-                                                         ? "Run a writing rule to see its input, result, and model details here."
-                                                         : "Enable recording in Settings if you want to keep future transformations on this Mac."))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                FrogCard {
+                    FrogEmptyState(symbol: "clock.arrow.circlepath",
+                                   title: model.configuration.preferences.historyEnabled ? "A fresh start" : "A clean slate, by choice",
+                                   message: model.configuration.preferences.historyEnabled
+                                   ? "Your next successful transformation will appear here, along with its original text and model details."
+                                   : "History is off. Turn it on in Settings to keep future transformations on this Mac.")
+                }
+                Spacer(minLength: 0)
             } else {
-                HSplitView {
-                    List(model.history, selection: $selectedID) { item in
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(item.ruleName).font(.headline)
-                            Text(item.processedText).lineLimit(2).foregroundStyle(.secondary)
-                            Text(item.timestamp, format: .dateTime.month(.abbreviated).day().hour().minute())
-                                .font(.caption).foregroundStyle(.secondary)
-                        }.padding(.vertical, 5).tag(item.id)
-                    }.frame(minWidth: 190, idealWidth: 240, maxWidth: 300)
+                HStack(alignment: .top, spacing: 18) {
+                    ScrollView {
+                        LazyVStack(spacing: 10) {
+                            ForEach(model.history) { item in historyItem(item) }
+                        }.padding(2)
+                    }.frame(width: 205)
                     if let entry {
                         ScrollView {
-                            VStack(alignment: .leading, spacing: 16) {
-                                Text(entry.ruleName).font(.title2.bold())
-                                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-                                    GridRow { Text("Date").foregroundStyle(.secondary); Text(entry.timestamp.formatted(date: .abbreviated, time: .standard)) }
-                                    GridRow { Text("Provider").foregroundStyle(.secondary); Text(entry.providerName) }
-                                    GridRow { Text("Model").foregroundStyle(.secondary); Text(entry.model) }
-                                    if !entry.targetLanguage.isEmpty {
-                                        GridRow { Text("Language").foregroundStyle(.secondary); Text(entry.targetLanguage) }
+                            VStack(alignment: .leading, spacing: 18) {
+                                FrogCard {
+                                    VStack(alignment: .leading, spacing: 15) {
+                                        HStack(alignment: .top) {
+                                            VStack(alignment: .leading, spacing: 6) {
+                                                Text(entry.ruleName).font(.system(size: 20, weight: .semibold, design: .rounded))
+                                                Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
+                                                    .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                                            }
+                                            Spacer()
+                                            Menu {
+                                                Button("Copy original") { ViewActions.copy(entry.originalText) }
+                                                Button("Delete entry", role: .destructive) { delete(entry) }
+                                            } label: { Image(systemName: "ellipsis") }
+                                                .menuStyle(.borderlessButton).frame(width: 20).accessibilityLabel("Entry actions")
+                                        }
+                                        Rectangle().fill(FrogStyle.border).frame(height: 1)
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            metadata("Provider", value: entry.providerName)
+                                            metadata("Model", value: entry.model)
+                                            if !entry.targetLanguage.isEmpty { metadata("Language", value: entry.targetLanguage) }
+                                        }
                                     }
-                                }.font(.callout).textSelection(.enabled)
-                                Divider()
-                                historyText("Original", text: entry.originalText)
-                                historyText("Result", text: entry.processedText)
-                            }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
-                        }.frame(minWidth: 300)
+                                }
+                                historyText("Original", text: entry.originalText, result: false)
+                                historyText("Result", text: entry.processedText, result: true)
+                            }.padding(2)
+                        }.frame(maxWidth: .infinity)
                     } else {
-                        ContentUnavailableView("Select an entry", systemImage: "text.magnifyingglass", description: Text("Inspect its original text, result, and details."))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        FrogCard {
+                            FrogEmptyState(symbol: "text.magnifyingglass", title: "Take a closer look", message: "Choose an entry to see the original, the result, and the model behind it.")
+                        }
                     }
-                }
+                }.frame(maxHeight: .infinity)
             }
-            Divider()
-            HStack {
-                Button("Refresh", systemImage: "arrow.clockwise") { model.refreshHistory() }
-                Button("Clear all…", role: .destructive) { confirmClear = true }.disabled(model.history.isEmpty)
-                Spacer()
-                if let entry {
-                    Button(copied ? "Copied" : "Copy result") { ViewActions.copy(entry.processedText); copied = true }
-                    Button("Delete entry", role: .destructive) {
-                        do { try model.deleteHistory(id: entry.id); selectedID = nil } catch { model.report(error) }
-                    }
-                }
-            }.padding()
-        }
-        .onAppear { model.refreshHistory() }
-        .onChange(of: selectedID) { _, _ in copied = false }
-        .confirmationDialog("Clear all local history?", isPresented: $confirmClear) {
-            Button("Clear all history", role: .destructive) {
-                do { try model.clearHistory(); selectedID = nil } catch { model.report(error) }
+        }.padding(32).background(FrogStyle.canvas)
+            .onAppear { refresh() }
+            .onChange(of: selectedID) { _, _ in copied = false }
+            .onChange(of: model.history.map(\.id)) { _, ids in
+                if let selectedID, !ids.contains(selectedID) { self.selectedID = ids.first }
             }
-        } message: { Text("All saved originals and results will be permanently deleted from this Mac.") }
+            .confirmationDialog("Clear all local history?", isPresented: $confirmClear) {
+                Button("Clear all history", role: .destructive) {
+                    do { try model.clearHistory(); selectedID = nil } catch { model.report(error) }
+                }
+            } message: { Text("All saved originals and results will be permanently deleted from this Mac.") }
     }
 
-    private func historyText(_ title: String, text: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(title).font(.headline)
-                Spacer()
-                Button("Copy \(title.lowercased())") { ViewActions.copy(text) }
+    private func historyItem(_ item: HistoryEntry) -> some View {
+        Button { selectedID = item.id } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Image(systemName: "text.badge.checkmark").foregroundStyle(FrogStyle.accent)
+                    Spacer()
+                    Text(item.timestamp, format: .dateTime.month(.abbreviated).day())
+                        .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                }
+                Text(item.ruleName).font(.system(size: 12, weight: .semibold)).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                Text(item.processedText).font(.system(size: 11)).lineSpacing(3).lineLimit(3).foregroundStyle(FrogStyle.muted)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(15)
+                .background(selectedID == item.id ? FrogStyle.accentSoft : FrogStyle.surface, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(selectedID == item.id ? FrogStyle.accent.opacity(0.5) : FrogStyle.border, lineWidth: 1))
+                .contentShape(RoundedRectangle(cornerRadius: 12))
+        }.buttonStyle(.plain).accessibilityAddTraits(selectedID == item.id ? .isSelected : [])
+    }
+
+    private func metadata(_ title: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(title).foregroundStyle(FrogStyle.muted).frame(width: 60, alignment: .leading)
+            Text(value).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+        }.font(.system(size: 11))
+    }
+
+    private func historyText(_ title: String, text: String, result: Bool) -> some View {
+        FrogCard {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    SectionCaption(text: title)
+                    Spacer()
+                    Button(result && copied ? "Copied" : "Copy", systemImage: result && copied ? "checkmark" : "doc.on.doc") {
+                        ViewActions.copy(text)
+                        if result { copied = true }
+                    }.accessibilityLabel("Copy \(title.lowercased())")
+                }
+                Text(text).font(.system(size: 13)).lineSpacing(5).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Text(text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12).background(.quaternary.opacity(0.4)).clipShape(RoundedRectangle(cornerRadius: 6))
         }
+    }
+
+    private func refresh() {
+        model.refreshHistory()
+        if !model.history.contains(where: { $0.id == selectedID }) { selectedID = model.history.first?.id }
+    }
+
+    private func delete(_ entry: HistoryEntry) {
+        do { try model.deleteHistory(id: entry.id); selectedID = model.history.first?.id } catch { model.report(error) }
     }
 }

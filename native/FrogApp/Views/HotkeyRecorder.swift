@@ -9,13 +9,14 @@ struct HotkeyRecorder: View {
     @State private var hint: String?
 
     var body: some View {
-        HStack {
-            Text(recording ? "Press shortcut…" : hotkey.map(HotkeyManager.display) ?? "No shortcut")
-                .font(.system(.body, design: .monospaced))
+        HStack(spacing: 10) {
+            ShortcutBadge(text: recording ? "Press shortcut…" : hotkey.map(HotkeyManager.display) ?? "No shortcut")
                 .frame(minWidth: 140, alignment: .leading)
+            Spacer(minLength: 0)
             Button(recording ? "Cancel recording" : "Record shortcut") {
                 recording.toggle(); hint = nil
             }
+            .buttonStyle(FrogButtonStyle(primary: recording))
             Button("Clear") { hotkey = nil; recording = false; hint = nil }
                 .disabled(hotkey == nil && !recording)
             if recording {

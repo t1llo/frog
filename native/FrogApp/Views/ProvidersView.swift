@@ -7,46 +7,66 @@ struct ProvidersView: View {
     @State private var deleting: ProviderConfiguration?
 
     var body: some View {
-        VStack(spacing: 0) {
-            EditorHeading(title: "Providers", subtitle: "Bring your own cloud credentials or use a local model with Ollama.")
-            HStack {
-                Picker("Default provider", selection: Binding(get: { model.configuration.defaultProviderID }, set: { id in
-                    do { try model.setDefaultProvider(id: id) } catch { model.report(error) }
-                })) {
-                    Text("None selected").tag(UUID?.none)
-                    ForEach(model.configuration.providers) { Text($0.name).tag(Optional($0.id)) }
-                }.frame(maxWidth: 420)
-                Spacer()
-            }.padding(.horizontal).padding(.bottom)
-            List(model.configuration.providers) { provider in
-                HStack(spacing: 12) {
-                    Image(systemName: provider.kind == .ollama ? "desktopcomputer" : "cloud")
-                        .foregroundStyle(Color.accentColor)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(provider.name).font(.headline)
-                        Text("\(provider.kind.title) · \(provider.model)").foregroundStyle(.secondary)
-                        Text(provider.endpoint).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                    Spacer()
-                    if model.hasAPIKey(provider.id) {
-                        Label("Key saved", systemImage: "key.fill").font(.caption).foregroundStyle(.secondary)
-                    }
-                    Button("Edit") { editing = provider }.accessibilityLabel("Edit \(provider.name)")
-                    Button(role: .destructive) { deleting = provider } label: { Image(systemName: "trash") }
-                        .accessibilityLabel("Delete \(provider.name)")
-                }.padding(.vertical, 8)
+        PageScroll {
+            PageHeader(title: "Choose your intelligence.", subtitle: "Cloud or local. Your models, your keys, your choice.") {
+                Button { editing = ProviderConfiguration() } label: { Label("Add provider", systemImage: "plus") }
+                    .buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut("n", modifiers: .command)
             }
-            .overlay {
-                if model.configuration.providers.isEmpty {
-                    ContentUnavailableView("Connect your first provider", systemImage: "server.rack", description: Text("Choose a cloud service or a running local Ollama server. Credentials are stored in macOS Keychain."))
+            FrogCard {
+                SettingRow(title: "Your go-to provider", description: "Used by any rule without its own provider.") {
+                    Picker("Default provider", selection: Binding(get: { model.configuration.defaultProviderID }, set: { id in
+                        do { try model.setDefaultProvider(id: id) } catch { model.report(error) }
+                    })) {
+                        Text("Choose a provider").tag(UUID?.none)
+                        ForEach(model.configuration.providers) { Text($0.name).tag(Optional($0.id)) }
+                    }.labelsHidden().frame(width: 210)
                 }
             }
-            HStack {
-                Button { editing = ProviderConfiguration() } label: { Label("Add provider", systemImage: "plus") }
-                    .keyboardShortcut("n", modifiers: .command)
-                Spacer()
-                Text("Rules can override the default provider and model.").font(.caption).foregroundStyle(.secondary)
-            }.padding()
+            SectionCaption(text: "Connections · \(model.configuration.providers.count)")
+            LazyVStack(spacing: 14) {
+                ForEach(model.configuration.providers) { provider in
+                    FrogCard {
+                        VStack(alignment: .leading, spacing: 18) {
+                            HStack(spacing: 14) {
+                                SymbolTile(symbol: provider.kind == .ollama ? "desktopcomputer" : "cloud")
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(provider.name).font(.system(size: 15, weight: .semibold))
+                                    Text(provider.kind.title).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
+                                }
+                                Spacer()
+                                if model.configuration.defaultProviderID == provider.id { FrogBadge(text: "Default", active: true) }
+                            }
+                            HStack(spacing: 8) {
+                                Label(provider.model, systemImage: "cpu").font(.system(size: 12, weight: .medium))
+                                Spacer()
+                                Label(model.hasAPIKey(provider.id) ? "Key secured" : "No saved key", systemImage: model.hasAPIKey(provider.id) ? "lock.shield" : "key")
+                                    .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                            }
+                            Rectangle().fill(FrogStyle.border).frame(height: 1)
+                            HStack {
+                                Text(provider.endpoint).font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(FrogStyle.muted).lineLimit(1).textSelection(.enabled)
+                                Spacer(minLength: 16)
+                                Button("Configure") { editing = provider }.accessibilityLabel("Configure \(provider.name)")
+                                Menu {
+                                    Button("Make default") {
+                                        do { try model.setDefaultProvider(id: provider.id) } catch { model.report(error) }
+                                    }.disabled(model.configuration.defaultProviderID == provider.id)
+                                    Button("Delete provider…", role: .destructive) { deleting = provider }
+                                } label: { Image(systemName: "ellipsis") }
+                                    .menuStyle(.borderlessButton).frame(width: 20).accessibilityLabel("Actions for \(provider.name)")
+                            }
+                        }
+                    }
+                }
+                if model.configuration.providers.isEmpty {
+                    FrogCard {
+                        FrogEmptyState(symbol: "cpu", title: "Meet your writing partner", message: "Connect OpenAI, Claude, Gemini, or your own local model. Your API keys stay in macOS Keychain.")
+                    }
+                }
+            }
+            Label("Cloud credentials live in Keychain. Local models can work without a key.", systemImage: "lock.shield")
+                .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
         }
         .sheet(item: $editing) { provider in ProviderEditor(provider: provider).environmentObject(model) }
         .confirmationDialog("Delete \(deleting?.name ?? "provider")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
@@ -91,66 +111,80 @@ private struct ProviderEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            EditorHeading(title: "Provider connection", subtitle: "Test this draft before saving. The test sends a short sample request to the endpoint below.")
-            Form {
-                Section("Connection") {
-                    Picker("Service", selection: $provider.kind) {
-                        ForEach(ProviderKind.allCases) { Text($0.title).tag($0) }
-                    }.onChange(of: provider.kind) { old, new in
-                        if provider.name == old.title || provider.name == "OpenAI" { provider.name = new.title }
-                        provider.endpoint = new.endpoint; provider.model = new.defaultModel
-                        testResult = nil
-                    }
-                    TextField("Name", text: $provider.name)
-                    TextField("Base endpoint", text: $provider.endpoint)
-                    TextField("Default model", text: $provider.model)
-                    if provider.kind == .ollama {
-                        Text("Run Ollama locally and install the model first. Frog connects to its native /api/chat API.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else if provider.kind == .compatible {
-                        Text("Use the API base URL, usually ending in /v1. Local compatible servers may not require a key.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Button("Use service defaults") {
-                        provider.endpoint = provider.kind.endpoint; provider.model = provider.kind.defaultModel
-                    }
-                }.disabled(testing)
-                Section("Credentials") {
-                    SecureField(model.hasAPIKey(provider.id) ? "Replacement API key" : "API key", text: $apiKey)
-                        .disabled(clearKey)
-                    if model.hasAPIKey(provider.id) {
-                        Toggle("Remove saved API key on save", isOn: $clearKey)
-                            .onChange(of: clearKey) { _, remove in if remove { apiKey = "" } }
-                        Text("Leave the key field blank to keep the saved key. A new key replaces it only when you save.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    } else {
-                        Text("Keys are stored in macOS Keychain. Local-only providers can leave this blank.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    if let credentialHint { InlineIssue(message: credentialHint) }
-                }.disabled(testing)
-                Section("Connection test") {
-                    HStack {
-                        Button(testing ? "Testing…" : "Test connection") { test() }
-                            .disabled(validation != nil || testing || model.isTestingProvider)
-                        if testing {
-                            ProgressView().controlSize(.small)
-                            Button("Cancel test") { testTask?.cancel() }
+            EditorHeading(title: "Connect your model.", subtitle: "A home for your favorite intelligence. Test it before saving.")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    FrogCard {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Picker("Service", selection: $provider.kind) {
+                                ForEach(ProviderKind.allCases) { Text($0.title).tag($0) }
+                            }.onChange(of: provider.kind) { old, new in
+                                if provider.name == old.title || provider.name == "OpenAI" { provider.name = new.title }
+                                provider.endpoint = new.endpoint; provider.model = new.defaultModel
+                                testResult = nil
+                            }
+                            LabeledField(title: "Connection name") { TextField("Connection name", text: $provider.name).labelsHidden() }
+                            LabeledField(title: "Base endpoint") { TextField("Base endpoint", text: $provider.endpoint).labelsHidden().font(.system(size: 12, design: .monospaced)) }
+                            LabeledField(title: "Default model") { TextField("Default model", text: $provider.model).labelsHidden() }
+                            HStack(alignment: .top, spacing: 16) {
+                                Text(provider.kind == .ollama ? "Run Ollama and install your model first. Frog uses its native /api/chat API." : "Use the API base URL. Compatible services usually end in /v1.")
+                                    .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
+                                Spacer(minLength: 0)
+                                Button("Reset defaults") {
+                                    provider.endpoint = provider.kind.endpoint; provider.model = provider.kind.defaultModel
+                                }.fixedSize()
+                            }
+                        }
+                    }.disabled(testing)
+                    SectionCaption(text: "Credentials")
+                    FrogCard {
+                        VStack(alignment: .leading, spacing: 14) {
+                            LabeledField(title: model.hasAPIKey(provider.id) ? "Replacement API key" : "API key") {
+                                SecureField("API key", text: $apiKey).disabled(clearKey)
+                            }
+                            if model.hasAPIKey(provider.id) {
+                                SettingRow(title: "Remove saved key", description: "Leave the field blank to keep your existing key. A replacement is stored only when you save.") {
+                                    Toggle("Remove saved API key on save", isOn: $clearKey).toggleStyle(.switch).labelsHidden().controlSize(.small)
+                                        .onChange(of: clearKey) { _, remove in if remove { apiKey = "" } }
+                                }
+                            } else {
+                                Label("Saved securely in Keychain. Optional for local-only services.", systemImage: "lock.shield")
+                                    .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                            }
+                            if let credentialHint { InlineIssue(message: credentialHint) }
+                        }
+                    }.disabled(testing)
+                    SectionCaption(text: "Take it for a spin")
+                    FrogCard {
+                        VStack(alignment: .leading, spacing: 14) {
+                            SettingRow(title: "Connection test", description: "Send a short sample request using this draft configuration.") {
+                                HStack {
+                                    if testing { ProgressView().controlSize(.small) }
+                                    Button(testing ? "Testing…" : "Test connection") { test() }
+                                        .disabled(validation != nil || testing || model.isTestingProvider)
+                                    if testing { Button("Cancel") { testTask?.cancel() } }
+                                }
+                            }
+                            if let testResult {
+                                Label(testResult, systemImage: "checkmark.circle.fill").font(.system(size: 12))
+                                    .foregroundStyle(FrogStyle.accent).textSelection(.enabled)
+                            }
+                            if let issue { InlineIssue(message: issue) }
                         }
                     }
-                    if let testResult { Label(testResult, systemImage: "checkmark.circle").foregroundStyle(.green).textSelection(.enabled) }
-                    if let issue { InlineIssue(message: issue) }
-                }
-                if let validation { InlineIssue(message: validation) }
-            }.formStyle(.grouped)
+                    if let validation { InlineIssue(message: validation) }
+                }.padding(.horizontal, 24).padding(.bottom, 24)
+            }
             HStack {
                 Button("Cancel") { testTask?.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Save provider") { save() }.keyboardShortcut(.defaultAction)
+                Button("Save provider") { save() }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.defaultAction)
                     .disabled(validation != nil || testing)
-            }.padding()
+            }.padding(20).background(FrogStyle.surface)
+                .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border).frame(height: 1) }
         }
-        .frame(width: 600, height: 690)
+        .frame(width: 640, height: 700).background(FrogStyle.canvas)
+        .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
         .onDisappear { testTask?.cancel(); apiKey = "" }
         .onChange(of: provider) { _, _ in testResult = nil }
         .onChange(of: apiKey) { _, _ in testResult = nil }
