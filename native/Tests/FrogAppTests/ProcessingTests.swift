@@ -4,6 +4,7 @@ import FrogCore
 
 @MainActor
 final class ProcessingTests: XCTestCase {
+    // Async test entry points let older XCTest runners hop to the main actor.
     private func directory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("FrogTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -83,13 +84,13 @@ final class ProcessingTests: XCTestCase {
         XCTAssertTrue(model.status.contains("Cancelled"))
     }
 
-    func testUnknownExplicitProviderDoesNotFallBackToDefault() throws {
+    func testUnknownExplicitProviderDoesNotFallBackToDefault() async throws {
         let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, readKey: { _ in nil }, writeClipboard: { _ in })
         try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
         XCTAssertThrowsError(try model.saveRule(Rule(providerID: UUID())))
     }
 
-    func testImportReplacesSettingsAndRemapsUnrecognizedCredentialIdentities() throws {
+    func testImportReplacesSettingsAndRemapsUnrecognizedCredentialIdentities() async throws {
         let directory = try directory()
         let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil }, writeClipboard: { _ in })
         let existing = ProviderConfiguration(name: "Existing", kind: .ollama)
@@ -111,7 +112,7 @@ final class ProcessingTests: XCTestCase {
         XCTAssertEqual(model.configuration, unchanged, "An unchanged known connection can keep its Keychain identity")
     }
 
-    func testInvalidImportLeavesCurrentSettingsAndFileUntouched() throws {
+    func testInvalidImportLeavesCurrentSettingsAndFileUntouched() async throws {
         let directory = try directory()
         let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil }, writeClipboard: { _ in })
         try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
@@ -125,7 +126,7 @@ final class ProcessingTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: file), bytes)
     }
 
-    func testInvalidRuleCannotMakeConfigurationUnexportable() throws {
+    func testInvalidRuleCannotMakeConfigurationUnexportable() async throws {
         let directory = try directory()
         let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil }, writeClipboard: { _ in })
         try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
