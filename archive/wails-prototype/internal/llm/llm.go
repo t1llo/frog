@@ -23,6 +23,7 @@ type OpenAIProvider struct {
 	model    string
 	client   *http.Client
 	name     string
+
 }
 
 // NewOpenAIProvider creates a new OpenAI-compatible provider
