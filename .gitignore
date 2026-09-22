@@ -1,0 +1,17 @@
+.build/
+dist/
+.DS_Store
+**/xcuserdata/
+/archive/
+/.scratch/
+/.agents/skills/
+/skills-lock.json
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.p8
+*.key
+*.mobileprovision
+node_modules
