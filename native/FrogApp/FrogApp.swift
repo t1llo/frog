@@ -10,7 +10,11 @@ struct FrogApp: App {
         MenuBarExtra {
             FrogStatusMenu(model: delegate.model)
         } label: {
-            FrogMenuLabel(model: delegate.model)
+            Image(nsImage: FrogMenuIcon.image)
+                .renderingMode(.template)
+                .resizable()
+                .frame(width: 22, height: 18)
+                .accessibilityLabel("Frog")
         }
         .menuBarExtraStyle(.menu)
     }
@@ -27,18 +31,6 @@ private struct FrogStatusMenu: View {
         Button("Open Frog…") { model.showSettings() }.keyboardShortcut(",")
         Divider()
         Button("Quit Frog") { model.shutdown(); NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
-    }
-}
-
-private struct FrogMenuLabel: View {
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        Image(nsImage: FrogMenuIcon.image)
-            .renderingMode(.template)
-            .resizable()
-            .frame(width: 22, height: 18)
-            .accessibilityLabel(model.isProcessing ? "Frog is processing" : "Frog")
     }
 }
 
