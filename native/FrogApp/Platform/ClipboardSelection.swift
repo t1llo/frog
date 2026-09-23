@@ -36,11 +36,7 @@ final class ClipboardSelection: CapturedTextSelection {
             throw FrogError.message("The app does not expose its active window. Copy your selection into Try text.")
         }
         let focused = AXRead.element(application, kAXFocusedUIElementAttribute)
-        // A hotkey's modifiers must be released before synthesizing Command-C.
-        for _ in 0..<40 {
-            if modifiersReleased { break }
-            try await Task.sleep(for: .milliseconds(25))
-        }
+        try await waitForShortcutRelease()
         guard modifiersReleased, sameTarget(application, window: window, focused: focused, pid: pid) else {
             throw FrogError.message("Release the shortcut keys and keep the selected app focused, then try again.")
         }
@@ -48,7 +44,7 @@ final class ClipboardSelection: CapturedTextSelection {
             guard sameTarget(application, window: window, focused: focused, pid: pid) else {
                 throw FrogError.message("The selected app changed before copying.")
             }
-            try key(8, pid: pid)
+            try command("c", keyCode: 8, application: application, pid: pid)
         }
         guard sameTarget(application, window: window, focused: focused, pid: pid) else {
             throw FrogError.message("The selected app changed while copying.")
@@ -57,33 +53,78 @@ final class ClipboardSelection: CapturedTextSelection {
     }
 
     func replace(with result: String) async throws {
-        // Every failure still leaves the finished result ready for manual paste.
-        defer { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(result, forType: .string) }
+        // Set once before validation. FreshSelectionCopy restores this result on
+        // failure; do not clear the pasteboard again while Paste is consuming it.
+        NSPasteboard.general.clearContents()
+        guard NSPasteboard.general.setString(result, forType: .string) else { throw FrogError.message("Could not copy the result.") }
         guard !consumed, !invalidated, Self.inputSnapshot() == input, Self.modifiersReleased,
               Self.sameTarget(application, window: window, focused: focused, pid: pid) else {
             throw FrogError.message("The selection changed or you interacted with the app. The result is copied; paste it where you want it.")
         }
-        guard let focused, Self.isEditable(focused) else {
+        guard canPaste else {
             throw FrogError.message("The app did not expose an editable target. The result is copied; paste it into your text field.")
         }
         consumed = true
         // Re-copy immediately before paste: window identity alone cannot establish selection identity.
         let beforeCopy = Self.inputSnapshot()
-        let current = try await FreshSelectionCopy.read(pasteboard: .general) { try Self.key(8, pid: self.pid) }
+        let current = try await FreshSelectionCopy.read(pasteboard: .general) {
+            try Self.command("c", keyCode: 8, application: self.application, pid: self.pid)
+        }
         let afterCopy = Self.inputSnapshot()
         guard !invalidated, current == text, afterCopy.dropFirst() == beforeCopy.dropFirst(),
               afterCopy[0] &- beforeCopy[0] <= 1, Self.modifiersReleased,
               Self.sameTarget(application, window: window, focused: focused, pid: pid) else {
             throw FrogError.message("The original selection changed. The result is on the clipboard.")
         }
-        guard Self.isEditable(focused) else { throw FrogError.message("The field is no longer editable. The result is on the clipboard.") }
-        NSPasteboard.general.clearContents()
-        guard NSPasteboard.general.setString(result, forType: .string) else { throw FrogError.message("Could not copy the result.") }
-        try Self.key(9, pid: pid)
+        guard canPaste else { throw FrogError.message("The field is no longer editable. The result is on the clipboard.") }
+        try Task.checkCancellation()
+        try Self.command("v", keyCode: 9, application: application, pid: pid)
     }
 
     private static var modifiersReleased: Bool {
-        CGEventSource.flagsState(.combinedSessionState).intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift]).isEmpty
+        // Inspect physical keys, not flags left on synthetic Copy/Paste events.
+        ![54, 55, 56, 60, 58, 61, 59, 62].contains { CGEventSource.keyState(.hidSystemState, key: CGKeyCode($0)) }
+    }
+
+    static func waitForShortcutRelease() async throws {
+        for _ in 0..<80 {
+            try Task.checkCancellation()
+            if modifiersReleased { return }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        throw FrogError.message("Release the shortcut keys before Frog copies the selection, then try again.")
+    }
+
+    private var canPaste: Bool {
+        if let focused, Self.isEditable(focused) { return true }
+        // Electron/Chromium may omit the focused AX field entirely. An enabled
+        // native Paste command is another app-provided signal of editability.
+        return Self.menuCommand("v", application: application) != nil
+    }
+
+    private static func command(_ character: String, keyCode: CGKeyCode, application: AXUIElement, pid: pid_t) throws {
+        if let item = menuCommand(character, application: application),
+           AXUIElementPerformAction(item, kAXPressAction as CFString) == .success { return }
+        try key(keyCode, pid: pid)
+    }
+
+    private static func menuCommand(_ character: String, application: AXUIElement) -> AXUIElement? {
+        guard let menu = AXRead.element(application, kAXMenuBarAttribute) else { return nil }
+        var pending = [(menu, 0)]
+        var visited = 0
+        while let (element, depth) = pending.popLast(), visited < 1_000 {
+            visited += 1
+            if AXRead.string(element, kAXRoleAttribute) == kAXMenuItemRole,
+               AXRead.string(element, kAXMenuItemCmdCharAttribute)?.lowercased() == character,
+               let modifiers = AXRead.attribute(element, kAXMenuItemCmdModifiersAttribute) as? NSNumber,
+               modifiers.intValue == 0, AXRead.boolean(element, kAXEnabledAttribute) == true {
+                return element
+            }
+            if depth < 5, let children = AXRead.attribute(element, kAXChildrenAttribute) as? [AXUIElement] {
+                pending.append(contentsOf: children.map { ($0, depth + 1) })
+            }
+        }
+        return nil
     }
 
     private static func isEditable(_ element: AXUIElement) -> Bool {
@@ -123,7 +164,7 @@ final class ClipboardSelection: CapturedTextSelection {
 
 @MainActor
 enum FreshSelectionCopy {
-    static func read(pasteboard: NSPasteboard, attempts: Int = 30, copy: () throws -> Void) async throws -> String {
+    static func read(pasteboard: NSPasteboard, attempts: Int = 60, copy: () throws -> Void) async throws -> String {
         let original: [NSPasteboardItem] = pasteboard.pasteboardItems?.map { item in
             let saved = NSPasteboardItem()
             for type in item.types { if let data = item.data(forType: type) { saved.setData(data, forType: type) } }
@@ -144,10 +185,11 @@ enum FreshSelectionCopy {
             if pasteboard.changeCount != previousCount {
                 copiedCount = pasteboard.changeCount
                 try Task.checkCancellation()
-                guard let text = pasteboard.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    throw FrogError.message("Copy did not return selected text. Select text in an editable field and try again.")
+                // Some apps clear/declare clipboard types before supplying text.
+                // A changed count is necessary, but is not yet a completed Copy.
+                if let text = pasteboard.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return text
                 }
-                return text
             }
             // Once Copy is posted, allow its bounded reply even on cancellation so
             // a delayed clipboard write can be restored before returning.
@@ -156,6 +198,7 @@ enum FreshSelectionCopy {
             }
         }
         try Task.checkCancellation()
+        if copiedCount != nil { throw FrogError.message("Copy did not return selected text. Select text in an editable field and try again.") }
         throw FrogError.message("The app did not copy a selection. Select text first, then try the shortcut again.")
     }
 }

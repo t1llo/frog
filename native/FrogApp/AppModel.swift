@@ -23,10 +23,11 @@ final class AppModel: ObservableObject {
     private let complete: (String, Rule, ProviderConfiguration, String?) async throws -> String
     private let readKey: (UUID) throws -> String?
     private let writeClipboard: (String) -> Void
+    private let notify: (String, String) -> Void
     private let registerShortcuts: Bool
     private let readAccessibility: () -> Bool
     private let hotkeys = HotkeyManager()
-    private let selectionService = SelectionService()
+    private let captureSelection: () async throws -> any CapturedTextSelection
     private let processingIndicator = ProcessingIndicator()
     private var processingTask: Task<Void, Never>?
     private var historyEpoch = UUID()
@@ -37,10 +38,14 @@ final class AppModel: ObservableObject {
          complete: ((String, Rule, ProviderConfiguration, String?) async throws -> String)? = nil,
          readKey: ((UUID) throws -> String?)? = nil,
          writeClipboard: ((String) -> Void)? = nil,
-         readAccessibility: (() -> Bool)? = nil) {
+          readAccessibility: (() -> Bool)? = nil,
+          captureSelection: (() async throws -> any CapturedTextSelection)? = nil,
+          notify: ((String, String) -> Void)? = nil) {
         let dataDirectory = dataDirectory ?? ProcessInfo.processInfo.environment["FROG_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         self.registerShortcuts = registerShortcuts
         self.readAccessibility = readAccessibility ?? { SelectionService.isTrusted }
+        self.captureSelection = captureSelection ?? { try await SelectionService().capture() }
+        self.notify = notify ?? { DesktopNotifications.post(title: $0, body: $1) }
         self.complete = complete ?? { text, rule, provider, key in try await LLMClient().complete(text: text, rule: rule, provider: provider, apiKey: key) }
         self.readKey = readKey ?? { try KeychainStore().read(providerID: $0) }
         self.writeClipboard = writeClipboard ?? { text in NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
@@ -278,7 +283,7 @@ final class AppModel: ObservableObject {
         return provider
     }
 
-    private func processSelection(ruleID: UUID) {
+    func processSelection(ruleID: UUID) {
         begin(ruleID: ruleID, manualText: nil)
     }
 
@@ -311,7 +316,7 @@ final class AppModel: ObservableObject {
                 let selection: (any CapturedTextSelection)?
                 let text: String
                 if let manualText { selection = nil; text = manualText }
-                else { let captured = try await self.selectionService.capture(); selection = captured; text = captured.text }
+                else { let captured = try await self.captureSelection(); selection = captured; text = captured.text }
                 guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("Select or enter some text first.") }
                 let key = try self.readKey(provider.id)
                 try Task.checkCancellation()
@@ -324,7 +329,7 @@ final class AppModel: ObservableObject {
                     catch {
                         self.status = "Result ready on clipboard; replacement skipped."
                         self.errorMessage = error.localizedDescription
-                        DesktopNotifications.post(title: "Frog: result copied", body: error.localizedDescription)
+                        self.notify("Frog: result copied", error.localizedDescription)
                     }
                 } else {
                     self.manualResult = result
@@ -350,12 +355,12 @@ final class AppModel: ObservableObject {
         report(error)
         if background {
             showIndicator(error.localizedDescription, working: false)
-            DesktopNotifications.post(title: "Frog", body: error.localizedDescription)
+            notify("Frog", error.localizedDescription)
         }
     }
 
     private func showIndicator(_ message: String, working: Bool) {
         guard registerShortcuts, configuration.preferences.showProcessingIndicator else { return }
-        processingIndicator.show(message, working: working)
+        processingIndicator.show(message, working: working, failed: errorMessage != nil)
     }
 }

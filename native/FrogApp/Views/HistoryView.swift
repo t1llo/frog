@@ -26,11 +26,20 @@ struct HistoryView: View {
             }
             if model.history.isEmpty {
                 FrogCard {
-                    FrogEmptyState(symbol: "clock.arrow.circlepath",
-                                   title: model.configuration.preferences.historyEnabled ? "A fresh start" : "A clean slate, by choice",
-                                   message: model.configuration.preferences.historyEnabled
-                                   ? "Your next successful transformation will appear here, along with its original text and model details."
-                                   : "History is off. Turn it on in Settings to keep future transformations on this Mac.")
+                    VStack(spacing: 0) {
+                        FrogEmptyState(symbol: "clock.arrow.circlepath",
+                                       title: model.configuration.preferences.historyEnabled ? "A fresh start" : "A clean slate, by choice",
+                                       message: model.configuration.preferences.historyEnabled
+                                       ? "Your next successful transformation will appear here, along with its original text and model details."
+                                       : "History is off. Enable it to keep future originals and results on this Mac.")
+                        if !model.configuration.preferences.historyEnabled {
+                            Button("Enable history", systemImage: "clock.arrow.circlepath") {
+                                var preferences = model.configuration.preferences
+                                preferences.historyEnabled = true
+                                do { try model.savePreferences(preferences) } catch { model.report(error) }
+                            }.buttonStyle(FrogButtonStyle(primary: true)).padding(.bottom, 24)
+                        }
+                    }
                 }
                 Spacer(minLength: 0)
             } else {
@@ -77,7 +86,7 @@ struct HistoryView: View {
             .onAppear { refresh() }
             .onChange(of: selectedID) { _, _ in copied = false }
             .onChange(of: model.history.map(\.id)) { _, ids in
-                if let selectedID, !ids.contains(selectedID) { self.selectedID = ids.first }
+                if selectedID.map({ !ids.contains($0) }) ?? true { selectedID = ids.first }
             }
             .confirmationDialog("Clear all local history?", isPresented: $confirmClear) {
                 Button("Clear all history", role: .destructive) {

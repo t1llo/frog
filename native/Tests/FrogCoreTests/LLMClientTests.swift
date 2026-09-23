@@ -88,6 +88,21 @@ final class LLMClientTests: XCTestCase {
         XCTAssertEqual(result, "Answer")
     }
 
+    func testGeminiDefaultUsesAIStudioGenerateContentEndpoint() async throws {
+        // Intercept the real default host: this checks URL construction without a live API request.
+        host = "generativelanguage.googleapis.com"
+        fixture { request in
+            XCTAssertEqual(request.url?.absoluteString, "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "x-goog-api-key"), "fixture-key")
+            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+            return (200, Data(#"{"candidates":[{"content":{"parts":[{"text":"Connected"}]},"finishReason":"STOP"}]}"#.utf8))
+        }
+        let result = try await client.complete(text: "Hello", rule: Rule(instructions: "Reply briefly"),
+                                               provider: ProviderConfiguration(kind: .gemini), apiKey: "fixture-key")
+        XCTAssertEqual(result, "Connected")
+    }
+
     func testOllamaAndCompatibleWorkWithoutKeys() async throws {
         for kind in [ProviderKind.ollama, .compatible, .lmStudio] {
             fixture { request in

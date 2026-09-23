@@ -5,54 +5,107 @@ import SwiftUI
 @main
 struct FrogApp: App {
     @NSApplicationDelegateAdaptor(FrogApplicationDelegate.self) private var delegate
-    @StateObject private var model = AppModel()
 
     var body: some Scene {
         MenuBarExtra {
-            Text(model.status).font(.caption)
-            if let error = model.errorMessage { Text(error).font(.caption) }
-            if model.isProcessing { Button("Cancel Processing") { model.cancelProcessing() } }
-            Divider()
-            Button("Open Frog…") { model.showSettings() }.keyboardShortcut(",")
-            Divider()
-            Button("Quit Frog") { model.shutdown(); NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
+            FrogStatusMenu(model: delegate.model)
         } label: {
-            Image(systemName: model.isProcessing ? "ellipsis.circle" : "text.badge.checkmark")
-                .accessibilityLabel(model.isProcessing ? "Frog is processing" : "Frog")
-                .onAppear { delegate.install(model: model) }
+            FrogMenuLabel(model: delegate.model)
         }
         .menuBarExtraStyle(.menu)
     }
 }
 
+private struct FrogStatusMenu: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Text(model.status).font(.caption)
+        if let error = model.errorMessage { Text(error).font(.caption) }
+        if model.isProcessing { Button("Cancel Processing") { model.cancelProcessing() } }
+        Divider()
+        Button("Open Frog…") { model.showSettings() }.keyboardShortcut(",")
+        Divider()
+        Button("Quit Frog") { model.shutdown(); NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
+    }
+}
+
+private struct FrogMenuLabel: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Image(nsImage: FrogMenuIcon.image)
+            .renderingMode(.template)
+            .resizable()
+            .frame(width: 22, height: 18)
+            .accessibilityLabel(model.isProcessing ? "Frog is processing" : "Frog")
+    }
+}
+
+/// A template frog face stays legible in both light and dark macOS menu bars.
+private enum FrogMenuIcon {
+    static let image: NSImage = {
+        // Render into an isolated bitmap, rather than using a lazy drawing handler
+        // with destination-out compositing inside SwiftUI's status-item renderer.
+        let size = NSSize(width: 22, height: 18)
+        let image = NSImage(size: size)
+        for scale in [1, 2, 3] {
+            guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 22 * scale, pixelsHigh: 18 * scale,
+                                              bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                              colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+                  let context = NSGraphicsContext(bitmapImageRep: bitmap) else { continue }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            let transform = NSAffineTransform()
+            transform.scale(by: CGFloat(scale)); transform.concat()
+            drawFace()
+            NSGraphicsContext.restoreGraphicsState()
+            bitmap.size = size
+            image.addRepresentation(bitmap)
+        }
+        image.isTemplate = true
+        return image
+    }()
+
+    private static func drawFace() {
+        NSColor.black.setStroke()
+        NSColor.black.setFill()
+        let outline = NSBezierPath()
+        outline.move(to: NSPoint(x: 3, y: 11))
+        outline.curve(to: NSPoint(x: 9, y: 14), controlPoint1: NSPoint(x: 1, y: 18), controlPoint2: NSPoint(x: 9, y: 18))
+        outline.line(to: NSPoint(x: 13, y: 14))
+        outline.curve(to: NSPoint(x: 19, y: 11), controlPoint1: NSPoint(x: 13, y: 18), controlPoint2: NSPoint(x: 21, y: 18))
+        outline.curve(to: NSPoint(x: 11, y: 1.5), controlPoint1: NSPoint(x: 25, y: 5), controlPoint2: NSPoint(x: 17, y: 1.5))
+        outline.curve(to: NSPoint(x: 3, y: 11), controlPoint1: NSPoint(x: 5, y: 1.5), controlPoint2: NSPoint(x: -3, y: 5))
+        outline.close()
+        outline.lineWidth = 1.4
+        outline.stroke()
+        for x in [CGFloat(5), CGFloat(15)] {
+            NSBezierPath(ovalIn: NSRect(x: x, y: 12, width: 2, height: 2.5)).fill()
+        }
+        let smile = NSBezierPath()
+        smile.move(to: NSPoint(x: 6, y: 7.5))
+        smile.curve(to: NSPoint(x: 16, y: 7.5), controlPoint1: NSPoint(x: 8, y: 3.5), controlPoint2: NSPoint(x: 14, y: 3.5))
+        smile.lineWidth = 1.2
+        smile.lineCapStyle = .round
+        smile.stroke()
+    }
+}
+
 @MainActor
 final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    private var model: AppModel?
+    let model = AppModel()
     private var window: NSWindow?
     private var observer: NSObjectProtocol?
     private var launchedAtLogin = false
-    private var applicationLaunched = false
-    private var started = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
         NSApplication.shared.setActivationPolicy(.accessory)
         let event = NSAppleEventManager.shared().currentAppleEvent
         launchedAtLogin = event?.eventID == kAEOpenApplication && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
-        applicationLaunched = true
-        startIfReady()
-    }
-
-    func install(model: AppModel) {
-        guard self.model == nil else { return }
-        self.model = model
         model.openSettings = { [weak self] in self?.showWindow() }
-        startIfReady()
-    }
-
-    private func startIfReady() {
-        guard applicationLaunched, !started, let model else { return }
-        started = true
+        // Register at application launch, even if SwiftUI never mounts the menu label.
         model.start()
         observer = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak model] _ in
             Task { @MainActor in model?.refreshSystemStatus() }
@@ -63,7 +116,6 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
     }
 
     private func showWindow() {
-        guard let model else { return }
         if window == nil {
             let controller = NSHostingController(rootView: MainView().environmentObject(model))
             let created = NSWindow(contentViewController: controller)
@@ -87,7 +139,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showWindow(); return true }
     func applicationWillTerminate(_ notification: Notification) {
-        model?.shutdown()
+        model.shutdown()
         if let observer { NotificationCenter.default.removeObserver(observer) }
     }
 }

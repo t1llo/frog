@@ -32,6 +32,12 @@ final class SelectionService {
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
             throw FrogError.message("Select text in another application before using a rule.")
         }
+        // Carbon's key-release event can arrive while Command/Option/Control is
+        // still physically held. Wait before either AX capture or Copy/Paste.
+        try await ClipboardSelection.waitForShortcutRelease()
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier else {
+            throw FrogError.message("The selected app changed before reading the selection. Try again.")
+        }
         let application = AXUIElementCreateApplication(app.processIdentifier)
         let element = AXRead.element(application, kAXFocusedUIElementAttribute)
         if let element, AXRead.string(element, kAXSubroleAttribute) == kAXSecureTextFieldSubrole {
@@ -48,8 +54,8 @@ final class SelectionService {
         let selected = AXRead.string(element, kAXSelectedTextAttribute)
         let substring = value.flatMap { AXRead.substring($0, range: range) }
         guard let text = selected ?? substring, !text.isEmpty,
-              value == nil || substring == text else {
-            throw FrogError.message("The selected text could not be read reliably. Try selecting it again.")
+               value == nil || substring == text else {
+            return try await ClipboardSelection.capture(application: application, pid: app.processIdentifier)
         }
         var pid: pid_t = 0
         guard AXUIElementGetPid(element, &pid) == .success, pid == app.processIdentifier else {
@@ -165,18 +171,14 @@ final class TextSelection: CapturedTextSelection {
         guard isValid else {
             throw FrogError.message("The original selection changed or lost focus. The result is on the clipboard; paste it where you want it.")
         }
-        let role = AXRead.string(element, kAXRoleAttribute)
-        if [kAXTextAreaRole, kAXTextFieldRole, kAXComboBoxRole].contains(role ?? "") {
+        if let pasteTarget {
             // Chromium can report AXSelectedText writes as successful without editing.
             // Use its ordinary Copy/Paste path, with a fresh comparison before paste.
-            guard let pasteTarget else {
-                throw FrogError.message("The app does not expose its active window. The result is on the clipboard.")
-            }
             consumed = true
             try await pasteTarget.replace(with: text)
             return
         }
-        throw FrogError.message("This selection is not in a supported editable field. The result is on the clipboard.")
+        throw FrogError.message("The app does not expose its active window. The result is on the clipboard.")
     }
 }
 

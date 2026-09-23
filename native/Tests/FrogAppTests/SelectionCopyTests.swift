@@ -4,6 +4,20 @@ import XCTest
 
 @MainActor
 final class SelectionCopyTests: XCTestCase {
+    func testCopyWaitsForTextAfterAppClearsClipboard() async throws {
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        board.setString("previous clipboard", forType: .string)
+        let text = try await FreshSelectionCopy.read(pasteboard: board) {
+            board.clearContents()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) {
+                board.setString("selected text", forType: .string)
+            }
+        }
+        XCTAssertEqual(text, "selected text")
+        XCTAssertEqual(board.string(forType: .string), "previous clipboard")
+    }
+
     func testStaleClipboardIsNeverAcceptedAsSelection() async throws {
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
@@ -32,7 +46,7 @@ final class SelectionCopyTests: XCTestCase {
         defer { board.releaseGlobally() }
         board.setString("old", forType: .string)
         do {
-            _ = try await FreshSelectionCopy.read(pasteboard: board) {
+                _ = try await FreshSelectionCopy.read(pasteboard: board, attempts: 1) {
                 board.clearContents(); board.setData(Data([1]), forType: .png)
             }
             XCTFail("Expected non-text rejection")

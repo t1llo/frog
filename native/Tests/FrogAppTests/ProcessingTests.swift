@@ -5,6 +5,61 @@ import FrogCore
 
 @MainActor
 final class ProcessingTests: XCTestCase {
+    func testShortcutProcessesOnlyCapturedSelectionReplacesAndPersistsHistory() async throws {
+        let folder = try directory()
+        let selection = FixtureSelection(text: "teh selected text")
+        var requests = 0
+        let model = AppModel(dataDirectory: folder, registerShortcuts: false, complete: { text, _, _, _ in
+            requests += 1
+            XCTAssertEqual(text, "teh selected text")
+            return "the selected text"
+        }, readKey: { _ in nil }, writeClipboard: { _ in XCTFail("Selection owns replacement clipboard") },
+            captureSelection: { selection })
+        try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
+        var preferences = model.configuration.preferences
+        preferences.historyEnabled = true
+        try model.savePreferences(preferences)
+        model.processSelection(ruleID: model.configuration.rules[0].id)
+        try await waitUntilFinished(model)
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(selection.replacement, "the selected text")
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.history.count, 1)
+        let saved = try HistoryStore(directory: folder).load(preferences: preferences)
+        XCTAssertEqual(saved.first?.originalText, selection.text)
+        XCTAssertEqual(saved.first?.processedText, selection.replacement)
+    }
+
+    func testFailedSelectionCaptureSendsNoRequestAndCreatesNoHistory() async throws {
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, complete: { _, _, _, _ in
+            XCTFail("Capture failure must not send stale clipboard content"); return "Unexpected"
+        }, readKey: { _ in nil }, writeClipboard: { _ in XCTFail("No result to copy") },
+            captureSelection: { throw FrogError.message("No selection") }, notify: { _, _ in })
+        try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
+        var preferences = model.configuration.preferences
+        preferences.historyEnabled = true
+        try model.savePreferences(preferences)
+        model.processSelection(ruleID: model.configuration.rules[0].id)
+        try await waitUntilFinished(model)
+        XCTAssertEqual(model.errorMessage, "No selection")
+        XCTAssertTrue(model.history.isEmpty)
+    }
+
+    func testReplacementFailureStillRecordsCompletedTransformation() async throws {
+        let selection = FixtureSelection(text: "original", failsReplacement: true)
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false,
+            complete: { _, _, _, _ in "translated" }, readKey: { _ in nil },
+            captureSelection: { selection }, notify: { _, _ in })
+        try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
+        var preferences = model.configuration.preferences
+        preferences.historyEnabled = true
+        try model.savePreferences(preferences)
+        model.processSelection(ruleID: model.configuration.rules[0].id)
+        try await waitUntilFinished(model)
+        XCTAssertEqual(model.history.first?.processedText, "translated")
+        XCTAssertNotNil(model.errorMessage)
+    }
+
     func testUnchangedPermissionRefreshDoesNotInvalidateOpenMenus() async throws {
         let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, readAccessibility: { true })
         var updates = 0
@@ -256,5 +311,17 @@ final class ProcessingTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(50))
         }
         XCTAssertFalse(model.accessibilityGranted)
+    }
+}
+
+@MainActor
+private final class FixtureSelection: CapturedTextSelection {
+    let text: String
+    let failsReplacement: Bool
+    var replacement: String?
+    init(text: String, failsReplacement: Bool = false) { self.text = text; self.failsReplacement = failsReplacement }
+    func replace(with text: String) async throws {
+        if failsReplacement { throw FrogError.message("Target changed; result copied") }
+        replacement = text
     }
 }
