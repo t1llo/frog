@@ -61,6 +61,12 @@ public enum ConfigurationFile {
                   !rule.model.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
                 throw FrogError.message("A rule contains an invalid model name.")
             }
+            if !rule.model.isEmpty {
+                guard let provider = configuration.providers.first(where: { $0.id == (rule.providerID ?? configuration.defaultProviderID) }),
+                      provider.models.contains(where: { $0.id == rule.model }) else {
+                    throw FrogError.message("Choose a configured model for \(rule.name). Add it in Providers first.")
+                }
+            }
             if rule.instructions.contains("{{language}}") {
                 let language = rule.targetLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !language.isEmpty, language.utf8.count <= 256 else { throw FrogError.message("Each translation rule needs a target language.") }
@@ -82,6 +88,19 @@ public enum ConfigurationFile {
               !provider.model.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
             throw FrogError.message("Provider name and a valid model are required.")
         }
+        guard !provider.models.isEmpty, provider.models.count <= 200,
+              Set(provider.models.map(\.id)).count == provider.models.count,
+              provider.models.contains(where: { $0.id == provider.model }),
+              provider.models.allSatisfy({ model in
+                  !model.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.id.utf8.count <= 256 &&
+                  model.id == model.id.trimmingCharacters(in: .whitespacesAndNewlines) &&
+                  !model.id.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) &&
+                  !model.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.name.utf8.count <= 256
+              }) else { throw FrogError.message("Configure 1–200 unique models and choose one as the default.") }
+        try validateEndpoint(provider)
+    }
+
+    public static func validateEndpoint(_ provider: ProviderConfiguration) throws {
         guard let url = URLComponents(string: provider.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)),
               let host = url.host, !host.isEmpty, let scheme = url.scheme?.lowercased(),
               ["http", "https"].contains(scheme), url.url != nil,

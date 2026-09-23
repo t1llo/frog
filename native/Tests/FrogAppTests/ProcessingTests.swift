@@ -1,9 +1,35 @@
 import XCTest
+import Combine
 import FrogCore
 @testable import FrogApp
 
 @MainActor
 final class ProcessingTests: XCTestCase {
+    func testUnchangedPermissionRefreshDoesNotInvalidateOpenMenus() async throws {
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, readAccessibility: { true })
+        var updates = 0
+        let subscription = model.objectWillChange.sink { updates += 1 }
+        model.refreshSystemStatus()
+        model.refreshSystemStatus()
+        XCTAssertEqual(updates, 0)
+        withExtendedLifetime(subscription) {}
+    }
+
+    func testDeletingLastProviderResetsRuleOverridesAndKeepsRules() async throws {
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false)
+        let provider = ProviderConfiguration(kind: .ollama)
+        try model.saveProvider(provider, apiKey: nil, clearKey: false)
+        let rule = Rule(name: "Keep me", providerID: provider.id, model: provider.model)
+        try model.saveRule(rule)
+        try model.deleteProvider(id: provider.id)
+        XCTAssertTrue(model.configuration.providers.isEmpty)
+        XCTAssertNil(model.configuration.defaultProviderID)
+        let retained = try XCTUnwrap(model.configuration.rules.first { $0.id == rule.id })
+        XCTAssertNil(retained.providerID)
+        XCTAssertEqual(retained.model, "")
+        XCTAssertEqual(retained.instructions, rule.instructions)
+        try ConfigurationFile.validate(model.configuration)
+    }
     // Async test entry points let older XCTest runners hop to the main actor.
     private func directory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("FrogTests-\(UUID().uuidString)")
@@ -28,7 +54,8 @@ final class ProcessingTests: XCTestCase {
             return "Corrected: \(text)"
         }, readKey: { _ in nil }, writeClipboard: { copied = $0 })
         let first = ProviderConfiguration(name: "Default", kind: .ollama)
-        let second = ProviderConfiguration(name: "Rule provider", kind: .ollama)
+        var second = ProviderConfiguration(name: "Rule provider", kind: .ollama)
+        second.models.append(ProviderModel(id: "custom-model", name: "Friendly custom name"))
         try model.saveProvider(first, apiKey: nil, clearKey: false)
         try model.saveProvider(second, apiKey: nil, clearKey: false)
         let rule = Rule(name: "Test", providerID: second.id, model: "custom-model")
@@ -144,5 +171,90 @@ final class ProcessingTests: XCTestCase {
         let exported = directory.appendingPathComponent("exported.json")
         try model.exportConfiguration(to: exported)
         XCTAssertEqual(try ConfigurationFile.read(from: exported), original)
+    }
+
+    func testDefaultProviderAndItsSelectedModelAreUsedWithoutOverride() async throws {
+        var routed: ProviderConfiguration?
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, complete: { _, _, provider, _ in
+            routed = provider; return "Done"
+        }, readKey: { _ in nil }, writeClipboard: { _ in })
+        let first = ProviderConfiguration(name: "First", kind: .ollama)
+        var second = ProviderConfiguration(name: "Second", kind: .lmStudio, model: "local-id")
+        second.models.append(ProviderModel(id: "second-id", name: "My writing model"))
+        second.model = "second-id"
+        try model.saveProvider(first, apiKey: nil, clearKey: false)
+        try model.saveProvider(second, apiKey: nil, clearKey: false)
+        try model.setDefaultProvider(id: second.id)
+        model.processManual(text: "Test", ruleID: model.configuration.rules[0].id)
+        try await waitUntilFinished(model)
+        XCTAssertEqual(routed?.id, second.id)
+        XCTAssertEqual(routed?.model, "second-id")
+    }
+
+    func testManualProviderAndModelChoicesDoNotMutateSavedRule() async throws {
+        var routed: ProviderConfiguration?
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, complete: { _, _, provider, _ in
+            routed = provider; return "Done"
+        }, readKey: { _ in nil }, writeClipboard: { _ in })
+        let first = ProviderConfiguration(name: "Rule provider", kind: .ollama)
+        var second = ProviderConfiguration(name: "Draft provider", kind: .ollama)
+        second.models.append(ProviderModel(id: "draft-model"))
+        try model.saveProvider(first, apiKey: nil, clearKey: false)
+        try model.saveProvider(second, apiKey: nil, clearKey: false)
+        let rule = Rule(providerID: first.id, model: first.model)
+        try model.saveRule(rule)
+        let previous = model.configuration
+        model.processManual(text: "Sample", ruleID: rule.id, providerID: second.id, modelID: "draft-model")
+        try await waitUntilFinished(model)
+        XCTAssertEqual(routed?.id, second.id)
+        XCTAssertEqual(routed?.model, "draft-model")
+        XCTAssertEqual(model.configuration, previous)
+    }
+
+    func testDeletingDefaultProviderResetsLegacyInheritedOverride() async throws {
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false)
+        let first = ProviderConfiguration(kind: .ollama, model: "old-model")
+        let second = ProviderConfiguration(kind: .ollama, model: "new-model")
+        try model.saveProvider(first, apiKey: nil, clearKey: false)
+        try model.saveProvider(second, apiKey: nil, clearKey: false)
+        let rule = Rule(model: "old-model")
+        try model.saveRule(rule)
+        try model.deleteProvider(id: first.id)
+        XCTAssertEqual(model.configuration.defaultProviderID, second.id)
+        XCTAssertEqual(model.configuration.rules.first { $0.id == rule.id }?.model, "")
+        try ConfigurationFile.validate(model.configuration)
+    }
+
+    func testRemovingModelUsedByRulePreservesConfiguration() async throws {
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, readKey: { _ in nil }, writeClipboard: { _ in })
+        var provider = ProviderConfiguration(kind: .ollama)
+        provider.models.append(ProviderModel(id: "custom"))
+        try model.saveProvider(provider, apiKey: nil, clearKey: false)
+        try model.saveRule(Rule(providerID: provider.id, model: "custom"))
+        let previous = model.configuration
+        provider.models.removeAll { $0.id == "custom" }
+        XCTAssertThrowsError(try model.saveProvider(provider, apiKey: nil, clearKey: false))
+        XCTAssertEqual(model.configuration, previous)
+    }
+
+    func testPermissionStatusUpdatesWithoutReactivatingWindowAndHandlesRevocation() async throws {
+        var granted = false
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, readAccessibility: { granted })
+        XCTAssertFalse(model.accessibilityGranted)
+        let monitor = Task { await model.monitorSystemStatus() }
+        defer { monitor.cancel() }
+        await Task.yield()
+        granted = true
+        for _ in 0..<30 {
+            if model.accessibilityGranted { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(model.accessibilityGranted)
+        granted = false
+        for _ in 0..<30 {
+            if !model.accessibilityGranted { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertFalse(model.accessibilityGranted)
     }
 }

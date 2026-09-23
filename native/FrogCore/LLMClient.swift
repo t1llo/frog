@@ -64,7 +64,7 @@ public struct LLMClient: Sendable {
         let body: [String: Any]
         let messages: [[String: String]] = [["role": "system", "content": instructions], ["role": "user", "content": text]]
         switch provider.kind {
-        case .openAI, .compatible:
+        case .openAI, .compatible, .lmStudio:
             path = "chat/completions"
             body = ["model": model, "messages": messages, "stream": false]
         case .anthropic:
@@ -106,7 +106,7 @@ public struct LLMClient: Sendable {
         var output: String?
         var truncated = false
         switch kind {
-        case .openAI, .compatible:
+        case .openAI, .compatible, .lmStudio:
             let choice = (object["choices"] as? [[String: Any]])?.first
             let message = choice?["message"] as? [String: Any]
             output = message?["content"] as? String
@@ -146,6 +146,37 @@ public struct LLMClient: Sendable {
         case 500...599: return .message("The provider is temporarily unavailable (HTTP \(status)). Try again later.")
         default: return .message("The provider rejected the request (HTTP \(status)). Check the model and provider settings.")
         }
+    }
+
+    /// Discover installed models only when explicitly requested; never sends writing text.
+    public func localModels(provider: ProviderConfiguration, apiKey: String?) async throws -> [ProviderModel] {
+        guard provider.kind.isLocal else { throw FrogError.message("Model discovery is available for Ollama and LM Studio.") }
+        try ConfigurationFile.validateEndpoint(provider)
+        let base = URL(string: provider.endpoint.trimmingCharacters(in: .whitespacesAndNewlines))!
+        let path = provider.kind == .ollama
+            ? (base.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).hasSuffix("api") ? "tags" : "api/tags")
+            : "models"
+        var request = URLRequest(url: base.appendingPathComponent(path), cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+        request.httpShouldHandleCookies = false
+        if let apiKey, !apiKey.isEmpty { request.setValue("Bearer \(try KeychainStore.validatedKey(apiKey))", forHTTPHeaderField: "Authorization") }
+        let data: Data
+        let response: URLResponse
+        do { (data, response) = try await session.data(for: request, delegate: NoRedirects()) }
+        catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
+            throw FrogError.message("Could not reach the local server. Start \(provider.kind.title), enable its server, and check the endpoint.")
+        }
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse else { throw FrogError.message("The model server returned an invalid response.") }
+        guard (200...299).contains(http.statusCode) else { throw statusError(http.statusCode) }
+        guard data.count <= 8 * 1_024 * 1_024,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let entries = object[provider.kind == .ollama ? "models" : "data"] as? [[String: Any]] else {
+            throw FrogError.message("The model server returned an invalid model list.")
+        }
+        let names = entries.compactMap { $0[provider.kind == .ollama ? "name" : "id"] as? String }
+        return Set(names).filter { !$0.isEmpty && $0.utf8.count <= 256 && !$0.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) }
+            .sorted().prefix(200).map { ProviderModel(id: $0) }
     }
 }
 

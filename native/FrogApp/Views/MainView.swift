@@ -59,6 +59,7 @@ struct MainView: View {
         .tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
         .frame(minWidth: 940, minHeight: 660)
         .onAppear { model.refreshSystemStatus() }
+        .task { await model.monitorSystemStatus() }
         .onChange(of: scenePhase) { _, phase in if phase == .active { model.refreshSystemStatus() } }
     }
 
@@ -110,11 +111,9 @@ struct MainView: View {
                 HStack(spacing: 8) {
                     if model.isProcessing { ProgressView().controlSize(.mini) }
                     else { Circle().fill(model.errorMessage == nil ? FrogStyle.accent : .orange).frame(width: 6, height: 6) }
-                    Text(model.isProcessing ? "Working on your words" : "Your writing companion")
-                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.muted)
+                    Text(model.status).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                        .lineLimit(4).textSelection(.enabled).help(model.status)
                 }
-                Text(model.status).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                    .lineLimit(4).textSelection(.enabled).help(model.status)
                 if model.isProcessing { Button("Cancel request") { model.cancelProcessing() } }
             }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
                 .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border).frame(height: 1) }

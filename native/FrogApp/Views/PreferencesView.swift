@@ -23,6 +23,11 @@ struct PreferencesView: View {
                         Label(model.loginStatus, systemImage: "power").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
                         Spacer()
                     }
+                    ruleDivider
+                    SettingRow(title: "Show processing indicator", description: "A small floating status appears during hotkey actions, without taking focus from your writing.") {
+                        Toggle("Show processing indicator", isOn: preference(\.showProcessingIndicator))
+                            .toggleStyle(.switch).labelsHidden().controlSize(.small)
+                    }
                 }
             }
             SectionCaption(text: "Your setup, to go")
@@ -81,6 +86,10 @@ struct PreferencesView: View {
                         Spacer()
                         Button { model.refreshSystemStatus() } label: { Image(systemName: "arrow.clockwise") }
                             .accessibilityLabel("Refresh permission status").help("Refresh permission status")
+                    }
+                    if !model.accessibilityGranted {
+                        Text("Already enabled but still denied? Quit Frog, remove its old entry with the minus button in Accessibility, then add /Applications/Frog.app and enable it again. Toggling an old entry may retain its old signature. Always quit Frog before moving or replacing the app, then reopen the installed copy.")
+                            .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
                     }
                     ruleDivider
                     HStack(alignment: .top, spacing: 14) {

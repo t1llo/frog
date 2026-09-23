@@ -5,6 +5,7 @@ struct HistoryView: View {
     @EnvironmentObject private var model: AppModel
     @State private var selectedID: UUID?
     @State private var confirmClear = false
+    @State private var deleting: HistoryEntry?
     @State private var copied = false
 
     private var entry: HistoryEntry? { model.history.first { $0.id == selectedID } }
@@ -12,10 +13,11 @@ struct HistoryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             PageHeader(title: "Words worth keeping.", subtitle: "A little look back at your writing. Stored on this Mac.") {
-                Menu {
-                    Button("Refresh history") { refresh() }
-                    Button("Clear all history…", role: .destructive) { confirmClear = true }.disabled(model.history.isEmpty)
-                } label: { Label("Manage", systemImage: "ellipsis") }.fixedSize()
+                HStack {
+                    IconAction(title: "Refresh history", symbol: "arrow.clockwise") { refresh() }
+                    Button("Clear history…", systemImage: "trash", role: .destructive) { confirmClear = true }
+                        .disabled(model.history.isEmpty)
+                }
             }
             HStack(spacing: 10) {
                 SectionCaption(text: "\(model.history.count) saved \(model.history.count == 1 ? "entry" : "entries")")
@@ -50,11 +52,7 @@ struct HistoryView: View {
                                                     .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
                                             }
                                             Spacer()
-                                            Menu {
-                                                Button("Copy original") { ViewActions.copy(entry.originalText) }
-                                                Button("Delete entry", role: .destructive) { delete(entry) }
-                                            } label: { Image(systemName: "ellipsis") }
-                                                .menuStyle(.borderlessButton).frame(width: 20).accessibilityLabel("Entry actions")
+                                            IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = entry }
                                         }
                                         Rectangle().fill(FrogStyle.border).frame(height: 1)
                                         VStack(alignment: .leading, spacing: 8) {
@@ -86,6 +84,12 @@ struct HistoryView: View {
                     do { try model.clearHistory(); selectedID = nil } catch { model.report(error) }
                 }
             } message: { Text("All saved originals and results will be permanently deleted from this Mac.") }
+            .confirmationDialog("Delete this history entry?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
+                Button("Delete entry", role: .destructive) {
+                    if let deleting { delete(deleting) }
+                    deleting = nil
+                }
+            } message: { Text("The saved original and result will be permanently deleted from this Mac.") }
     }
 
     private func historyItem(_ item: HistoryEntry) -> some View {

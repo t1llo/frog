@@ -13,7 +13,8 @@ A small macOS writing assistant that lives in your menu bar. Select some text, p
 
 - Proofread, fix spelling, polish emails, and translate with built-in rules.
 - Create your own rules, each with its own shortcut, language, provider, and model.
-- Use OpenAI, Claude, Gemini, an OpenAI-compatible service, or a local model through Ollama.
+- Use OpenAI, Claude, Gemini, an OpenAI-compatible service, or local models through Ollama and LM Studio.
+- Configure your models once, choose a default, and pick model overrides for individual rules.
 - Export and import your setup as an editable JSON file.
 - Keep an optional local history. It’s off by default.
 
@@ -22,7 +23,7 @@ No Frog account, analytics, or telemetry. Bring your own API key, or use a local
 ## Install
 
 1. Download **Frog-macOS.zip** from [Releases](https://github.com/t1llo/frog/releases), unzip it, and move **Frog.app** to **Applications**.
-2. Open Frog and add a provider. For Ollama, start Ollama separately and enter the name of an installed model.
+2. Open Frog, add a provider, and select its models. For Ollama or LM Studio, start the local server and click **Find installed models**. [Provider setup](docs/providers.md).
 3. Allow Frog in **System Settings → Privacy & Security → Accessibility** to work with text in other apps.
 
 Preview builds aren’t notarized yet. If macOS blocks a downloaded build, use **Open Anyway** in Privacy & Security after trying to open it. You can also [build from source](#build-from-source).

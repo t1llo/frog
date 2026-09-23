@@ -35,6 +35,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
     private var started = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
         NSApplication.shared.setActivationPolicy(.accessory)
         let event = NSAppleEventManager.shared().currentAppleEvent
         launchedAtLogin = event?.eventID == kAEOpenApplication && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem

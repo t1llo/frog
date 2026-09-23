@@ -142,6 +142,46 @@ struct LabeledField<Content: View>: View {
     }
 }
 
+/// Full-width menu controls with the same inset surface as editable fields.
+struct FrogMenu<Content: View>: View {
+    let title: String
+    let value: String
+    var symbol = "chevron.up.chevron.down"
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.system(size: 12, weight: .medium))
+            Menu { content } label: {
+                HStack(spacing: 12) {
+                    Text(value).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: symbol).font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.muted)
+                }.font(.system(size: 13)).foregroundStyle(FrogStyle.ink).padding(12)
+                    .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(FrogStyle.border, lineWidth: 1))
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
+            }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+                .accessibilityLabel(title).accessibilityValue(value)
+        }
+    }
+}
+
+struct IconAction: View {
+    let title: String
+    let symbol: String
+    var destructive = false
+    let action: () -> Void
+    var body: some View {
+        Button(role: destructive ? .destructive : nil, action: action) {
+            Image(systemName: symbol).font(.system(size: 13, weight: .medium))
+                .foregroundStyle(destructive ? Color.red : FrogStyle.muted)
+                .frame(width: 32, height: 32)
+                .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 8))
+                .contentShape(RoundedRectangle(cornerRadius: 8))
+        }.buttonStyle(.plain).accessibilityLabel(title).help(title)
+    }
+}
+
 struct SettingRow<Control: View>: View {
     let title: String
     let description: String

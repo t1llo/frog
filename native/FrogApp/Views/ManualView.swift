@@ -6,11 +6,20 @@ struct ManualView: View {
     @State private var text = ""
     @State private var ruleID: UUID?
     @State private var copied = false
+    @State private var providerID: UUID?
+    @State private var modelID: String?
 
     private var selectedRule: Rule? { model.configuration.rules.first { $0.id == ruleID } }
     private var providerAvailable: Bool {
-        guard let rule = selectedRule, let id = rule.providerID ?? model.configuration.defaultProviderID else { return false }
-        return model.configuration.providers.contains { $0.id == id }
+        selectedProvider != nil
+    }
+
+    private var selectedProvider: ProviderConfiguration? {
+        model.configuration.providers.first { $0.id == (providerID ?? selectedRule?.providerID ?? model.configuration.defaultProviderID) }
+    }
+
+    private var selectedModelID: String {
+        modelID ?? (providerID == nil && selectedRule?.model.isEmpty == false ? selectedRule!.model : selectedProvider?.model ?? "")
     }
 
     var body: some View {
@@ -27,20 +36,30 @@ struct ManualView: View {
                 }
             }
             FrogCard {
-                HStack(spacing: 16) {
-                    SymbolTile(symbol: "wand.and.stars")
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Give it a direction").font(.system(size: 13, weight: .semibold))
-                        Text("Your rule brings the instructions.").font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
-                    }
-                    Spacer()
-                    Picker("Writing rule", selection: $ruleID) {
-                        Text("Select a rule").tag(UUID?.none)
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Give it a direction").font(.system(size: 13, weight: .semibold))
+                    FrogMenu(title: "Writing rule", value: selectedRule?.name ?? "Select a rule") {
                         ForEach(model.configuration.rules) { rule in
-                            Text(rule.name + (rule.enabled ? "" : " (disabled)")).tag(Optional(rule.id))
+                            Button(rule.name + (rule.enabled ? "" : " (disabled)")) {
+                                ruleID = rule.id; providerID = nil; modelID = nil
+                            }.disabled(!rule.enabled)
                         }
-                    }.labelsHidden().frame(width: 220).disabled(model.isProcessing)
-                }
+                    }
+                    HStack(alignment: .top, spacing: 16) {
+                        FrogMenu(title: "Provider", value: selectedProvider?.name ?? "Choose a provider") {
+                            Button("Use rule’s provider") { providerID = nil; modelID = nil }
+                            ForEach(model.configuration.providers) { provider in
+                                Button(provider.name) { providerID = provider.id; modelID = nil }
+                            }
+                        }
+                        FrogMenu(title: "Model", value: selectedProvider?.modelName(selectedModelID) ?? "Choose a model") {
+                            if let provider = selectedProvider {
+                                ForEach(provider.models) { choice in Button(choice.name) { modelID = choice.id } }
+                            }
+                        }.disabled(selectedProvider == nil)
+                    }
+                    Text("These choices apply to this draft only; your saved rule stays the same.").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                }.disabled(model.isProcessing)
             }
             if model.configuration.rules.isEmpty {
                 InlineIssue(message: "Create a writing rule in Rules to get started.")
@@ -109,6 +128,10 @@ struct ManualView: View {
         .onAppear { selectInitialRule() }
         .onChange(of: model.configuration.rules) { _, _ in selectInitialRule() }
         .onChange(of: model.manualResult) { _, _ in copied = false }
+        .onChange(of: model.configuration.providers) { _, _ in
+            if !model.configuration.providers.contains(where: { $0.id == providerID }) { providerID = nil }
+            if selectedProvider?.models.contains(where: { $0.id == selectedModelID }) != true { modelID = nil }
+        }
     }
 
     private func selectInitialRule() {
@@ -120,6 +143,6 @@ struct ManualView: View {
     private func run() {
         guard let ruleID else { return }
         copied = false
-        model.processManual(text: text, ruleID: ruleID)
+        model.processManual(text: text, ruleID: ruleID, providerID: providerID, modelID: modelID)
     }
 }

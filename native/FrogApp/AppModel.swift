@@ -24,8 +24,10 @@ final class AppModel: ObservableObject {
     private let readKey: (UUID) throws -> String?
     private let writeClipboard: (String) -> Void
     private let registerShortcuts: Bool
+    private let readAccessibility: () -> Bool
     private let hotkeys = HotkeyManager()
     private let selectionService = SelectionService()
+    private let processingIndicator = ProcessingIndicator()
     private var processingTask: Task<Void, Never>?
     private var historyEpoch = UUID()
     private var configurationLoadError: Error?
@@ -34,9 +36,11 @@ final class AppModel: ObservableObject {
     init(dataDirectory: URL? = nil, registerShortcuts: Bool = true,
          complete: ((String, Rule, ProviderConfiguration, String?) async throws -> String)? = nil,
          readKey: ((UUID) throws -> String?)? = nil,
-         writeClipboard: ((String) -> Void)? = nil) {
+         writeClipboard: ((String) -> Void)? = nil,
+         readAccessibility: (() -> Bool)? = nil) {
         let dataDirectory = dataDirectory ?? ProcessInfo.processInfo.environment["FROG_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         self.registerShortcuts = registerShortcuts
+        self.readAccessibility = readAccessibility ?? { SelectionService.isTrusted }
         self.complete = complete ?? { text, rule, provider, key in try await LLMClient().complete(text: text, rule: rule, provider: provider, apiKey: key) }
         self.readKey = readKey ?? { try KeychainStore().read(providerID: $0) }
         self.writeClipboard = writeClipboard ?? { text in NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
@@ -54,6 +58,7 @@ final class AppModel: ObservableObject {
     }
 
     func shutdown() {
+        processingIndicator.hide()
         processingTask?.cancel()
         hotkeys.unregister()
     }
@@ -61,9 +66,20 @@ final class AppModel: ObservableObject {
     func showSettings() { refreshSystemStatus(); openSettings?() }
 
     func refreshSystemStatus() {
-        accessibilityGranted = SelectionService.isTrusted
-        startAtLogin = LoginService.isEnabled
-        loginStatus = LoginService.statusText
+        let trusted = readAccessibility()
+        let loginEnabled = LoginService.isEnabled
+        let loginText = LoginService.statusText
+        if accessibilityGranted != trusted { accessibilityGranted = trusted }
+        if startAtLogin != loginEnabled { startAtLogin = loginEnabled }
+        if loginStatus != loginText { loginStatus = loginText }
+    }
+
+    func monitorSystemStatus() async {
+        while !Task.isCancelled {
+            refreshSystemStatus()
+            do { try await Task.sleep(for: .seconds(1)) }
+            catch { return }
+        }
     }
 
     func setStartAtLogin(_ enabled: Bool) {
@@ -123,6 +139,7 @@ final class AppModel: ObservableObject {
         if let index = candidate.providers.firstIndex(where: { $0.id == provider.id }) { candidate.providers[index] = provider }
         else { candidate.providers.append(provider) }
         if candidate.defaultProviderID == nil { candidate.defaultProviderID = provider.id }
+        try ConfigurationFile.validate(candidate)
         let keyChanged = clearKey || !(apiKey ?? "").isEmpty
         let oldKey = keyChanged ? try keychain.read(providerID: provider.id) : nil
         if clearKey { try keychain.delete(providerID: provider.id) }
@@ -141,13 +158,16 @@ final class AppModel: ObservableObject {
     }
 
     func deleteProvider(id: UUID) throws {
-        let references = configuration.rules.filter { $0.providerID == id }
-        guard references.isEmpty else {
-            throw FrogError.message("Choose a different provider for these rules first: \(references.map(\.name).joined(separator: ", ")).")
-        }
         var candidate = configuration
         candidate.providers.removeAll { $0.id == id }
-        if candidate.defaultProviderID == id { candidate.defaultProviderID = nil }
+        let removedDefault = candidate.defaultProviderID == id
+        if removedDefault { candidate.defaultProviderID = candidate.providers.first?.id }
+        for index in candidate.rules.indices {
+            if candidate.rules[index].providerID == id || (removedDefault && candidate.rules[index].providerID == nil) {
+                candidate.rules[index].providerID = nil
+                candidate.rules[index].model = ""
+            }
+        }
         // Persist first: a Keychain deletion failure is explicit and can be retried by re-adding the provider ID.
         let previous = configuration
         try persist(candidate)
@@ -174,6 +194,11 @@ final class AppModel: ObservableObject {
         return "Connected to \(provider.name) using \(provider.model)."
     }
 
+    func discoverModels(_ provider: ProviderConfiguration, apiKey: String?) async throws -> [ProviderModel] {
+        let key = (apiKey?.isEmpty == false) ? apiKey : try keychain.read(providerID: provider.id)
+        return try await LLMClient().localModels(provider: provider, apiKey: key)
+    }
+
     func savePreferences(_ preferences: Preferences) throws {
         guard (1...200).contains(preferences.historyLimit), (1...30).contains(preferences.historyRetentionDays) else {
             throw FrogError.message("History must keep 1–200 entries for 1–30 days.")
@@ -181,6 +206,7 @@ final class AppModel: ObservableObject {
         var candidate = configuration; candidate.preferences = preferences
         try persist(candidate)
         if !preferences.historyEnabled { historyEpoch = UUID() }
+        if !preferences.showProcessingIndicator { processingIndicator.hide() }
         refreshHistory()
     }
 
@@ -256,36 +282,45 @@ final class AppModel: ObservableObject {
         begin(ruleID: ruleID, manualText: nil)
     }
 
-    func processManual(text: String, ruleID: UUID) { begin(ruleID: ruleID, manualText: text) }
+    func processManual(text: String, ruleID: UUID, providerID: UUID? = nil, modelID: String? = nil) {
+        begin(ruleID: ruleID, manualText: text, providerID: providerID, modelID: modelID)
+    }
     func cancelProcessing() { processingTask?.cancel(); status = "Cancelling…" }
 
-    private func begin(ruleID: UUID, manualText: String?) {
+    private func begin(ruleID: UUID, manualText: String?, providerID: UUID? = nil, modelID: String? = nil) {
         guard !isProcessing else { status = "A rule is already running. Wait or cancel it from the menu."; return }
-        guard let rule = configuration.rules.first(where: { $0.id == ruleID }), rule.enabled else { report(FrogError.message("Select an enabled rule.")); return }
+        guard var rule = configuration.rules.first(where: { $0.id == ruleID }), rule.enabled else { report(FrogError.message("Select an enabled rule.")); return }
+        if let providerID { rule.providerID = providerID; rule.model = modelID ?? "" }
+        else if let modelID { rule.model = modelID }
         let provider: ProviderConfiguration
         do { provider = try resolved(rule) }
         catch { finishFailure(error, background: manualText == nil); return }
         isProcessing = true
         errorMessage = nil
         status = "\(rule.name)…"
+        if manualText == nil { showIndicator("Reading selection…", working: true) }
         let recordingEpoch = historyEpoch
         let recordingWasEnabled = configuration.preferences.historyEnabled
         processingTask = Task { [weak self] in
             guard let self else { return }
-            defer { self.isProcessing = false; self.processingTask = nil }
+            defer {
+                self.isProcessing = false; self.processingTask = nil
+                if manualText == nil { self.showIndicator(self.errorMessage ?? self.status, working: false) }
+            }
             do {
-                let selection: TextSelection?
+                let selection: (any CapturedTextSelection)?
                 let text: String
                 if let manualText { selection = nil; text = manualText }
                 else { let captured = try await self.selectionService.capture(); selection = captured; text = captured.text }
                 guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("Select or enter some text first.") }
                 let key = try self.readKey(provider.id)
                 try Task.checkCancellation()
+                if manualText == nil { self.showIndicator("\(rule.name)…", working: true) }
                 let result = try await self.complete(text, rule, provider, key)
                 try Task.checkCancellation()
                 guard !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("The model returned no text. Nothing was replaced.") }
                 if let selection {
-                    do { try await selection.replace(with: result); self.status = "\(rule.name) complete — selection replaced and copied." }
+                    do { try await selection.replace(with: result); self.status = "\(rule.name) complete — result pasted and copied." }
                     catch {
                         self.status = "Result ready on clipboard; replacement skipped."
                         self.errorMessage = error.localizedDescription
@@ -313,6 +348,14 @@ final class AppModel: ObservableObject {
         }
         status = "Could not complete the rule."
         report(error)
-        if background { DesktopNotifications.post(title: "Frog", body: error.localizedDescription) }
+        if background {
+            showIndicator(error.localizedDescription, working: false)
+            DesktopNotifications.post(title: "Frog", body: error.localizedDescription)
+        }
+    }
+
+    private func showIndicator(_ message: String, working: Bool) {
+        guard registerShortcuts, configuration.preferences.showProcessingIndicator else { return }
+        processingIndicator.show(message, working: working)
     }
 }

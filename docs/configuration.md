@@ -4,8 +4,8 @@ Use **Settings → Export…** to save `Frog-configuration.json`. Use **Import�
 
 ## What moves
 
-- Rules: names, instructions, enabled state, shortcuts, provider/model overrides, and target languages.
-- Providers: service type, name, API endpoint, and default model.
+- Rules: names, instructions, enabled state, shortcuts, and provider/model overrides. Older target-language fields remain readable for compatibility.
+- Providers: service type, name, API endpoint, configured model IDs/display names, and default model.
 - The default provider and history preferences.
 
 API keys and text history are never exported. Login startup and macOS permissions belong to each Mac and must be configured separately. Frog doesn’t sync files or upload configurations to a service.
@@ -33,7 +33,8 @@ The format is UTF-8 JSON, version `1`, limited to 4 MB. This minimal example use
       "name": "Ollama",
       "kind": "ollama",
       "endpoint": "http://localhost:11434",
-      "model": "llama3.2"
+      "model": "llama3.2",
+      "models": [{ "id": "llama3.2", "name": "Llama 3.2" }]
     }
   ],
   "defaultProviderID": "070BC5A9-29DD-42E7-A4E5-5849C542DF11",
@@ -57,9 +58,15 @@ The format is UTF-8 JSON, version `1`, limited to 4 MB. This minimal example use
 }
 ```
 
-Provider kinds: `openAI`, `anthropic`, `gemini`, `ollama`, `compatible`. Cloud services require HTTPS; localhost model services can use HTTP. Credentials, query parameters, and fragments aren’t allowed in endpoint URLs.
+Provider kinds: `openAI`, `anthropic`, `gemini`, `ollama`, `lmStudio`, `compatible`. Cloud services require HTTPS; localhost model services can use HTTP. Credentials, query parameters, and fragments aren’t allowed in endpoint URLs.
 
-Omit a rule’s `providerID` to use the default provider; an empty `model` uses that provider’s model. Instructions may contain `{{language}}`, replaced with `targetLanguage`.
+Each provider's `models` list contains 1–200 unique API IDs with display names. Its `model` must be one of these IDs. Display names are shown in menus; requests send the API ID. Old files without `models` migrate their existing default and rule overrides into this list without changing the model used.
+
+Preferences also contain `showProcessingIndicator` (boolean, default `true` when absent in older files). This controls the floating hotkey status indicator independently of macOS notification permissions.
+
+Omit a rule’s `providerID` to use the default provider; an empty `model` uses that provider’s default model. Nonempty overrides must be configured on the resolved provider. The rule editor offers configured models grouped by provider and saves both the provider ID and model ID. Removing an in-use model requires updating the referencing rules first.
+
+Write translation languages directly in rule instructions. Legacy `{{language}}`/`targetLanguage` configurations still work; opening their rule editor folds the language into the instructions, preserving behavior when saved.
 
 Shortcuts use macOS virtual key codes and Carbon modifier bits. The example is Control + Shift + C (`4096 + 512`). Command is `256`; Option is `2048`. The easiest way to set shortcuts is to record them in Frog and export the result. Omit `hotkey` for a rule without a global shortcut.
 

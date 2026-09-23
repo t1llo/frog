@@ -3,6 +3,12 @@ import ApplicationServices
 import FrogCore
 
 @MainActor
+protocol CapturedTextSelection: AnyObject {
+    var text: String { get }
+    func replace(with text: String) async throws
+}
+
+@MainActor
 final class SelectionService {
     static var isTrusted: Bool { AXIsProcessTrusted() }
 
@@ -18,7 +24,7 @@ final class SelectionService {
         }
     }
 
-    func capture() async throws -> TextSelection {
+    func capture() async throws -> any CapturedTextSelection {
         guard Self.isTrusted else {
             throw FrogError.message("Allow Frog in System Settings → Privacy & Security → Accessibility, then try again.")
         }
@@ -27,9 +33,16 @@ final class SelectionService {
             throw FrogError.message("Select text in another application before using a rule.")
         }
         let application = AXUIElementCreateApplication(app.processIdentifier)
-        guard let element = AXRead.element(application, kAXFocusedUIElementAttribute),
-              let range = AXRead.range(element), range.location >= 0, range.length > 0 else {
-            throw FrogError.message("This application does not expose a reliable text selection. Copy the text into Frog’s Try text view.")
+        let element = AXRead.element(application, kAXFocusedUIElementAttribute)
+        if let element, AXRead.string(element, kAXSubroleAttribute) == kAXSecureTextFieldSubrole {
+            throw FrogError.message("Frog does not read password fields.")
+        }
+        if let element, let range = AXRead.range(element), range.length == 0,
+           [kAXTextAreaRole, kAXTextFieldRole].contains(AXRead.string(element, kAXRoleAttribute) ?? "") {
+            throw FrogError.message("Select some text before pressing the shortcut.")
+        }
+        guard let element, let range = AXRead.range(element), range.location >= 0, range.length > 0 else {
+            return try await ClipboardSelection.capture(application: application, pid: app.processIdentifier)
         }
         let value = AXRead.string(element, kAXValueAttribute)
         let selected = AXRead.string(element, kAXSelectedTextAttribute)
@@ -52,7 +65,7 @@ final class SelectionService {
 }
 
 @MainActor
-final class TextSelection {
+final class TextSelection: CapturedTextSelection {
     let text: String
     private let element: AXUIElement
     private let application: AXUIElement
@@ -64,7 +77,7 @@ final class TextSelection {
     private var workspaceObserver: NSObjectProtocol?
     private var invalidated = false
     private var consumed = false
-    private var observesChanges = false
+    private var pasteTarget: ClipboardSelection?
 
     fileprivate init(text: String, element: AXUIElement, application: AXUIElement,
                      pid: pid_t, range: CFRange, value: String?) {
@@ -75,12 +88,18 @@ final class TextSelection {
         self.range = range
         self.value = value
         window = AXRead.element(application, kAXFocusedWindowAttribute)
+        if let window {
+            pasteTarget = ClipboardSelection(text: text, application: application, window: window, focused: element, pid: pid)
+        }
         var created: AXObserver?
         let callback: AXObserverCallback = { _, _, _, context in
             guard let context else { return }
             // The observer source is installed only on the main run loop.
             MainActor.assumeIsolated {
-                Unmanaged<TextSelection>.fromOpaque(context).takeUnretainedValue().invalidated = true
+                let selection = Unmanaged<TextSelection>.fromOpaque(context).takeUnretainedValue()
+                // Browsers emit selection/focus notifications even when Copy leaves
+                // the snapshot unchanged. Validate the state instead of the notification.
+                if !selection.matchesSnapshot { selection.invalidated = true }
             }
         }
         if AXObserverCreate(pid, callback, &created) == .success, let created {
@@ -92,9 +111,9 @@ final class TextSelection {
                 (application, kAXFocusedUIElementChangedNotification),
                 (application, kAXFocusedWindowChangedNotification)
             ]
-            observesChanges = requests.map {
-                AXObserverAddNotification(created, $0.0, $0.1 as CFString, context) == .success
-            }.allSatisfy { $0 }
+            for request in requests {
+                _ = AXObserverAddNotification(created, request.0, request.1 as CFString, context)
+            }
             _ = AXObserverAddNotification(created, element, kAXUIElementDestroyedNotification as CFString, context)
             CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .commonModes)
         }
@@ -116,7 +135,11 @@ final class TextSelection {
     }
 
     fileprivate var isValid: Bool {
-        guard !invalidated, !consumed, SelectionService.isTrusted,
+        !invalidated && !consumed && matchesSnapshot
+    }
+
+    private var matchesSnapshot: Bool {
+        guard SelectionService.isTrusted,
               NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
               let focused = AXRead.element(application, kAXFocusedUIElementAttribute), CFEqual(focused, element),
               let currentRange = AXRead.range(element),
@@ -142,44 +165,22 @@ final class TextSelection {
         guard isValid else {
             throw FrogError.message("The original selection changed or lost focus. The result is on the clipboard; paste it where you want it.")
         }
-        var settable = DarwinBoolean(false)
-        if AXUIElementIsAttributeSettable(element, kAXSelectedTextAttribute as CFString, &settable) == .success,
-           settable.boolValue {
-            // Never replace the whole AXValue: doing so destroys rich document formatting.
-            consumed = true
-            let result = AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString)
-            guard result == .success else {
-                // A failed AX call may have partially applied. Do not retry with paste.
-                throw FrogError.message("The application could not replace the selection (Accessibility error \(result.rawValue)). The result is on the clipboard.")
+        let role = AXRead.string(element, kAXRoleAttribute)
+        if [kAXTextAreaRole, kAXTextFieldRole, kAXComboBoxRole].contains(role ?? "") {
+            // Chromium can report AXSelectedText writes as successful without editing.
+            // Use its ordinary Copy/Paste path, with a fresh comparison before paste.
+            guard let pasteTarget else {
+                throw FrogError.message("The app does not expose its active window. The result is on the clipboard.")
             }
+            consumed = true
+            try await pasteTarget.replace(with: text)
             return
         }
-        // Paste is only permitted for an observable, fully snapshotted editable control.
-        let role = AXRead.string(element, kAXRoleAttribute)
-        var valueSettable = DarwinBoolean(false)
-        guard observesChanges, value != nil, window != nil,
-              role == kAXTextAreaRole || role == kAXTextFieldRole,
-              AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &valueSettable) == .success,
-              valueSettable.boolValue,
-              AXRead.boolean(element, kAXEnabledAttribute) == true,
-              AXRead.boolean(element, kAXFocusedAttribute) == true,
-              CGEventSource.flagsState(.combinedSessionState).intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift]).isEmpty,
-              let source = CGEventSource(stateID: .privateState),
-              let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false), isValid else {
-            throw FrogError.message("This application cannot safely replace the selection automatically. The result is on the clipboard.")
-        }
-        down.flags = .maskCommand
-        up.flags = .maskCommand
-        consumed = true
-        // Target the captured process, not whichever application receives a global event.
-        // No await/run-loop turn occurs between final validation and posting the pair.
-        down.postToPid(pid)
-        up.postToPid(pid)
+        throw FrogError.message("This selection is not in a supported editable field. The result is on the clipboard.")
     }
 }
 
-private enum AXRead {
+enum AXRead {
     static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
         var result: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, name as CFString, &result) == .success else { return nil }

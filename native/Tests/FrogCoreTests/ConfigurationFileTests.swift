@@ -2,13 +2,22 @@ import XCTest
 @testable import FrogCore
 
 final class ConfigurationFileTests: XCTestCase {
+    func testLegacyPreferencesDefaultIndicatorOnAndPersistOptOut() throws {
+        let legacy = Data(#"{"historyEnabled":false,"historyLimit":200,"historyRetentionDays":30}"#.utf8)
+        var preferences = try JSONDecoder().decode(Preferences.self, from: legacy)
+        XCTAssertTrue(preferences.showProcessingIndicator)
+        preferences.showProcessingIndicator = false
+        XCTAssertEqual(try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(preferences)), preferences)
+    }
     private func configured() -> Configuration {
         var configuration = Configuration()
-        let provider = ProviderConfiguration(name: "My local model", kind: .ollama)
+        var provider = ProviderConfiguration(name: "My local model", kind: .ollama)
+        provider.models.append(ProviderModel(id: "another-model", name: "My second model"))
         configuration.providers = [provider]
         configuration.defaultProviderID = provider.id
         configuration.rules[3].providerID = provider.id
         configuration.rules[3].model = "another-model"
+        configuration.rules[3].instructions = "Translate into {{language}}."
         configuration.rules[3].targetLanguage = "日本語"
         configuration.preferences.historyLimit = 50
         return configuration
@@ -21,7 +30,7 @@ final class ConfigurationFileTests: XCTestCase {
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(Set(object.keys), ["version", "providers", "defaultProviderID", "rules", "preferences"])
         let provider = try XCTUnwrap((object["providers"] as? [[String: Any]])?.first)
-        XCTAssertEqual(Set(provider.keys), ["id", "name", "kind", "endpoint", "model"])
+        XCTAssertEqual(Set(provider.keys), ["id", "name", "kind", "endpoint", "model", "models"])
         XCTAssertEqual(data.last, 0x0A)
     }
 
@@ -67,5 +76,32 @@ final class ConfigurationFileTests: XCTestCase {
         let backup = try XCTUnwrap(store.replaceFromImport(replacement))
         XCTAssertEqual(try Data(contentsOf: backup), broken)
         XCTAssertEqual(try store.load(), replacement)
+    }
+
+    func testLegacyConfigurationKeepsModelIDsAndAddsExistingOverrides() throws {
+        let original = configured()
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(original)) as? [String: Any])
+        var providers = try XCTUnwrap(object["providers"] as? [[String: Any]])
+        providers[0].removeValue(forKey: "models")
+        providers[0]["model"] = "legacy-default"
+        object["providers"] = providers
+        let migrated = try ConfigurationFile.decode(JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(migrated.providers[0].model, "legacy-default")
+        XCTAssertEqual(migrated.providers[0].models.map(\.id), ["legacy-default", "another-model"])
+        XCTAssertEqual(migrated.rules, original.rules)
+        XCTAssertEqual(migrated.providers[0].id, original.providers[0].id)
+        XCTAssertEqual(try ConfigurationFile.decode(ConfigurationFile.encode(migrated)), migrated)
+    }
+
+    func testConfiguredModelValidationRejectsDuplicatesMissingDefaultAndUnknownOverride() throws {
+        let valid = configured()
+        var duplicate = valid; duplicate.providers[0].models.append(duplicate.providers[0].models[0])
+        var missingDefault = valid; missingDefault.providers[0].model = "not-configured"
+        var unknownOverride = valid; unknownOverride.rules[3].model = "not-configured"
+        var empty = valid; empty.providers[0].models = []
+        var invalid = valid; invalid.providers[0].models.append(ProviderModel(id: "bad\nmodel"))
+        for configuration in [duplicate, missingDefault, unknownOverride, empty, invalid] {
+            XCTAssertThrowsError(try ConfigurationFile.decode(JSONEncoder().encode(configuration)))
+        }
     }
 }

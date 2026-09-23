@@ -89,7 +89,7 @@ final class LLMClientTests: XCTestCase {
     }
 
     func testOllamaAndCompatibleWorkWithoutKeys() async throws {
-        for kind in [ProviderKind.ollama, .compatible] {
+        for kind in [ProviderKind.ollama, .compatible, .lmStudio] {
             fixture { request in
                 XCTAssertEqual(request.url?.path, kind == .ollama ? "/api/chat" : "/v1/chat/completions")
                 XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
@@ -173,9 +173,40 @@ final class LLMClientTests: XCTestCase {
         catch { XCTAssertTrue(error is CancellationError) }
     }
 
+    func testLocalModelDiscoveryUsesCorrectEndpointsAndNoTextPayload() async throws {
+        for kind in [ProviderKind.ollama, .lmStudio] {
+            fixture { request in
+                XCTAssertEqual(request.url?.path, kind == .ollama ? "/api/tags" : "/v1/models")
+                XCTAssertEqual(request.httpMethod, "GET")
+                XCTAssertNil(request.httpBody)
+                XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+                let json = kind == .ollama
+                    ? #"{"models":[{"name":"local-b"},{"name":"local-a"},{"name":"local-a"}]}"#
+                    : #"{"data":[{"id":"local-b"},{"id":"local-a"},{"id":"local-a"}]}"#
+                return (200, Data(json.utf8))
+            }
+            var draft = provider(kind); draft.model = ""; draft.models = []
+            let models = try await client.localModels(provider: draft, apiKey: nil)
+            XCTAssertEqual(models.map(\.id), ["local-a", "local-b"])
+        }
+    }
+
+    func testModelDiscoveryRejectsUnsafeEndpointsBeforeNetworkAndSanitizesFailures() async throws {
+        fixture { _ in XCTFail("Unsafe request reached the network"); return (200, Data()) }
+        var unsafe = provider(.lmStudio); unsafe.endpoint = "http://remote.example/v1"
+        do { _ = try await client.localModels(provider: unsafe, apiKey: nil); XCTFail("Expected rejection") }
+        catch { XCTAssertTrue(error is FrogError) }
+        fixture { _ in (401, Data("private-secret".utf8)) }
+        do { _ = try await client.localModels(provider: provider(.lmStudio), apiKey: "fixture-key"); XCTFail("Expected failure") }
+        catch { XCTAssertFalse(error.localizedDescription.contains("private-secret")) }
+        fixture { _ in (200, Data(#"{"unexpected":[]}"#.utf8)) }
+        do { _ = try await client.localModels(provider: provider(.ollama), apiKey: nil); XCTFail("Expected invalid list") }
+        catch { XCTAssertTrue(error is FrogError) }
+    }
+
     private var client: LLMClient { LLMClient(session: session) }
     private func provider(_ kind: ProviderKind) -> ProviderConfiguration {
-        let path = kind == .gemini ? "/v1beta" : ([.openAI, .compatible].contains(kind) ? "/v1" : "")
+        let path = kind == .gemini ? "/v1beta" : ([.openAI, .compatible, .lmStudio].contains(kind) ? "/v1" : "")
         return ProviderConfiguration(kind: kind, endpoint: "https://\(host!)\(path)", model: kind == .gemini ? "models/gemini-test" : "test-model")
     }
     private func complete(_ kind: ProviderKind) async throws -> String {

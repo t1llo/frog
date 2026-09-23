@@ -16,7 +16,9 @@ iconutil -c icns dist/Frog.iconset -o "$app/Contents/Resources/Frog.icns"
 cp "$binary_dir/Frog" "$app/Contents/MacOS/Frog"
 cp native/Info.plist "$app/Contents/Info.plist"
 chmod +x "$app/Contents/MacOS/Frog"
-codesign --force --options runtime --sign "${FROG_SIGN_IDENTITY:--}" "$app"
+sign_args=(--force --options runtime --sign "${FROG_SIGN_IDENTITY:--}")
+if [[ "${FROG_SIGN_IDENTITY:--}" != "-" ]]; then sign_args+=(--timestamp); fi
+codesign "${sign_args[@]}" "$app"
 codesign --verify --strict "$app"
 ditto -c -k --sequesterRsrc --keepParent "$app" dist/Frog-macOS.zip
 (cd dist && shasum -a 256 Frog-macOS.zip > SHA256SUMS)
