@@ -25,6 +25,8 @@ enum FrogStyle {
     static var surface: Color { themed(\.surface).opacity(1 - FrogAppearance.shared.settings.transparency * 0.78) }
     static var inset: Color { themed(\.inset).opacity(1 - FrogAppearance.shared.settings.transparency * 0.78) }
     static var border: Color { themed(\.border) }
+    /// Overlays need a stable backdrop independent of the main window's translucency.
+    static var panelSurface: Color { themed(\.surface) }
     static var accent: Color {
         if FrogAppearance.shared.settings.useThemeAccent == true {
             switch FrogAppearance.shared.settings.theme ?? .frog {

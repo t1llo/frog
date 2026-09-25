@@ -9,7 +9,7 @@
     <key>CFBundleIconFile</key><string>Frog</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
-    <key>CFBundleVersion</key><string>12</string>
+    <key>CFBundleVersion</key><string>13</string>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
     <key>CFBundleLocalizations</key><array><string>en</string><string>de</string></array>
     <key>NSMicrophoneUsageDescription</key><string>Frog records your voice when you start a transcription rule. Audio is processed locally on your Mac.</string>

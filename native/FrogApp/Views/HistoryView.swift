@@ -27,8 +27,6 @@ struct HistoryView: View {
                 }
             }
             ListToolbar(placeholder: "Search history", search: $search) {
-                Text(L10n.text(model.configuration.preferences.historyEnabled ? "Recording on · On this Mac" : "Recording off"))
-                    .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                 if !model.configuration.preferences.historyEnabled {
                     Button("Enable history") {
                         var preferences = model.configuration.preferences
@@ -60,7 +58,6 @@ struct HistoryView: View {
             }
         }.padding(20)
             .onAppear { model.refreshHistory() }
-            .sheet(item: $viewing) { HistoryDetail(entry: $0) }
             .onChange(of: model.history.map(\.id)) { _, ids in
                 if let viewing, !ids.contains(viewing.id) { self.viewing = nil }
             }
@@ -84,8 +81,9 @@ struct HistoryView: View {
     }
 
     private func historyRow(_ item: HistoryEntry) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
         HStack(spacing: 12) {
-            Button { viewing = item } label: {
+            Button { viewing = viewing?.id == item.id ? nil : item } label: {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack {
                     VStack(alignment: .leading, spacing: 4) {
@@ -94,49 +92,41 @@ struct HistoryView: View {
                             .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                     }.lineLimit(1)
                     Spacer()
+                    Image(systemName: viewing?.id == item.id ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                     }
+                    if viewing?.id != item.id {
                     Text(item.processedText).font(.system(size: 12)).foregroundStyle(FrogStyle.ink)
                         .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
-            }.buttonStyle(.plain).help("View original and result")
+            }.buttonStyle(.plain).help(L10n.text(viewing?.id == item.id ? "Collapse entry" : "Expand entry"))
             IconAction(title: copiedID == item.id ? "Copied" : "Copy result", symbol: copiedID == item.id ? "checkmark" : "doc.on.doc") {
                 ViewActions.copy(item.processedText); copiedID = item.id
             }
             IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = item }
+        }
+        if viewing?.id == item.id { HistoryDetail(entry: item) }
         }.padding(12)
     }
 }
 
 private struct HistoryDetail: View {
     let entry: HistoryEntry
-    @Environment(\.dismiss) private var dismiss
     @State private var copied: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(entry.ruleName).font(.system(size: 20, weight: .semibold))
-                    Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
-                        .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                }
-                Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
-            }
+        VStack(alignment: .leading, spacing: 14) {
             Text([entry.providerName, entry.model, entry.targetLanguage].filter { !$0.isEmpty }.joined(separator: " · "))
                 .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
-            ScrollView {
-                VStack(spacing: 14) {
-                    textSection("Result", text: entry.processedText)
-                    textSection("Original", text: entry.originalText)
-                }.padding(1)
-            }
-        }.padding(20).frame(width: 560, height: 500).background(FrogStyle.canvas)
+            textSection("Result", text: entry.processedText)
+            Divider().opacity(0.5)
+            textSection("Original", text: entry.originalText)
+        }.padding(.top, 4)
             .foregroundStyle(FrogStyle.ink).buttonStyle(FrogButtonStyle())
     }
 
     private func textSection(_ title: String, text: String) -> some View {
-        FrogCard {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     SectionCaption(text: title)
@@ -148,6 +138,5 @@ private struct HistoryDetail: View {
                 Text(text).font(.system(size: 13)).lineSpacing(4).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-        }
     }
 }

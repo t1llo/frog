@@ -128,15 +128,15 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
 
     private func showWindow() {
         if window == nil {
-            let controller = NSHostingController(rootView: MainView().environmentObject(model))
-            let created = NSWindow(contentViewController: controller)
+            let content = FrogHostingView(rootView: MainView().environmentObject(model))
+            let created = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 580), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+            created.contentView = content
             created.title = "Frog"
             created.titleVisibility = .hidden
             created.titlebarAppearsTransparent = true
             created.toolbarStyle = .unified
             created.backgroundColor = .clear
             created.isOpaque = false
-            created.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             created.setContentSize(NSSize(width: 800, height: 580))
             created.contentMinSize = NSSize(width: 740, height: 520)
             created.isReleasedWhenClosed = false
@@ -155,4 +155,10 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
         model.shutdown()
         if let observer { NotificationCenter.default.removeObserver(observer) }
     }
+}
+
+/// The SwiftUI surfaces and the behind-window material own the background.
+/// AppKit's hosting layer must not fill the content with an opaque window color.
+private final class FrogHostingView<Content: View>: NSHostingView<Content> {
+    override var isOpaque: Bool { false }
 }

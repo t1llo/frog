@@ -30,7 +30,7 @@ struct MainView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar.frame(width: 190)
+            sidebar.padding(.top, 32).frame(width: 190).background(FrogStyle.sidebar)
             VStack(spacing: 0) {
                 Group {
                     switch section {
@@ -49,11 +49,12 @@ struct MainView: View {
                     }.padding(16).background(FrogStyle.surface)
                         .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border).frame(height: 1) }
                 }
-            }.background(FrogStyle.canvas)
+            }.clipped().padding(.top, 32).background(FrogStyle.canvas)
         }
         .font(.system(size: 13)).foregroundStyle(FrogStyle.ink)
         .environment(\.locale, L10n.locale)
         .background(FrogWindowMaterial())
+        .ignoresSafeArea(.container, edges: .top)
         .tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
         .frame(minWidth: 740, minHeight: 520)
         .onAppear { model.refreshSystemStatus() }
@@ -108,12 +109,18 @@ struct MainView: View {
                      Text(L10n.text(model.dictation.active ? model.dictation.phase.rawValue.capitalized : model.status)).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
                         .lineLimit(4).textSelection(.enabled).help(model.status)
                     Spacer(minLength: 0)
+                    HStack(spacing: 3) {
+                        Image(systemName: "cpu").font(.system(size: 9))
+                        Text("\(model.localModels.loaded.count)").font(.system(size: 9)).monospacedDigit()
+                    }.foregroundStyle(FrogStyle.muted)
+                        .help(model.localModels.loaded.isEmpty ? L10n.text("No models in RAM") : model.localModels.loaded.sorted().map { LocalModelDescriptor.find($0)?.name ?? $0 }.joined(separator: ", "))
+                        .accessibilityLabel(L10n.text("Models in RAM") + ": \(model.localModels.loaded.count)")
                 }
                 if model.isProcessing { Button("Cancel request") { model.cancelProcessing() } }
             }.padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 38)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(alignment: .bottom) { MemorySparkline().frame(height: 34).allowsHitTesting(false) }
-        }.background(FrogStyle.sidebar)
+        }
     }
 }
 

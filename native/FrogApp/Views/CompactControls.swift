@@ -53,12 +53,12 @@ struct CompactMenu<Content: View>: View {
     var body: some View {
         Menu(content: { content }) {
             HStack(spacing: 8) {
+                Spacer(minLength: 0)
                 Text(L10n.text(value)).lineLimit(1).truncationMode(.middle)
                 Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
-            }.font(.system(size: 12)).padding(.horizontal, 9).padding(.vertical, 6)
-                .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
-                .overlay(RoundedRectangle(cornerRadius: FrogStyle.corner).strokeBorder(FrogStyle.border.opacity(0.6)))
-        }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize(horizontal: false, vertical: true)
+            }.font(.system(size: 12)).frame(width: 220, alignment: .trailing)
+        }.menuStyle(.borderlessButton).menuIndicator(.hidden)
+            .frame(width: 220, alignment: .trailing)
     }
 }
 

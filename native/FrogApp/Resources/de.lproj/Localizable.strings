@@ -1,4 +1,8 @@
 "Rules" = "Regeln";
+"No models in RAM" = "Keine Modelle im RAM";
+"Models in RAM" = "Modelle im RAM";
+"Collapse entry" = "Eintrag einklappen";
+"Expand entry" = "Eintrag ausklappen";
 "Connection" = "Verbindung";
 "Rule" = "Regel";
 "Theme" = "Design";
