@@ -6,7 +6,15 @@ Frog contains no analytics, telemetry, advertising, crash-reporting SDK, or usag
 
 When you run a rule, the selected text and rule instructions are sent to the provider endpoint you configured. Testing a connection sends a short test message. **Find installed models** sends a model-list request to your configured Ollama or LM Studio endpoint without writing text. Cloud providers have their own data policies. For local processing, use Ollama, LM Studio or a compatible service on your Mac.
 
-Frog doesn’t send requests at startup or download models. It doesn’t log selected text or API keys. Provider response bodies aren’t included in error messages. Redirects are refused, and request/response caching is disabled.
+Frog doesn’t send provider requests or download model weights at startup. Explicit model downloads use the built-in Hugging Face repositories through their native SDKs; the downloads follow the model host's file/CDN redirects and cache weights locally. Text-provider requests refuse redirects and disable response caching. Frog doesn’t log selected text or API keys. Provider response bodies aren’t included in error messages.
+
+## Transcription and built-in models
+
+Recording starts only when you invoke an audio rule or Record. Microphone audio stays in process memory for local WhisperKit transcription and is discarded after completion/cancellation. The live popup shows partial text when enabled. Recordings stop automatically after ten minutes. No audio files are added to history.
+
+Local cleanup uses downloaded MLX weights. A custom audio rule explicitly choosing a cloud text provider sends the transcript and instructions to that provider; raw audio is not sent. Results are copied, with optional insertion into a still-matching original target. Shared history, if enabled, stores the raw transcript and processed text under the same retention controls as writing results. If cleanup fails, the original transcript is preserved on the clipboard with an error message.
+
+Downloaded files live in `~/Library/Application Support/Frog/Models/`. Cancelled/failed installations remove partial files. Delete installed models from Providers or Transcription. Idle models unload according to Settings; downloadable inference requires Apple silicon. Models are not included in configuration exports.
 
 ## On your Mac
 

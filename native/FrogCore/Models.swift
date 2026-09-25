@@ -144,10 +144,11 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var showProcessingIndicator = true
     public var windowSwitcherEnabled = true
     public var workflows: WorkflowPreferences?
+    public var appearance: AppearancePreferences?
     public var workflowSettings: WorkflowPreferences { workflows ?? WorkflowPreferences() }
     public init() {}
 
-    private enum CodingKeys: String, CodingKey { case historyEnabled, historyLimit, historyRetentionDays, showProcessingIndicator, windowSwitcherEnabled, workflows }
+    private enum CodingKeys: String, CodingKey { case historyEnabled, historyLimit, historyRetentionDays, showProcessingIndicator, windowSwitcherEnabled, workflows, appearance }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         historyEnabled = try values.decode(Bool.self, forKey: .historyEnabled)
@@ -156,6 +157,7 @@ public struct Preferences: Codable, Equatable, Sendable {
         showProcessingIndicator = try values.decodeIfPresent(Bool.self, forKey: .showProcessingIndicator) ?? true
         windowSwitcherEnabled = try values.decodeIfPresent(Bool.self, forKey: .windowSwitcherEnabled) ?? true
         workflows = try values.decodeIfPresent(WorkflowPreferences.self, forKey: .workflows)
+        appearance = try values.decodeIfPresent(AppearancePreferences.self, forKey: .appearance)
     }
 }
 

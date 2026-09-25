@@ -15,8 +15,18 @@ swift scripts/make-icon.swift dist/Frog.iconset
 iconutil -c icns dist/Frog.iconset -o "$app/Contents/Resources/Frog.icns"
 cp "$binary_dir/Frog" "$app/Contents/MacOS/Frog"
 cp native/Info.plist "$app/Contents/Info.plist"
+# Native package resources include MLX's compiled Metal library.
+for bundle in "$binary_dir"/*.bundle; do
+    [[ -d "$bundle" ]] || continue
+    ditto "$bundle" "$app/Contents/Resources/$(basename "$bundle")"
+done
+metal_library="$app/Contents/Resources/mlx-swift_Cmlx.bundle/Contents/Resources/default.metallib"
+if [[ ! -s "$metal_library" ]]; then
+    echo 'MLX Metal resources are missing. Build with the Xcode SwiftBuild toolchain; do not distribute this bundle.' >&2
+    exit 1
+fi
 chmod +x "$app/Contents/MacOS/Frog"
-sign_args=(--force --options runtime --sign "${FROG_SIGN_IDENTITY:--}")
+sign_args=(--force --options runtime --entitlements native/Frog.entitlements --sign "${FROG_SIGN_IDENTITY:--}")
 if [[ "${FROG_SIGN_IDENTITY:--}" != "-" ]]; then sign_args+=(--timestamp); fi
 codesign "${sign_args[@]}" "$app"
 codesign --verify --strict "$app"

@@ -5,12 +5,14 @@ import WhisperKit
 #if arch(arm64)
 import MLXLLM
 import MLXLMCommon
+import MLX
 import Hub
 #endif
 
 /// Download ownership, installed paths and model residency stay behind one service.
 @MainActor
 final class LocalModels: ObservableObject {
+    typealias Downloader = @Sendable (LocalModelDescriptor, URL, @escaping @Sendable (Double) -> Void) async throws -> URL
     static var supported: Bool {
         #if arch(arm64)
         true
@@ -25,11 +27,13 @@ final class LocalModels: ObservableObject {
     @Published private(set) var busy = false
     private let root: URL
     private var downloads: [String: Task<Void, Never>] = [:]
-    private let runtime = LocalInference()
+    private let runtime: any LocalInferenceEngine
+    private let downloader: Downloader
     private var unloadTask: Task<Void, Never>?
     var idleSeconds = 120
 
-    init(directory: URL? = nil) {
+    init(directory: URL? = nil, runtime: any LocalInferenceEngine = LocalInference(), downloader: @escaping Downloader = LocalInference.download) {
+        self.runtime = runtime; self.downloader = downloader
         root = (directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Frog")) .appendingPathComponent("Models", isDirectory: true)
         for model in LocalModelDescriptor.catalog where modelURL(model.id) != nil { installed.insert(model.id) }
     }
@@ -46,23 +50,32 @@ final class LocalModels: ObservableObject {
         errors[model.id] = nil; progress[model.id] = 0
         let base = directory(model.id)
         downloads[model.id] = Task { [weak self] in
-            defer { self?.downloads[model.id] = nil; self?.progress[model.id] = nil }
+            guard let self else { return }
+            defer { self.downloads[model.id] = nil; self.progress[model.id] = nil }
             do {
                 try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-                let url = try await LocalInference.download(model, base: base) { fraction in
-                    Task { @MainActor [weak self] in self?.progress[model.id] = fraction }
+                let url = try await self.downloader(model, base) { [weak self] fraction in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.downloads[model.id] != nil else { return }
+                        self.progress[model.id] = fraction
+                    }
                 }
                 try Task.checkCancellation()
                 guard url.path.hasPrefix(base.path + "/") else { throw FrogError.message("Invalid model installation path.") }
                 let relative = String(url.path.dropFirst(base.path.count + 1))
                 try relative.write(to: base.appendingPathComponent("installed.txt"), atomically: true, encoding: .utf8)
-                self?.installed.insert(model.id)
+                self.installed.insert(model.id)
             } catch {
-                if !Task.isCancelled { self?.errors[model.id] = error.localizedDescription }
+                // No completed installation exists yet. Cancel/failure must not
+                // leave gigabytes that the UI has no installed row to delete.
+                try? FileManager.default.removeItem(at: base)
+                if !Task.isCancelled { self.errors[model.id] = error.localizedDescription }
             }
         }
     }
     func cancelDownload(_ id: String) { downloads[id]?.cancel() }
+    func waitForDownload(_ id: String) async { await downloads[id]?.value }
+    func waitForIdleUnload() async { await unloadTask?.value }
     func remove(_ id: String) async throws {
         guard !busy, downloads[id] == nil else { throw FrogError.message("Wait for the model operation to finish before deleting it.") }
         await unload()
@@ -71,6 +84,8 @@ final class LocalModels: ObservableObject {
     }
     func unload() async {
         guard !busy else { return }
+        busy = true
+        defer { busy = false }
         unloadTask?.cancel(); unloadTask = nil
         await runtime.unload(); loaded = []
     }
@@ -103,11 +118,18 @@ final class LocalModels: ObservableObject {
     func shutdown() {
         downloads.values.forEach { $0.cancel() }
         unloadTask?.cancel()
-        Task { await runtime.unload() }
+        if !busy { Task { await self.unload() } }
     }
 }
 
-private actor LocalInference {
+protocol LocalInferenceEngine: Actor {
+    var loadedIDs: Set<String> { get }
+    func transcribe(_ samples: [Float], id: String, url: URL) async throws -> String
+    func complete(_ text: String, instructions: String, id: String, url: URL) async throws -> String
+    func unload() async
+}
+
+actor LocalInference: LocalInferenceEngine {
     private var speech: WhisperKit?
     private var speechID: String?
     #if arch(arm64)
@@ -156,9 +178,9 @@ private actor LocalInference {
             textID = id
         }
         let input = try await textModel!.prepare(input: UserInput(prompt: .chat([
-            .system(instructions + " /no_think"),
+            .system(instructions),
             .user(text)
-        ])))
+        ]), additionalContext: ["enable_thinking": false]))
         let stream = try await textModel!.generate(input: input, parameters: GenerateParameters(maxTokens: 2048, temperature: 0.1))
         var output = ""
         for await generation in stream {
@@ -177,6 +199,7 @@ private actor LocalInference {
         await speech?.unloadModels(); speech = nil; speechID = nil
         #if arch(arm64)
         textModel = nil
+        MLX.Memory.clearCache()
         #endif
         textID = nil
     }

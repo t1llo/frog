@@ -74,6 +74,7 @@ final class AppModel: ObservableObject {
         catch { configurationLoadError = error; report(error) }
         refreshHistory()
         refreshSystemStatus()
+        if registerShortcuts { FrogAppearance.shared.settings = configuration.preferences.appearance ?? AppearancePreferences() }
         localModels.idleSeconds = configuration.preferences.workflowSettings.idleUnloadSeconds
         localModels.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         dictation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
@@ -100,6 +101,13 @@ final class AppModel: ObservableObject {
 
     func start() {
         started = true
+        if registerShortcuts, configurationLoadError == nil,
+           !configuration.rules.contains(where: { $0.category == .audio }), configuration.preferences.workflows == nil {
+            var candidate = configuration
+            candidate.rules.append(.dictationPreset)
+            candidate.preferences.workflows = WorkflowPreferences()
+            do { try persist(candidate) } catch { report(error) }
+        }
         registerHotkeys()
         configureWindowSwitcher()
         if configuration.providers.isEmpty { status = "Add a provider in Settings to get started." }
@@ -149,6 +157,7 @@ final class AppModel: ObservableObject {
         try ConfigurationFile.validate(candidate)
         try configurationStore.save(candidate)
         configuration = candidate
+        if registerShortcuts { FrogAppearance.shared.settings = candidate.preferences.appearance ?? AppearancePreferences() }
     }
 
     func saveRule(_ rule: Rule) throws {
@@ -255,6 +264,8 @@ final class AppModel: ObservableObject {
     }
 
     func savePreferences(_ preferences: Preferences) throws {
+        let shortcutChanged = preferences.workflowSettings.shortcutPanelHotkey != configuration.preferences.workflowSettings.shortcutPanelHotkey
+        if let key = preferences.workflowSettings.shortcutPanelHotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
         guard (1...200).contains(preferences.historyLimit), (1...30).contains(preferences.historyRetentionDays) else {
             throw FrogError.message("History must keep 1–200 entries for 1–30 days.")
         }
@@ -264,7 +275,7 @@ final class AppModel: ObservableObject {
         if !preferences.showProcessingIndicator { processingIndicator.hide() }
         configureWindowSwitcher()
         localModels.idleSeconds = preferences.workflowSettings.idleUnloadSeconds
-        registerHotkeys()
+        if shortcutChanged { registerHotkeys() }
         refreshHistory()
     }
 
@@ -307,7 +318,9 @@ final class AppModel: ObservableObject {
         }
         try configurationStore.replaceFromImport(candidate)
         configuration = candidate
+        if registerShortcuts { FrogAppearance.shared.settings = candidate.preferences.appearance ?? AppearancePreferences() }
         configurationLoadError = nil
+        localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds
         errorMessage = nil
         historyEpoch = UUID()
         registerHotkeys()
@@ -317,6 +330,7 @@ final class AppModel: ObservableObject {
     }
 
     func setShortcutRecording(_ recording: Bool) {
+        if recording { dictation.cancel() }
         isRecordingShortcut = recording
         if recording { hotkeys.unregister() }
         else { registerHotkeys() }
@@ -331,7 +345,9 @@ final class AppModel: ObservableObject {
             guard rule.enabled, let hotkey = rule.hotkey else { return false }
             return hotkey.keyCode == 48 && (hotkey.modifiers == 256 || hotkey.modifiers == 768)
         }
-        if configuration.preferences.windowSwitcherEnabled && conflict {
+        let referenceKey = configuration.preferences.workflowSettings.shortcutPanelHotkey
+        let referenceConflict = referenceKey?.keyCode == 48 && [UInt32(256), 768].contains(referenceKey?.modifiers ?? 0)
+        if configuration.preferences.windowSwitcherEnabled && (conflict || referenceConflict) {
             windowSwitcher.stop()
             let message = "A writing rule uses ⌘Tab — change its shortcut to enable window switching"
             if windowSwitcherStatus != message { windowSwitcherStatus = message }
@@ -399,12 +415,10 @@ final class AppModel: ObservableObject {
             if !pressed { launchApplication(rule) }
         case .audio:
             let mode = rule.action?.recordingMode ?? configuration.preferences.workflowSettings.recordingMode
-            if mode == .hold {
-                if pressed { if !dictation.active { startDictation(rule) } }
-                else if dictation.ruleID == id { dictation.stop(models: localModels) }
-            } else if !pressed {
-                if dictation.ruleID == id { dictation.stop(models: localModels) }
-                else if !dictation.active { startDictation(rule) }
+            switch RecordingShortcut.action(mode: mode, pressed: pressed, target: id, active: dictation.ruleID) {
+            case .start: startDictation(rule)
+            case .stop: dictation.stop(models: localModels)
+            case nil: break
             }
         }
     }
@@ -452,7 +466,7 @@ final class AppModel: ObservableObject {
                 try Task.checkCancellation()
                 if manualText == nil { self.showIndicator("\(rule.name)…", working: true) }
                 let result: String
-                if provider.id == Self.localProviderID { result = try await self.localModels.complete(text, instructions: rule.instructions, modelID: provider.model) }
+                if provider.id == Self.localProviderID { result = try await self.localModels.complete(text, instructions: rule.instructions.replacingOccurrences(of: "{{language}}", with: rule.targetLanguage), modelID: provider.model) }
                 else { result = try await self.complete(text, rule, provider, key) }
                 try Task.checkCancellation()
                 guard !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("The model returned no text. Nothing was replaced.") }

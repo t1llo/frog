@@ -26,6 +26,7 @@ final class DictationController: ObservableObject {
     private var target: DictationTarget?
     private var activeRule: Rule?
     private var preferences = WorkflowPreferences()
+    private weak var models: LocalModels?
     var onFinish: ((Rule, String, String, String) -> Void)?
     var onError: ((Error) -> Void)?
     var cleanup: ((String, Rule) async throws -> String)?
@@ -43,17 +44,19 @@ final class DictationController: ObservableObject {
         let modelID = rule.action?.audioModelID ?? preferences.audioModelID
         guard models.installed.contains(modelID) else { onError?(FrogError.message("Download an audio model in Transcription first.")); return }
         let token = UUID(); self.token = token
-        self.preferences = preferences; activeRule = rule; ruleID = rule.id
+        self.preferences = preferences; self.models = models; activeRule = rule; ruleID = rule.id
         stopRequested = false; samples = AudioSamples(); liveText = ""; elapsed = 0
         target = (rule.action?.output ?? preferences.output) == .paste ? DictationTarget.capture() : nil
         phase = .preparing
         let shortcut = rule.hotkey.map(HotkeyManager.display) ?? "Stop button"
         hint = (rule.action?.recordingMode ?? preferences.recordingMode) == .hold ? "Release \(shortcut) to stop · Esc to cancel" : "\(shortcut) to stop · Esc to cancel"
+        if rule.hotkey == nil { hint = "Stop to finish · Esc to cancel" }
         if preferences.showDictationPopup { showPanel() }
         installEscape()
         work = Task { [weak self] in
             guard let self else { return }
-            guard Self.microphoneGranted || (await Self.requestMicrophone()) else {
+            let granted = Self.microphoneGranted ? true : await Self.requestMicrophone()
+            guard granted else {
                 self.fail(FrogError.message("Allow Microphone in Settings to record dictation."), token: token); return
             }
             guard self.token == token, !Task.isCancelled else { return }
@@ -111,24 +114,34 @@ final class DictationController: ObservableObject {
                 var output = raw
                 if rule.action?.cleanup != false {
                     self.phase = .correcting
-                    if let cleanup = self.cleanup { output = try await cleanup(raw, rule) }
+                    if let cleanup = self.cleanup {
+                        do { output = try await cleanup(raw, rule) }
+                        catch {
+                            try Task.checkCancellation()
+                            guard self.token == token else { return }
+                            self.onError?(FrogError.message("Cleanup failed; the original transcript will be copied. \(error.localizedDescription)"))
+                        }
+                    }
                 }
                 try Task.checkCancellation()
                 guard self.token == token else { return }
                 NSPasteboard.general.clearContents(); NSPasteboard.general.setString(output, forType: .string)
-                var delivery = "Copied"
+                var insertion: (() async throws -> Void)?
                 if (rule.action?.output ?? self.preferences.output) == .paste {
-                    do {
-                        guard let target = self.target else { throw FrogError.message("No editable insertion point was captured. The transcript is copied.") }
+                    let target = self.target
+                    insertion = {
+                        guard let target else { throw FrogError.message("No editable insertion point was captured. The transcript is copied.") }
                         try await target.paste()
-                        delivery = "Pasted and copied"
-                    } catch { self.onError?(error) }
+                    }
                 }
-                self.onFinish?(rule, raw, output, delivery)
-                self.cancel()
+                try await DictationDelivery.finish(isCurrent: { self.token == token }, paste: insertion, onIssue: { self.onError?($0) }) { delivery in
+                    self.onFinish?(rule, raw, output, delivery)
+                    self.cancel()
+                }
             } catch { self.fail(error, token: token) }
         }
     }
+    func requestStop() { if let models { stop(models: models) } }
     func cancel() {
         token = nil; work?.cancel(); preview?.cancel(); ticker?.cancel()
         work = nil; preview = nil; ticker = nil
@@ -173,6 +186,7 @@ private struct DictationPopup: View {
                 Image(systemName: controller.phase == .recording ? "mic.fill" : "waveform").foregroundStyle(FrogStyle.accent)
                 Text(controller.phase.rawValue.capitalized).fontWeight(.semibold)
                 Spacer(); Text("\(controller.elapsed)s").monospacedDigit().foregroundStyle(.secondary)
+                if controller.phase == .recording { Button("Stop") { controller.requestStop() }.controlSize(.small) }
                 Button { controller.cancel() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Cancel dictation")
             }
             Text(controller.liveText.isEmpty ? "Listening…" : controller.liveText).font(.system(size: 13)).lineLimit(4).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

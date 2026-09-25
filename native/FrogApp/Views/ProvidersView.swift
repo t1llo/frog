@@ -5,6 +5,7 @@ struct ProvidersView: View {
     @EnvironmentObject private var model: AppModel
     @State private var editing: ProviderConfiguration?
     @State private var deleting: ProviderConfiguration?
+    @State private var filter = "All"
 
     var body: some View {
         PageScroll {
@@ -12,6 +13,12 @@ struct ProvidersView: View {
                 Button { editing = ProviderConfiguration() } label: { Label("Add provider", systemImage: "plus") }
                     .buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut("n", modifiers: .command)
             }
+            Picker("Provider category", selection: $filter) {
+                ForEach(["All", "Text", "Audio"], id: \.self) { Text($0).tag($0) }
+            }.pickerStyle(.segmented)
+            SectionCaption(text: "Built-in local models")
+            LocalModelRows(kind: filter == "All" ? nil : filter == "Audio" ? .audio : .text)
+            if filter != "Audio" {
             if !model.configuration.providers.isEmpty {
                 FrogCard {
                     VStack(alignment: .leading, spacing: 16) {
@@ -40,18 +47,18 @@ struct ProvidersView: View {
                 }
             }
             SectionCaption(text: "Connections · \(model.configuration.providers.count)")
-            LazyVStack(spacing: 14) {
+            LazyVStack(spacing: 8) {
                 ForEach(model.configuration.providers) { provider in
                     FrogCard {
-                        VStack(alignment: .leading, spacing: 18) {
+                        VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 14) {
-                                SymbolTile(symbol: provider.kind.isLocal ? "desktopcomputer" : "cloud")
+                                Image(systemName: provider.kind.isLocal ? "desktopcomputer" : "cloud").foregroundStyle(FrogStyle.accent)
                                 VStack(alignment: .leading, spacing: 5) {
-                                    Text(provider.name).font(.system(size: 15, weight: .semibold))
+                                    Text(provider.name).font(.system(size: 13, weight: .semibold))
                                     Text(provider.kind.title).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
                                 }
                                 Spacer()
-                                if model.configuration.defaultProviderID == provider.id { FrogBadge(text: "Default", active: true) }
+                                if model.configuration.defaultProviderID == provider.id && model.configuration.preferences.workflowSettings.defaultLocalTextModelID == nil { FrogBadge(text: "Default", active: true) }
                             }
                             HStack(spacing: 8) {
                                 Label(provider.modelName(provider.model), systemImage: "cpu").font(.system(size: 12, weight: .medium))
@@ -67,7 +74,7 @@ struct ProvidersView: View {
                                 Spacer(minLength: 16)
                                 Button("Make default") {
                                     do { try model.setDefaultProvider(id: provider.id) } catch { model.report(error) }
-                                }.disabled(model.configuration.defaultProviderID == provider.id)
+                                }.disabled(model.configuration.defaultProviderID == provider.id && model.configuration.preferences.workflowSettings.defaultLocalTextModelID == nil)
                                 IconAction(title: "Configure \(provider.name)", symbol: "pencil") { editing = provider }
                                 IconAction(title: "Duplicate \(provider.name)", symbol: "doc.on.doc") {
                                     var copy = provider; copy.id = UUID(); copy.name += " copy"; editing = copy
@@ -89,6 +96,7 @@ struct ProvidersView: View {
             }
             Label("Cloud credentials live in Keychain. Local models can work without a key.", systemImage: "lock.shield")
                 .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+            }
         }
         .sheet(item: $editing) { provider in ProviderEditor(provider: provider).environmentObject(model) }
         .confirmationDialog("Delete \(deleting?.name ?? "provider")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
@@ -121,6 +129,7 @@ private struct ProviderEditor: View {
     @State private var discovering = false
     @State private var discoveryTask: Task<Void, Never>?
     @State private var discoveryMessage: String?
+    @State private var makeDefault = false
 
     private var validation: String? {
         if provider.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Enter a provider name." }
@@ -144,7 +153,7 @@ private struct ProviderEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            EditorHeading(title: "Connect your model.", subtitle: "A home for your favorite intelligence. Test it before saving.")
+            EditorHeading(title: "Provider", subtitle: "Connection, models and default.")
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     FrogCard {
@@ -169,6 +178,7 @@ private struct ProviderEditor: View {
                                 }.foregroundStyle(FrogStyle.accent).font(.system(size: 12))
                             }
                             LabeledField(title: "Connection name") { TextField("Connection name", text: $provider.name).labelsHidden() }
+                            Toggle("Use as default text provider", isOn: $makeDefault)
                             LabeledField(title: "Base endpoint") { TextField("Base endpoint", text: $provider.endpoint).labelsHidden().font(.system(size: 12, design: .monospaced)) }
                             HStack(alignment: .top, spacing: 16) {
                                 Text(endpointHint)
@@ -359,6 +369,7 @@ private struct ProviderEditor: View {
         do {
             let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
             try model.saveProvider(normalized(), apiKey: key.isEmpty ? nil : key, clearKey: clearKey)
+            if makeDefault { try model.setDefaultProvider(id: provider.id) }
             dismiss()
         } catch { issue = error.localizedDescription }
     }

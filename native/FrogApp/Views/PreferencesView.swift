@@ -12,10 +12,15 @@ struct PreferencesView: View {
     var body: some View {
         PageScroll {
             PageHeader(title: "Settings", subtitle: "Startup, permissions, and local data.")
+            SectionCaption(text: "Appearance")
+            AppearanceSettingsView()
+            SectionCaption(text: "Defaults & audio")
+            WorkflowSettingsCard()
+            WorkflowAdvancedSettings()
             SectionCaption(text: "General")
             FrogCard {
-                VStack(spacing: 20) {
-                    SettingRow(title: "Start at login", description: "Keep writing shortcuts and window switching available after you sign in.") {
+                VStack(spacing: 12) {
+                    SettingRow(title: "Start at login", description: "Keep Frog available after sign-in.") {
                         Toggle("Start Frog at login", isOn: Binding(get: { model.startAtLogin }, set: { model.setStartAtLogin($0) }))
                             .toggleStyle(.switch).labelsHidden().controlSize(.small)
                     }
@@ -24,7 +29,7 @@ struct PreferencesView: View {
                         Spacer()
                     }
                     ruleDivider
-                    SettingRow(title: "Brief processing indicator", description: "A translucent status flashes for one second when a writing action starts and finishes.") {
+                    SettingRow(title: "Writing indicator", description: "Brief status for text actions.") {
                         Toggle("Show processing indicator", isOn: preference(\.showProcessingIndicator))
                             .toggleStyle(.switch).labelsHidden().controlSize(.small)
                     }
@@ -33,22 +38,19 @@ struct PreferencesView: View {
             SectionCaption(text: "Configuration")
             FrogCard {
                 VStack(alignment: .leading, spacing: 16) {
-                    SettingRow(title: "Configuration files", description: "Back up your setup or move it to another Mac. Plain JSON, ready to edit or share.") {
-                        Image(systemName: "doc.badge.gearshape").font(.system(size: 22)).foregroundStyle(FrogStyle.accent)
-                    }
                     HStack(spacing: 10) {
                         Button("Export…", systemImage: "square.and.arrow.up") { exportConfiguration() }
                         Button("Import…", systemImage: "square.and.arrow.down") { chooseConfiguration() }
                             .disabled(model.isProcessing || model.isTestingProvider)
                     }
-                    Text("Includes rules, shortcuts, provider settings, and preferences. API keys and text history are never included. Login and macOS permissions are set up separately on each Mac.")
+                    Text("JSON includes rules, providers and appearance. No keys, audio, model weights or history.")
                         .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
                 }
             }
             SectionCaption(text: "History")
             FrogCard {
-                VStack(alignment: .leading, spacing: 20) {
-                    SettingRow(title: "Keep a local history", description: "Save original text and results on this Mac. Off by default, always in your control.") {
+                VStack(alignment: .leading, spacing: 12) {
+                    SettingRow(title: "History", description: "Save text and transcription results locally.") {
                         Toggle("Record successful transformations", isOn: preference(\.historyEnabled))
                             .toggleStyle(.switch).labelsHidden().controlSize(.small)
                     }
@@ -58,22 +60,29 @@ struct PreferencesView: View {
                         Rectangle().fill(FrogStyle.border).frame(width: 1, height: 42)
                         historyRetention
                     }
-                    Text("Turning recording off also excludes requests in progress. Existing entries stay until deleted or expired. Lower limits also apply to saved history.")
+                    Text("Turning off stops new entries. Retention limits apply to saved history.")
                         .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
                 }
             }
             SectionCaption(text: "Permissions")
             FrogCard {
-                VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    Label("Microphone", systemImage: "mic")
+                    Spacer()
+                    Text(DictationController.microphoneGranted ? "Allowed" : "Needs access").font(.caption).foregroundStyle(.secondary)
+                    Button("Configure") { Task { _ = await DictationController.requestMicrophone(); DictationController.openMicrophoneSettings(); model.objectWillChange.send() } }
+                }
+            }
+            FrogCard {
+                VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top, spacing: 14) {
-                        SymbolTile(symbol: "hand.raised")
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
                                 Text("Accessibility").font(.system(size: 14, weight: .semibold))
                                 Spacer()
                                 FrogBadge(text: model.accessibilityGranted ? "Allowed" : "Needs access", active: model.accessibilityGranted)
                             }
-                            Text("Used for selected-text replacement and window switching. Try text works without this permission.")
+                            Text("For writing, paste and window switching.")
                                 .font(.system(size: 12)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
                         }
                     }
@@ -88,15 +97,16 @@ struct PreferencesView: View {
                             .accessibilityLabel("Refresh permission status").help("Refresh permission status")
                     }
                     if !model.accessibilityGranted {
+                        DisclosureGroup("Troubleshoot access") {
                         Text("Already enabled but still denied? Quit Frog, remove its old entry with the minus button in Accessibility, then add /Applications/Frog.app and enable it again. Toggling an old entry may retain its old signature. Always quit Frog before moving or replacing the app, then reopen the installed copy.")
                             .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
+                        }
                     }
                     ruleDivider
                     HStack(alignment: .top, spacing: 14) {
-                        SymbolTile(symbol: "bell")
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Notifications").font(.system(size: 14, weight: .semibold))
-                            Text("Get notifications for background results and errors. Status is always available in Frog’s menu and window.")
+                            Text("Background results and errors.")
                                 .font(.system(size: 12)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -114,9 +124,7 @@ struct PreferencesView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     Label("Privacy", systemImage: "lock.shield").font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(FrogStyle.accent)
-                    Text("Results are copied to the clipboard. If your original selection changes or can’t be safely edited, you can paste the result yourself.")
-                    Text("Cloud providers receive your selected text and rule instructions. Choose a local endpoint to process on your own server.")
-                    Text("No analytics, telemetry, or usage tracking. Frog makes no requests to a Frog server.")
+                    Text("Built-in models run locally. Cloud rules send text to your chosen provider. No analytics or Frog account.")
                 }.font(.system(size: 12)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
             }
         }.onAppear { model.refreshSystemStatus() }

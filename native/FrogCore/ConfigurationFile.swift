@@ -89,6 +89,9 @@ public enum ConfigurationFile {
             }
         }
         let preferences = configuration.preferences
+        guard (preferences.appearance ?? AppearancePreferences()).valid else {
+            throw FrogError.message("Appearance requires a six-digit accent hex color and transparency between 0 and 1.")
+        }
         let workflow = preferences.workflowSettings
         guard LocalModelDescriptor.find(workflow.audioModelID)?.kind == .audio,
               LocalModelDescriptor.find(workflow.cleanupModelID)?.kind == .text,

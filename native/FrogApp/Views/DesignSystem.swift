@@ -1,15 +1,26 @@
 import SwiftUI
 import AppKit
+import FrogCore
+import Observation
+
+@Observable
+final class FrogAppearance {
+    static let shared = FrogAppearance()
+    var settings = AppearancePreferences()
+}
 
 /// Shared adaptive colors keep the app, sheets, and controls in the same visual language.
 enum FrogStyle {
-    static let canvas = adaptive(light: 0xF8F9F6, dark: 0x191C1A)
-    static let sidebar = adaptive(light: 0xEFF1EC, dark: 0x141715)
+    static var canvas: Color { adaptive(light: 0xF8F9F6, dark: 0x191C1A).opacity(1 - FrogAppearance.shared.settings.transparency * 0.85) }
+    static var sidebar: Color { adaptive(light: 0xEFF1EC, dark: 0x141715).opacity(1 - FrogAppearance.shared.settings.transparency * 0.85) }
     static let surface = adaptive(light: 0xFFFFFF, dark: 0x232724)
     static let inset = adaptive(light: 0xF4F6F1, dark: 0x1B1F1C)
     static let border = adaptive(light: 0xDDE3D9, dark: 0x39413B)
-    static let accent = adaptive(light: 0x326B49, dark: 0xA3D8AF)
-    static let accentSoft = adaptive(light: 0xE3EDDE, dark: 0x2D4131)
+    static var accent: Color {
+        let rgb = UInt32(FrogAppearance.shared.settings.accentHex, radix: 16) ?? 0xA3D8AF
+        return Color(red: Double((rgb >> 16) & 255) / 255, green: Double((rgb >> 8) & 255) / 255, blue: Double(rgb & 255) / 255)
+    }
+    static var accentSoft: Color { accent.opacity(0.15) }
     static let onAccent = adaptive(light: 0xFFFFFF, dark: 0x18261C)
     static let ink = adaptive(light: 0x242D26, dark: 0xEDF2EA)
     static let muted = adaptive(light: 0x647060, dark: 0xADB8AB)
@@ -28,7 +39,7 @@ struct FrogButtonStyle: ButtonStyle {
     var primary = false
     @Environment(\.isEnabled) private var enabled
 
-    func makeBody(configuration: Configuration) -> some View {
+    func makeBody(configuration: ButtonStyleConfiguration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .semibold))
             .padding(.horizontal, 12).padding(.vertical, 8)
@@ -41,7 +52,7 @@ struct FrogButtonStyle: ButtonStyle {
 }
 
 struct FrogCard<Content: View>: View {
-    var padding: CGFloat = 16
+    var padding: CGFloat = 12
     @ViewBuilder var content: Content
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -61,7 +72,7 @@ struct PageHeader<Actions: View>: View {
     var body: some View {
         HStack(alignment: .top, spacing: 20) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(.system(size: 24, weight: .semibold)).tracking(-0.4)
+                Text(title).font(.system(size: 21, weight: .semibold)).tracking(-0.4)
                     .foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
                 Text(subtitle).font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
                     .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
@@ -81,10 +92,10 @@ struct PageScroll<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) { content }
-                .padding(24).frame(maxWidth: 1080)
+            VStack(alignment: .leading, spacing: 14) { content }
+                .padding(20).frame(maxWidth: 1080)
                 .frame(maxWidth: .infinity, alignment: .top)
-        }.background(FrogStyle.canvas)
+        }
     }
 }
 

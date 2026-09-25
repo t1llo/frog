@@ -8,13 +8,13 @@ struct MainView: View {
     @State private var section: Section = .rules
 
     private enum Section: String, CaseIterable, Identifiable {
-        case rules = "Rules", providers = "Providers", manual = "Try text", history = "History", windows = "Windows", settings = "Settings"
+        case rules = "Rules", history = "History", providers = "Providers", transcription = "Transcription", windows = "Windows", settings = "Settings"
         var id: String { rawValue }
         var symbol: String {
             switch self {
             case .rules: "square.stack.3d.up"
             case .providers: "cpu"
-            case .manual: "square.and.pencil"
+            case .transcription: "waveform"
             case .history: "clock.arrow.circlepath"
             case .windows: "macwindow.on.rectangle"
             case .settings: "slider.horizontal.3"
@@ -23,25 +23,25 @@ struct MainView: View {
         var key: KeyEquivalent {
             switch self {
             case .rules: "1"
-            case .providers: "2"
-            case .manual: "3"
-            case .history: "4"
-            case .windows: "6"
-            case .settings: "5"
+            case .history: "2"
+            case .providers: "3"
+            case .transcription: "4"
+            case .windows: "5"
+            case .settings: "6"
             }
         }
     }
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar.frame(width: 188)
+            sidebar.frame(width: 168)
             Rectangle().fill(FrogStyle.border).frame(width: 1)
             VStack(spacing: 0) {
                 Group {
                     switch section {
                     case .rules: RulesView()
                     case .providers: ProvidersView()
-                    case .manual: ManualView()
+                    case .transcription: TranscriptionView()
                     case .history: HistoryView()
                     case .windows: WindowSwitcherSettingsView()
                     case .settings: PreferencesView()
@@ -59,8 +59,9 @@ struct MainView: View {
             }.background(FrogStyle.canvas)
         }
         .font(.system(size: 13)).foregroundStyle(FrogStyle.ink)
+        .background(FrogWindowMaterial())
         .tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
-        .frame(minWidth: 940, minHeight: 660)
+        .frame(minWidth: 820, minHeight: 580)
         .onAppear { model.refreshSystemStatus() }
         .task { await model.monitorSystemStatus() }
         .onChange(of: scenePhase) { _, phase in if phase == .active { model.refreshSystemStatus() } }
@@ -91,15 +92,15 @@ struct MainView: View {
                 }
             }.padding(.horizontal, 13)
             Spacer(minLength: 24)
-            if model.configuration.providers.isEmpty || !model.accessibilityGranted {
+            if !model.accessibilityGranted || !DictationController.microphoneGranted {
                 VStack(alignment: .leading, spacing: 10) {
                     Image(systemName: "sparkles").foregroundStyle(FrogStyle.accent)
-                    Text(model.configuration.providers.isEmpty ? "Connect a provider" : "Allow Accessibility")
+                    Text(!model.accessibilityGranted ? "Allow Accessibility" : "Allow Microphone")
                         .font(.system(size: 12, weight: .semibold))
-                    Text(model.configuration.providers.isEmpty ? "Choose a model for your writing rules." : "Required for writing shortcuts and window switching.")
+                    Text(!model.accessibilityGranted ? "For writing and window shortcuts." : "For voice transcription.")
                         .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
-                    Button(model.configuration.providers.isEmpty ? "Connect a provider" : "Finish setup") {
-                        section = model.configuration.providers.isEmpty ? .providers : .settings
+                    Button("Finish setup") {
+                        section = !model.accessibilityGranted ? .settings : .transcription
                     }.buttonStyle(FrogButtonStyle()).controlSize(.small)
                 }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
                     .background(FrogStyle.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: 12))
@@ -109,8 +110,10 @@ struct MainView: View {
                 HStack(spacing: 8) {
                     if model.isProcessing { ProgressView().controlSize(.mini) }
                     else { Circle().fill(model.errorMessage == nil ? FrogStyle.accent : .orange).frame(width: 6, height: 6) }
-                    Text(model.status).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                     Text(model.dictation.active ? model.dictation.phase.rawValue.capitalized : model.status).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
                         .lineLimit(4).textSelection(.enabled).help(model.status)
+                    Spacer(minLength: 0)
+                    MemorySparkline()
                 }
                 if model.isProcessing { Button("Cancel request") { model.cancelProcessing() } }
             }.padding(20).frame(maxWidth: .infinity, alignment: .leading)

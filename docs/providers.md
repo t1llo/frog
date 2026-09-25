@@ -6,7 +6,13 @@ Choose a default model for each connection. The **Your defaults** card selects t
 
 The API-key link is directly beneath the key field (Gemini opens Google AI Studio). Connection cards have configure, duplicate and delete icons. Duplicating opens a new draft with the same model choices; enter its credentials separately. Confirmed deletion removes the key and resets affected rules to the remaining defaults. Deleting the last connection is allowed; rules remain saved and need a new provider before running.
 
-**Try text** has separate rule, provider and model menus. Its provider/model choices apply only to that draft and do not change the saved rule.
+**Rules** offers per-rule provider/model overrides. **Settings** controls default text and audio choices; provider editors can make a connection the default. The Providers list filters Text and Audio.
+
+## Built-in local models (Apple silicon)
+
+Download Whisper Base or Small for speech, and Qwen3 0.6B/1.7B (4-bit) for local text cleanup. Use the model row's **Use as…** menu to choose default audio, default text, or transcript cleanup. Downloaded text models are also selectable in writing rules. Weights come from `argmaxinc/whisperkit-coreml` and `mlx-community` on Hugging Face; arbitrary repository lists are not supported.
+
+**Transcription** exposes the same model downloads and recording settings. Choose a microphone, press-to-toggle or hold-to-record, copy or copy-and-paste, and whether to show the live popup. The predefined Dictate rule's shortcut is configured in Rules. Custom audio rules can override the speech model, cleanup prompt/provider, recording mode and delivery. Models load on demand and unload after the Settings idle delay.
 
 For background shortcuts, **Settings → Show processing indicator** controls the floating progress display. If an app does not expose an editable target, the completed result is copied for manual paste instead of inserted automatically.
 

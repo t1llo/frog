@@ -11,7 +11,9 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", exact: "1.1.0"),
         .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", exact: "2.31.3"),
-        .package(url: "https://github.com/huggingface/swift-transformers", exact: "1.2.1")
+        .package(url: "https://github.com/huggingface/swift-transformers", exact: "1.2.1"),
+        // Newer collections emits borrowing runtime symbols unavailable on macOS 14–26.
+        .package(url: "https://github.com/apple/swift-collections.git", exact: "1.2.1")
     ],
     targets: [
         .target(name: "FrogCore", path: "native/FrogCore"),

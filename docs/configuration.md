@@ -1,5 +1,22 @@
 # Configuration files
 
+## Local workflows and appearance (build 9)
+
+Rules may include an `action` object with `category` (`text`, `audio`, or `application`). Missing `action` preserves legacy text behavior. Audio actions may override `audioModelID`, `localTextModelID`, `recordingMode` (`toggle`/`hold`), `output` (`copy`/`paste`), and `cleanup`. Application actions store `applicationPath` and `applicationBundleID`; choose the app again if it is unavailable on another Mac.
+
+`preferences.workflows` stores speech/cleanup/default-local-text model IDs, microphone device ID, recording/output defaults, idle unload delay, `showDictationPopup`, and the optional `shortcutPanelHotkey`. The microphone ID belongs to the current Mac; the system default is represented by `null`. Downloaded model files live in `~/Library/Application Support/Frog/Models/` and are not exported.
+
+Appearance is editable in Settings or JSON:
+
+```json
+"appearance": {
+  "accentHex": "A3D8AF",
+  "transparency": 0.35
+}
+```
+
+Place this object inside `preferences`. `accentHex` is six hexadecimal RGB digits without `#`; transparency ranges from `0` (opaque) to `1` (strongest material translucency). Import applies appearance immediately. Quit Frog before editing its live configuration file directly, then reopen it.
+
 Use **Settings → Export…** to save `Frog-configuration.json`. Use **Import…** on another Mac, or edit the file and import it again. The app shows the number of rules and providers before replacing your setup.
 
 ## What moves

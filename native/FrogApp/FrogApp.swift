@@ -25,8 +25,18 @@ private struct FrogStatusMenu: View {
 
     var body: some View {
         Text(model.status).font(.caption)
+        Text("\(model.configuration.rules.filter { $0.enabled && $0.hotkey != nil }.count) active shortcuts").font(.caption)
+        if !model.accessibilityGranted { Button("Set up Accessibility…") { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() } }
+        if !DictationController.microphoneGranted { Button("Set up microphone…") { Task { _ = await DictationController.requestMicrophone(); model.objectWillChange.send() } } }
         if let error = model.errorMessage { Text(error).font(.caption) }
         if model.isProcessing { Button("Cancel Processing") { model.cancelProcessing() } }
+        if model.dictation.active {
+            Text("Dictation · \(model.dictation.phase.rawValue.capitalized)")
+            if model.dictation.phase == .recording { Button("Stop recording") { model.dictation.stop(models: model.localModels) } }
+            Button("Cancel dictation") { model.dictation.cancel() }
+        }
+        if !model.localModels.loaded.isEmpty { Text("Local models in memory: \(model.localModels.loaded.count)") }
+        Button("Show shortcuts…") { model.showShortcuts() }
         Divider()
         Toggle("Window switcher (⌘Tab)", isOn: Binding(get: { model.configuration.preferences.windowSwitcherEnabled }, set: { enabled in
             var preferences = model.configuration.preferences
@@ -111,7 +121,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
         observer = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak model] _ in
             Task { @MainActor in model?.refreshSystemStatus() }
         }
-        if model.configuration.providers.isEmpty && !launchedAtLogin && !ProcessInfo.processInfo.arguments.contains("--background") {
+        if (model.configuration.providers.isEmpty || !model.accessibilityGranted || !DictationController.microphoneGranted) && !launchedAtLogin && !ProcessInfo.processInfo.arguments.contains("--background") {
             showWindow()
         }
     }
@@ -124,10 +134,11 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
             created.titleVisibility = .hidden
             created.titlebarAppearsTransparent = true
             created.toolbarStyle = .unified
-            created.backgroundColor = .windowBackgroundColor
+            created.backgroundColor = .clear
+            created.isOpaque = false
             created.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-            created.setContentSize(NSSize(width: 1080, height: 760))
-            created.contentMinSize = NSSize(width: 940, height: 660)
+            created.setContentSize(NSSize(width: 920, height: 650))
+            created.contentMinSize = NSSize(width: 820, height: 580)
             created.isReleasedWhenClosed = false
             created.delegate = self
             created.center()
