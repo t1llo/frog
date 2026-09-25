@@ -135,16 +135,21 @@ final class LocalModels: ObservableObject {
     }
     func transcribe(_ samples: [Float], modelID: String, language: String? = nil) async throws -> String {
         let url = try acquire(modelID); defer { release() }
-        let result = try await runtime.transcribe(samples, id: modelID, url: url, language: language == "auto" ? nil : language)
-        loaded = await runtime.loadedIDs
-        return result
+        do {
+            let result = try await runtime.transcribe(samples, id: modelID, url: url, language: language == "auto" ? nil : language, residency: { [weak self] ids in await self?.updateResidency(ids) })
+            loaded = await runtime.loadedIDs
+            return result
+        } catch { loaded = await runtime.loadedIDs; throw error }
     }
     func complete(_ text: String, instructions: String, modelID: String) async throws -> String {
         let url = try acquire(modelID); defer { release() }
-        let result = try await runtime.complete(text, instructions: instructions, id: modelID, url: url)
-        loaded = await runtime.loadedIDs
-        return result
+        do {
+            let result = try await runtime.complete(text, instructions: instructions, id: modelID, url: url, residency: { [weak self] ids in await self?.updateResidency(ids) })
+            loaded = await runtime.loadedIDs
+            return result
+        } catch { loaded = await runtime.loadedIDs; throw error }
     }
+    private func updateResidency(_ ids: Set<String>) { loaded = ids }
     func shutdown() {
         downloads.values.forEach { $0.cancel() }
         unloadTask?.cancel()
@@ -154,8 +159,8 @@ final class LocalModels: ObservableObject {
 
 protocol LocalInferenceEngine: Actor {
     var loadedIDs: Set<String> { get }
-    func transcribe(_ samples: [Float], id: String, url: URL, language: String?) async throws -> String
-    func complete(_ text: String, instructions: String, id: String, url: URL) async throws -> String
+    func transcribe(_ samples: [Float], id: String, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String
+    func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String
     func unload() async
 }
 
@@ -184,33 +189,41 @@ actor LocalInference: LocalInferenceEngine {
         throw FrogError.message("Built-in local models require Apple silicon.")
         #endif
     }
-    func transcribe(_ samples: [Float], id: String, url: URL, language: String?) async throws -> String {
+    func transcribe(_ samples: [Float], id: String, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
         try Task.checkCancellation()
         if speechID != id {
             await speech?.unloadModels(); speech = nil; speechID = nil
+            await residency(loadedIDs)
+            try Task.checkCancellation()
             // WhisperKit's cache base contains its model and tokenizer snapshots.
             var base = url
             while base.lastPathComponent != id && base.path != "/" { base.deleteLastPathComponent() }
             speech = try await WhisperKit(WhisperKitConfig(modelFolder: url.path, tokenizerFolder: base, verbose: false, logLevel: .none, prewarm: false, load: true, download: false))
             speechID = id
+            await residency(loadedIDs)
         }
         try Task.checkCancellation()
         let results = try await speech!.transcribe(audioArray: samples, decodeOptions: DecodingOptions(verbose: false, language: language, detectLanguage: language == nil, skipSpecialTokens: true, withoutTimestamps: true))
         try Task.checkCancellation()
         return results.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    func complete(_ text: String, instructions: String, id: String, url: URL) async throws -> String {
+    func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
         #if arch(arm64)
         try Task.checkCancellation()
         if textID != id {
             textModel = nil; textID = nil
+            await residency(loadedIDs)
+            try Task.checkCancellation()
             textModel = try await LLMModelFactory.shared.loadContainer(configuration: ModelConfiguration(directory: url))
             textID = id
+            await residency(loadedIDs)
         }
+        try Task.checkCancellation()
         let input = try await textModel!.prepare(input: UserInput(prompt: .chat([
             .system(instructions),
             .user(text)
         ]), additionalContext: ["enable_thinking": false]))
+        try Task.checkCancellation()
         let stream = try await textModel!.generate(input: input, parameters: GenerateParameters(maxTokens: 2048, temperature: 0.1))
         var output = ""
         for await generation in stream {

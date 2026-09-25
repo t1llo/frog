@@ -119,6 +119,13 @@ actor WindowCatalog {
         return Snapshot(windows: windows, current: current)
     }
 
+    func bringApplicationForward(id: UUID) -> Bool {
+        guard !Task.isCancelled, AXIsProcessTrusted(), let target = targets.first(where: { $0.id == id }) else { return false }
+        let app = AXUIElementCreateApplication(target.pid)
+        AXUIElementSetMessagingTimeout(app, 0.1)
+        return AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue) == .success
+    }
+
     func raise(id: UUID) -> Bool {
         guard !Task.isCancelled, AXIsProcessTrusted(), let target = targets.first(where: { $0.id == id }) else { return false }
         var pid: pid_t = 0

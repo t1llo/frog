@@ -36,6 +36,7 @@ final class WindowSwitcherController {
     private var discovery: Task<Void, Never>?
     private var activation: Task<Void, Never>?
     private var activationID: UUID?
+    private var activationPID: pid_t?
     private var eventEpoch = UUID()
     private var focusMonitor: Task<Void, Never>?
     private var workspaceObserver: NSObjectProtocol?
@@ -71,7 +72,15 @@ final class WindowSwitcherController {
         statusChanged("Ready · ⌘Tab switches windows", true)
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
-        ) { [weak self] _ in MainActor.assumeIsolated { self?.cancelAll() } }
+        ) { [weak self] notification in MainActor.assumeIsolated {
+            guard let self else { return }
+            if self.activation != nil, let target = self.activationPID,
+               let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+               app.processIdentifier != target {
+                self.activation?.cancel(); self.activation = nil; self.activationPID = nil
+            }
+            self.cancelAll()
+        } }
         focusMonitor = Task { [weak self] in
             var nextRefresh = ContinuousClock.now
             while !Task.isCancelled {
@@ -99,6 +108,7 @@ final class WindowSwitcherController {
         eventEpoch = UUID()
         activation?.cancel(); activation = nil
         activationID = nil
+        activationPID = nil
         cancelAll()
         router.reset()
         focusMonitor?.cancel(); focusMonitor = nil
@@ -264,24 +274,21 @@ final class WindowSwitcherController {
         guard let selected else { return }
         let activationToken = UUID()
         activationID = activationToken
+        activationPID = selected.pid
         activation = Task { [weak self, catalog] in
             defer {
-                if self?.activationID == activationToken { self?.activation = nil; self?.activationID = nil }
+                if self?.activationID == activationToken { self?.activation = nil; self?.activationID = nil; self?.activationPID = nil }
             }
             guard !Task.isCancelled else { return }
             guard let app = NSRunningApplication(processIdentifier: selected.pid), !app.isTerminated else {
                 self?.onError?("That window closed. Press ⌘Tab to refresh the list."); return
             }
             _ = app.unhide()
-            guard await catalog.raise(id: selected.id) else {
+            let activated = await WindowActivation.perform(raise: { await catalog.raise(id: selected.id) }, request: { app.activate(options: []) }, bringForward: { await catalog.bringApplicationForward(id: selected.id) }, isFrontmost: { NSWorkspace.shared.frontmostApplication?.processIdentifier == selected.pid })
+            guard activated else {
                 guard !Task.isCancelled else { return }
-                self?.onError?("The selected window could not be raised. It may have closed or become unavailable."); return
+                self?.onError?("macOS could not bring the selected window to the front. It may have closed or become unavailable."); return
             }
-            guard !Task.isCancelled else { return }
-            guard app.activate(options: []) else {
-                self?.onError?("macOS could not activate the selected application."); return
-            }
-            _ = await catalog.raise(id: selected.id)
             if !Task.isCancelled { self?.cache.noteFocused(selected.id) }
         }
     }

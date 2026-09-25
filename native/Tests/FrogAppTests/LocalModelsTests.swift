@@ -4,6 +4,23 @@ import FrogCore
 
 @MainActor
 final class LocalModelsTests: XCTestCase {
+    func testResidencyIsVisibleDuringInferenceAndSurvivesInferenceFailure() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let gate = DownloadGate()
+        let models = LocalModels(directory: directory, runtime: FixtureInference(gate: gate, fail: true), downloader: Self.fixtureDownload)
+        let descriptor = LocalModelDescriptor.find("qwen-0.6b")!
+        models.download(descriptor); await models.waitForDownload(descriptor.id)
+        let request = Task { try await models.complete("hello", instructions: "Correct", modelID: descriptor.id) }
+        await gate.waitUntilStarted()
+        XCTAssertTrue(models.busy)
+        XCTAssertEqual(models.loaded, [descriptor.id])
+        await gate.resume()
+        do { _ = try await request.value; XCTFail("Fixture should fail") } catch {}
+        XCTAssertEqual(models.loaded, [descriptor.id])
+        await models.unload()
+        XCTAssertTrue(models.loaded.isEmpty)
+    }
     func testChangingStoragePreservesOldDownloadsAndPersistsNewLocation() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -102,11 +119,19 @@ final class LocalModelsTests: XCTestCase {
 }
 
 private actor FixtureInference: LocalInferenceEngine {
+    let gate: DownloadGate?
+    let fail: Bool
+    init(gate: DownloadGate? = nil, fail: Bool = false) { self.gate = gate; self.fail = fail }
     var loadedIDs = Set<String>()
     var unloads = 0
     var calls = 0
-    func transcribe(_ samples: [Float], id: String, url: URL, language: String?) async throws -> String { loadedIDs.insert(id); calls += 1; return "hello" }
-    func complete(_ text: String, instructions: String, id: String, url: URL) async throws -> String { loadedIDs.insert(id); calls += 1; return text }
+    func transcribe(_ samples: [Float], id: String, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String { loadedIDs.insert(id); calls += 1; await residency(loadedIDs); return "hello" }
+    func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
+        loadedIDs.insert(id); calls += 1; await residency(loadedIDs)
+        if let gate { await gate.wait() }
+        if fail { throw FrogError.message("Fixture inference failure") }
+        return text
+    }
     func unload() { loadedIDs = []; unloads += 1 }
 }
 
