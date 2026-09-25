@@ -8,7 +8,7 @@ struct ProvidersView: View {
 
     var body: some View {
         PageScroll {
-            PageHeader(title: "Choose your intelligence.", subtitle: "Cloud or local. Your models, your keys, your choice.") {
+            PageHeader(title: "Providers", subtitle: "Connect a model and choose your writing defaults.") {
                 Button { editing = ProviderConfiguration() } label: { Label("Add provider", systemImage: "plus") }
                     .buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut("n", modifiers: .command)
             }

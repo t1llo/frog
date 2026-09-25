@@ -15,6 +15,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var startAtLogin = false
     @Published private(set) var accessibilityGranted = false
     @Published private(set) var loginStatus = ""
+    @Published private(set) var windowSwitcherStatus = "Not started"
+    @Published private(set) var windowSwitcherReady = false
 
     var openSettings: (() -> Void)?
     private let configurationStore: ConfigurationStore
@@ -27,6 +29,15 @@ final class AppModel: ObservableObject {
     private let registerShortcuts: Bool
     private let readAccessibility: () -> Bool
     private let hotkeys = HotkeyManager()
+    private lazy var windowSwitcher: WindowSwitcherController = {
+        let controller = WindowSwitcherController { [weak self] message, ready in
+            if self?.windowSwitcherStatus != message { self?.windowSwitcherStatus = message }
+            if self?.windowSwitcherReady != ready { self?.windowSwitcherReady = ready }
+        }
+        controller.onError = { [weak self] message in self?.report(FrogError.message(message)) }
+        return controller
+    }()
+    private var started = false
     private let captureSelection: () async throws -> any CapturedTextSelection
     private let processingIndicator = ProcessingIndicator()
     private var processingTask: Task<Void, Never>?
@@ -58,11 +69,15 @@ final class AppModel: ObservableObject {
     }
 
     func start() {
+        started = true
         registerHotkeys()
+        configureWindowSwitcher()
         if configuration.providers.isEmpty { status = "Add a provider in Settings to get started." }
     }
 
     func shutdown() {
+        started = false
+        if registerShortcuts { windowSwitcher.stop() }
         processingIndicator.hide()
         processingTask?.cancel()
         hotkeys.unregister()
@@ -77,6 +92,7 @@ final class AppModel: ObservableObject {
         if accessibilityGranted != trusted { accessibilityGranted = trusted }
         if startAtLogin != loginEnabled { startAtLogin = loginEnabled }
         if loginStatus != loginText { loginStatus = loginText }
+        if started { configureWindowSwitcher() }
     }
 
     func monitorSystemStatus() async {
@@ -127,6 +143,7 @@ final class AppModel: ObservableObject {
         else { candidate.rules.append(rule) }
         try persist(candidate)
         registerHotkeys()
+        configureWindowSwitcher()
     }
 
     func deleteRule(id: UUID) throws {
@@ -134,6 +151,7 @@ final class AppModel: ObservableObject {
         candidate.rules.removeAll { $0.id == id }
         try persist(candidate)
         registerHotkeys()
+        configureWindowSwitcher()
     }
 
     func hasAPIKey(_ id: UUID) -> Bool { ((try? keychain.read(providerID: id)) ?? "").isEmpty == false }
@@ -212,6 +230,7 @@ final class AppModel: ObservableObject {
         try persist(candidate)
         if !preferences.historyEnabled { historyEpoch = UUID() }
         if !preferences.showProcessingIndicator { processingIndicator.hide() }
+        configureWindowSwitcher()
         refreshHistory()
     }
 
@@ -258,6 +277,7 @@ final class AppModel: ObservableObject {
         errorMessage = nil
         historyEpoch = UUID()
         registerHotkeys()
+        configureWindowSwitcher()
         refreshHistory()
         status = "Configuration imported. Check provider credentials and shortcut status."
     }
@@ -266,6 +286,25 @@ final class AppModel: ObservableObject {
         isRecordingShortcut = recording
         if recording { hotkeys.unregister() }
         else { registerHotkeys() }
+        configureWindowSwitcher()
+    }
+
+    private func configureWindowSwitcher() {
+        guard started, registerShortcuts else { return }
+        // Preserve any existing rule that owns Command–Tab instead of silently
+        // intercepting it. The user can reassign that rule to enable switching.
+        let conflict = configuration.rules.contains { rule in
+            guard rule.enabled, let hotkey = rule.hotkey else { return false }
+            return hotkey.keyCode == 48 && (hotkey.modifiers == 256 || hotkey.modifiers == 768)
+        }
+        if configuration.preferences.windowSwitcherEnabled && conflict {
+            windowSwitcher.stop()
+            let message = "A writing rule uses ⌘Tab — change its shortcut to enable window switching"
+            if windowSwitcherStatus != message { windowSwitcherStatus = message }
+            if windowSwitcherReady { windowSwitcherReady = false }
+            return
+        }
+        windowSwitcher.configure(enabled: configuration.preferences.windowSwitcherEnabled, suspended: isRecordingShortcut)
     }
 
     private func registerHotkeys() {

@@ -8,12 +8,11 @@ struct RulesView: View {
 
     var body: some View {
         PageScroll {
-            PageHeader(title: "A shortcut to better words.", subtitle: "Your writing rules, ready wherever you type.") {
+            PageHeader(title: "Writing rules", subtitle: "Select text in any supported app, then press a rule’s shortcut.") {
                 Button { editing = Rule() } label: { Label("New rule", systemImage: "plus") }
                     .buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut("n", modifiers: .command)
             }
-            SectionCaption(text: "Your rules")
-            LazyVStack(spacing: 12) {
+            LazyVStack(spacing: 8) {
                 ForEach(model.configuration.rules) { rule in ruleCard(rule) }
                 if model.configuration.rules.isEmpty {
                     FrogCard {
@@ -36,36 +35,26 @@ struct RulesView: View {
         let provider = model.configuration.providers.first { $0.id == (rule.providerID ?? model.configuration.defaultProviderID) }
         let modelName = rule.model.isEmpty ? provider?.model : rule.model
         return FrogCard {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top, spacing: 14) {
-                    SymbolTile(symbol: rule.targetLanguage.isEmpty ? "text.badge.checkmark" : "character.bubble")
-                    VStack(alignment: .leading, spacing: 7) {
-                        HStack(spacing: 8) {
-                            Text(rule.name).font(.system(size: 15, weight: .semibold))
-                            if rule.preset { FrogBadge(text: "Preset") }
-                        }
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(rule.name).font(.system(size: 13, weight: .semibold))
                         Text(rule.targetLanguage.isEmpty ? rule.instructions : rule.instructions.replacingOccurrences(of: "{{language}}", with: rule.targetLanguage))
-                            .font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
-                            .lineSpacing(3).lineLimit(2)
+                            .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                        Text([provider?.name ?? "No provider", modelName.map { provider?.modelName($0) ?? $0 }].compactMap { $0 }.joined(separator: " · "))
+                            .font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
                     }.frame(maxWidth: .infinity, alignment: .leading)
+                    ShortcutBadge(text: rule.hotkey.map(HotkeyManager.display) ?? "No shortcut")
                     Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { enabled in
                         var updated = rule; updated.enabled = enabled
                         do { try model.saveRule(updated) } catch { model.report(error) }
                     })).toggleStyle(.switch).labelsHidden().controlSize(.small)
                         .help(rule.enabled ? "Rule enabled" : "Rule disabled")
-                }
-                HStack(spacing: 8) {
-                    ShortcutBadge(text: rule.hotkey.map(HotkeyManager.display) ?? "No shortcut")
-                    Text(provider?.name ?? "No provider")
-                        .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                    if let modelName {
-                        Text("·").foregroundStyle(FrogStyle.muted)
-                        Text(provider?.modelName(modelName) ?? modelName).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                    HStack(spacing: 4) {
+                        IconAction(title: "Edit \(rule.name)", symbol: "pencil") { editing = rule }
+                        IconAction(title: "Duplicate \(rule.name)", symbol: "doc.on.doc") { duplicate(rule) }
+                        IconAction(title: "Delete \(rule.name)", symbol: "trash", destructive: true) { deleting = rule }
                     }
-                    Spacer(minLength: 4)
-                    IconAction(title: "Edit \(rule.name)", symbol: "pencil") { editing = rule }
-                    IconAction(title: "Duplicate \(rule.name)", symbol: "doc.on.doc") { duplicate(rule) }
-                    IconAction(title: "Delete \(rule.name)", symbol: "trash", destructive: true) { deleting = rule }
                 }
                 if let error = model.hotkeyErrors[rule.id] { InlineIssue(message: error) }
             }
@@ -114,7 +103,7 @@ private struct RuleEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            EditorHeading(title: rule.preset ? "Make it your own." : "A little writing magic.", subtitle: "Give your rule a name, a direction, and a shortcut.")
+            EditorHeading(title: "Rule settings", subtitle: "Choose instructions, a model, and a shortcut.")
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     FrogCard {

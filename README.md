@@ -1,6 +1,6 @@
 # Frog
 
-A small macOS writing assistant that lives in your menu bar. Select some text, press a shortcut, and get it proofread, translated, or rewritten in place.
+A small macOS menu-bar utility for writing and window switching. Rewrite selected text in place, or use Command–Tab to switch directly between individual windows.
 
 **[Download](https://github.com/t1llo/frog/releases)** · macOS 14+ · Apple silicon and Intel
 
@@ -17,6 +17,7 @@ A small macOS writing assistant that lives in your menu bar. Select some text, p
 - Configure your models once, choose a default, and pick model overrides for individual rules.
 - Export and import your setup as an editable JSON file.
 - Keep an optional local history. It’s off by default.
+- Switch between individual windows with **Command–Tab**, including minimized windows and multiple windows from the same app.
 
 No Frog account, analytics, or telemetry. Bring your own API key, or use a local model.
 
@@ -24,9 +25,9 @@ No Frog account, analytics, or telemetry. Bring your own API key, or use a local
 
 1. Download **Frog-macOS.zip** from [Releases](https://github.com/t1llo/frog/releases), unzip it, and move **Frog.app** to **Applications**.
 2. Open Frog, add a provider, and select its models. For Ollama or LM Studio, start the local server and click **Find installed models**. [Provider setup](docs/providers.md).
-3. Allow Frog in **System Settings → Privacy & Security → Accessibility** to work with text in other apps.
+3. Allow Frog in **System Settings → Privacy & Security → Accessibility** for writing shortcuts and window switching.
 
-Preview builds aren’t notarized yet. If macOS blocks a downloaded build, use **Open Anyway** in Privacy & Security after trying to open it. You can also [build from source](#build-from-source).
+Published build 6 is Developer ID signed and notarized by Apple. The new window switcher is in the source/build 7 update; check the release notes for the build available to download. You can also [build from source](#build-from-source).
 
 ## Use it
 
@@ -35,6 +36,12 @@ Select text in an editable field, then press **Control + Shift + C** to proofrea
 Frog sends the selected text and your rule to the provider you chose, copies the result, and replaces the selection. If you move to another field or the app can’t safely edit it, the result stays on your clipboard. **Try text** works inside Frog without Accessibility permission.
 
 Closing the window keeps Frog in the menu bar. Enable **Start at login** in Settings if you want it available after a restart.
+
+### Window switcher
+
+Hold **Command** and tap **Tab** to cycle individual windows. Add **Shift** to go backwards, use the arrow keys to navigate, and release **Command** to bring the selected window forward. **Escape** cancels; clicking a row switches directly.
+
+The list shows titles and app icons, with recently used windows first. Minimized windows and windows in hidden apps are included. Other Spaces are included when the app exposes those windows through Accessibility. No screen recording or cloud connection is needed. Turn the feature off in **Windows** or Frog’s menu to restore the macOS app switcher. If a writing rule already uses Command–Tab, Frog preserves that rule and reports the conflict.
 
 ## Your settings and data
 

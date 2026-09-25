@@ -24,7 +24,7 @@ struct ManualView: View {
 
     var body: some View {
         PageScroll {
-            PageHeader(title: "Room to play with words.", subtitle: "Drop in a draft. Pick a rule. See what happens.") {
+            PageHeader(title: "Try text", subtitle: "Paste a draft, choose a rule, and review the result.") {
                 if model.isProcessing {
                     Button("Cancel request") { model.cancelProcessing() }
                 } else {

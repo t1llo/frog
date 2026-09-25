@@ -6,7 +6,9 @@ final class ConfigurationFileTests: XCTestCase {
         let legacy = Data(#"{"historyEnabled":false,"historyLimit":200,"historyRetentionDays":30}"#.utf8)
         var preferences = try JSONDecoder().decode(Preferences.self, from: legacy)
         XCTAssertTrue(preferences.showProcessingIndicator)
+        XCTAssertTrue(preferences.windowSwitcherEnabled)
         preferences.showProcessingIndicator = false
+        preferences.windowSwitcherEnabled = false
         XCTAssertEqual(try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(preferences)), preferences)
     }
     private func configured() -> Configuration {

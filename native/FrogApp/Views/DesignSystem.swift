@@ -31,7 +31,7 @@ struct FrogButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .semibold))
-            .padding(.horizontal, 14).padding(.vertical, 10)
+            .padding(.horizontal, 12).padding(.vertical, 8)
             .foregroundStyle(primary ? FrogStyle.onAccent : FrogStyle.ink)
             .background(primary ? FrogStyle.accent : FrogStyle.surface, in: RoundedRectangle(cornerRadius: 9))
             .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(primary ? .clear : FrogStyle.border, lineWidth: 1))
@@ -41,14 +41,14 @@ struct FrogButtonStyle: ButtonStyle {
 }
 
 struct FrogCard<Content: View>: View {
-    var padding: CGFloat = 20
+    var padding: CGFloat = 16
     @ViewBuilder var content: Content
     @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         content.padding(padding).frame(maxWidth: .infinity, alignment: .leading)
-            .background(FrogStyle.surface, in: RoundedRectangle(cornerRadius: 16))
-            .overlay(RoundedRectangle(cornerRadius: 16)
+            .background(FrogStyle.surface, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(contrast == .increased ? FrogStyle.muted : FrogStyle.border, lineWidth: 1))
     }
 }
@@ -60,8 +60,8 @@ struct PageHeader<Actions: View>: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 20) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(title).font(.system(size: 29, weight: .bold, design: .rounded)).tracking(-0.6)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title).font(.system(size: 24, weight: .semibold)).tracking(-0.4)
                     .foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
                 Text(subtitle).font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
                     .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
@@ -81,8 +81,8 @@ struct PageScroll<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) { content }
-                .padding(32).frame(maxWidth: 1080)
+            VStack(alignment: .leading, spacing: 20) { content }
+                .padding(24).frame(maxWidth: 1080)
                 .frame(maxWidth: .infinity, alignment: .top)
         }.background(FrogStyle.canvas)
     }

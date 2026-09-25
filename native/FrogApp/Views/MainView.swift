@@ -8,7 +8,7 @@ struct MainView: View {
     @State private var section: Section = .rules
 
     private enum Section: String, CaseIterable, Identifiable {
-        case rules = "Rules", providers = "Providers", manual = "Try text", history = "History", settings = "Settings"
+        case rules = "Rules", providers = "Providers", manual = "Try text", history = "History", windows = "Windows", settings = "Settings"
         var id: String { rawValue }
         var symbol: String {
             switch self {
@@ -16,6 +16,7 @@ struct MainView: View {
             case .providers: "cpu"
             case .manual: "square.and.pencil"
             case .history: "clock.arrow.circlepath"
+            case .windows: "macwindow.on.rectangle"
             case .settings: "slider.horizontal.3"
             }
         }
@@ -25,6 +26,7 @@ struct MainView: View {
             case .providers: "2"
             case .manual: "3"
             case .history: "4"
+            case .windows: "6"
             case .settings: "5"
             }
         }
@@ -32,7 +34,7 @@ struct MainView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar.frame(width: 208)
+            sidebar.frame(width: 188)
             Rectangle().fill(FrogStyle.border).frame(width: 1)
             VStack(spacing: 0) {
                 Group {
@@ -41,6 +43,7 @@ struct MainView: View {
                     case .providers: ProvidersView()
                     case .manual: ManualView()
                     case .history: HistoryView()
+                    case .windows: WindowSwitcherSettingsView()
                     case .settings: PreferencesView()
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -67,24 +70,19 @@ struct MainView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 11) {
                 FrogMark()
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("frog").font(.system(size: 26, weight: .bold, design: .rounded)).tracking(-1)
-                    Text("A little writing magic").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                }
-            }.padding(.horizontal, 22).padding(.top, 28).padding(.bottom, 36)
+                Text("frog").font(.system(size: 24, weight: .semibold, design: .rounded)).tracking(-0.8)
+            }.padding(.horizontal, 20).padding(.top, 24).padding(.bottom, 28)
 
-            SectionCaption(text: "Workspace").padding(.horizontal, 25).padding(.bottom, 12)
-            VStack(spacing: 5) {
+            VStack(spacing: 4) {
                 ForEach(Section.allCases) { item in
                     Button { section = item } label: {
                         HStack(spacing: 12) {
                             Image(systemName: item.symbol).font(.system(size: 15, weight: .medium)).frame(width: 20)
                             Text(item.rawValue).font(.system(size: 13, weight: section == item ? .semibold : .medium))
                             Spacer()
-                            if section == item { Circle().fill(FrogStyle.accent).frame(width: 5, height: 5) }
                         }
                         .foregroundStyle(section == item ? FrogStyle.accent : FrogStyle.muted)
-                        .padding(.horizontal, 13).padding(.vertical, 12)
+                        .padding(.horizontal, 12).padding(.vertical, 10)
                         .background(section == item ? FrogStyle.accentSoft : .clear, in: RoundedRectangle(cornerRadius: 10))
                         .contentShape(RoundedRectangle(cornerRadius: 10))
                     }.buttonStyle(.plain).keyboardShortcut(item.key, modifiers: .command)
@@ -96,9 +94,9 @@ struct MainView: View {
             if model.configuration.providers.isEmpty || !model.accessibilityGranted {
                 VStack(alignment: .leading, spacing: 10) {
                     Image(systemName: "sparkles").foregroundStyle(FrogStyle.accent)
-                    Text(model.configuration.providers.isEmpty ? "Make yourself at home" : "One more little step")
+                    Text(model.configuration.providers.isEmpty ? "Connect a provider" : "Allow Accessibility")
                         .font(.system(size: 12, weight: .semibold))
-                    Text(model.configuration.providers.isEmpty ? "Connect a model to put your words to work." : "Allow Accessibility to rewrite text right where you type.")
+                    Text(model.configuration.providers.isEmpty ? "Choose a model for your writing rules." : "Required for writing shortcuts and window switching.")
                         .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
                     Button(model.configuration.providers.isEmpty ? "Connect a provider" : "Finish setup") {
                         section = model.configuration.providers.isEmpty ? .providers : .settings

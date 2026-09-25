@@ -20,6 +20,8 @@ Turning history off stops new records, including requests already in progress. E
 
 Accessibility is used to read the selection you invoke a rule on and to replace it in the original field. Frog validates focus and selection before editing; it doesn’t continuously record your typing.
 
+The window switcher uses Accessibility to list window titles, observe the recently focused window, and activate your chosen window. Titles, app identities and recent-window order stay in process memory; they are not written to history, logs or configuration and are never sent to a provider. A native keyboard event tap recognizes Command–Tab and switcher navigation keys; ordinary typing is passed through and is not recorded. Disabling the switcher removes that event tap. No screenshots or screen-recording permission are used.
+
 The optional floating processing indicator shows rule/status messages without taking focus. Turn it off in **Settings → Show processing indicator**. Compatibility replacement checks input-event counters, not keystroke contents, to reject changed targets.
 
 The archived Go/Wails prototype is not part of the native app. Legacy data in `~/.config/frog/`, if present, is neither imported nor removed automatically.

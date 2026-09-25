@@ -11,11 +11,11 @@ struct PreferencesView: View {
 
     var body: some View {
         PageScroll {
-            PageHeader(title: "Settle in.", subtitle: "A few small things to make Frog feel at home.")
-            SectionCaption(text: "Everyday essentials")
+            PageHeader(title: "Settings", subtitle: "Startup, permissions, and local data.")
+            SectionCaption(text: "General")
             FrogCard {
                 VStack(spacing: 20) {
-                    SettingRow(title: "Ready when you are", description: "Start Frog at login. It stays in your menu bar when the window closes.") {
+                    SettingRow(title: "Start at login", description: "Keep writing shortcuts and window switching available after you sign in.") {
                         Toggle("Start Frog at login", isOn: Binding(get: { model.startAtLogin }, set: { model.setStartAtLogin($0) }))
                             .toggleStyle(.switch).labelsHidden().controlSize(.small)
                     }
@@ -24,13 +24,13 @@ struct PreferencesView: View {
                         Spacer()
                     }
                     ruleDivider
-                    SettingRow(title: "Show processing indicator", description: "A small floating status appears during hotkey actions, without taking focus from your writing.") {
+                    SettingRow(title: "Brief processing indicator", description: "A translucent status flashes for one second when a writing action starts and finishes.") {
                         Toggle("Show processing indicator", isOn: preference(\.showProcessingIndicator))
                             .toggleStyle(.switch).labelsHidden().controlSize(.small)
                     }
                 }
             }
-            SectionCaption(text: "Your setup, to go")
+            SectionCaption(text: "Configuration")
             FrogCard {
                 VStack(alignment: .leading, spacing: 16) {
                     SettingRow(title: "Configuration files", description: "Back up your setup or move it to another Mac. Plain JSON, ready to edit or share.") {
@@ -45,7 +45,7 @@ struct PreferencesView: View {
                         .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
                 }
             }
-            SectionCaption(text: "A little memory")
+            SectionCaption(text: "History")
             FrogCard {
                 VStack(alignment: .leading, spacing: 20) {
                     SettingRow(title: "Keep a local history", description: "Save original text and results on this Mac. Off by default, always in your control.") {
@@ -62,7 +62,7 @@ struct PreferencesView: View {
                         .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
                 }
             }
-            SectionCaption(text: "Works with your Mac")
+            SectionCaption(text: "Permissions")
             FrogCard {
                 VStack(alignment: .leading, spacing: 20) {
                     HStack(alignment: .top, spacing: 14) {
@@ -73,7 +73,7 @@ struct PreferencesView: View {
                                 Spacer()
                                 FrogBadge(text: model.accessibilityGranted ? "Allowed" : "Needs access", active: model.accessibilityGranted)
                             }
-                            Text("Let Frog read and replace the selection in supported editable fields. Try text works without this permission.")
+                            Text("Used for selected-text replacement and window switching. Try text works without this permission.")
                                 .font(.system(size: 12)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
                         }
                     }
@@ -95,7 +95,7 @@ struct PreferencesView: View {
                     HStack(alignment: .top, spacing: 14) {
                         SymbolTile(symbol: "bell")
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("A quiet heads-up").font(.system(size: 14, weight: .semibold))
+                            Text("Notifications").font(.system(size: 14, weight: .semibold))
                             Text("Get notifications for background results and errors. Status is always available in Frog’s menu and window.")
                                 .font(.system(size: 12)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
                         }.frame(maxWidth: .infinity, alignment: .leading)
@@ -112,7 +112,7 @@ struct PreferencesView: View {
             }
             FrogCard {
                 VStack(alignment: .leading, spacing: 14) {
-                    Label("Small app. Thoughtful defaults.", systemImage: "leaf").font(.system(size: 14, weight: .semibold))
+                    Label("Privacy", systemImage: "lock.shield").font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(FrogStyle.accent)
                     Text("Results are copied to the clipboard. If your original selection changes or can’t be safely edited, you can paste the result yourself.")
                     Text("Cloud providers receive your selected text and rule instructions. Choose a local endpoint to process on your own server.")

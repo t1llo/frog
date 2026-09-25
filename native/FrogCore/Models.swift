@@ -141,15 +141,17 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var historyLimit = 200
     public var historyRetentionDays = 30
     public var showProcessingIndicator = true
+    public var windowSwitcherEnabled = true
     public init() {}
 
-    private enum CodingKeys: String, CodingKey { case historyEnabled, historyLimit, historyRetentionDays, showProcessingIndicator }
+    private enum CodingKeys: String, CodingKey { case historyEnabled, historyLimit, historyRetentionDays, showProcessingIndicator, windowSwitcherEnabled }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         historyEnabled = try values.decode(Bool.self, forKey: .historyEnabled)
         historyLimit = try values.decode(Int.self, forKey: .historyLimit)
         historyRetentionDays = try values.decode(Int.self, forKey: .historyRetentionDays)
         showProcessingIndicator = try values.decodeIfPresent(Bool.self, forKey: .showProcessingIndicator) ?? true
+        windowSwitcherEnabled = try values.decodeIfPresent(Bool.self, forKey: .windowSwitcherEnabled) ?? true
     }
 }
 

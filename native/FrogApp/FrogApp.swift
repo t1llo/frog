@@ -28,6 +28,15 @@ private struct FrogStatusMenu: View {
         if let error = model.errorMessage { Text(error).font(.caption) }
         if model.isProcessing { Button("Cancel Processing") { model.cancelProcessing() } }
         Divider()
+        Toggle("Window switcher (⌘Tab)", isOn: Binding(get: { model.configuration.preferences.windowSwitcherEnabled }, set: { enabled in
+            var preferences = model.configuration.preferences
+            preferences.windowSwitcherEnabled = enabled
+            do { try model.savePreferences(preferences) } catch { model.report(error) }
+        }))
+        if model.configuration.preferences.windowSwitcherEnabled && !model.windowSwitcherReady {
+            Text(model.windowSwitcherStatus).font(.caption)
+        }
+        Divider()
         Button("Open Frog…") { model.showSettings() }.keyboardShortcut(",")
         Divider()
         Button("Quit Frog") { model.shutdown(); NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
