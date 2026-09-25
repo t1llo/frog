@@ -8,9 +8,14 @@ let package = Package(
         .executable(name: "Frog", targets: ["FrogApp"]),
         .library(name: "FrogCore", targets: ["FrogCore"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/argmaxinc/WhisperKit.git", exact: "1.1.0"),
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", exact: "2.31.3"),
+        .package(url: "https://github.com/huggingface/swift-transformers", exact: "1.2.1")
+    ],
     targets: [
         .target(name: "FrogCore", path: "native/FrogCore"),
-        .executableTarget(name: "FrogApp", dependencies: ["FrogCore"], path: "native/FrogApp"),
+        .executableTarget(name: "FrogApp", dependencies: ["FrogCore", .product(name: "WhisperKit", package: "WhisperKit"), .product(name: "MLXLLM", package: "mlx-swift-lm"), .product(name: "MLXLMCommon", package: "mlx-swift-lm"), .product(name: "Hub", package: "swift-transformers")], path: "native/FrogApp"),
         .testTarget(name: "FrogCoreTests", dependencies: ["FrogCore"], path: "native/Tests/FrogCoreTests"),
         .testTarget(name: "FrogAppTests", dependencies: ["FrogApp", "FrogCore"], path: "native/Tests/FrogAppTests")
     ],

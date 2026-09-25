@@ -10,15 +10,18 @@ final class HotkeyManager {
     private var registrations: [EventHotKeyRef] = []
     private var rulesByID: [UInt32: UUID] = [:]
     private var onTrigger: ((UUID) -> Void)?
+    private var onPress: ((UUID) -> Void)?
+    private var pressed = Set<UUID>()
     private var generation: UInt64 = 0
 
-    func register(rules: [Rule], onTrigger: @escaping (UUID) -> Void) -> [UUID: String] {
+    func register(rules: [Rule], onPress: ((UUID) -> Void)? = nil, onTrigger: @escaping (UUID) -> Void) -> [UUID: String] {
         unregister()
         self.onTrigger = onTrigger
+        self.onPress = onPress
         let candidates = rules.filter { $0.enabled && $0.hotkey != nil }
         guard !candidates.isEmpty else { return [:] }
         var errors: [UUID: String] = [:]
-        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))
+        var eventTypes = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)), EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))]
         let callback: EventHandlerUPP = { _, event, context in
             guard let event, let context else { return OSStatus(eventNotHandledErr) }
             var hotkeyID = EventHotKeyID()
@@ -28,15 +31,18 @@ final class HotkeyManager {
             return MainActor.assumeIsolated {
                 let manager = Unmanaged<HotkeyManager>.fromOpaque(context).takeUnretainedValue()
                 guard let ruleID = manager.rulesByID[hotkeyID.id] else { return OSStatus(eventNotHandledErr) }
+                let down = GetEventKind(event) == UInt32(kEventHotKeyPressed)
+                if down && !manager.pressed.insert(ruleID).inserted { return noErr }
+                if !down { manager.pressed.remove(ruleID) }
                 let generation = manager.generation
                 Task { @MainActor [weak manager] in
                     guard let manager, manager.generation == generation else { return }
-                    manager.onTrigger?(ruleID)
+                    if down { manager.onPress?(ruleID) } else { manager.onTrigger?(ruleID) }
                 }
                 return noErr
             }
         }
-        let status = InstallEventHandler(GetApplicationEventTarget(), callback, 1, &eventType,
+        let status = InstallEventHandler(GetApplicationEventTarget(), callback, 2, &eventTypes,
                                          Unmanaged.passUnretained(self).toOpaque(), &handler)
         guard status == noErr else {
             for rule in candidates { errors[rule.id] = "Could not install the keyboard handler (\(status))." }
@@ -78,6 +84,7 @@ final class HotkeyManager {
         if let handler { RemoveEventHandler(handler) }
         handler = nil
         onTrigger = nil
+        onPress = nil; pressed = []
     }
 
     isolated deinit {

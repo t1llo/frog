@@ -26,6 +26,7 @@ final class WindowSwitcherController {
     private var workspaceObserver: NSObjectProtocol?
     private var pendingSteps: [Bool] = []
     private var commitOnLoad = false
+    private var unfilteredWindows: [SwitcherWindow] = []
 
     init(statusChanged: @escaping (String, Bool) -> Void) { self.statusChanged = statusChanged }
 
@@ -124,7 +125,8 @@ final class WindowSwitcherController {
         else {
             result = router.key(code: UInt16(event.getIntegerValueField(.keyboardEventKeycode)), down: type == .keyDown,
                 command: event.flags.contains(.maskCommand), shift: event.flags.contains(.maskShift),
-                otherModifiers: !event.flags.intersection([.maskControl, .maskAlternate]).isEmpty)
+                otherModifiers: !event.flags.intersection([.maskControl, .maskAlternate]).isEmpty,
+                text: NSEvent(cgEvent: event)?.charactersIgnoringModifiers ?? "")
         }
         if type == .keyDown && result.cancelsPendingActivation { activation?.cancel(); activation = nil }
         if let action = result.action, let sessionID = result.sessionID {
@@ -149,6 +151,12 @@ final class WindowSwitcherController {
             else { session.step(backwards: backwards); display.selected = session.selected }
         case .commit: commit()
         case .cancel: break
+        case .search(let text):
+            display.query += text
+            filterWindows()
+        case .deleteSearch:
+            if !display.query.isEmpty { display.query.removeLast() }
+            filterWindows()
         }
     }
 
@@ -159,6 +167,7 @@ final class WindowSwitcherController {
         generation = token
         pendingSteps = []; commitOnLoad = false
         session.reset()
+        display.query = ""; unfilteredWindows = []
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let cached = cache.readySnapshot(frontPID: front)
         presentation.begin(token, ready: cached != nil)
@@ -207,6 +216,7 @@ final class WindowSwitcherController {
     }
 
     private func apply(_ snapshot: WindowCatalog.Snapshot, backwards: Bool, token: UInt64) {
+        unfilteredWindows = snapshot.windows
         session.begin(windows: snapshot.windows.map(\.id), current: snapshot.current, backwards: backwards)
         for reverse in pendingSteps { session.step(backwards: reverse) }
         pendingSteps = []
@@ -214,9 +224,18 @@ final class WindowSwitcherController {
         display.selected = session.selected
         display.loading = false
         display.icons = iconCache
+        if !display.query.isEmpty { filterWindows() }
         presentation.loaded(token)
         if commitOnLoad { commit() }
         else { showPanelIfReady() }
+    }
+
+    private func filterWindows() {
+        guard !display.loading else { return }
+        let windows = WindowSearch.filter(unfilteredWindows, query: display.query)
+        display.windows = windows
+        session.begin(windows: windows.map(\.id), current: nil, backwards: false)
+        display.selected = session.selected
     }
 
     private func commit() {

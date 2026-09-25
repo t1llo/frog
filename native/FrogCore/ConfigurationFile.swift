@@ -48,7 +48,20 @@ public enum ConfigurationFile {
         }
         for provider in configuration.providers { try validate(provider: provider) }
         var shortcuts = Set<Hotkey>()
+        if let key = configuration.preferences.workflowSettings.shortcutPanelHotkey { shortcuts.insert(key) }
         for rule in configuration.rules {
+            if rule.category == .application {
+                guard let path = rule.action?.applicationPath, path.hasSuffix(".app"), path.hasPrefix("/"),
+                      rule.action?.applicationBundleID?.isEmpty == false else {
+                    throw FrogError.message("Choose an application for \(rule.name).")
+                }
+            }
+            if let id = rule.action?.audioModelID, LocalModelDescriptor.find(id)?.kind != .audio {
+                throw FrogError.message("Choose an available audio model.")
+            }
+            if let id = rule.action?.localTextModelID, LocalModelDescriptor.find(id)?.kind != .text {
+                throw FrogError.message("Choose an available local text model.")
+            }
             guard !rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   !rule.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   rule.instructions.utf8.count <= 100_000 else {
@@ -76,6 +89,13 @@ public enum ConfigurationFile {
             }
         }
         let preferences = configuration.preferences
+        let workflow = preferences.workflowSettings
+        guard LocalModelDescriptor.find(workflow.audioModelID)?.kind == .audio,
+              LocalModelDescriptor.find(workflow.cleanupModelID)?.kind == .text,
+              workflow.defaultLocalTextModelID == nil || LocalModelDescriptor.find(workflow.defaultLocalTextModelID!)?.kind == .text,
+              (0...3600).contains(workflow.idleUnloadSeconds) else {
+            throw FrogError.message("Choose valid default local models and an unload delay between 0 and 3600 seconds.")
+        }
         guard (1...200).contains(preferences.historyLimit), (1...30).contains(preferences.historyRetentionDays) else {
             throw FrogError.message("History must keep 1–200 entries for 1–30 days.")
         }

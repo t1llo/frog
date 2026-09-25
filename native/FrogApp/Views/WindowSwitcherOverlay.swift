@@ -6,6 +6,7 @@ final class WindowSwitcherDisplay: ObservableObject {
     @Published var windows: [SwitcherWindow] = []
     @Published var selected: UUID?
     @Published var loading = false
+    @Published var query = ""
     @Published var icons: [pid_t: NSImage] = [:]
 }
 
@@ -15,19 +16,15 @@ struct WindowSwitcherOverlay: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Image(systemName: "macwindow.on.rectangle").foregroundStyle(FrogStyle.accent)
-                Text("Windows").font(.system(size: 15, weight: .semibold))
-                Spacer()
-                Text("\(model.windows.count)").font(.system(size: 12)).foregroundStyle(.secondary)
-            }.padding(18)
-            Divider()
+            if !model.query.isEmpty {
+                HStack { Image(systemName: "magnifyingglass"); Text(model.query); Spacer() }
+                    .font(.system(size: 12)).padding(.horizontal, 16).padding(.vertical, 8)
+            }
             if model.loading {
                 Spacer(); ProgressView("Finding windows…").controlSize(.small); Spacer()
             } else if model.windows.isEmpty {
                 Spacer()
-                Text("No accessible windows").font(.system(size: 14, weight: .medium))
-                Text("Open a window, then try again.").font(.system(size: 12)).foregroundStyle(.secondary).padding(.top, 6)
+                Text(model.query.isEmpty ? "No accessible windows" : "No matching windows").font(.system(size: 14, weight: .medium))
                 Spacer()
             } else {
                 ScrollViewReader { proxy in
@@ -37,8 +34,8 @@ struct WindowSwitcherOverlay: View {
                                 Button { choose(window.id) } label: {
                                     HStack(spacing: 12) {
                                         if let icon = model.icons[window.pid] {
-                                            Image(nsImage: icon).resizable().frame(width: 30, height: 30)
-                                        } else { Image(systemName: "app").frame(width: 30, height: 30) }
+                                            Image(nsImage: icon).resizable().frame(width: 24, height: 24)
+                                        } else { Image(systemName: "app").frame(width: 24, height: 24) }
                                         VStack(alignment: .leading, spacing: 3) {
                                             Text(window.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
                                             Text(window.appName).font(.system(size: 11)).foregroundStyle(.secondary)
@@ -47,7 +44,7 @@ struct WindowSwitcherOverlay: View {
                                             Text(window.minimized ? "Minimized" : "Hidden").font(.system(size: 10)).foregroundStyle(.secondary)
                                         }
                                         if model.selected == window.id { Image(systemName: "return").font(.system(size: 12)).foregroundStyle(FrogStyle.accent) }
-                                    }.padding(.horizontal, 12).padding(.vertical, 10)
+                                    }.padding(.horizontal, 10).padding(.vertical, 6)
                                         .background(model.selected == window.id ? FrogStyle.accentSoft : .clear, in: RoundedRectangle(cornerRadius: 9))
                                         .contentShape(Rectangle())
                                 }.buttonStyle(.plain).id(window.id)
@@ -64,6 +61,7 @@ struct WindowSwitcherOverlay: View {
                 Text("⇥ Next")
                 Text("⇧⇥ Previous")
                 Text("esc Cancel")
+                Text("Type to search")
                 Spacer()
                 Text("Release ⌘ to switch")
             }.font(.system(size: 10)).foregroundStyle(.secondary).padding(14)

@@ -111,6 +111,7 @@ public struct Hotkey: Codable, Equatable, Hashable, Sendable {
 }
 
 public struct Rule: Codable, Identifiable, Equatable, Sendable {
+    public var action: RuleAction?
     public var id: UUID
     public var name: String
     public var instructions: String
@@ -142,9 +143,11 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var historyRetentionDays = 30
     public var showProcessingIndicator = true
     public var windowSwitcherEnabled = true
+    public var workflows: WorkflowPreferences?
+    public var workflowSettings: WorkflowPreferences { workflows ?? WorkflowPreferences() }
     public init() {}
 
-    private enum CodingKeys: String, CodingKey { case historyEnabled, historyLimit, historyRetentionDays, showProcessingIndicator, windowSwitcherEnabled }
+    private enum CodingKeys: String, CodingKey { case historyEnabled, historyLimit, historyRetentionDays, showProcessingIndicator, windowSwitcherEnabled, workflows }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         historyEnabled = try values.decode(Bool.self, forKey: .historyEnabled)
@@ -152,6 +155,7 @@ public struct Preferences: Codable, Equatable, Sendable {
         historyRetentionDays = try values.decode(Int.self, forKey: .historyRetentionDays)
         showProcessingIndicator = try values.decodeIfPresent(Bool.self, forKey: .showProcessingIndicator) ?? true
         windowSwitcherEnabled = try values.decodeIfPresent(Bool.self, forKey: .windowSwitcherEnabled) ?? true
+        workflows = try values.decodeIfPresent(WorkflowPreferences.self, forKey: .workflows)
     }
 }
 
@@ -185,6 +189,7 @@ public struct Configuration: Codable, Equatable, Sendable {
 }
 
 public struct HistoryEntry: Codable, Identifiable, Equatable, Sendable {
+    public var category: RuleCategory?
     public var id: UUID
     public var timestamp: Date
     public var originalText: String

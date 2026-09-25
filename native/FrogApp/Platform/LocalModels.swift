@@ -1,0 +1,183 @@
+import Foundation
+import Combine
+import FrogCore
+import WhisperKit
+#if arch(arm64)
+import MLXLLM
+import MLXLMCommon
+import Hub
+#endif
+
+/// Download ownership, installed paths and model residency stay behind one service.
+@MainActor
+final class LocalModels: ObservableObject {
+    static var supported: Bool {
+        #if arch(arm64)
+        true
+        #else
+        false
+        #endif
+    }
+    @Published private(set) var installed = Set<String>()
+    @Published private(set) var progress: [String: Double] = [:]
+    @Published private(set) var errors: [String: String] = [:]
+    @Published private(set) var loaded = Set<String>()
+    @Published private(set) var busy = false
+    private let root: URL
+    private var downloads: [String: Task<Void, Never>] = [:]
+    private let runtime = LocalInference()
+    private var unloadTask: Task<Void, Never>?
+    var idleSeconds = 120
+
+    init(directory: URL? = nil) {
+        root = (directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Frog")) .appendingPathComponent("Models", isDirectory: true)
+        for model in LocalModelDescriptor.catalog where modelURL(model.id) != nil { installed.insert(model.id) }
+    }
+    private func directory(_ id: String) -> URL { root.appendingPathComponent(id, isDirectory: true) }
+    private func modelURL(_ id: String) -> URL? {
+        let base = directory(id)
+        guard let relative = try? String(contentsOf: base.appendingPathComponent("installed.txt"), encoding: .utf8),
+              !relative.hasPrefix("/"), !relative.split(separator: "/").contains("..") else { return nil }
+        let url = base.appendingPathComponent(relative)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+    func download(_ model: LocalModelDescriptor) {
+        guard Self.supported, downloads[model.id] == nil, !installed.contains(model.id) else { return }
+        errors[model.id] = nil; progress[model.id] = 0
+        let base = directory(model.id)
+        downloads[model.id] = Task { [weak self] in
+            defer { self?.downloads[model.id] = nil; self?.progress[model.id] = nil }
+            do {
+                try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+                let url = try await LocalInference.download(model, base: base) { fraction in
+                    Task { @MainActor [weak self] in self?.progress[model.id] = fraction }
+                }
+                try Task.checkCancellation()
+                guard url.path.hasPrefix(base.path + "/") else { throw FrogError.message("Invalid model installation path.") }
+                let relative = String(url.path.dropFirst(base.path.count + 1))
+                try relative.write(to: base.appendingPathComponent("installed.txt"), atomically: true, encoding: .utf8)
+                self?.installed.insert(model.id)
+            } catch {
+                if !Task.isCancelled { self?.errors[model.id] = error.localizedDescription }
+            }
+        }
+    }
+    func cancelDownload(_ id: String) { downloads[id]?.cancel() }
+    func remove(_ id: String) async throws {
+        guard !busy, downloads[id] == nil else { throw FrogError.message("Wait for the model operation to finish before deleting it.") }
+        await unload()
+        try FileManager.default.removeItem(at: directory(id))
+        installed.remove(id); errors[id] = nil
+    }
+    func unload() async {
+        guard !busy else { return }
+        unloadTask?.cancel(); unloadTask = nil
+        await runtime.unload(); loaded = []
+    }
+    private func acquire(_ id: String) throws -> URL {
+        guard Self.supported else { throw FrogError.message("Built-in local models require Apple silicon.") }
+        guard !busy else { throw FrogError.message("A local model is already processing.") }
+        guard let url = modelURL(id) else { throw FrogError.message("Download \(LocalModelDescriptor.find(id)?.name ?? id) in Providers first.") }
+        busy = true; unloadTask?.cancel(); return url
+    }
+    private func release() {
+        busy = false
+        let delay = idleSeconds
+        unloadTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            await self?.unload()
+        }
+    }
+    func transcribe(_ samples: [Float], modelID: String) async throws -> String {
+        let url = try acquire(modelID); defer { release() }
+        let result = try await runtime.transcribe(samples, id: modelID, url: url)
+        loaded = await runtime.loadedIDs
+        return result
+    }
+    func complete(_ text: String, instructions: String, modelID: String) async throws -> String {
+        let url = try acquire(modelID); defer { release() }
+        let result = try await runtime.complete(text, instructions: instructions, id: modelID, url: url)
+        loaded = await runtime.loadedIDs
+        return result
+    }
+    func shutdown() {
+        downloads.values.forEach { $0.cancel() }
+        unloadTask?.cancel()
+        Task { await runtime.unload() }
+    }
+}
+
+private actor LocalInference {
+    private var speech: WhisperKit?
+    private var speechID: String?
+    #if arch(arm64)
+    private var textModel: ModelContainer?
+    #endif
+    private var textID: String?
+    var loadedIDs: Set<String> { Set([speechID, textID].compactMap { $0 }) }
+
+    static func download(_ model: LocalModelDescriptor, base: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+        #if arch(arm64)
+        if model.kind == .audio {
+            let url = try await WhisperKit.download(variant: model.variant!, downloadBase: base, from: model.repository) { progress($0.fractionCompleted * 0.9) }
+            try Task.checkCancellation()
+            // Download/tokenize during explicit installation, not the first recording.
+            let kit = try await WhisperKit(WhisperKitConfig(modelFolder: url.path, tokenizerFolder: base, verbose: false, logLevel: .none, prewarm: false, load: true, download: false))
+            await kit.unloadModels()
+            progress(1)
+            return url
+        }
+        return try await HubApi(downloadBase: base).snapshot(from: model.repository, matching: ["*.json", "*.safetensors", "*.jinja", "*.txt"]) { progress($0.fractionCompleted) }
+        #else
+        throw FrogError.message("Built-in local models require Apple silicon.")
+        #endif
+    }
+    func transcribe(_ samples: [Float], id: String, url: URL) async throws -> String {
+        try Task.checkCancellation()
+        if speechID != id {
+            await speech?.unloadModels(); speech = nil; speechID = nil
+            // WhisperKit's cache base contains its model and tokenizer snapshots.
+            var base = url
+            while base.lastPathComponent != id && base.path != "/" { base.deleteLastPathComponent() }
+            speech = try await WhisperKit(WhisperKitConfig(modelFolder: url.path, tokenizerFolder: base, verbose: false, logLevel: .none, prewarm: false, load: true, download: false))
+            speechID = id
+        }
+        try Task.checkCancellation()
+        let results = try await speech!.transcribe(audioArray: samples, decodeOptions: DecodingOptions(verbose: false, skipSpecialTokens: true, withoutTimestamps: true))
+        try Task.checkCancellation()
+        return results.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    func complete(_ text: String, instructions: String, id: String, url: URL) async throws -> String {
+        #if arch(arm64)
+        try Task.checkCancellation()
+        if textID != id {
+            textModel = nil; textID = nil
+            textModel = try await LLMModelFactory.shared.loadContainer(configuration: ModelConfiguration(directory: url))
+            textID = id
+        }
+        let input = try await textModel!.prepare(input: UserInput(prompt: .chat([
+            .system(instructions + " /no_think"),
+            .user(text)
+        ])))
+        let stream = try await textModel!.generate(input: input, parameters: GenerateParameters(maxTokens: 2048, temperature: 0.1))
+        var output = ""
+        for await generation in stream {
+            try Task.checkCancellation()
+            if case .chunk(let text) = generation { output += text }
+        }
+        if let end = output.range(of: "</think>") { output = String(output[end.upperBound...]) }
+        let result = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !result.isEmpty else { throw FrogError.message("The local model returned no text.") }
+        return result
+        #else
+        throw FrogError.message("Built-in local models require Apple silicon.")
+        #endif
+    }
+    func unload() async {
+        await speech?.unloadModels(); speech = nil; speechID = nil
+        #if arch(arm64)
+        textModel = nil
+        #endif
+        textID = nil
+    }
+}

@@ -25,7 +25,7 @@ struct WindowSwitchSession<ID: Hashable> {
 
 /// Pure key routing: only the switcher's keys are consumed, never ordinary typing.
 struct WindowSwitchKeyRouter {
-    enum Action: Equatable { case begin(backwards: Bool), step(backwards: Bool), commit, cancel }
+    enum Action: Equatable { case begin(backwards: Bool), step(backwards: Bool), commit, cancel, search(String), deleteSearch }
     struct Result {
         var consume = false
         var action: Action?
@@ -38,7 +38,7 @@ struct WindowSwitchKeyRouter {
     private var nextSessionID: UInt64 = 0
     private var swallowed = Set<UInt16>()
 
-    mutating func key(code: UInt16, down: Bool, command: Bool, shift: Bool, otherModifiers: Bool) -> Result {
+    mutating func key(code: UInt16, down: Bool, command: Bool, shift: Bool, otherModifiers: Bool, text: String = "") -> Result {
         if !down { return Result(consume: swallowed.remove(code) != nil) }
         // A held Escape/Return/Tab must not start repeating into the source app
         // after this session has already committed or cancelled.
@@ -63,7 +63,12 @@ struct WindowSwitchKeyRouter {
         case 36, 76: action = .commit; active = false
         case 123, 126: action = .step(backwards: true)
         case 124, 125: action = .step(backwards: false)
+        case 51 where active && command: action = .deleteSearch
         default:
+            if active && command && !otherModifiers && !text.isEmpty && !text.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) {
+                swallowed.insert(code)
+                return Result(consume: true, action: .search(text), sessionID: id)
+            }
             active = false
             sessionID = nil
             return Result(action: .cancel, sessionID: id)

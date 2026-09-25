@@ -38,6 +38,13 @@ final class AppModel: ObservableObject {
         return controller
     }()
     private var started = false
+    let localModels: LocalModels
+    let dictation = DictationController()
+    private var observations = Set<AnyCancellable>()
+    private var dictationHistoryEpoch: UUID?
+    static let localProviderID = UUID(uuidString: "7C05FB97-5BEF-48FD-9C28-A67605107251")!
+    static let shortcutPanelID = UUID(uuidString: "85F8DE80-89BC-4506-B82D-DCFB71AFE292")!
+    private let shortcutPanel = ShortcutReferencePanel()
     private let captureSelection: () async throws -> any CapturedTextSelection
     private let processingIndicator = ProcessingIndicator()
     private var processingTask: Task<Void, Never>?
@@ -54,6 +61,7 @@ final class AppModel: ObservableObject {
           notify: ((String, String) -> Void)? = nil) {
         let dataDirectory = dataDirectory ?? ProcessInfo.processInfo.environment["FROG_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         self.registerShortcuts = registerShortcuts
+        localModels = LocalModels(directory: dataDirectory)
         self.readAccessibility = readAccessibility ?? { SelectionService.isTrusted }
         self.captureSelection = captureSelection ?? { try await SelectionService().capture() }
         self.notify = notify ?? { DesktopNotifications.post(title: $0, body: $1) }
@@ -66,6 +74,28 @@ final class AppModel: ObservableObject {
         catch { configurationLoadError = error; report(error) }
         refreshHistory()
         refreshSystemStatus()
+        localModels.idleSeconds = configuration.preferences.workflowSettings.idleUnloadSeconds
+        localModels.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
+        dictation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
+        dictation.onError = { [weak self] in self?.report($0) }
+        dictation.cleanup = { [weak self] text, rule in
+            guard let self else { throw CancellationError() }
+            if rule.providerID != nil {
+                let provider = try self.resolved(rule)
+                return try await self.complete(text, rule, provider, self.readKey(provider.id))
+            }
+            return try await self.localModels.complete(text, instructions: rule.instructions, modelID: rule.action?.localTextModelID ?? self.configuration.preferences.workflowSettings.cleanupModelID)
+        }
+        dictation.onFinish = { [weak self] rule, original, result, delivery in
+            guard let self else { return }
+            self.status = "\(rule.name) · \(delivery)"
+            if self.configuration.preferences.historyEnabled, self.dictationHistoryEpoch == self.historyEpoch {
+                var entry = HistoryEntry(originalText: original, processedText: result, ruleName: rule.name, providerName: "Transcription", model: rule.action?.audioModelID ?? self.configuration.preferences.workflowSettings.audioModelID)
+                entry.category = .audio
+                do { try self.historyStore.append(entry, preferences: self.configuration.preferences); self.refreshHistory() }
+                catch { self.report(error) }
+            }
+        }
     }
 
     func start() {
@@ -76,6 +106,7 @@ final class AppModel: ObservableObject {
     }
 
     func shutdown() {
+        dictation.cancel(); localModels.shutdown(); shortcutPanel.hide()
         started = false
         if registerShortcuts { windowSwitcher.stop() }
         processingIndicator.hide()
@@ -204,6 +235,7 @@ final class AppModel: ObservableObject {
     func setDefaultProvider(id: UUID?) throws {
         if let id, !configuration.providers.contains(where: { $0.id == id }) { throw FrogError.message("Choose an existing provider.") }
         var candidate = configuration; candidate.defaultProviderID = id
+        var workflow = candidate.preferences.workflowSettings; workflow.defaultLocalTextModelID = nil; candidate.preferences.workflows = workflow
         try persist(candidate)
     }
 
@@ -231,6 +263,8 @@ final class AppModel: ObservableObject {
         if !preferences.historyEnabled { historyEpoch = UUID() }
         if !preferences.showProcessingIndicator { processingIndicator.hide() }
         configureWindowSwitcher()
+        localModels.idleSeconds = preferences.workflowSettings.idleUnloadSeconds
+        registerHotkeys()
         refreshHistory()
     }
 
@@ -248,7 +282,7 @@ final class AppModel: ObservableObject {
     }
 
     func importConfiguration(_ imported: Configuration) throws {
-        guard !isProcessing, !isTestingProvider else { throw FrogError.message("Finish or cancel the current request before importing a configuration.") }
+        guard !isProcessing, !isTestingProvider, !dictation.active else { throw FrogError.message("Finish or cancel the current request before importing a configuration.") }
         try ConfigurationFile.validate(imported)
         for rule in imported.rules {
             if let hotkey = rule.hotkey, let issue = HotkeyManager.validationError(hotkey) { throw FrogError.message(issue) }
@@ -309,10 +343,18 @@ final class AppModel: ObservableObject {
 
     private func registerHotkeys() {
         guard registerShortcuts, !isRecordingShortcut else { return }
-        hotkeyErrors = hotkeys.register(rules: configuration.rules) { [weak self] id in self?.processSelection(ruleID: id) }
+        var rules = configuration.rules
+        if let key = configuration.preferences.workflowSettings.shortcutPanelHotkey {
+            rules.append(Rule(id: Self.shortcutPanelID, name: "Show shortcuts", hotkey: key))
+        }
+        hotkeyErrors = hotkeys.register(rules: rules, onPress: { [weak self] id in self?.handleShortcut(id, pressed: true) }) { [weak self] id in self?.handleShortcut(id, pressed: false) }
     }
 
     private func resolved(_ rule: Rule) throws -> ProviderConfiguration {
+        if let id = rule.action?.localTextModelID ?? (rule.providerID == nil ? configuration.preferences.workflowSettings.defaultLocalTextModelID : nil),
+           let model = LocalModelDescriptor.find(id) {
+            return ProviderConfiguration(id: Self.localProviderID, name: model.name, kind: .compatible, model: id)
+        }
         guard let providerID = rule.providerID ?? configuration.defaultProviderID,
               var provider = configuration.providers.first(where: { $0.id == providerID }) else {
             throw FrogError.message("Choose a provider for \(rule.name), or set a default provider in Settings.")
@@ -329,10 +371,59 @@ final class AppModel: ObservableObject {
     func processManual(text: String, ruleID: UUID, providerID: UUID? = nil, modelID: String? = nil) {
         begin(ruleID: ruleID, manualText: text, providerID: providerID, modelID: modelID)
     }
-    func cancelProcessing() { processingTask?.cancel(); status = "Cancelling…" }
+    func cancelProcessing() { dictation.cancel(); processingTask?.cancel(); status = "Cancelling…" }
+
+    func showShortcuts() { shortcutPanel.show(rules: configuration.rules) }
+
+    func saveWorkflowPreferences(_ value: WorkflowPreferences) throws {
+        var prefs = configuration.preferences; prefs.workflows = value
+        try savePreferences(prefs)
+    }
+
+    func startDictation(_ rule: Rule) {
+        guard !isProcessing, !localModels.busy else { report(FrogError.message("Wait for the current request to finish.")); return }
+        dictationHistoryEpoch = configuration.preferences.historyEnabled ? historyEpoch : nil
+        dictation.start(rule: rule, preferences: configuration.preferences.workflowSettings, models: localModels)
+    }
+
+    func ensureDictationRule() throws {
+        if !configuration.rules.contains(where: { $0.category == .audio }) { try saveRule(.dictationPreset) }
+    }
+
+    private func handleShortcut(_ id: UUID, pressed: Bool) {
+        if id == Self.shortcutPanelID { if !pressed { showShortcuts() }; return }
+        guard let rule = configuration.rules.first(where: { $0.id == id && $0.enabled }) else { return }
+        switch rule.category {
+        case .text: if !pressed { processSelection(ruleID: id) }
+        case .application:
+            if !pressed { launchApplication(rule) }
+        case .audio:
+            let mode = rule.action?.recordingMode ?? configuration.preferences.workflowSettings.recordingMode
+            if mode == .hold {
+                if pressed { if !dictation.active { startDictation(rule) } }
+                else if dictation.ruleID == id { dictation.stop(models: localModels) }
+            } else if !pressed {
+                if dictation.ruleID == id { dictation.stop(models: localModels) }
+                else if !dictation.active { startDictation(rule) }
+            }
+        }
+    }
+
+    private func launchApplication(_ rule: Rule) {
+        guard let bundleID = rule.action?.applicationBundleID else { return }
+        if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+            app.unhide(); app.activate(options: []); return
+        }
+        guard let path = rule.action?.applicationPath else { return }
+        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) ?? URL(fileURLWithPath: path)
+        guard Bundle(url: url)?.bundleIdentifier == bundleID else { report(FrogError.message("Choose the application again; it has moved or been replaced.")); return }
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { [weak self] _, error in
+            if let error { Task { @MainActor in self?.report(error) } }
+        }
+    }
 
     private func begin(ruleID: UUID, manualText: String?, providerID: UUID? = nil, modelID: String? = nil) {
-        guard !isProcessing else { status = "A rule is already running. Wait or cancel it from the menu."; return }
+        guard !isProcessing, !dictation.active else { status = "A rule is already running. Wait or cancel it from the menu."; return }
         guard var rule = configuration.rules.first(where: { $0.id == ruleID }), rule.enabled else { report(FrogError.message("Select an enabled rule.")); return }
         if let providerID { rule.providerID = providerID; rule.model = modelID ?? "" }
         else if let modelID { rule.model = modelID }
@@ -357,10 +448,12 @@ final class AppModel: ObservableObject {
                 if let manualText { selection = nil; text = manualText }
                 else { let captured = try await self.captureSelection(); selection = captured; text = captured.text }
                 guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("Select or enter some text first.") }
-                let key = try self.readKey(provider.id)
+                let key = provider.id == Self.localProviderID ? nil : try self.readKey(provider.id)
                 try Task.checkCancellation()
                 if manualText == nil { self.showIndicator("\(rule.name)…", working: true) }
-                let result = try await self.complete(text, rule, provider, key)
+                let result: String
+                if provider.id == Self.localProviderID { result = try await self.localModels.complete(text, instructions: rule.instructions, modelID: provider.model) }
+                else { result = try await self.complete(text, rule, provider, key) }
                 try Task.checkCancellation()
                 guard !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("The model returned no text. Nothing was replaced.") }
                 if let selection {
