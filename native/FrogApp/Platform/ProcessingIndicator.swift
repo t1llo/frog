@@ -34,7 +34,8 @@ final class ProcessingIndicator {
             Text(working ? "Working…" : (failed ? "Check Frog for details" : (message.hasPrefix("Cancelled") ? "Cancelled" : "Done")))
                 .font(.system(size: 11, weight: .medium)).lineLimit(1)
         }.frame(width: 200, height: 36).background(.ultraThinMaterial, in: Capsule())
-            .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 0.5)).preferredColorScheme(.dark))
+            .foregroundStyle(FrogStyle.ink)
+            .overlay(Capsule().strokeBorder(FrogStyle.border.opacity(0.4), lineWidth: 0.5)))
         if !panel.isVisible, let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main {
             panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - 100, y: screen.visibleFrame.minY + 24))
         }

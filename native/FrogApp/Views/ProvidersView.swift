@@ -5,99 +5,60 @@ struct ProvidersView: View {
     @EnvironmentObject private var model: AppModel
     @State private var editing: ProviderConfiguration?
     @State private var deleting: ProviderConfiguration?
-    @State private var filter = "All"
+    @State private var filter = "Providers"
+    @State private var kind: LocalModelDescriptor.Kind = .audio
+    @State private var search = ""
+    private var providers: [ProviderConfiguration] {
+        model.configuration.providers.filter { search.isEmpty || ($0.name + " " + $0.models.map(\.name).joined(separator: " ")).localizedStandardContains(search) }
+    }
 
     var body: some View {
-        PageScroll {
-            PageHeader(title: "Providers", subtitle: "Connect a model and choose your writing defaults.") {
-                Button { editing = ProviderConfiguration() } label: { Label("Add provider", systemImage: "plus") }
-                    .buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut("n", modifiers: .command)
+        VStack(alignment: .leading, spacing: 14) {
+            PageHeader(title: "Models", subtitle: "") {
+                Button { editing = ProviderConfiguration() } label: { Label("Connect provider", systemImage: "plus") }
+                    .keyboardShortcut("n", modifiers: .command)
+                    .opacity(filter == "Providers" ? 1 : 0).disabled(filter != "Providers").accessibilityHidden(filter != "Providers")
             }
-            Picker("Provider category", selection: $filter) {
-                ForEach(["All", "Text", "Audio"], id: \.self) { Text($0).tag($0) }
-            }.pickerStyle(.segmented)
-            SectionCaption(text: "Built-in local models")
-            LocalModelRows(kind: filter == "All" ? nil : filter == "Audio" ? .audio : .text)
-            if filter != "Audio" {
-            if !model.configuration.providers.isEmpty {
-                FrogCard {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Your defaults").font(.system(size: 15, weight: .semibold))
-                        Text("Used by rules without a model override.").font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
-                        HStack(alignment: .top, spacing: 16) {
-                            FrogMenu(title: "Provider", value: defaultProvider?.name ?? "Choose a provider") {
-                                ForEach(model.configuration.providers) { provider in
-                                    Button(provider.name) {
-                                        do { try model.setDefaultProvider(id: provider.id) } catch { model.report(error) }
-                                    }
-                                }
-                            }
-                            if let provider = defaultProvider {
-                                FrogMenu(title: "Default model", value: provider.modelName(provider.model)) {
-                                    ForEach(provider.models) { choice in
-                                        Button(choice.name) {
-                                            var updated = provider; updated.model = choice.id
-                                            do { try model.saveProvider(updated, apiKey: nil, clearKey: false) } catch { model.report(error) }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+            ListToolbar(placeholder: "Search models", search: $search) {
+                ForEach(["Providers", "Inside Frog"], id: \.self) { name in FilterTag(title: name, selected: filter == name) { filter = name } }
+            }
+            ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+            if filter == "Inside Frog" {
+                HStack(spacing: 4) {
+                    FilterTag(title: "Audio", selected: kind == .audio) { kind = .audio }
+                    FilterTag(title: "Text", selected: kind == .text) { kind = .text }
+                    Spacer()
+                    if !LocalModels.supported { Text("Requires Apple silicon").font(.caption).foregroundStyle(.secondary) }
                 }
-            }
-            SectionCaption(text: "Connections · \(model.configuration.providers.count)")
-            LazyVStack(spacing: 8) {
-                ForEach(model.configuration.providers) { provider in
-                    FrogCard {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(spacing: 14) {
-                                Image(systemName: provider.kind.isLocal ? "desktopcomputer" : "cloud").foregroundStyle(FrogStyle.accent)
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text(provider.name).font(.system(size: 13, weight: .semibold))
-                                    Text(provider.kind.title).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
-                                }
-                                Spacer()
-                                if model.configuration.defaultProviderID == provider.id && model.configuration.preferences.workflowSettings.defaultLocalTextModelID == nil { FrogBadge(text: "Default", active: true) }
-                            }
-                            HStack(spacing: 8) {
-                                Label(provider.modelName(provider.model), systemImage: "cpu").font(.system(size: 12, weight: .medium))
-                                Text("· \(provider.models.count) \(provider.models.count == 1 ? "model" : "models")").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                                Spacer()
-                                Label(model.hasAPIKey(provider.id) ? "Key secured" : (provider.kind.isLocal ? "Local connection" : "No saved key"), systemImage: model.hasAPIKey(provider.id) ? "lock.shield" : "key")
-                                    .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                            }
-                            Rectangle().fill(FrogStyle.border).frame(height: 1)
-                            HStack {
-                                Text(provider.endpoint).font(.system(size: 11, design: .monospaced))
-                                    .foregroundStyle(FrogStyle.muted).lineLimit(1).textSelection(.enabled)
-                                Spacer(minLength: 16)
-                                Button("Make default") {
-                                    do { try model.setDefaultProvider(id: provider.id) } catch { model.report(error) }
-                                }.disabled(model.configuration.defaultProviderID == provider.id && model.configuration.preferences.workflowSettings.defaultLocalTextModelID == nil)
-                                IconAction(title: "Configure \(provider.name)", symbol: "pencil") { editing = provider }
-                                IconAction(title: "Duplicate \(provider.name)", symbol: "doc.on.doc") {
-                                    var copy = provider; copy.id = UUID(); copy.name += " copy"; editing = copy
-                                }
-                                IconAction(title: "Delete \(provider.name)", symbol: "trash", destructive: true) { deleting = provider }
-                            }
-                        }
+                ModelInventory(kind: kind, search: search)
+            } else {
+                Text("Cloud APIs, Ollama and LM Studio run outside Frog.").font(.caption).foregroundStyle(.secondary)
+                VStack(spacing: 0) {
+                    ForEach(providers) { provider in
+                        HStack(spacing: 10) {
+                            Image(systemName: provider.kind.isLocal ? "desktopcomputer" : "cloud").foregroundStyle(.secondary)
+                            Button { editing = provider } label: {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(provider.name).font(.system(size: 12, weight: .medium))
+                                    Text(provider.modelName(provider.model)).font(.system(size: 10)).foregroundStyle(.secondary)
+                                }.frame(maxWidth: .infinity, alignment: .leading)
+                            }.buttonStyle(.plain)
+                            IconAction(title: "Edit provider", symbol: "pencil") { editing = provider }
+                            Menu {
+                                Button("Make default") { do { try model.setDefaultProvider(id: provider.id) } catch { model.report(error) } }
+                                Button("Duplicate") { var copy = provider; copy.id = UUID(); copy.name += " copy"; editing = copy }
+                                Button("Delete…", role: .destructive) { deleting = provider }
+                            } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                        }.padding(12)
+                        if provider.id != providers.last?.id { Divider().opacity(0.5) }
                     }
-                }
-                if model.configuration.providers.isEmpty {
-                    FrogCard {
-                        VStack(spacing: 0) {
-                            FrogEmptyState(symbol: "cpu", title: "Meet your writing partner", message: "Connect OpenAI, Claude, Gemini, Ollama, or LM Studio. Your API keys stay in macOS Keychain.")
-                            Button("Add provider", systemImage: "plus") { editing = ProviderConfiguration() }
-                                .buttonStyle(FrogButtonStyle(primary: true)).padding(.bottom, 24)
-                        }
-                    }
-                }
+                    if model.configuration.providers.isEmpty { Text("Connect a cloud provider, Ollama or LM Studio.").font(.caption).foregroundStyle(.secondary).padding(14) }
+                }.frogTableSurface()
             }
-            Label("Cloud credentials live in Keychain. Local models can work without a key.", systemImage: "lock.shield")
-                .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+            }.frame(maxWidth: .infinity, alignment: .leading)
             }
-        }
+        }.padding(20)
         .sheet(item: $editing) { provider in ProviderEditor(provider: provider).environmentObject(model) }
         .confirmationDialog("Delete \(deleting?.name ?? "provider")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             Button("Delete provider", role: .destructive) {
@@ -108,9 +69,6 @@ struct ProvidersView: View {
         } message: { Text("The saved API key will also be removed. Affected rules will use the remaining default provider and model. If no provider remains, add one before running those rules.") }
     }
 
-    private var defaultProvider: ProviderConfiguration? {
-        model.configuration.providers.first { $0.id == model.configuration.defaultProviderID }
-    }
 }
 
 private struct ProviderEditor: View {
@@ -153,10 +111,10 @@ private struct ProviderEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            EditorHeading(title: "Provider", subtitle: "Connection, models and default.")
+            EditorHeading(title: "Provider", subtitle: "")
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    FrogCard {
+                    SettingsSection(title: "Connection") {
                         VStack(alignment: .leading, spacing: 16) {
                             FrogMenu(title: "Service", value: provider.kind.title) {
                                 ForEach(ProviderKind.allCases) { kind in
@@ -177,9 +135,9 @@ private struct ProviderEditor: View {
                                     Label(provider.kind.isLocal ? "\(provider.kind.title) setup guide" : "Get an API key for \(provider.kind.title)", systemImage: "arrow.up.right.square")
                                 }.foregroundStyle(FrogStyle.accent).font(.system(size: 12))
                             }
-                            LabeledField(title: "Connection name") { TextField("Connection name", text: $provider.name).labelsHidden() }
+                            CompactRow(title: "Connection name") { TextField("Connection name", text: $provider.name).textFieldStyle(.roundedBorder).labelsHidden() }
                             Toggle("Use as default text provider", isOn: $makeDefault)
-                            LabeledField(title: "Base endpoint") { TextField("Base endpoint", text: $provider.endpoint).labelsHidden().font(.system(size: 12, design: .monospaced)) }
+                            CompactRow(title: "Base endpoint") { TextField("Base endpoint", text: $provider.endpoint).textFieldStyle(.roundedBorder).labelsHidden().font(.system(size: 12, design: .monospaced)) }
                             HStack(alignment: .top, spacing: 16) {
                                 Text(endpointHint)
                                     .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
@@ -190,8 +148,7 @@ private struct ProviderEditor: View {
                             }
                         }
                     }.disabled(testing || discovering)
-                    SectionCaption(text: "Credentials")
-                    FrogCard {
+                    SettingsSection(title: "Credentials") {
                         VStack(alignment: .leading, spacing: 14) {
                             LabeledField(title: model.hasAPIKey(provider.id) ? "Replacement API key" : "API key") {
                                 SecureField("API key", text: $apiKey).disabled(clearKey)
@@ -234,7 +191,7 @@ private struct ProviderEditor: View {
                         }
                     }
                     if let validation { InlineIssue(message: validation) }
-                }.padding(.horizontal, 24).padding(.bottom, 24)
+                }.padding(.horizontal, 20).padding(.bottom, 12)
             }
             HStack {
                 Button("Cancel") { testTask?.cancel(); discoveryTask?.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
@@ -244,7 +201,7 @@ private struct ProviderEditor: View {
             }.padding(20).background(FrogStyle.surface)
                 .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border).frame(height: 1) }
         }
-        .frame(width: 640, height: 700).background(FrogStyle.canvas)
+        .frame(width: 540, height: 560).background(FrogWindowMaterial()).background(FrogStyle.canvas)
         .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
         .onDisappear { testTask?.cancel(); discoveryTask?.cancel(); apiKey = "" }
         .onChange(of: provider) { _, _ in testResult = nil }

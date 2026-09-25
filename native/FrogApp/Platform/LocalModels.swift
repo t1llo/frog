@@ -25,7 +25,10 @@ final class LocalModels: ObservableObject {
     @Published private(set) var errors: [String: String] = [:]
     @Published private(set) var loaded = Set<String>()
     @Published private(set) var busy = false
-    private let root: URL
+    @Published private(set) var root: URL
+    let defaultDirectory: URL
+    private let storagePreference: URL
+    @Published private(set) var changingDirectory = false
     private var downloads: [String: Task<Void, Never>] = [:]
     private let runtime: any LocalInferenceEngine
     private let downloader: Downloader
@@ -34,8 +37,31 @@ final class LocalModels: ObservableObject {
 
     init(directory: URL? = nil, runtime: any LocalInferenceEngine = LocalInference(), downloader: @escaping Downloader = LocalInference.download) {
         self.runtime = runtime; self.downloader = downloader
-        root = (directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Frog")) .appendingPathComponent("Models", isDirectory: true)
+        let support = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Frog")
+        defaultDirectory = support.appendingPathComponent("Models", isDirectory: true)
+        storagePreference = support.appendingPathComponent("model-storage.json")
+        if let data = try? Data(contentsOf: storagePreference), let path = try? JSONDecoder().decode(String.self, from: data), path.hasPrefix("/") {
+            root = URL(fileURLWithPath: path, isDirectory: true)
+        } else { root = defaultDirectory }
         for model in LocalModelDescriptor.catalog where modelURL(model.id) != nil { installed.insert(model.id) }
+    }
+    /// Storage location is device-local, intentionally excluded from configuration exports.
+    func changeDirectory(to location: URL) async throws {
+        guard !busy, downloads.isEmpty, !changingDirectory else { throw FrogError.message("Wait for model operations to finish before changing the download folder.") }
+        guard location.isFileURL else { throw FrogError.message("Choose a local model folder.") }
+        let location = URL(fileURLWithPath: location.standardizedFileURL.path, isDirectory: true)
+        if location == root { return }
+        try FileManager.default.createDirectory(at: location, withIntermediateDirectories: true)
+        guard FileManager.default.isWritableFile(atPath: location.path) else { throw FrogError.message("The selected model folder is not writable.") }
+        changingDirectory = true; busy = true
+        defer { changingDirectory = false; busy = false }
+        unloadTask?.cancel(); unloadTask = nil
+        await runtime.unload(); loaded = []
+        try FileManager.default.createDirectory(at: storagePreference.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(location.path).write(to: storagePreference, options: [.atomic])
+        root = location
+        installed = Set(LocalModelDescriptor.catalog.filter { modelURL($0.id) != nil }.map(\.id))
+        errors = [:]
     }
     private func directory(_ id: String) -> URL { root.appendingPathComponent(id, isDirectory: true) }
     private func modelURL(_ id: String) -> URL? {
@@ -46,9 +72,13 @@ final class LocalModels: ObservableObject {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
     func download(_ model: LocalModelDescriptor) {
-        guard Self.supported, downloads[model.id] == nil, !installed.contains(model.id) else { return }
-        errors[model.id] = nil; progress[model.id] = 0
+        guard Self.supported, !changingDirectory, downloads[model.id] == nil, !installed.contains(model.id) else { return }
         let base = directory(model.id)
+        guard !FileManager.default.fileExists(atPath: base.path) else {
+            errors[model.id] = "A folder named \(model.id) already exists without a completed Frog installation. Choose another download folder or move that folder aside."
+            return
+        }
+        errors[model.id] = nil; progress[model.id] = 0
         downloads[model.id] = Task { [weak self] in
             guard let self else { return }
             defer { self.downloads[model.id] = nil; self.progress[model.id] = nil }
@@ -103,9 +133,9 @@ final class LocalModels: ObservableObject {
             await self?.unload()
         }
     }
-    func transcribe(_ samples: [Float], modelID: String) async throws -> String {
+    func transcribe(_ samples: [Float], modelID: String, language: String? = nil) async throws -> String {
         let url = try acquire(modelID); defer { release() }
-        let result = try await runtime.transcribe(samples, id: modelID, url: url)
+        let result = try await runtime.transcribe(samples, id: modelID, url: url, language: language == "auto" ? nil : language)
         loaded = await runtime.loadedIDs
         return result
     }
@@ -124,7 +154,7 @@ final class LocalModels: ObservableObject {
 
 protocol LocalInferenceEngine: Actor {
     var loadedIDs: Set<String> { get }
-    func transcribe(_ samples: [Float], id: String, url: URL) async throws -> String
+    func transcribe(_ samples: [Float], id: String, url: URL, language: String?) async throws -> String
     func complete(_ text: String, instructions: String, id: String, url: URL) async throws -> String
     func unload() async
 }
@@ -154,7 +184,7 @@ actor LocalInference: LocalInferenceEngine {
         throw FrogError.message("Built-in local models require Apple silicon.")
         #endif
     }
-    func transcribe(_ samples: [Float], id: String, url: URL) async throws -> String {
+    func transcribe(_ samples: [Float], id: String, url: URL, language: String?) async throws -> String {
         try Task.checkCancellation()
         if speechID != id {
             await speech?.unloadModels(); speech = nil; speechID = nil
@@ -165,7 +195,7 @@ actor LocalInference: LocalInferenceEngine {
             speechID = id
         }
         try Task.checkCancellation()
-        let results = try await speech!.transcribe(audioArray: samples, decodeOptions: DecodingOptions(verbose: false, skipSpecialTokens: true, withoutTimestamps: true))
+        let results = try await speech!.transcribe(audioArray: samples, decodeOptions: DecodingOptions(verbose: false, language: language, detectLanguage: language == nil, skipSpecialTokens: true, withoutTimestamps: true))
         try Task.checkCancellation()
         return results.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
     }

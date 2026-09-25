@@ -49,6 +49,7 @@ public enum ConfigurationFile {
         for provider in configuration.providers { try validate(provider: provider) }
         var shortcuts = Set<Hotkey>()
         if let key = configuration.preferences.workflowSettings.shortcutPanelHotkey { shortcuts.insert(key) }
+        if let key = configuration.preferences.workflowSettings.cancelRecordingHotkey, !shortcuts.insert(key).inserted { throw FrogError.message("The cancel shortcut conflicts with the shortcut panel.") }
         for rule in configuration.rules {
             if rule.category == .application {
                 guard let path = rule.action?.applicationPath, path.hasSuffix(".app"), path.hasPrefix("/"),
@@ -63,7 +64,7 @@ public enum ConfigurationFile {
                 throw FrogError.message("Choose an available local text model.")
             }
             guard !rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  !rule.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  rule.category == .application || !rule.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   rule.instructions.utf8.count <= 100_000 else {
                 throw FrogError.message("Each rule needs a name and instructions of at most 100,000 bytes.")
             }
@@ -93,6 +94,8 @@ public enum ConfigurationFile {
             throw FrogError.message("Appearance requires a six-digit accent hex color and transparency between 0 and 1.")
         }
         let workflow = preferences.workflowSettings
+        if let language = workflow.applicationLanguage, !WorkflowPreferences.interfaceLanguages.contains(language) { throw FrogError.message("Choose English, German or the system language.") }
+        if let language = workflow.transcriptionLanguage, !WorkflowPreferences.speechLanguages.contains(language) { throw FrogError.message("Choose a supported transcription language.") }
         guard LocalModelDescriptor.find(workflow.audioModelID)?.kind == .audio,
               LocalModelDescriptor.find(workflow.cleanupModelID)?.kind == .text,
               workflow.defaultLocalTextModelID == nil || LocalModelDescriptor.find(workflow.defaultLocalTextModelID!)?.kind == .text,

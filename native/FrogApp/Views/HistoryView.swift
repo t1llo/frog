@@ -19,23 +19,16 @@ struct HistoryView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            PageHeader(title: "History", subtitle: "Your recent writing, newest first.") {
+        VStack(alignment: .leading, spacing: 14) {
+            PageHeader(title: "History", subtitle: "") {
                 HStack {
-                    IconAction(title: "Refresh history", symbol: "arrow.clockwise") { model.refreshHistory() }
                     Button("Clear all…", systemImage: "trash", role: .destructive) { confirmClear = true }
                         .disabled(model.history.isEmpty)
                 }
             }
-            HStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(FrogStyle.muted)
-                    TextField("Search history", text: $search).textFieldStyle(.plain)
-                    if !search.isEmpty {
-                        Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
-                            .buttonStyle(.plain).accessibilityLabel("Clear search")
-                    }
-                }.padding(10).background(FrogStyle.surface, in: RoundedRectangle(cornerRadius: 8))
+            ListToolbar(placeholder: "Search history", search: $search) {
+                Text(L10n.text(model.configuration.preferences.historyEnabled ? "Recording on · On this Mac" : "Recording off"))
+                    .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                 if !model.configuration.preferences.historyEnabled {
                     Button("Enable history") {
                         var preferences = model.configuration.preferences
@@ -44,11 +37,6 @@ struct HistoryView: View {
                     }.fixedSize()
                 }
             }
-            HStack {
-                Text("\(entries.count) \(entries.count == 1 ? "entry" : "entries")")
-                Spacer()
-                Text(model.configuration.preferences.historyEnabled ? "Recording on · Stored on this Mac" : "Recording off")
-            }.font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
 
             if model.history.isEmpty {
                 FrogEmptyState(symbol: "clock.arrow.circlepath", title: "No history yet",
@@ -64,15 +52,13 @@ struct HistoryView: View {
                     LazyVStack(spacing: 0) {
                         ForEach(entries) { item in
                             historyRow(item)
-                            Divider().overlay(FrogStyle.border)
+                            if item.id != entries.last?.id { Divider().opacity(0.5) }
                         }
                     }
                 }
-                .background(FrogStyle.surface, in: RoundedRectangle(cornerRadius: 12))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(FrogStyle.border, lineWidth: 1))
+                .frogTableSurface()
             }
-        }.padding(24).background(FrogStyle.canvas)
+        }.padding(20)
             .onAppear { model.refreshHistory() }
             .sheet(item: $viewing) { HistoryDetail(entry: $0) }
             .onChange(of: model.history.map(\.id)) { _, ids in
@@ -100,22 +86,24 @@ struct HistoryView: View {
     private func historyRow(_ item: HistoryEntry) -> some View {
         HStack(spacing: 12) {
             Button { viewing = item } label: {
-                HStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(item.ruleName).font(.system(size: 12, weight: .semibold)).foregroundStyle(FrogStyle.ink)
                         Text(item.timestamp.formatted(date: .abbreviated, time: .shortened))
                             .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                    }.frame(width: 150, alignment: .leading).lineLimit(1)
+                    }.lineLimit(1)
+                    Spacer()
+                    }
                     Text(item.processedText).font(.system(size: 12)).foregroundStyle(FrogStyle.ink)
                         .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-                    Image(systemName: "chevron.right").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                }.frame(minHeight: 54).contentShape(Rectangle())
+                }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain).help("View original and result")
             IconAction(title: copiedID == item.id ? "Copied" : "Copy result", symbol: copiedID == item.id ? "checkmark" : "doc.on.doc") {
                 ViewActions.copy(item.processedText); copiedID = item.id
             }
             IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = item }
-        }.padding(.horizontal, 12).padding(.vertical, 3)
+        }.padding(12)
     }
 }
 
@@ -143,7 +131,7 @@ private struct HistoryDetail: View {
                     textSection("Original", text: entry.originalText)
                 }.padding(1)
             }
-        }.padding(24).frame(width: 640, height: 560).background(FrogStyle.canvas)
+        }.padding(20).frame(width: 560, height: 500).background(FrogStyle.canvas)
             .foregroundStyle(FrogStyle.ink).buttonStyle(FrogButtonStyle())
     }
 
@@ -153,7 +141,7 @@ private struct HistoryDetail: View {
                 HStack {
                     SectionCaption(text: title)
                     Spacer()
-                    Button(copied == title ? "Copied" : "Copy", systemImage: copied == title ? "checkmark" : "doc.on.doc") {
+                    Button(L10n.text(copied == title ? "Copied" : "Copy"), systemImage: copied == title ? "checkmark" : "doc.on.doc") {
                         ViewActions.copy(text); copied = title
                     }.accessibilityLabel("Copy \(title.lowercased())")
                 }

@@ -5,6 +5,23 @@ import FrogCore
 
 @MainActor
 final class ProcessingTests: XCTestCase {
+    func testSeparateDefaultsPreserveLocalSelectionAndDisplayLegacyOverride() async throws {
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false)
+        var provider = ProviderConfiguration(kind: .ollama)
+        provider.models.append(ProviderModel(id: "other", name: "Other model"))
+        try model.saveProvider(provider, apiKey: nil, clearKey: false)
+        var prefs = model.configuration.preferences.workflowSettings
+        prefs.defaultLocalTextModelID = "qwen-1.7b"
+        prefs.textSource = .frog
+        try model.saveWorkflowPreferences(prefs)
+        try model.setDefaultProvider(id: provider.id, activate: false)
+        XCTAssertEqual(try model.resolved(Rule()).model, "qwen-1.7b")
+        try model.setDefaultProvider(id: provider.id)
+        XCTAssertEqual(model.configuration.preferences.workflowSettings.defaultLocalTextModelID, "qwen-1.7b")
+        let legacy = Rule(name: "Legacy override", model: "other")
+        XCTAssertEqual(try model.resolved(legacy).model, "other")
+        XCTAssertEqual(model.ruleModelLabel(legacy), provider.name + " · Other model")
+    }
     func testShortcutProcessesOnlyCapturedSelectionReplacesAndPersistsHistory() async throws {
         let folder = try directory()
         let selection = FixtureSelection(text: "teh selected text")

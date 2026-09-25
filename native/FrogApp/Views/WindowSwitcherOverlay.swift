@@ -8,6 +8,7 @@ final class WindowSwitcherDisplay: ObservableObject {
     @Published var loading = false
     @Published var query = ""
     @Published var icons: [pid_t: NSImage] = [:]
+    @Published var shortcuts: [pid_t: String] = [:]
 }
 
 struct WindowSwitcherOverlay: View {
@@ -24,7 +25,7 @@ struct WindowSwitcherOverlay: View {
                 Spacer(); ProgressView("Finding windows…").controlSize(.small); Spacer()
             } else if model.windows.isEmpty {
                 Spacer()
-                Text(model.query.isEmpty ? "No accessible windows" : "No matching windows").font(.system(size: 14, weight: .medium))
+                Text(L10n.text(model.query.isEmpty ? "No accessible windows" : "No matching windows")).font(.system(size: 14, weight: .medium))
                 Spacer()
             } else {
                 ScrollViewReader { proxy in
@@ -43,6 +44,7 @@ struct WindowSwitcherOverlay: View {
                                         if window.minimized || window.hidden {
                                             Text(window.minimized ? "Minimized" : "Hidden").font(.system(size: 10)).foregroundStyle(.secondary)
                                         }
+                                        if let shortcut = model.shortcuts[window.pid] { Text(shortcut).font(.system(size: 10)).foregroundStyle(.secondary) }
                                         if model.selected == window.id { Image(systemName: "return").font(.system(size: 12)).foregroundStyle(FrogStyle.accent) }
                                     }.padding(.horizontal, 10).padding(.vertical, 6)
                                         .background(model.selected == window.id ? FrogStyle.accentSoft : .clear, in: RoundedRectangle(cornerRadius: 9))
@@ -66,8 +68,9 @@ struct WindowSwitcherOverlay: View {
                 Text("Release ⌘ to switch")
             }.font(.system(size: 10)).foregroundStyle(.secondary).padding(14)
         }.frame(width: 580, height: 480)
+            .environment(\.locale, L10n.locale)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.12), lineWidth: 1))
-            .foregroundStyle(FrogStyle.ink).preferredColorScheme(.dark)
+            .foregroundStyle(FrogStyle.ink)
     }
 }

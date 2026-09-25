@@ -1,6 +1,16 @@
 import Foundation
 
 public struct AppearancePreferences: Codable, Equatable, Sendable {
+    public enum Mode: String, Codable, CaseIterable, Sendable { case system, light, dark }
+    public enum Theme: String, Codable, CaseIterable, Sendable {
+        case frog, tokyoNight, catppuccin, nord
+        public var title: String {
+            switch self { case .frog: "Frog"; case .tokyoNight: "Tokyo Night"; case .catppuccin: "Catppuccin"; case .nord: "Nord" }
+        }
+    }
+    public var mode: Mode?
+    public var theme: Theme?
+    public var useThemeAccent: Bool?
     /// Six-digit RGB, without '#'.
     public var accentHex = "A3D8AF"
     /// Zero is opaque; one is the strongest material translucency.

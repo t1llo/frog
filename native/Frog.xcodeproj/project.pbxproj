@@ -11,7 +11,7 @@
             compatibilityVersion = "Xcode 16.0";
             developmentRegion = en;
             hasScannedForEncodings = 0;
-            knownRegions = (en, Base);
+            knownRegions = (en, de, Base);
             mainGroup = A00000000000000000000002;
             productRefGroup = A00000000000000000000003;
             projectDirPath = "";

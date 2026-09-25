@@ -74,16 +74,26 @@ actor WindowCatalog {
             for element in elements {
                 if Task.isCancelled { break }
                 AXUIElementSetMessagingTimeout(element, 0.1)
-                guard AXRead.string(element, kAXRoleAttribute) == kAXWindowRole else { continue }
-                if AXRead.string(element, kAXIdentifierAttribute) == SwitcherWindow.overlayIdentifier { continue }
-                let subrole = AXRead.string(element, kAXSubroleAttribute)
+                // Fetch display metadata in one IPC rather than six sequential AX calls.
+                let names = [kAXRoleAttribute, kAXIdentifierAttribute, kAXSubroleAttribute, kAXTitleAttribute, kAXMinimizedAttribute]
+                var result: CFArray?
+                let success = AXUIElementCopyMultipleAttributeValues(element, names as CFArray, [], &result) == .success
+                let values = success ? result as? [Any] : nil
+                func value(_ index: Int) -> Any? {
+                    if let values, values.count == names.count { return values[index] }
+                    guard !Task.isCancelled else { return nil }
+                    return AXRead.attribute(element, names[index])
+                }
+                guard value(0) as? String == kAXWindowRole else { continue }
+                if value(1) as? String == SwitcherWindow.overlayIdentifier { continue }
+                let subrole = value(2) as? String
                 if ["AXFloatingWindow", "AXSystemFloatingWindow"].contains(subrole ?? "") { continue }
                 let id = identity(element, pid: app.pid)
                 guard !windows.contains(where: { $0.id == id }) else { continue }
-                let title = AXRead.string(element, kAXTitleAttribute)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let title = (value(3) as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 windows.append(SwitcherWindow(id: id, pid: app.pid, appName: app.name,
                     title: title.isEmpty ? "Untitled window" : title,
-                    minimized: AXRead.boolean(element, kAXMinimizedAttribute) == true, hidden: app.hidden))
+                    minimized: value(4) as? Bool == true, hidden: app.hidden))
                 if let focused, CFEqual(focused, element) { current = id }
             }
         }

@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Frog",
+    defaultLocalization: "en",
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "Frog", targets: ["FrogApp"]),
@@ -17,7 +18,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "FrogCore", path: "native/FrogCore"),
-        .executableTarget(name: "FrogApp", dependencies: ["FrogCore", .product(name: "WhisperKit", package: "WhisperKit"), .product(name: "MLXLLM", package: "mlx-swift-lm"), .product(name: "MLXLMCommon", package: "mlx-swift-lm"), .product(name: "Hub", package: "swift-transformers")], path: "native/FrogApp"),
+        .executableTarget(name: "FrogApp", dependencies: ["FrogCore", .product(name: "WhisperKit", package: "WhisperKit"), .product(name: "MLXLLM", package: "mlx-swift-lm"), .product(name: "MLXLMCommon", package: "mlx-swift-lm"), .product(name: "Hub", package: "swift-transformers")], path: "native/FrogApp", resources: [.process("Resources")]),
         .testTarget(name: "FrogCoreTests", dependencies: ["FrogCore"], path: "native/Tests/FrogCoreTests"),
         .testTarget(name: "FrogAppTests", dependencies: ["FrogApp", "FrogCore"], path: "native/Tests/FrogAppTests")
     ],

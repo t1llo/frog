@@ -6,24 +6,60 @@ import Observation
 @Observable
 final class FrogAppearance {
     static let shared = FrogAppearance()
-    var settings = AppearancePreferences()
+    private(set) var settings = AppearancePreferences()
+    @MainActor func apply(_ settings: AppearancePreferences) {
+        self.settings = settings
+        switch settings.mode ?? .system {
+        case .system: NSApplication.shared.appearance = nil
+        case .light: NSApplication.shared.appearance = NSAppearance(named: .aqua)
+        case .dark: NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+        }
+    }
 }
 
 /// Shared adaptive colors keep the app, sheets, and controls in the same visual language.
 enum FrogStyle {
-    static var canvas: Color { adaptive(light: 0xF8F9F6, dark: 0x191C1A).opacity(1 - FrogAppearance.shared.settings.transparency * 0.85) }
-    static var sidebar: Color { adaptive(light: 0xEFF1EC, dark: 0x141715).opacity(1 - FrogAppearance.shared.settings.transparency * 0.85) }
-    static let surface = adaptive(light: 0xFFFFFF, dark: 0x232724)
-    static let inset = adaptive(light: 0xF4F6F1, dark: 0x1B1F1C)
-    static let border = adaptive(light: 0xDDE3D9, dark: 0x39413B)
+    static let corner: CGFloat = 8
+    static var canvas: Color { themed(\.canvas).opacity(1 - FrogAppearance.shared.settings.transparency * 0.85) }
+    static var sidebar: Color { themed(\.sidebar).opacity(1 - FrogAppearance.shared.settings.transparency * 0.85) }
+    static var surface: Color { themed(\.surface).opacity(1 - FrogAppearance.shared.settings.transparency * 0.78) }
+    static var inset: Color { themed(\.inset).opacity(1 - FrogAppearance.shared.settings.transparency * 0.78) }
+    static var border: Color { themed(\.border) }
     static var accent: Color {
+        if FrogAppearance.shared.settings.useThemeAccent == true {
+            switch FrogAppearance.shared.settings.theme ?? .frog {
+            case .frog: return adaptive(light: 0x397A4C, dark: 0xA3D8AF)
+            case .tokyoNight: return adaptive(light: 0x34548A, dark: 0x7AA2F7)
+            case .catppuccin: return adaptive(light: 0x8839EF, dark: 0xCBA6F7)
+            case .nord: return adaptive(light: 0x466A83, dark: 0x88C0D0)
+            }
+        }
         let rgb = UInt32(FrogAppearance.shared.settings.accentHex, radix: 16) ?? 0xA3D8AF
         return Color(red: Double((rgb >> 16) & 255) / 255, green: Double((rgb >> 8) & 255) / 255, blue: Double(rgb & 255) / 255)
     }
     static var accentSoft: Color { accent.opacity(0.15) }
     static let onAccent = adaptive(light: 0xFFFFFF, dark: 0x18261C)
-    static let ink = adaptive(light: 0x242D26, dark: 0xEDF2EA)
-    static let muted = adaptive(light: 0x647060, dark: 0xADB8AB)
+    static var ink: Color { themed(\.ink) }
+    static var muted: Color { themed(\.muted) }
+
+    private struct Palette {
+        let canvas, sidebar, surface, inset, border, ink, muted: UInt32
+    }
+    private static func palette(dark: Bool) -> Palette {
+        switch (FrogAppearance.shared.settings.theme ?? .frog, dark) {
+        case (.frog, false): Palette(canvas: 0xF8F9F6, sidebar: 0xEFF1EC, surface: 0xFFFFFF, inset: 0xF4F6F1, border: 0xDDE3D9, ink: 0x242D26, muted: 0x647060)
+        case (.frog, true): Palette(canvas: 0x191C1A, sidebar: 0x141715, surface: 0x232724, inset: 0x1B1F1C, border: 0x39413B, ink: 0xEDF2EA, muted: 0xADB8AB)
+        case (.tokyoNight, false): Palette(canvas: 0xE1E2E7, sidebar: 0xD5D6DB, surface: 0xEBECF0, inset: 0xDADBE0, border: 0xB4B5BD, ink: 0x343B58, muted: 0x565F89)
+        case (.tokyoNight, true): Palette(canvas: 0x1A1B26, sidebar: 0x16161E, surface: 0x24283B, inset: 0x1F2335, border: 0x414868, ink: 0xC0CAF5, muted: 0xA9B1D6)
+        case (.catppuccin, false): Palette(canvas: 0xEFF1F5, sidebar: 0xE6E9EF, surface: 0xFFFFFF, inset: 0xDCE0E8, border: 0xBCC0CC, ink: 0x4C4F69, muted: 0x6C6F85)
+        case (.catppuccin, true): Palette(canvas: 0x1E1E2E, sidebar: 0x181825, surface: 0x313244, inset: 0x242435, border: 0x45475A, ink: 0xCDD6F4, muted: 0xBAC2DE)
+        case (.nord, false): Palette(canvas: 0xECEFF4, sidebar: 0xE5E9F0, surface: 0xF8FAFC, inset: 0xE5E9F0, border: 0xC4CCD8, ink: 0x2E3440, muted: 0x4C566A)
+        case (.nord, true): Palette(canvas: 0x2E3440, sidebar: 0x272D38, surface: 0x3B4252, inset: 0x323A48, border: 0x4C566A, ink: 0xECEFF4, muted: 0xD8DEE9)
+        }
+    }
+    private static func themed(_ key: KeyPath<Palette, UInt32>) -> Color {
+        adaptive(light: palette(dark: false)[keyPath: key], dark: palette(dark: true)[keyPath: key])
+    }
 
     private static func adaptive(light: UInt32, dark: UInt32) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
@@ -35,19 +71,27 @@ enum FrogStyle {
     }
 }
 
+extension View {
+    func frogTableSurface() -> some View {
+        background(FrogStyle.surface, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+            .clipShape(RoundedRectangle(cornerRadius: FrogStyle.corner))
+            .overlay(RoundedRectangle(cornerRadius: FrogStyle.corner).strokeBorder(FrogStyle.border.opacity(0.35)))
+    }
+}
+
 struct FrogButtonStyle: ButtonStyle {
     var primary = false
     @Environment(\.isEnabled) private var enabled
 
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .padding(.horizontal, 12).padding(.vertical, 8)
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, 10).padding(.vertical, 7)
             .foregroundStyle(primary ? FrogStyle.onAccent : FrogStyle.ink)
-            .background(primary ? FrogStyle.accent : FrogStyle.surface, in: RoundedRectangle(cornerRadius: 9))
-            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(primary ? .clear : FrogStyle.border, lineWidth: 1))
+            .background(primary ? FrogStyle.accent : FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+            .overlay(RoundedRectangle(cornerRadius: FrogStyle.corner).strokeBorder(primary ? .clear : FrogStyle.border.opacity(0.6), lineWidth: 1))
             .opacity(enabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
-            .contentShape(RoundedRectangle(cornerRadius: 9))
+            .contentShape(RoundedRectangle(cornerRadius: FrogStyle.corner))
     }
 }
 
@@ -58,8 +102,8 @@ struct FrogCard<Content: View>: View {
 
     var body: some View {
         content.padding(padding).frame(maxWidth: .infinity, alignment: .leading)
-            .background(FrogStyle.surface, in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12)
+            .background(FrogStyle.surface, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+            .overlay(RoundedRectangle(cornerRadius: FrogStyle.corner)
                 .strokeBorder(contrast == .increased ? FrogStyle.muted : FrogStyle.border, lineWidth: 1))
     }
 }
@@ -70,15 +114,16 @@ struct PageHeader<Actions: View>: View {
     @ViewBuilder var actions: Actions
 
     var body: some View {
-        HStack(alignment: .top, spacing: 20) {
+        HStack(alignment: .center, spacing: 20) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(.system(size: 21, weight: .semibold)).tracking(-0.4)
+                Text(L10n.text(title)).font(.system(size: 21, weight: .semibold)).tracking(-0.4)
                     .foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
-                Text(subtitle).font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
+                if !subtitle.isEmpty { Text(L10n.text(subtitle)).font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
                     .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+                }
             }.frame(maxWidth: .infinity, alignment: .leading)
-            actions.padding(.top, 3)
-        }
+            actions
+        }.frame(minHeight: 32)
     }
 }
 
@@ -102,7 +147,7 @@ struct PageScroll<Content: View>: View {
 struct SectionCaption: View {
     let text: String
     var body: some View {
-        Text(text.uppercased()).font(.system(size: 10, weight: .bold)).tracking(1.4)
+        Text(L10n.text(text).uppercased()).font(.system(size: 10, weight: .bold)).tracking(1.4)
             .foregroundStyle(FrogStyle.muted).accessibilityAddTraits(.isHeader)
     }
 }
@@ -122,7 +167,7 @@ struct FrogBadge: View {
     let text: String
     var active = false
     var body: some View {
-        Text(text).font(.system(size: 10, weight: .semibold))
+        Text(L10n.text(text)).font(.system(size: 10, weight: .semibold))
             .foregroundStyle(active ? FrogStyle.accent : FrogStyle.muted)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(active ? FrogStyle.accentSoft : FrogStyle.inset, in: Capsule())
@@ -134,8 +179,8 @@ struct ShortcutBadge: View {
     var body: some View {
         Text(text).font(.system(size: 12, weight: .medium, design: .monospaced))
             .foregroundStyle(FrogStyle.muted).padding(.horizontal, 9).padding(.vertical, 5)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(FrogStyle.border, lineWidth: 1))
+            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+            .overlay(RoundedRectangle(cornerRadius: FrogStyle.corner).strokeBorder(FrogStyle.border.opacity(0.6), lineWidth: 1))
             .accessibilityLabel("Shortcut: \(text)")
     }
 }
@@ -145,8 +190,8 @@ struct LabeledField<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(FrogStyle.ink)
-            content.textFieldStyle(.plain).padding(11)
+            Text(L10n.text(title)).font(.system(size: 12, weight: .medium)).foregroundStyle(FrogStyle.ink)
+            content.textFieldStyle(.plain).padding(8)
                 .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(FrogStyle.border, lineWidth: 1))
         }
@@ -161,18 +206,9 @@ struct FrogMenu<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.system(size: 12, weight: .medium))
-            Menu { content } label: {
-                HStack(spacing: 12) {
-                    Text(value).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
-                    Image(systemName: symbol).font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.muted)
-                }.font(.system(size: 13)).foregroundStyle(FrogStyle.ink).padding(12)
-                    .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(FrogStyle.border, lineWidth: 1))
-                    .contentShape(RoundedRectangle(cornerRadius: 8))
-            }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
-                .accessibilityLabel(title).accessibilityValue(value)
+        CompactRow(title: title) {
+            CompactMenu(value: value) { content }
+                .accessibilityLabel(L10n.text(title)).accessibilityValue(value)
         }
     }
 }
@@ -186,10 +222,9 @@ struct IconAction: View {
         Button(role: destructive ? .destructive : nil, action: action) {
             Image(systemName: symbol).font(.system(size: 13, weight: .medium))
                 .foregroundStyle(destructive ? Color.red : FrogStyle.muted)
-                .frame(width: 32, height: 32)
-                .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 8))
-                .contentShape(RoundedRectangle(cornerRadius: 8))
-        }.buttonStyle(.plain).accessibilityLabel(title).help(title)
+                .frame(width: 26, height: 26)
+                .contentShape(RoundedRectangle(cornerRadius: FrogStyle.corner))
+        }.buttonStyle(.plain).accessibilityLabel(L10n.text(title)).help(L10n.text(title))
     }
 }
 
@@ -200,8 +235,8 @@ struct SettingRow<Control: View>: View {
     var body: some View {
         HStack(spacing: 24) {
             VStack(alignment: .leading, spacing: 5) {
-                Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(FrogStyle.ink)
-                Text(description).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
+                Text(L10n.text(title)).font(.system(size: 12, weight: .medium)).foregroundStyle(FrogStyle.ink)
+                Text(L10n.text(description)).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
                     .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
             }.frame(maxWidth: .infinity, alignment: .leading)
             control
@@ -216,8 +251,8 @@ struct FrogEmptyState: View {
     var body: some View {
         VStack(spacing: 16) {
             SymbolTile(symbol: symbol, size: 60)
-            Text(title).font(.system(size: 21, weight: .semibold, design: .rounded)).foregroundStyle(FrogStyle.ink)
-            Text(message).font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
+            Text(L10n.text(title)).font(.system(size: 21, weight: .semibold, design: .rounded)).foregroundStyle(FrogStyle.ink)
+            Text(L10n.text(message)).font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
                 .multilineTextAlignment(.center).lineSpacing(4).frame(maxWidth: 340)
         }.frame(maxWidth: .infinity).padding(.vertical, 44).padding(.horizontal, 24)
     }

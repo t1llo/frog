@@ -44,6 +44,7 @@ final class AppModel: ObservableObject {
     private var dictationHistoryEpoch: UUID?
     static let localProviderID = UUID(uuidString: "7C05FB97-5BEF-48FD-9C28-A67605107251")!
     static let shortcutPanelID = UUID(uuidString: "85F8DE80-89BC-4506-B82D-DCFB71AFE292")!
+    static let cancelRecordingID = UUID(uuidString: "E4A8A2D5-7F72-42CA-924C-9100A213D030")!
     private let shortcutPanel = ShortcutReferencePanel()
     private let captureSelection: () async throws -> any CapturedTextSelection
     private let processingIndicator = ProcessingIndicator()
@@ -74,7 +75,8 @@ final class AppModel: ObservableObject {
         catch { configurationLoadError = error; report(error) }
         refreshHistory()
         refreshSystemStatus()
-        if registerShortcuts { FrogAppearance.shared.settings = configuration.preferences.appearance ?? AppearancePreferences() }
+        if registerShortcuts { FrogAppearance.shared.apply(configuration.preferences.appearance ?? AppearancePreferences()) }
+        if registerShortcuts { AppLanguage.shared.selection = configuration.preferences.workflowSettings.applicationLanguage ?? "system" }
         localModels.idleSeconds = configuration.preferences.workflowSettings.idleUnloadSeconds
         localModels.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         dictation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
@@ -157,12 +159,13 @@ final class AppModel: ObservableObject {
         try ConfigurationFile.validate(candidate)
         try configurationStore.save(candidate)
         configuration = candidate
-        if registerShortcuts { FrogAppearance.shared.settings = candidate.preferences.appearance ?? AppearancePreferences() }
+        if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
+        if registerShortcuts { AppLanguage.shared.selection = candidate.preferences.workflowSettings.applicationLanguage ?? "system" }
     }
 
     func saveRule(_ rule: Rule) throws {
         guard !rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !rule.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+              rule.category == .application || !rule.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw FrogError.message("Give this rule a name and instructions.")
         }
         if rule.instructions.contains("{{language}}") && rule.targetLanguage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -241,10 +244,10 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func setDefaultProvider(id: UUID?) throws {
+    func setDefaultProvider(id: UUID?, activate: Bool = true) throws {
         if let id, !configuration.providers.contains(where: { $0.id == id }) { throw FrogError.message("Choose an existing provider.") }
         var candidate = configuration; candidate.defaultProviderID = id
-        var workflow = candidate.preferences.workflowSettings; workflow.defaultLocalTextModelID = nil; candidate.preferences.workflows = workflow
+        if activate { var workflow = candidate.preferences.workflowSettings; workflow.textSource = .provider; candidate.preferences.workflows = workflow }
         try persist(candidate)
     }
 
@@ -264,8 +267,9 @@ final class AppModel: ObservableObject {
     }
 
     func savePreferences(_ preferences: Preferences) throws {
-        let shortcutChanged = preferences.workflowSettings.shortcutPanelHotkey != configuration.preferences.workflowSettings.shortcutPanelHotkey
+        let shortcutChanged = preferences.workflowSettings.shortcutPanelHotkey != configuration.preferences.workflowSettings.shortcutPanelHotkey || preferences.workflowSettings.cancelRecordingHotkey != configuration.preferences.workflowSettings.cancelRecordingHotkey
         if let key = preferences.workflowSettings.shortcutPanelHotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
+        if let key = preferences.workflowSettings.cancelRecordingHotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
         guard (1...200).contains(preferences.historyLimit), (1...30).contains(preferences.historyRetentionDays) else {
             throw FrogError.message("History must keep 1–200 entries for 1–30 days.")
         }
@@ -318,7 +322,8 @@ final class AppModel: ObservableObject {
         }
         try configurationStore.replaceFromImport(candidate)
         configuration = candidate
-        if registerShortcuts { FrogAppearance.shared.settings = candidate.preferences.appearance ?? AppearancePreferences() }
+        if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
+        if registerShortcuts { AppLanguage.shared.selection = candidate.preferences.workflowSettings.applicationLanguage ?? "system" }
         configurationLoadError = nil
         localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds
         errorMessage = nil
@@ -345,16 +350,17 @@ final class AppModel: ObservableObject {
             guard rule.enabled, let hotkey = rule.hotkey else { return false }
             return hotkey.keyCode == 48 && (hotkey.modifiers == 256 || hotkey.modifiers == 768)
         }
-        let referenceKey = configuration.preferences.workflowSettings.shortcutPanelHotkey
-        let referenceConflict = referenceKey?.keyCode == 48 && [UInt32(256), 768].contains(referenceKey?.modifiers ?? 0)
+        let workflow = configuration.preferences.workflowSettings
+        let referenceConflict = [workflow.shortcutPanelHotkey, workflow.cancelRecordingHotkey].compactMap { $0 }.contains { $0.keyCode == 48 && [UInt32(256), 768].contains($0.modifiers) }
         if configuration.preferences.windowSwitcherEnabled && (conflict || referenceConflict) {
             windowSwitcher.stop()
-            let message = "A writing rule uses ⌘Tab — change its shortcut to enable window switching"
+            let message = "A configured shortcut uses ⌘Tab — change it to enable window switching"
             if windowSwitcherStatus != message { windowSwitcherStatus = message }
             if windowSwitcherReady { windowSwitcherReady = false }
             return
         }
         windowSwitcher.configure(enabled: configuration.preferences.windowSwitcherEnabled, suspended: isRecordingShortcut)
+        windowSwitcher.updateShortcuts(configuration.rules.filter { hotkeyErrors[$0.id] == nil })
     }
 
     private func registerHotkeys() {
@@ -363,11 +369,12 @@ final class AppModel: ObservableObject {
         if let key = configuration.preferences.workflowSettings.shortcutPanelHotkey {
             rules.append(Rule(id: Self.shortcutPanelID, name: "Show shortcuts", hotkey: key))
         }
+        if let key = configuration.preferences.workflowSettings.cancelRecordingHotkey { rules.append(Rule(id: Self.cancelRecordingID, name: "Cancel recording", hotkey: key)) }
         hotkeyErrors = hotkeys.register(rules: rules, onPress: { [weak self] id in self?.handleShortcut(id, pressed: true) }) { [weak self] id in self?.handleShortcut(id, pressed: false) }
     }
 
-    private func resolved(_ rule: Rule) throws -> ProviderConfiguration {
-        if let id = rule.action?.localTextModelID ?? (rule.providerID == nil ? configuration.preferences.workflowSettings.defaultLocalTextModelID : nil),
+    func resolved(_ rule: Rule) throws -> ProviderConfiguration {
+        if let id = rule.action?.localTextModelID ?? (rule.providerID == nil && configuration.preferences.workflowSettings.effectiveTextSource == .frog ? configuration.preferences.workflowSettings.defaultLocalTextModelID ?? "qwen-0.6b" : nil),
            let model = LocalModelDescriptor.find(id) {
             return ProviderConfiguration(id: Self.localProviderID, name: model.name, kind: .compatible, model: id)
         }
@@ -407,6 +414,7 @@ final class AppModel: ObservableObject {
     }
 
     private func handleShortcut(_ id: UUID, pressed: Bool) {
+        if id == Self.cancelRecordingID { if pressed { dictation.cancel() }; return }
         if id == Self.shortcutPanelID { if !pressed { showShortcuts() }; return }
         guard let rule = configuration.rules.first(where: { $0.id == id && $0.enabled }) else { return }
         switch rule.category {

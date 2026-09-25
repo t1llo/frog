@@ -1,6 +1,6 @@
 # Frog
 
-A small macOS menu-bar utility for writing and window switching. Rewrite selected text in place, or use Command–Tab to switch directly between individual windows.
+A native macOS app with Dock and menu-bar access for writing, dictation and window switching. Rewrite selected text in place, or use Command–Tab to switch directly between individual windows.
 
 **[Download](https://github.com/t1llo/frog/releases)** · macOS 14+ · Apple silicon and Intel
 
@@ -38,7 +38,7 @@ Select text in an editable field, then press **Control + Shift + C** to proofrea
 
 Frog sends selected text and your rule to the chosen text provider (or built-in local model), copies the result, and replaces the selection. If you move to another field or the app can’t safely edit it, the result stays on your clipboard.
 
-Closing the window keeps Frog in the menu bar. Enable **Start at login** in Settings if you want it available after a restart.
+Closing the window keeps Frog running in the Dock and menu bar. Click its Dock icon to reopen the window. Enable **Start at login** in Settings if you want it available after a restart.
 
 ### Window switcher
 
@@ -48,7 +48,11 @@ The list shows titles and app icons, with recently used windows first. Keep hold
 
 ### Local transcription
 
-On Apple silicon, open **Transcription**, allow microphone access, and download a Whisper speech model plus a Qwen local cleanup model. Configure the Dictate rule's shortcut in **Rules**. Choose press-to-toggle or hold-to-record and copy-only or copy-and-paste in Settings; rules can override these defaults. The optional popup shows live partial text and stop/cancel controls. Shared history stays optional. Providers also lists downloadable local text models that can be used for ordinary writing rules.
+On Apple silicon, open **Models → Inside Frog** and download a Whisper speech model plus a Qwen local cleanup model. Allow microphone access in **Settings → Permissions**, then configure the Dictate rule's shortcut in **Rules**. Choose press-to-toggle or hold-to-record and copy-only or copy-and-paste in **Settings → Recording**; rules can override these defaults. The optional popup shows live partial text and stop/cancel controls. Shared history stays optional. Local text models can also be used for ordinary writing rules. **Models → Providers** configures services running outside Frog, including cloud APIs, Ollama and LM Studio.
+
+Choose where models download in **Settings → Model storage**. Changing the folder preserves existing files in the previous location; choose that folder again to reuse those models. This machine-local path is saved separately from portable configuration exports.
+
+In **Settings → Appearance**, choose System, Light or Dark and a Frog, Tokyo Night, Catppuccin or Nord theme. Themes supply matching light/dark surfaces and accent colors; the color picker can override the accent independently.
 
 ## Your settings and data
 

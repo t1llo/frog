@@ -4,6 +4,45 @@ import FrogCore
 
 @MainActor
 final class LocalModelsTests: XCTestCase {
+    func testChangingStoragePreservesOldDownloadsAndPersistsNewLocation() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: Self.fixtureDownload)
+        let descriptor = LocalModelDescriptor.find("qwen-0.6b")!
+        models.download(descriptor); await models.waitForDownload(descriptor.id)
+        let original = models.root
+        try await models.changeDirectory(to: directory.appendingPathComponent("custom"))
+        XCTAssertTrue(models.installed.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: original.appendingPathComponent(descriptor.id).path))
+        models.download(descriptor); await models.waitForDownload(descriptor.id)
+        let restarted = LocalModels(directory: directory)
+        XCTAssertEqual(restarted.root, models.root)
+        XCTAssertTrue(restarted.installed.contains(descriptor.id))
+        try await models.changeDirectory(to: original)
+        XCTAssertTrue(models.installed.contains(descriptor.id))
+    }
+    func testChangingStorageDuringDownloadIsRejectedAndForeignFolderIsPreserved() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let gate = DownloadGate()
+        let models = LocalModels(directory: directory, downloader: { model, base, progress in
+            let folder = try await Self.fixtureDownload(model, base, progress)
+            await gate.wait()
+            return folder
+        })
+        let descriptor = LocalModelDescriptor.find("whisper-base")!
+        models.download(descriptor); await gate.waitUntilStarted()
+        let original = models.root
+        do { try await models.changeDirectory(to: directory.appendingPathComponent("custom")); XCTFail("Active download must keep its root") } catch {}
+        XCTAssertEqual(models.root, original)
+        models.cancelDownload(descriptor.id); await gate.resume(); await models.waitForDownload(descriptor.id)
+        let existing = original.appendingPathComponent(descriptor.id)
+        try FileManager.default.createDirectory(at: existing, withIntermediateDirectories: true)
+        try Data("keep".utf8).write(to: existing.appendingPathComponent("user-file"))
+        models.download(descriptor)
+        XCTAssertNotNil(models.errors[descriptor.id])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: existing.appendingPathComponent("user-file").path))
+    }
     func testInstalledModelSurvivesRestartAndIdleUnloadReleasesResidency() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -66,7 +105,7 @@ private actor FixtureInference: LocalInferenceEngine {
     var loadedIDs = Set<String>()
     var unloads = 0
     var calls = 0
-    func transcribe(_ samples: [Float], id: String, url: URL) async throws -> String { loadedIDs.insert(id); calls += 1; return "hello" }
+    func transcribe(_ samples: [Float], id: String, url: URL, language: String?) async throws -> String { loadedIDs.insert(id); calls += 1; return "hello" }
     func complete(_ text: String, instructions: String, id: String, url: URL) async throws -> String { loadedIDs.insert(id); calls += 1; return text }
     func unload() { loadedIDs = []; unloads += 1 }
 }

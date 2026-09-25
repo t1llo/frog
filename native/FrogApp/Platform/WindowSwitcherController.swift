@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import SwiftUI
+import FrogCore
 
 @MainActor
 final class WindowSwitcherController {
@@ -12,6 +13,20 @@ final class WindowSwitcherController {
     private var presentationTask: Task<Void, Never>?
     private let statusChanged: (String, Bool) -> Void
     var onError: ((String) -> Void)?
+    private var shortcutRules: [Rule] = []
+    func updateShortcuts(_ rules: [Rule]) {
+        shortcutRules = rules
+        refreshShortcuts()
+    }
+    private func refreshShortcuts() {
+        var shortcuts: [pid_t: String] = [:]
+        for app in NSWorkspace.shared.runningApplications {
+            if let rule = shortcutRules.first(where: { $0.enabled && $0.category == .application && $0.action?.applicationBundleID == app.bundleIdentifier }), let key = rule.hotkey {
+                shortcuts[app.processIdentifier] = HotkeyManager.display(key)
+            }
+        }
+        display.shortcuts = shortcuts
+    }
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var panel: NSPanel?
@@ -161,6 +176,7 @@ final class WindowSwitcherController {
     }
 
     private func begin(backwards: Bool, token: UInt64) {
+        refreshShortcuts()
         if let previous = generation, previous != token { cancel(session: previous) }
         activation?.cancel(); activation = nil
         discovery?.cancel()
@@ -173,7 +189,7 @@ final class WindowSwitcherController {
         presentation.begin(token, ready: cached != nil)
         presentationTask?.cancel()
         presentationTask = Task { [weak self] in
-            do { try await Task.sleep(for: .milliseconds(120)) } catch { return }
+            do { try await Task.sleep(for: .milliseconds(80)) } catch { return }
             guard let self, self.generation == token else { return }
             self.presentation.elapsed(token)
             self.showPanelIfReady()

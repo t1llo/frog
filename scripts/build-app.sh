@@ -15,6 +15,9 @@ swift scripts/make-icon.swift dist/Frog.iconset
 iconutil -c icns dist/Frog.iconset -o "$app/Contents/Resources/Frog.icns"
 cp "$binary_dir/Frog" "$app/Contents/MacOS/Frog"
 cp native/Info.plist "$app/Contents/Info.plist"
+for localization in native/FrogApp/Resources/*.lproj; do
+    ditto "$localization" "$app/Contents/Resources/$(basename "$localization")"
+done
 # Native package resources include MLX's compiled Metal library.
 for bundle in "$binary_dir"/*.bundle; do
     [[ -d "$bundle" ]] || continue

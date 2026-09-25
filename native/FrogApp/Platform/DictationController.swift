@@ -14,6 +14,7 @@ final class DictationController: ObservableObject {
     @Published private(set) var hint = ""
     private(set) var ruleID: UUID?
     private var recorder: AudioProcessor?
+    private let outputMute = RecordingMute()
     private var work: Task<Void, Never>?
     private var preview: Task<Void, Never>?
     private var ticker: Task<Void, Never>?
@@ -42,7 +43,7 @@ final class DictationController: ObservableObject {
     func start(rule: Rule, preferences: WorkflowPreferences, models: LocalModels) {
         guard !active else { return }
         let modelID = rule.action?.audioModelID ?? preferences.audioModelID
-        guard models.installed.contains(modelID) else { onError?(FrogError.message("Download an audio model in Transcription first.")); return }
+        guard models.installed.contains(modelID) else { onError?(FrogError.message("Download an audio model in Models → Inside Frog first.")); return }
         let token = UUID(); self.token = token
         self.preferences = preferences; self.models = models; activeRule = rule; ruleID = rule.id
         stopRequested = false; samples = AudioSamples(); liveText = ""; elapsed = 0
@@ -67,6 +68,7 @@ final class DictationController: ObservableObject {
                 let device = preferences.microphoneID.flatMap(UInt32.init)
                 if let device, !Self.devices.contains(where: { $0.id == device }) { throw FrogError.message("The selected microphone is unavailable. Choose another in Settings.") }
                 let samples = self.samples
+                if preferences.muteWhileRecording == true { try self.outputMute.begin() }
                 try recorder.startRecordingLive(inputDeviceID: device) { samples.append($0) }
                 self.phase = .recording
                 self.ticker = Task { [weak self] in
@@ -84,7 +86,7 @@ final class DictationController: ObservableObject {
                             guard let self, self.token == token, self.phase == .recording else { return }
                             let audio = samples.snapshot(last: 30 * 16000)
                             guard audio.count >= 16000, !models.busy else { continue }
-                            let text = try await models.transcribe(audio, modelID: modelID)
+                            let text = try await models.transcribe(audio, modelID: modelID, language: preferences.transcriptionLanguage)
                             if self.token == token && self.phase == .recording { self.liveText = text }
                         } catch { if Task.isCancelled { return } }
                     }
@@ -98,6 +100,7 @@ final class DictationController: ObservableObject {
         if phase == .preparing { stopRequested = true; return }
         guard phase == .recording else { return }
         recorder?.stopRecording(); recorder = nil
+        outputMute.restore()
         ticker?.cancel(); ticker = nil
         let previous = preview; previous?.cancel(); preview = nil
         let audio = samples.snapshot(); samples.clear()
@@ -108,7 +111,7 @@ final class DictationController: ObservableObject {
             guard let self, self.token == token, !Task.isCancelled else { return }
             do {
                 guard audio.count >= 3200 else { throw FrogError.message("No speech recorded. Hold the shortcut longer, or use toggle mode.") }
-                let raw = try await models.transcribe(audio, modelID: modelID)
+                let raw = try await models.transcribe(audio, modelID: modelID, language: self.preferences.transcriptionLanguage)
                 guard !raw.isEmpty else { throw FrogError.message("No speech detected.") }
                 self.liveText = raw
                 var output = raw
@@ -146,6 +149,7 @@ final class DictationController: ObservableObject {
         token = nil; work?.cancel(); preview?.cancel(); ticker?.cancel()
         work = nil; preview = nil; ticker = nil
         recorder?.stopRecording(); recorder = nil; samples.clear()
+        outputMute.restore()
         target = nil; activeRule = nil; ruleID = nil; phase = .idle
         panel?.orderOut(nil)
         if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }; escapeMonitor = nil
@@ -184,15 +188,16 @@ private struct DictationPopup: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Image(systemName: controller.phase == .recording ? "mic.fill" : "waveform").foregroundStyle(FrogStyle.accent)
-                Text(controller.phase.rawValue.capitalized).fontWeight(.semibold)
+                Text(L10n.text(controller.phase.rawValue.capitalized)).fontWeight(.semibold)
                 Spacer(); Text("\(controller.elapsed)s").monospacedDigit().foregroundStyle(.secondary)
                 if controller.phase == .recording { Button("Stop") { controller.requestStop() }.controlSize(.small) }
                 Button { controller.cancel() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Cancel dictation")
             }
-            Text(controller.liveText.isEmpty ? "Listening…" : controller.liveText).font(.system(size: 13)).lineLimit(4).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            Text(controller.liveText.isEmpty ? L10n.text("Listening…") : controller.liveText).font(.system(size: 13)).lineLimit(4).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             Text(controller.hint).font(.system(size: 10)).foregroundStyle(.secondary)
         }.padding(16).frame(width: 440, height: 170)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14)).preferredColorScheme(.dark)
+            .environment(\.locale, L10n.locale)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
     }
 }
 

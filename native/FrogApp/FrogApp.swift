@@ -9,6 +9,7 @@ struct FrogApp: App {
     var body: some Scene {
         MenuBarExtra {
             FrogStatusMenu(model: delegate.model)
+                .environment(\.locale, L10n.locale)
         } label: {
             Image(nsImage: FrogMenuIcon.image)
                 .renderingMode(.template)
@@ -24,7 +25,7 @@ private struct FrogStatusMenu: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        Text(model.status).font(.caption)
+        Text(L10n.text(model.status)).font(.caption)
         Text("\(model.configuration.rules.filter { $0.enabled && $0.hotkey != nil }.count) active shortcuts").font(.caption)
         if !model.accessibilityGranted { Button("Set up Accessibility…") { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() } }
         if !DictationController.microphoneGranted { Button("Set up microphone…") { Task { _ = await DictationController.requestMicrophone(); model.objectWillChange.send() } } }
@@ -111,8 +112,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
     private var launchedAtLogin = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
-        NSApplication.shared.setActivationPolicy(.accessory)
+        NSApplication.shared.setActivationPolicy(.regular)
         let event = NSAppleEventManager.shared().currentAppleEvent
         launchedAtLogin = event?.eventID == kAEOpenApplication && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
         model.openSettings = { [weak self] in self?.showWindow() }
@@ -121,7 +121,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
         observer = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak model] _ in
             Task { @MainActor in model?.refreshSystemStatus() }
         }
-        if (model.configuration.providers.isEmpty || !model.accessibilityGranted || !DictationController.microphoneGranted) && !launchedAtLogin && !ProcessInfo.processInfo.arguments.contains("--background") {
+        if !launchedAtLogin && !ProcessInfo.processInfo.arguments.contains("--background") {
             showWindow()
         }
     }
@@ -136,15 +136,16 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
             created.toolbarStyle = .unified
             created.backgroundColor = .clear
             created.isOpaque = false
-            created.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-            created.setContentSize(NSSize(width: 920, height: 650))
-            created.contentMinSize = NSSize(width: 820, height: 580)
+            created.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            created.setContentSize(NSSize(width: 800, height: 580))
+            created.contentMinSize = NSSize(width: 740, height: 520)
             created.isReleasedWhenClosed = false
             created.delegate = self
             created.center()
             window = created
         }
         NSApplication.shared.activate(ignoringOtherApps: true)
+        if window?.isMiniaturized == true { window?.deminiaturize(nil) }
         window?.makeKeyAndOrderFront(nil)
     }
 

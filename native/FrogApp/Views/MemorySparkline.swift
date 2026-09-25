@@ -13,7 +13,7 @@ struct MemorySparkline: View {
                 if index == 0 { line.move(to: point) } else { line.addLine(to: point) }
             }
             context.stroke(line, with: .color(FrogStyle.accent.opacity(0.65)), lineWidth: 1)
-        }.frame(width: 36, height: 14)
+        }.frame(maxWidth: .infinity)
             .help("Frog memory: \(ByteCountFormatter.string(fromByteCount: Int64(samples.last ?? 0), countStyle: .memory))")
             .accessibilityLabel("Frog memory usage")
             .task {

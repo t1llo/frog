@@ -10,16 +10,16 @@ struct HotkeyRecorder: View {
     @State private var hint: String?
 
     var body: some View {
-        HStack(spacing: 10) {
-            ShortcutBadge(text: recording ? "Press shortcut…" : hotkey.map(HotkeyManager.display) ?? "No shortcut")
-                .frame(minWidth: 140, alignment: .leading)
-            Spacer(minLength: 0)
-            Button(recording ? "Cancel recording" : "Record shortcut") {
+        HStack(spacing: 6) {
+            Button {
                 recording.toggle(); hint = nil
+            } label: {
+                ShortcutBadge(text: recording ? L10n.text("Press shortcut…") : hotkey.map(HotkeyManager.display) ?? L10n.text("Record shortcut"))
+            }.buttonStyle(.plain)
+            if hotkey != nil || recording {
+                Button { hotkey = nil; recording = false; hint = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    .buttonStyle(.plain).accessibilityLabel("Clear shortcut")
             }
-            .buttonStyle(FrogButtonStyle(primary: recording))
-            Button("Clear") { hotkey = nil; recording = false; hint = nil }
-                .disabled(hotkey == nil && !recording)
             if recording {
                 KeyCapture(recording: $recording, hotkey: $hotkey, hint: $hint)
                     .frame(width: 1, height: 1).accessibilityHidden(true)

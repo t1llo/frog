@@ -29,6 +29,9 @@ public struct RuleAction: Codable, Equatable, Sendable {
 }
 
 public struct WorkflowPreferences: Codable, Equatable, Sendable {
+    public static let interfaceLanguages = ["system", "en", "de"]
+    public static let speechLanguages = ["auto", "en", "de", "fr", "es", "it", "pt", "nl", "pl", "uk", "ru", "ja", "zh", "ko", "ar", "hi", "tr"]
+    public enum TextSource: String, Codable, CaseIterable, Sendable { case provider, frog }
     public var audioModelID = "whisper-small"
     public var cleanupModelID = "qwen-0.6b"
     public var defaultLocalTextModelID: String?
@@ -38,6 +41,12 @@ public struct WorkflowPreferences: Codable, Equatable, Sendable {
     public var idleUnloadSeconds = 120
     public var showDictationPopup = true
     public var shortcutPanelHotkey: Hotkey?
+    public var textSource: TextSource?
+    public var transcriptionLanguage: String?
+    public var muteWhileRecording: Bool?
+    public var cancelRecordingHotkey: Hotkey?
+    public var applicationLanguage: String?
+    public var effectiveTextSource: TextSource { textSource ?? (defaultLocalTextModelID == nil ? .provider : .frog) }
     public init() {}
 }
 
@@ -49,6 +58,10 @@ public struct LocalModelDescriptor: Identifiable, Equatable, Sendable {
     public let repository: String
     public let variant: String?
     public let size: String
+    public var accuracy: String { switch id { case "whisper-small", "qwen-1.7b": "Higher accuracy"; default: "Standard accuracy" } }
+    public var speed: String { switch id { case "whisper-base", "qwen-0.6b": "Fast"; default: "Balanced speed" } }
+    public var languages: String { kind == .audio ? "99 languages" : "Multilingual" }
+    public var streaming: String { kind == .audio ? "Live preview" : "Token streaming" }
     public static let catalog: [Self] = [
         .init(id: "whisper-small", name: "Whisper Small", kind: .audio, repository: "argmaxinc/whisperkit-coreml", variant: "openai_whisper-small", size: "≈500 MB"),
         .init(id: "whisper-base", name: "Whisper Base", kind: .audio, repository: "argmaxinc/whisperkit-coreml", variant: "openai_whisper-base", size: "≈150 MB"),
