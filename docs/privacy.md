@@ -10,7 +10,9 @@ Frog doesn’t send provider requests or download model weights at startup. Expl
 
 ## Transcription and built-in models
 
-Recording starts only when you invoke an audio rule or Record. Microphone audio stays in process memory for local WhisperKit transcription and is discarded after completion/cancellation. The live popup shows partial text when enabled. Recordings stop automatically after ten minutes. No audio files are added to history.
+Recording starts only when you invoke an audio rule or Record. Microphone audio stays in process memory for local WhisperKit or FluidAudio/Parakeet transcription and is discarded after completion/cancellation. The live popup shows partial text when enabled. Recordings stop automatically after ten minutes. No audio files are added to history.
+
+Adding a Hugging Face model link fetches public repository metadata and, for text models, `config.json` to inspect its format. It does not upload your text/audio or download weights. Weights download only when you press Download. Each model's information panel links to the converted weights, original model when known, and license. Parakeet inference uses local Core ML loading rather than FluidAudio's auto-download helpers.
 
 Local cleanup uses downloaded MLX weights. A custom audio rule explicitly choosing a cloud text provider sends the transcript and instructions to that provider; raw audio is not sent. Results are copied, with optional insertion into a still-matching original target. Shared history, if enabled, stores the raw transcript and processed text under the same retention controls as writing results. If cleanup fails, the original transcript is preserved on the clipboard with an error message.
 

@@ -74,7 +74,7 @@ struct RulesView: View {
 @MainActor
 extension AppModel {
     func localModelLabel(_ id: String) -> String {
-        (LocalModelDescriptor.find(id)?.name ?? id) + (localModels.installed.contains(id) ? "" : " · " + L10n.text("Not downloaded"))
+        (configuration.localModel(id)?.name ?? id) + (localModels.installed.contains(id) ? "" : " · " + L10n.text("Not downloaded"))
     }
     var defaultTextLabel: String {
         let prefs = configuration.preferences.workflowSettings
@@ -171,7 +171,7 @@ private struct RuleEditor: View {
         CompactMenu(value: selectedModel) {
             Button(L10n.text("Default") + " · " + defaultModel) { rule.providerID = nil; rule.model = ""; rule.action?.localTextModelID = nil }
             Section("Downloaded") {
-                ForEach(LocalModelDescriptor.catalog.filter { $0.kind == .text && model.localModels.installed.contains($0.id) }) { item in
+                ForEach(model.configuration.modelCatalog.filter { $0.kind == .text && model.localModels.installed.contains($0.id) }) { item in
                     Button(item.name) {
                         if rule.action == nil { rule.action = RuleAction() }
                         rule.action?.localTextModelID = item.id; rule.providerID = nil; rule.model = ""
@@ -187,10 +187,10 @@ private struct RuleEditor: View {
     }
     private var audioOptions: some View {
         Group {
-            CompactRow(title: "Speech model") {
+            CompactRow(title: "Speech model", detail: model.configuration.localModel(rule.action?.audioModelID ?? prefs.audioModelID)?.languages) {
                 CompactMenu(value: rule.action?.audioModelID.map(model.localModelLabel) ?? L10n.text("Default") + " · " + model.localModelLabel(prefs.audioModelID)) {
                     Button(L10n.text("Default") + " · " + model.localModelLabel(prefs.audioModelID)) { rule.action?.audioModelID = nil }
-                    ForEach(LocalModelDescriptor.catalog.filter { $0.kind == .audio && model.localModels.installed.contains($0.id) }) { item in
+                    ForEach(model.configuration.modelCatalog.filter { $0.kind == .audio && model.localModels.installed.contains($0.id) }) { item in
                         Button(item.name) { rule.action?.audioModelID = item.id }
                     }
                 }

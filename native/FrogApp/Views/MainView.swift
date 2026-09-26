@@ -113,7 +113,7 @@ struct MainView: View {
                         Image(systemName: "cpu").font(.system(size: 9))
                         Text("\(model.localModels.loaded.count)").font(.system(size: 9)).monospacedDigit()
                     }.foregroundStyle(FrogStyle.muted)
-                        .help(model.localModels.loaded.isEmpty ? L10n.text("No models in RAM") : model.localModels.loaded.sorted().map { LocalModelDescriptor.find($0)?.name ?? $0 }.joined(separator: ", "))
+                        .help(model.localModels.loaded.isEmpty ? L10n.text("No models in RAM") : model.localModels.loaded.sorted().map { model.configuration.localModel($0)?.name ?? $0 }.joined(separator: ", "))
                         .accessibilityLabel(L10n.text("Models in RAM") + ": \(model.localModels.loaded.count)")
                 }
                 if model.isProcessing { Button("Cancel request") { model.cancelProcessing() } }

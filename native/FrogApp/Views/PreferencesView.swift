@@ -94,8 +94,12 @@ struct PreferencesView: View {
                     }
                     Divider()
                     CompactRow(title: "Speech language") {
+                        if let audio = model.configuration.localModel(prefs.audioModelID), !audio.supportsLanguageSelection {
+                            Text(L10n.text(audio.languages)).font(.system(size: 11)).foregroundStyle(.secondary)
+                        } else {
                         CompactMenu(value: speechLanguageName(prefs.transcriptionLanguage ?? "auto")) {
                             ForEach(WorkflowPreferences.speechLanguages, id: \.self) { code in Button(speechLanguageName(code)) { update { $0.transcriptionLanguage = code } } }
+                        }
                         }
                     }
                     Divider()
@@ -174,8 +178,8 @@ struct PreferencesView: View {
     private func localChoice(_ title: String, selected: String, kind: LocalModelDescriptor.Kind, choose: @escaping (String) -> Void) -> some View {
         CompactRow(title: title) {
             CompactMenu(value: model.localModelLabel(selected)) {
-                ForEach(LocalModelDescriptor.catalog.filter { $0.kind == kind && model.localModels.installed.contains($0.id) }) { item in Button(item.name) { choose(item.id) } }
-                if !LocalModelDescriptor.catalog.contains(where: { $0.kind == kind && model.localModels.installed.contains($0.id) }) { Text("Download models in Models → Inside Frog") }
+                ForEach(model.configuration.modelCatalog.filter { $0.kind == kind && model.localModels.installed.contains($0.id) }) { item in Button(item.name) { choose(item.id) } }
+                if !model.configuration.modelCatalog.contains(where: { $0.kind == kind && model.localModels.installed.contains($0.id) }) { Text("Download models in Models → Inside Frog") }
             }
         }
     }

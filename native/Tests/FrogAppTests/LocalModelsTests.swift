@@ -4,6 +4,29 @@ import FrogCore
 
 @MainActor
 final class LocalModelsTests: XCTestCase {
+    func testCustomSourceInstallsRescansAndReachesTheSpeechRuntimeWithItsLanguagePolicy() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let engine = FixtureInference()
+        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload)
+        let repository = "fixture/whisperkit"
+        let variant = "openai_whisper-tiny.en"
+        let custom = LocalModelDescriptor(id: HuggingFaceSource.modelID(repository: repository, variant: variant, backend: .whisperKit), name: "English fixture", kind: .audio, repository: repository, variant: variant, size: "Fixture")
+        var installations = 0
+        models.onInstall = { XCTAssertEqual($0.id, custom.id); installations += 1 }
+        models.updateCatalog(LocalModelDescriptor.catalog + [custom])
+        models.download(custom); await models.waitForDownload(custom.id)
+        XCTAssertEqual(installations, 1)
+        let restarted = LocalModels(directory: directory, runtime: FixtureInference())
+        restarted.updateCatalog(models.catalog)
+        XCTAssertTrue(restarted.installed.contains(custom.id))
+        _ = try await models.transcribe([0.1], modelID: custom.id, language: "de")
+        let requestedModel = await engine.lastSpeechModel
+        let requestedLanguage = await engine.lastLanguage
+        XCTAssertEqual(requestedModel, custom)
+        XCTAssertEqual(requestedLanguage, "en", "English-only models must not receive a conflicting global language hint")
+        await models.unload()
+    }
     func testChangingIdlePolicyToImmediateUnloadsAnAlreadyResidentModel() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -143,7 +166,12 @@ private actor FixtureInference: LocalInferenceEngine {
     var unloads = 0
     var cancelledUnload = false
     var calls = 0
-    func transcribe(_ samples: [Float], id: String, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String { loadedIDs.insert(id); calls += 1; await residency(loadedIDs); return "hello" }
+    var lastSpeechModel: LocalModelDescriptor?
+    var lastLanguage: String?
+    func transcribe(_ samples: [Float], model: LocalModelDescriptor, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
+        lastSpeechModel = model; lastLanguage = language
+        loadedIDs.insert(model.id); calls += 1; await residency(loadedIDs); return "hello"
+    }
     func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
         loadedIDs.insert(id); calls += 1; await residency(loadedIDs)
         if let gate { await gate.wait() }

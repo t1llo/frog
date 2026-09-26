@@ -162,6 +162,7 @@ public struct Preferences: Codable, Equatable, Sendable {
 }
 
 public struct Configuration: Codable, Equatable, Sendable {
+    public var localModels: [LocalModelDescriptor]?
     public var version = 1
     public var providers: [ProviderConfiguration] = []
     public var defaultProviderID: UUID?
@@ -169,10 +170,11 @@ public struct Configuration: Codable, Equatable, Sendable {
     public var preferences = Preferences()
     public init() {}
 
-    private enum CodingKeys: String, CodingKey { case version, providers, defaultProviderID, rules, preferences }
+    private enum CodingKeys: String, CodingKey { case version, providers, defaultProviderID, rules, preferences, localModels }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         version = try values.decode(Int.self, forKey: .version)
+        localModels = try values.decodeIfPresent([LocalModelDescriptor].self, forKey: .localModels)
         providers = try values.decode([ProviderConfiguration].self, forKey: .providers)
         defaultProviderID = try values.decodeIfPresent(UUID.self, forKey: .defaultProviderID)
         rules = try values.decode([Rule].self, forKey: .rules)

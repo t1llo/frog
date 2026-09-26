@@ -21,6 +21,9 @@ final class LocalModels: ObservableObject {
         #endif
     }
     @Published private(set) var installed = Set<String>()
+    @Published private(set) var catalog = LocalModelDescriptor.catalog
+    var onInstall: ((LocalModelDescriptor) -> Void)?
+    var onInventoryChanged: (() -> Void)?
     @Published private(set) var progress: [String: Double] = [:]
     @Published private(set) var errors: [String: String] = [:]
     @Published private(set) var loaded = Set<String>()
@@ -36,6 +39,12 @@ final class LocalModels: ObservableObject {
     var idleSeconds = 120 {
         didSet { if idleSeconds != oldValue, !busy, !loaded.isEmpty { scheduleUnload() } }
     }
+    func updateCatalog(_ models: [LocalModelDescriptor]) {
+        guard catalog != models else { return }
+        catalog = models
+        installed = Set(catalog.filter { modelURL($0.id) != nil }.map(\.id))
+    }
+    func descriptor(_ id: String) -> LocalModelDescriptor? { catalog.first { $0.id == id } }
 
     init(directory: URL? = nil, runtime: any LocalInferenceEngine = LocalInference(), downloader: @escaping Downloader = LocalInference.download) {
         self.runtime = runtime; self.downloader = downloader
@@ -62,8 +71,9 @@ final class LocalModels: ObservableObject {
         try FileManager.default.createDirectory(at: storagePreference.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(location.path).write(to: storagePreference, options: [.atomic])
         root = location
-        installed = Set(LocalModelDescriptor.catalog.filter { modelURL($0.id) != nil }.map(\.id))
+        installed = Set(catalog.filter { modelURL($0.id) != nil }.map(\.id))
         errors = [:]
+        onInventoryChanged?()
     }
     private func directory(_ id: String) -> URL { root.appendingPathComponent(id, isDirectory: true) }
     private func modelURL(_ id: String) -> URL? {
@@ -97,6 +107,7 @@ final class LocalModels: ObservableObject {
                 let relative = String(url.path.dropFirst(base.path.count + 1))
                 try relative.write(to: base.appendingPathComponent("installed.txt"), atomically: true, encoding: .utf8)
                 self.installed.insert(model.id)
+                self.onInstall?(model)
             } catch {
                 // No completed installation exists yet. Cancel/failure must not
                 // leave gigabytes that the UI has no installed row to delete.
@@ -110,9 +121,13 @@ final class LocalModels: ObservableObject {
     func waitForIdleUnload() async { await unloadTask?.value }
     func remove(_ id: String) async throws {
         guard !busy, downloads[id] == nil else { throw FrogError.message("Wait for the model operation to finish before deleting it.") }
-        await unload()
+        busy = true
+        defer { busy = false }
+        unloadTask?.cancel(); unloadTask = nil
+        await runtime.unload(); loaded = []
         try FileManager.default.removeItem(at: directory(id))
         installed.remove(id); errors[id] = nil
+        onInventoryChanged?()
     }
     func unload() async {
         guard !busy else { return }
@@ -124,7 +139,7 @@ final class LocalModels: ObservableObject {
     private func acquire(_ id: String) throws -> URL {
         guard Self.supported else { throw FrogError.message("Built-in local models require Apple silicon.") }
         guard !busy else { throw FrogError.message("A local model is already processing.") }
-        guard let url = modelURL(id) else { throw FrogError.message("Download \(LocalModelDescriptor.find(id)?.name ?? id) in Providers first.") }
+        guard descriptor(id) != nil, let url = modelURL(id) else { throw FrogError.message("Download \(descriptor(id)?.name ?? id) in Models first.") }
         busy = true; unloadTask?.cancel(); return url
     }
     private func release() {
@@ -147,7 +162,9 @@ final class LocalModels: ObservableObject {
     func transcribe(_ samples: [Float], modelID: String, language: String? = nil) async throws -> String {
         let url = try acquire(modelID); defer { release() }
         do {
-            let result = try await runtime.transcribe(samples, id: modelID, url: url, language: language == "auto" ? nil : language, residency: { [weak self] ids in await self?.updateResidency(ids) })
+            guard let model = descriptor(modelID) else { throw FrogError.message("The speech model is no longer configured.") }
+            let selectedLanguage = model.englishOnly ? "en" : model.supportsLanguageSelection && language != "auto" ? language : nil
+            let result = try await runtime.transcribe(samples, model: model, url: url, language: selectedLanguage, residency: { [weak self] ids in await self?.updateResidency(ids) })
             loaded = await runtime.loadedIDs
             return result
         } catch { loaded = await runtime.loadedIDs; throw error }
@@ -170,7 +187,7 @@ final class LocalModels: ObservableObject {
 
 protocol LocalInferenceEngine: Actor {
     var loadedIDs: Set<String> { get }
-    func transcribe(_ samples: [Float], id: String, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String
+    func transcribe(_ samples: [Float], model: LocalModelDescriptor, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String
     func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String
     func unload() async
 }
@@ -180,13 +197,15 @@ actor LocalInference: LocalInferenceEngine {
     private var speechID: String?
     #if arch(arm64)
     private var textModel: ModelContainer?
+    private var parakeet: ParakeetRuntime?
     #endif
     private var textID: String?
     var loadedIDs: Set<String> { Set([speechID, textID].compactMap { $0 }) }
 
     static func download(_ model: LocalModelDescriptor, base: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         #if arch(arm64)
-        if model.kind == .audio {
+        if model.backend == .parakeet { return try await ParakeetRuntime.download(model, base: base, progress: progress) }
+        if model.backend == .whisperKit {
             let url = try await WhisperKit.download(variant: model.variant!, downloadBase: base, from: model.repository) { progress($0.fractionCompleted * 0.9) }
             try Task.checkCancellation()
             // Download/tokenize during explicit installation, not the first recording.
@@ -195,15 +214,36 @@ actor LocalInference: LocalInferenceEngine {
             progress(1)
             return url
         }
-        return try await HubApi(downloadBase: base).snapshot(from: model.repository, matching: ["*.json", "*.safetensors", "*.jinja", "*.txt"]) { progress($0.fractionCompleted) }
+        return try await HubApi(downloadBase: base).snapshot(from: model.repository, matching: ["*.json", "*.safetensors", "*.jinja", "*.txt", "*.model"]) { progress($0.fractionCompleted) }
         #else
         throw FrogError.message("Built-in local models require Apple silicon.")
         #endif
     }
-    func transcribe(_ samples: [Float], id: String, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
+    func transcribe(_ samples: [Float], model: LocalModelDescriptor, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
+        let id = model.id
         try Task.checkCancellation()
+        #if arch(arm64)
+        if model.backend == .parakeet {
+            if speechID != id {
+                await speech?.unloadModels(); speech = nil
+                await parakeet?.unload(); parakeet = nil; speechID = nil
+                await residency(loadedIDs); try Task.checkCancellation()
+                let engine = ParakeetRuntime()
+                try await engine.load(from: url, version: model.variant == "v2" ? .v2 : .v3)
+                parakeet = engine; speechID = id
+                await residency(loadedIDs)
+            }
+            try Task.checkCancellation()
+            let result = try await parakeet!.transcribe(samples)
+            try Task.checkCancellation()
+            return result
+        }
+        #endif
         if speechID != id {
             await speech?.unloadModels(); speech = nil; speechID = nil
+            #if arch(arm64)
+            await parakeet?.unload(); parakeet = nil
+            #endif
             await residency(loadedIDs)
             try Task.checkCancellation()
             // WhisperKit's cache base contains its model and tokenizer snapshots.
@@ -252,6 +292,7 @@ actor LocalInference: LocalInferenceEngine {
     func unload() async {
         await speech?.unloadModels(); speech = nil; speechID = nil
         #if arch(arm64)
+        await parakeet?.unload(); parakeet = nil
         textModel = nil
         MLX.Memory.clearCache()
         #endif

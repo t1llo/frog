@@ -42,7 +42,7 @@ struct CompactRow<Content: View>: View {
                 if let detail { Text(L10n.text(detail)).font(.system(size: 10)).foregroundStyle(.secondary) }
             }
             Spacer(minLength: 12)
-            content.controlSize(.small).frame(maxWidth: 245, alignment: .trailing)
+            content.controlSize(.small).fixedSize(horizontal: true, vertical: false)
         }.padding(.vertical, 3)
     }
 }
@@ -56,14 +56,14 @@ struct CompactMenu<Content: View>: View {
             HStack(spacing: 8) {
                 Text(L10n.text(value)).lineLimit(1).truncationMode(.middle).frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .medium)).foregroundStyle(FrogStyle.muted)
-            }.font(.system(size: 11, weight: .medium))
+            }.frame(width: 200).font(.system(size: 11, weight: .medium))
                 .foregroundStyle(FrogStyle.ink)
                 .padding(.horizontal, 10).padding(.vertical, 7)
                 .background(hovering ? FrogStyle.accentSoft : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(hovering ? FrogStyle.accent.opacity(0.45) : FrogStyle.border.opacity(0.4)))
                 .contentShape(RoundedRectangle(cornerRadius: 6))
         }.menuStyle(.borderlessButton).menuIndicator(.hidden)
-            .frame(maxWidth: 220, alignment: .trailing)
+            .fixedSize().frame(width: 220, alignment: .trailing)
             .onHover { hovering = $0 }
             .help(L10n.text(value))
     }

@@ -74,6 +74,16 @@ final class AppModel: ObservableObject {
         historyStore = HistoryStore(directory: dataDirectory)
         do { configuration = try configurationStore.load() }
         catch { configurationLoadError = error; report(error) }
+        localModels.updateCatalog(configuration.modelCatalog)
+        localModels.onInstall = { [weak self] item in
+            guard let self else { return }
+            var candidate = self.configuration
+            candidate.selectSoleInstalledModel(item, installed: self.localModels.installed)
+            if candidate != self.configuration {
+                do { try self.persist(candidate) } catch { self.report(error) }
+            }
+        }
+        localModels.onInventoryChanged = { [weak self] in self?.reconcileLocalModelDefaults() }
         refreshHistory()
         refreshSystemStatus()
         if registerShortcuts { FrogAppearance.shared.apply(configuration.preferences.appearance ?? AppearancePreferences()) }
@@ -118,6 +128,9 @@ final class AppModel: ObservableObject {
         }
         registerHotkeys()
         configureWindowSwitcher()
+        if registerShortcuts, configurationLoadError == nil {
+            reconcileLocalModelDefaults()
+        }
         if configuration.providers.isEmpty { status = "Add a provider in Settings to get started." }
     }
 
@@ -166,6 +179,7 @@ final class AppModel: ObservableObject {
         try ConfigurationFile.validate(candidate)
         try configurationStore.save(candidate)
         configuration = candidate
+        localModels.updateCatalog(candidate.modelCatalog)
         if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
         if registerShortcuts { AppLanguage.shared.selection = candidate.preferences.workflowSettings.applicationLanguage ?? "system" }
     }
@@ -194,6 +208,31 @@ final class AppModel: ObservableObject {
         try persist(candidate)
         registerHotkeys()
         configureWindowSwitcher()
+    }
+
+    private func reconcileLocalModelDefaults() {
+        var candidate = configuration
+        for item in candidate.modelCatalog where localModels.installed.contains(item.id) {
+            candidate.selectSoleInstalledModel(item, installed: localModels.installed)
+        }
+        if candidate != configuration { do { try persist(candidate) } catch { report(error) } }
+    }
+
+    func addLocalModel(_ item: LocalModelDescriptor) throws {
+        guard !configuration.modelCatalog.contains(where: { $0.id == item.id }) else { return }
+        try item.validateCustom()
+        var candidate = configuration
+        candidate.localModels = (candidate.localModels ?? []) + [item]
+        try persist(candidate)
+    }
+
+    func removeLocalModelSource(_ item: LocalModelDescriptor) throws {
+        guard !localModels.installed.contains(item.id), localModels.progress[item.id] == nil else {
+            throw FrogError.message("Delete the downloaded model before removing its source.")
+        }
+        var candidate = configuration
+        candidate.localModels?.removeAll { $0.id == item.id }
+        try persist(candidate)
     }
 
     func deleteRule(id: UUID) throws {
@@ -330,6 +369,7 @@ final class AppModel: ObservableObject {
         }
         try configurationStore.replaceFromImport(candidate)
         configuration = candidate
+        localModels.updateCatalog(candidate.modelCatalog)
         if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
         if registerShortcuts { AppLanguage.shared.selection = candidate.preferences.workflowSettings.applicationLanguage ?? "system" }
         configurationLoadError = nil
@@ -383,7 +423,7 @@ final class AppModel: ObservableObject {
 
     func resolved(_ rule: Rule) throws -> ProviderConfiguration {
         if let id = rule.action?.localTextModelID ?? (rule.providerID == nil && configuration.preferences.workflowSettings.effectiveTextSource == .frog ? configuration.preferences.workflowSettings.defaultLocalTextModelID ?? "qwen-0.6b" : nil),
-           let model = LocalModelDescriptor.find(id) {
+           let model = configuration.localModel(id) {
             return ProviderConfiguration(id: Self.localProviderID, name: model.name, kind: .compatible, model: id)
         }
         guard let providerID = rule.providerID ?? configuration.defaultProviderID,

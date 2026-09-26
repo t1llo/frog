@@ -38,6 +38,11 @@ public enum ConfigurationFile {
 
     public static func validate(_ configuration: Configuration) throws {
         guard configuration.version == 1 else { throw FrogError.message("This configuration version is not supported by this version of Frog.") }
+        guard (configuration.localModels?.count ?? 0) <= 100,
+              Set(configuration.modelCatalog.map(\.id)).count == configuration.modelCatalog.count else {
+            throw FrogError.message("Keep at most 100 custom models with unique IDs.")
+        }
+        for model in configuration.localModels ?? [] { try model.validateCustom() }
         let providerIDs = Set(configuration.providers.map(\.id))
         guard providerIDs.count == configuration.providers.count,
               Set(configuration.rules.map(\.id)).count == configuration.rules.count else {
@@ -57,10 +62,10 @@ public enum ConfigurationFile {
                     throw FrogError.message("Choose an application for \(rule.name).")
                 }
             }
-            if let id = rule.action?.audioModelID, LocalModelDescriptor.find(id)?.kind != .audio {
+            if let id = rule.action?.audioModelID, configuration.localModel(id)?.kind != .audio {
                 throw FrogError.message("Choose an available audio model.")
             }
-            if let id = rule.action?.localTextModelID, LocalModelDescriptor.find(id)?.kind != .text {
+            if let id = rule.action?.localTextModelID, configuration.localModel(id)?.kind != .text {
                 throw FrogError.message("Choose an available local text model.")
             }
             guard !rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -96,9 +101,9 @@ public enum ConfigurationFile {
         let workflow = preferences.workflowSettings
         if let language = workflow.applicationLanguage, !WorkflowPreferences.interfaceLanguages.contains(language) { throw FrogError.message("Choose English, German or the system language.") }
         if let language = workflow.transcriptionLanguage, !WorkflowPreferences.speechLanguages.contains(language) { throw FrogError.message("Choose a supported transcription language.") }
-        guard LocalModelDescriptor.find(workflow.audioModelID)?.kind == .audio,
-              LocalModelDescriptor.find(workflow.cleanupModelID)?.kind == .text,
-              workflow.defaultLocalTextModelID == nil || LocalModelDescriptor.find(workflow.defaultLocalTextModelID!)?.kind == .text,
+        guard configuration.localModel(workflow.audioModelID)?.kind == .audio,
+              configuration.localModel(workflow.cleanupModelID)?.kind == .text,
+              workflow.defaultLocalTextModelID == nil || configuration.localModel(workflow.defaultLocalTextModelID!)?.kind == .text,
               (0...3600).contains(workflow.idleUnloadSeconds) else {
             throw FrogError.message("Choose valid default local models and an unload delay between 0 and 3600 seconds.")
         }

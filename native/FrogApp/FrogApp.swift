@@ -13,8 +13,6 @@ struct FrogApp: App {
         } label: {
             Image(nsImage: FrogMenuIcon.image)
                 .renderingMode(.template)
-                .resizable()
-                .frame(width: 22, height: 18)
                 .accessibilityLabel("Frog")
         }
         .menuBarExtraStyle(.menu)
@@ -55,53 +53,13 @@ private struct FrogStatusMenu: View {
 }
 
 /// A template frog face stays legible in both light and dark macOS menu bars.
-private enum FrogMenuIcon {
+enum FrogMenuIcon {
     static let image: NSImage = {
-        // Render into an isolated bitmap, rather than using a lazy drawing handler
-        // with destination-out compositing inside SwiftUI's status-item renderer.
-        let size = NSSize(width: 22, height: 18)
-        let image = NSImage(size: size)
-        for scale in [1, 2, 3] {
-            guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 22 * scale, pixelsHigh: 18 * scale,
-                                              bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-                                              colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
-                  let context = NSGraphicsContext(bitmapImageRep: bitmap) else { continue }
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current = context
-            let transform = NSAffineTransform()
-            transform.scale(by: CGFloat(scale)); transform.concat()
-            drawFace()
-            NSGraphicsContext.restoreGraphicsState()
-            bitmap.size = size
-            image.addRepresentation(bitmap)
-        }
+        let image = Bundle.module.url(forResource: "FrogMenuIcon", withExtension: "png").flatMap { NSImage(contentsOf: $0) } ?? NSImage(size: NSSize(width: 22, height: 18))
+        image.size = NSSize(width: 22, height: 18)
         image.isTemplate = true
         return image
     }()
-
-    private static func drawFace() {
-        NSColor.black.setStroke()
-        NSColor.black.setFill()
-        let outline = NSBezierPath()
-        outline.move(to: NSPoint(x: 3, y: 11))
-        outline.curve(to: NSPoint(x: 9, y: 14), controlPoint1: NSPoint(x: 1, y: 18), controlPoint2: NSPoint(x: 9, y: 18))
-        outline.line(to: NSPoint(x: 13, y: 14))
-        outline.curve(to: NSPoint(x: 19, y: 11), controlPoint1: NSPoint(x: 13, y: 18), controlPoint2: NSPoint(x: 21, y: 18))
-        outline.curve(to: NSPoint(x: 11, y: 1.5), controlPoint1: NSPoint(x: 25, y: 5), controlPoint2: NSPoint(x: 17, y: 1.5))
-        outline.curve(to: NSPoint(x: 3, y: 11), controlPoint1: NSPoint(x: 5, y: 1.5), controlPoint2: NSPoint(x: -3, y: 5))
-        outline.close()
-        outline.lineWidth = 1.4
-        outline.stroke()
-        for x in [CGFloat(5), CGFloat(15)] {
-            NSBezierPath(ovalIn: NSRect(x: x, y: 12, width: 2, height: 2.5)).fill()
-        }
-        let smile = NSBezierPath()
-        smile.move(to: NSPoint(x: 6, y: 7.5))
-        smile.curve(to: NSPoint(x: 16, y: 7.5), controlPoint1: NSPoint(x: 8, y: 3.5), controlPoint2: NSPoint(x: 14, y: 3.5))
-        smile.lineWidth = 1.2
-        smile.lineCapStyle = .round
-        smile.stroke()
-    }
 }
 
 @MainActor

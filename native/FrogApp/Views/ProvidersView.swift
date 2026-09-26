@@ -4,6 +4,7 @@ import FrogCore
 struct ProvidersView: View {
     @EnvironmentObject private var model: AppModel
     @State private var editing: ProviderConfiguration?
+    @State private var addingLocal = false
     @State private var deleting: ProviderConfiguration?
     @State private var filter = "Providers"
     @State private var kind: LocalModelDescriptor.Kind = .audio
@@ -15,9 +16,12 @@ struct ProvidersView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             PageHeader(title: "Models", subtitle: "") {
+                if filter == "Inside Frog" {
+                    Button("Add model…", systemImage: "plus") { addingLocal = true }
+                } else {
                 Button { editing = ProviderConfiguration() } label: { Label("Connect provider", systemImage: "plus") }
                     .keyboardShortcut("n", modifiers: .command)
-                    .opacity(filter == "Providers" ? 1 : 0).disabled(filter != "Providers").accessibilityHidden(filter != "Providers")
+                }
             }
             ListToolbar(placeholder: "Search models", search: $search) {
                 ForEach(["Providers", "Inside Frog"], id: \.self) { name in FilterTag(title: name, selected: filter == name) { filter = name } }
@@ -44,6 +48,9 @@ struct ProvidersView: View {
                                     Text(provider.modelName(provider.model)).font(.system(size: 10)).foregroundStyle(.secondary)
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }.buttonStyle(.plain)
+                            if provider.id == model.configuration.defaultProviderID {
+                                Text("Default").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.accent)
+                            }
                             IconAction(title: "Edit provider", symbol: "pencil") { editing = provider }
                             Menu {
                                 Button("Make default") { do { try model.setDefaultProvider(id: provider.id) } catch { model.report(error) } }
@@ -60,6 +67,7 @@ struct ProvidersView: View {
             }
         }.padding(20)
         .sheet(item: $editing) { provider in ProviderEditor(provider: provider).environmentObject(model) }
+        .sheet(isPresented: $addingLocal) { AddLocalModelView { kind = $0 }.environmentObject(model) }
         .confirmationDialog("Delete \(deleting?.name ?? "provider")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             Button("Delete provider", role: .destructive) {
                 guard let provider = deleting else { return }

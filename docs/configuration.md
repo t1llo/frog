@@ -44,6 +44,8 @@ Use **Settings → Configuration → Export…** to save `Frog-configuration.jso
 
 ## What moves
 
+Custom Hugging Face source descriptors are exported in the top-level `localModels` array. Add sources through **Models → Inside Frog → Add model…** to generate validated IDs and format metadata. Rules and local-model defaults may refer to those IDs. Removing a referenced source from JSON is rejected until its rule/default references are changed. Weights and the device-local download folder are not exported. See [local model sources](local-model-sources.md).
+
 - Rules: names, instructions, enabled state, shortcuts, and provider/model overrides. Older target-language fields remain readable for compatibility.
 - Providers: service type, name, API endpoint, configured model IDs/display names, and default model.
 - The default provider, history, processing indicator and window-switcher preferences.

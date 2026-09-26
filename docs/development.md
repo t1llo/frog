@@ -1,6 +1,6 @@
 # Development and releases
 
-Frog is a native SwiftUI menu-bar app for macOS 14+. Building requires Xcode 26+ and Swift 6.2+. There are no third-party package dependencies.
+Frog is a native SwiftUI menu-bar app for macOS 14+. Building requires Xcode 26+ and Swift 6.2+. Local inference uses pinned WhisperKit, FluidAudio, MLX and Hugging Face Swift packages; see `Package.swift` and `Package.resolved`. FluidAudio's Apache-2.0 license is copied into the app's Resources during packaging.
 
 ```sh
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer

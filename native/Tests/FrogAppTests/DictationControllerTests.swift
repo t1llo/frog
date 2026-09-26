@@ -84,8 +84,8 @@ private actor SuspendedSpeech: LocalInferenceEngine {
     private var continuation: CheckedContinuation<Void, Never>?
     func waitUntilStarted() async { while continuation == nil { await Task.yield() } }
     func resume() { continuation?.resume(); continuation = nil }
-    func transcribe(_ samples: [Float], id: String, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
-        loadedIDs = [id]; await residency(loadedIDs)
+    func transcribe(_ samples: [Float], model: LocalModelDescriptor, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
+        loadedIDs = [model.id]; await residency(loadedIDs)
         await withCheckedContinuation { continuation = $0 }
         return "Old transcript"
     }

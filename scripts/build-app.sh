@@ -11,6 +11,7 @@ swift build "${args[@]}"
 binary_dir="$(swift build "${args[@]}" --show-bin-path)"
 app="dist/Frog.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+ditto .build/checkouts/FluidAudio/LICENSE "$app/Contents/Resources/FluidAudio-LICENSE.txt"
 swift scripts/make-icon.swift dist/Frog.iconset
 iconutil -c icns dist/Frog.iconset -o "$app/Contents/Resources/Frog.icns"
 cp "$binary_dir/Frog" "$app/Contents/MacOS/Frog"
