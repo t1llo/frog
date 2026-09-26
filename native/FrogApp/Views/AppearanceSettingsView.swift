@@ -12,12 +12,11 @@ struct FrogWindowMaterial: NSViewRepresentable {
 
 struct AppearanceSettingsView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var accentInput = ""
     var body: some View {
         CompactRow(title: "Appearance") {
-            CompactMenu(value: (appearance.mode ?? .system).rawValue.capitalized) {
-                ForEach(AppearancePreferences.Mode.allCases, id: \.self) { mode in
-                    Button(L10n.text(mode.rawValue.capitalized)) { var value = appearance; value.mode = mode; save(value) }
-                }
+            CompactSegments(values: AppearancePreferences.Mode.allCases, selected: appearance.mode ?? .system, title: { $0.rawValue.capitalized }) { mode in
+                var value = appearance; value.mode = mode; save(value)
             }
         }
         Divider()
@@ -35,6 +34,14 @@ struct AppearanceSettingsView: View {
         CompactRow(title: "Accent color") {
             HStack(spacing: 10) {
                 Button("Reset") { var value = appearance; value.useThemeAccent = true; save(value) }.buttonStyle(.link)
+                HStack(spacing: 2) {
+                    Text("#").foregroundStyle(FrogStyle.muted)
+                    TextField("RGB", text: $accentInput).textFieldStyle(.plain).frame(width: 58)
+                        .onSubmit { saveAccent() }.accessibilityLabel("Accent hex color")
+                }.font(.system(size: 11, design: .monospaced)).padding(6)
+                    .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 5))
+                    .onAppear { accentInput = appearance.accentHex }
+                    .onChange(of: appearance.accentHex) { _, value in accentInput = value }
                 ColorPicker("Accent color", selection: Binding(get: { FrogStyle.accent }, set: { color in
                     guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return }
                     var value = appearance; value.useThemeAccent = false; value.accentHex = String(format: "%02X%02X%02X", Int(rgb.redComponent * 255), Int(rgb.greenComponent * 255), Int(rgb.blueComponent * 255)); save(value)
@@ -50,5 +57,11 @@ struct AppearanceSettingsView: View {
         }
     }
     private var appearance: AppearancePreferences { model.configuration.preferences.appearance ?? AppearancePreferences() }
+    private func saveAccent() {
+        let hex = accentInput.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "").uppercased()
+        var value = appearance; value.accentHex = hex; value.useThemeAccent = false
+        guard value.valid else { model.report(FrogError.message("Enter a six-digit RGB hex color, such as A3D8AF.")); return }
+        save(value); accentInput = hex
+    }
     private func save(_ value: AppearancePreferences) { var preferences = model.configuration.preferences; preferences.appearance = value; do { try model.savePreferences(preferences) } catch { model.report(error) } }
 }

@@ -49,6 +49,7 @@ final class AppModel: ObservableObject {
     private let captureSelection: () async throws -> any CapturedTextSelection
     private let processingIndicator = ProcessingIndicator()
     private var processingTask: Task<Void, Never>?
+    private var applicationTask: Task<Void, Never>?
     private var historyEpoch = UUID()
     private var configurationLoadError: Error?
     private var isRecordingShortcut = false
@@ -110,6 +111,11 @@ final class AppModel: ObservableObject {
             candidate.preferences.workflows = WorkflowPreferences()
             do { try persist(candidate) } catch { report(error) }
         }
+        if registerShortcuts, configurationLoadError == nil, configuration.preferences.workflowSettings.dictationDefaultsVersion == nil {
+            var candidate = configuration
+            candidate.adoptClipboardDictationDefaults()
+            do { try persist(candidate) } catch { report(error) }
+        }
         registerHotkeys()
         configureWindowSwitcher()
         if configuration.providers.isEmpty { status = "Add a provider in Settings to get started." }
@@ -121,6 +127,7 @@ final class AppModel: ObservableObject {
         if registerShortcuts { windowSwitcher.stop() }
         processingIndicator.hide()
         processingTask?.cancel()
+        applicationTask?.cancel()
         hotkeys.unregister()
     }
 
@@ -277,6 +284,7 @@ final class AppModel: ObservableObject {
         try persist(candidate)
         if !preferences.historyEnabled { historyEpoch = UUID() }
         if !preferences.showProcessingIndicator { processingIndicator.hide() }
+        dictation.setPopupVisible(preferences.workflowSettings.showDictationPopup)
         configureWindowSwitcher()
         localModels.idleSeconds = preferences.workflowSettings.idleUnloadSeconds
         if shortcutChanged { registerHotkeys() }
@@ -432,15 +440,11 @@ final class AppModel: ObservableObject {
     }
 
     private func launchApplication(_ rule: Rule) {
-        guard let bundleID = rule.action?.applicationBundleID else { return }
-        if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
-            app.unhide(); app.activate(options: []); return
-        }
-        guard let path = rule.action?.applicationPath else { return }
-        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) ?? URL(fileURLWithPath: path)
-        guard Bundle(url: url)?.bundleIdentifier == bundleID else { report(FrogError.message("Choose the application again; it has moved or been replaced.")); return }
-        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) { [weak self] _, error in
-            if let error { Task { @MainActor in self?.report(error) } }
+        applicationTask?.cancel()
+        applicationTask = Task {
+            do { try await ApplicationLauncher().launch(rule) }
+            catch is CancellationError { }
+            catch { report(error) }
         }
     }
 

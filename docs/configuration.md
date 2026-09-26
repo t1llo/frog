@@ -1,6 +1,6 @@
 # Configuration files
 
-## Local workflows and appearance (build 9)
+## Local workflows and appearance
 
 Rules may include an `action` object with `category` (`text`, `audio`, or `application`). Missing `action` preserves legacy text behavior. Audio actions may override `audioModelID`, `localTextModelID`, `recordingMode` (`toggle`/`hold`), `output` (`copy`/`paste`), and `cleanup`. Application actions store `applicationPath` and `applicationBundleID`; choose the app again if it is unavailable on another Mac.
 
@@ -10,6 +10,9 @@ Appearance is editable in Settings or JSON:
 
 ```json
 "appearance": {
+  "theme": "nord",
+  "mode": "dark",
+  "useThemeAccent": false,
   "accentHex": "A3D8AF",
   "transparency": 0.35
 }
@@ -17,7 +20,27 @@ Appearance is editable in Settings or JSON:
 
 Place this object inside `preferences`. `accentHex` is six hexadecimal RGB digits without `#`; transparency ranges from `0` (opaque) to `1` (strongest material translucency). Import applies appearance immediately. Quit Frog before editing its live configuration file directly, then reopen it.
 
-Use **Settings → Export…** to save `Frog-configuration.json`. Use **Import…** on another Mac, or edit the file and import it again. The app shows the number of rules and providers before replacing your setup.
+- `theme`: `frog`, `tokyoNight`, `catppuccin`, or `nord`.
+- `mode`: `system`, `light`, or `dark`.
+- `useThemeAccent`: set `true` for the theme's adaptive accent, or `false` to use `accentHex`. Editing `accentHex` alone will not override a theme accent when this flag is `true`.
+- Settings → Appearance has the same controls, including an RGB hex field (press Return to apply). Export includes these values along with the other preferences.
+
+### Recording defaults (build 14)
+
+New audio rules have `action.cleanup: false`; `preferences.workflows.output` defaults to `copy`. Transcription does not require a text model. Enable **Improve transcript** in a specific audio rule to opt into LLM cleanup, and choose **Copy and paste** if insertion is wanted. A one-time upgrade turns off cleanup for the original, uncustomized factory Dictate rule; custom rules and subsequent explicit opt-ins are preserved. `dictationDefaultsVersion` tracks this upgrade and should be left as exported.
+
+In an exported configuration, edit these fields inside the existing `preferences.workflows` object (retain the other fields):
+
+```json
+"output": "copy",
+"recordingMode": "toggle",
+"showDictationPopup": false,
+"idleUnloadSeconds": 120
+```
+
+`recordingMode` accepts `toggle` or `hold`; `showDictationPopup` controls the compact recording/transcribing panel. Disabling it in Settings hides an active panel too. `idleUnloadSeconds` accepts 0–3600; zero unloads immediately after inference. Changing this setting reschedules models already idle. **Unload now** releases resident models when no inference/recording is active; model downloads remain installed.
+
+Use **Settings → Configuration → Export…** to save `Frog-configuration.json`. Use **Import…** on another Mac, or edit the file and import it again. The app asks before replacing your setup.
 
 ## What moves
 

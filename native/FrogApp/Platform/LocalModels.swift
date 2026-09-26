@@ -33,7 +33,9 @@ final class LocalModels: ObservableObject {
     private let runtime: any LocalInferenceEngine
     private let downloader: Downloader
     private var unloadTask: Task<Void, Never>?
-    var idleSeconds = 120
+    var idleSeconds = 120 {
+        didSet { if idleSeconds != oldValue, !busy, !loaded.isEmpty { scheduleUnload() } }
+    }
 
     init(directory: URL? = nil, runtime: any LocalInferenceEngine = LocalInference(), downloader: @escaping Downloader = LocalInference.download) {
         self.runtime = runtime; self.downloader = downloader
@@ -127,9 +129,18 @@ final class LocalModels: ObservableObject {
     }
     private func release() {
         busy = false
+        scheduleUnload()
+    }
+    private func scheduleUnload() {
+        unloadTask?.cancel()
+        guard !loaded.isEmpty else { unloadTask = nil; return }
         let delay = idleSeconds
         unloadTask = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            guard !Task.isCancelled else { return }
+            // Do not cancel this very task inside unload(): the native engine
+            // must receive a live task while releasing its resources.
+            self?.unloadTask = nil
             await self?.unload()
         }
     }

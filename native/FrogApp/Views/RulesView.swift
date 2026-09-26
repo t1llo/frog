@@ -208,7 +208,7 @@ private struct RuleEditor: View {
                 }
             }
             CompactRow(title: "Improve transcript", detail: "Fix wording and punctuation with a text model.") {
-                Toggle("Improve transcript", isOn: Binding(get: { rule.action?.cleanup ?? true }, set: { rule.action?.cleanup = $0 })).labelsHidden().toggleStyle(.switch)
+                Toggle("Improve transcript", isOn: Binding(get: { rule.action?.cleanup ?? false }, set: { rule.action?.cleanup = $0 })).labelsHidden().toggleStyle(.switch)
             }
         }
     }

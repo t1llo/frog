@@ -17,7 +17,7 @@ A native macOS app with Dock and menu-bar access for writing, dictation and wind
 - Configure your models once, choose a default, and pick model overrides for individual rules.
 - Export and import your setup as an editable JSON file.
 - Keep an optional local history. It’s off by default.
-- Dictate with downloadable local speech models and lightweight text cleanup on Apple silicon; choose hold/toggle recording and copy/paste delivery.
+- Dictate with downloadable local speech models on Apple silicon; copy the transcript by default, with optional LLM cleanup and paste delivery. Choose hold/toggle recording.
 - Create application-launch shortcuts and open a configurable shortcut-reference panel.
 - Customize accent color and window transparency in Settings or configuration JSON.
 - Switch between individual windows with **Command–Tab**, including minimized windows and multiple windows from the same app.
@@ -48,7 +48,7 @@ The list shows titles and app icons, with recently used windows first. Keep hold
 
 ### Local transcription
 
-On Apple silicon, open **Models → Inside Frog** and download a Whisper speech model plus a Qwen local cleanup model. Allow microphone access in **Settings → Permissions**, then configure the Dictate rule's shortcut in **Rules**. Choose press-to-toggle or hold-to-record and copy-only or copy-and-paste in **Settings → Recording**; rules can override these defaults. The optional popup shows live partial text and stop/cancel controls. Shared history stays optional. Local text models can also be used for ordinary writing rules. **Models → Providers** configures services running outside Frog, including cloud APIs, Ollama and LM Studio.
+On Apple silicon, open **Models → Inside Frog** and download a Whisper speech model. Allow microphone access in **Settings → Permissions**, then configure the Dictate rule's shortcut in **Rules**. The default is **transcribe → copy to clipboard**, without a text model. To opt into LLM cleanup, enable **Improve transcript** in the audio rule and download a local text model or configure its provider. Choose toggle/hold recording and copy/copy-and-paste in **Settings → Recording**; rules can override these defaults. The compact recording popup shows status, partial text and stop/cancel controls, and can be switched off there. Shared history stays optional. Local text models can also be used for ordinary writing rules. **Models → Providers** configures services running outside Frog, including cloud APIs, Ollama and LM Studio.
 
 Choose where models download in **Settings → Model storage**. Changing the folder preserves existing files in the previous location; choose that folder again to reuse those models. This machine-local path is saved separately from portable configuration exports.
 

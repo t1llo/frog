@@ -50,15 +50,41 @@ struct CompactRow<Content: View>: View {
 struct CompactMenu<Content: View>: View {
     let value: String
     @ViewBuilder var content: Content
+    @State private var hovering = false
     var body: some View {
         Menu(content: { content }) {
             HStack(spacing: 8) {
-                Spacer(minLength: 0)
-                Text(L10n.text(value)).lineLimit(1).truncationMode(.middle)
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
-            }.font(.system(size: 12)).frame(width: 220, alignment: .trailing)
+                Text(L10n.text(value)).lineLimit(1).truncationMode(.middle).frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.down").font(.system(size: 9, weight: .medium)).foregroundStyle(FrogStyle.muted)
+            }.font(.system(size: 11, weight: .medium))
+                .foregroundStyle(FrogStyle.ink)
+                .padding(.horizontal, 10).padding(.vertical, 7)
+                .background(hovering ? FrogStyle.accentSoft : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(hovering ? FrogStyle.accent.opacity(0.45) : FrogStyle.border.opacity(0.4)))
+                .contentShape(RoundedRectangle(cornerRadius: 6))
         }.menuStyle(.borderlessButton).menuIndicator(.hidden)
-            .frame(width: 220, alignment: .trailing)
+            .frame(maxWidth: 220, alignment: .trailing)
+            .onHover { hovering = $0 }
+            .help(L10n.text(value))
+    }
+}
+
+struct CompactSegments<Value: Hashable>: View {
+    let values: [Value]
+    let selected: Value
+    let title: (Value) -> String
+    let choose: (Value) -> Void
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(values, id: \.self) { value in
+                Button { choose(value) } label: {
+                    Text(L10n.text(title(value))).font(.system(size: 11, weight: selected == value ? .semibold : .regular))
+                        .frame(maxWidth: .infinity).padding(.vertical, 6)
+                        .foregroundStyle(selected == value ? FrogStyle.accent : FrogStyle.muted)
+                        .background(selected == value ? FrogStyle.accentSoft : .clear, in: RoundedRectangle(cornerRadius: 5))
+                }.buttonStyle(.plain).accessibilityAddTraits(selected == value ? .isSelected : [])
+            }
+        }.padding(3).frame(width: 220).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 7))
     }
 }
 

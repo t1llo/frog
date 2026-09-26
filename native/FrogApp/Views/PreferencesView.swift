@@ -35,10 +35,7 @@ struct PreferencesView: View {
                 SettingsSection(title: "Appearance") { AppearanceSettingsView() }
                 SettingsSection(title: "Defaults") {
                     CompactRow(title: "Text rules use") {
-                        CompactMenu(value: prefs.effectiveTextSource == .frog ? "Inside Frog" : "Provider") {
-                            Button("Provider") { update { $0.textSource = .provider } }
-                            Button("Inside Frog") { update { $0.textSource = .frog } }
-                        }
+                        CompactSegments(values: WorkflowPreferences.TextSource.allCases, selected: prefs.effectiveTextSource, title: { $0 == .frog ? "Inside Frog" : "Provider" }) { value in update { $0.textSource = value } }
                     }
                     Divider()
                     CompactRow(title: "Default provider") {
@@ -63,13 +60,17 @@ struct PreferencesView: View {
                     Divider()
                     localChoice("Speech model", selected: prefs.audioModelID, kind: .audio) { value in update { $0.audioModelID = value } }
                     Divider()
-                    localChoice("Transcript cleanup", selected: prefs.cleanupModelID, kind: .text) { value in update { $0.cleanupModelID = value } }
+                    localChoice("Optional cleanup model", selected: prefs.cleanupModelID, kind: .text) { value in update { $0.cleanupModelID = value } }
                     Divider()
                     CompactRow(title: "Unload idle models") {
                         CompactMenu(value: prefs.idleUnloadSeconds == 0 ? "Immediately" : "\(prefs.idleUnloadSeconds / 60) min") {
                             Button("Immediately") { update { $0.idleUnloadSeconds = 0 } }
                             ForEach([120, 300, 900], id: \.self) { seconds in Button("\(seconds / 60) min") { update { $0.idleUnloadSeconds = seconds } } }
                         }
+                    }
+                    CompactRow(title: model.localModels.loaded.isEmpty ? "No models loaded" : "Models in memory") {
+                        Button("Unload now") { Task { await model.localModels.unload() } }
+                            .disabled(model.localModels.loaded.isEmpty || model.localModels.busy || model.dictation.active)
                     }
                 }
                 SettingsSection(title: "Model storage") {
@@ -99,20 +100,18 @@ struct PreferencesView: View {
                     }
                     Divider()
                     CompactRow(title: "Recording mode") {
-                        CompactMenu(value: prefs.recordingMode.title) {
-                            ForEach(RecordingMode.allCases, id: \.self) { mode in Button(L10n.text(mode.title)) { update { $0.recordingMode = mode } } }
-                        }
+                        CompactSegments(values: RecordingMode.allCases, selected: prefs.recordingMode, title: { $0 == .toggle ? "Toggle" : "Hold" }) { value in update { $0.recordingMode = value } }
                     }
                     Divider()
                     CompactRow(title: "Output") {
-                        CompactMenu(value: prefs.output.title) {
-                            ForEach(TranscriptOutput.allCases, id: \.self) { output in Button(L10n.text(output.title)) { update { $0.output = output } } }
-                        }
+                        CompactSegments(values: TranscriptOutput.allCases, selected: prefs.output, title: { $0.title }) { value in update { $0.output = value } }
                     }
+                    Text("Transcripts are copied by default. Enable Improve transcript in an audio rule only if you want LLM cleanup.")
+                        .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                     Divider()
                     CompactRow(title: "Mute Mac audio while recording") { Toggle("Mute Mac audio while recording", isOn: workflowBool(\.muteWhileRecording)).labelsHidden() }
                     Divider()
-                    CompactRow(title: "Live transcription popup") { Toggle("Live transcription popup", isOn: Binding(get: { prefs.showDictationPopup }, set: { value in update { $0.showDictationPopup = value } })).labelsHidden() }
+                    CompactRow(title: "Recording popup", detail: "Small status panel while recording or transcribing.") { Toggle("Recording popup", isOn: Binding(get: { prefs.showDictationPopup }, set: { value in update { $0.showDictationPopup = value } })).labelsHidden() }
                     Divider()
                     CompactRow(title: "Cancel recording", detail: "Escape always cancels.") {
                         HotkeyRecorder(hotkey: Binding(get: { prefs.cancelRecordingHotkey }, set: { value in update { $0.cancelRecordingHotkey = value } }))
@@ -157,7 +156,7 @@ struct PreferencesView: View {
                     Text("Built-in models run locally. Provider rules send text to the provider you choose. No analytics.").font(.system(size: 10)).foregroundStyle(.secondary)
                 }
                 SettingsSection(title: "Configuration") {
-                    CompactRow(title: "Import / export", detail: "JSON settings, without keys, models or history.") {
+                    CompactRow(title: "Import / export", detail: "Rules, shortcuts, themes, accent colors and preferences. No keys, models or history.") {
                         HStack {
                             Button("Import…") { chooseConfiguration() }.disabled(model.isProcessing || model.isTestingProvider || model.dictation.active)
                             Button("Export…") { exportConfiguration() }

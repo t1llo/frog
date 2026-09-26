@@ -24,7 +24,7 @@ public struct RuleAction: Codable, Equatable, Sendable {
     public var localTextModelID: String?
     public var recordingMode: RecordingMode?
     public var output: TranscriptOutput?
-    public var cleanup = true
+    public var cleanup = false
     public init(category: RuleCategory = .text) { self.category = category }
 }
 
@@ -46,6 +46,8 @@ public struct WorkflowPreferences: Codable, Equatable, Sendable {
     public var muteWhileRecording: Bool?
     public var cancelRecordingHotkey: Hotkey?
     public var applicationLanguage: String?
+    /// One-time migration of the original factory dictation rule; custom rules are preserved.
+    public var dictationDefaultsVersion: Int?
     public var effectiveTextSource: TextSource { textSource ?? (defaultLocalTextModelID == nil ? .provider : .frog) }
     public init() {}
 }
@@ -77,5 +79,23 @@ extension Rule {
         var rule = Rule(name: "Dictate", instructions: "Clean up this transcript. Fix punctuation, spelling and obvious speech recognition mistakes. Preserve meaning and language. Return only the corrected text, without commentary.", preset: true)
         rule.action = RuleAction(category: .audio)
         return rule
+    }
+}
+
+extension Configuration {
+    public mutating func adoptClipboardDictationDefaults() {
+        var workflow = preferences.workflowSettings
+        guard workflow.dictationDefaultsVersion == nil else { return }
+        let factory = Rule.dictationPreset
+        for index in rules.indices {
+            let rule = rules[index]
+            if rule.category == .audio, rule.preset, rule.name == factory.name,
+               rule.instructions == factory.instructions, rule.providerID == nil,
+               rule.action?.localTextModelID == nil {
+                rules[index].action?.cleanup = false
+            }
+        }
+        workflow.dictationDefaultsVersion = 1
+        preferences.workflows = workflow
     }
 }

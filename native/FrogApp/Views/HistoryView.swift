@@ -20,6 +20,21 @@ struct HistoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if let viewing {
+                HStack {
+                    Button { self.viewing = nil } label: { Label("History", systemImage: "arrow.left") }
+                    Spacer()
+                    Button(copiedID == viewing.id ? "Copied" : "Copy result", systemImage: copiedID == viewing.id ? "checkmark" : "doc.on.doc") {
+                        ViewActions.copy(viewing.processedText); copiedID = viewing.id
+                    }
+                    IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = viewing }
+                }
+                PageHeader(title: viewing.ruleName, subtitle: viewing.timestamp.formatted(date: .abbreviated, time: .shortened))
+                ScrollView {
+                    HistoryDetail(entry: viewing).padding(16)
+                }.frogTableSurface()
+                    .onCopyCommand { [NSItemProvider(object: viewing.processedText as NSString)] }
+            } else {
             PageHeader(title: "History", subtitle: "") {
                 HStack {
                     Button("Clear all…", systemImage: "trash", role: .destructive) { confirmClear = true }
@@ -56,6 +71,7 @@ struct HistoryView: View {
                 }
                 .frogTableSurface()
             }
+            }
         }.padding(20)
             .onAppear { model.refreshHistory() }
             .onChange(of: model.history.map(\.id)) { _, ids in
@@ -81,9 +97,8 @@ struct HistoryView: View {
     }
 
     private func historyRow(_ item: HistoryEntry) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
         HStack(spacing: 12) {
-            Button { viewing = viewing?.id == item.id ? nil : item } label: {
+            Button { viewing = item } label: {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack {
                     VStack(alignment: .leading, spacing: 4) {
@@ -92,21 +107,15 @@ struct HistoryView: View {
                             .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                     }.lineLimit(1)
                     Spacer()
-                    Image(systemName: viewing?.id == item.id ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                     }
-                    if viewing?.id != item.id {
                     Text(item.processedText).font(.system(size: 12)).foregroundStyle(FrogStyle.ink)
                         .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-                    }
                 }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
-            }.buttonStyle(.plain).help(L10n.text(viewing?.id == item.id ? "Collapse entry" : "Expand entry"))
+            }.buttonStyle(.plain).help("Open full entry")
             IconAction(title: copiedID == item.id ? "Copied" : "Copy result", symbol: copiedID == item.id ? "checkmark" : "doc.on.doc") {
                 ViewActions.copy(item.processedText); copiedID = item.id
             }
             IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = item }
-        }
-        if viewing?.id == item.id { HistoryDetail(entry: item) }
         }.padding(12)
     }
 }
@@ -136,6 +145,7 @@ private struct HistoryDetail: View {
                     }.accessibilityLabel("Copy \(title.lowercased())")
                 }
                 Text(text).font(.system(size: 13)).lineSpacing(4).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
     }

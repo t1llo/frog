@@ -4,6 +4,20 @@ import FrogCore
 
 @MainActor
 final class LocalModelsTests: XCTestCase {
+    func testChangingIdlePolicyToImmediateUnloadsAnAlreadyResidentModel() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let unloaded = expectation(description: "Resident model responds to changed idle setting")
+        let engine = FixtureInference(onUnload: { unloaded.fulfill() })
+        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload)
+        let descriptor = LocalModelDescriptor.find("qwen-0.6b")!
+        models.download(descriptor); await models.waitForDownload(descriptor.id)
+        _ = try await models.complete("hello", instructions: "Correct", modelID: descriptor.id)
+        models.idleSeconds = 0
+        await fulfillment(of: [unloaded], timeout: 1)
+        XCTAssertTrue(models.loaded.isEmpty)
+        models.shutdown()
+    }
     func testResidencyIsVisibleDuringInferenceAndSurvivesInferenceFailure() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -76,6 +90,8 @@ final class LocalModelsTests: XCTestCase {
         XCTAssertTrue(models.loaded.isEmpty)
         let unloads = await engine.unloads
         XCTAssertEqual(unloads, 1)
+        let cancelledUnload = await engine.cancelledUnload
+        XCTAssertFalse(cancelledUnload, "The idle task must not cancel itself before native resources are released")
         try await models.remove(descriptor.id)
         XCTAssertFalse(models.installed.contains(descriptor.id))
     }
@@ -121,9 +137,11 @@ final class LocalModelsTests: XCTestCase {
 private actor FixtureInference: LocalInferenceEngine {
     let gate: DownloadGate?
     let fail: Bool
-    init(gate: DownloadGate? = nil, fail: Bool = false) { self.gate = gate; self.fail = fail }
+    let onUnload: @Sendable () -> Void
+    init(gate: DownloadGate? = nil, fail: Bool = false, onUnload: @escaping @Sendable () -> Void = {}) { self.gate = gate; self.fail = fail; self.onUnload = onUnload }
     var loadedIDs = Set<String>()
     var unloads = 0
+    var cancelledUnload = false
     var calls = 0
     func transcribe(_ samples: [Float], id: String, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String { loadedIDs.insert(id); calls += 1; await residency(loadedIDs); return "hello" }
     func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
@@ -132,7 +150,7 @@ private actor FixtureInference: LocalInferenceEngine {
         if fail { throw FrogError.message("Fixture inference failure") }
         return text
     }
-    func unload() { loadedIDs = []; unloads += 1 }
+    func unload() { cancelledUnload = Task.isCancelled; loadedIDs = []; unloads += 1; onUnload() }
 }
 
 private actor DownloadGate {

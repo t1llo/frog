@@ -228,3 +228,17 @@
 "Not configured" = "Nicht eingerichtet";
 "Built-in models run locally. Provider rules send text to the provider you choose. No analytics." = "Integrierte Modelle laufen lokal. Anbieterregeln senden Text an den gewählten Anbieter. Keine Analysedaten.";
 "Download models in Models → Inside Frog" = "Modelle unter Modelle → In Frog herunterladen";
+"Optional cleanup model" = "Optionales Überarbeitungsmodell";
+"No models loaded" = "Keine Modelle geladen";
+"Models in memory" = "Modelle im Speicher";
+"Unload now" = "Jetzt entladen";
+"Toggle" = "Umschalten";
+"Hold" = "Gedrückt halten";
+"Recording popup" = "Aufnahmefenster";
+"Small status panel while recording or transcribing." = "Kleine Statusanzeige während Aufnahme und Transkription.";
+"Starting microphone…" = "Mikrofon wird gestartet …";
+"Processing audio…" = "Audio wird verarbeitet …";
+"Open full entry" = "Vollständigen Eintrag öffnen";
+"Accent hex color" = "Akzentfarbe als Hexwert";
+"Rules, shortcuts, themes, accent colors and preferences. No keys, models or history." = "Regeln, Kurzbefehle, Designs, Akzentfarben und Einstellungen. Ohne Schlüssel, Modelle und Verlauf.";
+"Transcripts are copied by default. Enable Improve transcript in an audio rule only if you want LLM cleanup." = "Transkripte werden standardmäßig kopiert. Aktiviere Transkript verbessern in einer Audioregel nur für eine Überarbeitung durch ein Sprachmodell.";

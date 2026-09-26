@@ -2,6 +2,28 @@ import XCTest
 @testable import FrogCore
 
 final class WorkflowConfigurationTests: XCTestCase {
+    func testFactoryCleanupMigrationRunsOnceAndKeepsCustomRulesAndShortcuts() throws {
+        var config = Configuration()
+        var factory = Rule.dictationPreset
+        factory.action?.cleanup = true
+        factory.hotkey = Hotkey(keyCode: 2, modifiers: 4096)
+        var custom = Rule.dictationPreset; custom.id = UUID(); custom.preset = false; custom.action?.cleanup = true
+        config.rules += [factory, custom]
+        config.adoptClipboardDictationDefaults()
+        XCTAssertEqual(config.rules.first { $0.id == factory.id }?.action?.cleanup, false)
+        XCTAssertEqual(config.rules.first { $0.id == factory.id }?.hotkey, factory.hotkey)
+        XCTAssertEqual(config.rules.first { $0.id == custom.id }?.action?.cleanup, true)
+        let index = config.rules.firstIndex { $0.id == factory.id }!
+        config.rules[index].action?.cleanup = true
+        config = try ConfigurationFile.decode(ConfigurationFile.encode(config))
+        config.adoptClipboardDictationDefaults()
+        XCTAssertEqual(config.rules[index].action?.cleanup, true, "Explicit opt-in after migration survives restart")
+    }
+    func testNewDictationDoesNotRunLLMCleanupOrPasteByDefault() {
+        XCTAssertEqual(Rule.dictationPreset.action?.cleanup, false)
+        XCTAssertEqual(RuleAction(category: .audio).cleanup, false)
+        XCTAssertEqual(WorkflowPreferences().output, .copy)
+    }
     func testAppearanceThemesRoundTripAndLegacySettingsKeepTheirAccent() throws {
         let old = try JSONDecoder().decode(AppearancePreferences.self, from: Data(#"{"accentHex":"AABBCC","transparency":0.4}"#.utf8))
         XCTAssertNil(old.theme)

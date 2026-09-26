@@ -13,7 +13,11 @@ final class DictationController: ObservableObject {
     @Published private(set) var elapsed = 0
     @Published private(set) var hint = ""
     private(set) var ruleID: UUID?
-    private var recorder: AudioProcessor?
+    private var recorder: (any DictationRecording)?
+    private let makeRecorder: () -> any DictationRecording
+    private let authorize: () async -> Bool
+    private let copy: (String) -> Void
+    private let monitorKeys: Bool
     private let outputMute = RecordingMute()
     private var work: Task<Void, Never>?
     private var preview: Task<Void, Never>?
@@ -32,6 +36,15 @@ final class DictationController: ObservableObject {
     var onError: ((Error) -> Void)?
     var cleanup: ((String, Rule) async throws -> String)?
     var active: Bool { phase != .idle }
+
+    init(makeRecorder: @escaping @MainActor () -> any DictationRecording = { MicrophoneRecording() },
+         authorize: @escaping @MainActor () async -> Bool = { DictationController.microphoneGranted ? true : await DictationController.requestMicrophone() },
+         copy: @escaping (String) -> Void = { NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string) },
+         monitorKeys: Bool = true) {
+        self.makeRecorder = makeRecorder; self.authorize = authorize; self.copy = copy; self.monitorKeys = monitorKeys
+    }
+
+    func waitForWork() async { await work?.value }
 
     static var microphoneGranted: Bool { AVCaptureDevice.authorizationStatus(for: .audio) == .authorized }
     static var devices: [AudioDevice] { AudioProcessor.getAudioDevices() }
@@ -53,23 +66,24 @@ final class DictationController: ObservableObject {
         hint = (rule.action?.recordingMode ?? preferences.recordingMode) == .hold ? "Release \(shortcut) to stop · Esc to cancel" : "\(shortcut) to stop · Esc to cancel"
         if rule.hotkey == nil { hint = "Stop to finish · Esc to cancel" }
         if preferences.showDictationPopup { showPanel() }
-        installEscape()
+        if monitorKeys { installEscape() }
         work = Task { [weak self] in
             guard let self else { return }
-            let granted = Self.microphoneGranted ? true : await Self.requestMicrophone()
+            let granted = await self.authorize()
+            guard self.token == token, !Task.isCancelled else { return }
             guard granted else {
                 self.fail(FrogError.message("Allow Microphone in Settings to record dictation."), token: token); return
             }
             guard self.token == token, !Task.isCancelled else { return }
             if self.stopRequested { self.cancel(); return }
             do {
-                let recorder = AudioProcessor()
+                let recorder = self.makeRecorder()
                 self.recorder = recorder
                 let device = preferences.microphoneID.flatMap(UInt32.init)
                 if let device, !Self.devices.contains(where: { $0.id == device }) { throw FrogError.message("The selected microphone is unavailable. Choose another in Settings.") }
                 let samples = self.samples
                 if preferences.muteWhileRecording == true { try self.outputMute.begin() }
-                try recorder.startRecordingLive(inputDeviceID: device) { samples.append($0) }
+                try recorder.start(device: device) { samples.append($0) }
                 self.phase = .recording
                 self.ticker = Task { [weak self] in
                     while !Task.isCancelled {
@@ -84,6 +98,7 @@ final class DictationController: ObservableObject {
                         do {
                             try await Task.sleep(for: .seconds(2))
                             guard let self, self.token == token, self.phase == .recording else { return }
+                            guard self.preferences.showDictationPopup else { continue }
                             let audio = samples.snapshot(last: 30 * 16000)
                             guard audio.count >= 16000, !models.busy else { continue }
                             let text = try await models.transcribe(audio, modelID: modelID, language: preferences.transcriptionLanguage)
@@ -99,7 +114,7 @@ final class DictationController: ObservableObject {
         guard let token, let rule = activeRule else { return }
         if phase == .preparing { stopRequested = true; return }
         guard phase == .recording else { return }
-        recorder?.stopRecording(); recorder = nil
+        recorder?.stop(); recorder = nil
         outputMute.restore()
         ticker?.cancel(); ticker = nil
         let previous = preview; previous?.cancel(); preview = nil
@@ -112,10 +127,12 @@ final class DictationController: ObservableObject {
             do {
                 guard audio.count >= 3200 else { throw FrogError.message("No speech recorded. Hold the shortcut longer, or use toggle mode.") }
                 let raw = try await models.transcribe(audio, modelID: modelID, language: self.preferences.transcriptionLanguage)
+                try Task.checkCancellation()
+                guard self.token == token else { return }
                 guard !raw.isEmpty else { throw FrogError.message("No speech detected.") }
                 self.liveText = raw
                 var output = raw
-                if rule.action?.cleanup != false {
+                if rule.action?.cleanup == true {
                     self.phase = .correcting
                     if let cleanup = self.cleanup {
                         do { output = try await cleanup(raw, rule) }
@@ -128,7 +145,7 @@ final class DictationController: ObservableObject {
                 }
                 try Task.checkCancellation()
                 guard self.token == token else { return }
-                NSPasteboard.general.clearContents(); NSPasteboard.general.setString(output, forType: .string)
+                self.copy(output)
                 var insertion: (() async throws -> Void)?
                 if (rule.action?.output ?? self.preferences.output) == .paste {
                     let target = self.target
@@ -145,10 +162,15 @@ final class DictationController: ObservableObject {
         }
     }
     func requestStop() { if let models { stop(models: models) } }
+    func setPopupVisible(_ visible: Bool) {
+        preferences.showDictationPopup = visible
+        if !visible { panel?.orderOut(nil) }
+        else if active { showPanel() }
+    }
     func cancel() {
         token = nil; work?.cancel(); preview?.cancel(); ticker?.cancel()
         work = nil; preview = nil; ticker = nil
-        recorder?.stopRecording(); recorder = nil; samples.clear()
+        recorder?.stop(); recorder = nil; samples.clear()
         outputMute.restore()
         target = nil; activeRule = nil; ruleID = nil; phase = .idle
         panel?.orderOut(nil)
@@ -170,14 +192,14 @@ final class DictationController: ObservableObject {
     }
     private func showPanel() {
         if panel == nil {
-            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 440, height: 170), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 320, height: 88), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             panel.level = .floating; panel.isOpaque = false; panel.backgroundColor = .clear
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             panel.hidesOnDeactivate = false; panel.isReleasedWhenClosed = false
             panel.contentView = NSHostingView(rootView: DictationPopup(controller: self))
             self.panel = panel
         }
-        if let screen = NSScreen.main { panel?.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - 220, y: screen.visibleFrame.minY + 36)) }
+        if let screen = NSScreen.main { panel?.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - 160, y: screen.visibleFrame.minY + 24)) }
         panel?.orderFrontRegardless()
     }
 }
@@ -185,19 +207,25 @@ final class DictationController: ObservableObject {
 private struct DictationPopup: View {
     @ObservedObject var controller: DictationController
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
                 Image(systemName: controller.phase == .recording ? "mic.fill" : "waveform").foregroundStyle(FrogStyle.accent)
-                Text(L10n.text(controller.phase.rawValue.capitalized)).fontWeight(.semibold)
+                Text(L10n.text(controller.phase.rawValue.capitalized)).font(.system(size: 12, weight: .semibold))
                 Spacer(); Text("\(controller.elapsed)s").monospacedDigit().foregroundStyle(.secondary)
-                if controller.phase == .recording { Button("Stop") { controller.requestStop() }.controlSize(.small) }
+                if controller.phase == .recording {
+                    Button { controller.requestStop() } label: { Image(systemName: "stop.fill").font(.system(size: 10)) }
+                        .buttonStyle(.plain).help("Stop recording").accessibilityLabel("Stop recording")
+                }
                 Button { controller.cancel() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Cancel dictation")
             }
-            Text(controller.liveText.isEmpty ? L10n.text("Listening…") : controller.liveText).font(.system(size: 13)).lineLimit(4).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            Text(controller.hint).font(.system(size: 10)).foregroundStyle(.secondary)
-        }.padding(16).frame(width: 440, height: 170)
+            Text(controller.liveText.isEmpty ? L10n.text(controller.phase == .recording ? "Listening…" : controller.phase == .preparing ? "Starting microphone…" : "Processing audio…") : controller.liveText)
+                .font(.system(size: 11)).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+            Text(controller.hint).font(.system(size: 9)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+        }.padding(.horizontal, 12).padding(.vertical, 10).frame(width: 320, height: 88)
             .environment(\.locale, L10n.locale)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .foregroundStyle(FrogStyle.ink)
+            .background(FrogStyle.panelSurface, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+            .overlay(RoundedRectangle(cornerRadius: FrogStyle.corner).strokeBorder(FrogStyle.border.opacity(0.6)))
     }
 }
 
