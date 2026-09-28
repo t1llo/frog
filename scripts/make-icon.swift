@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 let destination = URL(fileURLWithPath: CommandLine.arguments.dropFirst().first ?? "dist/Frog.iconset", isDirectory: true)
-guard let source = NSImage(contentsOfFile: "docs/images/frog_logo.png") else { fatalError("Missing docs/images/frog_logo.png") }
+guard let source = NSImage(contentsOfFile: "docs/images/frog_icon.png") else { fatalError("Missing docs/images/frog_icon.png") }
 try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
 func image(size: Int) -> Data {
     let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!

@@ -1,3 +1,5 @@
+<img src="docs/images/frog_icon.png" alt="Frog app icon" width="96" height="96">
+
 # Frog
 
 [![Build](https://github.com/t1llo/frog/actions/workflows/native.yml/badge.svg?branch=main)](https://github.com/t1llo/frog/actions/workflows/native.yml)
