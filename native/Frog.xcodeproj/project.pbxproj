@@ -38,7 +38,7 @@
         A00000000000000000000005 = {
             isa = PBXNativeTarget;
             buildConfigurationList = A00000000000000000000011;
-            buildPhases = (A00000000000000000000007, A00000000000000000000008, A00000000000000000000025, B00000000000000000000040);
+            buildPhases = (A00000000000000000000007, A00000000000000000000008, A00000000000000000000025);
             buildRules = ();
             dependencies = ();
             fileSystemSynchronizedGroups = (A00000000000000000000004);
@@ -82,8 +82,6 @@
         B00000000000000000000024 = { isa = PBXBuildFile; productRef = B00000000000000000000014; };
         B00000000000000000000025 = { isa = PBXBuildFile; productRef = B00000000000000000000015; };
         B00000000000000000000026 = { isa = PBXBuildFile; productRef = B00000000000000000000016; };
-        B00000000000000000000027 = { isa = PBXBuildFile; productRef = B00000000000000000000015; settings = { ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy); }; };
-        B00000000000000000000040 = { isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 10; files = (B00000000000000000000027); name = "Embed Frameworks"; runOnlyForDeploymentPostprocessing = 0; };
     };
     rootObject = A00000000000000000000001;
 }
