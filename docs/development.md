@@ -26,6 +26,8 @@ Local and CI builds use ad-hoc signing. Developer ID builds use hardened runtime
 
 Release downloads are `Frog-macOS.zip` and `SHA256SUMS`. Updater-enabled releases also include a signed Sparkle `appcast.xml`. GitHub Actions builds and tests the app without signing credentials. Distribution releases are signed, notarized and published manually from the maintainer's Mac.
 
+Releases use semantic versions starting at **1.0.0**. The local publisher selects the next patch version from existing release names and Git tags (`1.0.1`, `1.0.2`, …), tags it `vX.Y.Z`, and titles it `Frog X.Y.Z`. `FROG_VERSION` supplies that version to packaging and Settings. A separate increasing `FROG_BUILD_NUMBER` remains Sparkle's update ordering key. Resuming an existing archive preserves its signed version rather than relabeling it.
+
 Before a release, run the automated checks, `python3 scripts/check-app-launch.py dist/Frog.app`, and the [desktop verification steps](verification.md).
 
 ### One-time Apple account setup

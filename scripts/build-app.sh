@@ -18,6 +18,10 @@ swift scripts/make-icon.swift dist/Frog.iconset
 iconutil -c icns dist/Frog.iconset -o "$app/Contents/Resources/Frog.icns"
 cp "$binary_dir/Frog" "$app/Contents/MacOS/Frog"
 cp native/Info.plist "$app/Contents/Info.plist"
+if [[ -n "${FROG_VERSION:-}" ]]; then
+    [[ "$FROG_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo 'FROG_VERSION must be a semantic version, such as 1.0.0.' >&2; exit 1; }
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $FROG_VERSION" "$app/Contents/Info.plist"
+fi
 if [[ -n "${FROG_BUILD_NUMBER:-}" ]]; then
     [[ "$FROG_BUILD_NUMBER" =~ ^[0-9]+$ ]] || exit 1
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $FROG_BUILD_NUMBER" "$app/Contents/Info.plist"
