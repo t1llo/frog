@@ -21,6 +21,9 @@ public struct RuleAction: Codable, Equatable, Sendable {
     public var applicationPath: String?
     public var applicationBundleID: String?
     public var audioModelID: String?
+    public var audioProviderID: UUID?
+    public var transcriptionLanguage: String?
+    public var showRecordingPopup: Bool?
     public var localTextModelID: String?
     public var recordingMode: RecordingMode?
     public var output: TranscriptOutput?
@@ -55,7 +58,7 @@ public struct WorkflowPreferences: Codable, Equatable, Sendable {
 extension Rule {
     public var category: RuleCategory { action?.category ?? .text }
     public static var dictationPreset: Rule {
-        var rule = Rule(name: "Dictate", instructions: "Clean up this transcript. Fix punctuation, spelling and obvious speech recognition mistakes. Preserve meaning and language. Return only the corrected text, without commentary.", preset: true)
+        var rule = Rule(name: "Dictate", instructions: "Clean up this transcript. Fix punctuation, spelling and obvious speech recognition mistakes. Preserve meaning and language. Return only the corrected text, without commentary.", hotkey: Hotkey(keyCode: 49, modifiers: 2048), preset: true)
         rule.action = RuleAction(category: .audio)
         return rule
     }

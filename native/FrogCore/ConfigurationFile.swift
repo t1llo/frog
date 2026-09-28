@@ -62,8 +62,11 @@ public enum ConfigurationFile {
                     throw FrogError.message("Choose an application for \(rule.name).")
                 }
             }
-            if let id = rule.action?.audioModelID, configuration.localModel(id)?.kind != .audio {
-                throw FrogError.message("Choose an available audio model.")
+            if let id = rule.action?.audioModelID {
+                if let providerID = rule.action?.audioProviderID {
+                    guard let provider = configuration.providers.first(where: { $0.id == providerID }), provider.kind.supportsTranscription,
+                          provider.models.contains(where: { $0.id == id && $0.category == .audio }) else { throw FrogError.message("Choose a configured speech-to-text model.") }
+                } else if configuration.localModel(id)?.kind != .audio { throw FrogError.message("Choose an available audio model.") }
             }
             if let id = rule.action?.localTextModelID, configuration.localModel(id)?.kind != .text {
                 throw FrogError.message("Choose an available local text model.")
@@ -82,7 +85,7 @@ public enum ConfigurationFile {
             }
             if !rule.model.isEmpty {
                 guard let provider = configuration.providers.first(where: { $0.id == (rule.providerID ?? configuration.defaultProviderID) }),
-                      provider.models.contains(where: { $0.id == rule.model }) else {
+                      provider.models.contains(where: { $0.id == rule.model && $0.category == .text }) else {
                     throw FrogError.message("Choose a configured model for \(rule.name). Add it in Providers first.")
                 }
             }
@@ -127,7 +130,10 @@ public enum ConfigurationFile {
                   model.id == model.id.trimmingCharacters(in: .whitespacesAndNewlines) &&
                   !model.id.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) &&
                   !model.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.name.utf8.count <= 256
-              }) else { throw FrogError.message("Configure 1–200 unique models and choose one as the default.") }
+               }) else { throw FrogError.message("Configure 1–200 unique models.") }
+        if provider.models.contains(where: { $0.category == .audio }), !provider.kind.supportsTranscription {
+            throw FrogError.message("This service supports text models only. Use OpenAI, Gemini or a compatible transcription endpoint for speech-to-text.")
+        }
         try validateEndpoint(provider)
     }
 

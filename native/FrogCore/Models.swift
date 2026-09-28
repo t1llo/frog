@@ -70,9 +70,18 @@ public enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable 
 }
 
 public struct ProviderModel: Codable, Identifiable, Equatable, Sendable {
+    public enum Category: String, Codable, CaseIterable, Sendable { case text, audio }
     public var id: String
     public var name: String
-    public init(id: String, name: String? = nil) { self.id = id; self.name = name ?? id }
+    public var category: Category
+    public init(id: String, name: String? = nil, category: Category = .text) { self.id = id; self.name = name ?? id; self.category = category }
+    private enum CodingKeys: String, CodingKey { case id, name, category }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        name = try values.decode(String.self, forKey: .name)
+        category = try values.decodeIfPresent(Category.self, forKey: .category) ?? .text
+    }
 }
 
 public struct ProviderConfiguration: Codable, Identifiable, Equatable, Sendable {
@@ -143,12 +152,14 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var historyRetentionDays = 30
     public var showProcessingIndicator = true
     public var windowSwitcherEnabled = true
+    public var applicationShortcutsEnabled: Bool?
+    public var shortcutsEnabled: Bool { applicationShortcutsEnabled ?? true }
     public var workflows: WorkflowPreferences?
     public var appearance: AppearancePreferences?
     public var workflowSettings: WorkflowPreferences { workflows ?? WorkflowPreferences() }
     public init() {}
 
-    private enum CodingKeys: String, CodingKey { case historyEnabled, historyLimit, historyRetentionDays, showProcessingIndicator, windowSwitcherEnabled, workflows, appearance }
+    private enum CodingKeys: String, CodingKey { case historyEnabled, historyLimit, historyRetentionDays, showProcessingIndicator, windowSwitcherEnabled, applicationShortcutsEnabled, workflows, appearance }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         historyEnabled = try values.decode(Bool.self, forKey: .historyEnabled)
@@ -156,12 +167,15 @@ public struct Preferences: Codable, Equatable, Sendable {
         historyRetentionDays = try values.decode(Int.self, forKey: .historyRetentionDays)
         showProcessingIndicator = try values.decodeIfPresent(Bool.self, forKey: .showProcessingIndicator) ?? true
         windowSwitcherEnabled = try values.decodeIfPresent(Bool.self, forKey: .windowSwitcherEnabled) ?? true
+        applicationShortcutsEnabled = try values.decodeIfPresent(Bool.self, forKey: .applicationShortcutsEnabled)
         workflows = try values.decodeIfPresent(WorkflowPreferences.self, forKey: .workflows)
         appearance = try values.decodeIfPresent(AppearancePreferences.self, forKey: .appearance)
     }
 }
 
 public struct Configuration: Codable, Equatable, Sendable {
+    public var explicitRuleModels: Bool?
+    public var recentModels: [RuleModelSelection]?
     public var localModels: [LocalModelDescriptor]?
     public var version = 1
     public var providers: [ProviderConfiguration] = []
@@ -170,10 +184,12 @@ public struct Configuration: Codable, Equatable, Sendable {
     public var preferences = Preferences()
     public init() {}
 
-    private enum CodingKeys: String, CodingKey { case version, providers, defaultProviderID, rules, preferences, localModels }
+    private enum CodingKeys: String, CodingKey { case version, providers, defaultProviderID, rules, preferences, localModels, explicitRuleModels, recentModels }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         version = try values.decode(Int.self, forKey: .version)
+        explicitRuleModels = try values.decodeIfPresent(Bool.self, forKey: .explicitRuleModels)
+        recentModels = try values.decodeIfPresent([RuleModelSelection].self, forKey: .recentModels)
         localModels = try values.decodeIfPresent([LocalModelDescriptor].self, forKey: .localModels)
         providers = try values.decode([ProviderConfiguration].self, forKey: .providers)
         defaultProviderID = try values.decodeIfPresent(UUID.self, forKey: .defaultProviderID)
