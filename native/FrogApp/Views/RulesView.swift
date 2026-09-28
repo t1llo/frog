@@ -59,7 +59,7 @@ struct RulesView: View {
                         if rule.id != rules.last?.id { Divider().opacity(0.5) }
                     }
                     if rules.isEmpty { Text("No matching rules").font(.caption).foregroundStyle(FrogStyle.muted).padding(24) }
-                }
+                }.minimalScrollbars()
             }.frogTableSurface()
         }.padding(20).sheet(item: $editing) { RuleEditor(rule: $0).environmentObject(model) }
     }
@@ -133,7 +133,7 @@ struct RuleEditor: View {
                         if rule.category == .text { instructions }
                     }
                     if let issue { Text(issue).font(.caption).foregroundStyle(.orange) }
-                }.padding(.horizontal, 24).padding(.bottom, 24)
+                }.padding(.horizontal, 24).padding(.bottom, 24).minimalScrollbars()
             }
             HStack(spacing: 8) {
                 if existing {

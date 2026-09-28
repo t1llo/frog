@@ -28,7 +28,7 @@ struct HistoryView: View {
                 }.frame(height: 32)
                 PageHeader(title: viewing.ruleName, subtitle: viewing.timestamp.formatted(date: .abbreviated, time: .shortened))
                 ScrollView {
-                    HistoryDetail(entry: viewing).padding(16)
+                    HistoryDetail(entry: viewing).padding(16).minimalScrollbars()
                 }.frogTableSurface()
                     .onCopyCommand { [NSItemProvider(object: viewing.processedText as NSString)] }
             } else {
@@ -64,7 +64,7 @@ struct HistoryView: View {
                             historyRow(item)
                             if item.id != entries.last?.id { Divider().opacity(0.5) }
                         }
-                    }
+                    }.minimalScrollbars()
                 }
                 .frogTableSurface()
             }
