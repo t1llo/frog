@@ -16,7 +16,6 @@ dist/
 *.mobileprovision
 node_modules
 
-# Machine-local agent guidance and implementation notes, not public documentation.
 /AGENTS.md
 /docs/agent-workflow.md
 /docs/progress.md
