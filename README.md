@@ -10,16 +10,20 @@ Native macOS shortcuts for writing, dictation and switching between windows.
 
 **[Website](https://frog.beffa.xyz/)** · **[Download](https://github.com/t1llo/frog/releases/latest)**
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/frog-dark.png">
-  <img src="docs/images/frog-light.png" alt="Frog’s native macOS interface" width="960">
-</picture>
+<img src="docs/images/frog-rules.png" alt="Frog writing rules and keyboard shortcuts" width="960">
 
 - Rewrite selected text with customizable rules and shortcuts.
 - Dictate with local speech models or external transcription providers.
 - Use downloaded models, OpenAI, Claude, Gemini, Ollama or LM Studio.
 - Switch between individual windows with **Command–Tab**.
 - Keep API keys in Keychain and history optional. No account or analytics.
+
+## Screenshots
+
+**Internal models**
+
+<img src="docs/images/frog-internal-models.png" alt="Download and manage internal speech models in Frog" width="960">
+
 
 ## Install
 
