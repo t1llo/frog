@@ -82,7 +82,7 @@ struct PreferencesView: View {
                         Task { if !DictationController.microphoneGranted { _ = await DictationController.requestMicrophone() }; DictationController.openMicrophoneSettings(); model.objectWillChange.send() }
                     }
                     Divider()
-                    CompactRow(title: "Notifications") { Button("Allow…") { DesktopNotifications.requestAuthorization() } }
+                    NotificationPermissionRow()
                 }.id("permissions")
                 SettingsSection(title: "History") {
                     CompactRow(title: "Save history on this Mac") { Toggle("Save history on this Mac", isOn: preference(\.historyEnabled)).labelsHidden() }

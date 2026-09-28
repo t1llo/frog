@@ -2,7 +2,6 @@ import AppKit
 import SwiftUI
 import FrogCore
 import UniformTypeIdentifiers
-import UserNotifications
 
 struct RecommendedModelBadge: View {
     var body: some View {
@@ -21,7 +20,6 @@ struct SetupView: View {
     @State private var kind: LocalModelDescriptor.Kind = .audio
     @State private var issue: String?
     @State private var pendingImport: Configuration?
-    @State private var notificationsAllowed = false
     @State private var microphoneAllowed = false
     private let titles = ["Welcome to Frog", "Choose your models", "Permissions", "You're ready"]
 
@@ -143,13 +141,7 @@ struct SetupView: View {
                 }
             }
             Divider()
-            permission("Notifications", detail: "Optional alerts about requests and errors.", allowed: notificationsAllowed) {
-                Task {
-                    do { _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) }
-                    catch { issue = error.localizedDescription }
-                    await refreshPermissions()
-                }
-            }
+            NotificationPermissionRow(detail: "Optional alerts about requests and errors.")
             Text("You can skip any permission and enable it later in Settings. Features needing it stay unavailable until allowed.").font(.caption).foregroundStyle(FrogStyle.muted)
         }
     }
@@ -190,9 +182,6 @@ struct SetupView: View {
     private func refreshPermissions() async {
         model.refreshSystemStatus()
         microphoneAllowed = DictationController.microphoneGranted
-        guard Bundle.main.bundleIdentifier != nil else { return }
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        notificationsAllowed = [.authorized, .provisional].contains(settings.authorizationStatus)
     }
     private func chooseImport() {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.allowsMultipleSelection = false
