@@ -8,7 +8,7 @@ struct MainView: View {
     @State private var section: Section = .rules
 
     private enum Section: String, CaseIterable, Identifiable {
-        case rules = "Rules", history = "History", providers = "Models", settings = "Settings"
+        case rules = "Rules", history = "History", providers = "Models", shortcuts = "Shortcuts", settings = "Settings"
         var id: String { rawValue }
         var symbol: String {
             switch self {
@@ -16,6 +16,7 @@ struct MainView: View {
             case .providers: "cpu"
             case .history: "clock.arrow.circlepath"
             case .settings: "slider.horizontal.3"
+            case .shortcuts: "command"
             }
         }
         var key: KeyEquivalent {
@@ -23,7 +24,8 @@ struct MainView: View {
             case .rules: "1"
             case .history: "2"
             case .providers: "3"
-            case .settings: "4"
+            case .shortcuts: "4"
+            case .settings: "5"
             }
         }
     }
@@ -38,6 +40,7 @@ struct MainView: View {
                     case .providers: ProvidersView()
                     case .history: HistoryView()
                     case .settings: PreferencesView()
+                    case .shortcuts: RulesView(applications: true)
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 if let error = model.errorMessage {
@@ -60,6 +63,7 @@ struct MainView: View {
         .onAppear { model.refreshSystemStatus() }
         .task { await model.monitorSystemStatus() }
         .onChange(of: scenePhase) { _, phase in if phase == .active { model.refreshSystemStatus() } }
+        .onChange(of: model.configuration.preferences.shortcutsEnabled) { _, enabled in if !enabled && section == .shortcuts { section = .settings } }
     }
 
     private var sidebar: some View {
@@ -70,7 +74,7 @@ struct MainView: View {
             }.padding(.horizontal, 20).padding(.top, 24).padding(.bottom, 28)
 
             VStack(spacing: 4) {
-                ForEach(Section.allCases) { item in
+                ForEach(Section.allCases.filter { $0 != .shortcuts || model.configuration.preferences.shortcutsEnabled }) { item in
                     Button { section = item } label: {
                         HStack(spacing: 12) {
                             Image(systemName: item.symbol).font(.system(size: 15, weight: .medium)).frame(width: 20)

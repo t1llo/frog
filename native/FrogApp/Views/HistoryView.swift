@@ -24,11 +24,8 @@ struct HistoryView: View {
                 HStack {
                     Button { self.viewing = nil } label: { Label("History", systemImage: "arrow.left") }
                     Spacer()
-                    Button(copiedID == viewing.id ? "Copied" : "Copy result", systemImage: copiedID == viewing.id ? "checkmark" : "doc.on.doc") {
-                        ViewActions.copy(viewing.processedText); copiedID = viewing.id
-                    }
                     IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = viewing }
-                }
+                }.frame(height: 32)
                 PageHeader(title: viewing.ruleName, subtitle: viewing.timestamp.formatted(date: .abbreviated, time: .shortened))
                 ScrollView {
                     HistoryDetail(entry: viewing).padding(16)
@@ -37,7 +34,7 @@ struct HistoryView: View {
             } else {
             PageHeader(title: "History", subtitle: "") {
                 HStack {
-                    Button("Clear all…", systemImage: "trash", role: .destructive) { confirmClear = true }
+                    Button("Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }
                         .disabled(model.history.isEmpty)
                 }
             }

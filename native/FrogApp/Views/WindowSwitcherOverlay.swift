@@ -9,11 +9,13 @@ final class WindowSwitcherDisplay: ObservableObject {
     @Published var query = ""
     @Published var icons: [pid_t: NSImage] = [:]
     @Published var shortcuts: [pid_t: String] = [:]
+    var selectionFromPointer = false
 }
 
 struct WindowSwitcherOverlay: View {
     @ObservedObject var model: WindowSwitcherDisplay
     let choose: (UUID) -> Void
+    let hover: (UUID) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -50,11 +52,12 @@ struct WindowSwitcherOverlay: View {
                                         .background(model.selected == window.id ? FrogStyle.accentSoft : .clear, in: RoundedRectangle(cornerRadius: 9))
                                         .contentShape(Rectangle())
                                 }.buttonStyle(.plain).id(window.id)
+                                    .onContinuousHover { phase in if case .active = phase { hover(window.id) } }
                                     .accessibilityAddTraits(model.selected == window.id ? .isSelected : [])
                             }
                         }.padding(8)
                     }
-                    .onChange(of: model.selected) { _, id in if let id { proxy.scrollTo(id) } }
+                    .onChange(of: model.selected) { _, id in if let id, !model.selectionFromPointer { proxy.scrollTo(id) } }
                     .onAppear { if let id = model.selected { proxy.scrollTo(id) } }
                 }
             }

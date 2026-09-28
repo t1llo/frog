@@ -56,9 +56,9 @@ struct CompactMenu<Content: View>: View {
             HStack(spacing: 8) {
                 Text(L10n.text(value)).lineLimit(1).truncationMode(.middle).frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .medium)).foregroundStyle(FrogStyle.muted)
-            }.frame(width: 200).font(.system(size: 11, weight: .medium))
+            }.font(.system(size: 11, weight: .medium))
                 .foregroundStyle(FrogStyle.ink)
-                .padding(.horizontal, 10).padding(.vertical, 7)
+                .padding(.horizontal, 9).frame(width: 220, height: 32)
                 .background(hovering ? FrogStyle.accentSoft : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(hovering ? FrogStyle.accent.opacity(0.45) : FrogStyle.border.opacity(0.4)))
                 .contentShape(RoundedRectangle(cornerRadius: 6))

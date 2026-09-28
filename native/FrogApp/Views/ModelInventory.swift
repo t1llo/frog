@@ -26,15 +26,12 @@ struct ModelInventory: View {
                                 Text(item.size + (model.localModels.loaded.contains(item.id) ? " · In memory" : "")).font(.system(size: 10)).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            if isDefault(item) { Text(item.kind == .text && model.configuration.preferences.workflowSettings.effectiveTextSource == .provider ? "Local default" : "Default").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.accent).padding(.horizontal, 7).padding(.vertical, 3).background(FrogStyle.accentSoft, in: Capsule()) }
                             IconAction(title: "Model information", symbol: "info.circle") { information = item }
                             if let progress = model.localModels.progress[item.id] {
                                 ProgressView(value: progress).frame(width: 70)
                                 Button("Cancel") { model.localModels.cancelDownload(item.id) }.controlSize(.small)
                             } else if installed {
                                 Menu {
-                                    Button("Use as default") { setDefault(item) }
-                                    if item.kind == .text { Button("Use for transcript cleanup") { update { $0.cleanupModelID = item.id } } }
                                     Button("Delete download", role: .destructive) { Task { do { try await model.localModels.remove(item.id) } catch { model.report(error) } } }
                                         .disabled(model.localModels.busy || model.dictation.active)
                                 } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
@@ -57,14 +54,5 @@ struct ModelInventory: View {
                 if items.isEmpty { Text(L10n.text(installed ? "No downloaded models" : "No additional models")).font(.system(size: 11)).foregroundStyle(.secondary).padding(14).frame(maxWidth: .infinity, alignment: .leading) }
             }.frogTableSurface()
         }
-    }
-    private func isDefault(_ item: LocalModelDescriptor) -> Bool {
-        let prefs = model.configuration.preferences.workflowSettings
-        return item.kind == .audio ? prefs.audioModelID == item.id : (prefs.defaultLocalTextModelID ?? "qwen-0.6b") == item.id
-    }
-    private func setDefault(_ item: LocalModelDescriptor) { update { if item.kind == .audio { $0.audioModelID = item.id } else { $0.defaultLocalTextModelID = item.id; $0.textSource = .frog } } }
-    private func update(_ body: (inout WorkflowPreferences) -> Void) {
-        var value = model.configuration.preferences.workflowSettings; body(&value)
-        do { try model.saveWorkflowPreferences(value) } catch { model.report(error) }
     }
 }

@@ -5,218 +5,186 @@ import UniformTypeIdentifiers
 
 struct RulesView: View {
     @EnvironmentObject private var model: AppModel
+    var applications = false
     @State private var editing: Rule?
-    @State private var deleting: Rule?
-    @State private var filter: RuleCategory? = .text
+    @State private var filter: RuleCategory = .text
     @State private var search = ""
+    private var category: RuleCategory { applications ? .application : filter }
     private var rules: [Rule] {
-        model.configuration.rules.filter { rule in
-            (filter == nil || rule.category == filter) && (search.isEmpty ||
-                [rule.name, rule.instructions, rule.action?.applicationBundleID ?? "", rule.category.title].contains { $0.localizedStandardContains(search) })
-        }
+        model.configuration.rules.filter { $0.category == category && (search.isEmpty || ($0.name + " " + $0.instructions).localizedStandardContains(search)) }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            PageHeader(title: "Rules", subtitle: "") {
-                Button("New rule", systemImage: "plus") {
-                    var draft = filter == .audio ? Rule.dictationPreset : Rule()
-                    draft.id = UUID(); draft.preset = false; draft.hotkey = nil
-                    if filter == .application { draft.action = RuleAction(category: .application); draft.instructions = "" }
-                    editing = draft
+            PageHeader(title: applications ? "Shortcuts" : "Rules", subtitle: "") {
+                Button(applications ? "Add application" : "New rule", systemImage: "plus") {
+                    editing = model.configuration.newRule(category: category, installed: model.localModels.installed)
                 }.keyboardShortcut("n", modifiers: .command)
             }
-            ListToolbar(placeholder: "Search rules", search: $search) {
-                ForEach(RuleCategory.allCases) { category in
-                    FilterTag(title: category.title, selected: filter == category) { filter = filter == category ? nil : category }
+            if applications {
+                SettingsSection(title: "Window switcher") {
+                    CompactRow(title: "Switch windows with ⌘Tab", detail: "Hold ⌘ and type to search. Release to switch; Esc cancels.") {
+                        Toggle("Window switcher", isOn: Binding(get: { model.configuration.preferences.windowSwitcherEnabled }, set: { value in
+                            var prefs = model.configuration.preferences; prefs.windowSwitcherEnabled = value
+                            do { try model.savePreferences(prefs) } catch { model.report(error) }
+                        })).labelsHidden().toggleStyle(.switch).controlSize(.small)
+                    }
+                    Text(model.windowSwitcherStatus).font(.caption).foregroundStyle(FrogStyle.muted)
                 }
+            }
+            ListToolbar(placeholder: applications ? "Search applications" : "Search rules", search: $search) {
+                if !applications { ForEach([RuleCategory.text, .audio]) { category in FilterTag(title: category.title, selected: filter == category) { filter = category } } }
             }
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(rules) { rule in
-                        ruleRow(rule)
+                        HStack(spacing: 10) {
+                            if applications { Image(nsImage: NSWorkspace.shared.icon(forFile: rule.action?.applicationPath ?? "")).resizable().frame(width: 28, height: 28) }
+                            Button { editing = rule } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(rule.name).font(.system(size: 12, weight: .medium))
+                                    Text(model.ruleModelLabel(rule)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                                    if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(.orange) }
+                                }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                            if let key = rule.hotkey { ShortcutBadge(text: HotkeyManager.display(key)) }
+                            Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { value in
+                                var updated = rule; updated.enabled = value
+                                do { try model.saveRule(updated) } catch { model.report(error) }
+                            })).labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                            IconAction(title: "Edit rule", symbol: "pencil") { editing = rule }
+                        }.padding(12)
                         if rule.id != rules.last?.id { Divider().opacity(0.5) }
                     }
-                    if rules.isEmpty { Text("No matching rules").font(.system(size: 12)).foregroundStyle(.secondary).padding(24) }
+                    if rules.isEmpty { Text("No matching rules").font(.caption).foregroundStyle(FrogStyle.muted).padding(24) }
                 }
             }.frogTableSurface()
-        }.padding(20)
-            .sheet(item: $editing) { RuleEditor(rule: $0).environmentObject(model) }
-            .confirmationDialog("Delete \(deleting?.name ?? "rule")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
-                Button("Delete rule", role: .destructive) {
-                    if let deleting { do { try model.deleteRule(id: deleting.id) } catch { model.report(error) } }
-                    deleting = nil
-                }
-            }
-    }
-    private func ruleRow(_ rule: Rule) -> some View {
-        HStack(spacing: 10) {
-            Button { editing = rule } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(rule.name).font(.system(size: 12, weight: .medium)).foregroundStyle(FrogStyle.ink)
-                    Text(model.ruleModelLabel(rule)).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
-                    if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(.orange) }
-                }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-            }.buttonStyle(.plain)
-            if let hotkey = rule.hotkey { ShortcutBadge(text: HotkeyManager.display(hotkey)) }
-            Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { enabled in
-                var updated = rule; updated.enabled = enabled
-                do { try model.saveRule(updated) } catch { model.report(error) }
-            })).labelsHidden().toggleStyle(.switch).controlSize(.mini)
-            IconAction(title: "Edit rule", symbol: "pencil") { editing = rule }
-            Menu {
-                Button("Duplicate") { var copy = rule; copy.id = UUID(); copy.name += " copy"; copy.hotkey = nil; copy.preset = false; editing = copy }
-                Button("Delete…", role: .destructive) { deleting = rule }
-            } label: { Image(systemName: "ellipsis").frame(width: 16) }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-        }.padding(.horizontal, 12).padding(.vertical, 12)
+        }.padding(20).sheet(item: $editing) { RuleEditor(rule: $0).environmentObject(model) }
     }
 }
 
 @MainActor
 extension AppModel {
     func localModelLabel(_ id: String) -> String {
-        (configuration.localModel(id)?.name ?? id) + (localModels.installed.contains(id) ? "" : " · " + L10n.text("Not downloaded"))
+        (configuration.localModel(id)?.name ?? id) + (localModels.installed.contains(id) ? "" : " · Not downloaded")
     }
-    var defaultTextLabel: String {
-        let prefs = configuration.preferences.workflowSettings
-        if prefs.effectiveTextSource == .frog { return localModelLabel(prefs.defaultLocalTextModelID ?? "qwen-0.6b") }
-        guard let provider = configuration.providers.first(where: { $0.id == configuration.defaultProviderID }) else { return "Not configured" }
-        return provider.name + " · " + provider.modelName(provider.model)
-    }
+    var defaultTextLabel: String { "Choose a model" }
     func ruleModelLabel(_ rule: Rule) -> String {
         if rule.category == .application { return rule.action?.applicationPath.map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent } ?? "Choose application" }
-        if rule.category == .audio { return localModelLabel(rule.action?.audioModelID ?? configuration.preferences.workflowSettings.audioModelID) }
-        guard let provider = try? resolved(rule) else { return L10n.text("Not configured") }
-        if provider.id == Self.localProviderID { return localModelLabel(provider.model) }
-        return provider.name + " · " + provider.modelName(provider.model)
+        if rule.category == .audio {
+            guard let id = rule.action?.audioModelID else { return "Choose a speech model" }
+            if let provider = configuration.providers.first(where: { $0.id == rule.action?.audioProviderID }) { return provider.name + " · " + provider.modelName(id) }
+            return localModelLabel(id)
+        }
+        guard let provider = try? resolved(rule) else { return "Choose a text model" }
+        return provider.id == Self.localProviderID ? localModelLabel(provider.model) : provider.name + " · " + provider.modelName(provider.model)
     }
 }
 
-private struct RuleEditor: View {
+struct RuleEditor: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State var rule: Rule
     @State private var issue: String?
+    @State private var deleting = false
+    @State private var step = 0
     init(rule: Rule) {
         var draft = rule
         if !draft.targetLanguage.isEmpty { draft.instructions = draft.instructions.replacingOccurrences(of: "{{language}}", with: draft.targetLanguage); draft.targetLanguage = "" }
+        if draft.action == nil { draft.action = RuleAction(category: draft.category) }
         _rule = State(initialValue: draft)
     }
-    private var prefs: WorkflowPreferences { model.configuration.preferences.workflowSettings }
-    private var defaultModel: String { rule.category == .audio ? model.localModelLabel(prefs.cleanupModelID) : model.defaultTextLabel }
-    private var selectedModel: String {
-        if rule.category == .text {
-            let label = model.ruleModelLabel(rule)
-            return rule.providerID == nil && rule.model.isEmpty && rule.action?.localTextModelID == nil ? L10n.text("Default") + " · " + label : label
-        }
-        if let id = rule.action?.localTextModelID { return model.localModelLabel(id) }
-        if let provider = model.configuration.providers.first(where: { $0.id == rule.providerID }) { return provider.name + " · " + provider.modelName(rule.model.isEmpty ? provider.model : rule.model) }
-        return L10n.text("Default") + " · " + defaultModel
-    }
+    private var existing: Bool { model.configuration.rules.contains { $0.id == rule.id } }
     var body: some View {
         VStack(spacing: 0) {
-            EditorHeading(title: "Edit rule", subtitle: "")
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(rule.category == .application ? "Application shortcut" : rule.category == .audio ? "Audio rule" : "Text rule").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                    TextField("Name your rule", text: $rule.name).textFieldStyle(.plain).font(.system(size: 23, weight: .semibold)).accessibilityLabel("Rule name")
+                }
+                Toggle("Enabled", isOn: $rule.enabled).toggleStyle(.switch).controlSize(.mini).font(.system(size: 11))
+            }.padding(24)
+            if rule.category == .audio {
+                CompactSegments(values: [0, 1], selected: step, title: { $0 == 0 ? "Recording" : "Cleanup" }) { step = $0 }.padding(.bottom, 16)
+            }
             ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                SettingsSection(title: "Rule") {
-                    CompactRow(title: "Name") {
-                        TextField("Name", text: $rule.name).textFieldStyle(.plain).padding(7)
-                            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
-                    }
-                    Divider()
-                    CompactRow(title: "Action") {
-                        CompactMenu(value: rule.category.title) {
-                            ForEach(RuleCategory.allCases) { category in
-                                Button(L10n.text(category.title)) {
-                                    guard category != rule.category else { return }
-                                    rule.action = RuleAction(category: category); rule.providerID = nil; rule.model = ""
-                                    rule.instructions = category == .application ? "" : category == .audio ? Rule.dictationPreset.instructions : Rule().instructions
-                                }
+                VStack(alignment: .leading, spacing: 20) {
+                    if rule.category == .audio && step == 1 {
+                        CompactRow(title: "Improve transcript", detail: "A text model cleans up the transcript. Adds processing time.") {
+                            Toggle("Improve transcript", isOn: Binding(get: { rule.action?.cleanup ?? false }, set: { rule.action?.cleanup = $0 })).labelsHidden().toggleStyle(.switch)
+                        }
+                        if rule.action?.cleanup == true {
+                            CompactRow(title: "Cleanup model") { RuleModelPicker(rule: $rule) }
+                            instructions
+                        }
+                    } else {
+                        VStack(spacing: 10) {
+                            if rule.category == .application {
+                                CompactRow(title: "Application") { Button(rule.action?.applicationPath.map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent } ?? "Choose application") { chooseApplication() } }
+                            } else {
+                                CompactRow(title: rule.category == .audio ? "Speech model" : "Text model") { RuleModelPicker(rule: $rule, speech: rule.category == .audio) }
                             }
-                        }
+                            Divider()
+                            CompactRow(title: "Shortcut") { HotkeyRecorder(hotkey: $rule.hotkey) }
+                            if rule.category == .audio { audioOptions }
+                        }.padding(13).frogTableSurface()
+                        if rule.category == .text { instructions }
                     }
-                    Divider()
-                    if rule.category == .application {
-                        CompactRow(title: "Application") {
-                            Button(rule.action?.applicationPath.map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent } ?? L10n.text("Choose…")) { chooseApplication() }
-                        }
-                    }
-                    if rule.category == .audio { audioOptions }
-                    if rule.category == .text || (rule.category == .audio && rule.action?.cleanup != false) {
-                        CompactRow(title: rule.category == .audio ? "Cleanup model" : "Text model") { modelMenu }
-                    }
-                    Divider()
-                    CompactRow(title: "Shortcut") { HotkeyRecorder(hotkey: $rule.hotkey) }
-                }
-                if rule.category == .text || (rule.category == .audio && rule.action?.cleanup != false) {
-                    SettingsSection(title: rule.category == .audio ? "Cleanup instructions" : "Instructions") {
-                        TextEditor(text: $rule.instructions).font(.system(size: 12)).scrollContentBackground(.hidden).frame(height: 105)
-                    }
-                }
-                if let issue { Text(issue).font(.caption).foregroundStyle(.orange) }
-            }.padding(.horizontal, 20).padding(.bottom, 12)
+                    if let issue { Text(issue).font(.caption).foregroundStyle(.orange) }
+                }.padding(.horizontal, 24).padding(.bottom, 24)
             }
-            HStack {
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+            HStack(spacing: 8) {
+                if existing {
+                    Button("Delete", systemImage: "trash", role: .destructive) { deleting = true }.buttonStyle(.plain).foregroundStyle(.red.opacity(0.8))
+                    Button("Duplicate", systemImage: "square.on.square") { rule.id = UUID(); rule.name += " copy"; rule.hotkey = nil; rule.preset = false }.buttonStyle(.plain).foregroundStyle(FrogStyle.muted).padding(.leading, 8)
+                }
                 Spacer()
-                Button("Save") {
-                    do { try model.saveRule(rule); dismiss() } catch { issue = error.localizedDescription }
-                }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.defaultAction).disabled(rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }.padding(20).background(FrogStyle.surface)
-                .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border).frame(height: 1) }
-        }.frame(width: 540, height: rule.category == .application ? 350 : rule.category == .audio ? 600 : 470)
-            .background(FrogStyle.canvas).background(FrogWindowMaterial()).tint(FrogStyle.accent)
-            .buttonStyle(FrogButtonStyle()).toggleStyle(.switch).controlSize(.small)
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Save") { do { try model.saveRule(rule); dismiss() } catch { issue = error.localizedDescription } }
+                    .buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.defaultAction).disabled(rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }.font(.system(size: 12)).padding(.horizontal, 20).padding(.vertical, 15)
+                .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border.opacity(0.5)).frame(height: 1) }
+        }.frame(width: 544, height: rule.category == .application ? 320 : rule.category == .audio ? 590 : 490)
+            .foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).tint(FrogStyle.accent).buttonStyle(FrogButtonStyle()).controlSize(.small)
+            .confirmationDialog("Delete this rule?", isPresented: $deleting) {
+                Button("Delete rule", role: .destructive) { do { try model.deleteRule(id: rule.id); dismiss() } catch { issue = error.localizedDescription } }
+            }
     }
-    private var modelMenu: some View {
-        CompactMenu(value: selectedModel) {
-            Button(L10n.text("Default") + " · " + defaultModel) { rule.providerID = nil; rule.model = ""; rule.action?.localTextModelID = nil }
-            Section("Downloaded") {
-                ForEach(model.configuration.modelCatalog.filter { $0.kind == .text && model.localModels.installed.contains($0.id) }) { item in
-                    Button(item.name) {
-                        if rule.action == nil { rule.action = RuleAction() }
-                        rule.action?.localTextModelID = item.id; rule.providerID = nil; rule.model = ""
-                    }
-                }
-            }
-            ForEach(model.configuration.providers) { provider in
-                Section(provider.name) {
-                    ForEach(provider.models) { choice in Button(choice.name) { rule.providerID = provider.id; rule.model = choice.id; rule.action?.localTextModelID = nil } }
-                }
-            }
+    private var instructions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack { Text("Instructions").font(.system(size: 12, weight: .medium)); Spacer(); if rule.category == .text { Text("Applied to selected text").font(.system(size: 10)).foregroundStyle(FrogStyle.muted) } }
+            TextEditor(text: $rule.instructions).font(.system(size: 12)).scrollContentBackground(.hidden).padding(9).frame(height: 145)
+                .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(FrogStyle.border.opacity(0.6)))
         }
     }
     private var audioOptions: some View {
         Group {
-            CompactRow(title: "Speech model", detail: model.configuration.localModel(rule.action?.audioModelID ?? prefs.audioModelID)?.languages) {
-                CompactMenu(value: rule.action?.audioModelID.map(model.localModelLabel) ?? L10n.text("Default") + " · " + model.localModelLabel(prefs.audioModelID)) {
-                    Button(L10n.text("Default") + " · " + model.localModelLabel(prefs.audioModelID)) { rule.action?.audioModelID = nil }
-                    ForEach(model.configuration.modelCatalog.filter { $0.kind == .audio && model.localModels.installed.contains($0.id) }) { item in
-                        Button(item.name) { rule.action?.audioModelID = item.id }
-                    }
+            Divider()
+            CompactRow(title: "Language") {
+                CompactMenu(value: languageName(rule.action?.transcriptionLanguage ?? languageChoices.first ?? "auto")) {
+                    ForEach(languageChoices, id: \.self) { language in Button(languageName(language)) { rule.action?.transcriptionLanguage = language } }
                 }
             }
-            CompactRow(title: "Recording") {
-                CompactMenu(value: rule.action?.recordingMode.map { L10n.text($0.title) } ?? L10n.text("Default") + " · " + L10n.text(prefs.recordingMode.title)) {
-                    Button(L10n.text("Default") + " · " + L10n.text(prefs.recordingMode.title)) { rule.action?.recordingMode = nil }
-                    ForEach(RecordingMode.allCases, id: \.self) { mode in Button(L10n.text(mode.title)) { rule.action?.recordingMode = mode } }
-                }
-            }
-            CompactRow(title: "Output") {
-                CompactMenu(value: rule.action?.output.map { L10n.text($0.title) } ?? L10n.text("Default") + " · " + L10n.text(prefs.output.title)) {
-                    Button(L10n.text("Default") + " · " + L10n.text(prefs.output.title)) { rule.action?.output = nil }
-                    ForEach(TranscriptOutput.allCases, id: \.self) { output in Button(L10n.text(output.title)) { rule.action?.output = output } }
-                }
-            }
-            CompactRow(title: "Improve transcript", detail: "Fix wording and punctuation with a text model.") {
-                Toggle("Improve transcript", isOn: Binding(get: { rule.action?.cleanup ?? false }, set: { rule.action?.cleanup = $0 })).labelsHidden().toggleStyle(.switch)
-            }
+            Divider()
+            CompactRow(title: "Recording") { CompactSegments(values: RecordingMode.allCases, selected: rule.action?.recordingMode ?? .toggle, title: { $0.title }) { rule.action?.recordingMode = $0 } }
+            Divider()
+            CompactRow(title: "Output") { CompactSegments(values: TranscriptOutput.allCases, selected: rule.action?.output ?? .copy, title: { $0.title }) { rule.action?.output = $0 } }
+            Divider()
+            CompactRow(title: "Recording popup") { Toggle("Recording popup", isOn: Binding(get: { rule.action?.showRecordingPopup ?? true }, set: { rule.action?.showRecordingPopup = $0 })).labelsHidden().toggleStyle(.switch) }
         }
     }
+    private var languageChoices: [String] {
+        if rule.action?.audioProviderID == nil, let id = rule.action?.audioModelID, let item = model.configuration.localModel(id) {
+            if item.englishOnly { return ["en"] }
+            if !item.supportsLanguageSelection { return ["auto"] }
+        }
+        return WorkflowPreferences.speechLanguages
+    }
+    private func languageName(_ code: String) -> String { code == "auto" ? "Auto" : Locale(identifier: "en").localizedString(forLanguageCode: code) ?? code }
     private func chooseApplication() {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.application]; panel.canChooseDirectories = false
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         guard panel.runModal() == .OK, let url = panel.url, let id = Bundle(url: url)?.bundleIdentifier else { return }
         rule.action?.applicationPath = url.path; rule.action?.applicationBundleID = id
-        if rule.name == "Custom rule" { rule.name = "Open " + url.deletingPathExtension().lastPathComponent }
+        if rule.name == "Open application" { rule.name = "Open " + url.deletingPathExtension().lastPathComponent }
     }
 }

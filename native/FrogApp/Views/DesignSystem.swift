@@ -180,9 +180,9 @@ struct ShortcutBadge: View {
     let text: String
     var body: some View {
         Text(text).font(.system(size: 12, weight: .medium, design: .monospaced))
-            .foregroundStyle(FrogStyle.muted).padding(.horizontal, 9).padding(.vertical, 5)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
-            .overlay(RoundedRectangle(cornerRadius: FrogStyle.corner).strokeBorder(FrogStyle.border.opacity(0.6), lineWidth: 1))
+            .foregroundStyle(FrogStyle.ink).padding(.horizontal, 7).frame(height: 24)
+            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 5))
+            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(FrogStyle.border.opacity(0.6), lineWidth: 1))
             .accessibilityLabel("Shortcut: \(text)")
     }
 }
@@ -262,18 +262,7 @@ struct FrogEmptyState: View {
 
 struct FrogMark: View {
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 14).fill(FrogStyle.accentSoft).frame(width: 46, height: 46)
-            Capsule().fill(FrogStyle.accent).frame(width: 29, height: 21).offset(y: 4)
-            ForEach([-1.0, 1.0], id: \.self) { side in
-                Circle().fill(FrogStyle.accent).frame(width: 13, height: 13).offset(x: side * 9, y: -5)
-                Circle().fill(FrogStyle.onAccent).frame(width: 5, height: 5).offset(x: side * 9, y: -6)
-                Circle().fill(FrogStyle.accent).frame(width: 2, height: 2).offset(x: side * 9, y: -6)
-            }
-            Path { path in
-                path.move(to: CGPoint(x: 18, y: 28))
-                path.addQuadCurve(to: CGPoint(x: 28, y: 28), control: CGPoint(x: 23, y: 33))
-            }.stroke(FrogStyle.onAccent, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-        }.frame(width: 46, height: 46).accessibilityHidden(true)
+        Image("FrogLogo", bundle: FrogResources.bundle).resizable().interpolation(.high).scaledToFit()
+            .frame(width: 46, height: 46).accessibilityHidden(true)
     }
 }

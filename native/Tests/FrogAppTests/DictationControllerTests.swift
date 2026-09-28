@@ -22,7 +22,8 @@ final class DictationControllerTests: XCTestCase {
         controller.cleanup = { _, _ in cleanupCalls += 1; return "LLM output" }
         controller.onFinish = { _, _, result, delivery in completed.append(result); XCTAssertEqual(delivery, "Copied") }
         var prefs = WorkflowPreferences(); prefs.showDictationPopup = false; prefs.audioModelID = descriptor.id
-        controller.start(rule: .dictationPreset, preferences: prefs, models: models)
+        var rule = Rule.dictationPreset; rule.action?.audioModelID = descriptor.id; rule.action?.showRecordingPopup = false
+        controller.start(rule: rule, preferences: prefs, models: models)
         await controller.waitForWork()
         controller.stop(models: models)
         controller.stop(models: models) // Repeated stop must not submit twice.
@@ -51,6 +52,7 @@ final class DictationControllerTests: XCTestCase {
         controller.cleanup = { text, _ in cleanupCalls += 1; return text }
         var prefs = WorkflowPreferences(); prefs.showDictationPopup = false; prefs.audioModelID = descriptor.id
         var rule = Rule.dictationPreset; rule.action?.cleanup = true
+        rule.action?.audioModelID = descriptor.id; rule.action?.showRecordingPopup = false
         controller.start(rule: rule, preferences: prefs, models: models)
         await controller.waitForWork()
         XCTAssertEqual(controller.phase, .recording)

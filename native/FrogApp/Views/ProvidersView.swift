@@ -6,7 +6,7 @@ struct ProvidersView: View {
     @State private var editing: ProviderConfiguration?
     @State private var addingLocal = false
     @State private var deleting: ProviderConfiguration?
-    @State private var filter = "Providers"
+    @State private var filter = "External providers"
     @State private var kind: LocalModelDescriptor.Kind = .audio
     @State private var search = ""
     private var providers: [ProviderConfiguration] {
@@ -16,7 +16,7 @@ struct ProvidersView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             PageHeader(title: "Models", subtitle: "") {
-                if filter == "Inside Frog" {
+                if filter == "Internal models" {
                     Button("Add model…", systemImage: "plus") { addingLocal = true }
                 } else {
                 Button { editing = ProviderConfiguration() } label: { Label("Connect provider", systemImage: "plus") }
@@ -24,11 +24,12 @@ struct ProvidersView: View {
                 }
             }
             ListToolbar(placeholder: "Search models", search: $search) {
-                ForEach(["Providers", "Inside Frog"], id: \.self) { name in FilterTag(title: name, selected: filter == name) { filter = name } }
+                ForEach(["External providers", "Internal models"], id: \.self) { name in FilterTag(title: name, selected: filter == name) { filter = name } }
             }
             ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-            if filter == "Inside Frog" {
+            if filter == "Internal models" {
+                Text("Downloaded and run by Frog on this Mac.").font(.caption).foregroundStyle(.secondary)
                 HStack(spacing: 4) {
                     FilterTag(title: "Audio", selected: kind == .audio) { kind = .audio }
                     FilterTag(title: "Text", selected: kind == .text) { kind = .text }
@@ -45,15 +46,11 @@ struct ProvidersView: View {
                             Button { editing = provider } label: {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(provider.name).font(.system(size: 12, weight: .medium))
-                                    Text(provider.modelName(provider.model)).font(.system(size: 10)).foregroundStyle(.secondary)
+                                    Text("\(provider.models.filter { $0.category == .text }.count) text · \(provider.models.filter { $0.category == .audio }.count) speech").font(.system(size: 10)).foregroundStyle(.secondary)
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }.buttonStyle(.plain)
-                            if provider.id == model.configuration.defaultProviderID {
-                                Text("Default").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.accent)
-                            }
                             IconAction(title: "Edit provider", symbol: "pencil") { editing = provider }
                             Menu {
-                                Button("Make default") { do { try model.setDefaultProvider(id: provider.id) } catch { model.report(error) } }
                                 Button("Duplicate") { var copy = provider; copy.id = UUID(); copy.name += " copy"; editing = copy }
                                 Button("Delete…", role: .destructive) { deleting = provider }
                             } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
@@ -74,7 +71,7 @@ struct ProvidersView: View {
                 do { try model.deleteProvider(id: provider.id) } catch { model.report(error) }
                 deleting = nil
             }
-        } message: { Text("The saved API key will also be removed. Affected rules will use the remaining default provider and model. If no provider remains, add one before running those rules.") }
+        } message: { Text("The saved API key will also be removed. Choose a new model in affected rules.") }
     }
 
 }
@@ -95,7 +92,8 @@ private struct ProviderEditor: View {
     @State private var discovering = false
     @State private var discoveryTask: Task<Void, Never>?
     @State private var discoveryMessage: String?
-    @State private var makeDefault = false
+    @State private var step = 0
+    @State private var customCategory: ProviderModel.Category = .text
 
     private var validation: String? {
         if provider.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Enter a provider name." }
@@ -119,10 +117,15 @@ private struct ProviderEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            EditorHeading(title: "Provider", subtitle: "")
+            VStack(alignment: .leading, spacing: 6) {
+                Text("External provider").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                TextField("Connection name", text: $provider.name).textFieldStyle(.plain).font(.system(size: 23, weight: .semibold))
+                CompactSegments(values: [0, 1, 2], selected: step, title: { ["Service", "Connection", "Models"][$0] }) { step = $0 }.padding(.top, 12)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(24)
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    SettingsSection(title: "Connection") {
+                    if step == 0 {
+                    SettingsSection(title: "Service") {
                         VStack(alignment: .leading, spacing: 16) {
                             FrogMenu(title: "Service", value: provider.kind.title) {
                                 ForEach(ProviderKind.allCases) { kind in
@@ -143,8 +146,13 @@ private struct ProviderEditor: View {
                                     Label(provider.kind.isLocal ? "\(provider.kind.title) setup guide" : "Get an API key for \(provider.kind.title)", systemImage: "arrow.up.right.square")
                                 }.foregroundStyle(FrogStyle.accent).font(.system(size: 12))
                             }
-                            CompactRow(title: "Connection name") { TextField("Connection name", text: $provider.name).textFieldStyle(.roundedBorder).labelsHidden() }
-                            Toggle("Use as default text provider", isOn: $makeDefault)
+                        }
+                    }.disabled(testing || discovering)
+                    Text("Cloud APIs and services such as Ollama and LM Studio run outside Frog.").font(.caption).foregroundStyle(FrogStyle.muted)
+                    }
+                    if step == 1 {
+                    SettingsSection(title: "Connection") {
+                        VStack(alignment: .leading, spacing: 16) {
                             CompactRow(title: "Base endpoint") { TextField("Base endpoint", text: $provider.endpoint).textFieldStyle(.roundedBorder).labelsHidden().font(.system(size: 12, design: .monospaced)) }
                             HStack(alignment: .top, spacing: 16) {
                                 Text(endpointHint)
@@ -178,6 +186,8 @@ private struct ProviderEditor: View {
                             if let credentialHint { InlineIssue(message: credentialHint) }
                         }
                     }.disabled(testing || discovering)
+                    }
+                    if step == 2 {
                     SectionCaption(text: "Your models")
                     modelSettings.disabled(testing)
                     SectionCaption(text: "Take it for a spin")
@@ -198,14 +208,16 @@ private struct ProviderEditor: View {
                             if let issue { InlineIssue(message: issue) }
                         }
                     }
+                    }
                     if let validation { InlineIssue(message: validation) }
                 }.padding(.horizontal, 20).padding(.bottom, 12)
             }
             HStack {
                 Button("Cancel") { testTask?.cancel(); discoveryTask?.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Save provider") { save() }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.defaultAction)
-                    .disabled(validation != nil || testing || discovering)
+                if step > 0 { Button("Back") { step -= 1 } }
+                Button(step < 2 ? "Continue" : "Save") { if step < 2 { step += 1 } else { save() } }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.defaultAction)
+                    .disabled((step == 2 && validation != nil) || testing || discovering)
             }.padding(20).background(FrogStyle.surface)
                 .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border).frame(height: 1) }
         }
@@ -260,15 +272,13 @@ private struct ProviderEditor: View {
                         .font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
                 }
                 Divider()
+                CompactRow(title: "Model type") {
+                    CompactSegments(values: provider.kind.supportsTranscription ? ProviderModel.Category.allCases : [.text], selected: customCategory, title: { $0 == .text ? "Text" : "Speech-to-text" }) { customCategory = $0 }
+                }
                 HStack(alignment: .bottom, spacing: 10) {
                     LabeledField(title: "Model ID") { TextField("Exact API model ID", text: $customModelID).accessibilityLabel("Custom model ID") }
                     LabeledField(title: "Display name") { TextField("Optional friendly name", text: $customModelName).accessibilityLabel("Custom model display name") }
                     Button("Add") { addCustomModel() }.disabled(customModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                if !provider.models.isEmpty {
-                    FrogMenu(title: "Default model", value: provider.modelName(provider.model)) {
-                        ForEach(provider.models) { choice in Button(choice.name) { provider.model = choice.id } }
-                    }
                 }
             }
         }
@@ -281,7 +291,7 @@ private struct ProviderEditor: View {
               !id.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
             issue = "Use a model ID and display name of at most 256 bytes, without control characters in the ID."; return
         }
-        let choice = ProviderModel(id: id, name: name.isEmpty ? id : name)
+        let choice = ProviderModel(id: id, name: name.isEmpty ? id : name, category: customCategory)
         if let index = provider.models.firstIndex(where: { $0.id == id }) { provider.models[index] = choice }
         else { provider.models.append(choice) }
         if provider.model.isEmpty { provider.model = id }
@@ -334,7 +344,6 @@ private struct ProviderEditor: View {
         do {
             let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
             try model.saveProvider(normalized(), apiKey: key.isEmpty ? nil : key, clearKey: clearKey)
-            if makeDefault { try model.setDefaultProvider(id: provider.id) }
             dismiss()
         } catch { issue = error.localizedDescription }
     }

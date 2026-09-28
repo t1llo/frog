@@ -7,15 +7,17 @@ final class ShortcutReferencePanel {
     private var panel: NSPanel?
     func hide() { panel?.orderOut(nil) }
     func show(rules: [Rule]) {
-        if panel?.isVisible == true { hide(); return }
+        if panel?.isVisible == true { return }
         if panel == nil {
-            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 460, height: 420), styleMask: [.titled, .closable, .utilityWindow], backing: .buffered, defer: false)
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 360), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             panel.isReleasedWhenClosed = false
+            panel.isOpaque = false; panel.backgroundColor = .clear
+            panel.hidesOnDeactivate = false; panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             panel.level = .floating; self.panel = panel
         }
         panel?.title = L10n.text("Frog shortcuts")
         panel?.contentView = NSHostingView(rootView: ShortcutReferenceView(rules: rules))
-        panel?.center(); panel?.makeKeyAndOrderFront(nil)
+        panel?.center(); panel?.orderFrontRegardless()
     }
 }
 private struct ShortcutReferenceView: View {
@@ -31,7 +33,9 @@ private struct ShortcutReferenceView: View {
                 }
                 if !rules.contains(where: { $0.enabled && $0.hotkey != nil }) { Text("Add shortcuts in Rules.").foregroundStyle(.secondary) }
             }.padding(20)
-        }.frame(width: 460, height: 420).background(FrogStyle.canvas)
+        }.frame(width: 380, height: 360).foregroundStyle(FrogStyle.ink)
+            .background(FrogStyle.panelSurface, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(FrogStyle.border.opacity(0.6)))
             .environment(\.locale, L10n.locale)
     }
 }

@@ -6,7 +6,7 @@ final class MenuIconTests: XCTestCase {
     func testPackagedMenuIconHasVisibleTemplatePixelsAndTransparentSurround() throws {
         let image = FrogMenuIcon.image
         XCTAssertTrue(image.isTemplate)
-        XCTAssertEqual(image.size, NSSize(width: 22, height: 18))
+        XCTAssertEqual(image.size, NSSize(width: 18, height: 15))
         let data = try XCTUnwrap(image.tiffRepresentation)
         let bitmap = try XCTUnwrap(NSBitmapImageRep(data: data))
         var opaque = 0, transparent = 0

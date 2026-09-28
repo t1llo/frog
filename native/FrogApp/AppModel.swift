@@ -75,15 +75,20 @@ final class AppModel: ObservableObject {
         do { configuration = try configurationStore.load() }
         catch { configurationLoadError = error; report(error) }
         localModels.updateCatalog(configuration.modelCatalog)
+        if registerShortcuts, configurationLoadError == nil {
+            var candidate = configuration
+            candidate.adoptExplicitRuleSettings(installed: localModels.installed)
+            if candidate != configuration { do { try persist(candidate) } catch { report(error) } }
+        }
         localModels.onInstall = { [weak self] item in
             guard let self else { return }
             var candidate = self.configuration
-            candidate.selectSoleInstalledModel(item, installed: self.localModels.installed)
+            candidate.modelAdded(RuleModelSelection(modelID: item.id, category: item.kind == .audio ? .audio : .text))
             if candidate != self.configuration {
                 do { try self.persist(candidate) } catch { self.report(error) }
             }
         }
-        localModels.onInventoryChanged = { [weak self] in self?.reconcileLocalModelDefaults() }
+        localModels.onInventoryChanged = { [weak self] in self?.objectWillChange.send() }
         refreshHistory()
         refreshSystemStatus()
         if registerShortcuts { FrogAppearance.shared.apply(configuration.preferences.appearance ?? AppearancePreferences()) }
@@ -92,13 +97,20 @@ final class AppModel: ObservableObject {
         localModels.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         dictation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         dictation.onError = { [weak self] in self?.report($0) }
+        dictation.externalTranscription = { [weak self] audio, rule in
+            guard let self, let provider = self.configuration.providers.first(where: { $0.id == rule.action?.audioProviderID }),
+                  let id = rule.action?.audioModelID, provider.models.contains(where: { $0.id == id && $0.category == .audio }) else {
+                throw FrogError.message("Choose a configured speech-to-text model for this rule.")
+            }
+            return try await SpeechClient().transcribe(samples: audio, provider: provider, model: id, language: rule.action?.transcriptionLanguage, apiKey: self.readKey(provider.id))
+        }
         dictation.cleanup = { [weak self] text, rule in
             guard let self else { throw CancellationError() }
-            if rule.providerID != nil {
-                let provider = try self.resolved(rule)
+            let provider = try self.resolved(rule)
+            if provider.id != Self.localProviderID {
                 return try await self.complete(text, rule, provider, self.readKey(provider.id))
             }
-            return try await self.localModels.complete(text, instructions: rule.instructions, modelID: rule.action?.localTextModelID ?? self.configuration.preferences.workflowSettings.cleanupModelID)
+            return try await self.localModels.complete(text, instructions: rule.instructions, modelID: provider.model)
         }
         dictation.onFinish = { [weak self] rule, original, result, delivery in
             guard let self else { return }
@@ -128,10 +140,7 @@ final class AppModel: ObservableObject {
         }
         registerHotkeys()
         configureWindowSwitcher()
-        if registerShortcuts, configurationLoadError == nil {
-            reconcileLocalModelDefaults()
-        }
-        if configuration.providers.isEmpty { status = "Add a provider in Settings to get started." }
+        if configuration.providers.isEmpty && localModels.installed.isEmpty { status = "Add a model in Models to get started." }
     }
 
     func shutdown() {
@@ -248,9 +257,28 @@ final class AppModel: ObservableObject {
     func saveProvider(_ provider: ProviderConfiguration, apiKey: String?, clearKey: Bool) throws {
         try ConfigurationFile.validate(provider: provider)
         var candidate = configuration
+        let previousModels = candidate.providers.first(where: { $0.id == provider.id })?.models ?? []
         if let index = candidate.providers.firstIndex(where: { $0.id == provider.id }) { candidate.providers[index] = provider }
         else { candidate.providers.append(provider) }
         if candidate.defaultProviderID == nil { candidate.defaultProviderID = provider.id }
+        if candidate.explicitRuleModels == true {
+            // Removed models leave affected rules unconfigured, never silently rerouted.
+            for index in candidate.rules.indices {
+                if candidate.rules[index].providerID == provider.id,
+                   !provider.models.contains(where: { $0.id == candidate.rules[index].model && $0.category == .text }) {
+                    candidate.rules[index].providerID = nil; candidate.rules[index].model = ""
+                    candidate.rules[index].preset = false
+                }
+                if candidate.rules[index].action?.audioProviderID == provider.id,
+                   !provider.models.contains(where: { $0.id == candidate.rules[index].action?.audioModelID && $0.category == .audio }) {
+                    candidate.rules[index].action?.audioProviderID = nil; candidate.rules[index].action?.audioModelID = nil
+                    candidate.rules[index].preset = false
+                }
+            }
+            for item in provider.models where !previousModels.contains(where: { $0.id == item.id && $0.category == item.category }) {
+                candidate.modelAdded(RuleModelSelection(providerID: provider.id, modelID: item.id, category: item.category))
+            }
+        }
         try ConfigurationFile.validate(candidate)
         let keyChanged = clearKey || !(apiKey ?? "").isEmpty
         let oldKey = keyChanged ? try keychain.read(providerID: provider.id) : nil
@@ -275,9 +303,14 @@ final class AppModel: ObservableObject {
         let removedDefault = candidate.defaultProviderID == id
         if removedDefault { candidate.defaultProviderID = candidate.providers.first?.id }
         for index in candidate.rules.indices {
-            if candidate.rules[index].providerID == id || (removedDefault && candidate.rules[index].providerID == nil) {
+            if candidate.rules[index].providerID == id || (candidate.explicitRuleModels != true && removedDefault && candidate.rules[index].providerID == nil) {
                 candidate.rules[index].providerID = nil
                 candidate.rules[index].model = ""
+                candidate.rules[index].preset = false
+            }
+            if candidate.rules[index].action?.audioProviderID == id {
+                candidate.rules[index].action?.audioProviderID = nil; candidate.rules[index].action?.audioModelID = nil
+                candidate.rules[index].preset = false
             }
         }
         // Persist first: a Keychain deletion failure is explicit and can be retried by re-adding the provider ID.
@@ -303,8 +336,13 @@ final class AppModel: ObservableObject {
         isTestingProvider = true
         defer { isTestingProvider = false }
         let key = (apiKey?.isEmpty == false) ? apiKey : try keychain.read(providerID: provider.id)
-        _ = try await complete("Reply with OK.", Rule(name: "Connection test", instructions: "Reply briefly to the user."), provider, key)
-        return "Connected to \(provider.name) using \(provider.model)."
+        if let textModel = provider.models.first(where: { $0.category == .text }) {
+            var test = provider; test.model = textModel.id
+            _ = try await complete("Reply with OK.", Rule(name: "Connection test", instructions: "Reply briefly to the user."), test, key)
+            return "Connected using \(textModel.name)."
+        }
+        _ = try await discoverModels(provider, apiKey: key)
+        return "Connected. Transcription is checked when you record."
     }
 
     func discoverModels(_ provider: ProviderConfiguration, apiKey: String?) async throws -> [ProviderModel] {
@@ -323,10 +361,9 @@ final class AppModel: ObservableObject {
         try persist(candidate)
         if !preferences.historyEnabled { historyEpoch = UUID() }
         if !preferences.showProcessingIndicator { processingIndicator.hide() }
-        dictation.setPopupVisible(preferences.workflowSettings.showDictationPopup)
         configureWindowSwitcher()
         localModels.idleSeconds = preferences.workflowSettings.idleUnloadSeconds
-        if shortcutChanged { registerHotkeys() }
+        if shortcutChanged || preferences.applicationShortcutsEnabled != nil { registerHotkeys(); shortcutPanel.hide() }
         refreshHistory()
     }
 
@@ -334,6 +371,7 @@ final class AppModel: ObservableObject {
         do { history = try historyStore.load(preferences: configuration.preferences) }
         catch { report(error) }
     }
+    var historyFileURL: URL { historyStore.directory.appendingPathComponent("history.json") }
     func deleteHistory(id: UUID) throws { try historyStore.delete(id: id); refreshHistory() }
     func clearHistory() throws { try historyStore.clear(); historyEpoch = UUID(); refreshHistory() }
 
@@ -366,7 +404,12 @@ final class AppModel: ObservableObject {
         if let id = candidate.defaultProviderID { candidate.defaultProviderID = remapped[id] ?? id }
         for index in candidate.rules.indices {
             if let id = candidate.rules[index].providerID { candidate.rules[index].providerID = remapped[id] ?? id }
+            if let id = candidate.rules[index].action?.audioProviderID { candidate.rules[index].action?.audioProviderID = remapped[id] ?? id }
         }
+        if let recent = candidate.recentModels {
+            candidate.recentModels = recent.map { var item = $0; if let id = item.providerID { item.providerID = remapped[id] ?? id }; return item }
+        }
+        candidate.adoptExplicitRuleSettings(installed: localModels.installed)
         try configurationStore.replaceFromImport(candidate)
         configuration = candidate
         localModels.updateCatalog(candidate.modelCatalog)
@@ -407,13 +450,13 @@ final class AppModel: ObservableObject {
             if windowSwitcherReady { windowSwitcherReady = false }
             return
         }
-        windowSwitcher.configure(enabled: configuration.preferences.windowSwitcherEnabled, suspended: isRecordingShortcut)
+        windowSwitcher.configure(enabled: configuration.preferences.shortcutsEnabled && configuration.preferences.windowSwitcherEnabled, suspended: isRecordingShortcut)
         windowSwitcher.updateShortcuts(configuration.rules.filter { hotkeyErrors[$0.id] == nil })
     }
 
     private func registerHotkeys() {
         guard registerShortcuts, !isRecordingShortcut else { return }
-        var rules = configuration.rules
+        var rules = configuration.rules.filter { configuration.preferences.shortcutsEnabled || $0.category != .application }
         if let key = configuration.preferences.workflowSettings.shortcutPanelHotkey {
             rules.append(Rule(id: Self.shortcutPanelID, name: "Show shortcuts", hotkey: key))
         }
@@ -422,15 +465,17 @@ final class AppModel: ObservableObject {
     }
 
     func resolved(_ rule: Rule) throws -> ProviderConfiguration {
-        if let id = rule.action?.localTextModelID ?? (rule.providerID == nil && configuration.preferences.workflowSettings.effectiveTextSource == .frog ? configuration.preferences.workflowSettings.defaultLocalTextModelID ?? "qwen-0.6b" : nil),
+        if let id = rule.action?.localTextModelID ?? (configuration.explicitRuleModels != true && rule.providerID == nil && configuration.preferences.workflowSettings.effectiveTextSource == .frog ? configuration.preferences.workflowSettings.defaultLocalTextModelID ?? "qwen-0.6b" : nil),
            let model = configuration.localModel(id) {
             return ProviderConfiguration(id: Self.localProviderID, name: model.name, kind: .compatible, model: id)
         }
-        guard let providerID = rule.providerID ?? configuration.defaultProviderID,
+        guard let providerID = rule.providerID ?? (configuration.explicitRuleModels == true ? nil : configuration.defaultProviderID),
               var provider = configuration.providers.first(where: { $0.id == providerID }) else {
-            throw FrogError.message("Choose a provider for \(rule.name), or set a default provider in Settings.")
+            throw FrogError.message("Choose a text model in \(rule.name). Add a provider or download a model in Models first.")
         }
+        if configuration.explicitRuleModels == true, rule.model.isEmpty { throw FrogError.message("Choose a text model for \(rule.name).") }
         if !rule.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { provider.model = rule.model }
+        guard provider.models.contains(where: { $0.id == provider.model && $0.category == .text }) else { throw FrogError.message("Choose a configured text model for \(rule.name).") }
         try ConfigurationFile.validate(provider: provider)
         return provider
     }
@@ -444,7 +489,7 @@ final class AppModel: ObservableObject {
     }
     func cancelProcessing() { dictation.cancel(); processingTask?.cancel(); status = "Cancelling…" }
 
-    func showShortcuts() { shortcutPanel.show(rules: configuration.rules) }
+    func showShortcuts() { shortcutPanel.show(rules: configuration.rules.filter { configuration.preferences.shortcutsEnabled || $0.category != .application }) }
 
     func saveWorkflowPreferences(_ value: WorkflowPreferences) throws {
         var prefs = configuration.preferences; prefs.workflows = value
@@ -463,12 +508,12 @@ final class AppModel: ObservableObject {
 
     private func handleShortcut(_ id: UUID, pressed: Bool) {
         if id == Self.cancelRecordingID { if pressed { dictation.cancel() }; return }
-        if id == Self.shortcutPanelID { if !pressed { showShortcuts() }; return }
+        if id == Self.shortcutPanelID { if pressed { showShortcuts() } else { shortcutPanel.hide() }; return }
         guard let rule = configuration.rules.first(where: { $0.id == id && $0.enabled }) else { return }
         switch rule.category {
         case .text: if !pressed { processSelection(ruleID: id) }
         case .application:
-            if !pressed { launchApplication(rule) }
+            if pressed && configuration.preferences.shortcutsEnabled { launchApplication(rule) }
         case .audio:
             let mode = rule.action?.recordingMode ?? configuration.preferences.workflowSettings.recordingMode
             switch RecordingShortcut.action(mode: mode, pressed: pressed, target: id, active: dictation.ruleID) {

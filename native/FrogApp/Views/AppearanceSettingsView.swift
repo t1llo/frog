@@ -15,11 +15,7 @@ struct AppearanceSettingsView: View {
     @State private var accentInput = ""
     var body: some View {
         CompactRow(title: "Appearance") {
-            CompactMenu(value: (appearance.mode ?? .system).rawValue.capitalized) {
-                ForEach(AppearancePreferences.Mode.allCases, id: \.self) { mode in
-                    Button(L10n.text(mode.rawValue.capitalized)) { var value = appearance; value.mode = mode; save(value) }
-                }
-            }
+            CompactSegments(values: [AppearancePreferences.Mode.light, .dark], selected: appearance.mode == .light ? .light : .dark, title: { $0.rawValue.capitalized }) { mode in var value = appearance; value.mode = mode; save(value) }
         }
         Divider()
         CompactRow(title: "Theme") {

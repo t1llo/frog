@@ -25,7 +25,7 @@ struct LocalModelInformation: View {
             if item.backend == .whisperKit {
                 Text("WhisperKit also installs the matching tokenizer from the upstream Hugging Face model.").font(.caption).foregroundStyle(FrogStyle.muted)
             }
-            Text("Runs on your Mac after download. No per-request API fee. Model terms and supported languages are listed on the source model card.").font(.caption).foregroundStyle(FrogStyle.muted)
+            Text("Runs locally after download.").font(.caption).foregroundStyle(FrogStyle.muted)
             HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
         }.padding(22).frame(width: 450).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
             .buttonStyle(FrogButtonStyle()).environment(\.locale, L10n.locale)
@@ -48,6 +48,8 @@ struct AddLocalModelView: View {
             TextField("https://huggingface.co/owner/model", text: $source).textFieldStyle(.roundedBorder)
                 .disabled(loading).onSubmit { inspect() }
                 .onChange(of: source) { _, _ in candidates = []; issue = nil }
+            Button("Example: huggingface.co/mlx-community/Qwen3-0.6B-4bit") { source = "https://huggingface.co/mlx-community/Qwen3-0.6B-4bit" }
+                .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(FrogStyle.accent).disabled(loading)
             HStack {
                 Button("Check source") { inspect() }.disabled(loading || source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 if loading { ProgressView().controlSize(.small) }
@@ -71,7 +73,7 @@ struct AddLocalModelView: View {
                     }
                 }.frame(maxHeight: 250)
             }
-            Text("Checking reads metadata only. Use Download in the model list to fetch weights. Text model compatibility depends on the MLX architecture; raw PyTorch, GGUF and unconverted NeMo files are not supported.")
+            Text("Checking reads metadata. Download installs the model separately. Use MLX, WhisperKit or a supported Parakeet conversion.")
                 .font(.caption).foregroundStyle(FrogStyle.muted)
             HStack { Spacer(); Button("Cancel") { inspection?.cancel(); dismiss() }.keyboardShortcut(.cancelAction) }
         }.padding(22).frame(width: 520).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)

@@ -9,11 +9,16 @@
     <key>CFBundleIconFile</key><string>Frog</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
-    <key>CFBundleVersion</key><string>15</string>
+    <key>CFBundleVersion</key><string>16</string>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
-    <key>CFBundleLocalizations</key><array><string>en</string><string>de</string></array>
-    <key>NSMicrophoneUsageDescription</key><string>Frog records your voice when you start a transcription rule. Audio is processed locally on your Mac.</string>
+    <key>CFBundleLocalizations</key><array><string>en</string></array>
+    <key>NSMicrophoneUsageDescription</key><string>Frog records your voice when you start a transcription rule. Your selected speech model processes audio locally or through its external provider.</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>SUFeedURL</key><string>https://github.com/t1llo/frog/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key><string>htCFiLHv2aTGt5JIloQzqA7A7s6bUOOQmcW3ry3rW+s=</string>
+    <key>SUEnableAutomaticChecks</key><true/>
+    <key>SUAutomaticallyUpdate</key><false/>
+    <key>SUEnableSystemProfiling</key><false/>
     <key>LSUIElement</key><false/>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSAccessibilityUsageDescription</key><string>Frog reads and replaces selected text for writing shortcuts, and lists and activates windows for Command-Tab switching.</string>

@@ -1,6 +1,16 @@
 import Foundation
 import Observation
 
+enum FrogResources {
+    static var bundle: Bundle {
+        #if SWIFT_PACKAGE
+        Bundle.module
+        #else
+        Bundle.main
+        #endif
+    }
+}
+
 @Observable
 final class AppLanguage {
     static let shared = AppLanguage()
@@ -8,10 +18,7 @@ final class AppLanguage {
 }
 
 enum L10n {
-    static var language: String {
-        let choice = AppLanguage.shared.selection
-        return choice == "system" ? (Locale.preferredLanguages.first?.hasPrefix("de") == true ? "de" : "en") : choice
-    }
+    static var language: String { "en" }
     static var locale: Locale { Locale(identifier: language) }
     static func text(_ key: String) -> String {
         #if SWIFT_PACKAGE

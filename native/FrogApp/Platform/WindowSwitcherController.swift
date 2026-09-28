@@ -43,6 +43,7 @@ final class WindowSwitcherController {
     private var pendingSteps: [Bool] = []
     private var commitOnLoad = false
     private var unfilteredWindows: [SwitcherWindow] = []
+    private var pointerPosition = NSPoint.zero
 
     init(statusChanged: @escaping (String, Bool) -> Void) { self.statusChanged = statusChanged }
 
@@ -168,6 +169,8 @@ final class WindowSwitcherController {
     private func handle(_ action: WindowSwitchKeyRouter.Action, sessionID: UInt64) {
         if action == .cancel { cancel(session: sessionID); return }
         guard router.sessionID == sessionID else { return }
+        display.selectionFromPointer = false
+        pointerPosition = NSEvent.mouseLocation
         switch action {
         case .begin(let backwards): begin(backwards: backwards, token: sessionID)
         case .step(let backwards):
@@ -317,9 +320,17 @@ final class WindowSwitcherController {
             created.isOpaque = false; created.backgroundColor = .clear
             created.setAccessibilityIdentifier(SwitcherWindow.overlayIdentifier)
             created.hasShadow = true; created.hidesOnDeactivate = false; created.isReleasedWhenClosed = false
-            created.contentView = WindowSwitcherHostingView(rootView: WindowSwitcherOverlay(model: display) { [weak self] id in
+            created.acceptsMouseMovedEvents = true
+            created.contentView = WindowSwitcherHostingView(rootView: WindowSwitcherOverlay(model: display, choose: { [weak self] id in
                 self?.session.select(id); self?.commit()
-            })
+            }, hover: { [weak self] id in
+                guard let self, self.panel?.isVisible == true, self.router.active, !self.display.loading else { return }
+                let point = NSEvent.mouseLocation
+                guard point != self.pointerPosition else { return }
+                self.pointerPosition = point
+                self.display.selectionFromPointer = true
+                self.session.select(id); self.display.selected = self.session.selected
+            }))
             panel = created
             created.contentView?.layoutSubtreeIfNeeded()
         }
@@ -331,6 +342,7 @@ final class WindowSwitcherController {
         guard let panel else { return }
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         if let screen { panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - 290, y: screen.visibleFrame.midY - 240)) }
+        pointerPosition = NSEvent.mouseLocation
         panel.orderFrontRegardless()
     }
 }

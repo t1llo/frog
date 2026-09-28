@@ -35,6 +35,7 @@ final class DictationController: ObservableObject {
     var onFinish: ((Rule, String, String, String) -> Void)?
     var onError: ((Error) -> Void)?
     var cleanup: ((String, Rule) async throws -> String)?
+    var externalTranscription: (([Float], Rule) async throws -> String)?
     var active: Bool { phase != .idle }
 
     init(makeRecorder: @escaping @MainActor () -> any DictationRecording = { MicrophoneRecording() },
@@ -55,17 +56,20 @@ final class DictationController: ObservableObject {
 
     func start(rule: Rule, preferences: WorkflowPreferences, models: LocalModels) {
         guard !active else { return }
-        let modelID = rule.action?.audioModelID ?? preferences.audioModelID
-        guard models.installed.contains(modelID) else { onError?(FrogError.message("Download an audio model in Models → Inside Frog first.")); return }
+        guard let modelID = rule.action?.audioModelID else { onError?(FrogError.message("Choose a speech model in this audio rule. Add one in Models first.")); return }
+        let external = rule.action?.audioProviderID != nil
+        guard external || models.installed.contains(modelID) else { onError?(FrogError.message("Download this speech model in Models first.")); return }
         let token = UUID(); self.token = token
         self.preferences = preferences; self.models = models; activeRule = rule; ruleID = rule.id
+        self.preferences.showDictationPopup = rule.action?.showRecordingPopup ?? true
+        self.preferences.transcriptionLanguage = rule.action?.transcriptionLanguage
         stopRequested = false; samples = AudioSamples(); liveText = ""; elapsed = 0
         target = (rule.action?.output ?? preferences.output) == .paste ? DictationTarget.capture() : nil
         phase = .preparing
         let shortcut = rule.hotkey.map(HotkeyManager.display) ?? "Stop button"
         hint = (rule.action?.recordingMode ?? preferences.recordingMode) == .hold ? "Release \(shortcut) to stop · Esc to cancel" : "\(shortcut) to stop · Esc to cancel"
         if rule.hotkey == nil { hint = "Stop to finish · Esc to cancel" }
-        if preferences.showDictationPopup { showPanel() }
+        if self.preferences.showDictationPopup { showPanel() }
         if monitorKeys { installEscape() }
         work = Task { [weak self] in
             guard let self else { return }
@@ -98,10 +102,10 @@ final class DictationController: ObservableObject {
                         do {
                             try await Task.sleep(for: .seconds(2))
                             guard let self, self.token == token, self.phase == .recording else { return }
-                            guard self.preferences.showDictationPopup else { continue }
+                            guard self.preferences.showDictationPopup, !external else { continue }
                             let audio = samples.snapshot(last: 30 * 16000)
                             guard audio.count >= 16000, !models.busy else { continue }
-                            let text = try await models.transcribe(audio, modelID: modelID, language: preferences.transcriptionLanguage)
+                            let text = try await models.transcribe(audio, modelID: modelID, language: rule.action?.transcriptionLanguage)
                             if self.token == token && self.phase == .recording { self.liveText = text }
                         } catch { if Task.isCancelled { return } }
                     }
@@ -126,7 +130,11 @@ final class DictationController: ObservableObject {
             guard let self, self.token == token, !Task.isCancelled else { return }
             do {
                 guard audio.count >= 3200 else { throw FrogError.message("No speech recorded. Hold the shortcut longer, or use toggle mode.") }
-                let raw = try await models.transcribe(audio, modelID: modelID, language: self.preferences.transcriptionLanguage)
+                let raw: String
+                if rule.action?.audioProviderID != nil {
+                    guard let transcribe = self.externalTranscription else { throw FrogError.message("External speech is unavailable.") }
+                    raw = try await transcribe(audio, rule)
+                } else { raw = try await models.transcribe(audio, modelID: modelID, language: rule.action?.transcriptionLanguage) }
                 try Task.checkCancellation()
                 guard self.token == token else { return }
                 guard !raw.isEmpty else { throw FrogError.message("No speech detected.") }

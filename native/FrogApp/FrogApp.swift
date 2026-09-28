@@ -35,8 +35,8 @@ private struct FrogStatusMenu: View {
             Button("Cancel dictation") { model.dictation.cancel() }
         }
         if !model.localModels.loaded.isEmpty { Text("Local models in memory: \(model.localModels.loaded.count)") }
-        Button("Show shortcuts…") { model.showShortcuts() }
         Divider()
+        if model.configuration.preferences.shortcutsEnabled {
         Toggle("Window switcher (⌘Tab)", isOn: Binding(get: { model.configuration.preferences.windowSwitcherEnabled }, set: { enabled in
             var preferences = model.configuration.preferences
             preferences.windowSwitcherEnabled = enabled
@@ -45,8 +45,10 @@ private struct FrogStatusMenu: View {
         if model.configuration.preferences.windowSwitcherEnabled && !model.windowSwitcherReady {
             Text(model.windowSwitcherStatus).font(.caption)
         }
+        }
         Divider()
         Button("Open Frog…") { model.showSettings() }.keyboardShortcut(",")
+        CheckForUpdatesButton()
         Divider()
         Button("Quit Frog") { model.shutdown(); NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
     }
@@ -55,8 +57,8 @@ private struct FrogStatusMenu: View {
 /// A template frog face stays legible in both light and dark macOS menu bars.
 enum FrogMenuIcon {
     static let image: NSImage = {
-        let image = Bundle.module.url(forResource: "FrogMenuIcon", withExtension: "png").flatMap { NSImage(contentsOf: $0) } ?? NSImage(size: NSSize(width: 22, height: 18))
-        image.size = NSSize(width: 22, height: 18)
+        let image = FrogResources.bundle.url(forResource: "FrogMenuIcon", withExtension: "png").flatMap { NSImage(contentsOf: $0) } ?? NSImage(size: NSSize(width: 18, height: 15))
+        image.size = NSSize(width: 18, height: 15)
         image.isTemplate = true
         return image
     }()
@@ -76,6 +78,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
         model.openSettings = { [weak self] in self?.showWindow() }
         // Register at application launch, even if SwiftUI never mounts the menu label.
         model.start()
+        UpdateService.shared.start()
         observer = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak model] _ in
             Task { @MainActor in model?.refreshSystemStatus() }
         }

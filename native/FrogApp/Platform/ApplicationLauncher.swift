@@ -8,7 +8,7 @@ struct ApplicationLauncher {
     var resolve: (String) -> URL? = { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }
     var bundleIdentifier: (URL) -> String? = { Bundle(url: $0)?.bundleIdentifier }
     var open: (URL) async throws -> Void = { url in
-        try await ClipboardSelection.waitForShortcutRelease()
+        // Launching does not synthesize keystrokes, so it need not wait for key-up.
         try Task.checkCancellation()
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
