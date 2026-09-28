@@ -4,6 +4,12 @@ Frog separates **Internal models**, downloaded and run inside the app, from **Ex
 
 Each rule selects its own model. There are no global model defaults. The first compatible model can configure unconfigured built-in rules; new rules preselect the most recently added compatible model. Existing configured rules keep their selections.
 
+## First launch
+
+Choose an offline experience or external providers in the setup assistant. The recommended local pair is **Whisper Small** for multilingual transcription and **Qwen3 1.7B (4-bit)** for writing, approximately 1.5 GB total. Each is also marked Recommended in the internal model catalog. Downloads begin only when requested and can be cancelled.
+
+Alternatively, configure an external provider or import a configuration file to skip setup. Imported files do not include API keys, downloaded weights or macOS permissions. Every step is skippable. Your choice does not limit future model/provider use; everything remains available in Models and Settings. Reopen the assistant under **Settings → General → Setup assistant**.
+
 ## External providers
 
 Add a connection, name it, choose its service and endpoint, then select models. API keys are saved in macOS Keychain. Each model has an API ID, a display name and a Text or Speech-to-text category. Display names never change the ID sent to the API.

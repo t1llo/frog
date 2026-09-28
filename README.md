@@ -23,7 +23,7 @@ Native macOS shortcuts for writing, dictation and switching between windows.
 
 ## Install
 
-Download **Frog-macOS.zip**, unzip it, and move **Frog.app** to **Applications**. Add models, configure your rules, and allow Accessibility for writing shortcuts and window switching. Dictation also needs microphone permission.
+Download **Frog-macOS.zip**, unzip it, and move **Frog.app** to **Applications**. The setup assistant helps you download local models, connect a provider, or import settings, then review permissions. Every step is optional; reopen it from Settings anytime.
 
 macOS 14+ · Apple silicon and Intel · Built-in model inference requires Apple silicon.
 

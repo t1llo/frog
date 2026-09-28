@@ -22,6 +22,7 @@ struct SetupView: View {
     @State private var issue: String?
     @State private var pendingImport: Configuration?
     @State private var notificationsAllowed = false
+    @State private var microphoneAllowed = false
     private let titles = ["Welcome to Frog", "Choose your models", "Permissions", "You're ready"]
 
     var body: some View {
@@ -134,7 +135,7 @@ struct SetupView: View {
                 SelectionService.requestAccess(); SelectionService.openAccessibilitySettings()
             }
             Divider()
-            permission("Microphone", detail: "Record speech when you run an audio rule.", allowed: DictationController.microphoneGranted) {
+            permission("Microphone", detail: "Record speech when you run an audio rule.", allowed: microphoneAllowed) {
                 Task {
                     if !DictationController.microphoneGranted { _ = await DictationController.requestMicrophone() }
                     if !DictationController.microphoneGranted { DictationController.openMicrophoneSettings() }
@@ -188,9 +189,10 @@ struct SetupView: View {
     }
     private func refreshPermissions() async {
         model.refreshSystemStatus()
+        microphoneAllowed = DictationController.microphoneGranted
         guard Bundle.main.bundleIdentifier != nil else { return }
         let settings = await UNUserNotificationCenter.current().notificationSettings()
-        notificationsAllowed = [.authorized, .provisional, .ephemeral].contains(settings.authorizationStatus)
+        notificationsAllowed = [.authorized, .provisional].contains(settings.authorizationStatus)
     }
     private func chooseImport() {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.allowsMultipleSelection = false
