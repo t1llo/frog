@@ -1,55 +1,47 @@
 # Providers and models
 
-In **Providers**, add a connection, choose its service, then select the models you want available in Rules. Cloud services include preselected text models; use the **Get an API key** link to open the service's key page. For other models, enter the exact API model ID and an optional friendly display name. Re-adding an existing ID updates its display name.
+Frog separates **Internal models**, downloaded and run inside the app, from **External providers**, including cloud APIs and locally running Ollama or LM Studio servers.
 
-Choose a default model for each connection. The **Your defaults** card selects the default provider and its model. In a rule's **Model override** menu, select a configured model grouped under its provider, or use the defaults. Friendly names are for display only; Frog sends the exact model ID to the API. Existing configurations keep their original model choices.
+Each rule selects its own model. There are no global model defaults. The first compatible model can configure unconfigured built-in rules; new rules preselect the most recently added compatible model. Existing configured rules keep their selections.
 
-The API-key link is directly beneath the key field (Gemini opens Google AI Studio). Connection cards have configure, duplicate and delete icons. Duplicating opens a new draft with the same model choices; enter its credentials separately. Confirmed deletion removes the key and resets affected rules to the remaining defaults. Deleting the last connection is allowed; rules remain saved and need a new provider before running.
+## External providers
 
-**Rules** offers per-rule provider/model overrides. **Settings** controls default text and audio choices; provider editors can make a connection the default. The Providers list filters Text and Audio.
+Add a connection, name it, choose its service and endpoint, then select models. API keys are saved in macOS Keychain. Each model has an API ID, a display name and a Text or Speech-to-text category. Display names never change the ID sent to the API.
 
-## Built-in local models (Apple silicon)
+| Service | Base endpoint |
+| --- | --- |
+| OpenAI | `https://api.openai.com/v1` |
+| Claude | `https://api.anthropic.com` |
+| Gemini | `https://generativelanguage.googleapis.com/v1beta` |
+| Ollama | `http://localhost:11434` |
+| LM Studio | `http://localhost:1234/v1` |
 
-Download Whisper Base or Small for speech, and Qwen3 0.6B/1.7B (4-bit) for local text cleanup. Use the model row's **Use as…** menu to choose default audio, default text, or transcript cleanup. Downloaded text models are also selectable in writing rules. Weights come from `argmaxinc/whisperkit-coreml` and `mlx-community` on Hugging Face; arbitrary repository lists are not supported.
+Use the model IDs available to your account. Cloud suggestions are starting points, not a guarantee of API access. Custom OpenAI-compatible connections use your service's endpoint and credentials.
 
-**Transcription** exposes the same model downloads and recording settings. Choose a microphone, press-to-toggle or hold-to-record, copy or copy-and-paste, and whether to show the live popup. The predefined Dictate rule's shortcut is configured in Rules. Custom audio rules can override the speech model, cleanup prompt/provider, recording mode and delivery. Models load on demand and unload after the Settings idle delay.
+Speech-to-text supports OpenAI transcription, Gemini audio input and compatible transcription endpoints. Other provider types offer text models only. Speech models transcribe recordings; they do not generate spoken audio.
 
-For background shortcuts, **Settings → Show processing indicator** controls the floating progress display. If an app does not expose an editable target, the completed result is copied for manual paste instead of inserted automatically.
-
-## Local setup
+Deleting a connection clears affected rule selections rather than silently choosing a replacement. Duplicated connections need their own credentials.
 
 ### Ollama
 
 1. Install and start [Ollama](https://ollama.com/download).
 2. Download a text model, for example `ollama pull llama3.2`.
-3. Add an **Ollama (local)** provider. The default endpoint is `http://localhost:11434`.
-4. Click **Find installed models**, select your models and a default, then test and save the connection.
+3. Add an Ollama connection and click **Find installed models**.
+4. Select models, test the connection and save.
 
 ### LM Studio
 
 1. Install [LM Studio](https://lmstudio.ai/) and download a text model.
-2. Start the local server in LM Studio's **Developer** section. See its [server setup guide](https://lmstudio.ai/docs/developer/core/server).
-3. Add an **LM Studio (local)** provider. The default endpoint is `http://localhost:1234/v1`.
-4. Click **Find installed models**, select a text model, choose a default, then test and save. Enter an API token if you enabled server authentication.
+2. Start its local server in the Developer section.
+3. Add an LM Studio connection and click **Find installed models**.
+4. Select models, test and save. Supply an API token if your server requires one.
 
-Frog does not install model servers or download model weights. Discovery runs only when you click the button; it sends no writing text. The list reflects models reported by your server, so select models that support text/chat.
+Discovery sends a model-list request, not your writing or recordings. Frog does not install or manage external model servers.
 
-## Verified catalog and endpoints
+## Internal models
 
-Checked against official documentation on **2026-09-22**. Suggestions are a bundled starting point, not a promise that your API account has access. Custom IDs allow newer models without waiting for an app update.
+Built-in inference requires Apple silicon. Download speech or text models from the catalog, or [add a compatible Hugging Face source](local-model-sources.md). Models load on demand and unload after the idle delay in Settings.
 
-| Service | Base endpoint | Suggested text models |
-| --- | --- | --- |
-| OpenAI | `https://api.openai.com/v1` | `gpt-6-luna` (default), `gpt-6-sol`, `gpt-6-astra` |
-| Claude | `https://api.anthropic.com` | `claude-sonnet-5` (default), `claude-haiku-4-5-20251001`, `claude-opus-5-5`, `claude-fable-5-1` |
-| Gemini | `https://generativelanguage.googleapis.com/v1beta` | `gemini-3.8-flash` (default), `gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-2.5-pro` |
-| Ollama | `http://localhost:11434` | Installed models from `/api/tags`; starter suggestion `llama3.2` |
-| LM Studio | `http://localhost:1234/v1` | Installed models from `/v1/models` |
+Audio rules own speech language, Toggle/Hold recording, Copy/Copy and paste output, recording-popup visibility and optional transcript cleanup. Cleanup uses a separately selected text model and adds processing time. The built-in Dictate shortcut is **Option–Space**; shortcuts remain editable.
 
-The cloud base endpoints are still current; newer model versions do not require changing them. Frog uses OpenAI/LM Studio chat completions, Claude Messages, Gemini `generateContent` and Ollama `/api/chat`.
-
-The Gemini catalog lists text/chat models only, excluding image, audio, embedding and video-only services. Google restricts 2.5 access to existing API users; those choices are labeled accordingly. Models with `preview` in their IDs are previews.
-
-Sources: [OpenAI model catalog](https://developers.openai.com/api/docs/models), [GPT-6 Luna API support](https://developers.openai.com/api/docs/models/gpt-6-luna), [Claude model catalog](https://platform.claude.com/docs/en/about-claude/models/overview), [Gemini model catalog](https://ai.google.dev/gemini-api/docs/models), [Ollama model listing](https://docs.ollama.com/api/tags), [LM Studio OpenAI-compatible endpoints](https://lmstudio.ai/docs/developer/openai-compat).
-
-API keys: [OpenAI](https://platform.openai.com/api-keys), [Claude](https://platform.claude.com/settings/keys), [Google AI Studio](https://aistudio.google.com/apikey). For a custom OpenAI-compatible service, use that service's endpoint, model IDs and credentials.
+API keys: [OpenAI](https://platform.openai.com/api-keys) · [Claude](https://platform.claude.com/settings/keys) · [Google AI Studio](https://aistudio.google.com/apikey).

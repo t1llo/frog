@@ -15,3 +15,11 @@ dist/
 *.key
 *.mobileprovision
 node_modules
+
+# Machine-local agent guidance and implementation notes, not public documentation.
+/AGENTS.md
+/docs/agent-workflow.md
+/docs/progress.md
+/docs/native-contract.md
+/docs/product.md
+/docs/reviews/

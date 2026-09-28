@@ -1,4 +1,4 @@
-# Local model sources — build 15
+# Local model sources
 
 ## Catalog and provenance
 
@@ -33,13 +33,13 @@ WhisperKit folder links such as `https://huggingface.co/argmaxinc/whisperkit-cor
 
 Custom text sources need MLX format, SafeTensors weights and tokenizer files. A supported MLX architecture is still required at load time; format inspection alone cannot establish inference correctness. Custom speech sources need complete WhisperKit Core ML variant bundles. Parakeet currently supports the two version-specific catalog sources. Raw PyTorch, GGUF and arbitrary NeMo weights are not interchangeable with these formats. Gated/private repositories need authentication and are not supported by this import flow.
 
-Custom descriptors are included in portable JSON under `localModels`; downloaded weights stay device-local. Removing a source requires deleting its download first and changing any rules/defaults that refer to it. Changing the download folder rescans the configured catalog and preserves old files.
+Custom descriptors are included in portable JSON under `localModels`; downloaded weights stay device-local. Removing a source requires deleting its download first and changing references to it. Changing the download folder rescans the configured catalog and preserves old files.
 
-## Defaults and language
+## Selection and language
 
-- The only installed model of a type is selected automatically, including after restart, deletion or folder changes. Downloading a second model preserves the selected default.
-- Default models are visibly marked. Text shows **Local default** if a connected provider remains the active text source; downloading a local text model does not override that existing provider choice.
-- Whisper multilingual models detect the language by default. Settings → Recording → Speech language can supply an explicit hint. English-only custom variants force English.
+- Each rule selects its own model. The first added compatible model can configure unconfigured built-in rules. Later additions do not reroute configured rules.
+- New rules preselect the most recently added compatible model that is still available.
+- Whisper multilingual models detect the language by default. Each audio rule can supply a language hint. English-only custom variants force English.
 - Parakeet v3 automatically handles its 25 supported European languages, including German and English. It does not use Whisper's language-hint selector.
 - Parakeet v2 is English-only. The UI shows the model's language behavior rather than offering an ineffective selector. Rules show the capability of their selected speech override too.
 

@@ -1,6 +1,6 @@
 # Development and releases
 
-Frog is a native SwiftUI menu-bar app for macOS 14+. Building requires Xcode 26+ and Swift 6.2+. Local inference uses pinned WhisperKit, FluidAudio, MLX and Hugging Face Swift packages; see `Package.swift` and `Package.resolved`. FluidAudio's Apache-2.0 license is copied into the app's Resources during packaging.
+Frog is a native SwiftUI app for macOS 14+. Building requires Xcode with Swift 6.3+; CI uses Xcode 27. Local inference uses pinned WhisperKit, FluidAudio, MLX and Hugging Face Swift packages. Sparkle provides in-app updates. See `Package.swift` and `Package.resolved`. FluidAudio's Apache-2.0 license is copied into the app's Resources during packaging.
 
 ```sh
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
@@ -24,9 +24,9 @@ For isolated manual testing, launch the executable with `FROG_DATA_DIRECTORY` po
 
 Local and CI builds use ad-hoc signing. Developer ID builds use hardened runtime and a secure timestamp. Follow the setup below to sign and notarize a release for direct download.
 
-Preview release assets are `Frog-macOS.zip` and `SHA256SUMS`. The build/test workflow also uploads them as a GitHub Actions artifact.
+Release downloads are `Frog-macOS.zip` and `SHA256SUMS`. Updater-enabled releases also include a signed Sparkle `appcast.xml`. GitHub Actions builds and tests the app without signing credentials. Distribution releases are signed, notarized and published manually from the maintainer's Mac.
 
-Before a release, run the automated checks and the [desktop verification steps](verification.md).
+Before a release, run the automated checks, `python3 scripts/check-app-launch.py dist/Frog.app`, and the [desktop verification steps](verification.md).
 
 ### One-time Apple account setup
 
@@ -55,4 +55,4 @@ The script validates the signing identity and Keychain profile, builds a release
 
 Set `FROG_NOTARY_PROFILE` if you saved credentials under a name other than `frog-notary`. Submission metadata and any rejection log stay in ignored `dist/`. If submission is interrupted, inspect `xcrun notarytool history --keychain-profile frog-notary` before retrying. To retrieve Apple's diagnostics, use `xcrun notarytool log SUBMISSION_ID --keychain-profile frog-notary dist/notarization-log.json`.
 
-Once the notarized assets replace a preview release, update that release's notes and README installation text to describe the new signing status. The workflow does not upload assets, change repository visibility, or claim existing preview downloads are notarized.
+The notarization script prepares assets; it does not publish them. Release publishing is a separate local operation. Signing and notarization credentials must stay in Keychain, never in repository files or Actions logs.

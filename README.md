@@ -1,77 +1,35 @@
 # Frog
 
-A native macOS app with Dock and menu-bar access for writing, dictation and window switching. Rewrite selected text in place, or use Command–Tab to switch directly between individual windows.
+[![Build](https://github.com/t1llo/frog/actions/workflows/native.yml/badge.svg?branch=main)](https://github.com/t1llo/frog/actions/workflows/native.yml)
+[![Release](https://img.shields.io/github/v/release/t1llo/frog)](https://github.com/t1llo/frog/releases/latest)
+![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue)
 
-**[Download](https://github.com/t1llo/frog/releases)** · macOS 14+ · Apple silicon and Intel
+Native macOS shortcuts for writing, dictation and switching between windows.
+
+**[Website](https://frog.beffa.xyz/)** · **[Download](https://github.com/t1llo/frog/releases/latest)**
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/frog-dark.png">
-  <img src="docs/images/frog-light.png" alt="Frog’s writing rules in its native macOS interface" width="960">
+  <img src="docs/images/frog-light.png" alt="Frog’s native macOS interface" width="960">
 </picture>
 
-## What it does
-
-- Proofread, fix spelling, polish emails, and translate with built-in rules.
-- Create your own rules, each with its own shortcut, language, provider, and model.
-- Use OpenAI, Claude, Gemini, an OpenAI-compatible service, or local models through Ollama and LM Studio.
-- Configure your models once, choose a default, and pick model overrides for individual rules.
-- Export and import your setup as an editable JSON file.
-- Keep an optional local history. It’s off by default.
-- Dictate with downloadable local speech models on Apple silicon; copy the transcript by default, with optional LLM cleanup and paste delivery. Choose hold/toggle recording.
-- Create application-launch shortcuts and open a configurable shortcut-reference panel.
-- Customize accent color and window transparency in Settings or configuration JSON.
-- Switch between individual windows with **Command–Tab**, including minimized windows and multiple windows from the same app.
-
-No Frog account, analytics, or telemetry. Bring your own API key, or use a local model.
+- Rewrite selected text with customizable rules and shortcuts.
+- Dictate with local speech models or external transcription providers.
+- Use downloaded models, OpenAI, Claude, Gemini, Ollama or LM Studio.
+- Switch between individual windows with **Command–Tab**.
+- Keep API keys in Keychain and history optional. No account or analytics.
 
 ## Install
 
-1. Download **Frog-macOS.zip** from [Releases](https://github.com/t1llo/frog/releases), unzip it, and move **Frog.app** to **Applications**.
-2. Open Frog, add a provider, and select its models. For Ollama or LM Studio, start the local server and click **Find installed models**. [Provider setup](docs/providers.md).
-3. Allow Frog in **System Settings → Privacy & Security → Accessibility** for writing shortcuts and window switching.
+Download **Frog-macOS.zip**, unzip it, and move **Frog.app** to **Applications**. Add models, configure your rules, and allow Accessibility for writing shortcuts and window switching. Dictation also needs microphone permission.
 
-Published build 6 is Developer ID signed and notarized by Apple. Window switching and local workflows are in the newer source/local builds; check the release notes for the build available to download. You can also [build from source](#build-from-source).
+macOS 14+ · Apple silicon and Intel · Built-in model inference requires Apple silicon.
 
-## Use it
+Source may include features newer than the latest download; see the release notes for your build.
 
-Select text in an editable field, then press **Control + Shift + C** to proofread. Change shortcuts and instructions in **Rules**. Other presets cover spelling, email polishing, and translation to English or German.
+## Build
 
-Frog sends selected text and your rule to the chosen text provider (or built-in local model), copies the result, and replaces the selection. If you move to another field or the app can’t safely edit it, the result stays on your clipboard.
-
-Closing the window keeps Frog running in the Dock and menu bar. Click its Dock icon to reopen the window. Enable **Start at login** in Settings if you want it available after a restart.
-
-### Window switcher
-
-Hold **Command** and tap **Tab** to cycle individual windows. Add **Shift** to go backwards, use the arrow keys to navigate, and release **Command** to bring the selected window forward. **Escape** cancels; clicking a row switches directly.
-
-The list shows titles and app icons, with recently used windows first. Keep holding Command and type to fuzzy-find a window by title or app name; Tab cycles matches. Quick taps use a cached list without flashing the overlay. Minimized windows and windows in hidden apps are included. Other Spaces are included when the app exposes those windows through Accessibility. Turn the feature off in **Windows** or Frog’s menu to restore the macOS app switcher.
-
-### Local transcription
-
-On Apple silicon, open **Models → Inside Frog** and download an OpenAI Whisper or NVIDIA Parakeet speech model. The first installed audio model becomes the default and is marked in the list. Whisper detects language automatically or accepts a Settings language hint; Parakeet v3 detects its supported languages automatically, and v2 is English-only. Allow microphone access in **Settings → Permissions**, then configure the Dictate rule's shortcut in **Rules**. The default is **transcribe → copy to clipboard**, without a text model. To opt into LLM cleanup, enable **Improve transcript** in the audio rule and download a local text model or configure its provider. Choose toggle/hold recording and copy/copy-and-paste in **Settings → Recording**; rules can override these defaults. The compact recording popup shows status, partial text and stop/cancel controls, and can be switched off there. Shared history stays optional. Local text models can also be used for ordinary writing rules. **Models → Providers** configures services running outside Frog, including cloud APIs, Ollama and LM Studio.
-
-The local catalog includes Whisper, Parakeet, Qwen, Llama and Gemma choices. Use each model's **ⓘ** button for its download source, original model, license and language support. **Add model…** accepts compatible Hugging Face repository links for MLX text and WhisperKit speech models; checking a link reads metadata, and Download installs the weights separately. See [model sources and compatibility](docs/local-model-sources.md).
-
-Choose where models download in **Settings → Model storage**. Changing the folder preserves existing files in the previous location; choose that folder again to reuse those models. This machine-local path is saved separately from portable configuration exports.
-
-In **Settings → Appearance**, choose System, Light or Dark and a Frog, Tokyo Night, Catppuccin or Nord theme. Themes supply matching light/dark surfaces and accent colors; the color picker can override the accent independently.
-
-## Your settings and data
-
-**Settings → Export / Import** moves rules, shortcuts, provider settings, and preferences between Macs. API keys stay in Keychain; text history isn’t included. Imports validate the file and back up your previous configuration. [Configuration format](docs/configuration.md).
-
-Frog has no usage tracking or backend service. Cloud providers receive text only when you run a rule or test a connection. Local providers use the endpoint you configure. Optional history stays on your Mac and can be cleared at any time. [Privacy details](docs/privacy.md).
-
-<details>
-<summary>Settings screenshot</summary>
-
-![Configuration import and export in Frog Settings](docs/images/frog-settings.png)
-
-</details>
-
-## Build from source
-
-Requires Xcode 26+ / Swift 6.2+. Open `native/Frog.xcodeproj` and run the **Frog-macOS** scheme, or:
+Requires Xcode with Swift 6.3+ (CI uses Xcode 27).
 
 ```sh
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
@@ -80,6 +38,4 @@ bash scripts/build-app.sh
 open dist/Frog.app
 ```
 
-Set `FROG_UNIVERSAL=1` when building for both CPU architectures. The app is written in SwiftUI and has no third-party package dependencies.
-
-[Build and release notes](docs/development.md) · Verification status
+[Providers](docs/providers.md) · [Local models](docs/local-model-sources.md) · [Configuration](docs/configuration.md) · [Privacy](docs/privacy.md) · [Development](docs/development.md)

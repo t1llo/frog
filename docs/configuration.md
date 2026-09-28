@@ -1,12 +1,34 @@
-# Configuration files
+# Configuration
 
-## Local workflows and appearance
+Use **Settings → Configuration → Export / Import** to transfer rules, connections and preferences. API keys stay in Keychain; history and downloaded models are not exported. Login startup, permissions and model-storage paths belong to each Mac.
 
-Rules may include an `action` object with `category` (`text`, `audio`, or `application`). Missing `action` preserves legacy text behavior. Audio actions may override `audioModelID`, `localTextModelID`, `recordingMode` (`toggle`/`hold`), `output` (`copy`/`paste`), and `cleanup`. Application actions store `applicationPath` and `applicationBundleID`; choose the app again if it is unavailable on another Mac.
+Import validates the file and backs up the previous configuration as `configuration-backup-<UUID>.json` in `~/Library/Application Support/Frog/`. Invalid files leave the existing setup untouched. Changed/new provider endpoints receive fresh Keychain identities and require their credentials again.
 
-`preferences.workflows` stores speech/cleanup/default-local-text model IDs, microphone device ID, recording/output defaults, idle unload delay, `showDictationPopup`, and the optional `shortcutPanelHotkey`. The microphone ID belongs to the current Mac; the system default is represented by `null`. Downloaded model files live in `~/Library/Application Support/Frog/Models/` and are not exported.
+## Rules and models
 
-Appearance is editable in Settings or JSON:
+The UTF-8 JSON format is version `1`, limited to 4 MB. Prefer exporting from Frog before editing. Quit Frog before directly modifying the live `configuration.json` file.
+
+- `action.category` is `text`, `audio` or `application`.
+- External text models use the rule's `providerID` and `model`; internal text models use `action.localTextModelID`.
+- Audio uses `action.audioModelID` and, for external speech, `action.audioProviderID`.
+- Audio options are `action.transcriptionLanguage`, `recordingMode` (`toggle`/`hold`), `output` (`copy`/`paste`), `showRecordingPopup` and `cleanup`.
+- Cleanup uses the rule's selected text model and instructions.
+- Application shortcuts store `action.applicationPath` and `action.applicationBundleID`.
+- Provider `models` entries have `id`, `name` and `category` (`text`/`audio`). Missing category means text for older files.
+
+Models are explicit per rule. `explicitRuleModels` records migration from older global defaults, preserving each rule's effective choice. `recentModels` tracks added choices for new rules. Legacy default fields remain readable for migration; they do not reroute migrated rules.
+
+Custom Hugging Face descriptors are exported in `localModels`; weights are not. Removing a referenced source requires changing its references first.
+
+## Preferences
+
+History is off by default. When enabled, `historyLimit` accepts 1–200 entries and `historyRetentionDays` accepts 1–30 days. Importing shorter limits can prune history.
+
+`applicationShortcutsEnabled` controls both application shortcuts and the window switcher. `windowSwitcherEnabled` retains the individual switcher setting. Window titles and switching history are not exported.
+
+`preferences.workflows` includes microphone selection, mute-while-recording, cancel and shortcut-reference bindings, and `idleUnloadSeconds` (0–3600). Zero unloads internal models immediately after inference. Recording behavior belongs to each audio rule.
+
+Appearance example, inside `preferences`:
 
 ```json
 "appearance": {
@@ -18,100 +40,10 @@ Appearance is editable in Settings or JSON:
 }
 ```
 
-Place this object inside `preferences`. `accentHex` is six hexadecimal RGB digits without `#`; transparency ranges from `0` (opaque) to `1` (strongest material translucency). Import applies appearance immediately. Quit Frog before editing its live configuration file directly, then reopen it.
+Themes: `frog`, `tokyoNight`, `catppuccin`, `nord`. The interface offers Light and Dark. Accent is six hexadecimal digits without `#`; transparency ranges from 0 to 1.
 
-- `theme`: `frog`, `tokyoNight`, `catppuccin`, or `nord`.
-- `mode`: `system`, `light`, or `dark`.
-- `useThemeAccent`: set `true` for the theme's adaptive accent, or `false` to use `accentHex`. Editing `accentHex` alone will not override a theme accent when this flag is `true`.
-- Settings → Appearance has the same controls, including an RGB hex field (press Return to apply). Export includes these values along with the other preferences.
+## Shortcuts and compatibility
 
-### Recording defaults (build 14)
+Shortcuts use macOS virtual key codes and Carbon modifier bits: Command `256`, Shift `512`, Option `2048`, Control `4096`. Record shortcuts in Frog rather than calculating these manually. Omit `hotkey` for no global shortcut.
 
-New audio rules have `action.cleanup: false`; `preferences.workflows.output` defaults to `copy`. Transcription does not require a text model. Enable **Improve transcript** in a specific audio rule to opt into LLM cleanup, and choose **Copy and paste** if insertion is wanted. A one-time upgrade turns off cleanup for the original, uncustomized factory Dictate rule; custom rules and subsequent explicit opt-ins are preserved. `dictationDefaultsVersion` tracks this upgrade and should be left as exported.
-
-In an exported configuration, edit these fields inside the existing `preferences.workflows` object (retain the other fields):
-
-```json
-"output": "copy",
-"recordingMode": "toggle",
-"showDictationPopup": false,
-"idleUnloadSeconds": 120
-```
-
-`recordingMode` accepts `toggle` or `hold`; `showDictationPopup` controls the compact recording/transcribing panel. Disabling it in Settings hides an active panel too. `idleUnloadSeconds` accepts 0–3600; zero unloads immediately after inference. Changing this setting reschedules models already idle. **Unload now** releases resident models when no inference/recording is active; model downloads remain installed.
-
-Use **Settings → Configuration → Export…** to save `Frog-configuration.json`. Use **Import…** on another Mac, or edit the file and import it again. The app asks before replacing your setup.
-
-## What moves
-
-Custom Hugging Face source descriptors are exported in the top-level `localModels` array. Add sources through **Models → Inside Frog → Add model…** to generate validated IDs and format metadata. Rules and local-model defaults may refer to those IDs. Removing a referenced source from JSON is rejected until its rule/default references are changed. Weights and the device-local download folder are not exported. See [local model sources](local-model-sources.md).
-
-- Rules: names, instructions, enabled state, shortcuts, and provider/model overrides. Older target-language fields remain readable for compatibility.
-- Providers: service type, name, API endpoint, configured model IDs/display names, and default model.
-- The default provider, history, processing indicator and window-switcher preferences.
-
-API keys and text history are never exported. Login startup and macOS permissions belong to each Mac and must be configured separately. Frog doesn’t sync files or upload configurations to a service.
-
-## Import behavior
-
-Import replaces the current configuration. Before writing it, Frog checks the file version, references, shortcuts, endpoints, and preference limits. An invalid file leaves your setup untouched. Shortcuts already occupied by other apps are reported in Rules after import.
-
-The previous settings file is backed up as `configuration-backup-<UUID>.json` in `~/Library/Application Support/Frog/`. You can import that backup to undo a change. Explicit import can also recover a malformed settings file while preserving its original bytes in the backup.
-
-An existing provider keeps its Keychain identity only if its ID, service type, and endpoint still match. New or changed connections get a fresh identity and need their API key entered again. Import doesn’t delete saved Keychain items. This prevents an imported endpoint from silently inheriting a different connection’s key.
-
-History records are separate. Imported recording/retention preferences apply to them: recording can turn on or off, and shorter retention or entry limits can prune existing records. The confirmation dialog explains this before import.
-
-## Format
-
-The format is UTF-8 JSON, version `1`, limited to 4 MB. This minimal example uses Ollama and one proofreading rule:
-
-```json
-{
-  "version": 1,
-  "providers": [
-    {
-      "id": "070BC5A9-29DD-42E7-A4E5-5849C542DF11",
-      "name": "Ollama",
-      "kind": "ollama",
-      "endpoint": "http://localhost:11434",
-      "model": "llama3.2",
-      "models": [{ "id": "llama3.2", "name": "Llama 3.2" }]
-    }
-  ],
-  "defaultProviderID": "070BC5A9-29DD-42E7-A4E5-5849C542DF11",
-  "rules": [
-    {
-      "id": "D6D41870-A571-4978-98B0-E8AF21E434D0",
-      "name": "Proofread",
-      "instructions": "Fix grammar and spelling. Return only the corrected text.",
-      "model": "",
-      "targetLanguage": "",
-      "hotkey": { "keyCode": 8, "modifiers": 4608 },
-      "enabled": true,
-      "preset": false
-    }
-  ],
-  "preferences": {
-    "historyEnabled": false,
-    "historyLimit": 200,
-    "historyRetentionDays": 30
-  }
-}
-```
-
-Provider kinds: `openAI`, `anthropic`, `gemini`, `ollama`, `lmStudio`, `compatible`. Cloud services require HTTPS; localhost model services can use HTTP. Credentials, query parameters, and fragments aren’t allowed in endpoint URLs.
-
-Each provider's `models` list contains 1–200 unique API IDs with display names. Its `model` must be one of these IDs. Display names are shown in menus; requests send the API ID. Old files without `models` migrate their existing default and rule overrides into this list without changing the model used.
-
-Preferences also contain `showProcessingIndicator` (boolean, default `true` when absent in older files). This controls the floating hotkey status indicator independently of macOS notification permissions.
-
-`windowSwitcherEnabled` is a boolean, defaulting to `true` for new and older configurations. It enables the individual-window Command–Tab switcher when Accessibility is available. Set it to `false` to use the native macOS app switcher. If an enabled writing rule already uses Command–Tab or Shift–Command–Tab, window switching remains inactive and the Windows page explains the conflict. Window-switcher recency and window titles are not persisted or exported.
-
-Omit a rule’s `providerID` to use the default provider; an empty `model` uses that provider’s default model. Nonempty overrides must be configured on the resolved provider. The rule editor offers configured models grouped by provider and saves both the provider ID and model ID. Removing an in-use model requires updating the referencing rules first.
-
-Write translation languages directly in rule instructions. Legacy `{{language}}`/`targetLanguage` configurations still work; opening their rule editor folds the language into the instructions, preserving behavior when saved.
-
-Shortcuts use macOS virtual key codes and Carbon modifier bits. The example is Control + Shift + C (`4096 + 512`). Command is `256`; Option is `2048`. The easiest way to set shortcuts is to record them in Frog and export the result. Omit `hotkey` for a rule without a global shortcut.
-
-The live file is `~/Library/Application Support/Frog/configuration.json`. Quit Frog before editing it directly; importing is preferable while the app is running.
+Write translation languages in rule instructions. Legacy `{{language}}` and `targetLanguage` values remain supported. Imported providers retain Keychain access only when their identity, service type and endpoint match the existing connection.

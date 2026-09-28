@@ -10,7 +10,7 @@ Frog doesn’t send provider requests or download model weights at startup. Expl
 
 ## Transcription and built-in models
 
-Recording starts only when you invoke an audio rule or Record. Microphone audio stays in process memory for local WhisperKit or FluidAudio/Parakeet transcription and is discarded after completion/cancellation. The live popup shows partial text when enabled. Recordings stop automatically after ten minutes. No audio files are added to history.
+Recording starts only when you invoke an audio rule or Record. For local WhisperKit or FluidAudio/Parakeet transcription, microphone audio stays in process memory and is discarded after completion/cancellation. If the rule selects an external speech model, Frog sends the recording to that provider for transcription. The live popup shows partial text when supported and enabled. Recordings stop automatically after ten minutes. No audio files are added to history.
 
 Adding a Hugging Face model link fetches public repository metadata and, for text models, `config.json` to inspect its format. It does not upload your text/audio or download weights. Weights download only when you press Download. Each model's information panel links to the converted weights, original model when known, and license. Parakeet inference uses local Core ML loading rather than FluidAudio's auto-download helpers.
 
@@ -34,4 +34,6 @@ The window switcher uses Accessibility to list window titles, observe the recent
 
 The optional floating processing indicator shows rule/status messages without taking focus. Turn it off in **Settings → Show processing indicator**. Compatibility replacement checks input-event counters, not keystroke contents, to reject changed targets.
 
-The archived Go/Wails prototype is not part of the native app. Legacy data in `~/.config/frog/`, if present, is neither imported nor removed automatically.
+## Updates
+
+Sparkle checks the GitHub release feed and downloads signed updates. Automatic checks and downloads are configurable in Settings. System profiling is disabled. GitHub receives the network requests needed to serve the feed and downloads; no text, audio or provider keys are included.
