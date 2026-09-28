@@ -22,6 +22,8 @@ For isolated manual testing, launch the executable with `FROG_DATA_DIRECTORY` po
 
 ## Release packaging
 
+For a local app without release archives or publication, run `make build`. It builds the current checkout into `dist/Frog.app`, using a locally available Developer ID identity when possible, otherwise ad-hoc signing. It does not notarize, upload or increment the release version. Each local build gets its own build number. Use `make build CONFIGURATION=debug` for a debug build; set `FROG_SIGN_IDENTITY` explicitly to choose a certificate. Full releases use the separate local release script.
+
 Local and CI builds use ad-hoc signing. Developer ID builds use hardened runtime and a secure timestamp. Follow the setup below to sign and notarize a release for direct download.
 
 Release downloads are `Frog-macOS.zip` and `SHA256SUMS`. Updater-enabled releases also include a signed Sparkle `appcast.xml`. GitHub Actions builds and tests the app without signing credentials. Distribution releases are signed, notarized and published manually from the maintainer's Mac.

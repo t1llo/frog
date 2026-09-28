@@ -58,6 +58,10 @@ codesign "${nested_args[@]}" "$sparkle/Updater.app"
 codesign "${nested_args[@]}" "$app/Contents/Frameworks/Sparkle.framework"
 codesign "${sign_args[@]}" "$app"
 codesign --verify --deep --strict "$app"
+if [[ "${FROG_APP_ONLY:-0}" == "1" ]]; then
+    echo "Built $app"
+    exit 0
+fi
 ditto -c -k --sequesterRsrc --keepParent "$app" dist/Frog-macOS.zip
 (cd dist && shasum -a 256 Frog-macOS.zip > SHA256SUMS)
 echo "Built $app"

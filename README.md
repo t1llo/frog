@@ -40,7 +40,7 @@ Requires Xcode with Swift 6.3+ (CI uses Xcode 27).
 ```sh
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 swift test
-bash scripts/build-app.sh
+make build
 open dist/Frog.app
 ```
 
