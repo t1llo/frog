@@ -51,7 +51,7 @@ struct RulesView: View {
                                 var updated = rule; updated.enabled = value
                                 do { try model.saveRule(updated) } catch { model.report(error) }
                             })).labelsHidden().toggleStyle(.switch).controlSize(.mini)
-                            IconAction(title: "Edit rule", symbol: "pencil") { editing = rule }
+                            IconAction(title: "Edit rule", symbol: "pencil", bordered: true) { editing = rule }
                         }.padding(12)
                         if rule.id != rules.last?.id { Divider().opacity(0.5) }
                     }

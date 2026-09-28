@@ -219,14 +219,18 @@ struct IconAction: View {
     let title: String
     let symbol: String
     var destructive = false
+    var bordered = false
     let action: () -> Void
+    @State private var hovering = false
     var body: some View {
         Button(role: destructive ? .destructive : nil, action: action) {
             Image(systemName: symbol).font(.system(size: 13, weight: .medium))
-                .foregroundStyle(destructive ? Color.red : FrogStyle.muted)
+                .foregroundStyle(destructive ? Color.red : hovering ? FrogStyle.accent : FrogStyle.muted)
                 .frame(width: 26, height: 26)
+                .background(bordered ? (hovering ? FrogStyle.accentSoft : FrogStyle.inset) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(bordered ? FrogStyle.border.opacity(hovering ? 0.8 : 0.5) : .clear))
                 .contentShape(RoundedRectangle(cornerRadius: FrogStyle.corner))
-        }.buttonStyle(.plain).accessibilityLabel(L10n.text(title)).help(L10n.text(title))
+        }.buttonStyle(.plain).onHover { hovering = $0 }.accessibilityLabel(L10n.text(title)).help(L10n.text(title))
     }
 }
 
@@ -261,8 +265,10 @@ struct FrogEmptyState: View {
 }
 
 struct FrogMark: View {
+    private static let image = FrogResources.bundle.url(forResource: "FrogLogo", withExtension: "png")
+        .flatMap { NSImage(contentsOf: $0) } ?? NSImage(named: NSImage.applicationIconName) ?? NSImage()
     var body: some View {
-        Image("FrogLogo", bundle: FrogResources.bundle).resizable().interpolation(.high).scaledToFit()
+        Image(nsImage: Self.image).resizable().interpolation(.high).scaledToFit()
             .frame(width: 46, height: 46).accessibilityHidden(true)
     }
 }

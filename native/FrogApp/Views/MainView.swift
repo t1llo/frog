@@ -6,6 +6,7 @@ struct MainView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var section: Section = .rules
+    @State private var permissionsRequest: UUID?
 
     private enum Section: String, CaseIterable, Identifiable {
         case rules = "Rules", history = "History", providers = "Models", shortcuts = "Shortcuts", settings = "Settings"
@@ -39,7 +40,7 @@ struct MainView: View {
                     case .rules: RulesView()
                     case .providers: ProvidersView()
                     case .history: HistoryView()
-                    case .settings: PreferencesView()
+                    case .settings: PreferencesView(permissionsRequest: permissionsRequest)
                     case .shortcuts: RulesView(applications: true)
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -99,8 +100,9 @@ struct MainView: View {
                         .font(.system(size: 12, weight: .semibold))
                     Text(L10n.text(!model.accessibilityGranted ? "For writing and window shortcuts." : "For voice transcription."))
                         .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
-                    Button("Finish setup") {
-                        section = .settings
+                     Button("Finish setup") {
+                         section = .settings
+                         permissionsRequest = UUID()
                     }.buttonStyle(FrogButtonStyle()).controlSize(.small)
                 }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
                     .background(FrogStyle.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: FrogStyle.corner))

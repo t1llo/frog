@@ -50,22 +50,56 @@ struct CompactRow<Content: View>: View {
 struct CompactMenu<Content: View>: View {
     let value: String
     @ViewBuilder var content: Content
+    @State private var showing = false
+    var body: some View {
+        Button { showing.toggle() } label: {
+            CompactDropdownLabel(value: L10n.text(value))
+        }.buttonStyle(.plain).help(L10n.text(value))
+            .popover(isPresented: $showing, arrowEdge: .bottom) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) { content }
+                        .buttonStyle(CompactOptionStyle { showing = false })
+                        .padding(8)
+                }.frame(width: 280).frame(maxHeight: 280).fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
+            }
+    }
+}
+
+struct CompactDropdownLabel: View {
+    let value: String
+    var symbol: String? = nil
     @State private var hovering = false
     var body: some View {
-        Menu(content: { content }) {
-            HStack(spacing: 8) {
-                Text(L10n.text(value)).lineLimit(1).truncationMode(.middle).frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: "chevron.down").font(.system(size: 9, weight: .medium)).foregroundStyle(FrogStyle.muted)
-            }.font(.system(size: 11, weight: .medium))
-                .foregroundStyle(FrogStyle.ink)
-                .padding(.horizontal, 9).frame(width: 220, height: 32)
-                .background(hovering ? FrogStyle.accentSoft : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(hovering ? FrogStyle.accent.opacity(0.45) : FrogStyle.border.opacity(0.4)))
-                .contentShape(RoundedRectangle(cornerRadius: 6))
-        }.menuStyle(.borderlessButton).menuIndicator(.hidden)
-            .fixedSize().frame(width: 220, alignment: .trailing)
-            .onHover { hovering = $0 }
-            .help(L10n.text(value))
+        HStack(spacing: 8) {
+            if let symbol { Image(systemName: symbol).foregroundStyle(FrogStyle.muted) }
+            Text(value).lineLimit(1).truncationMode(.middle)
+            Spacer(minLength: 2)
+            Image(systemName: "chevron.down").font(.system(size: 9)).foregroundStyle(FrogStyle.muted)
+        }.font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.ink)
+            .padding(.horizontal, 9).frame(width: 220, height: 32)
+            .background(hovering ? FrogStyle.accentSoft : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(FrogStyle.border.opacity(0.6)))
+            .contentShape(RoundedRectangle(cornerRadius: 7)).onHover { hovering = $0 }
+    }
+}
+
+private struct CompactOptionStyle: PrimitiveButtonStyle {
+    let dismiss: () -> Void
+    func makeBody(configuration: Configuration) -> some View {
+        Option(configuration: configuration, dismiss: dismiss)
+    }
+    private struct Option: View {
+        let configuration: PrimitiveButtonStyleConfiguration
+        let dismiss: () -> Void
+        @State private var hovering = false
+        var body: some View {
+            Button { configuration.trigger(); dismiss() } label: {
+                HStack { configuration.label; Spacer(minLength: 0) }
+                    .font(.system(size: 12)).padding(8).contentShape(Rectangle())
+                    .background(hovering ? FrogStyle.accentSoft : .clear, in: RoundedRectangle(cornerRadius: 5))
+            }.buttonStyle(.plain).onHover { hovering = $0 }
+        }
     }
 }
 

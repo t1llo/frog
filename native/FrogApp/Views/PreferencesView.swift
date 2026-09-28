@@ -4,11 +4,13 @@ import FrogCore
 import UniformTypeIdentifiers
 
 struct PreferencesView: View {
+    var permissionsRequest: UUID? = nil
     @EnvironmentObject private var model: AppModel
     @State private var pendingConfiguration: Configuration?
     @State private var confirmingImport = false
     private var prefs: WorkflowPreferences { model.configuration.preferences.workflowSettings }
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 PageHeader(title: "Settings", subtitle: "")
@@ -77,7 +79,7 @@ struct PreferencesView: View {
                     }
                     Divider()
                     CompactRow(title: "Notifications") { Button("Allow…") { DesktopNotifications.requestAuthorization() } }
-                }
+                }.id("permissions")
                 SettingsSection(title: "History") {
                     CompactRow(title: "Save history on this Mac") { Toggle("Save history on this Mac", isOn: preference(\.historyEnabled)).labelsHidden() }
                     Divider()
@@ -103,10 +105,17 @@ struct PreferencesView: View {
                 }
             }.toggleStyle(.switch).controlSize(.small).padding(20).frame(maxWidth: 630).frame(maxWidth: .infinity)
         }.onAppear { model.refreshSystemStatus() }
+            .task(id: permissionsRequest) {
+                guard permissionsRequest != nil else { return }
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                withAnimation { proxy.scrollTo("permissions", anchor: .top) }
+            }
             .confirmationDialog("Replace configuration?", isPresented: $confirmingImport) {
                 Button("Replace configuration") { if let pendingConfiguration { do { try model.importConfiguration(pendingConfiguration) } catch { model.report(error) } }; pendingConfiguration = nil }
                 Button("Cancel", role: .cancel) { pendingConfiguration = nil }
             } message: { Text("The current settings are backed up. Provider keys may need to be re-entered.") }
+        }
     }
     private func permission(_ title: String, allowed: Bool, action: @escaping () -> Void) -> some View {
         CompactRow(title: title) {

@@ -37,14 +37,7 @@ struct RuleModelPicker: View {
         Button {
             local = selected?.providerID == nil && selected != nil; search = ""; showing.toggle()
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: selected?.providerID == nil ? "cpu" : "cloud").foregroundStyle(FrogStyle.muted)
-                Text(selected.map(name) ?? "Choose a model").lineLimit(1).truncationMode(.middle)
-                Spacer(minLength: 2)
-                Image(systemName: "chevron.down").font(.system(size: 9)).foregroundStyle(FrogStyle.muted)
-            }.font(.system(size: 11, weight: .medium)).padding(.horizontal, 9).frame(width: 220, height: 32)
-                .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(FrogStyle.border.opacity(0.6)))
+            CompactDropdownLabel(value: selected.map(name) ?? "Choose a model", symbol: selected?.providerID == nil ? "cpu" : "cloud")
         }.buttonStyle(.plain).accessibilityLabel(speech ? "Speech model" : "Text model")
             .popover(isPresented: $showing, arrowEdge: .bottom) {
                 VStack(spacing: 9) {
