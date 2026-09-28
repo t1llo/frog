@@ -5,16 +5,17 @@ struct HistoryView: View {
     @EnvironmentObject private var model: AppModel
     @State private var viewing: HistoryEntry?
     @State private var search = ""
+    @State private var category: RuleCategory?
     @State private var confirmClear = false
     @State private var deleting: HistoryEntry?
     @State private var copiedID: UUID?
 
     private var entries: [HistoryEntry] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return model.history }
         return model.history.filter { entry in
-            [entry.ruleName, entry.originalText, entry.processedText, entry.providerName, entry.model]
-                .contains { $0.localizedStandardContains(query) }
+            (category == nil || (entry.category ?? .text) == category) &&
+            (query.isEmpty || [entry.ruleName, entry.originalText, entry.processedText, entry.providerName, entry.model]
+                .contains { $0.localizedStandardContains(query) })
         }
     }
 
@@ -34,17 +35,21 @@ struct HistoryView: View {
             } else {
             PageHeader(title: "History", subtitle: "") {
                 HStack {
+                    if !model.configuration.preferences.historyEnabled {
+                        Button("Enable history") {
+                            var preferences = model.configuration.preferences
+                            preferences.historyEnabled = true
+                            do { try model.savePreferences(preferences) } catch { model.report(error) }
+                        }
+                    }
                     Button("Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }
                         .disabled(model.history.isEmpty)
                 }
             }
             ListToolbar(placeholder: "Search history", search: $search) {
-                if !model.configuration.preferences.historyEnabled {
-                    Button("Enable history") {
-                        var preferences = model.configuration.preferences
-                        preferences.historyEnabled = true
-                        do { try model.savePreferences(preferences) } catch { model.report(error) }
-                    }.fixedSize()
+                FilterTag(title: "All", selected: category == nil) { category = nil }
+                ForEach([RuleCategory.text, .audio]) { value in
+                    FilterTag(title: value.title, selected: category == value) { category = value }
                 }
             }
 
@@ -55,7 +60,7 @@ struct HistoryView: View {
                                : "Enable history to save future originals and results on this Mac.")
                 Spacer(minLength: 0)
             } else if entries.isEmpty {
-                FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another word or clear your search.")
+                FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another filter or clear your search.")
                 Spacer(minLength: 0)
             } else {
                 ScrollView {
@@ -98,12 +103,10 @@ struct HistoryView: View {
             Button { viewing = item } label: {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(item.ruleName).font(.system(size: 12, weight: .semibold)).foregroundStyle(FrogStyle.ink)
+                        FrogBadge(text: item.category == .audio ? "Audio" : "Text")
                         Text(item.timestamp.formatted(date: .abbreviated, time: .shortened))
-                            .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                    }.lineLimit(1)
-                    Spacer()
+                            .font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                        Spacer()
                     }
                     Text(item.processedText).font(.system(size: 12)).foregroundStyle(FrogStyle.ink)
                         .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
