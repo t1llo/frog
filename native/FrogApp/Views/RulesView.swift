@@ -46,11 +46,14 @@ struct RulesView: View {
                                     if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(.orange) }
                                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                             }.buttonStyle(.plain)
-                            if let key = rule.hotkey { ShortcutBadge(text: HotkeyManager.display(key)) }
                             Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { value in
                                 var updated = rule; updated.enabled = value
                                 do { try model.saveRule(updated) } catch { model.report(error) }
                             })).labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                            HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: { value in
+                                var updated = rule; updated.hotkey = value
+                                do { try model.saveRule(updated) } catch { model.report(error) }
+                            }), showsClearButton: false)
                             IconAction(title: "Edit rule", symbol: "pencil", bordered: true) { editing = rule }
                         }.padding(12)
                         if rule.id != rules.last?.id { Divider().opacity(0.5) }

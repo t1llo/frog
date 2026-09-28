@@ -6,6 +6,7 @@ import FrogCore
 struct HotkeyRecorder: View {
     @EnvironmentObject private var model: AppModel
     @Binding var hotkey: Hotkey?
+    var showsClearButton = true
     @State private var recording = false
     @State private var hint: String?
 
@@ -15,8 +16,8 @@ struct HotkeyRecorder: View {
                 recording.toggle(); hint = nil
             } label: {
                 ShortcutBadge(text: recording ? L10n.text("Press shortcut…") : hotkey.map(HotkeyManager.display) ?? L10n.text("Record shortcut"))
-            }.buttonStyle(.plain)
-            if hotkey != nil || recording {
+            }.buttonStyle(.plain).help(recording ? "Press a new shortcut, or Escape to cancel." : "Click to change shortcut")
+            if showsClearButton && (hotkey != nil || recording) {
                 Button { hotkey = nil; recording = false; hint = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
                     .buttonStyle(.plain).accessibilityLabel("Clear shortcut")
             }

@@ -180,10 +180,20 @@ struct ShortcutBadge: View {
     let text: String
     var body: some View {
         Text(text).font(.system(size: 12, weight: .medium, design: .monospaced))
-            .foregroundStyle(FrogStyle.ink).padding(.horizontal, 7).frame(height: 24)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 5))
-            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(FrogStyle.border.opacity(0.6), lineWidth: 1))
+            .padding(.horizontal, 7).modifier(CompactActionSurface())
             .accessibilityLabel("Shortcut: \(text)")
+    }
+}
+
+struct CompactActionSurface: ViewModifier {
+    @State private var hovering = false
+    func body(content: Content) -> some View {
+        content.frame(height: 24)
+            .foregroundStyle(hovering ? FrogStyle.accent : FrogStyle.ink)
+            .background(hovering ? FrogStyle.accentSoft : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 5))
+            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(FrogStyle.border.opacity(0.6)))
+            .contentShape(RoundedRectangle(cornerRadius: 5))
+            .onHover { hovering = $0 }
     }
 }
 
@@ -224,12 +234,15 @@ struct IconAction: View {
     @State private var hovering = false
     var body: some View {
         Button(role: destructive ? .destructive : nil, action: action) {
+            if bordered {
+                Image(systemName: symbol).font(.system(size: 12, weight: .medium))
+                    .frame(width: 24).modifier(CompactActionSurface())
+            } else {
             Image(systemName: symbol).font(.system(size: 13, weight: .medium))
                 .foregroundStyle(destructive ? Color.red : hovering ? FrogStyle.accent : FrogStyle.muted)
                 .frame(width: 26, height: 26)
-                .background(bordered ? (hovering ? FrogStyle.accentSoft : FrogStyle.inset) : .clear, in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(bordered ? FrogStyle.border.opacity(hovering ? 0.8 : 0.5) : .clear))
                 .contentShape(RoundedRectangle(cornerRadius: FrogStyle.corner))
+            }
         }.buttonStyle(.plain).onHover { hovering = $0 }.accessibilityLabel(L10n.text(title)).help(L10n.text(title))
     }
 }
