@@ -13,6 +13,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify toolchain
         run: swift --version
+      - name: Install Metal compiler
+        run: |
+          xcodebuild -downloadComponent MetalToolchain
+          xcrun metal --version
       - name: Build and test native app
         run: swift test
       - name: Package application
