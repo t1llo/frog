@@ -120,7 +120,8 @@ struct PreferencesView: View {
     private func permission(_ title: String, allowed: Bool, action: @escaping () -> Void) -> some View {
         CompactRow(title: title) {
             HStack(spacing: 10) {
-                if allowed { Label("Allowed", systemImage: "checkmark.circle.fill").font(.system(size: 11)).foregroundStyle(FrogStyle.accent) }
+                Label(allowed ? "Allowed" : "Permission needed", systemImage: allowed ? "checkmark.circle.fill" : "exclamationmark.circle")
+                    .font(.system(size: 11)).foregroundStyle(allowed ? FrogStyle.accent : .orange)
                 Button(allowed ? "Manage…" : "Allow…", action: action)
             }
         }
