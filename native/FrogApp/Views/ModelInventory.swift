@@ -22,7 +22,10 @@ struct ModelInventory: View {
                         HStack(spacing: 10) {
                             Image(systemName: installed ? "checkmark.circle.fill" : "arrow.down.circle").foregroundStyle(installed ? FrogStyle.accent : FrogStyle.muted)
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(item.name).font(.system(size: 12, weight: .medium))
+                                 HStack(spacing: 6) {
+                                     Text(item.name).font(.system(size: 12, weight: .medium))
+                                     if item.isRecommended { RecommendedModelBadge() }
+                                 }
                                 Text(item.size + (model.localModels.loaded.contains(item.id) ? " · In memory" : "")).font(.system(size: 10)).foregroundStyle(.secondary)
                             }
                             Spacer()

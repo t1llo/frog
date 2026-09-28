@@ -76,7 +76,7 @@ struct ProvidersView: View {
 
 }
 
-private struct ProviderEditor: View {
+struct ProviderEditor: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State var provider: ProviderConfiguration

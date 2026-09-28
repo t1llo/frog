@@ -72,6 +72,21 @@ private enum PrivateFile {
     }
 }
 
+/// Device-local onboarding state is intentionally excluded from configuration exports.
+public struct SetupStore {
+    private let file: URL
+    public init(directory: URL) { file = directory.appendingPathComponent("setup.json") }
+    public func needsSetup(existingConfiguration: Bool) throws -> Bool {
+        if let data = try PrivateFile.read(file, maximumBytes: 1024) {
+            return !(try PrivateFile.decode(Bool.self, from: data, name: "Setup state"))
+        }
+        // Existing installations keep their setup; new installations resume until skipped/completed.
+        try complete(existingConfiguration)
+        return !existingConfiguration
+    }
+    public func complete(_ value: Bool = true) throws { try PrivateFile.write(JSONEncoder().encode(value), to: file) }
+}
+
 public final class ConfigurationStore: @unchecked Sendable {
     public let directory: URL
     private var file: URL { directory.appendingPathComponent("configuration.json") }

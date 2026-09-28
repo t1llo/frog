@@ -62,6 +62,9 @@ struct MainView: View {
         .tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
         .frame(minWidth: 740, minHeight: 520)
         .onAppear { model.refreshSystemStatus() }
+        .sheet(isPresented: Binding(get: { model.setupPresented }, set: { if !$0 { model.finishSetup() } })) {
+            SetupView().environmentObject(model).interactiveDismissDisabled()
+        }
         .task { await model.monitorSystemStatus() }
         .onChange(of: scenePhase) { _, phase in if phase == .active { model.refreshSystemStatus() } }
         .onChange(of: model.configuration.preferences.shortcutsEnabled) { _, enabled in if !enabled && section == .shortcuts { section = .settings } }

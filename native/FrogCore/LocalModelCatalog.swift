@@ -49,6 +49,8 @@ public struct LocalModelDescriptor: Codable, Identifiable, Equatable, Sendable {
         .init(id: id, name: name, kind: .audio, repository: "argmaxinc/whisperkit-coreml", variant: variant, size: size, originalRepository: original, license: "MIT")
     }
     public static func find(_ id: String) -> Self? { catalog.first { $0.id == id } }
+    public static var recommended: [Self] { catalog.filter(\.isRecommended) }
+    public var isRecommended: Bool { id == "whisper-small" || id == "qwen-1.7b" }
 }
 
 extension Configuration {

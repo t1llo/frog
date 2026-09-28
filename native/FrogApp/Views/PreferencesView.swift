@@ -15,6 +15,10 @@ struct PreferencesView: View {
             VStack(alignment: .leading, spacing: 20) {
                 PageHeader(title: "Settings", subtitle: "")
                 SettingsSection(title: "General") {
+                    CompactRow(title: "Setup assistant", detail: "Choose models and review permissions. Every step is optional.") {
+                        Button("Open setup…") { model.showSetup() }
+                    }
+                    Divider()
                     CompactRow(title: "Start at login") { Toggle("Start at login", isOn: Binding(get: { model.startAtLogin }, set: model.setStartAtLogin)).labelsHidden() }
                     Divider()
                     CompactRow(title: "Writing indicator") { Toggle("Writing indicator", isOn: preference(\.showProcessingIndicator)).labelsHidden() }

@@ -17,6 +17,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var loginStatus = ""
     @Published private(set) var windowSwitcherStatus = "Not started"
     @Published private(set) var windowSwitcherReady = false
+    @Published private(set) var setupPresented = false
 
     var openSettings: (() -> Void)?
     private let configurationStore: ConfigurationStore
@@ -72,6 +73,12 @@ final class AppModel: ObservableObject {
         self.writeClipboard = writeClipboard ?? { text in NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
         configurationStore = ConfigurationStore(directory: dataDirectory)
         historyStore = HistoryStore(directory: dataDirectory)
+        if registerShortcuts {
+            do {
+                setupPresented = try SetupStore(directory: configurationStore.directory).needsSetup(
+                    existingConfiguration: FileManager.default.fileExists(atPath: configurationStore.directory.appendingPathComponent("configuration.json").path))
+            } catch { report(error) }
+        }
         do { configuration = try configurationStore.load() }
         catch { configurationLoadError = error; report(error) }
         localModels.updateCatalog(configuration.modelCatalog)
@@ -122,6 +129,12 @@ final class AppModel: ObservableObject {
                 catch { self.report(error) }
             }
         }
+    }
+
+    func showSetup() { setupPresented = true }
+    func finishSetup() {
+        do { try SetupStore(directory: configurationStore.directory).complete(); setupPresented = false }
+        catch { report(error) }
     }
 
     func start() {
