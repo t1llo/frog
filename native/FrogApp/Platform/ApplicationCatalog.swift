@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import FrogCore
 
 enum ApplicationCatalog {
@@ -44,6 +45,54 @@ enum ApplicationCatalog {
             URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardizedFileURL.path
         })
         return (configured + installed.filter { !paths.contains($0.action?.applicationPath ?? "") })
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            .sorted {
+                if ($0.hotkey != nil) != ($1.hotkey != nil) { return $0.hotkey != nil }
+                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+    }
+}
+
+/// Shared across tab visits; discovery runs off the main thread and coalesces concurrent requests.
+@MainActor
+final class ApplicationCatalogStore: ObservableObject {
+    static let shared = ApplicationCatalogStore()
+    @Published private(set) var installed: [Rule] = []
+    private let discover: @Sendable () async -> [Rule]
+    private var loading: Task<[Rule], Never>?
+    private var scannedAt: ContinuousClock.Instant?
+    private var cachedConfiguration: [Rule]?
+    private var cachedRows: [Rule] = []
+
+    init(discover: @escaping @Sendable () async -> [Rule] = {
+        await Task.detached(priority: .utility) { ApplicationCatalog.scan() }.value
+    }) { self.discover = discover }
+
+    func loadIfNeeded() async {
+        if let scannedAt, scannedAt.duration(to: .now) < .seconds(60) { return }
+        if let loading { _ = await loading.value; return }
+        let discover = self.discover
+        let task = Task { await discover() }
+        loading = task
+        let discovered = await task.value
+        let previousIDs = Dictionary(uniqueKeysWithValues: installed.compactMap { rule in
+            rule.action?.applicationPath.map { ($0, rule.id) }
+        })
+        let refreshed = discovered.map { rule in
+            var rule = rule
+            if let path = rule.action?.applicationPath, let id = previousIDs[path] { rule.id = id }
+            return rule
+        }
+        if refreshed != installed {
+            cachedConfiguration = nil
+            installed = refreshed
+        }
+        scannedAt = .now; loading = nil
+    }
+
+    func rows(configured: [Rule]) -> [Rule] {
+        if cachedConfiguration == configured { return cachedRows }
+        cachedRows = ApplicationCatalog.rows(installed: installed, configured: configured)
+        cachedConfiguration = configured
+        return cachedRows
     }
 }

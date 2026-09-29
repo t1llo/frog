@@ -18,7 +18,7 @@ The UTF-8 JSON format is version `1`, limited to 4 MB. Prefer exporting from Fro
 - Audio options are `action.transcriptionLanguage`, `recordingMode` (`toggle`/`hold`), `output` (`copy`/`paste`), `showRecordingPopup` and `cleanup`.
 - Cleanup uses the rule's selected text model and instructions.
 - Application shortcuts store `action.applicationPath` and `action.applicationBundleID`.
-- Window shortcuts store `action.windowAction`. All 15 window actions start disabled with no assigned shortcut. Use **Shortcuts → Applications / Windows** to record one inline; recording enables that action automatically. Installed applications are listed automatically, but only configured shortcuts are saved.
+- Window shortcuts store `action.windowAction`. All 15 window actions start disabled with no assigned shortcut. Use **Shortcuts → Applications / Windows** to record one inline; recording enables that action automatically. Assigned shortcuts appear first, including disabled assignments. Installed applications are listed automatically, but only configured shortcuts are saved.
 - Provider `models` entries have `id`, `name` and `category` (`text`/`audio`). Missing category means text for older files.
 
 Models are explicit per rule. `explicitRuleModels` records migration from older global defaults, preserving each rule's effective choice. `recentModels` tracks added choices for new rules. Legacy default fields remain readable for migration; they do not reroute migrated rules.

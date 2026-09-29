@@ -9,21 +9,24 @@ struct RulesView: View {
     @State private var editing: Rule?
     @State private var filter: RuleCategory = .text
     @State private var search = ""
-    @State private var installedApplications: [Rule] = []
+    @ObservedObject private var applicationCatalog = ApplicationCatalogStore.shared
     @State private var shortcutCategory: RuleCategory = .application
     private var category: RuleCategory { applications ? shortcutCategory : filter }
     private var rules: [Rule] {
         let source: [Rule]
         if applications, shortcutCategory == .window {
-            source = WindowAction.allCases.map { action in
+            let windows = WindowAction.allCases.map { action in
                 model.configuration.rules.first { $0.category == .window && $0.action?.windowAction == action } ?? action.rule
             }
+            source = windows.filter { $0.hotkey != nil } + windows.filter { $0.hotkey == nil }
         } else {
-            source = applications ? ApplicationCatalog.rows(installed: installedApplications, configured: model.configuration.rules) : model.configuration.rules
+            source = applications ? applicationCatalog.rows(configured: model.configuration.rules) : model.configuration.rules
         }
         return source.filter { $0.category == category && (search.isEmpty || ($0.name + " " + $0.instructions).localizedStandardContains(search)) }
     }
     var body: some View {
+        let displayedRules = rules
+        let lastRuleID = displayedRules.last?.id
         VStack(alignment: .leading, spacing: 14) {
             PageHeader(title: applications ? "Shortcuts" : "Rules", subtitle: "") {
                 if !applications { Button("New rule", systemImage: "plus") {
@@ -55,10 +58,10 @@ struct RulesView: View {
             }
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(rules) { rule in
+                    ForEach(displayedRules) { rule in
                         HStack(spacing: 10) {
                             if applications {
-                                if rule.category == .application { Image(nsImage: NSWorkspace.shared.icon(forFile: rule.action?.applicationPath ?? "")).resizable().frame(width: 28, height: 28) }
+                                if rule.category == .application { ApplicationIcon(path: rule.action?.applicationPath ?? "") }
                                 else { Image(systemName: "macwindow").font(.system(size: 20)).foregroundStyle(FrogStyle.muted).frame(width: 28, height: 28) }
                             }
                             if applications {
@@ -84,17 +87,15 @@ struct RulesView: View {
                             }), showsClearButton: false)
                             if !applications { IconAction(title: "Edit rule", symbol: "pencil", bordered: true) { editing = rule } }
                         }.padding(12)
-                        if rule.id != rules.last?.id { Divider().opacity(0.5) }
+                        if rule.id != lastRuleID { Divider().opacity(0.5) }
                     }
-                    if rules.isEmpty { Text("No matching rules").font(.caption).foregroundStyle(FrogStyle.muted).padding(24) }
+                    if displayedRules.isEmpty { Text("No matching rules").font(.caption).foregroundStyle(FrogStyle.muted).padding(24) }
                 }.minimalScrollbars()
             }.frogTableSurface()
         }.padding(20).sheet(item: $editing) { RuleEditor(rule: $0).environmentObject(model) }
             .task {
                 guard applications else { return }
-                let discovered = await Task.detached(priority: .utility) { ApplicationCatalog.scan() }.value
-                guard !Task.isCancelled else { return }
-                installedApplications = discovered
+                await applicationCatalog.loadIfNeeded()
             }
     }
 }

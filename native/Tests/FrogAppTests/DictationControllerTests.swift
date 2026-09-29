@@ -4,6 +4,19 @@ import FrogCore
 
 @MainActor
 final class DictationControllerTests: XCTestCase {
+    func testMicrophoneOnlyUpdatesDoNotInvalidateTheWholeApp() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let controller = DictationController(monitorKeys: false)
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, dictationController: controller)
+        var updates = 0
+        let observation = model.objectWillChange.sink { updates += 1 }
+        for _ in 0..<10 { controller.refreshRecordingFeedback(elapsed: 0) }
+        XCTAssertEqual(updates, 0)
+        controller.refreshRecordingFeedback(elapsed: 1)
+        XCTAssertEqual(updates, 1)
+        withExtendedLifetime(observation) {}
+    }
     func testMicrophoneMeterReflectsSamplesAndReturnsToSilence() {
         let samples = AudioSamples()
         XCTAssertEqual(samples.inputLevel, 0)

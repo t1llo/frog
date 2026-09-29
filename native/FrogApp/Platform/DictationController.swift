@@ -11,7 +11,7 @@ final class DictationController: ObservableObject {
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var liveText = ""
     @Published private(set) var elapsed = 0
-    @Published private(set) var inputLevels: [Double] = Array(repeating: 0, count: 40)
+    let microphoneMeter = MicrophoneMeter()
     @Published private(set) var hint = ""
     private(set) var ruleID: UUID?
     private var recorder: (any DictationRecording)?
@@ -73,7 +73,7 @@ final class DictationController: ObservableObject {
         self.preferences.showDictationPopup = rule.action?.showRecordingPopup ?? true
         self.preferences.transcriptionLanguage = rule.action?.transcriptionLanguage
         stopRequested = false; samples = AudioSamples(); liveText = ""; elapsed = 0
-        inputLevels = Array(repeating: 0, count: 40)
+        microphoneMeter.reset()
         previewPrefix = ""; previewDraft = ""; previewOffset = 0
         completedTranscript = []; partialTranscript = nil
         phase = .preparing
@@ -105,8 +105,7 @@ final class DictationController: ObservableObject {
                     while !Task.isCancelled {
                         do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
                         guard let self, self.token == token else { return }
-                        self.elapsed = Int(recordingStarted.duration(to: .now).components.seconds)
-                        self.inputLevels = Array(self.inputLevels.dropFirst()) + [samples.inputLevel]
+                        self.refreshRecordingFeedback(elapsed: Int(recordingStarted.duration(to: .now).components.seconds))
                         if self.elapsed >= 600 { self.stop(models: models); return }
                     }
                 }
@@ -122,6 +121,11 @@ final class DictationController: ObservableObject {
                 }
             } catch { self.fail(error, token: token) }
         }
+    }
+
+    func refreshRecordingFeedback(elapsed: Int) {
+        if self.elapsed != elapsed { self.elapsed = elapsed }
+        microphoneMeter.append(samples.inputLevel)
     }
 
     func refreshPreview(includePartial: Bool = true) async throws {
@@ -283,7 +287,7 @@ private struct DictationPopup: View {
                 Button { controller.cancel() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Cancel dictation")
             }
             if controller.phase == .recording {
-                MicrophoneWaveform(levels: controller.inputLevels).frame(height: 24)
+                MicrophoneWaveform(meter: controller.microphoneMeter).frame(height: 24)
             }
             ScrollViewReader { reader in
                 ScrollView {
@@ -302,9 +306,17 @@ private struct DictationPopup: View {
     }
 }
 
+@MainActor
+final class MicrophoneMeter: ObservableObject {
+    @Published private(set) var levels = Array(repeating: 0.0, count: 40)
+    func append(_ level: Double) { levels = Array(levels.dropFirst()) + [level] }
+    func reset() { levels = Array(repeating: 0, count: 40) }
+}
+
 private struct MicrophoneWaveform: View {
-    let levels: [Double]
+    @ObservedObject var meter: MicrophoneMeter
     var body: some View {
+        let levels = meter.levels
         Canvas { context, size in
             let step = size.width / CGFloat(max(levels.count, 1))
             for (index, level) in levels.enumerated() {
