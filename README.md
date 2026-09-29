@@ -8,9 +8,9 @@ A local-first macOS app for rewriting text, turning speech into text, and managi
 
 **[Website](https://frog.beffa.xyz/)** · **[Download](https://github.com/t1llo/frog/releases/latest)**
 
-<a href="docs/media/frog-demo.mp4"><img src="docs/images/frog-rules.png" alt="Frog writing rules and keyboard shortcuts — watch the demo" width="960"></a>
+<img src="docs/media/frog-demo.gif" alt="Frog demo showing dictation rules, local models, shortcuts and settings" width="960">
 
-**[Watch the demo](docs/media/frog-demo.mp4)** · 24 seconds
+**[Download the demo video](docs/media/frog-demo.mp4)** · 24 seconds · MP4
 
 - Rewrite selected text with customizable rules and shortcuts.
 - Dictate with local speech models or external transcription providers.
