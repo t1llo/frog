@@ -1,5 +1,3 @@
-<img src="docs/images/frog_icon.png" alt="Frog app icon" width="96" height="96">
-
 # Frog
 
 [![Build](https://github.com/t1llo/frog/actions/workflows/native.yml/badge.svg?branch=main)](https://github.com/t1llo/frog/actions/workflows/native.yml)
@@ -10,19 +8,15 @@ A local-first macOS app for rewriting text, turning speech into text, and managi
 
 **[Website](https://frog.beffa.xyz/)** · **[Download](https://github.com/t1llo/frog/releases/latest)**
 
-<img src="docs/images/frog-rules.png" alt="Frog writing rules and keyboard shortcuts" width="960">
+<a href="docs/media/frog-demo.mp4"><img src="docs/images/frog-rules.png" alt="Frog writing rules and keyboard shortcuts — watch the demo" width="960"></a>
+
+**[Watch the demo](docs/media/frog-demo.mp4)** · 24 seconds
 
 - Rewrite selected text with customizable rules and shortcuts.
 - Dictate with local speech models or external transcription providers.
 - Use downloaded models, OpenAI, Claude, Gemini, Ollama or LM Studio.
 - Switch between individual windows with **Command–Tab**.
 - Keep API keys in Keychain and history optional. No account or analytics.
-
-## Screenshots
-
-**Internal models**
-
-<img src="docs/images/frog-internal-models.png" alt="Download and manage internal speech models in Frog" width="960">
 
 ## Install
 

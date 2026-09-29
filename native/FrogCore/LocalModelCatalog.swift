@@ -30,13 +30,16 @@ public struct LocalModelDescriptor: Codable, Identifiable, Equatable, Sendable {
     }
     public var streaming: String { kind == .audio ? "Live preview" : "Token streaming" }
     public static let catalog: [Self] = [
-        whisper("whisper-tiny", "Whisper Tiny", "openai_whisper-tiny", "≈80 MB", "openai/whisper-tiny"),
+        whisper("whisper-tiny", "Whisper Tiny", "openai_whisper-tiny", "≈77 MB", "openai/whisper-tiny"),
+        whisper("whisper-small-216mb", "Whisper Small · Compact", "openai_whisper-small_216MB", "≈217 MB", "openai/whisper-small"),
+        .init(id: "parakeet-v3", name: "NVIDIA Parakeet TDT v3", kind: .audio, repository: "FluidInference/parakeet-tdt-0.6b-v3-coreml", variant: "v3", size: "≈483 MB", backend: .parakeet, originalRepository: "nvidia/parakeet-tdt-0.6b-v3", license: "CC-BY-4.0"),
+        whisper("whisper-large-v3-turbo-626mb", "Whisper Large v3 Turbo", "openai_whisper-large-v3-v20240930_626MB", "≈627 MB", "openai/whisper-large-v3-turbo"),
+        // Keep original IDs and variants resolvable for saved rules and downloads.
         whisper("whisper-base", "Whisper Base", "openai_whisper-base", "≈150 MB", "openai/whisper-base"),
         whisper("whisper-small", "Whisper Small", "openai_whisper-small", "≈500 MB", "openai/whisper-small"),
         whisper("whisper-medium", "Whisper Medium", "openai_whisper-medium", "≈1.5 GB", "openai/whisper-medium"),
         whisper("whisper-large-v3", "Whisper Large v3", "openai_whisper-large-v3", "≈3 GB", "openai/whisper-large-v3"),
         whisper("whisper-large-v3-turbo", "Whisper Large v3 Turbo", "openai_whisper-large-v3-v20240930_turbo_632MB", "≈650 MB", "openai/whisper-large-v3-turbo"),
-        .init(id: "parakeet-v3", name: "NVIDIA Parakeet TDT v3", kind: .audio, repository: "FluidInference/parakeet-tdt-0.6b-v3-coreml", variant: "v3", size: "≈485 MB", backend: .parakeet, originalRepository: "nvidia/parakeet-tdt-0.6b-v3", license: "CC-BY-4.0"),
         .init(id: "parakeet-v2", name: "NVIDIA Parakeet TDT v2 · English", kind: .audio, repository: "FluidInference/parakeet-tdt-0.6b-v2-coreml", variant: "v2", size: "≈465 MB", backend: .parakeet, originalRepository: "nvidia/parakeet-tdt-0.6b-v2", license: "CC-BY-4.0"),
         .init(id: "qwen-0.6b", name: "Qwen3 0.6B · 4-bit", kind: .text, repository: "mlx-community/Qwen3-0.6B-4bit", size: "≈400 MB", originalRepository: "Qwen/Qwen3-0.6B", license: "Apache-2.0"),
         .init(id: "qwen-1.7b", name: "Qwen3 1.7B · 4-bit", kind: .text, repository: "mlx-community/Qwen3-1.7B-4bit", size: "≈1 GB", originalRepository: "Qwen/Qwen3-1.7B", license: "Apache-2.0"),
@@ -49,13 +52,26 @@ public struct LocalModelDescriptor: Codable, Identifiable, Equatable, Sendable {
         .init(id: id, name: name, kind: .audio, repository: "argmaxinc/whisperkit-coreml", variant: variant, size: size, originalRepository: original, license: "MIT")
     }
     public static func find(_ id: String) -> Self? { catalog.first { $0.id == id } }
-    public static var recommended: [Self] { catalog.filter(\.isRecommended) }
-    public var isRecommended: Bool { id == "whisper-small" || id == "qwen-1.7b" }
+    public static let defaultAudioModelID = "whisper-large-v3-turbo-626mb"
+    public static var defaultCatalog: [Self] {
+        catalog.filter { $0.kind == .text || ["whisper-tiny", "whisper-small-216mb", "parakeet-v3", defaultAudioModelID].contains($0.id) }
+    }
+    public static var recommended: [Self] { defaultCatalog.filter(\.isRecommended) }
+    public var isRecommended: Bool { id == Self.defaultAudioModelID || id == "qwen-1.7b" }
 }
 
 extension Configuration {
     public var modelCatalog: [LocalModelDescriptor] { LocalModelDescriptor.catalog + (localModels ?? []) }
     public func localModel(_ id: String) -> LocalModelDescriptor? { modelCatalog.first { $0.id == id } }
+    /// Older built-ins remain manageable when installed, selected, or explicitly requested.
+    public func modelInventory(installed: Set<String>, including: Set<String> = []) -> [LocalModelDescriptor] {
+        let workflow = preferences.workflowSettings
+        let selected = rules.compactMap { $0.action?.audioProviderID == nil ? $0.action?.audioModelID : nil }
+        let visible = Set(LocalModelDescriptor.defaultCatalog.map(\.id))
+            .union((localModels ?? []).map(\.id)).union(installed).union(including)
+            .union(selected).union([workflow.audioModelID])
+        return modelCatalog.filter { visible.contains($0.id) }
+    }
     public mutating func selectSoleInstalledModel(_ model: LocalModelDescriptor, installed: Set<String>) {
         guard installed.contains(model.id), modelCatalog.filter({ $0.kind == model.kind && installed.contains($0.id) }).count == 1 else { return }
         var workflow = preferences.workflowSettings

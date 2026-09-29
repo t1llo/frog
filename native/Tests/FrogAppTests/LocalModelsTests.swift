@@ -4,6 +4,25 @@ import FrogCore
 
 @MainActor
 final class LocalModelsTests: XCTestCase {
+    func testLegacySpeechDownloadsSurviveRestartAndKeepTheirOriginalRuntimeSources() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: Self.fixtureDownload)
+        let ids = ["whisper-small", "whisper-large-v3-turbo", "parakeet-v2"]
+        for id in ids {
+            models.download(try XCTUnwrap(LocalModelDescriptor.find(id))); await models.waitForDownload(id)
+        }
+        let engine = FixtureInference()
+        let restarted = LocalModels(directory: directory, runtime: engine)
+        restarted.updateCatalog(Configuration().modelCatalog)
+        XCTAssertEqual(restarted.installed, Set(ids))
+        for id in ids {
+            _ = try await restarted.transcribe([0.1], modelID: id)
+            let source = await engine.lastSpeechModel
+            XCTAssertEqual(source, LocalModelDescriptor.find(id))
+        }
+        await restarted.unload()
+    }
     func testCustomSourceInstallsRescansAndReachesTheSpeechRuntimeWithItsLanguagePolicy() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

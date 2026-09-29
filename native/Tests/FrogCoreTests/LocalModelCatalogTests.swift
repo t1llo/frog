@@ -2,6 +2,44 @@ import XCTest
 @testable import FrogCore
 
 final class LocalModelCatalogTests: XCTestCase {
+    func testFreshInventoryOffersFourSpeechModelsAndTheRecommendedDefault() {
+        let configuration = Configuration()
+        let audio = configuration.modelInventory(installed: []).filter { $0.kind == .audio }
+        XCTAssertEqual(audio.count, 4)
+        XCTAssertEqual(Set(audio.map(\.id)).count, 4)
+        XCTAssertEqual(audio.filter { $0.backend == .whisperKit }.count, 3)
+        XCTAssertEqual(audio.filter { $0.backend == .parakeet }.count, 1)
+        XCTAssertEqual(audio.filter(\.isRecommended).map(\.id), [configuration.preferences.workflowSettings.audioModelID])
+        XCTAssertEqual(configuration.modelInventory(installed: []).filter { $0.kind == .text }, LocalModelDescriptor.catalog.filter { $0.kind == .text })
+    }
+    func testOriginalSpeechSelectionsRoundTripAndRemainRecoverable() throws {
+        for id in ["whisper-tiny", "whisper-base", "whisper-small", "whisper-medium", "whisper-large-v3", "whisper-large-v3-turbo", "parakeet-v3", "parakeet-v2"] {
+            var configuration = Configuration()
+            var rule = Rule.dictationPreset
+            rule.action?.audioModelID = id
+            configuration.rules = [rule]
+            var workflow = WorkflowPreferences(); workflow.audioModelID = id
+            configuration.preferences.workflows = workflow
+            let restored = try ConfigurationFile.decode(ConfigurationFile.encode(configuration))
+            XCTAssertEqual(restored, configuration)
+            XCTAssertNotNil(restored.localModel(id))
+            XCTAssertTrue(restored.modelInventory(installed: []).contains { $0.id == id }, "Selected downloads must remain recoverable: \(id)")
+        }
+        XCTAssertEqual(LocalModelDescriptor.find("whisper-small")?.variant, "openai_whisper-small")
+        XCTAssertEqual(LocalModelDescriptor.find("whisper-large-v3-turbo")?.variant, "openai_whisper-large-v3-v20240930_turbo_632MB")
+    }
+    func testInventoryRetainsInstalledRuleSelectedAndExplicitlyRevealedLegacyModels() {
+        var configuration = Configuration()
+        XCTAssertFalse(configuration.modelInventory(installed: []).contains { $0.id == "whisper-medium" })
+        var rule = Rule.dictationPreset; rule.action?.audioModelID = "whisper-small"
+        configuration.rules = [rule]
+        let inventory = configuration.modelInventory(installed: ["whisper-medium"], including: ["parakeet-v2"])
+        for id in ["whisper-small", "whisper-medium", "parakeet-v2"] {
+            XCTAssertTrue(inventory.contains { $0.id == id })
+        }
+        XCTAssertFalse(inventory.contains { $0.id == "whisper-base" })
+        XCTAssertEqual(Set(inventory.map(\.id)).count, inventory.count)
+    }
     func testKnownParakeetSourceRequiresAllNativeComponents() throws {
         let source = try HuggingFaceSource("FluidInference/parakeet-tdt-0.6b-v3-coreml")
         let files = ["Preprocessor", "Encoder", "Decoder", "JointDecision"].map { "\($0).mlmodelc/coremldata.bin" } + ["parakeet_vocab.json"]
@@ -32,6 +70,7 @@ final class LocalModelCatalogTests: XCTestCase {
         let restored = try ConfigurationFile.decode(ConfigurationFile.encode(configuration))
         XCTAssertEqual(restored, configuration)
         XCTAssertEqual(restored.localModel(model.id), model)
+        XCTAssertTrue(restored.modelInventory(installed: []).contains(model))
         configuration.localModels = []
         XCTAssertThrowsError(try ConfigurationFile.validate(configuration), "Referenced custom sources cannot silently disappear")
     }

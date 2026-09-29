@@ -5,6 +5,7 @@ struct ProvidersView: View {
     @EnvironmentObject private var model: AppModel
     @State private var editing: ProviderConfiguration?
     @State private var addingLocal = false
+    @State private var revealedModelID: String?
     @State private var deleting: ProviderConfiguration?
     @State private var filter = "External providers"
     @State private var kind: LocalModelDescriptor.Kind = .audio
@@ -36,7 +37,7 @@ struct ProvidersView: View {
                     Spacer()
                     if !LocalModels.supported { Text("Requires Apple silicon").font(.caption).foregroundStyle(.secondary) }
                 }
-                ModelInventory(kind: kind, search: search)
+                ModelInventory(kind: kind, search: search, revealedModelID: revealedModelID)
             } else {
                 Text("Cloud APIs, Ollama and LM Studio run outside Frog.").font(.caption).foregroundStyle(.secondary)
                 VStack(spacing: 0) {
@@ -64,7 +65,9 @@ struct ProvidersView: View {
             }
         }.padding(20)
         .sheet(item: $editing) { provider in ProviderEditor(provider: provider).environmentObject(model) }
-        .sheet(isPresented: $addingLocal) { AddLocalModelView { kind = $0 }.environmentObject(model) }
+        .sheet(isPresented: $addingLocal) {
+            AddLocalModelView { item in kind = item.kind; revealedModelID = item.id; search = "" }.environmentObject(model)
+        }
         .confirmationDialog("Delete \(deleting?.name ?? "provider")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             Button("Delete provider", role: .destructive) {
                 guard let provider = deleting else { return }

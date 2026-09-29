@@ -2,14 +2,18 @@
 
 ## Catalog and provenance
 
-Frog's original two speech models were OpenAI Whisper Base and Small, distributed as Apple Core ML conversions by **Argmax** at `argmaxinc/whisperkit-coreml` on Hugging Face. Its two text models were Qwen3 0.6B and 1.7B, distributed as MLX conversions by **mlx-community**. The runtime libraries are separate from the downloaded weights.
+The default audio catalog offers four choices:
 
-The catalog now contains:
+| Speech | Approximate download | Role | Download source |
+| --- | --- | --- | --- |
+| Whisper Tiny | 77 MB | Smallest footprint; multilingual | `argmaxinc/whisperkit-coreml` / `openai_whisper-tiny` |
+| Whisper Small · Compact | 217 MB | Compact multilingual option | `argmaxinc/whisperkit-coreml` / `openai_whisper-small_216MB` |
+| NVIDIA Parakeet TDT v3 | 483 MB | Fast dictation in 25 European languages | `FluidInference/parakeet-tdt-0.6b-v3-coreml` |
+| Whisper Large v3 Turbo — recommended | 627 MB | General-purpose multilingual transcription | `argmaxinc/whisperkit-coreml` / `openai_whisper-large-v3-v20240930_626MB` |
 
-| Speech | Download repository | Native runtime |
-| --- | --- | --- |
-| OpenAI Whisper Tiny, Base, Small, Medium, Large v3, Large v3 Turbo | `argmaxinc/whisperkit-coreml` (individual variant folders) | WhisperKit / Core ML |
-| NVIDIA Parakeet TDT 0.6B v3 and v2 | `FluidInference/parakeet-tdt-0.6b-v3-coreml` and `FluidInference/parakeet-tdt-0.6b-v2-coreml` | FluidAudio / Core ML |
+Whisper runs through WhisperKit / Core ML; Parakeet uses FluidAudio / Core ML. These conversions work with Frog's macOS 14+ runtimes. Sizes describe model-file payloads, excluding tokenizers and caches. Compact conversions trade weight precision for smaller downloads; performance depends on your Mac and language.
+
+Previously installed or selected models remain available with their original IDs and weights, including Base, uncompressed Small, Medium, full Large v3, the earlier Turbo conversion, and English-only Parakeet v2. You can also reveal these models through **Add model…** using their Hugging Face source. Saved selections are preserved.
 
 | Text | Download repositories |
 | --- | --- |
@@ -43,9 +47,11 @@ Custom descriptors are included in portable JSON under `localModels`; downloaded
 - Parakeet v3 automatically handles its 25 supported European languages, including German and English. It does not use Whisper's language-hint selector.
 - Parakeet v2 is English-only. The UI shows the model's language behavior rather than offering an ineffective selector. Rules show the capability of their selected speech override too.
 
-## Primary sources checked September 26, 2026
+## Primary sources
 
-- [Argmax WhisperKit Core ML model files](https://huggingface.co/argmaxinc/whisperkit-coreml/tree/main): confirmed catalog variants exist through the Hugging Face model API.
+- [Argmax WhisperKit Core ML model files](https://huggingface.co/argmaxinc/whisperkit-coreml/tree/main): audio variants and download sizes checked September 29, 2026 through the Hugging Face model API.
+- [Argmax v1.1.0 recommended models](https://github.com/argmaxinc/argmax-oss-swift/blob/v1.1.0/README.md): the `_626MB` Large v3 Turbo conversion is recommended across iOS and macOS.
+- [OpenAI Whisper models](https://github.com/openai/whisper#available-models-and-languages) and [NVIDIA Parakeet v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3): model architecture and language coverage.
 - [FluidAudio v0.12.4 manifest](https://github.com/FluidInference/FluidAudio/blob/v0.12.4/Package.swift): Swift/macOS compatibility and dependencies.
 - [FluidAudio v0.12.4 manual loading](https://github.com/FluidInference/FluidAudio/blob/v0.12.4/Documentation/ASR/ManualModelLoading.md), plus pinned `AsrModels`, `AsrManager` and `ModelNames` source. Frog constructs `AsrModels` from local Core ML components directly because the convenience loader can recover by downloading.
 - [Parakeet v3 conversion](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml), [v2 conversion](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml): repository file listings and license metadata.

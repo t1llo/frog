@@ -35,7 +35,7 @@ struct LocalModelInformation: View {
 struct AddLocalModelView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    var onAdded: (LocalModelDescriptor.Kind) -> Void
+    var onAdded: (LocalModelDescriptor) -> Void
     @State private var source = ""
     @State private var candidates: [LocalModelDescriptor] = []
     @State private var loading = false
@@ -66,7 +66,7 @@ struct AddLocalModelView: View {
                                 }
                                 Spacer()
                                 Button(model.configuration.modelCatalog.contains(where: { $0.id == item.id }) ? "Show model" : "Add model") {
-                                    do { try model.addLocalModel(item); onAdded(item.kind); dismiss() } catch { issue = error.localizedDescription }
+                                    do { try model.addLocalModel(item); onAdded(item); dismiss() } catch { issue = error.localizedDescription }
                                 }
                             }.padding(10).frogTableSurface()
                         }

@@ -5,8 +5,13 @@ struct ModelInventory: View {
     @EnvironmentObject private var model: AppModel
     let kind: LocalModelDescriptor.Kind
     var search = ""
+    var revealedModelID: String?
     @State private var information: LocalModelDescriptor?
-    private var inventory: [LocalModelDescriptor] { model.configuration.modelCatalog.filter { $0.kind == kind && (search.isEmpty || ($0.name + " " + $0.repository).localizedStandardContains(search)) } }
+    private var inventory: [LocalModelDescriptor] {
+        let visible = Set(model.localModels.progress.keys).union(model.localModels.errors.keys).union([revealedModelID].compactMap { $0 })
+        return model.configuration.modelInventory(installed: model.localModels.installed, including: visible)
+            .filter { $0.kind == kind && (search.isEmpty || ($0.name + " " + $0.repository).localizedStandardContains(search)) }
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
         group("Downloaded", items: inventory.filter { model.localModels.installed.contains($0.id) }, installed: true)
