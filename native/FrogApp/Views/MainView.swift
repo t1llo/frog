@@ -62,6 +62,9 @@ struct MainView: View {
         .ignoresSafeArea(.container, edges: .top)
         .tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
         .frame(minWidth: 740, minHeight: 520)
+        .overlay(alignment: .top) {
+            WindowDragRegion().frame(height: 24).padding(.top, 28).accessibilityHidden(true)
+        }
         .onAppear { model.refreshSystemStatus() }
         .sheet(isPresented: Binding(get: { model.setupPresented }, set: { if !$0 { model.finishSetup() } })) {
             SetupView().environmentObject(model).interactiveDismissDisabled()
@@ -77,6 +80,8 @@ struct MainView: View {
                 FrogMark()
                 Text("frog").font(.system(size: 24, weight: .semibold, design: .rounded)).tracking(-0.8)
             }.padding(.horizontal, 20).padding(.top, 24).padding(.bottom, 28)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay { WindowDragRegion().accessibilityHidden(true) }
 
             VStack(spacing: 4) {
                 ForEach(Section.allCases.filter { $0 != .shortcuts || model.configuration.preferences.shortcutsEnabled }) { item in

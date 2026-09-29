@@ -124,6 +124,7 @@ struct PageHeader<Actions: View>: View {
                     .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
+                .overlay { WindowDragRegion().accessibilityHidden(true) }
             actions
         }.frame(minHeight: 32)
     }
