@@ -6,7 +6,7 @@
 [![Release](https://img.shields.io/github/v/release/t1llo/frog)](https://github.com/t1llo/frog/releases/latest)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue)
 
-Native macOS shortcuts for writing, dictation and switching between windows.
+A local-first macOS app for rewriting text, turning speech into text, and managing apps and windows with keyboard shortcuts. Run AI models on your Mac, or connect an external provider.
 
 **[Website](https://frog.beffa.xyz/)** · **[Download](https://github.com/t1llo/frog/releases/latest)**
 
