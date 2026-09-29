@@ -49,7 +49,8 @@ struct MainView: View {
                         Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
                         Text(error).font(.system(size: 12)).textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Button("Dismiss") { model.dismissError() }.buttonStyle(FrogButtonStyle())
+                        Button { model.dismissError() } label: { Image(systemName: "xmark") }
+                            .buttonStyle(.plain).accessibilityLabel("Dismiss error")
                     }.padding(16).background(FrogStyle.surface)
                         .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border).frame(height: 1) }
                 }

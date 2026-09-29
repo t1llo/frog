@@ -28,8 +28,8 @@ struct PreferencesView: View {
                     }
                     if let issue = model.hotkeyErrors[AppModel.shortcutPanelID] { Text(issue).font(.caption).foregroundStyle(.orange) }
                     Divider()
-                    CompactRow(title: "Application shortcuts", detail: "Application launch shortcuts and the Command–Tab switcher.") {
-                        Toggle("Application shortcuts", isOn: Binding(get: { model.configuration.preferences.shortcutsEnabled }, set: { value in
+                    CompactRow(title: "App & window shortcuts", detail: "App launching, window positioning and the Command–Tab switcher.") {
+                        Toggle("App & window shortcuts", isOn: Binding(get: { model.configuration.preferences.shortcutsEnabled }, set: { value in
                             var preferences = model.configuration.preferences; preferences.applicationShortcutsEnabled = value
                             do { try model.savePreferences(preferences) } catch { model.report(error) }
                         })).labelsHidden()
@@ -87,6 +87,10 @@ struct PreferencesView: View {
                 SettingsSection(title: "History") {
                     CompactRow(title: "Save history on this Mac") { Toggle("Save history on this Mac", isOn: preference(\.historyEnabled)).labelsHidden() }
                     Divider()
+                    CompactRow(title: "Hide history text", detail: "Mask previews and details until revealed. Saved text is unchanged.") {
+                        Toggle("Hide history text", isOn: preference(\.hideHistoryText)).labelsHidden()
+                    }
+                    Divider()
                     CompactRow(title: "Maximum entries") { Stepper("\(model.configuration.preferences.historyLimit)", value: preference(\.historyLimit), in: 1...200).fixedSize() }
                     Divider()
                     CompactRow(title: "Retention") { Stepper("\(model.configuration.preferences.historyRetentionDays) days", value: preference(\.historyRetentionDays), in: 1...30).fixedSize() }
@@ -107,6 +111,35 @@ struct PreferencesView: View {
                     }
                 }
                 SettingsSection(title: "Updates") { UpdateSettingsView() }
+                SettingsSection(title: "Logs") {
+                    DisclosureGroup("Recent errors (\(model.recentErrors.count))") {
+                        Text("Last 100 errors from this session. Banners disappear after 6 seconds.")
+                            .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                        if model.recentErrors.isEmpty {
+                            Text("No errors recorded.").font(.system(size: 11)).foregroundStyle(FrogStyle.muted).padding(.vertical, 8)
+                        } else {
+                            ScrollView {
+                                LazyVStack(alignment: .leading, spacing: 10) {
+                                    ForEach(model.recentErrors) { issue in
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(issue.timestamp.formatted(date: .omitted, time: .standard))
+                                                .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                                            Text(issue.message).font(.system(size: 11)).textSelection(.enabled)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }.frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                }.padding(.vertical, 8).minimalScrollbars()
+                            }.frame(maxHeight: 200)
+                            HStack {
+                                Button("Copy log") {
+                                    let text = model.recentErrors.map { "\($0.timestamp.ISO8601Format())  \($0.message)" }.joined(separator: "\n")
+                                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+                                }
+                                Button("Clear log") { model.clearRecentErrors() }
+                            }
+                        }
+                    }.font(.system(size: 12))
+                }
                 SettingsSection(title: "About") {
                     CompactRow(title: "Frog") { Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")").foregroundStyle(FrogStyle.muted) }
                     CompactRow(title: "Source code") { Link("GitHub ↗", destination: URL(string: "https://github.com/t1llo/frog")!) }

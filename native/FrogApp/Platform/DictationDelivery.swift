@@ -1,8 +1,8 @@
 import Foundation
 
-/// Completion is an atomic UI/history callback after the last suspension point.
-/// A stale recording can never finalize, even if an insertion implementation
-/// returns normally after cancellation.
+/// Delivery status is finalized after the last suspension point; completed
+/// transcripts are recorded separately before delivery begins. A stale recording
+/// cannot finalize delivery, even if insertion returns normally after cancellation.
 @MainActor
 enum DictationDelivery {
     static func finish(isCurrent: () -> Bool, paste: (() async throws -> Void)?,

@@ -2,6 +2,12 @@ import AppKit
 import Combine
 import FrogCore
 
+struct AppIssue: Identifiable {
+    let id = UUID()
+    let timestamp = Date()
+    let message: String
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var configuration = Configuration()
@@ -10,6 +16,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var isProcessing = false
     @Published private(set) var status = "Ready"
     @Published private(set) var errorMessage: String?
+    @Published private(set) var recentErrors: [AppIssue] = []
+    private var errorDismissal: Task<Void, Never>?
+    private let errorDisplayDuration: Duration
     @Published private(set) var manualResult = ""
     @Published private(set) var isTestingProvider = false
     @Published private(set) var startAtLogin = false
@@ -51,6 +60,8 @@ final class AppModel: ObservableObject {
     private let processingIndicator = ProcessingIndicator()
     private var processingTask: Task<Void, Never>?
     private var applicationTask: Task<Void, Never>?
+    private let windowManager = WindowManager()
+    private var windowActionTask: Task<Void, Never>?
     private var historyEpoch = UUID()
     private var configurationLoadError: Error?
     private var isRecordingShortcut = false
@@ -62,10 +73,12 @@ final class AppModel: ObservableObject {
           readAccessibility: (() -> Bool)? = nil,
           captureSelection: (() async throws -> any CapturedTextSelection)? = nil,
            notify: ((String, String) -> Void)? = nil,
-           dictationController: DictationController? = nil) {
+           dictationController: DictationController? = nil,
+           errorDisplayDuration: Duration = .seconds(6)) {
         let dataDirectory = dataDirectory ?? ProcessInfo.processInfo.environment["FROG_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         self.registerShortcuts = registerShortcuts
         self.dictation = dictationController ?? DictationController()
+        self.errorDisplayDuration = errorDisplayDuration
         localModels = LocalModels(directory: dataDirectory)
         self.readAccessibility = readAccessibility ?? { SelectionService.isTrusted }
         self.captureSelection = captureSelection ?? { try await SelectionService().capture() }
@@ -121,9 +134,12 @@ final class AppModel: ObservableObject {
             }
             return try await self.localModels.complete(text, instructions: rule.instructions, modelID: provider.model)
         }
-        dictation.onFinish = { [weak self] rule, original, result, delivery in
+        dictation.onFinish = { [weak self] rule, _, _, delivery in
             guard let self else { return }
             self.status = "\(rule.name) · \(delivery)"
+        }
+        dictation.onTranscript = { [weak self] rule, original, result in
+            guard let self else { return }
             if self.configuration.preferences.historyEnabled, self.dictationHistoryEpoch == self.historyEpoch {
                 var entry = HistoryEntry(originalText: original, processedText: result, ruleName: rule.name, providerName: "Transcription", model: rule.action?.audioModelID ?? self.configuration.preferences.workflowSettings.audioModelID)
                 entry.category = .audio
@@ -166,6 +182,7 @@ final class AppModel: ObservableObject {
         processingIndicator.hide()
         processingTask?.cancel()
         applicationTask?.cancel()
+        windowActionTask?.cancel()
         hotkeys.unregister()
     }
 
@@ -194,8 +211,21 @@ final class AppModel: ObservableObject {
         catch { refreshSystemStatus(); report(error) }
     }
 
-    func report(_ error: Error) { errorMessage = error.localizedDescription }
-    func dismissError() { errorMessage = nil }
+    func report(_ error: Error) {
+        errorDismissal?.cancel()
+        let message = error.localizedDescription
+        errorMessage = message
+        recentErrors.insert(AppIssue(message: message), at: 0)
+        recentErrors = Array(recentErrors.prefix(100))
+        let duration = errorDisplayDuration
+        errorDismissal = Task { [weak self] in
+            do { try await Task.sleep(for: duration) } catch { return }
+            self?.errorMessage = nil
+        }
+    }
+    func dismissError() { errorDismissal?.cancel(); errorDismissal = nil; errorMessage = nil }
+    func clearRecentErrors() { recentErrors = [] }
+    func waitForErrorDismissal() async { await errorDismissal?.value }
 
     private func persist(_ candidate: Configuration) throws {
         if let error = configurationLoadError {
@@ -211,7 +241,7 @@ final class AppModel: ObservableObject {
 
     func saveRule(_ rule: Rule) throws {
         guard !rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              rule.category == .application || !rule.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+              rule.category.isShortcut || !rule.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw FrogError.message("Give this rule a name and instructions.")
         }
         if rule.instructions.contains("{{language}}") && rule.targetLanguage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -472,7 +502,7 @@ final class AppModel: ObservableObject {
 
     private func registerHotkeys() {
         guard registerShortcuts, !isRecordingShortcut else { return }
-        var rules = configuration.rules.filter { configuration.preferences.shortcutsEnabled || $0.category != .application }
+        var rules = configuration.rules.filter { configuration.preferences.shortcutsEnabled || !$0.category.isShortcut }
         if let key = configuration.preferences.workflowSettings.shortcutPanelHotkey {
             rules.append(Rule(id: Self.shortcutPanelID, name: "Show shortcuts", hotkey: key))
         }
@@ -505,7 +535,7 @@ final class AppModel: ObservableObject {
     }
     func cancelProcessing() { dictation.cancel(); processingTask?.cancel(); status = "Cancelling…" }
 
-    func showShortcuts() { shortcutPanel.show(rules: configuration.rules.filter { configuration.preferences.shortcutsEnabled || $0.category != .application }) }
+    func showShortcuts() { shortcutPanel.show(rules: configuration.rules.filter { configuration.preferences.shortcutsEnabled || !$0.category.isShortcut }) }
 
     func saveWorkflowPreferences(_ value: WorkflowPreferences) throws {
         var prefs = configuration.preferences; prefs.workflows = value
@@ -530,6 +560,8 @@ final class AppModel: ObservableObject {
         case .text: if !pressed { processSelection(ruleID: id) }
         case .application:
             if pressed && configuration.preferences.shortcutsEnabled { launchApplication(rule) }
+        case .window:
+            if pressed && configuration.preferences.shortcutsEnabled { manageWindow(rule) }
         case .audio:
             let mode = rule.action?.recordingMode ?? configuration.preferences.workflowSettings.recordingMode
             switch RecordingShortcut.action(mode: mode, pressed: pressed, target: id, active: dictation.ruleID) {
@@ -544,6 +576,26 @@ final class AppModel: ObservableObject {
         applicationTask?.cancel()
         applicationTask = Task {
             do { try await ApplicationLauncher().launch(rule) }
+            catch is CancellationError { }
+            catch { report(error) }
+        }
+    }
+
+    private func manageWindow(_ rule: Rule) {
+        guard let action = rule.action?.windowAction, let app = NSWorkspace.shared.frontmostApplication else { return }
+        let primaryTop = NSScreen.screens.first?.frame.maxY ?? 0
+        var displays: [CGRect] = NSScreen.screens.map { screen -> CGRect in
+            let frame = screen.visibleFrame
+            return CGRect(x: frame.minX, y: primaryTop - frame.maxY, width: frame.width, height: frame.height)
+        }
+        displays.sort { left, right in
+            if left.minX == right.minX { return left.minY < right.minY }
+            return left.minX < right.minX
+        }
+        let pid = app.processIdentifier
+        windowActionTask?.cancel()
+        windowActionTask = Task {
+            do { try await windowManager.perform(action, pid: pid, displays: displays) }
             catch is CancellationError { }
             catch { report(error) }
         }
@@ -587,7 +639,7 @@ final class AppModel: ObservableObject {
                     do { try await selection.replace(with: result); self.status = "\(rule.name) complete — result pasted and copied." }
                     catch {
                         self.status = "Result ready on clipboard; replacement skipped."
-                        self.errorMessage = error.localizedDescription
+                        self.report(error)
                         self.notify("Frog: result copied", error.localizedDescription)
                     }
                 } else {

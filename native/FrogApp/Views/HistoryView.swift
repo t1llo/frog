@@ -9,6 +9,8 @@ struct HistoryView: View {
     @State private var confirmClear = false
     @State private var deleting: HistoryEntry?
     @State private var copiedID: UUID?
+    @State private var revealed: Set<UUID> = []
+    private func hidden(_ entry: HistoryEntry) -> Bool { model.configuration.preferences.hideHistoryText && !revealed.contains(entry.id) }
 
     private var entries: [HistoryEntry] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -25,11 +27,18 @@ struct HistoryView: View {
                 HStack {
                     Button { self.viewing = nil } label: { Label("History", systemImage: "arrow.left") }
                     Spacer()
+                    if model.configuration.preferences.hideHistoryText { revealButton(viewing) }
                     IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = viewing }
                 }.frame(height: 32)
                 PageHeader(title: viewing.ruleName, subtitle: viewing.timestamp.formatted(date: .abbreviated, time: .shortened))
                 ScrollView {
-                    HistoryDetail(entry: viewing).padding(16).minimalScrollbars()
+                    if hidden(viewing) {
+                        VStack(spacing: 12) {
+                            Image(systemName: "eye.slash").foregroundStyle(FrogStyle.muted)
+                            Text("History text is hidden").font(.system(size: 12))
+                            Button("Reveal text") { revealed.insert(viewing.id) }
+                        }.frame(maxWidth: .infinity).padding(32)
+                    } else { HistoryDetail(entry: viewing).padding(16).minimalScrollbars() }
                 }.frogTableSurface()
                     .onCopyCommand { [NSItemProvider(object: viewing.processedText as NSString)] }
             } else {
@@ -76,6 +85,8 @@ struct HistoryView: View {
             }
         }.padding(20)
             .onAppear { model.refreshHistory() }
+            .onChange(of: model.configuration.preferences.hideHistoryText) { _, _ in revealed = [] }
+            .onDisappear { revealed = [] }
             .onChange(of: model.history.map(\.id)) { _, ids in
                 if let viewing, !ids.contains(viewing.id) { self.viewing = nil }
             }
@@ -108,15 +119,21 @@ struct HistoryView: View {
                             .font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
                         Spacer()
                     }
-                    Text(item.processedText).font(.system(size: 12)).foregroundStyle(FrogStyle.ink)
+                    Text(hidden(item) ? "••••••••••••" : item.processedText).font(.system(size: 12)).foregroundStyle(FrogStyle.ink)
                         .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
                 }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain).help("Open full entry")
+            if model.configuration.preferences.hideHistoryText { revealButton(item) }
             IconAction(title: copiedID == item.id ? "Copied" : "Copy result", symbol: copiedID == item.id ? "checkmark" : "doc.on.doc") {
                 ViewActions.copy(item.processedText); copiedID = item.id
             }
             IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = item }
         }.padding(12)
+    }
+    private func revealButton(_ entry: HistoryEntry) -> some View {
+        IconAction(title: hidden(entry) ? "Reveal text" : "Hide text", symbol: hidden(entry) ? "eye" : "eye.slash") {
+            if revealed.contains(entry.id) { revealed.remove(entry.id) } else { revealed.insert(entry.id) }
+        }
     }
 }
 

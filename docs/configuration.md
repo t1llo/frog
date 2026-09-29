@@ -18,6 +18,7 @@ The UTF-8 JSON format is version `1`, limited to 4 MB. Prefer exporting from Fro
 - Audio options are `action.transcriptionLanguage`, `recordingMode` (`toggle`/`hold`), `output` (`copy`/`paste`), `showRecordingPopup` and `cleanup`.
 - Cleanup uses the rule's selected text model and instructions.
 - Application shortcuts store `action.applicationPath` and `action.applicationBundleID`.
+- Window shortcuts store `action.windowAction`. All 15 window actions start disabled with no assigned shortcut. Use **Shortcuts → Applications / Windows** to record one inline; recording enables that action automatically. Installed applications are listed automatically, but only configured shortcuts are saved.
 - Provider `models` entries have `id`, `name` and `category` (`text`/`audio`). Missing category means text for older files.
 
 Models are explicit per rule. `explicitRuleModels` records migration from older global defaults, preserving each rule's effective choice. `recentModels` tracks added choices for new rules. Legacy default fields remain readable for migration; they do not reroute migrated rules.
@@ -26,9 +27,9 @@ Custom Hugging Face descriptors are exported in `localModels`; weights are not. 
 
 ## Preferences
 
-History is off by default. When enabled, `historyLimit` accepts 1–200 entries and `historyRetentionDays` accepts 1–30 days. Importing shorter limits can prune history.
+History is off by default. When enabled, `historyLimit` accepts 1–200 entries and `historyRetentionDays` accepts 1–30 days. Importing shorter limits can prune history. `hideHistoryText` masks history previews and details until you reveal an entry; it does not change the stored text or detect passwords.
 
-`applicationShortcutsEnabled` controls both application shortcuts and the window switcher. `windowSwitcherEnabled` retains the individual switcher setting. Window titles and switching history are not exported.
+`applicationShortcutsEnabled` controls application shortcuts, window actions and the window switcher. `windowSwitcherEnabled` retains the individual switcher setting. Window titles and switching history are not exported.
 
 `preferences.workflows` includes microphone selection, mute-while-recording, cancel and shortcut-reference bindings, and `idleUnloadSeconds` (0–3600). Zero unloads internal models immediately after inference. Recording behavior belongs to each audio rule.
 

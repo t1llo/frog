@@ -28,7 +28,7 @@ extension Configuration {
         guard explicitRuleModels != true else { return }
         let workflow = preferences.workflowSettings
         for index in rules.indices {
-            guard rules[index].category != .application else { continue }
+            guard !rules[index].category.isShortcut else { continue }
             if rules[index].action == nil { rules[index].action = RuleAction() }
             if rules[index].category == .audio {
                 if rules[index].action?.audioModelID == nil, installed.contains(workflow.audioModelID) {
@@ -96,7 +96,7 @@ extension Configuration {
         rule.name = category == .audio ? "New audio rule" : category == .application ? "Open application" : "New text rule"
         rule.action = RuleAction(category: category)
         rule.action?.recordingMode = .toggle; rule.action?.output = .copy; rule.action?.showRecordingPopup = true
-        if category == .application { rule.instructions = ""; return rule }
+        if category.isShortcut { rule.instructions = ""; return rule }
         let kind: ProviderModel.Category = category == .audio ? .audio : .text
         if let selection = recentModels?.last(where: { $0.category == kind && selectionAvailable($0, installed: installed) }) {
             selection.apply(to: &rule)

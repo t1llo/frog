@@ -148,6 +148,7 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
 
 public struct Preferences: Codable, Equatable, Sendable {
     public var historyEnabled = false
+    public var hideHistoryText = false
     public var historyLimit = 200
     public var historyRetentionDays = 30
     public var showProcessingIndicator = true
@@ -159,10 +160,11 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var workflowSettings: WorkflowPreferences { workflows ?? WorkflowPreferences() }
     public init() {}
 
-    private enum CodingKeys: String, CodingKey { case historyEnabled, historyLimit, historyRetentionDays, showProcessingIndicator, windowSwitcherEnabled, applicationShortcutsEnabled, workflows, appearance }
+    private enum CodingKeys: String, CodingKey { case historyEnabled, hideHistoryText, historyLimit, historyRetentionDays, showProcessingIndicator, windowSwitcherEnabled, applicationShortcutsEnabled, workflows, appearance }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         historyEnabled = try values.decode(Bool.self, forKey: .historyEnabled)
+        hideHistoryText = try values.decodeIfPresent(Bool.self, forKey: .hideHistoryText) ?? false
         historyLimit = try values.decode(Int.self, forKey: .historyLimit)
         historyRetentionDays = try values.decode(Int.self, forKey: .historyRetentionDays)
         showProcessingIndicator = try values.decodeIfPresent(Bool.self, forKey: .showProcessingIndicator) ?? true

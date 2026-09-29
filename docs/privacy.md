@@ -14,7 +14,7 @@ Recording starts only when you invoke an audio rule or Record. For local Whisper
 
 Adding a Hugging Face model link fetches public repository metadata and, for text models, `config.json` to inspect its format. It does not upload your text/audio or download weights. Weights download only when you press Download. Each model's information panel links to the converted weights, original model when known, and license. Parakeet inference uses local Core ML loading rather than FluidAudio's auto-download helpers.
 
-Local cleanup uses downloaded MLX weights. A custom audio rule explicitly choosing a cloud text provider sends the transcript and instructions to that provider; raw audio is not sent. Results are copied, with optional insertion into a still-matching original target. Shared history, if enabled, stores the raw transcript and processed text under the same retention controls as writing results. If cleanup fails, the original transcript is preserved on the clipboard with an error message.
+Local cleanup uses downloaded MLX weights. A custom audio rule explicitly choosing a cloud text provider sends the transcript and instructions to that provider; raw audio is not sent. Results are copied, with optional insertion into the currently focused app after transcription, so you can change input fields while recording. Password fields are excluded when identified by Accessibility. Shared history, if enabled, saves the completed transcript and processed text before clipboard/paste delivery, under the same retention controls as writing results. If cleanup fails, the original transcript is preserved on the clipboard with an error message.
 
 Downloaded files live in `~/Library/Application Support/Frog/Models/`. Cancelled/failed installations remove partial files. Delete installed models from Providers or Transcription. Idle models unload according to Settings; downloadable inference requires Apple silicon. Models are not included in configuration exports.
 
@@ -26,6 +26,9 @@ Downloaded files live in `~/Library/Application Support/Frog/Models/`. Cancelled
 - **History:** off by default. When enabled, original text, output, rule, provider, model, language, and time are stored locally in `~/Library/Application Support/Frog/history.json`. Keep up to 200 records for up to 30 days; expiry is applied when history is loaded. Delete individual entries or clear all in History.
 - **Clipboard:** a successful result is placed on the system clipboard, including when automatic replacement is skipped. When an app does not expose its selection through Accessibility, Frog requests Copy and accepts only a fresh clipboard update. It also re-copies the selection before pasting to confirm the target still matches. Previous clipboard formats are restored after these temporary reads. Clipboard managers may observe those temporary copies.
 - **Configuration exports/backups:** settings and rule instructions only. No keys or history. Exported files are under your control.
+- **Recent errors:** Settings → Logs keeps the last 100 errors in memory for this session. Banners disappear after six seconds. Logs are not written to disk; you can explicitly copy or clear them.
+
+**Hide history text** masks previews and details until you reveal an entry. This is a display preference, not password detection or encryption; the saved original and result remain unchanged.
 
 Turning history off stops new records, including requests already in progress. Existing records remain until cleared or expired. Clearing history during a request also prevents that request from repopulating it.
 

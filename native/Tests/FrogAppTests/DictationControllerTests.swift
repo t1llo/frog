@@ -4,6 +4,84 @@ import FrogCore
 
 @MainActor
 final class DictationControllerTests: XCTestCase {
+    func testMicrophoneMeterReflectsSamplesAndReturnsToSilence() {
+        let samples = AudioSamples()
+        XCTAssertEqual(samples.inputLevel, 0)
+        samples.append(Array(repeating: 0.05, count: 1600))
+        let quiet = samples.inputLevel
+        XCTAssertGreaterThan(quiet, 0)
+        samples.append(Array(repeating: 0.1, count: 1600))
+        XCTAssertGreaterThan(samples.inputLevel, quiet)
+        samples.append(Array(repeating: 0, count: 1600))
+        XCTAssertEqual(samples.inputLevel, 0)
+        samples.append(Array(repeating: 1, count: 1600))
+        XCTAssertEqual(samples.inputLevel, 1)
+        samples.clear()
+        XCTAssertEqual(samples.inputLevel, 0)
+    }
+    func testSilentPreviewDoesNotEraseRecognizedSpeech() {
+        let controller = DictationController(monitorKeys: false)
+        controller.updatePreview("First sentence. Second sentence.")
+        controller.updatePreview("   \n")
+        XCTAssertEqual(controller.liveText, "First sentence. Second sentence.")
+    }
+    func testPreviewRetainsEarlierWindowsAndRevisesOnlyCurrentWindow() {
+        let controller = DictationController(monitorKeys: false)
+        controller.updatePreview("First thirty seconds.", completingWindow: true)
+        controller.updatePreview("New sentence")
+        controller.updatePreview("New sentence revised.")
+        XCTAssertEqual(controller.liveText, "First thirty seconds. New sentence revised.")
+        controller.updatePreview("", completingWindow: true)
+        controller.updatePreview("Next minute.")
+        XCTAssertEqual(controller.liveText, "First thirty seconds. New sentence revised. Next minute.")
+    }
+    func testCompletedAudioAppearsInHistoryAndSurvivesReload() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let controller = DictationController(makeRecorder: { FixtureRecording() }, authorize: { true }, copy: { _ in }, monitorKeys: false)
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, dictationController: controller)
+        var prefs = model.configuration.preferences; prefs.historyEnabled = true
+        try model.savePreferences(prefs)
+        var rule = Rule.dictationPreset
+        rule.action?.audioModelID = "fixture-speech"
+        rule.action?.audioProviderID = UUID()
+        rule.action?.showRecordingPopup = false
+        rule.action?.output = .copy
+        controller.externalTranscription = { _, _ in "An audio history entry." }
+        model.startDictation(rule)
+        await controller.waitForWork()
+        controller.stop(models: model.localModels)
+        await controller.waitForWork()
+        XCTAssertEqual(model.history.count, 1)
+        XCTAssertEqual(model.history.first?.category, .audio)
+        XCTAssertEqual(model.history.first?.processedText, "An audio history entry.")
+        XCTAssertEqual(try HistoryStore(directory: directory).load(preferences: prefs), model.history)
+    }
+    func testTranscriptAlreadyCopiedIsNotLostFromHistoryWhenDeliveryIsCancelled() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        weak var activeController: DictationController?
+        var copied = ""
+        let controller = DictationController(makeRecorder: { FixtureRecording() }, authorize: { true }, copy: {
+            copied = $0
+            activeController?.cancel()
+        }, monitorKeys: false)
+        activeController = controller
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, dictationController: controller)
+        var prefs = model.configuration.preferences; prefs.historyEnabled = true
+        try model.savePreferences(prefs)
+        var rule = Rule.dictationPreset
+        rule.action?.audioModelID = "fixture-speech"; rule.action?.audioProviderID = UUID()
+        rule.action?.showRecordingPopup = false; rule.action?.output = .copy
+        controller.externalTranscription = { _, _ in "Completed before delivery was cancelled." }
+        model.startDictation(rule)
+        await controller.waitForWork()
+        controller.stop(models: model.localModels)
+        await controller.waitForWork()
+        XCTAssertEqual(copied, "Completed before delivery was cancelled.")
+        XCTAssertEqual(model.history.first?.processedText, copied)
+        XCTAssertEqual(model.history.first?.category, .audio)
+    }
     func testDefaultRecordingCopiesRawTranscriptOnceWithoutCleanup() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

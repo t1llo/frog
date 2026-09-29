@@ -9,16 +9,26 @@ struct RulesView: View {
     @State private var editing: Rule?
     @State private var filter: RuleCategory = .text
     @State private var search = ""
-    private var category: RuleCategory { applications ? .application : filter }
+    @State private var installedApplications: [Rule] = []
+    @State private var shortcutCategory: RuleCategory = .application
+    private var category: RuleCategory { applications ? shortcutCategory : filter }
     private var rules: [Rule] {
-        model.configuration.rules.filter { $0.category == category && (search.isEmpty || ($0.name + " " + $0.instructions).localizedStandardContains(search)) }
+        let source: [Rule]
+        if applications, shortcutCategory == .window {
+            source = WindowAction.allCases.map { action in
+                model.configuration.rules.first { $0.category == .window && $0.action?.windowAction == action } ?? action.rule
+            }
+        } else {
+            source = applications ? ApplicationCatalog.rows(installed: installedApplications, configured: model.configuration.rules) : model.configuration.rules
+        }
+        return source.filter { $0.category == category && (search.isEmpty || ($0.name + " " + $0.instructions).localizedStandardContains(search)) }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             PageHeader(title: applications ? "Shortcuts" : "Rules", subtitle: "") {
-                Button(applications ? "Add application" : "New rule", systemImage: "plus") {
+                if !applications { Button("New rule", systemImage: "plus") {
                     editing = model.configuration.newRule(category: category, installed: model.localModels.installed)
-                }.keyboardShortcut("n", modifiers: .command)
+                }.keyboardShortcut("n", modifiers: .command) }
             }
             if applications {
                 VStack(alignment: .leading, spacing: 6) {
@@ -36,30 +46,43 @@ struct RulesView: View {
                     }
                 }.padding(12).frogTableSurface()
             }
-            ListToolbar(placeholder: applications ? "Search applications" : "Search rules", search: $search) {
-                if !applications { ForEach([RuleCategory.text, .audio]) { category in FilterTag(title: category.title, selected: filter == category) { filter = category } } }
+            ListToolbar(placeholder: applications ? "Search shortcuts" : "Search rules", search: $search) {
+                if applications {
+                    ForEach([RuleCategory.application, .window]) { value in
+                        FilterTag(title: value.title, selected: shortcutCategory == value) { shortcutCategory = value; search = "" }
+                    }
+                } else { ForEach([RuleCategory.text, .audio]) { category in FilterTag(title: category.title, selected: filter == category) { filter = category } } }
             }
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(rules) { rule in
                         HStack(spacing: 10) {
-                            if applications { Image(nsImage: NSWorkspace.shared.icon(forFile: rule.action?.applicationPath ?? "")).resizable().frame(width: 28, height: 28) }
-                            Button { editing = rule } label: {
+                            if applications {
+                                if rule.category == .application { Image(nsImage: NSWorkspace.shared.icon(forFile: rule.action?.applicationPath ?? "")).resizable().frame(width: 28, height: 28) }
+                                else { Image(systemName: "macwindow").font(.system(size: 20)).foregroundStyle(FrogStyle.muted).frame(width: 28, height: 28) }
+                            }
+                            if applications {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(rule.name).font(.system(size: 12, weight: .medium))
+                                    if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(.orange) }
+                                }.frame(maxWidth: .infinity, alignment: .leading)
+                            } else { Button { editing = rule } label: {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(rule.name).font(.system(size: 12, weight: .medium))
                                     Text(model.ruleModelLabel(rule)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
                                     if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(.orange) }
                                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                            }.buttonStyle(.plain)
+                            }.buttonStyle(.plain) }
                             Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { value in
                                 var updated = rule; updated.enabled = value
                                 do { try model.saveRule(updated) } catch { model.report(error) }
                             })).labelsHidden().toggleStyle(.switch).controlSize(.mini)
                             HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: { value in
                                 var updated = rule; updated.hotkey = value
+                                if applications { updated.enabled = value != nil }
                                 do { try model.saveRule(updated) } catch { model.report(error) }
                             }), showsClearButton: false)
-                            IconAction(title: "Edit rule", symbol: "pencil", bordered: true) { editing = rule }
+                            if !applications { IconAction(title: "Edit rule", symbol: "pencil", bordered: true) { editing = rule } }
                         }.padding(12)
                         if rule.id != rules.last?.id { Divider().opacity(0.5) }
                     }
@@ -67,6 +90,12 @@ struct RulesView: View {
                 }.minimalScrollbars()
             }.frogTableSurface()
         }.padding(20).sheet(item: $editing) { RuleEditor(rule: $0).environmentObject(model) }
+            .task {
+                guard applications else { return }
+                let discovered = await Task.detached(priority: .utility) { ApplicationCatalog.scan() }.value
+                guard !Task.isCancelled else { return }
+                installedApplications = discovered
+            }
     }
 }
 
