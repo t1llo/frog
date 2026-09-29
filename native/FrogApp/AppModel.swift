@@ -40,7 +40,7 @@ final class AppModel: ObservableObject {
     }()
     private var started = false
     let localModels: LocalModels
-    let dictation = DictationController()
+    let dictation: DictationController
     private var observations = Set<AnyCancellable>()
     private var dictationHistoryEpoch: UUID?
     static let localProviderID = UUID(uuidString: "7C05FB97-5BEF-48FD-9C28-A67605107251")!
@@ -61,9 +61,11 @@ final class AppModel: ObservableObject {
          writeClipboard: ((String) -> Void)? = nil,
           readAccessibility: (() -> Bool)? = nil,
           captureSelection: (() async throws -> any CapturedTextSelection)? = nil,
-          notify: ((String, String) -> Void)? = nil) {
+           notify: ((String, String) -> Void)? = nil,
+           dictationController: DictationController? = nil) {
         let dataDirectory = dataDirectory ?? ProcessInfo.processInfo.environment["FROG_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         self.registerShortcuts = registerShortcuts
+        self.dictation = dictationController ?? DictationController()
         localModels = LocalModels(directory: dataDirectory)
         self.readAccessibility = readAccessibility ?? { SelectionService.isTrusted }
         self.captureSelection = captureSelection ?? { try await SelectionService().capture() }
@@ -75,8 +77,8 @@ final class AppModel: ObservableObject {
         historyStore = HistoryStore(directory: dataDirectory)
         if registerShortcuts {
             do {
-                setupPresented = try SetupStore(directory: configurationStore.directory).needsSetup(
-                    existingConfiguration: FileManager.default.fileExists(atPath: configurationStore.directory.appendingPathComponent("configuration.json").path))
+                setupPresented = try SetupStore(directory: historyStore.directory).needsSetup(
+                    existingConfiguration: configurationStore.hasExistingConfiguration)
             } catch { report(error) }
         }
         do { configuration = try configurationStore.load() }
@@ -132,8 +134,9 @@ final class AppModel: ObservableObject {
     }
 
     func showSetup() { setupPresented = true }
+    var configurationFileURL: URL { configurationStore.file }
     func finishSetup() {
-        do { try SetupStore(directory: configurationStore.directory).complete(); setupPresented = false }
+        do { try SetupStore(directory: historyStore.directory).complete(); setupPresented = false }
         catch { report(error) }
     }
 

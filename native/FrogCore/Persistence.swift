@@ -89,15 +89,42 @@ public struct SetupStore {
 
 public final class ConfigurationStore: @unchecked Sendable {
     public let directory: URL
-    private var file: URL { directory.appendingPathComponent("configuration.json") }
-    public init(directory: URL? = nil) { self.directory = directory ?? PrivateFile.defaultDirectory }
+    public var file: URL { directory.appendingPathComponent("config.json") }
+    private let legacyFile: URL?
+    public var hasExistingConfiguration: Bool {
+        FileManager.default.fileExists(atPath: file.path) || legacyFile.map { FileManager.default.fileExists(atPath: $0.path) } == true
+    }
+    public init(directory: URL? = nil, legacyDirectory: URL? = nil) {
+        self.directory = directory ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/frog", isDirectory: true)
+        let legacy = legacyDirectory ?? (directory == nil ? PrivateFile.defaultDirectory : directory)
+        legacyFile = legacy?.appendingPathComponent("configuration.json")
+    }
 
     public func load() throws -> Configuration {
         persistenceLock.lock(); defer { persistenceLock.unlock() }
-        guard let data = try PrivateFile.read(file, maximumBytes: 4 * 1_024 * 1_024) else { return Configuration() }
+        let data = try PrivateFile.read(file, maximumBytes: ConfigurationFile.maximumBytes)
+        if data == nil || data.map(isPrototypeConfiguration) == true {
+            guard let legacyFile, let previous = try PrivateFile.read(legacyFile, maximumBytes: ConfigurationFile.maximumBytes) else {
+                if data != nil { throw FrogError.message("The file at \(file.path) belongs to an older Frog prototype. Import a native Frog configuration to replace it; the original file will be backed up.") }
+                return Configuration()
+            }
+            let configuration = try PrivateFile.decode(Configuration.self, from: previous, name: "Previous configuration")
+            try validate(configuration)
+            if let data {
+                try PrivateFile.write(data, to: directory.appendingPathComponent("config-prototype-backup-\(UUID().uuidString).json"))
+            }
+            try PrivateFile.write(try ConfigurationFile.encode(configuration), to: file)
+            return configuration
+        }
+        guard let data else { return Configuration() }
         let configuration = try PrivateFile.decode(Configuration.self, from: data, name: "Configuration")
         try validate(configuration)
         return configuration
+    }
+
+    private func isPrototypeConfiguration(_ data: Data) -> Bool {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        return Set(object.keys) == Set(["globalHotkeys", "llm", "shortcuts", "textProcessing"])
     }
 
     public func save(_ configuration: Configuration) throws {

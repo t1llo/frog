@@ -216,7 +216,7 @@ final class ProcessingTests: XCTestCase {
         let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil }, writeClipboard: { _ in })
         try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
         let original = model.configuration
-        let file = directory.appendingPathComponent("configuration.json")
+        let file = directory.appendingPathComponent("config.json")
         let bytes = try Data(contentsOf: file)
         var invalid = original
         invalid.rules[0].hotkey = Hotkey(keyCode: 999, modifiers: 0)
@@ -230,7 +230,7 @@ final class ProcessingTests: XCTestCase {
         let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil }, writeClipboard: { _ in })
         try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
         let original = model.configuration
-        let file = directory.appendingPathComponent("configuration.json")
+        let file = directory.appendingPathComponent("config.json")
         let bytes = try Data(contentsOf: file)
         let invalidRules = [
             Rule(instructions: String(repeating: "x", count: 100_001)),

@@ -94,6 +94,11 @@ struct PreferencesView: View {
                     Text(model.historyFileURL.path).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
                 }
                 SettingsSection(title: "Configuration") {
+                    CompactRow(title: "Configuration file", detail: "Copy or sync this file between Macs. Quit Frog before replacing it; reopen to load changes.") {
+                        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.configurationFileURL]) }
+                    }
+                    Text(model.configurationFileURL.path).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
+                    Divider()
                     CompactRow(title: "Import / export", detail: "Rules, models and preferences. API keys stay in Keychain.") {
                         HStack {
                             Button("Import…") { chooseConfiguration() }.disabled(model.isProcessing || model.isTestingProvider || model.dictation.active)
@@ -136,7 +141,7 @@ struct PreferencesView: View {
     private func update(_ body: (inout WorkflowPreferences) -> Void) { var value = prefs; body(&value); do { try model.saveWorkflowPreferences(value) } catch { model.report(error) } }
     private func preference<T>(_ key: WritableKeyPath<Preferences, T>) -> Binding<T> { Binding(get: { model.configuration.preferences[keyPath: key] }, set: { value in var preferences = model.configuration.preferences; preferences[keyPath: key] = value; do { try model.savePreferences(preferences) } catch { model.report(error) } }) }
     private func exportConfiguration() {
-        let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = "Frog-configuration.json"
+        let panel = NSSavePanel(); panel.allowedContentTypes = [.json]; panel.nameFieldStringValue = "config.json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try model.exportConfiguration(to: url) } catch { model.report(error) }
     }

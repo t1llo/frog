@@ -21,18 +21,18 @@ final class PersistenceTests: XCTestCase {
         configuration.preferences.historyEnabled = true
         try store.save(configuration)
         XCTAssertEqual(try ConfigurationStore(directory: directory).load(), configuration)
-        let file = directory.appendingPathComponent("configuration.json")
+        let file = directory.appendingPathComponent("config.json")
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber)?.intValue, 0o600)
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? NSNumber)?.intValue, 0o700)
         configuration.rules[0].name = "Changed"
         try store.save(configuration)
         XCTAssertEqual(try store.load(), configuration)
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), ["configuration.json"])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), ["config.json"])
     }
 
     func testCorruptAndFutureConfigurationsAreNeverOverwritten() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let file = directory.appendingPathComponent("configuration.json")
+        let file = directory.appendingPathComponent("config.json")
         let store = ConfigurationStore(directory: directory)
         var future = Configuration(); future.version = 99
         for bytes in [Data("{broken".utf8), Data("{}".utf8), try JSONEncoder().encode(future)] {
@@ -48,11 +48,45 @@ final class PersistenceTests: XCTestCase {
         let target = directory.appendingPathComponent("original.json")
         let bytes = try JSONEncoder().encode(Configuration())
         try bytes.write(to: target)
-        try FileManager.default.createSymbolicLink(at: directory.appendingPathComponent("configuration.json"), withDestinationURL: target)
+        try FileManager.default.createSymbolicLink(at: directory.appendingPathComponent("config.json"), withDestinationURL: target)
         let store = ConfigurationStore(directory: directory)
         XCTAssertThrowsError(try store.load())
         XCTAssertThrowsError(try store.save(Configuration()))
         XCTAssertEqual(try Data(contentsOf: target), bytes)
+    }
+
+    func testNativeConfigurationMigratesWithoutRemovingPreviousFile() throws {
+        let legacy = directory.appendingPathComponent("legacy")
+        let current = directory.appendingPathComponent("current")
+        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        var original = Configuration(); original.rules[0].name = "My rule"
+        let bytes = try ConfigurationFile.encode(original)
+        let previous = legacy.appendingPathComponent("configuration.json")
+        try bytes.write(to: previous)
+        let store = ConfigurationStore(directory: current, legacyDirectory: legacy)
+        XCTAssertTrue(store.hasExistingConfiguration)
+        XCTAssertEqual(try store.load(), original)
+        XCTAssertEqual(try Data(contentsOf: previous), bytes)
+        var changed = original; changed.rules[0].name = "Synced rule"
+        try ConfigurationFile.encode(changed).write(to: current.appendingPathComponent("config.json"))
+        XCTAssertEqual(try store.load(), changed)
+    }
+
+    func testPrototypeIsBackedUpButUnknownConfigIsNeverOverwrittenDuringMigration() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let original = Configuration()
+        try ConfigurationFile.encode(original).write(to: directory.appendingPathComponent("configuration.json"))
+        let prototype = Data(#"{"globalHotkeys":{},"llm":{},"shortcuts":[],"textProcessing":{}}"#.utf8)
+        let store = ConfigurationStore(directory: directory)
+        try prototype.write(to: store.file)
+        XCTAssertEqual(try store.load(), original)
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        let backup = try XCTUnwrap(files.first { $0.lastPathComponent.hasPrefix("config-prototype-backup-") })
+        XCTAssertEqual(try Data(contentsOf: backup), prototype)
+        let unknown = Data("{\"otherApp\":true}".utf8)
+        try unknown.write(to: store.file)
+        XCTAssertThrowsError(try store.load())
+        XCTAssertEqual(try Data(contentsOf: store.file), unknown)
     }
 
     func testHistoryDisabledPreservesRecordsAndDoesNotCreateFiles() throws {

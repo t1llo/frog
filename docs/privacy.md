@@ -21,9 +21,9 @@ Downloaded files live in `~/Library/Application Support/Frog/Models/`. Cancelled
 ## On your Mac
 
 - **API keys:** macOS Keychain, separate from configuration files.
-- **Settings:** `~/Library/Application Support/Frog/configuration.json`.
-- **Setup:** `setup.json` in the same folder remembers whether the local setup assistant was completed or skipped. It contains no credentials and is not exported.
-- **History:** off by default. When enabled, original text, output, rule, provider, model, language, and time are stored locally in `history.json`. Keep up to 200 records for up to 30 days; expiry is applied when history is loaded. Delete individual entries or clear all in History.
+- **Settings:** `~/.config/frog/config.json`; you can copy or sync this portable file yourself. Previous native settings migrate from Application Support without deleting the old file.
+- **Setup:** `~/Library/Application Support/Frog/setup.json` remembers whether the local setup assistant was completed or skipped. It contains no credentials and is not exported.
+- **History:** off by default. When enabled, original text, output, rule, provider, model, language, and time are stored locally in `~/Library/Application Support/Frog/history.json`. Keep up to 200 records for up to 30 days; expiry is applied when history is loaded. Delete individual entries or clear all in History.
 - **Clipboard:** a successful result is placed on the system clipboard, including when automatic replacement is skipped. When an app does not expose its selection through Accessibility, Frog requests Copy and accepts only a fresh clipboard update. It also re-copies the selection before pasting to confirm the target still matches. Previous clipboard formats are restored after these temporary reads. Clipboard managers may observe those temporary copies.
 - **Configuration exports/backups:** settings and rule instructions only. No keys or history. Exported files are under your control.
 

@@ -69,7 +69,7 @@ final class ConfigurationFileTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let file = directory.appendingPathComponent("configuration.json")
+        let file = directory.appendingPathComponent("config.json")
         let broken = Data("{broken configuration".utf8)
         try broken.write(to: file)
         let store = ConfigurationStore(directory: directory)

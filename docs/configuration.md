@@ -2,11 +2,15 @@
 
 Use **Settings → Configuration → Export / Import** to transfer rules, connections and preferences. API keys stay in Keychain; history and downloaded models are not exported. Login startup, permissions and model-storage paths belong to each Mac.
 
-Import validates the file and backs up the previous configuration as `configuration-backup-<UUID>.json` in `~/Library/Application Support/Frog/`. Invalid files leave the existing setup untouched. Changed/new provider endpoints receive fresh Keychain identities and require their credentials again.
+The standard file is **`~/.config/frog/config.json`**. Copy a native Frog export there, or sync that file between Macs. Quit Frog before replacing it and reopen to load changes. Settings shows the path and a Finder shortcut. Keys, history, downloaded weights and setup progress remain machine-local.
+
+Existing native settings migrate automatically from `~/Library/Application Support/Frog/configuration.json`, leaving the old file intact. If the destination contains the recognized older prototype format, it is backed up before migration. An existing native config takes precedence; malformed or unknown files are not silently replaced.
+
+Import validates the file and backs up the previous configuration as `configuration-backup-<UUID>.json` beside the config. Invalid files leave the existing setup untouched. Changed/new provider endpoints receive fresh Keychain identities and require their credentials again.
 
 ## Rules and models
 
-The UTF-8 JSON format is version `1`, limited to 4 MB. Prefer exporting from Frog before editing. Quit Frog before directly modifying the live `configuration.json` file.
+The UTF-8 JSON format is version `1`, limited to 4 MB. Prefer exporting from Frog before editing. A copied config preserves provider identifiers; re-enter keys on a new Mac. Coordinate sync so two Macs do not overwrite each other's changes; Frog does not merge simultaneous edits.
 
 - `action.category` is `text`, `audio` or `application`.
 - External text models use the rule's `providerID` and `model`; internal text models use `action.localTextModelID`.
