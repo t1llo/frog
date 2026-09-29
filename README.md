@@ -24,7 +24,6 @@ A local-first macOS app for rewriting text, turning speech into text, and managi
 
 <img src="docs/images/frog-internal-models.png" alt="Download and manage internal speech models in Frog" width="960">
 
-
 ## Install
 
 Download **Frog-macOS.zip**, unzip it, and move **Frog.app** to **Applications**. The setup assistant helps you download local models, connect a provider, or import settings, then review permissions. Every step is optional; reopen it from Settings anytime.

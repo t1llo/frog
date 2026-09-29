@@ -4,7 +4,7 @@ dist/
 **/xcuserdata/
 /archive/
 /.scratch/
-/.agents/skills/
+/.agents/
 /skills-lock.json
 .env
 .env.*
@@ -22,3 +22,12 @@ node_modules
 /docs/native-contract.md
 /docs/product.md
 /docs/reviews/
+/docs/releases/
+/docs/status.md
+/docs/work-items.md
+/docs/implementation-contract.md
+/docs/native-platform.md
+/docs/compact-redesign.md
+/docs/local-workflows.md
+**/*.prototype.md
+**/*.prototype.html
