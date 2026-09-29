@@ -22,6 +22,8 @@ struct HistoryView: View {
     }
 
     var body: some View {
+        let displayedEntries = entries
+        let lastEntryID = displayedEntries.last?.id
         VStack(alignment: .leading, spacing: 14) {
             if let viewing {
                 HStack {
@@ -68,15 +70,17 @@ struct HistoryView: View {
                                ? "Completed transformations will appear here."
                                : "Enable history to save future originals and results on this Mac.")
                 Spacer(minLength: 0)
-            } else if entries.isEmpty {
+            } else if displayedEntries.isEmpty {
                 FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another filter or clear your search.")
                 Spacer(minLength: 0)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(entries) { item in
+                        ForEach(displayedEntries) { item in
                             historyRow(item)
-                            if item.id != entries.last?.id { Divider().opacity(0.5) }
+                                .overlay(alignment: .bottom) {
+                                    if item.id != lastEntryID { Divider().opacity(0.5) }
+                                }
                         }
                     }.minimalScrollbars()
                 }

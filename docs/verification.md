@@ -40,3 +40,4 @@ Use an installed signed app and a disposable document. Record macOS version, arc
 ## Distribution
 
 Developer ID signing/notarization requires the owner's Apple Developer credentials. Ad-hoc signing is suitable for local development, but is not notarization and does not establish that macOS will trust a downloaded release on another machine.
+

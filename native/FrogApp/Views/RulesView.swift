@@ -19,6 +19,11 @@ struct RulesView: View {
                 model.configuration.rules.first { $0.category == .window && $0.action?.windowAction == action } ?? action.rule
             }
             source = windows.filter { $0.hotkey != nil } + windows.filter { $0.hotkey == nil }
+        } else if applications, shortcutCategory == .system {
+            let actions = SystemAction.allCases.map { action in
+                model.configuration.rules.first { $0.category == .system && $0.action?.systemAction == action } ?? action.rule
+            }
+            source = actions.filter { $0.hotkey != nil } + actions.filter { $0.hotkey == nil }
         } else {
             source = applications ? applicationCatalog.rows(configured: model.configuration.rules) : model.configuration.rules
         }
@@ -51,7 +56,7 @@ struct RulesView: View {
             }
             ListToolbar(placeholder: applications ? "Search shortcuts" : "Search rules", search: $search) {
                 if applications {
-                    ForEach([RuleCategory.application, .window]) { value in
+                    ForEach([RuleCategory.application, .window, .system]) { value in
                         FilterTag(title: value.title, selected: shortcutCategory == value) { shortcutCategory = value; search = "" }
                     }
                 } else { ForEach([RuleCategory.text, .audio]) { category in FilterTag(title: category.title, selected: filter == category) { filter = category } } }
@@ -62,7 +67,7 @@ struct RulesView: View {
                         HStack(spacing: 10) {
                             if applications {
                                 if rule.category == .application { ApplicationIcon(path: rule.action?.applicationPath ?? "") }
-                                else { Image(systemName: "macwindow").font(.system(size: 20)).foregroundStyle(FrogStyle.muted).frame(width: 28, height: 28) }
+                                else { Image(systemName: rule.action?.systemAction?.symbol ?? "macwindow").font(.system(size: 20)).foregroundStyle(FrogStyle.muted).frame(width: 28, height: 28) }
                             }
                             if applications {
                                 VStack(alignment: .leading, spacing: 4) {
@@ -87,7 +92,9 @@ struct RulesView: View {
                             }), showsClearButton: false)
                             if !applications { IconAction(title: "Edit rule", symbol: "pencil", bordered: true) { editing = rule } }
                         }.padding(12)
-                        if rule.id != lastRuleID { Divider().opacity(0.5) }
+                            .overlay(alignment: .bottom) {
+                                if rule.id != lastRuleID { Divider().opacity(0.5) }
+                            }
                     }
                     if displayedRules.isEmpty { Text("No matching rules").font(.caption).foregroundStyle(FrogStyle.muted).padding(24) }
                 }.minimalScrollbars()

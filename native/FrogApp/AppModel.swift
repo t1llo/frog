@@ -74,12 +74,13 @@ final class AppModel: ObservableObject {
           captureSelection: (() async throws -> any CapturedTextSelection)? = nil,
            notify: ((String, String) -> Void)? = nil,
            dictationController: DictationController? = nil,
+           modelService: LocalModels? = nil,
            errorDisplayDuration: Duration = .seconds(6)) {
         let dataDirectory = dataDirectory ?? ProcessInfo.processInfo.environment["FROG_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         self.registerShortcuts = registerShortcuts
         self.dictation = dictationController ?? DictationController()
         self.errorDisplayDuration = errorDisplayDuration
-        localModels = LocalModels(directory: dataDirectory)
+        localModels = modelService ?? LocalModels(directory: dataDirectory)
         self.readAccessibility = readAccessibility ?? { SelectionService.isTrusted }
         self.captureSelection = captureSelection ?? { try await SelectionService().capture() }
         self.notify = notify ?? { DesktopNotifications.post(title: $0, body: $1) }
@@ -119,6 +120,12 @@ final class AppModel: ObservableObject {
         localModels.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         dictation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         dictation.onError = { [weak self] in self?.report($0) }
+        dictation.onMicrophoneChange = { [weak self] id in
+            guard let self else { return }
+            var preferences = self.configuration.preferences.workflowSettings
+            preferences.microphoneID = id
+            do { try self.saveWorkflowPreferences(preferences) } catch { self.report(error) }
+        }
         dictation.externalTranscription = { [weak self] audio, rule in
             guard let self, let provider = self.configuration.providers.first(where: { $0.id == rule.action?.audioProviderID }),
                   let id = rule.action?.audioModelID, provider.models.contains(where: { $0.id == id && $0.category == .audio }) else {
@@ -543,7 +550,7 @@ final class AppModel: ObservableObject {
     }
 
     func startDictation(_ rule: Rule) {
-        guard !isProcessing, !localModels.busy else { report(FrogError.message("Wait for the current request to finish.")); return }
+        guard !isProcessing else { report(FrogError.message("Wait for the current request to finish.")); return }
         dictationHistoryEpoch = configuration.preferences.historyEnabled ? historyEpoch : nil
         dictation.start(rule: rule, preferences: configuration.preferences.workflowSettings, models: localModels)
     }
@@ -562,6 +569,8 @@ final class AppModel: ObservableObject {
             if pressed && configuration.preferences.shortcutsEnabled { launchApplication(rule) }
         case .window:
             if pressed && configuration.preferences.shortcutsEnabled { manageWindow(rule) }
+        case .system:
+            if pressed && configuration.preferences.shortcutsEnabled { performSystemAction(rule) }
         case .audio:
             let mode = rule.action?.recordingMode ?? configuration.preferences.workflowSettings.recordingMode
             switch RecordingShortcut.action(mode: mode, pressed: pressed, target: id, active: dictation.ruleID) {
@@ -577,6 +586,19 @@ final class AppModel: ObservableObject {
         applicationTask = Task {
             do { try await ApplicationLauncher().launch(rule) }
             catch is CancellationError { }
+            catch { report(error) }
+        }
+    }
+
+    private func performSystemAction(_ rule: Rule) {
+        guard let action = rule.action?.systemAction, let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return }
+        applicationTask?.cancel()
+        applicationTask = Task {
+            do {
+                try await ClipboardSelection.waitForShortcutRelease()
+                try Task.checkCancellation()
+                try await SystemActionController.shared.perform(action, pid: pid)
+            } catch is CancellationError { }
             catch { report(error) }
         }
     }

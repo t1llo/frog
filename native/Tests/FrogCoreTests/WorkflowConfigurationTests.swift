@@ -2,6 +2,18 @@ import XCTest
 @testable import FrogCore
 
 final class WorkflowConfigurationTests: XCTestCase {
+    func testSystemShortcutSurvivesConfigurationRoundTripWithoutATextModel() throws {
+        var configuration = Configuration()
+        var rule = SystemAction.lockScreen.rule
+        rule.hotkey = Hotkey(keyCode: 37, modifiers: 4096 | 512); rule.enabled = true
+        configuration.rules.append(rule)
+        let restored = try ConfigurationFile.decode(ConfigurationFile.encode(configuration))
+        XCTAssertEqual(restored.rules.last, rule)
+        XCTAssertTrue(rule.category.isShortcut)
+        XCTAssertEqual(SystemAction.lockScreen.rule.id, rule.id)
+        configuration.rules[configuration.rules.count - 1].action?.systemAction = nil
+        XCTAssertThrowsError(try ConfigurationFile.validate(configuration))
+    }
     func testFactoryCleanupMigrationRunsOnceAndKeepsCustomRulesAndShortcuts() throws {
         var config = Configuration()
         var factory = Rule.dictationPreset

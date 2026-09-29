@@ -56,6 +56,9 @@ public enum ConfigurationFile {
         if let key = configuration.preferences.workflowSettings.shortcutPanelHotkey { shortcuts.insert(key) }
         if let key = configuration.preferences.workflowSettings.cancelRecordingHotkey, !shortcuts.insert(key).inserted { throw FrogError.message("The cancel shortcut conflicts with the shortcut panel.") }
         for rule in configuration.rules {
+            if rule.category == .system, rule.action?.systemAction == nil {
+                throw FrogError.message("Choose a system action for \(rule.name).")
+            }
             if rule.category == .window, rule.action?.windowAction == nil {
                 throw FrogError.message("Choose a window action for \(rule.name).")
             }

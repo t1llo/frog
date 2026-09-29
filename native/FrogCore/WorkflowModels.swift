@@ -1,10 +1,10 @@
 import Foundation
 
 public enum RuleCategory: String, Codable, CaseIterable, Identifiable, Sendable {
-    case text, audio, application, window
+    case text, audio, application, window, system
     public var id: String { rawValue }
-    public var title: String { switch self { case .text: "Text"; case .audio: "Audio"; case .application: "Applications"; case .window: "Windows" } }
-    public var isShortcut: Bool { self == .application || self == .window }
+    public var title: String { switch self { case .text: "Text"; case .audio: "Audio"; case .application: "Applications"; case .window: "Windows"; case .system: "Other" } }
+    public var isShortcut: Bool { self == .application || self == .window || self == .system }
 }
 
 public enum RecordingMode: String, Codable, CaseIterable, Sendable {
@@ -22,6 +22,7 @@ public struct RuleAction: Codable, Equatable, Sendable {
     public var applicationPath: String?
     public var applicationBundleID: String?
     public var windowAction: WindowAction?
+    public var systemAction: SystemAction?
     public var audioModelID: String?
     public var audioProviderID: UUID?
     public var transcriptionLanguage: String?

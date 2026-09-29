@@ -119,6 +119,14 @@ final class LocalModels: ObservableObject {
     func cancelDownload(_ id: String) { downloads[id]?.cancel() }
     func waitForDownload(_ id: String) async { await downloads[id]?.value }
     func waitForIdleUnload() async { await unloadTask?.value }
+    func waitUntilAvailable() async throws {
+        guard busy else { try Task.checkCancellation(); return }
+        for await _ in $busy.values {
+            try Task.checkCancellation()
+            if !busy { return }
+        }
+        try Task.checkCancellation()
+    }
     func remove(_ id: String) async throws {
         guard !busy, downloads[id] == nil else { throw FrogError.message("Wait for the model operation to finish before deleting it.") }
         busy = true
@@ -193,6 +201,9 @@ protocol LocalInferenceEngine: Actor {
 }
 
 actor LocalInference: LocalInferenceEngine {
+    // Avoid lengthy Neural Engine encoder specialization on a cold model store.
+    // Installation and inference use the same compute policy so their compiled caches match.
+    private static let whisperCompute = ModelComputeOptions(audioEncoderCompute: .cpuAndGPU)
     private var speech: WhisperKit?
     private var speechID: String?
     #if arch(arm64)
@@ -209,7 +220,7 @@ actor LocalInference: LocalInferenceEngine {
             let url = try await WhisperKit.download(variant: model.variant!, downloadBase: base, from: model.repository) { progress($0.fractionCompleted * 0.9) }
             try Task.checkCancellation()
             // Download/tokenize during explicit installation, not the first recording.
-            let kit = try await WhisperKit(WhisperKitConfig(modelFolder: url.path, tokenizerFolder: base, verbose: false, logLevel: .none, prewarm: false, load: true, download: false))
+            let kit = try await WhisperKit(WhisperKitConfig(modelFolder: url.path, tokenizerFolder: base, computeOptions: whisperCompute, verbose: false, logLevel: .none, prewarm: false, load: true, download: false))
             await kit.unloadModels()
             progress(1)
             return url
@@ -249,7 +260,7 @@ actor LocalInference: LocalInferenceEngine {
             // WhisperKit's cache base contains its model and tokenizer snapshots.
             var base = url
             while base.lastPathComponent != id && base.path != "/" { base.deleteLastPathComponent() }
-            speech = try await WhisperKit(WhisperKitConfig(modelFolder: url.path, tokenizerFolder: base, verbose: false, logLevel: .none, prewarm: false, load: true, download: false))
+            speech = try await WhisperKit(WhisperKitConfig(modelFolder: url.path, tokenizerFolder: base, computeOptions: Self.whisperCompute, verbose: false, logLevel: .none, prewarm: false, load: true, download: false))
             speechID = id
             await residency(loadedIDs)
         }

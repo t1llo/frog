@@ -4,6 +4,35 @@ import FrogCore
 
 @MainActor
 final class IncrementalDictationTests: XCTestCase {
+    func testCancelThenRecordStartsMicrophoneWhileOldRecognitionFinishesCancelling() async throws {
+        let fixture = await makeFixture(seconds: 2)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        var copied = ""
+        let controller = DictationController(makeRecorder: { fixture.recorder }, authorize: { true }, copy: { copied = $0 }, monitorKeys: false, previewInterval: .seconds(3600))
+        let model = AppModel(dataDirectory: fixture.directory, registerShortcuts: false, dictationController: controller, modelService: fixture.models)
+        model.startDictation(rule)
+        await controller.waitForWork()
+        let started = expectation(description: "First recognition started")
+        await fixture.engine.pauseNext(started)
+        let oldPreview = Task { try await controller.refreshPreview() }
+        await fulfillment(of: [started], timeout: 2)
+        controller.cancel()
+        model.startDictation(rule)
+        await controller.waitForWork()
+        XCTAssertEqual(controller.phase, .recording)
+        XCTAssertNil(model.errorMessage)
+        controller.stop(models: fixture.models)
+        await Task.yield()
+        XCTAssertEqual(controller.phase, .transcribing)
+        XCTAssertTrue(copied.isEmpty)
+        await fixture.engine.resume()
+        _ = try? await oldPreview.value
+        await controller.waitForWork()
+        XCTAssertEqual(controller.phase, .idle)
+        XCTAssertEqual(copied, "Seconds 0–1.")
+        XCTAssertNil(model.errorMessage)
+        await fixture.models.unload()
+    }
     func testStopReusesCompletedAudioAndOnlyTranscribesTheEnding() async throws {
         let fixture = await makeFixture(seconds: 95)
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
