@@ -15,42 +15,76 @@ struct FrogApp: App {
                 .renderingMode(.template)
                 .accessibilityLabel("Frog")
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
     }
 }
 
 private struct FrogStatusMenu: View {
     @ObservedObject var model: AppModel
+    @ObservedObject private var updater = UpdateService.shared
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        Text(L10n.text(model.status)).font(.caption)
-        Text("\(model.configuration.rules.filter { $0.enabled && $0.hotkey != nil }.count) active shortcuts").font(.caption)
-        if !model.accessibilityGranted { Button("Set up Accessibility…") { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() } }
-        if !DictationController.microphoneGranted { Button("Set up microphone…") { Task { _ = await DictationController.requestMicrophone(); model.objectWillChange.send() } } }
-        if let error = model.errorMessage { Text(error).font(.caption) }
-        if model.isProcessing { Button("Cancel Processing") { model.cancelProcessing() } }
-        if model.dictation.active {
-            Text("Dictation · \(model.dictation.phase.rawValue.capitalized)")
-            if model.dictation.phase == .recording { Button("Stop recording") { model.dictation.stop(models: model.localModels) } }
-            Button("Cancel dictation") { model.dictation.cancel() }
-        }
-        if !model.localModels.loaded.isEmpty { Text("Local models in memory: \(model.localModels.loaded.count)") }
-        Divider()
-        if model.configuration.preferences.shortcutsEnabled {
-        Toggle("Window switcher (⌘Tab)", isOn: Binding(get: { model.configuration.preferences.windowSwitcherEnabled }, set: { enabled in
-            var preferences = model.configuration.preferences
-            preferences.windowSwitcherEnabled = enabled
-            do { try model.savePreferences(preferences) } catch { model.report(error) }
-        }))
-        if model.configuration.preferences.windowSwitcherEnabled && !model.windowSwitcherReady {
-            Text(model.windowSwitcherStatus).font(.caption)
-        }
-        }
-        Divider()
-        Button("Open Frog…") { model.showSettings() }.keyboardShortcut(",")
-        CheckForUpdatesButton()
-        Divider()
-        Button("Quit Frog") { model.shutdown(); NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 10) {
+                FrogMark().scaleEffect(0.78).frame(width: 36, height: 36)
+                Text("frog").font(.system(size: 22, weight: .semibold, design: .rounded))
+                Spacer()
+                HStack(spacing: 5) {
+                    Circle().fill(model.dictation.phase == .recording ? Color.red : FrogStyle.accent).frame(width: 6, height: 6)
+                    Text(model.dictation.active ? model.dictation.phase.rawValue.capitalized : model.isProcessing ? "Working…" : "Ready")
+                        .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                }
+            }
+            if model.dictation.active {
+                HStack {
+                    if model.dictation.phase == .recording {
+                        Button("Stop recording", systemImage: "stop.fill") { model.dictation.stop(models: model.localModels) }
+                            .buttonStyle(FrogButtonStyle(primary: true))
+                    }
+                    Button("Cancel", systemImage: "xmark") { model.dictation.cancel() }
+                }
+            }
+            if model.isProcessing { Button("Cancel processing", systemImage: "xmark") { model.cancelProcessing() } }
+            if let error = model.errorMessage {
+                HStack(alignment: .top) {
+                    Text(error).font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button { model.dismissError() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss error")
+                }
+            }
+            if model.configuration.preferences.shortcutsEnabled {
+                VStack(alignment: .leading, spacing: 5) {
+                    Toggle(isOn: Binding(get: { model.configuration.preferences.windowSwitcherEnabled }, set: { enabled in
+                        var preferences = model.configuration.preferences; preferences.windowSwitcherEnabled = enabled
+                        do { try model.savePreferences(preferences) } catch { model.report(error) }
+                    })) {
+                        HStack { Image(systemName: "rectangle.on.rectangle").foregroundStyle(FrogStyle.muted); Text("Window switcher"); Spacer(); Text("⌘Tab").foregroundStyle(FrogStyle.muted) }
+                    }.toggleStyle(.switch)
+                    if model.configuration.preferences.windowSwitcherEnabled && !model.windowSwitcherReady {
+                        Text(model.windowSwitcherStatus).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                    }
+                }.padding(12).frogTableSurface()
+            }
+            MemorySparkline(showUsage: true).frame(height: 66).padding(12).frogTableSurface()
+            VStack(spacing: 6) {
+                Button { dismiss(); model.showSettings() } label: {
+                    Label("Open Frog", systemImage: "arrow.up.forward.app").frame(maxWidth: .infinity, alignment: .leading)
+                }.keyboardShortcut(",")
+                Button { dismiss(); updater.check() } label: {
+                    Label("Check for Updates…", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity, alignment: .leading)
+                }.disabled(!updater.canCheck)
+            }
+            HStack {
+                Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                Spacer()
+                Button("Quit Frog") { model.shutdown(); NSApplication.shared.terminate(nil) }.keyboardShortcut("q").buttonStyle(.plain).foregroundStyle(FrogStyle.muted)
+            }
+        }.font(.system(size: 12)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
+            .buttonStyle(FrogButtonStyle()).controlSize(.small).padding(18).frame(width: 320)
+            .background(FrogStyle.canvas).background(FrogWindowMaterial())
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .task { await model.monitorSystemStatus() }
     }
 }
 

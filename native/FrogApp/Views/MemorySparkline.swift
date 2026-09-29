@@ -2,8 +2,18 @@ import SwiftUI
 import Darwin
 
 struct MemorySparkline: View {
+    var showUsage = false
     @State private var samples: [Double] = []
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+        if showUsage {
+            HStack {
+                Label("Frog RAM", systemImage: "memorychip").foregroundStyle(FrogStyle.muted)
+                Spacer()
+                Text(samples.isEmpty ? "—" : ByteCountFormatter.string(fromByteCount: Int64(samples.last ?? 0), countStyle: .memory))
+                    .monospacedDigit().foregroundStyle(FrogStyle.ink)
+            }.font(.system(size: 11))
+        }
         Canvas { context, size in
             guard samples.count > 1 else { return }
             let maximum = max(samples.max() ?? 1, 64 * 1024 * 1024)
@@ -14,6 +24,7 @@ struct MemorySparkline: View {
             }
             context.stroke(line, with: .color(FrogStyle.accent.opacity(0.65)), lineWidth: 1)
         }.frame(maxWidth: .infinity)
+        }
             .help("Frog memory: \(ByteCountFormatter.string(fromByteCount: Int64(samples.last ?? 0), countStyle: .memory))")
             .accessibilityLabel("Frog memory usage")
             .task {

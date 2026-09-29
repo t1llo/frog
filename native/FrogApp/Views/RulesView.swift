@@ -21,15 +21,20 @@ struct RulesView: View {
                 }.keyboardShortcut("n", modifiers: .command)
             }
             if applications {
-                SettingsSection(title: "Window switcher") {
-                    CompactRow(title: "Switch windows with ⌘Tab", detail: "Hold ⌘ and type to search. Release to switch; Esc cancels.") {
+                VStack(alignment: .leading, spacing: 6) {
+                    CompactRow(title: "Switch windows with ⌘Tab") {
+                        if model.windowSwitcherReady {
+                            Text("Ready").font(.system(size: 10)).foregroundStyle(FrogStyle.accent)
+                        }
                         Toggle("Window switcher", isOn: Binding(get: { model.configuration.preferences.windowSwitcherEnabled }, set: { value in
                             var prefs = model.configuration.preferences; prefs.windowSwitcherEnabled = value
                             do { try model.savePreferences(prefs) } catch { model.report(error) }
                         })).labelsHidden().toggleStyle(.switch).controlSize(.small)
                     }
-                    Text(model.windowSwitcherStatus).font(.caption).foregroundStyle(FrogStyle.muted)
-                }
+                    if model.configuration.preferences.windowSwitcherEnabled && !model.windowSwitcherReady {
+                        Text(model.windowSwitcherStatus).font(.caption).foregroundStyle(FrogStyle.muted)
+                    }
+                }.padding(12).frogTableSurface()
             }
             ListToolbar(placeholder: applications ? "Search applications" : "Search rules", search: $search) {
                 if !applications { ForEach([RuleCategory.text, .audio]) { category in FilterTag(title: category.title, selected: filter == category) { filter = category } } }
