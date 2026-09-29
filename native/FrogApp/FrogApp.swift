@@ -21,7 +21,6 @@ struct FrogApp: App {
 
 private struct FrogStatusMenu: View {
     @ObservedObject var model: AppModel
-    @ObservedObject private var updater = UpdateService.shared
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -71,9 +70,6 @@ private struct FrogStatusMenu: View {
                 Button { dismiss(); model.showSettings() } label: {
                     Label("Open Frog", systemImage: "arrow.up.forward.app").frame(maxWidth: .infinity, alignment: .leading)
                 }.keyboardShortcut(",")
-                Button { dismiss(); updater.check() } label: {
-                    Label("Check for Updates…", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity, alignment: .leading)
-                }.disabled(!updater.canCheck)
             }
             HStack {
                 Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
