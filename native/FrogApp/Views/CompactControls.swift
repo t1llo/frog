@@ -116,6 +116,7 @@ struct CompactSegments<Value: Hashable>: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
                         .foregroundStyle(selected == value ? FrogStyle.accent : FrogStyle.muted)
                         .background(selected == value ? FrogStyle.accentSoft : .clear, in: RoundedRectangle(cornerRadius: 5))
+                        .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityAddTraits(selected == value ? .isSelected : [])
             }
         }.padding(3).frame(width: 220).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 7))

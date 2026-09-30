@@ -190,9 +190,15 @@ struct RuleEditor: View {
                 .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border.opacity(0.5)).frame(height: 1) }
         }.frame(width: 520, height: rule.category == .application ? 320 : 460)
             .foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).tint(FrogStyle.accent).buttonStyle(FrogButtonStyle()).controlSize(.small)
+            .onChange(of: model.configuration, initial: true) { reconcileModels() }
+            .onChange(of: model.localModels.installed) { reconcileModels() }
             .confirmationDialog("Delete this rule?", isPresented: $deleting) {
                 Button("Delete rule", role: .destructive) { do { try model.deleteRule(id: rule.id); dismiss() } catch { issue = error.localizedDescription } }
             }
+    }
+    private func reconcileModels() {
+        let updated = model.configuration.reconcilingModels(in: rule, installed: model.localModels.installed)
+        if updated != rule { rule = updated }
     }
     private var instructions: some View {
         VStack(alignment: .leading, spacing: 8) {

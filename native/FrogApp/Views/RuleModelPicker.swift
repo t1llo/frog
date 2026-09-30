@@ -16,7 +16,7 @@ struct RuleModelPicker: View {
         if !speech, let id = rule.providerID, !rule.model.isEmpty { return .init(providerID: id, modelID: rule.model, category: .text) }
         return nil
     }
-    private var choices: [RuleModelSelection] {
+    private func choices(local: Bool) -> [RuleModelSelection] {
         let kind: ProviderModel.Category = speech ? .audio : .text
         if local {
             return model.configuration.modelCatalog.filter { $0.kind == (speech ? .audio : .text) && model.localModels.installed.contains($0.id) }
@@ -37,12 +37,14 @@ struct RuleModelPicker: View {
     }
     var body: some View {
         Button {
-            local = selected?.providerID == nil && selected != nil; search = ""; showing.toggle()
+            local = selected.map { $0.providerID == nil } ?? !choices(local: true).isEmpty
+            search = ""; showing.toggle()
         } label: {
             CompactDropdownLabel(value: selected.map(name) ?? "Choose a model", symbol: selected?.providerID == nil ? "cpu" : "cloud")
         }.buttonStyle(.plain).accessibilityLabel(speech ? "Speech model" : "Text model")
             .popover(isPresented: $showing, arrowEdge: .bottom) {
                 VStack(spacing: 9) {
+                    let choices = choices(local: local)
                     let matches = choices.filter { search.isEmpty || (name($0) + " " + source($0)).localizedStandardContains(search) }
                     SearchBox(placeholder: "Find a model", text: $search)
                     CompactSegments(values: [true, false], selected: local, title: { $0 ? "Local" : "External" }) { local = $0; search = "" }

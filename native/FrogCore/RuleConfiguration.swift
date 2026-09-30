@@ -23,6 +23,27 @@ public struct RuleModelSelection: Codable, Hashable, Sendable {
 }
 
 extension Configuration {
+    /// Reconcile a draft against the current inventory without overwriting its other edits.
+    public func reconcilingModels(in rule: Rule, installed: Set<String>) -> Rule {
+        var draft = self
+        draft.rules = [rule]
+        draft.reconcileUnavailableModels(installed: installed)
+        return draft.rules[0]
+    }
+
+    /// Recover saved selections whose downloads disappeared between app launches.
+    /// An intentionally empty selection is never filled by this reconciliation.
+    public mutating func reconcileUnavailableModels(installed: Set<String>) {
+        let unavailable = rules.flatMap { rule -> [RuleModelSelection] in
+            let audio = rule.action?.audioModelID.map { RuleModelSelection(providerID: rule.action?.audioProviderID, modelID: $0, category: .audio) }
+            let text = rule.action?.localTextModelID.map { RuleModelSelection(modelID: $0, category: .text) }
+                ?? rule.providerID.flatMap { id in rule.model.isEmpty ? nil : RuleModelSelection(providerID: id, modelID: rule.model, category: .text) }
+            return [audio, text].compactMap { $0 }.filter { !selectionAvailable($0, installed: installed) }
+        }
+        guard !unavailable.isEmpty else { return }
+        modelsRemoved(unavailable, installed: installed)
+    }
+
     /// Materialize legacy defaults once. Later additions never reroute an existing selection.
     public mutating func adoptExplicitRuleSettings(installed: Set<String>) {
         guard explicitRuleModels != true else { return }

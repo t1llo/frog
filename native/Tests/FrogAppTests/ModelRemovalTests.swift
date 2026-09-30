@@ -4,6 +4,25 @@ import FrogCore
 
 @MainActor
 final class ModelRemovalTests: XCTestCase {
+    func testPreviouslyDeletedSelectionFallsBackWhenConfigurationLoads() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let folder = directory.appendingPathComponent("Models/whisper-tiny")
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("fixture"), withIntermediateDirectories: true)
+        try "fixture".write(to: folder.appendingPathComponent("installed.txt"), atomically: true, encoding: .utf8)
+        var config = Configuration()
+        var audio = Rule.dictationPreset
+        audio.action?.audioModelID = "whisper-base"
+        config.rules = [audio]; config.explicitRuleModels = true
+        let store = ConfigurationStore(directory: directory)
+        try store.save(config)
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false)
+        defer { model.shutdown() }
+        XCTAssertEqual(model.configuration.rules[0].action?.audioModelID, "whisper-tiny")
+        XCTAssertEqual(try store.load().rules[0].action?.audioModelID, "whisper-tiny")
+        XCTAssertTrue(model.localModels.loaded.isEmpty)
+    }
+
     func testDeletingSelectedDownloadPersistsCompatibleFallbackWithoutChangingCleanup() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -95,9 +95,10 @@ final class AppModel: ObservableObject {
         do { configuration = try configurationStore.load() }
         catch { configurationLoadError = error; report(error) }
         localModels.updateCatalog(configuration.modelCatalog)
-        if registerShortcuts, configurationLoadError == nil {
+        if configurationLoadError == nil {
             var candidate = configuration
-            candidate.adoptExplicitRuleSettings(installed: localModels.installed)
+            if registerShortcuts { candidate.adoptExplicitRuleSettings(installed: localModels.installed) }
+            candidate.reconcileUnavailableModels(installed: localModels.installed)
             if candidate != configuration { do { try persist(candidate) } catch { report(error) } }
         }
         localModels.onInstall = { [weak self] item in
@@ -266,6 +267,7 @@ final class AppModel: ObservableObject {
            let conflict = configuration.rules.first(where: { $0.id != rule.id && $0.enabled && $0.hotkey == hotkey }) {
             throw FrogError.message("That hotkey is already assigned to \(conflict.name).")
         }
+        let rule = configuration.reconcilingModels(in: rule, installed: localModels.installed)
         var candidate = configuration
         if let index = candidate.rules.firstIndex(where: { $0.id == rule.id }) { candidate.rules[index] = rule }
         else { candidate.rules.append(rule) }

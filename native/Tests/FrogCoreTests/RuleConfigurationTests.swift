@@ -2,6 +2,22 @@ import XCTest
 @testable import FrogCore
 
 final class RuleConfigurationTests: XCTestCase {
+    func testReconciliationPreservesAvailableAndIntentionallyEmptySelections() {
+        var config = Configuration()
+        var audio = Rule.dictationPreset
+        audio.action?.audioModelID = "whisper-tiny"
+        audio.action?.localTextModelID = "qwen-0.6b"
+        audio.action?.transcriptionLanguage = "de"
+        var unselected = Rule.dictationPreset
+        unselected.id = UUID(); unselected.hotkey = nil
+        unselected.action?.audioModelID = nil
+        config.rules = [audio, unselected]
+        config.recentModels = [.init(modelID: "whisper-base", category: .audio)]
+        let original = config
+        config.reconcileUnavailableModels(installed: ["whisper-tiny", "whisper-base", "qwen-0.6b"])
+        XCTAssertEqual(config, original, "Inventory changes must not replace valid choices or fill an intentional empty selection")
+    }
+
     func testMigrationFreezesEffectiveModelsAndRecordingOptions() throws {
         var config = Configuration()
         let provider = ProviderConfiguration(model: "first", models: [.init(id: "first"), .init(id: "second")])
