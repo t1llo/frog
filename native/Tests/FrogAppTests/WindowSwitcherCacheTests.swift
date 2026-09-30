@@ -3,6 +3,17 @@ import XCTest
 
 @MainActor
 final class WindowSwitcherCacheTests: XCTestCase {
+    func testAnInventoryThatAgesWhileTypingRequiresFreshDiscovery() async {
+        let cache = WindowSwitcherCache()
+        let old = window("Old window", pid: 10)
+        _ = await cache.update { .init(windows: [old], current: old.id) }
+        XCTAssertNotNil(cache.readySnapshot(frontPID: 10))
+        XCTAssertNil(cache.readySnapshot(frontPID: 10, at: .now.advanced(by: .seconds(6))))
+        let new = window("New window", pid: 10)
+        _ = await cache.update { .init(windows: [new], current: new.id) }
+        XCTAssertEqual(cache.readySnapshot(frontPID: 10)?.windows.map(\.id), [new.id])
+    }
+
     func testCachedInventoryIsImmediatelyAvailableDuringSlowRefresh() async throws {
         let cache = WindowSwitcherCache()
         let first = window("First", pid: 10)

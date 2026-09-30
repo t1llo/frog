@@ -15,27 +15,32 @@ final class WindowSwitcherController {
     var onError: ((String) -> Void)?
     private var shortcutRules: [Rule] = []
     func updateShortcuts(_ rules: [Rule]) {
+        let rules = rules.filter { $0.enabled && $0.category == .application && $0.hotkey != nil }
+        guard shortcutRules != rules else { return }
         shortcutRules = rules
-        refreshShortcuts()
+        if generation != nil { refreshShortcuts() }
     }
     private func refreshShortcuts() {
         var shortcuts: [pid_t: String] = [:]
-        for app in NSWorkspace.shared.runningApplications {
-            if let rule = shortcutRules.first(where: { $0.enabled && $0.category == .application && $0.action?.applicationBundleID == app.bundleIdentifier }), let key = rule.hotkey {
-                shortcuts[app.processIdentifier] = HotkeyManager.display(key)
+        if !shortcutRules.isEmpty {
+            for app in NSWorkspace.shared.runningApplications {
+                if let rule = shortcutRules.first(where: { $0.action?.applicationBundleID == app.bundleIdentifier }), let key = rule.hotkey {
+                    shortcuts[app.processIdentifier] = HotkeyManager.display(key)
+                }
             }
         }
-        display.shortcuts = shortcuts
+        if display.shortcuts != shortcuts { display.shortcuts = shortcuts }
     }
     private var tap: CFMachPort?
-    private var source: CFRunLoopSource?
+    private var inputRunLoop: EventTapRunLoop?
+    private var input: WindowSwitchInput?
     private var panel: NSPanel?
-    private var router = WindowSwitchKeyRouter()
+    private var router: WindowSwitchKeyRouter { input?.state ?? WindowSwitchKeyRouter() }
     private var session = WindowSwitchSession<UUID>()
     private var generation: UInt64?
     private var discovery: Task<Void, Never>?
     private var activation: Task<Void, Never>?
-    private var activationID: UUID?
+    private var activationID: UUID? { didSet { if activationID == nil { input?.cancelActivation(oldValue) } } }
     private var activationPID: pid_t?
     private var eventEpoch = UUID()
     private var focusMonitor: Task<Void, Never>?
@@ -52,23 +57,28 @@ final class WindowSwitcherController {
         guard !suspended else { stop(); statusChanged("Paused while recording a shortcut", false); return }
         guard SelectionService.isTrusted else { stop(); statusChanged("Allow Accessibility to switch windows", false); return }
         guard tap == nil else { return }
+        let epoch = UUID(); eventEpoch = epoch
+        let input = WindowSwitchInput { [weak self] message in
+            DispatchQueue.main.async {
+                guard let self, self.eventEpoch == epoch, self.tap != nil else { return }
+                self.receive(message)
+            }
+        }
         let mask = [CGEventType.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown]
             .reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
         let callback: CGEventTapCallBack = { _, type, event, context in
             guard let context else { return Unmanaged.passUnretained(event) }
-            return MainActor.assumeIsolated {
-                Unmanaged<WindowSwitcherController>.fromOpaque(context).takeUnretainedValue().receive(type: type, event: event)
-            }
+            return Unmanaged<WindowSwitchInput>.fromOpaque(context).takeUnretainedValue().receive(type: type, event: event)
         }
         guard let created = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
-            eventsOfInterest: mask, callback: callback, userInfo: Unmanaged.passUnretained(self).toOpaque()),
+            eventsOfInterest: mask, callback: callback, userInfo: Unmanaged.passUnretained(input).toOpaque()),
               let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, created, 0) else {
             statusChanged("Keyboard access unavailable — check Accessibility and reopen Frog", false)
             return
         }
-        tap = created; source = runLoopSource
-        eventEpoch = UUID()
-        CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+        tap = created
+        self.input = input; input.attach(created)
+        inputRunLoop = EventTapRunLoop(source: runLoopSource, lifetime: input)
         CGEvent.tapEnable(tap: created, enable: true)
         statusChanged("Ready · ⌘Tab switches windows", true)
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -78,7 +88,7 @@ final class WindowSwitcherController {
             if self.activation != nil, let target = self.activationPID,
                let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                app.processIdentifier != target {
-                self.activation?.cancel(); self.activation = nil; self.activationPID = nil
+                self.activation?.cancel(); self.activation = nil; self.activationID = nil; self.activationPID = nil
             }
             self.cancelAll()
         } }
@@ -89,7 +99,7 @@ final class WindowSwitcherController {
                 guard SelectionService.isTrusted else {
                     self.stop(); self.statusChanged("Allow Accessibility to switch windows", false); return
                 }
-                if self.generation == nil, self.activation == nil {
+                if self.generation == nil, self.activation == nil, self.input?.shouldDeferBackgroundWork() == false {
                     if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
                        let focused = await self.catalog.noteFocus(pid: pid) {
                         self.cache.noteFocused(focused)
@@ -111,59 +121,45 @@ final class WindowSwitcherController {
         activationID = nil
         activationPID = nil
         cancelAll()
-        router.reset()
+        input?.stop()
         focusMonitor?.cancel(); focusMonitor = nil
         cache.clear(); iconCache = [:]
         display.windows = []; display.icons = [:]
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
         workspaceObserver = nil
-        if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
-        source = nil
+        inputRunLoop?.stop(); inputRunLoop = nil
         if let tap { CGEvent.tapEnable(tap: tap, enable: false); CFMachPortInvalidate(tap) }
-        tap = nil
+        tap = nil; input = nil
     }
 
     isolated deinit {
         discovery?.cancel(); focusMonitor?.cancel(); activation?.cancel(); presentationTask?.cancel()
         cache.cancelRefresh()
+        input?.stop()
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
-        if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
+        inputRunLoop?.stop()
         if let tap { CFMachPortInvalidate(tap) }
         panel?.orderOut(nil)
     }
 
-    private func receive(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            eventEpoch = UUID()
-            cancelAll(); router.reset()
-            if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
-            return Unmanaged.passUnretained(event)
+    private func receive(_ event: WindowSwitchInput.Event) {
+        switch event {
+        case .reset(let session):
+            if let session { cancel(session: session) }
+        case .mouse(let point, let session, let activation):
+            let cocoaPoint = NSPoint(x: point.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - point.y)
+            guard panel?.isVisible != true || panel?.frame.contains(cocoaPoint) != true else { return }
+            cancelActivation(activation)
+            if let session { cancel(session: session) }
+        case .key(let result, let activation):
+            cancelActivation(activation)
+            if let action = result.action, let session = result.sessionID { handle(action, sessionID: session) }
         }
-        if type == .leftMouseDown || type == .rightMouseDown {
-            if panel?.isVisible != true || panel?.frame.contains(NSEvent.mouseLocation) != true {
-                activation?.cancel()
-                cancelAll()
-            }
-            return Unmanaged.passUnretained(event)
-        }
-        let result: WindowSwitchKeyRouter.Result
-        if type == .flagsChanged { result = router.modifiers(command: event.flags.contains(.maskCommand)) }
-        else {
-            result = router.key(code: UInt16(event.getIntegerValueField(.keyboardEventKeycode)), down: type == .keyDown,
-                command: event.flags.contains(.maskCommand), shift: event.flags.contains(.maskShift),
-                otherModifiers: !event.flags.intersection([.maskControl, .maskAlternate]).isEmpty,
-                text: NSEvent(cgEvent: event)?.charactersIgnoringModifiers ?? "")
-        }
-        if type == .keyDown && result.cancelsPendingActivation { activation?.cancel(); activation = nil }
-        if let action = result.action, let sessionID = result.sessionID {
-            // Never enumerate AX windows inside the event-tap callback.
-            let epoch = eventEpoch
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.eventEpoch == epoch, self.tap != nil else { return }
-                self.handle(action, sessionID: sessionID)
-            }
-        }
-        return result.consume ? nil : Unmanaged.passUnretained(event)
+    }
+
+    private func cancelActivation(_ id: UUID?) {
+        guard let id, id == activationID else { return }
+        activation?.cancel(); activation = nil; activationID = nil; activationPID = nil
     }
 
     private func handle(_ action: WindowSwitchKeyRouter.Action, sessionID: UInt64) {
@@ -191,7 +187,7 @@ final class WindowSwitcherController {
     private func begin(backwards: Bool, token: UInt64) {
         refreshShortcuts()
         if let previous = generation, previous != token { cancel(session: previous) }
-        activation?.cancel(); activation = nil
+        activation?.cancel(); activation = nil; activationID = nil
         discovery?.cancel()
         generation = token
         pendingSteps = []; commitOnLoad = false
@@ -235,12 +231,6 @@ final class WindowSwitcherController {
         for pid in pids where iconCache[pid] == nil {
             iconCache[pid] = NSRunningApplication(processIdentifier: pid)?.icon
         }
-        if generation == nil {
-            if display.windows != snapshot.windows { display.windows = snapshot.windows }
-            display.icons = iconCache
-            display.loading = false
-            preparePanel()
-        }
         return snapshot
     }
 
@@ -272,17 +262,17 @@ final class WindowSwitcherController {
         presentation.release(token)
         presentationTask?.cancel(); presentationTask = nil
         if display.loading { commitOnLoad = true; panel?.orderOut(nil); return }
-        let selected = display.windows.first { $0.id == session.selected }
-        cancel(session: token)
-        guard let selected else { return }
+        guard let selected = display.windows.first(where: { $0.id == session.selected }) else { cancel(session: token); return }
         let activationToken = UUID()
+        guard input?.finish(session: token, activating: activationToken) == true else { cancel(session: token); return }
+        cancel(session: token)
         activationID = activationToken
         activationPID = selected.pid
         activation = Task { [weak self, catalog] in
             defer {
                 if self?.activationID == activationToken { self?.activation = nil; self?.activationID = nil; self?.activationPID = nil }
             }
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, self?.input?.isActivationPending(activationToken) == true else { return }
             guard let app = NSRunningApplication(processIdentifier: selected.pid), !app.isTerminated else {
                 self?.onError?("That window closed. Press ⌘Tab to refresh the list."); return
             }
@@ -297,7 +287,7 @@ final class WindowSwitcherController {
     }
 
     private func cancel(session token: UInt64) {
-        router.finish(session: token)
+        input?.finish(session: token)
         guard generation == token else { return }
         generation = nil; discovery?.cancel(); discovery = nil
         presentation.cancel(token); presentationTask?.cancel(); presentationTask = nil
@@ -307,7 +297,7 @@ final class WindowSwitcherController {
     }
 
     private func cancelAll() {
-        if let token = router.sessionID { router.finish(session: token) }
+        if let token = router.sessionID { input?.finish(session: token) }
         if let token = generation { cancel(session: token) }
     }
 

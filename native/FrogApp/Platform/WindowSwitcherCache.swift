@@ -5,6 +5,7 @@ import Foundation
 @MainActor
 final class WindowSwitcherCache {
     private(set) var snapshot: WindowCatalog.Snapshot?
+    private var updatedAt: ContinuousClock.Instant?
     private var refresh: Task<WindowCatalog.Snapshot, Never>?
     private var revision: UInt64 = 0
 
@@ -26,6 +27,7 @@ final class WindowSwitcherCache {
         refresh = nil
         guard !task.isCancelled, !Task.isCancelled else { return snapshot }
         snapshot = result
+        updatedAt = .now
         return result
     }
 
@@ -34,15 +36,17 @@ final class WindowSwitcherCache {
         refresh?.cancel(); refresh = nil
     }
 
-    func clear() { cancelRefresh(); snapshot = nil }
+    func clear() { cancelRefresh(); snapshot = nil; updatedAt = nil }
 
     func noteFocused(_ id: UUID) {
         guard let snapshot, let window = snapshot.windows.first(where: { $0.id == id }) else { return }
         self.snapshot = WindowCatalog.Snapshot(windows: [window] + snapshot.windows.filter { $0.id != id }, current: id)
     }
 
-    func readySnapshot(frontPID: pid_t?) -> WindowCatalog.Snapshot? {
-        guard let snapshot else { return nil }
+    func readySnapshot(frontPID: pid_t?, at now: ContinuousClock.Instant = .now) -> WindowCatalog.Snapshot? {
+        // Background scans pause while typing. A later explicit invocation must
+        // discover new/closed windows rather than use an indefinitely old list.
+        guard let snapshot, let updatedAt, updatedAt.duration(to: now) < .seconds(5) else { return nil }
         let current = snapshot.windows.first { $0.id == snapshot.current && $0.pid == frontPID }
             ?? snapshot.windows.first { $0.pid == frontPID }
         return WindowCatalog.Snapshot(windows: snapshot.windows, current: current?.id)

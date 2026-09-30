@@ -24,9 +24,9 @@ struct WindowSwitchSession<ID: Hashable> {
 }
 
 /// Pure key routing: only the switcher's keys are consumed, never ordinary typing.
-struct WindowSwitchKeyRouter {
-    enum Action: Equatable { case begin(backwards: Bool), step(backwards: Bool), commit, cancel, search(String), deleteSearch }
-    struct Result {
+struct WindowSwitchKeyRouter: Sendable {
+    enum Action: Equatable, Sendable { case begin(backwards: Bool), step(backwards: Bool), commit, cancel, search(String), deleteSearch }
+    struct Result: Sendable {
         var consume = false
         var action: Action?
         var sessionID: UInt64?
