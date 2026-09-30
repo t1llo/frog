@@ -147,9 +147,9 @@ struct RuleEditor: View {
                     TextField("Name your rule", text: $rule.name).textFieldStyle(.plain).font(.system(size: 23, weight: .semibold)).accessibilityLabel("Rule name")
                 }
                 Toggle("Enabled", isOn: $rule.enabled).toggleStyle(.switch).controlSize(.mini).font(.system(size: 11))
-            }.padding(24)
+            }.padding(20)
             if rule.category == .audio {
-                CompactSegments(values: [0, 1], selected: step, title: { $0 == 0 ? "Recording" : "Cleanup" }) { step = $0 }.padding(.bottom, 16)
+                CompactSegments(values: [0, 1], selected: step, title: { $0 == 0 ? "Recording" : "Cleanup" }) { step = $0 }.padding(.bottom, 12)
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -175,7 +175,7 @@ struct RuleEditor: View {
                         if rule.category == .text { instructions }
                     }
                     if let issue { Text(issue).font(.caption).foregroundStyle(.orange) }
-                }.padding(.horizontal, 24).padding(.bottom, 24).minimalScrollbars()
+                }.padding(.horizontal, 20).padding(.bottom, 16).minimalScrollbars()
             }
             HStack(spacing: 8) {
                 if existing {
@@ -188,7 +188,7 @@ struct RuleEditor: View {
                     .buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.defaultAction).disabled(rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }.font(.system(size: 12)).padding(.horizontal, 20).padding(.vertical, 15)
                 .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border.opacity(0.5)).frame(height: 1) }
-        }.frame(width: 544, height: rule.category == .application ? 320 : rule.category == .audio ? 590 : 490)
+        }.frame(width: 520, height: rule.category == .application ? 320 : 460)
             .foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).tint(FrogStyle.accent).buttonStyle(FrogButtonStyle()).controlSize(.small)
             .confirmationDialog("Delete this rule?", isPresented: $deleting) {
                 Button("Delete rule", role: .destructive) { do { try model.deleteRule(id: rule.id); dismiss() } catch { issue = error.localizedDescription } }
@@ -197,7 +197,7 @@ struct RuleEditor: View {
     private var instructions: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack { Text("Instructions").font(.system(size: 12, weight: .medium)); Spacer(); if rule.category == .text { Text("Applied to selected text").font(.system(size: 10)).foregroundStyle(FrogStyle.muted) } }
-            TextEditor(text: $rule.instructions).font(.system(size: 12)).scrollContentBackground(.hidden).padding(9).frame(height: 145)
+            TextEditor(text: $rule.instructions).font(.system(size: 12)).scrollContentBackground(.hidden).padding(9).frame(height: 120)
                 .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(FrogStyle.border.opacity(0.6)))
         }
     }

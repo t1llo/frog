@@ -174,6 +174,7 @@ private final class FixtureRecording: DictationRecording {
 
 private actor SuspendedSpeech: LocalInferenceEngine {
     var loadedIDs: Set<String> = []
+    func prepare(model: LocalModelDescriptor, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws { loadedIDs.insert(model.id); await residency(loadedIDs) }
     private var continuation: CheckedContinuation<Void, Never>?
     func waitUntilStarted() async { while continuation == nil { await Task.yield() } }
     func resume() { continuation?.resume(); continuation = nil }
@@ -183,5 +184,5 @@ private actor SuspendedSpeech: LocalInferenceEngine {
         return "Old transcript"
     }
     func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String { text }
-    func unload() { loadedIDs = [] }
+    func unload(keepingMetadata: Bool) { loadedIDs = [] }
 }

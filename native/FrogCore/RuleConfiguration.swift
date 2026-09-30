@@ -90,6 +90,45 @@ extension Configuration {
         }
     }
 
+    /// Replace only deleted selections. Local rules stay local; external rules prefer
+    /// another model from the same provider, then an installed local alternative.
+    public mutating func modelsRemoved(_ removed: [RuleModelSelection], installed: Set<String>) {
+        let removed = Set(removed)
+        let local = modelCatalog.filter { installed.contains($0.id) }.map {
+            RuleModelSelection(modelID: $0.id, category: $0.kind == .audio ? .audio : .text)
+        }
+        let external = providers.flatMap { provider in provider.models.map {
+            RuleModelSelection(providerID: provider.id, modelID: $0.id, category: $0.category)
+        } }
+        let available = (Array((recentModels ?? []).reversed()) + local + external).filter {
+            !removed.contains($0) && selectionAvailable($0, installed: installed)
+        }
+        func replacement(for selection: RuleModelSelection) -> RuleModelSelection? {
+            let compatible = available.filter { $0.category == selection.category }
+            if let sameSource = compatible.first(where: { $0.providerID == selection.providerID }) { return sameSource }
+            guard selection.providerID != nil else { return nil }
+            return compatible.first(where: { $0.providerID == nil }) ?? compatible.first
+        }
+        for index in rules.indices {
+            if let id = rules[index].action?.audioModelID {
+                let selection = RuleModelSelection(providerID: rules[index].action?.audioProviderID, modelID: id, category: .audio)
+                if removed.contains(selection) {
+                    rules[index].action?.audioModelID = nil; rules[index].action?.audioProviderID = nil
+                    replacement(for: selection)?.apply(to: &rules[index])
+                    rules[index].preset = false
+                }
+            }
+            let selection = rules[index].action?.localTextModelID.map { RuleModelSelection(modelID: $0, category: .text) }
+                ?? rules[index].providerID.map { RuleModelSelection(providerID: $0, modelID: rules[index].model, category: .text) }
+            if let selection, removed.contains(selection) {
+                rules[index].providerID = nil; rules[index].model = ""; rules[index].action?.localTextModelID = nil
+                replacement(for: selection)?.apply(to: &rules[index])
+                rules[index].preset = false
+            }
+        }
+        recentModels?.removeAll { removed.contains($0) }
+    }
+
     public func newRule(category: RuleCategory, installed: Set<String>) -> Rule {
         var rule = category == .audio ? Rule.dictationPreset : Rule()
         rule.id = UUID(); rule.preset = false; rule.hotkey = nil

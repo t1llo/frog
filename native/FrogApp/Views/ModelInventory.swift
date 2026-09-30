@@ -40,7 +40,7 @@ struct ModelInventory: View {
                                 Button("Cancel") { model.localModels.cancelDownload(item.id) }.controlSize(.small)
                             } else if installed {
                                 Menu {
-                                    Button("Delete download", role: .destructive) { Task { do { try await model.localModels.remove(item.id) } catch { model.report(error) } } }
+                                    Button("Delete download", role: .destructive) { Task { do { try await model.deleteLocalModel(item) } catch { model.report(error) } } }
                                         .disabled(model.localModels.busy || model.dictation.active)
                                 } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                             } else {
@@ -52,7 +52,7 @@ struct ModelInventory: View {
                                 }
                             }
                         }
-                        Text([item.runtimeName, item.languages].map(L10n.text).joined(separator: " · "))
+                        Text([item.runtimeName, item.recommendationSummary ?? item.languages].map(L10n.text).joined(separator: " · "))
                             .font(.system(size: 10)).foregroundStyle(.secondary)
                             .help(item.kind == .audio ? "Live preview uses repeated short audio chunks, not a continuous streaming decoder. Speed and accuracy are relative catalog guidance." : "Relative catalog guidance; performance depends on your Mac and input.")
                         if let error = model.localModels.errors[item.id] { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }

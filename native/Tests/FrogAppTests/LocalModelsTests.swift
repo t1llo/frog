@@ -182,6 +182,7 @@ private actor FixtureInference: LocalInferenceEngine {
     let onUnload: @Sendable () -> Void
     init(gate: DownloadGate? = nil, fail: Bool = false, onUnload: @escaping @Sendable () -> Void = {}) { self.gate = gate; self.fail = fail; self.onUnload = onUnload }
     var loadedIDs = Set<String>()
+    func prepare(model: LocalModelDescriptor, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws { loadedIDs.insert(model.id); await residency(loadedIDs) }
     var unloads = 0
     var cancelledUnload = false
     var calls = 0
@@ -197,7 +198,7 @@ private actor FixtureInference: LocalInferenceEngine {
         if fail { throw FrogError.message("Fixture inference failure") }
         return text
     }
-    func unload() { cancelledUnload = Task.isCancelled; loadedIDs = []; unloads += 1; onUnload() }
+    func unload(keepingMetadata: Bool) { cancelledUnload = Task.isCancelled; loadedIDs = []; unloads += 1; onUnload() }
 }
 
 private actor DownloadGate {

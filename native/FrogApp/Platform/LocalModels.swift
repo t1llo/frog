@@ -36,6 +36,7 @@ final class LocalModels: ObservableObject {
     private let runtime: any LocalInferenceEngine
     private let downloader: Downloader
     private var unloadTask: Task<Void, Never>?
+    private var residencyHolds = Set<UUID>()
     var idleSeconds = 120 {
         didSet { if idleSeconds != oldValue, !busy, !loaded.isEmpty { scheduleUnload() } }
     }
@@ -58,7 +59,7 @@ final class LocalModels: ObservableObject {
     }
     /// Storage location is device-local, intentionally excluded from configuration exports.
     func changeDirectory(to location: URL) async throws {
-        guard !busy, downloads.isEmpty, !changingDirectory else { throw FrogError.message("Wait for model operations to finish before changing the download folder.") }
+        guard !busy, residencyHolds.isEmpty, downloads.isEmpty, !changingDirectory else { throw FrogError.message("Wait for model operations to finish before changing the download folder.") }
         guard location.isFileURL else { throw FrogError.message("Choose a local model folder.") }
         let location = URL(fileURLWithPath: location.standardizedFileURL.path, isDirectory: true)
         if location == root { return }
@@ -67,7 +68,7 @@ final class LocalModels: ObservableObject {
         changingDirectory = true; busy = true
         defer { changingDirectory = false; busy = false }
         unloadTask?.cancel(); unloadTask = nil
-        await runtime.unload(); loaded = []
+        loaded = []; await runtime.unload(keepingMetadata: false)
         try FileManager.default.createDirectory(at: storagePreference.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(location.path).write(to: storagePreference, options: [.atomic])
         root = location
@@ -119,6 +120,29 @@ final class LocalModels: ObservableObject {
     func cancelDownload(_ id: String) { downloads[id]?.cancel() }
     func waitForDownload(_ id: String) async { await downloads[id]?.value }
     func waitForIdleUnload() async { await unloadTask?.value }
+    func holdResidency() -> UUID {
+        let id = UUID(); residencyHolds.insert(id)
+        unloadTask?.cancel(); unloadTask = nil
+        return id
+    }
+    func releaseResidency(_ id: UUID) {
+        residencyHolds.remove(id)
+        if !busy { scheduleUnload() }
+    }
+    func prepare(_ id: String) async throws {
+        try Task.checkCancellation()
+        guard !loaded.contains(id) else { return }
+        try await waitUntilAvailable()
+        try Task.checkCancellation()
+        guard !loaded.contains(id) else { return }
+        let url = try acquire(id); defer { release() }
+        do {
+            guard let model = descriptor(id) else { throw FrogError.message("The model is no longer configured.") }
+            try await runtime.prepare(model: model, url: url, residency: { [weak self] ids in await self?.updateResidency(ids) })
+            loaded = await runtime.loadedIDs
+            try Task.checkCancellation()
+        } catch { loaded = await runtime.loadedIDs; throw error }
+    }
     func waitUntilAvailable() async throws {
         guard busy else { try Task.checkCancellation(); return }
         for await _ in $busy.values {
@@ -128,21 +152,21 @@ final class LocalModels: ObservableObject {
         try Task.checkCancellation()
     }
     func remove(_ id: String) async throws {
-        guard !busy, downloads[id] == nil else { throw FrogError.message("Wait for the model operation to finish before deleting it.") }
+        guard !busy, residencyHolds.isEmpty, downloads[id] == nil else { throw FrogError.message("Wait for the model operation to finish before deleting it.") }
         busy = true
         defer { busy = false }
         unloadTask?.cancel(); unloadTask = nil
-        await runtime.unload(); loaded = []
+        loaded = []; await runtime.unload(keepingMetadata: false)
         try FileManager.default.removeItem(at: directory(id))
         installed.remove(id); errors[id] = nil
         onInventoryChanged?()
     }
-    func unload() async {
-        guard !busy else { return }
+    func unload(keepingMetadata: Bool = false) async {
+        guard !busy, residencyHolds.isEmpty else { return }
         busy = true
         defer { busy = false }
         unloadTask?.cancel(); unloadTask = nil
-        await runtime.unload(); loaded = []
+        loaded = []; await runtime.unload(keepingMetadata: keepingMetadata)
     }
     private func acquire(_ id: String) throws -> URL {
         guard Self.supported else { throw FrogError.message("Built-in local models require Apple silicon.") }
@@ -156,7 +180,7 @@ final class LocalModels: ObservableObject {
     }
     private func scheduleUnload() {
         unloadTask?.cancel()
-        guard !loaded.isEmpty else { unloadTask = nil; return }
+        guard !loaded.isEmpty, residencyHolds.isEmpty else { unloadTask = nil; return }
         let delay = idleSeconds
         unloadTask = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(delay)) } catch { return }
@@ -164,7 +188,7 @@ final class LocalModels: ObservableObject {
             // Do not cancel this very task inside unload(): the native engine
             // must receive a live task while releasing its resources.
             self?.unloadTask = nil
-            await self?.unload()
+            await self?.unload(keepingMetadata: true)
         }
     }
     func transcribe(_ samples: [Float], modelID: String, language: String? = nil) async throws -> String {
@@ -195,9 +219,10 @@ final class LocalModels: ObservableObject {
 
 protocol LocalInferenceEngine: Actor {
     var loadedIDs: Set<String> { get }
+    func prepare(model: LocalModelDescriptor, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws
     func transcribe(_ samples: [Float], model: LocalModelDescriptor, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String
     func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String
-    func unload() async
+    func unload(keepingMetadata: Bool) async
 }
 
 actor LocalInference: LocalInferenceEngine {
@@ -230,7 +255,8 @@ actor LocalInference: LocalInferenceEngine {
         throw FrogError.message("Built-in local models require Apple silicon.")
         #endif
     }
-    func transcribe(_ samples: [Float], model: LocalModelDescriptor, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
+    func prepare(model: LocalModelDescriptor, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws {
+        if model.kind == .text { try await prepareText(id: model.id, url: url, residency: residency); return }
         let id = model.id
         try Task.checkCancellation()
         #if arch(arm64)
@@ -244,13 +270,11 @@ actor LocalInference: LocalInferenceEngine {
                 parakeet = engine; speechID = id
                 await residency(loadedIDs)
             }
-            try Task.checkCancellation()
-            let result = try await parakeet!.transcribe(samples)
-            try Task.checkCancellation()
-            return result
+            return
         }
         #endif
         if speechID != id {
+            let cached = speech?.modelFolder == url ? speech : nil
             await speech?.unloadModels(); speech = nil; speechID = nil
             #if arch(arm64)
             await parakeet?.unload(); parakeet = nil
@@ -260,16 +284,32 @@ actor LocalInference: LocalInferenceEngine {
             // WhisperKit's cache base contains its model and tokenizer snapshots.
             var base = url
             while base.lastPathComponent != id && base.path != "/" { base.deleteLastPathComponent() }
-            speech = try await WhisperKit(WhisperKitConfig(modelFolder: url.path, tokenizerFolder: base, computeOptions: Self.whisperCompute, verbose: false, logLevel: .none, prewarm: false, load: true, download: false))
+            if let cached {
+                try await cached.loadModels()
+                speech = cached
+            } else {
+                speech = try await WhisperKit(WhisperKitConfig(modelFolder: url.path, tokenizerFolder: base, computeOptions: Self.whisperCompute, verbose: false, logLevel: .none, prewarm: false, load: true, download: false))
+            }
             speechID = id
             await residency(loadedIDs)
         }
+    }
+    func transcribe(_ samples: [Float], model: LocalModelDescriptor, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
+        try await prepare(model: model, url: url, residency: residency)
+        try Task.checkCancellation()
+        #if arch(arm64)
+        if model.backend == .parakeet {
+            let result = try await parakeet!.transcribe(samples)
+            try Task.checkCancellation()
+            return result
+        }
+        #endif
         try Task.checkCancellation()
         let results = try await speech!.transcribe(audioArray: samples, decodeOptions: DecodingOptions(verbose: false, language: language, detectLanguage: language == nil, skipSpecialTokens: true, withoutTimestamps: true))
         try Task.checkCancellation()
         return results.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
+    private func prepareText(id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws {
         #if arch(arm64)
         try Task.checkCancellation()
         if textID != id {
@@ -280,6 +320,13 @@ actor LocalInference: LocalInferenceEngine {
             textID = id
             await residency(loadedIDs)
         }
+        #else
+        throw FrogError.message("Built-in local models require Apple silicon.")
+        #endif
+    }
+    func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
+        #if arch(arm64)
+        try await prepareText(id: id, url: url, residency: residency)
         try Task.checkCancellation()
         let input = try await textModel!.prepare(input: UserInput(prompt: .chat([
             .system(instructions),
@@ -300,8 +347,11 @@ actor LocalInference: LocalInferenceEngine {
         throw FrogError.message("Built-in local models require Apple silicon.")
         #endif
     }
-    func unload() async {
-        await speech?.unloadModels(); speech = nil; speechID = nil
+    func unload(keepingMetadata: Bool) async {
+        await speech?.unloadModels(); speechID = nil
+        // Idle expiry frees weights while retaining parsed tokenizer metadata for the
+        // next recording. Explicit unload, deletion and folder changes drop everything.
+        if !keepingMetadata { speech = nil }
         #if arch(arm64)
         await parakeet?.unload(); parakeet = nil
         textModel = nil

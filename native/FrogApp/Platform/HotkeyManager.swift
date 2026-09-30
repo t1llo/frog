@@ -114,6 +114,10 @@ final class HotkeyManager {
     }
 
     static func validationError(_ hotkey: Hotkey) -> String? {
+        let command = UInt32(cmdKey)
+        let clipboard = [UInt32(8), 9, 7].contains(hotkey.keyCode) && hotkey.modifiers == command
+        let pasteStyle = hotkey.keyCode == 9 && [UInt32(cmdKey | shiftKey), UInt32(cmdKey | optionKey | shiftKey)].contains(hotkey.modifiers)
+        guard !clipboard, !pasteStyle else { return "Copy, Cut and Paste shortcuts are reserved for the focused app. Choose a different Frog shortcut." }
         let allowed = UInt32(cmdKey | optionKey | controlKey | shiftKey)
         guard hotkey.modifiers & ~allowed == 0 else { return "The shortcut contains unsupported modifier flags." }
         guard hotkey.modifiers & UInt32(cmdKey | optionKey | controlKey) != 0 else {

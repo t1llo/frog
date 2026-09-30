@@ -102,6 +102,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
     private var launchedAtLogin = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        DesktopNotifications.clearPreviousNotifications()
         NSApplication.shared.setActivationPolicy(.regular)
         let event = NSAppleEventManager.shared().currentAppleEvent
         launchedAtLogin = event?.eventID == kAEOpenApplication && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem

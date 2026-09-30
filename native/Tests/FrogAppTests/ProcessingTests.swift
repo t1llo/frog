@@ -51,7 +51,7 @@ final class ProcessingTests: XCTestCase {
         let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, complete: { _, _, _, _ in
             XCTFail("Capture failure must not send stale clipboard content"); return "Unexpected"
         }, readKey: { _ in nil }, writeClipboard: { _ in XCTFail("No result to copy") },
-            captureSelection: { throw FrogError.message("No selection") }, notify: { _, _ in })
+            captureSelection: { throw FrogError.message("No selection") })
         try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
         var preferences = model.configuration.preferences
         preferences.historyEnabled = true
@@ -66,7 +66,7 @@ final class ProcessingTests: XCTestCase {
         let selection = FixtureSelection(text: "original", failsReplacement: true)
         let model = AppModel(dataDirectory: try directory(), registerShortcuts: false,
             complete: { _, _, _, _ in "translated" }, readKey: { _ in nil },
-            captureSelection: { selection }, notify: { _, _ in })
+            captureSelection: { selection })
         try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
         var preferences = model.configuration.preferences
         preferences.historyEnabled = true
@@ -297,16 +297,19 @@ final class ProcessingTests: XCTestCase {
         try ConfigurationFile.validate(model.configuration)
     }
 
-    func testRemovingModelUsedByRulePreservesConfiguration() async throws {
+    func testRemovingModelUsedByRuleSelectsRemainingCompatibleModel() async throws {
         let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, readKey: { _ in nil }, writeClipboard: { _ in })
         var provider = ProviderConfiguration(kind: .ollama)
         provider.models.append(ProviderModel(id: "custom"))
         try model.saveProvider(provider, apiKey: nil, clearKey: false)
-        try model.saveRule(Rule(providerID: provider.id, model: "custom"))
-        let previous = model.configuration
+        let rule = Rule(providerID: provider.id, model: "custom")
+        try model.saveRule(rule)
         provider.models.removeAll { $0.id == "custom" }
-        XCTAssertThrowsError(try model.saveProvider(provider, apiKey: nil, clearKey: false))
-        XCTAssertEqual(model.configuration, previous)
+        try model.saveProvider(provider, apiKey: nil, clearKey: false)
+        let saved = try XCTUnwrap(model.configuration.rules.first { $0.id == rule.id })
+        XCTAssertEqual(saved.providerID, provider.id)
+        XCTAssertEqual(saved.model, provider.model)
+        try ConfigurationFile.validate(model.configuration)
     }
 
     func testPermissionStatusUpdatesWithoutReactivatingWindowAndHandlesRevocation() async throws {

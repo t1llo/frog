@@ -9,7 +9,7 @@ final class LocalModelCatalogTests: XCTestCase {
         XCTAssertEqual(Set(audio.map(\.id)).count, 4)
         XCTAssertEqual(audio.filter { $0.backend == .whisperKit }.count, 3)
         XCTAssertEqual(audio.filter { $0.backend == .parakeet }.count, 1)
-        XCTAssertEqual(audio.filter(\.isRecommended).map(\.id), [configuration.preferences.workflowSettings.audioModelID])
+        XCTAssertEqual(audio.filter(\.isRecommended).map(\.id), ["parakeet-v3", configuration.preferences.workflowSettings.audioModelID])
         XCTAssertEqual(configuration.modelInventory(installed: []).filter { $0.kind == .text }, LocalModelDescriptor.catalog.filter { $0.kind == .text })
     }
     func testOriginalSpeechSelectionsRoundTripAndRemainRecoverable() throws {

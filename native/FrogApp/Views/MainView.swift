@@ -7,6 +7,7 @@ struct MainView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var section: Section = .rules
     @State private var permissionsRequest: UUID?
+    @State private var showingLoadedModels = false
 
     private enum Section: String, CaseIterable, Identifiable {
         case rules = "Rules", history = "History", providers = "Models", shortcuts = "Shortcuts", settings = "Settings"
@@ -49,6 +50,7 @@ struct MainView: View {
                         Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
                         Text(error).font(.system(size: 12)).textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                        IconAction(title: "Copy error", symbol: "doc.on.doc") { ViewActions.copy(error) }
                         Button { model.dismissError() } label: { Image(systemName: "xmark") }
                             .buttonStyle(.plain).accessibilityLabel("Dismiss error")
                     }.padding(16).background(FrogStyle.surface)
@@ -124,13 +126,27 @@ struct MainView: View {
                      Text(L10n.text(model.dictation.active ? model.dictation.phase.rawValue.capitalized : model.status)).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
                         .lineLimit(4).textSelection(.enabled).help(model.status)
                     Spacer(minLength: 0)
-                    HStack(spacing: 3) {
-                        Image(systemName: "cpu").font(.system(size: 9))
-                        Text("\(model.localModels.loaded.count)").font(.system(size: 9)).monospacedDigit()
-                    }.foregroundStyle(FrogStyle.muted)
-                        .help(model.localModels.loaded.isEmpty ? L10n.text("No models in RAM") : model.localModels.loaded.sorted().map { model.configuration.localModel($0)?.name ?? $0 }.joined(separator: ", "))
-                        .accessibilityLabel(L10n.text("Models in RAM") + ": \(model.localModels.loaded.count)")
                 }
+                Button { showingLoadedModels.toggle() } label: {
+                    Label(model.localModels.loaded.count == 1 ? "1 model in memory" : "\(model.localModels.loaded.count) models in memory", systemImage: "cpu")
+                        .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                }.buttonStyle(.plain)
+                    .popover(isPresented: $showingLoadedModels) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Models in memory").font(.system(size: 13, weight: .semibold))
+                            ForEach(model.localModels.catalog.filter { model.localModels.loaded.contains($0.id) }) { item in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Label(item.name, systemImage: item.kind == .audio ? "waveform" : "text.bubble")
+                                        .font(.system(size: 12, weight: .medium))
+                                    Text("\(item.kind == .audio ? "Audio" : "Text") · \(item.size) download")
+                                        .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                                }
+                            }
+                            if model.localModels.loaded.isEmpty { Text("No models loaded").font(.caption).foregroundStyle(FrogStyle.muted) }
+                            Text("Models stay cached after use until the idle timeout. Audio rules load a text model only when cleanup is enabled.")
+                                .font(.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                        }.padding(16).frame(width: 340).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
+                    }
                 if model.isProcessing { Button("Cancel request") { model.cancelProcessing() } }
             }.padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 38)
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -39,7 +39,21 @@ final class MicrophoneFeedbackTests: XCTestCase {
         fixture.controller.refreshRecordingFeedback(elapsed: 3)
         XCTAssertFalse(fixture.controller.noMicrophoneInput)
         fixture.controller.refreshRecordingFeedback(elapsed: 4)
+        XCTAssertFalse(fixture.controller.noMicrophoneInput, "Silence still delivers valid microphone buffers")
+        fixture.controller.refreshRecordingFeedback(elapsed: 5)
         XCTAssertTrue(fixture.controller.noMicrophoneInput)
+    }
+
+    func testQuietAndSilentBuffersDoNotClaimTheMicrophoneIsMissing() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanUp() }
+        fixture.start()
+        await fixture.controller.waitForWork()
+        for elapsed in 1...8 {
+            fixture.recorders[0].emit(elapsed.isMultiple(of: 2) ? 0 : 0.0001)
+            fixture.controller.refreshRecordingFeedback(elapsed: elapsed)
+            XCTAssertFalse(fixture.controller.noMicrophoneInput, "A quiet but connected microphone is still supplying audio")
+        }
     }
 
     func testSwitchingMicrophonesPreservesAudioAndRejectsStoppedInput() async throws {

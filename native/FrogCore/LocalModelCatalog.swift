@@ -56,8 +56,16 @@ public struct LocalModelDescriptor: Codable, Identifiable, Equatable, Sendable {
     public static var defaultCatalog: [Self] {
         catalog.filter { $0.kind == .text || ["whisper-tiny", "whisper-small-216mb", "parakeet-v3", defaultAudioModelID].contains($0.id) }
     }
-    public static var recommended: [Self] { defaultCatalog.filter(\.isRecommended) }
-    public var isRecommended: Bool { id == Self.defaultAudioModelID || id == "qwen-1.7b" }
+    /// Onboarding downloads one speech model and one optional text model.
+    public static var recommendedPair: [Self] { defaultCatalog.filter { $0.id == defaultAudioModelID || $0.id == "qwen-1.7b" } }
+    public var isRecommended: Bool { id == "parakeet-v3" || id == Self.defaultAudioModelID || id == "qwen-1.7b" }
+    public var recommendationSummary: String? {
+        switch id {
+        case "parakeet-v3": "Fast dictation · 25 European languages"
+        case Self.defaultAudioModelID: "Broad multilingual coverage · 99+ languages"
+        default: nil
+        }
+    }
 }
 
 extension Configuration {

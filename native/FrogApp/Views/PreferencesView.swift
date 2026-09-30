@@ -81,8 +81,6 @@ struct PreferencesView: View {
                     permission("Microphone", allowed: DictationController.microphoneGranted) {
                         Task { if !DictationController.microphoneGranted { _ = await DictationController.requestMicrophone() }; DictationController.openMicrophoneSettings(); model.objectWillChange.send() }
                     }
-                    Divider()
-                    NotificationPermissionRow()
                 }.id("permissions")
                 SettingsSection(title: "History") {
                     CompactRow(title: "Save history on this Mac") { Toggle("Save history on this Mac", isOn: preference(\.historyEnabled)).labelsHidden() }
@@ -112,6 +110,13 @@ struct PreferencesView: View {
                 }
                 SettingsSection(title: "Updates") { UpdateSettingsView() }
                 SettingsSection(title: "Logs") {
+                    HStack {
+                        Button("Copy log", systemImage: "doc.on.doc") {
+                            ViewActions.copy(model.recentErrors.map { "\($0.timestamp.ISO8601Format())  \($0.message)" }.joined(separator: "\n"))
+                        }
+                        Spacer()
+                        Button("Clear log") { model.clearRecentErrors() }
+                    }.disabled(model.recentErrors.isEmpty)
                     DisclosureGroup("Recent errors (\(model.recentErrors.count))") {
                         Text("Last 100 errors from this session. Banners disappear after 6 seconds.")
                             .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
@@ -122,21 +127,18 @@ struct PreferencesView: View {
                                 LazyVStack(alignment: .leading, spacing: 10) {
                                     ForEach(model.recentErrors) { issue in
                                         VStack(alignment: .leading, spacing: 3) {
-                                            Text(issue.timestamp.formatted(date: .omitted, time: .standard))
-                                                .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                                            HStack {
+                                                Text(issue.timestamp.formatted(date: .omitted, time: .standard))
+                                                    .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                                                Spacer()
+                                                IconAction(title: "Copy error", symbol: "doc.on.doc") { ViewActions.copy("\(issue.timestamp.ISO8601Format())  \(issue.message)") }
+                                            }
                                             Text(issue.message).font(.system(size: 11)).textSelection(.enabled)
                                                 .fixedSize(horizontal: false, vertical: true)
                                         }.frame(maxWidth: .infinity, alignment: .leading)
                                     }
                                 }.padding(.vertical, 8).minimalScrollbars()
                             }.frame(maxHeight: 200)
-                            HStack {
-                                Button("Copy log") {
-                                    let text = model.recentErrors.map { "\($0.timestamp.ISO8601Format())  \($0.message)" }.joined(separator: "\n")
-                                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
-                                }
-                                Button("Clear log") { model.clearRecentErrors() }
-                            }
                         }
                     }.font(.system(size: 12))
                 }

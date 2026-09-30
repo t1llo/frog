@@ -35,7 +35,6 @@ final class AppModel: ObservableObject {
     private let complete: (String, Rule, ProviderConfiguration, String?) async throws -> String
     private let readKey: (UUID) throws -> String?
     private let writeClipboard: (String) -> Void
-    private let notify: (String, String) -> Void
     private let registerShortcuts: Bool
     private let readAccessibility: () -> Bool
     private let hotkeys = HotkeyManager()
@@ -70,12 +69,11 @@ final class AppModel: ObservableObject {
          complete: ((String, Rule, ProviderConfiguration, String?) async throws -> String)? = nil,
          readKey: ((UUID) throws -> String?)? = nil,
          writeClipboard: ((String) -> Void)? = nil,
-          readAccessibility: (() -> Bool)? = nil,
-          captureSelection: (() async throws -> any CapturedTextSelection)? = nil,
-           notify: ((String, String) -> Void)? = nil,
-           dictationController: DictationController? = nil,
-           modelService: LocalModels? = nil,
-           errorDisplayDuration: Duration = .seconds(6)) {
+         readAccessibility: (() -> Bool)? = nil,
+         captureSelection: (() async throws -> any CapturedTextSelection)? = nil,
+         dictationController: DictationController? = nil,
+         modelService: LocalModels? = nil,
+         errorDisplayDuration: Duration = .seconds(6)) {
         let dataDirectory = dataDirectory ?? ProcessInfo.processInfo.environment["FROG_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         self.registerShortcuts = registerShortcuts
         self.dictation = dictationController ?? DictationController()
@@ -83,7 +81,6 @@ final class AppModel: ObservableObject {
         localModels = modelService ?? LocalModels(directory: dataDirectory)
         self.readAccessibility = readAccessibility ?? { SelectionService.isTrusted }
         self.captureSelection = captureSelection ?? { try await SelectionService().capture() }
-        self.notify = notify ?? { DesktopNotifications.post(title: $0, body: $1) }
         self.complete = complete ?? { text, rule, provider, key in try await LLMClient().complete(text: text, rule: rule, provider: provider, apiKey: key) }
         self.readKey = readKey ?? { try KeychainStore().read(providerID: $0) }
         self.writeClipboard = writeClipboard ?? { text in NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
@@ -140,6 +137,11 @@ final class AppModel: ObservableObject {
                 return try await self.complete(text, rule, provider, self.readKey(provider.id))
             }
             return try await self.localModels.complete(text, instructions: rule.instructions, modelID: provider.model)
+        }
+        dictation.localCleanupModel = { [weak self] rule in
+            guard let self else { throw CancellationError() }
+            let provider = try self.resolved(rule)
+            return provider.id == Self.localProviderID ? provider.model : nil
         }
         dictation.onFinish = { [weak self] rule, _, _, delivery in
             guard let self else { return }
@@ -297,6 +299,13 @@ final class AppModel: ObservableObject {
         try persist(candidate)
     }
 
+    func deleteLocalModel(_ item: LocalModelDescriptor) async throws {
+        try await localModels.remove(item.id)
+        var candidate = configuration
+        candidate.modelsRemoved([RuleModelSelection(modelID: item.id, category: item.kind == .audio ? .audio : .text)], installed: localModels.installed)
+        try persist(candidate)
+    }
+
     func deleteRule(id: UUID) throws {
         var candidate = configuration
         candidate.rules.removeAll { $0.id == id }
@@ -314,20 +323,9 @@ final class AppModel: ObservableObject {
         if let index = candidate.providers.firstIndex(where: { $0.id == provider.id }) { candidate.providers[index] = provider }
         else { candidate.providers.append(provider) }
         if candidate.defaultProviderID == nil { candidate.defaultProviderID = provider.id }
+        let removed = previousModels.filter { old in !provider.models.contains { $0.id == old.id && $0.category == old.category } }
+        candidate.modelsRemoved(removed.map { RuleModelSelection(providerID: provider.id, modelID: $0.id, category: $0.category) }, installed: localModels.installed)
         if candidate.explicitRuleModels == true {
-            // Removed models leave affected rules unconfigured, never silently rerouted.
-            for index in candidate.rules.indices {
-                if candidate.rules[index].providerID == provider.id,
-                   !provider.models.contains(where: { $0.id == candidate.rules[index].model && $0.category == .text }) {
-                    candidate.rules[index].providerID = nil; candidate.rules[index].model = ""
-                    candidate.rules[index].preset = false
-                }
-                if candidate.rules[index].action?.audioProviderID == provider.id,
-                   !provider.models.contains(where: { $0.id == candidate.rules[index].action?.audioModelID && $0.category == .audio }) {
-                    candidate.rules[index].action?.audioProviderID = nil; candidate.rules[index].action?.audioModelID = nil
-                    candidate.rules[index].preset = false
-                }
-            }
             for item in provider.models where !previousModels.contains(where: { $0.id == item.id && $0.category == item.category }) {
                 candidate.modelAdded(RuleModelSelection(providerID: provider.id, modelID: item.id, category: item.category))
             }
@@ -352,17 +350,15 @@ final class AppModel: ObservableObject {
 
     func deleteProvider(id: UUID) throws {
         var candidate = configuration
+        let removed = candidate.providers.first(where: { $0.id == id })?.models ?? []
         candidate.providers.removeAll { $0.id == id }
         let removedDefault = candidate.defaultProviderID == id
         if removedDefault { candidate.defaultProviderID = candidate.providers.first?.id }
+        candidate.modelsRemoved(removed.map { RuleModelSelection(providerID: id, modelID: $0.id, category: $0.category) }, installed: localModels.installed)
         for index in candidate.rules.indices {
-            if candidate.rules[index].providerID == id || (candidate.explicitRuleModels != true && removedDefault && candidate.rules[index].providerID == nil) {
+            if candidate.rules[index].providerID == id || (candidate.explicitRuleModels != true && removedDefault && configuration.rules[index].providerID == nil) {
                 candidate.rules[index].providerID = nil
                 candidate.rules[index].model = ""
-                candidate.rules[index].preset = false
-            }
-            if candidate.rules[index].action?.audioProviderID == id {
-                candidate.rules[index].action?.audioProviderID = nil; candidate.rules[index].action?.audioModelID = nil
                 candidate.rules[index].preset = false
             }
         }
@@ -662,7 +658,6 @@ final class AppModel: ObservableObject {
                     catch {
                         self.status = "Result ready on clipboard; replacement skipped."
                         self.report(error)
-                        self.notify("Frog: result copied", error.localizedDescription)
                     }
                 } else {
                     self.manualResult = result
@@ -688,7 +683,6 @@ final class AppModel: ObservableObject {
         report(error)
         if background {
             showIndicator(error.localizedDescription, working: false)
-            notify("Frog", error.localizedDescription)
         }
     }
 

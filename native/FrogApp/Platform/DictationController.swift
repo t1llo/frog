@@ -16,6 +16,7 @@ final class DictationController: ObservableObject {
     @Published private(set) var microphones: [AudioDevice] = []
     let microphoneMeter = MicrophoneMeter()
     @Published private(set) var hint = ""
+    @Published private(set) var preparationMessage = "Preparing…"
     private(set) var ruleID: UUID?
     private var recorder: (any DictationRecording)?
     private let makeRecorder: () -> any DictationRecording
@@ -25,6 +26,7 @@ final class DictationController: ObservableObject {
     private let previewInterval: Duration
     private let inputDevices: () -> [AudioDevice]
     private var lastInputElapsed = 0
+    private var lastInputRevision: UInt64 = 0
     private let outputMute = RecordingMute()
     private var work: Task<Void, Never>?
     private var preview: Task<Void, Never>?
@@ -34,7 +36,6 @@ final class DictationController: ObservableObject {
     private var localEscapeMonitor: Any?
     private var panel: NSPanel?
     private var token: UUID?
-    private var stopRequested = false
     private var samples = AudioSamples()
     private var previewPrefix = ""
     private var previewDraft = ""
@@ -44,18 +45,15 @@ final class DictationController: ObservableObject {
     private var activeRule: Rule?
     private var preferences = WorkflowPreferences()
     private weak var models: LocalModels?
+    private var residencyHold: UUID?
     var onFinish: ((Rule, String, String, String) -> Void)?
     var onTranscript: ((Rule, String, String) -> Void)?
     var onError: ((Error) -> Void)?
     var onMicrophoneChange: ((String?) -> Void)?
     var cleanup: ((String, Rule) async throws -> String)?
+    var localCleanupModel: ((Rule) throws -> String?)?
     var externalTranscription: (([Float], Rule) async throws -> String)?
     var active: Bool { phase != .idle }
-    fileprivate var loadingSpeechModel: Bool {
-        guard let models, let rule = activeRule, rule.action?.audioProviderID == nil,
-              let id = rule.action?.audioModelID else { return false }
-        return models.busy && !models.loaded.contains(id)
-    }
 
     init(makeRecorder: @escaping @MainActor () -> any DictationRecording = { MicrophoneRecording() },
          authorize: @escaping @MainActor () async -> Bool = { DictationController.microphoneGranted ? true : await DictationController.requestMicrophone() },
@@ -83,18 +81,20 @@ final class DictationController: ObservableObject {
         guard external || models.installed.contains(modelID) else { onError?(FrogError.message("Download this speech model in Models first.")); return }
         let token = UUID(); self.token = token
         self.preferences = preferences; self.models = models; activeRule = rule; ruleID = rule.id
+        residencyHold = models.holdResidency()
         self.preferences.showDictationPopup = rule.action?.showRecordingPopup ?? true
         self.preferences.transcriptionLanguage = rule.action?.transcriptionLanguage
-        stopRequested = false; samples = AudioSamples(); liveText = ""; elapsed = 0
-        noMicrophoneInput = false; lastInputElapsed = 0
+        samples = AudioSamples(); liveText = ""; elapsed = 0
+        noMicrophoneInput = false; lastInputElapsed = 0; lastInputRevision = 0
         selectedMicrophoneID = preferences.microphoneID; refreshMicrophones()
         microphoneMeter.reset()
         previewPrefix = ""; previewDraft = ""; previewOffset = 0
         completedTranscript = []; partialTranscript = nil
         phase = .preparing
+        preparationMessage = "Checking microphone permission…"
         let shortcut = rule.hotkey.map(HotkeyManager.display) ?? "Stop button"
-        hint = (rule.action?.recordingMode ?? preferences.recordingMode) == .hold ? "Release \(shortcut) to stop · Esc to cancel" : "\(shortcut) to stop · Esc to cancel"
-        if rule.hotkey == nil { hint = "Stop to finish · Esc to cancel" }
+        let recordingHint = rule.hotkey == nil ? "Stop to finish · Esc to cancel" : (rule.action?.recordingMode ?? preferences.recordingMode) == .hold ? "Release \(shortcut) to stop · Esc to cancel" : "\(shortcut) to stop · Esc to cancel"
+        hint = "Esc to cancel"
         if self.preferences.showDictationPopup { showPanel() }
         if monitorKeys { installEscape() }
         work = Task { [weak self] in
@@ -105,11 +105,29 @@ final class DictationController: ObservableObject {
                 self.fail(FrogError.message("Allow Microphone in Settings to record dictation."), token: token); return
             }
             guard self.token == token, !Task.isCancelled else { return }
-            if self.stopRequested { self.cancel(); return }
             do {
+                if !external {
+                    self.preparationMessage = "Loading speech model…"
+                    try await models.prepare(modelID)
+                }
+                try Task.checkCancellation()
+                guard self.token == token else { return }
+                if rule.action?.cleanup == true {
+                    let cleanupID: String?
+                    if let resolve = self.localCleanupModel { cleanupID = try resolve(rule) }
+                    else { cleanupID = rule.action?.localTextModelID }
+                    if let cleanupID {
+                        self.preparationMessage = "Loading cleanup model…"
+                        try await models.prepare(cleanupID)
+                    }
+                }
+                try Task.checkCancellation()
+                guard self.token == token else { return }
+                self.preparationMessage = "Starting microphone…"
                 if preferences.muteWhileRecording == true { try self.outputMute.begin() }
                 try self.beginRecording(microphoneID: self.preferences.microphoneID)
                 self.phase = .recording
+                self.hint = recordingHint
                 let recordingStarted = ContinuousClock.now
                 self.ticker = Task { [weak self] in
                     while !Task.isCancelled {
@@ -137,7 +155,8 @@ final class DictationController: ObservableObject {
         if self.elapsed != elapsed { self.elapsed = elapsed }
         let level = samples.inputLevel
         microphoneMeter.append(level)
-        if level > 0.01 { lastInputElapsed = elapsed }
+        let revision = samples.inputRevision
+        if revision != lastInputRevision { lastInputElapsed = elapsed; lastInputRevision = revision }
         let missing = phase == .recording && elapsed - lastInputElapsed >= 2
         if noMicrophoneInput != missing { noMicrophoneInput = missing }
     }
@@ -206,7 +225,7 @@ final class DictationController: ObservableObject {
 
     func stop(models: LocalModels) {
         guard let token, let rule = activeRule else { return }
-        if phase == .preparing { stopRequested = true; return }
+        if phase == .preparing { cancel(); return }
         guard phase == .recording else { return }
         let recorder = self.recorder; self.recorder = nil
         let capturedSamples = samples
@@ -297,6 +316,7 @@ final class DictationController: ObservableObject {
         work = nil; preview = nil; previewInference = nil; ticker = nil
         recorder?.stop(); recorder = nil; samples.clear()
         outputMute.restore()
+        if let residencyHold { models?.releaseResidency(residencyHold) }; residencyHold = nil
         activeRule = nil; ruleID = nil; phase = .idle
         panel?.orderOut(nil)
         if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }; escapeMonitor = nil
@@ -316,7 +336,6 @@ final class DictationController: ObservableObject {
         }
     }
     private func showPanel() {
-        guard let models else { return }
         if panel == nil {
             let panel = NSPanel(contentRect: NSRect(origin: .zero, size: DictationPopup.size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             panel.level = .floating; panel.isOpaque = false; panel.backgroundColor = .clear
@@ -324,7 +343,7 @@ final class DictationController: ObservableObject {
             panel.hidesOnDeactivate = false; panel.isReleasedWhenClosed = false
             self.panel = panel
         }
-        let content = DictationPopup(controller: self, models: models)
+        let content = DictationPopup(controller: self)
         if let hosting = panel?.contentView as? NSHostingView<DictationPopup> { hosting.rootView = content }
         else { panel?.contentView = NSHostingView(rootView: content) }
         if let screen = NSScreen.main { panel?.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - DictationPopup.size.width / 2, y: screen.visibleFrame.minY + 24)) }
@@ -335,7 +354,6 @@ final class DictationController: ObservableObject {
 private struct DictationPopup: View {
     static let size = NSSize(width: 400, height: 120)
     @ObservedObject var controller: DictationController
-    @ObservedObject var models: LocalModels
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
@@ -356,7 +374,8 @@ private struct DictationPopup: View {
                     .simultaneousGesture(TapGesture().onEnded { controller.refreshMicrophones() })
                 }
                 Text(L10n.text(controller.phase.rawValue.capitalized)).font(.system(size: 12, weight: .semibold))
-                Spacer(); Text("\(controller.elapsed)s").monospacedDigit().foregroundStyle(.secondary)
+                Spacer()
+                if controller.phase != .preparing { Text("\(controller.elapsed)s").monospacedDigit().foregroundStyle(.secondary) }
                 if controller.phase == .recording {
                     Button { controller.requestStop() } label: { Image(systemName: "stop.fill").font(.system(size: 10)) }
                         .buttonStyle(.plain).help("Stop recording").accessibilityLabel("Stop recording")
@@ -374,7 +393,7 @@ private struct DictationPopup: View {
             }
             ScrollViewReader { reader in
                 ScrollView {
-                    Text(controller.liveText.isEmpty ? L10n.text(controller.loadingSpeechModel ? "Loading speech model…" : controller.phase == .recording ? "Listening…" : controller.phase == .preparing ? "Starting microphone…" : "Processing audio…") : controller.liveText)
+                    Text(controller.liveText.isEmpty ? L10n.text(controller.phase == .preparing ? controller.preparationMessage : controller.phase == .recording ? "Listening…" : "Processing audio…") : controller.liveText)
                         .font(.system(size: 12)).lineSpacing(2).fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Color.clear.frame(height: 1).id("transcript-end")
@@ -416,8 +435,10 @@ final class AudioSamples: @unchecked Sendable {
     private let lock = NSLock()
     private var samples: [Float] = []
     private var level = 0.0
+    private var revision: UInt64 = 0
     private var input = UUID()
     private var lastInput = ContinuousClock.now
+    var inputRevision: UInt64 { lock.lock(); defer { lock.unlock() }; return revision }
     var inputLevel: Double {
         lock.lock(); defer { lock.unlock() }
         return lastInput.duration(to: .now) < .milliseconds(300) ? level : 0
@@ -430,7 +451,8 @@ final class AudioSamples: @unchecked Sendable {
     func endInput() { lock.lock(); defer { lock.unlock() }; input = UUID(); level = 0 }
     func append(_ buffer: [Float], from input: UUID? = nil) {
         lock.lock(); defer { lock.unlock() }
-        guard input == nil || input == self.input else { return }
+        guard !buffer.isEmpty, input == nil || input == self.input else { return }
+        revision &+= 1
         samples.append(contentsOf: buffer.prefix(max(0, 600 * 16000 - samples.count)))
         let energy = buffer.reduce(0.0) { $0 + Double($1) * Double($1) }
         level = min(1, sqrt(energy / Double(max(1, buffer.count))) * 8)

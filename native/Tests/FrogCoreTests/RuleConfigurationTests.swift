@@ -57,4 +57,42 @@ final class RuleConfigurationTests: XCTestCase {
         XCTAssertThrowsError(try ConfigurationFile.validate(config))
         XCTAssertEqual(Rule.dictationPreset.hotkey, Hotkey(keyCode: 49, modifiers: 2048))
     }
+
+    func testRemovedLocalTextFallsBackForTextAndCleanupWithoutCrossingIntoCloud() throws {
+        var config = Configuration()
+        let cloud = ProviderConfiguration(model: "cloud-text")
+        config.providers = [cloud]
+        var text = Rule()
+        RuleModelSelection(modelID: "qwen-0.6b", category: .text).apply(to: &text)
+        var audio = Rule.dictationPreset
+        audio.action?.audioModelID = "whisper-tiny"; audio.action?.localTextModelID = "qwen-0.6b"
+        config.rules = [text, audio, Rule(providerID: cloud.id, model: "cloud-text")]
+        config.modelsRemoved([.init(modelID: "qwen-0.6b", category: .text)], installed: ["whisper-tiny", "qwen-1.7b"])
+        XCTAssertEqual(config.rules[0].action?.localTextModelID, "qwen-1.7b")
+        XCTAssertEqual(config.rules[1].action?.localTextModelID, "qwen-1.7b")
+        XCTAssertEqual(config.rules[1].action?.audioModelID, "whisper-tiny")
+        XCTAssertEqual(config.rules[2].providerID, cloud.id)
+        config.modelsRemoved([.init(modelID: "qwen-1.7b", category: .text)], installed: ["whisper-tiny"])
+        XCTAssertNil(config.rules[0].action?.localTextModelID)
+        XCTAssertNil(config.rules[0].providerID)
+        XCTAssertNil(config.rules[1].action?.localTextModelID)
+        try ConfigurationFile.validate(config)
+    }
+
+    func testRemovedExternalAudioPrefersSameProviderAndCompatibleCategory() throws {
+        var config = Configuration()
+        let provider = ProviderConfiguration(model: "text", models: [.init(id: "text"), .init(id: "new-speech", category: .audio)])
+        config.providers = [provider]
+        var audio = Rule.dictationPreset
+        audio.action?.audioModelID = "old-speech"; audio.action?.audioProviderID = provider.id
+        config.rules = [audio]
+        config.modelsRemoved([.init(providerID: provider.id, modelID: "old-speech", category: .audio)], installed: ["whisper-tiny"])
+        XCTAssertEqual(config.rules[0].action?.audioModelID, "new-speech")
+        XCTAssertEqual(config.rules[0].action?.audioProviderID, provider.id)
+        config.providers = []
+        config.modelsRemoved([.init(providerID: provider.id, modelID: "new-speech", category: .audio)], installed: ["whisper-tiny"])
+        XCTAssertEqual(config.rules[0].action?.audioModelID, "whisper-tiny")
+        XCTAssertNil(config.rules[0].action?.audioProviderID)
+        try ConfigurationFile.validate(config)
+    }
 }

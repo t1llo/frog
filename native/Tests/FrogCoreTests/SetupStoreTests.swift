@@ -21,7 +21,7 @@ final class SetupStoreTests: XCTestCase {
     }
 
     func testRecommendedPairContainsOneSpeechAndOneTextModel() {
-        let models = LocalModelDescriptor.recommended
+        let models = LocalModelDescriptor.recommendedPair
         XCTAssertEqual(models.count, 2)
         XCTAssertEqual(models.filter { $0.kind == .audio }.count, 1)
         XCTAssertEqual(models.filter { $0.kind == .text }.count, 1)

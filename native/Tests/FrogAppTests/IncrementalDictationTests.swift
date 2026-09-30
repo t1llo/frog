@@ -199,6 +199,7 @@ private actor CountingSpeech: LocalInferenceEngine {
     }
     var calls: [Call] = []
     var loadedIDs: Set<String> = []
+    func prepare(model: LocalModelDescriptor, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws { loadedIDs.insert(model.id); await residency(loadedIDs) }
     private var pause: XCTestExpectation?
     private var continuation: CheckedContinuation<Void, Never>?
     private var shouldFail = false
@@ -217,7 +218,7 @@ private actor CountingSpeech: LocalInferenceEngine {
         return "Seconds \(Int(samples.first ?? 0))–\(Int(samples.last ?? 0))."
     }
     func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String { text }
-    func unload() { loadedIDs = [] }
+    func unload(keepingMetadata: Bool) { loadedIDs = [] }
 }
 
 private struct PreviewFailure: Error {}

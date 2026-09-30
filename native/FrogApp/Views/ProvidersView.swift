@@ -74,7 +74,7 @@ struct ProvidersView: View {
                 do { try model.deleteProvider(id: provider.id) } catch { model.report(error) }
                 deleting = nil
             }
-        } message: { Text("The saved API key will also be removed. Choose a new model in affected rules.") }
+        } message: { Text("The saved API key will also be removed. Affected rules will use another compatible model when available.") }
     }
 
 }

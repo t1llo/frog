@@ -93,9 +93,9 @@ struct SetupView: View {
                 }
             }
             SettingsSection(title: "Recommended offline pair") {
-                Text("Whisper Small for multilingual transcription and Qwen3 1.7B for writing. Approximately 1.5 GB to download; no model account required.")
+                Text("Whisper Turbo for broad multilingual dictation and Qwen3 1.7B for writing or optional cleanup. Approximately 1.6 GB to download; no model account required.")
                     .font(.caption).foregroundStyle(FrogStyle.muted)
-                ForEach(LocalModelDescriptor.recommended) { item in
+                ForEach(LocalModelDescriptor.recommendedPair) { item in
                     VStack(alignment: .leading, spacing: 6) {
                         CompactRow(title: item.name, detail: item.kind == .audio ? "Speech-to-text · \(item.size)" : "Text · \(item.size)") {
                             if model.localModels.installed.contains(item.id) {
@@ -110,10 +110,12 @@ struct SetupView: View {
                     }
                 }
                 Button("Download recommended pair") {
-                    for item in LocalModelDescriptor.recommended where !model.localModels.installed.contains(item.id) && model.localModels.progress[item.id] == nil {
+                    for item in LocalModelDescriptor.recommendedPair where !model.localModels.installed.contains(item.id) && model.localModels.progress[item.id] == nil {
                         model.localModels.download(item)
                     }
-                }.disabled(!LocalModels.supported || LocalModelDescriptor.recommended.allSatisfy { model.localModels.installed.contains($0.id) || model.localModels.progress[$0.id] != nil })
+                }.disabled(!LocalModels.supported || LocalModelDescriptor.recommendedPair.allSatisfy { model.localModels.installed.contains($0.id) || model.localModels.progress[$0.id] != nil })
+                Text("For faster dictation in 25 European languages, choose Parakeet v3 (≈483 MB) under other internal models below.")
+                    .font(.caption).foregroundStyle(FrogStyle.muted)
                 if !LocalModels.supported { Text("Internal inference requires Apple silicon. Use an external provider on this Mac, or skip for now.").font(.caption).foregroundStyle(.orange) }
                 Text("Downloads continue if you move to the next step. You can cancel them in Models.").font(.caption).foregroundStyle(FrogStyle.muted)
             }
@@ -141,7 +143,6 @@ struct SetupView: View {
                 }
             }
             Divider()
-            NotificationPermissionRow(detail: "Optional alerts about requests and errors.")
             Text("You can skip any permission and enable it later in Settings. Features needing it stay unavailable until allowed.").font(.caption).foregroundStyle(FrogStyle.muted)
         }
     }
