@@ -3,7 +3,7 @@ import FrogCore
 
 struct HistoryView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var viewing: HistoryEntry?
+    @State private var viewing: UUID?
     @State private var search = ""
     @State private var category: RuleCategory?
     @State private var confirmClear = false
@@ -16,7 +16,7 @@ struct HistoryView: View {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
         return model.history.filter { entry in
             (category == nil || (entry.category ?? .text) == category) &&
-            (query.isEmpty || [entry.ruleName, entry.originalText, entry.processedText, entry.providerName, entry.model]
+            (query.isEmpty || [entry.ruleName, entry.originalText, entry.processedText, entry.providerName, entry.model, entry.interruptionLabel ?? ""]
                 .contains { $0.localizedStandardContains(query) })
         }
     }
@@ -25,7 +25,7 @@ struct HistoryView: View {
         let displayedEntries = entries
         let lastEntryID = displayedEntries.last?.id
         VStack(alignment: .leading, spacing: 14) {
-            if let viewing {
+            if let viewing = model.history.first(where: { $0.id == self.viewing }) {
                 HStack {
                     Button { self.viewing = nil } label: { Label("History", systemImage: "arrow.left") }
                     Spacer()
@@ -33,6 +33,7 @@ struct HistoryView: View {
                     IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = viewing }
                 }.frame(height: 32)
                 PageHeader(title: viewing.ruleName, subtitle: viewing.timestamp.formatted(date: .abbreviated, time: .shortened))
+                interruptionStatus(viewing)
                 ScrollView {
                     if hidden(viewing) {
                         VStack(spacing: 12) {
@@ -67,7 +68,7 @@ struct HistoryView: View {
             if model.history.isEmpty {
                 FrogEmptyState(symbol: "clock.arrow.circlepath", title: "No history yet",
                                message: model.configuration.preferences.historyEnabled
-                               ? "Completed transformations will appear here."
+                               ? "Transformations and interrupted recordings will appear here."
                                : "Enable history to save future originals and results on this Mac.")
                 Spacer(minLength: 0)
             } else if displayedEntries.isEmpty {
@@ -92,7 +93,7 @@ struct HistoryView: View {
             .onChange(of: model.configuration.preferences.hideHistoryText) { _, _ in revealed = [] }
             .onDisappear { revealed = [] }
             .onChange(of: model.history.map(\.id)) { _, ids in
-                if let viewing, !ids.contains(viewing.id) { self.viewing = nil }
+                if let viewing, !ids.contains(viewing) { self.viewing = nil }
             }
             .task(id: copiedID) {
                 guard copiedID != nil else { return }
@@ -115,7 +116,7 @@ struct HistoryView: View {
 
     private func historyRow(_ item: HistoryEntry) -> some View {
         HStack(spacing: 12) {
-            Button { viewing = item } label: {
+            Button { viewing = item.id } label: {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack {
                         FrogBadge(text: item.category == .audio ? "Audio" : "Text")
@@ -123,16 +124,33 @@ struct HistoryView: View {
                             .font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
                         Spacer()
                     }
-                    Text(hidden(item) ? "••••••••••••" : item.processedText).font(.system(size: 12)).foregroundStyle(FrogStyle.ink)
+                    interruptionStatus(item)
+                    Text(hidden(item) ? "••••••••••••" : item.processedText.isEmpty ? L10n.text("No transcript available") : item.processedText).font(.system(size: 12)).foregroundStyle(FrogStyle.ink)
                         .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
                 }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain).help("Open full entry")
             if model.configuration.preferences.hideHistoryText { revealButton(item) }
             IconAction(title: copiedID == item.id ? "Copied" : "Copy result", symbol: copiedID == item.id ? "checkmark" : "doc.on.doc") {
                 ViewActions.copy(item.processedText); copiedID = item.id
-            }
+            }.disabled(item.processedText.isEmpty)
             IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = item }
         }.padding(12)
+    }
+    @ViewBuilder
+    private func interruptionStatus(_ entry: HistoryEntry) -> some View {
+        if let label = entry.interruptionLabel {
+            HStack(spacing: 8) {
+                FrogBadge(text: label)
+                if model.dictation.recoveringHistoryIDs.contains(entry.id) {
+                    ProgressView().controlSize(.mini)
+                    Text("Transcribing…")
+                } else if entry.transcriptState == .failed {
+                    Text("Transcription failed")
+                } else if entry.transcriptState == .partial {
+                    Text("Partial transcript")
+                }
+            }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+        }
     }
     private func revealButton(_ entry: HistoryEntry) -> some View {
         IconAction(title: hidden(entry) ? "Reveal text" : "Hide text", symbol: hidden(entry) ? "eye" : "eye.slash") {
@@ -163,11 +181,21 @@ private struct HistoryDetail: View {
                     Spacer()
                     Button(L10n.text(copied == title ? "Copied" : "Copy"), systemImage: copied == title ? "checkmark" : "doc.on.doc") {
                         ViewActions.copy(text); copied = title
-                    }.accessibilityLabel("Copy \(title.lowercased())")
+                    }.accessibilityLabel("Copy \(title.lowercased())").disabled(text.isEmpty)
                 }
                 Text(text).font(.system(size: 13)).lineSpacing(4).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+    }
+}
+
+private extension HistoryEntry {
+    var interruptionLabel: String? {
+        switch interruption {
+        case .escape: "Interrupted · Esc"
+        case .cancelled: "Interrupted"
+        case nil: nil
+        }
     }
 }

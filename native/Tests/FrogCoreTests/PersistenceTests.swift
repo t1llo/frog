@@ -108,6 +108,28 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(try store.load(preferences: preferences), [])
     }
 
+    func testInterruptedHistoryRoundTripsAndLateUpdatesCannotRestoreDeletedEntries() throws {
+        let store = HistoryStore(directory: directory)
+        var preferences = Preferences(); preferences.historyEnabled = true
+        let legacy = entry()
+        XCTAssertNil(try JSONDecoder().decode(HistoryEntry.self, from: JSONEncoder().encode(legacy)).interruption)
+        var interrupted = entry(); interrupted.category = .audio
+        interrupted.interruption = .escape; interrupted.transcriptState = .partial
+        try store.append(interrupted, preferences: preferences)
+        XCTAssertEqual(try store.load(preferences: preferences), [interrupted])
+        interrupted.processedText = "Recovered transcript"; interrupted.transcriptState = .complete
+        XCTAssertTrue(try store.update(interrupted, preferences: preferences))
+        XCTAssertEqual(try store.load(preferences: preferences), [interrupted])
+        try store.delete(id: interrupted.id)
+        XCTAssertFalse(try store.update(interrupted, preferences: preferences))
+        XCTAssertTrue(try store.load(preferences: preferences).isEmpty)
+        try store.append(interrupted, preferences: preferences)
+        preferences.historyEnabled = false
+        interrupted.processedText = "Disabled history must not change"
+        XCTAssertFalse(try store.update(interrupted, preferences: preferences))
+        XCTAssertEqual(try store.load(preferences: preferences).first?.processedText, "Recovered transcript")
+    }
+
     func testHistoryBoundsRetentionOrderingDeduplicationAndClear() throws {
         let store = HistoryStore(directory: directory)
         var preferences = Preferences(); preferences.historyEnabled = true

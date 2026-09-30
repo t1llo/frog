@@ -4,6 +4,82 @@ import FrogCore
 
 @MainActor
 final class IncrementalDictationTests: XCTestCase {
+    func testNewRecordingCleanupWaitsForInterruptedHistoryInsteadOfFailingBusy() async throws {
+        let fixture = await makeFixture(seconds: 2)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let textModel = try XCTUnwrap(LocalModelDescriptor.find("qwen-0.6b"))
+        fixture.models.download(textModel); await fixture.models.waitForDownload(textModel.id)
+        try await fixture.models.prepare(textModel.id)
+        var copied = ""
+        let controller = DictationController(makeRecorder: { BufferedRecording(seconds: 2) }, authorize: { true }, copy: { copied = $0 }, monitorKeys: false, previewInterval: .seconds(3600))
+        let model = AppModel(dataDirectory: fixture.directory, registerShortcuts: false, dictationController: controller, modelService: fixture.models)
+        defer { model.shutdown() }
+        var preferences = model.configuration.preferences; preferences.historyEnabled = true
+        try model.savePreferences(preferences)
+        let recoveryStarted = expectation(description: "Background recognition started")
+        await fixture.engine.pauseNext(recoveryStarted)
+        model.startDictation(rule)
+        await controller.waitForWork()
+        controller.interrupt(reason: .escape)
+        await fulfillment(of: [recoveryStarted], timeout: 2)
+        let cleanupStarted = expectation(description: "New recording reached cleanup")
+        let cleanup = try XCTUnwrap(controller.cleanup)
+        controller.cleanup = { text, rule in cleanupStarted.fulfill(); return try await cleanup(text, rule) }
+        controller.externalTranscription = { _, _ in "New speech" }
+        var nextRule = rule
+        nextRule.action?.audioProviderID = UUID(); nextRule.action?.cleanup = true
+        nextRule.action?.localTextModelID = textModel.id
+        model.startDictation(nextRule)
+        await controller.waitForWork()
+        controller.stop(models: fixture.models)
+        await fulfillment(of: [cleanupStarted], timeout: 2)
+        XCTAssertEqual(controller.phase, .correcting)
+        XCTAssertTrue(copied.isEmpty)
+        await fixture.engine.resume()
+        await controller.waitForHistoryRecovery()
+        await controller.waitForWork()
+        XCTAssertEqual(copied, "Cleaned: New speech")
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.history.first(where: { $0.interruption == .escape })?.processedText, "Seconds 0–1.")
+    }
+
+    func testInterruptedHistoryReusesCompletedAndInFlightPreviewWithoutUpdatingANewerRecording() async throws {
+        let fixture = await makeFixture(seconds: 35)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        var copied = ""
+        let controller = DictationController(makeRecorder: { BufferedRecording(seconds: 35) }, authorize: { true }, copy: { copied = $0 }, monitorKeys: false, previewInterval: .seconds(3600))
+        let model = AppModel(dataDirectory: fixture.directory, registerShortcuts: false, dictationController: controller, modelService: fixture.models)
+        defer { model.shutdown() }
+        var preferences = model.configuration.preferences; preferences.historyEnabled = true
+        try model.savePreferences(preferences)
+        fixture.models.idleSeconds = 0
+        model.startDictation(rule)
+        await controller.waitForWork()
+        try await controller.refreshPreview()
+        let started = expectation(description: "Ending preview started")
+        await fixture.engine.pauseNext(started)
+        let preview = Task { try await controller.refreshPreview() }
+        await fulfillment(of: [started], timeout: 2)
+        controller.interrupt(reason: .escape)
+        model.startDictation(rule)
+        await controller.waitForWork()
+        XCTAssertEqual(controller.phase, .recording)
+        await fixture.engine.resume()
+        try await preview.value
+        await controller.waitForHistoryRecovery()
+        let calls = await fixture.engine.calls
+        XCTAssertEqual(calls.map(\.count), [30, 5].map { $0 * 16000 })
+        XCTAssertEqual(model.history.first?.processedText, "Seconds 0–29. Seconds 30–34.")
+        XCTAssertEqual(model.history.first?.interruption, .escape)
+        XCTAssertEqual(controller.phase, .recording)
+        XCTAssertTrue(controller.liveText.isEmpty)
+        XCTAssertTrue(copied.isEmpty)
+        XCTAssertEqual(fixture.models.loaded, ["whisper-base"], "Recovery must not release the newer recording's residency hold")
+        controller.cancel()
+        await fixture.models.waitForIdleUnload()
+        XCTAssertTrue(fixture.models.loaded.isEmpty)
+    }
+
     func testCancelThenRecordStartsMicrophoneWhileOldRecognitionFinishesCancelling() async throws {
         let fixture = await makeFixture(seconds: 2)
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
@@ -207,7 +283,7 @@ private actor CountingSpeech: LocalInferenceEngine {
     func resume() { continuation?.resume(); continuation = nil }
     func failNext() { shouldFail = true }
     func transcribe(_ samples: [Float], model: LocalModelDescriptor, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
-        loadedIDs = [model.id]; await residency(loadedIDs)
+        loadedIDs.insert(model.id); await residency(loadedIDs)
         calls.append(Call(count: samples.count, firstSecond: Int(samples.first ?? 0)))
         if let pause {
             self.pause = nil
@@ -217,7 +293,7 @@ private actor CountingSpeech: LocalInferenceEngine {
         if shouldFail { shouldFail = false; throw PreviewFailure() }
         return "Seconds \(Int(samples.first ?? 0))–\(Int(samples.last ?? 0))."
     }
-    func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String { text }
+    func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String { "Cleaned: \(text)" }
     func unload(keepingMetadata: Bool) { loadedIDs = [] }
 }
 

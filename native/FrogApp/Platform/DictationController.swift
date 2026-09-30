@@ -14,6 +14,7 @@ final class DictationController: ObservableObject {
     @Published private(set) var noMicrophoneInput = false
     @Published private(set) var selectedMicrophoneID: String?
     @Published private(set) var microphones: [AudioDevice] = []
+    @Published private(set) var recoveringHistoryIDs = Set<UUID>()
     let microphoneMeter = MicrophoneMeter()
     @Published private(set) var hint = ""
     @Published private(set) var preparationMessage = "Preparing…"
@@ -31,6 +32,8 @@ final class DictationController: ObservableObject {
     private var work: Task<Void, Never>?
     private var preview: Task<Void, Never>?
     private var previewInference: Task<Void, Error>?
+    private var finalTranscription: Task<String, Error>?
+    private var historyRecovery: [UUID: (work: Task<Void, Never>, recognition: Task<String, Error>)] = [:]
     private var ticker: Task<Void, Never>?
     private var escapeMonitor: Any?
     private var localEscapeMonitor: Any?
@@ -39,15 +42,16 @@ final class DictationController: ObservableObject {
     private var samples = AudioSamples()
     private var previewPrefix = ""
     private var previewDraft = ""
-    private var previewOffset = 0
-    private var completedTranscript: [String] = []
-    private var partialTranscript: (sampleCount: Int, text: String)?
+    private var transcript = DictationTranscript()
+    private var transcriptPublished = false
     private var activeRule: Rule?
     private var preferences = WorkflowPreferences()
     private weak var models: LocalModels?
     private var residencyHold: UUID?
     var onFinish: ((Rule, String, String, String) -> Void)?
-    var onTranscript: ((Rule, String, String) -> Void)?
+    var onTranscript: ((UUID, Rule, String, String) -> Void)?
+    var onInterruption: ((DictationInterruption) -> Bool)?
+    var onHistoryRecovered: ((UUID, Result<String, Error>) -> Void)?
     var onError: ((Error) -> Void)?
     var onMicrophoneChange: ((String?) -> Void)?
     var cleanup: ((String, Rule) async throws -> String)?
@@ -66,6 +70,9 @@ final class DictationController: ObservableObject {
     }
 
     func waitForWork() async { await work?.value }
+    func waitForHistoryRecovery() async {
+        for task in Array(historyRecovery.values) { await task.work.value }
+    }
 
     static var microphoneGranted: Bool { AVCaptureDevice.authorizationStatus(for: .audio) == .authorized }
     static var devices: [AudioDevice] { AudioProcessor.getAudioDevices() }
@@ -88,8 +95,8 @@ final class DictationController: ObservableObject {
         noMicrophoneInput = false; lastInputElapsed = 0; lastInputRevision = 0
         selectedMicrophoneID = preferences.microphoneID; refreshMicrophones()
         microphoneMeter.reset()
-        previewPrefix = ""; previewDraft = ""; previewOffset = 0
-        completedTranscript = []; partialTranscript = nil
+        previewPrefix = ""; previewDraft = ""
+        transcript = DictationTranscript(); transcriptPublished = false
         phase = .preparing
         preparationMessage = "Checking microphone permission…"
         let shortcut = rule.hotkey.map(HotkeyManager.display) ?? "Stop button"
@@ -125,7 +132,14 @@ final class DictationController: ObservableObject {
                 guard self.token == token else { return }
                 self.preparationMessage = "Starting microphone…"
                 if preferences.muteWhileRecording == true { try self.outputMute.begin() }
-                try self.beginRecording(microphoneID: self.preferences.microphoneID)
+                do { try self.beginRecording(microphoneID: self.preferences.microphoneID) }
+                catch {
+                    guard self.preferences.microphoneID != nil else { throw error }
+                    // A disconnected preferred input must not prevent starting with
+                    // macOS's default. Keep the saved preference for its next connection.
+                    try self.beginRecording(microphoneID: nil)
+                    self.selectedMicrophoneID = nil
+                }
                 self.phase = .recording
                 self.hint = recordingHint
                 let recordingStarted = ContinuousClock.now
@@ -167,20 +181,30 @@ final class DictationController: ObservableObject {
     }
 
     func selectMicrophone(_ id: String?) {
-        guard phase == .recording, id != selectedMicrophoneID || noMicrophoneInput else { return }
+        guard phase == .recording else { return }
+        if id == selectedMicrophoneID, !noMicrophoneInput {
+            rememberMicrophone(id)
+            return
+        }
         let previous = selectedMicrophoneID
         recorder?.stop(); recorder = nil
         do {
             try beginRecording(microphoneID: id)
-            preferences.microphoneID = id; selectedMicrophoneID = id
+            selectedMicrophoneID = id
             noMicrophoneInput = false; lastInputElapsed = elapsed; microphoneMeter.reset()
-            if previous != id { onMicrophoneChange?(id) }
+            rememberMicrophone(id)
         } catch {
             let issue = error
             do { try beginRecording(microphoneID: previous) }
             catch { if let token { fail(error, token: token) }; return }
             onError?(issue)
         }
+    }
+
+    private func rememberMicrophone(_ id: String?) {
+        guard preferences.microphoneID != id else { return }
+        preferences.microphoneID = id
+        onMicrophoneChange?(id)
     }
 
     private func beginRecording(microphoneID: String?) throws {
@@ -199,24 +223,18 @@ final class DictationController: ObservableObject {
     func refreshPreview(includePartial: Bool = true) async throws {
         guard let token, let rule = activeRule, let models, let modelID = rule.action?.audioModelID,
               rule.action?.audioProviderID == nil, phase == .recording, !models.busy, previewInference == nil else { return }
-        let audio = samples.snapshot(from: previewOffset, limit: 30 * 16000)
-        guard audio.count >= (includePartial ? 16000 : 30 * 16000), partialTranscript?.sampleCount != audio.count else { return }
+        let transcript = self.transcript
+        let audio = samples.snapshot(from: transcript.offset, limit: 30 * 16000)
+        guard audio.count >= (includePartial ? 16000 : 30 * 16000), transcript.partial?.sampleCount != audio.count else { return }
         // Keep inference separate from the preview timer: Stop interrupts the timer
-        // but lets useful in-flight recognition finish. Cancel still cancels both.
+        // but lets useful in-flight recognition finish, including interrupted history.
         let inference = Task { [weak self] in
             let text = try await models.transcribe(audio, modelID: modelID, language: rule.action?.transcriptionLanguage)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             try Task.checkCancellation()
+            transcript.acceptPreview(text, sampleCount: audio.count)
             guard let self, self.token == token, self.phase == .recording || self.phase == .transcribing else { return }
-            let complete = audio.count == 30 * 16000
-            self.updatePreview(text, completingWindow: complete)
-            if complete {
-                self.completedTranscript.append(text)
-                self.previewOffset += audio.count
-                self.partialTranscript = nil
-            } else {
-                self.partialTranscript = (audio.count, text)
-            }
+            self.updatePreview(text, completingWindow: audio.count == 30 * 16000)
         }
         previewInference = inference
         defer { if self.token == token { previewInference = nil } }
@@ -227,47 +245,14 @@ final class DictationController: ObservableObject {
         guard let token, let rule = activeRule else { return }
         if phase == .preparing { cancel(); return }
         guard phase == .recording else { return }
-        let recorder = self.recorder; self.recorder = nil
-        let capturedSamples = samples
-        ticker?.cancel(); ticker = nil
-        let pending = previewInference
-        preview?.cancel(); preview = nil
+        let recognition = finishTranscription(token: token, rule: rule, models: models)
         phase = .transcribing; hint = "Esc to cancel"
-        let modelID = rule.action?.audioModelID ?? preferences.audioModelID
         work = Task { [weak self] in
-            // Drain capture's queued buffers before freezing the transcript input. Cancelling still
-            // finishes this recorder, but must not restore mute or clear samples for a newer session.
-            await recorder?.finish()
-            capturedSamples.endInput()
-            let audio = capturedSamples.snapshot(); capturedSamples.clear()
-            guard let self, self.token == token, !Task.isCancelled else { return }
-            self.outputMute.restore()
-            // A failed preview leaves its audio uncommitted so final recognition retries it.
-            _ = try? await pending?.value
-            guard self.token == token, !Task.isCancelled else { return }
+            guard let self else { return }
             do {
-                guard audio.count >= 3200 else { throw FrogError.message("No speech recorded. Hold the shortcut longer, or use toggle mode.") }
-                let raw: String
-                if rule.action?.audioProviderID != nil {
-                    guard let transcribe = self.externalTranscription else { throw FrogError.message("External speech is unavailable.") }
-                    raw = try await transcribe(audio, rule)
-                } else {
-                    let remaining = Array(audio.dropFirst(self.previewOffset))
-                    let ending: String
-                    if remaining.isEmpty { ending = "" }
-                    else if let partial = self.partialTranscript, partial.sampleCount == remaining.count {
-                        ending = partial.text
-                    } else {
-                        try await models.waitUntilAvailable()
-                        try Task.checkCancellation()
-                        ending = try await models.transcribe(remaining, modelID: modelID, language: rule.action?.transcriptionLanguage)
-                    }
-                    raw = (self.completedTranscript + [ending]).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                        .filter { !$0.isEmpty }.joined(separator: " ")
-                }
+                let raw = try await recognition.value
                 try Task.checkCancellation()
                 guard self.token == token else { return }
-                guard !raw.isEmpty else { throw FrogError.message("No speech detected.") }
                 self.liveText = raw
                 var output = raw
                 if rule.action?.cleanup == true {
@@ -284,7 +269,8 @@ final class DictationController: ObservableObject {
                 try Task.checkCancellation()
                 guard self.token == token else { return }
                 // A completed transcript belongs in history even if delivery is subsequently cancelled.
-                self.onTranscript?(rule, raw, output)
+                self.transcriptPublished = true
+                self.onTranscript?(token, rule, raw, output)
                 self.copy(output)
                 var insertion: (() async throws -> Void)?
                 if (rule.action?.output ?? self.preferences.output) == .paste {
@@ -297,6 +283,57 @@ final class DictationController: ObservableObject {
                     self.cancel()
                 }
             } catch { self.fail(error, token: token) }
+        }
+    }
+
+    private func finishTranscription(token: UUID, rule: Rule, models: LocalModels) -> Task<String, Error> {
+        if let finalTranscription { return finalTranscription }
+        let recorder = self.recorder; self.recorder = nil
+        let capturedSamples = samples, transcript = self.transcript
+        let pending = previewInference, external = externalTranscription
+        ticker?.cancel(); ticker = nil
+        preview?.cancel(); preview = nil
+        let recognition = Task { [weak self] in
+            try await transcript.finish(recorder: recorder, samples: capturedSamples,
+                                        pendingPreview: pending, models: models, rule: rule, external: external) {
+                if self?.token == token { self?.outputMute.restore() }
+            }
+        }
+        finalTranscription = recognition
+        return recognition
+    }
+
+    func interrupt(reason: HistoryEntry.Interruption = .cancelled) {
+        guard let token, let rule = activeRule, let models, phase != .preparing else { cancel(); return }
+        let interruption = DictationInterruption(id: token, rule: rule, text: liveText,
+                                                reason: reason, transcriptPublished: transcriptPublished)
+        guard onInterruption?(interruption) == true else { cancel(); return }
+        let recognition = finishTranscription(token: token, rule: rule, models: models)
+        let hold = residencyHold; residencyHold = nil
+        // Transfer capture/recognition ownership before resetting the active recording.
+        finalTranscription = nil; previewInference = nil; samples = AudioSamples()
+        cancel()
+        recoveringHistoryIDs.insert(token)
+        let recovery = Task { [weak self] in
+            defer {
+                if let hold { models.releaseResidency(hold) }
+                self?.historyRecovery[token] = nil
+                self?.recoveringHistoryIDs.remove(token)
+            }
+            do {
+                let text = try await recognition.value
+                try Task.checkCancellation()
+                self?.onHistoryRecovered?(token, .success(text))
+            } catch {
+                if !Task.isCancelled { self?.onHistoryRecovered?(token, .failure(error)) }
+            }
+        }
+        historyRecovery[token] = (recovery, recognition)
+    }
+
+    func cancelHistoryRecovery(id: UUID? = nil) {
+        for (key, task) in historyRecovery where id == nil || id == key {
+            task.work.cancel(); task.recognition.cancel(); recoveringHistoryIDs.remove(key)
         }
     }
     func requestStop() { if let models { stop(models: models) } }
@@ -312,8 +349,8 @@ final class DictationController: ObservableObject {
         else if active { showPanel() }
     }
     func cancel() {
-        token = nil; work?.cancel(); preview?.cancel(); previewInference?.cancel(); ticker?.cancel()
-        work = nil; preview = nil; previewInference = nil; ticker = nil
+        token = nil; work?.cancel(); finalTranscription?.cancel(); preview?.cancel(); previewInference?.cancel(); ticker?.cancel()
+        work = nil; finalTranscription = nil; preview = nil; previewInference = nil; ticker = nil
         recorder?.stop(); recorder = nil; samples.clear()
         outputMute.restore()
         if let residencyHold { models?.releaseResidency(residencyHold) }; residencyHold = nil
@@ -328,11 +365,17 @@ final class DictationController: ObservableObject {
         cancel()
     }
     private func installEscape() {
+        guard let token else { return }
         escapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 { Task { @MainActor in self?.cancel() } }
+            if event.keyCode == 53 {
+                Task { @MainActor in
+                    guard self?.token == token else { return }
+                    self?.interrupt(reason: .escape)
+                }
+            }
         }
         localEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 { self?.cancel(); return nil }; return event
+            if event.keyCode == 53, self?.token == token { self?.interrupt(reason: .escape); return nil }; return event
         }
     }
     private func showPanel() {
@@ -380,7 +423,7 @@ private struct DictationPopup: View {
                     Button { controller.requestStop() } label: { Image(systemName: "stop.fill").font(.system(size: 10)) }
                         .buttonStyle(.plain).help("Stop recording").accessibilityLabel("Stop recording")
                 }
-                Button { controller.cancel() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Cancel dictation")
+                Button { controller.interrupt() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Cancel dictation")
             }
             if controller.phase == .recording {
                 HStack(spacing: 8) {

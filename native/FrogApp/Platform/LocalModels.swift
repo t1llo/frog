@@ -202,6 +202,8 @@ final class LocalModels: ObservableObject {
         } catch { loaded = await runtime.loadedIDs; throw error }
     }
     func complete(_ text: String, instructions: String, modelID: String) async throws -> String {
+        // An interrupted recording may still be transcribing for History.
+        try await waitUntilAvailable()
         let url = try acquire(modelID); defer { release() }
         do {
             let result = try await runtime.complete(text, instructions: instructions, id: modelID, url: url, residency: { [weak self] ids in await self?.updateResidency(ids) })

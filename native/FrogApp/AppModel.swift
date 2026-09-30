@@ -51,6 +51,7 @@ final class AppModel: ObservableObject {
     let dictation: DictationController
     private var observations = Set<AnyCancellable>()
     private var dictationHistoryEpoch: UUID?
+    private var recoveryHistoryEpochs: [UUID: UUID] = [:]
     static let localProviderID = UUID(uuidString: "7C05FB97-5BEF-48FD-9C28-A67605107251")!
     static let shortcutPanelID = UUID(uuidString: "85F8DE80-89BC-4506-B82D-DCFB71AFE292")!
     static let cancelRecordingID = UUID(uuidString: "E4A8A2D5-7F72-42CA-924C-9100A213D030")!
@@ -148,15 +149,17 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             self.status = "\(rule.name) · \(delivery)"
         }
-        dictation.onTranscript = { [weak self] rule, original, result in
+        dictation.onTranscript = { [weak self] id, rule, original, result in
             guard let self else { return }
             if self.configuration.preferences.historyEnabled, self.dictationHistoryEpoch == self.historyEpoch {
-                var entry = HistoryEntry(originalText: original, processedText: result, ruleName: rule.name, providerName: "Transcription", model: rule.action?.audioModelID ?? self.configuration.preferences.workflowSettings.audioModelID)
+                var entry = HistoryEntry(id: id, originalText: original, processedText: result, ruleName: rule.name, providerName: "Transcription", model: rule.action?.audioModelID ?? self.configuration.preferences.workflowSettings.audioModelID)
                 entry.category = .audio
                 do { try self.historyStore.append(entry, preferences: self.configuration.preferences); self.refreshHistory() }
                 catch { self.report(error) }
             }
         }
+        dictation.onInterruption = { [weak self] in self?.saveInterruption($0) ?? false }
+        dictation.onHistoryRecovered = { [weak self] in self?.finishHistoryRecovery(id: $0, result: $1) }
     }
 
     func showSetup() { setupPresented = true }
@@ -186,6 +189,7 @@ final class AppModel: ObservableObject {
     }
 
     func shutdown() {
+        invalidateHistoryRecovery()
         dictation.cancel(); localModels.shutdown(); shortcutPanel.hide()
         started = false
         if registerShortcuts { windowSwitcher.stop() }
@@ -410,7 +414,7 @@ final class AppModel: ObservableObject {
         }
         var candidate = configuration; candidate.preferences = preferences
         try persist(candidate)
-        if !preferences.historyEnabled { historyEpoch = UUID() }
+        if !preferences.historyEnabled { invalidateHistoryRecovery() }
         if !preferences.showProcessingIndicator { processingIndicator.hide() }
         configureWindowSwitcher()
         localModels.idleSeconds = preferences.workflowSettings.idleUnloadSeconds
@@ -419,12 +423,60 @@ final class AppModel: ObservableObject {
     }
 
     func refreshHistory() {
-        do { history = try historyStore.load(preferences: configuration.preferences) }
+        do {
+            history = try historyStore.load(preferences: configuration.preferences)
+            let retained = Set(history.map(\.id))
+            for id in Array(recoveryHistoryEpochs.keys) where !retained.contains(id) {
+                recoveryHistoryEpochs[id] = nil; dictation.cancelHistoryRecovery(id: id)
+            }
+        }
         catch { report(error) }
     }
     var historyFileURL: URL { historyStore.directory.appendingPathComponent("history.json") }
     func deleteHistory(id: UUID) throws { try historyStore.delete(id: id); refreshHistory() }
-    func clearHistory() throws { try historyStore.clear(); historyEpoch = UUID(); refreshHistory() }
+    func clearHistory() throws { try historyStore.clear(); invalidateHistoryRecovery(); refreshHistory() }
+
+    private func invalidateHistoryRecovery() {
+        historyEpoch = UUID(); recoveryHistoryEpochs = [:]
+        dictation.cancelHistoryRecovery()
+    }
+
+    private func saveInterruption(_ interruption: DictationInterruption) -> Bool {
+        guard configuration.preferences.historyEnabled, dictationHistoryEpoch == historyEpoch else { return false }
+        do {
+            if interruption.transcriptPublished {
+                // Delivery may be interrupted after the completed result was already saved.
+                if var entry = history.first(where: { $0.id == interruption.id }) {
+                    entry.interruption = interruption.reason; entry.transcriptState = .complete
+                    try historyStore.update(entry, preferences: configuration.preferences)
+                    refreshHistory()
+                }
+                return false
+            }
+            var entry = HistoryEntry(id: interruption.id, originalText: interruption.text, processedText: interruption.text,
+                                     ruleName: interruption.rule.name, providerName: "Transcription",
+                                     model: interruption.rule.action?.audioModelID ?? configuration.preferences.workflowSettings.audioModelID)
+            entry.category = .audio; entry.interruption = interruption.reason; entry.transcriptState = .partial
+            try historyStore.append(entry, preferences: configuration.preferences)
+            recoveryHistoryEpochs[entry.id] = historyEpoch
+            refreshHistory()
+            return recoveryHistoryEpochs[entry.id] != nil
+        } catch { report(error); return false }
+    }
+
+    private func finishHistoryRecovery(id: UUID, result: Result<String, Error>) {
+        guard recoveryHistoryEpochs.removeValue(forKey: id) == historyEpoch,
+              configuration.preferences.historyEnabled, var entry = history.first(where: { $0.id == id }) else { return }
+        switch result {
+        case .success(let text):
+            entry.originalText = text; entry.processedText = text; entry.transcriptState = .complete
+        case .failure(let error):
+            entry.transcriptState = .failed
+            report(FrogError.message("Interrupted recording transcription failed. \(error.localizedDescription)"))
+        }
+        do { try historyStore.update(entry, preferences: configuration.preferences); refreshHistory() }
+        catch { report(error) }
+    }
 
     func exportConfiguration(to url: URL) throws {
         guard configurationLoadError == nil else { throw FrogError.message("Repair the saved settings before exporting them.") }
@@ -469,7 +521,7 @@ final class AppModel: ObservableObject {
         configurationLoadError = nil
         localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds
         errorMessage = nil
-        historyEpoch = UUID()
+        invalidateHistoryRecovery()
         registerHotkeys()
         configureWindowSwitcher()
         refreshHistory()
@@ -538,7 +590,7 @@ final class AppModel: ObservableObject {
     func processManual(text: String, ruleID: UUID, providerID: UUID? = nil, modelID: String? = nil) {
         begin(ruleID: ruleID, manualText: text, providerID: providerID, modelID: modelID)
     }
-    func cancelProcessing() { dictation.cancel(); processingTask?.cancel(); status = "Cancelling…" }
+    func cancelProcessing() { dictation.interrupt(); processingTask?.cancel(); status = "Cancelling…" }
 
     func showShortcuts() { shortcutPanel.show(rules: configuration.rules.filter { configuration.preferences.shortcutsEnabled || !$0.category.isShortcut }) }
 
@@ -549,6 +601,7 @@ final class AppModel: ObservableObject {
 
     func startDictation(_ rule: Rule) {
         guard !isProcessing else { report(FrogError.message("Wait for the current request to finish.")); return }
+        guard !dictation.active else { return }
         dictationHistoryEpoch = configuration.preferences.historyEnabled ? historyEpoch : nil
         dictation.start(rule: rule, preferences: configuration.preferences.workflowSettings, models: localModels)
     }
@@ -558,7 +611,10 @@ final class AppModel: ObservableObject {
     }
 
     private func handleShortcut(_ id: UUID, pressed: Bool) {
-        if id == Self.cancelRecordingID { if pressed { dictation.cancel() }; return }
+        if id == Self.cancelRecordingID {
+            if pressed { dictation.interrupt(reason: configuration.preferences.workflowSettings.cancelRecordingHotkey?.keyCode == 53 ? .escape : .cancelled) }
+            return
+        }
         if id == Self.shortcutPanelID { if pressed { showShortcuts() } else { shortcutPanel.hide() }; return }
         guard let rule = configuration.rules.first(where: { $0.id == id && $0.enabled }) else { return }
         switch rule.category {

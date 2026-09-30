@@ -184,6 +184,18 @@ public final class HistoryStore: @unchecked Sendable {
         try write(bounded(entries, preferences: preferences))
     }
 
+    /// A late transcription may update a retained entry, never recreate a deleted one.
+    @discardableResult
+    public func update(_ entry: HistoryEntry, preferences: Preferences) throws -> Bool {
+        persistenceLock.lock(); defer { persistenceLock.unlock() }
+        guard preferences.historyEnabled else { return false }
+        var entries = bounded(try read(), preferences: preferences)
+        guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return false }
+        entries[index] = entry
+        try write(bounded(entries, preferences: preferences))
+        return true
+    }
+
     public func delete(id: UUID) throws {
         persistenceLock.lock(); defer { persistenceLock.unlock() }
         let entries = try read()

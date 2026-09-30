@@ -41,7 +41,7 @@ private struct FrogStatusMenu: View {
                         Button("Stop recording", systemImage: "stop.fill") { model.dictation.stop(models: model.localModels) }
                             .buttonStyle(FrogButtonStyle(primary: true))
                     }
-                    Button("Cancel", systemImage: "xmark") { model.dictation.cancel() }
+                    Button("Cancel", systemImage: "xmark") { model.dictation.interrupt() }
                 }
             }
             if model.isProcessing { Button("Cancel processing", systemImage: "xmark") { model.cancelProcessing() } }

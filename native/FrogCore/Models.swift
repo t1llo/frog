@@ -211,6 +211,11 @@ public struct Configuration: Codable, Equatable, Sendable {
 }
 
 public struct HistoryEntry: Codable, Identifiable, Equatable, Sendable {
+    public enum Interruption: String, Codable, Sendable { case escape, cancelled }
+    public enum TranscriptState: String, Codable, Sendable { case partial, complete, failed }
+    // Optional metadata keeps history written by older versions readable.
+    public var interruption: Interruption?
+    public var transcriptState: TranscriptState?
     public var category: RuleCategory?
     public var id: UUID
     public var timestamp: Date
