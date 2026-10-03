@@ -23,6 +23,7 @@ final class DictationController: ObservableObject {
     private let makeRecorder: () -> any DictationRecording
     private let authorize: () async -> Bool
     private let copy: (String) -> Void
+    var onCopy: ((String) -> Void)?
     private let monitorKeys: Bool
     private let previewInterval: Duration
     private let inputDevices: () -> [AudioDevice]
@@ -272,6 +273,7 @@ final class DictationController: ObservableObject {
                 self.transcriptPublished = true
                 self.onTranscript?(token, rule, raw, output)
                 self.copy(output)
+                self.onCopy?(output)
                 var insertion: (() async throws -> Void)?
                 if (rule.action?.output ?? self.preferences.output) == .paste {
                     insertion = {

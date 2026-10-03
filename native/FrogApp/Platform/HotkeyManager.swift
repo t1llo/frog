@@ -4,6 +4,7 @@ import FrogCore
 
 @MainActor
 final class HotkeyManager {
+    enum ShortcutPurpose { case rule, clipboardHistory }
     private static let signature: OSType = 0x46524F47 // FROG
     private static var nextRegistrationID: UInt32 = 1
     private var handler: EventHandlerRef?
@@ -14,7 +15,7 @@ final class HotkeyManager {
     private var pressed = Set<UUID>()
     private var generation: UInt64 = 0
 
-    func register(rules: [Rule], onPress: ((UUID) -> Void)? = nil, onTrigger: @escaping (UUID) -> Void) -> [UUID: String] {
+    func register(rules: [Rule], purposes: [UUID: ShortcutPurpose] = [:], onPress: ((UUID) -> Void)? = nil, onTrigger: @escaping (UUID) -> Void) -> [UUID: String] {
         unregister()
         self.onTrigger = onTrigger
         self.onPress = onPress
@@ -52,7 +53,7 @@ final class HotkeyManager {
         let idCounts = Dictionary(grouping: candidates, by: \.id).mapValues(\.count)
         for rule in candidates {
             guard let hotkey = rule.hotkey else { continue }
-            if let error = Self.validationError(hotkey) { errors[rule.id] = error; continue }
+            if let error = Self.validationError(hotkey, purpose: purposes[rule.id] ?? .rule) { errors[rule.id] = error; continue }
             guard counts[hotkey] == 1, idCounts[rule.id] == 1 else {
                 errors[rule.id] = "This shortcut or rule ID is duplicated. Assign a unique shortcut to each enabled rule."
                 continue
@@ -92,7 +93,12 @@ final class HotkeyManager {
         if let handler { RemoveEventHandler(handler) }
     }
 
-    static func hotkey(from event: NSEvent) -> Hotkey? {
+    static func hotkey(from event: NSEvent, purpose: ShortcutPurpose = .rule) -> Hotkey? {
+        guard let result = capture(event, purpose: purpose) else { return nil }
+        return try? result.get()
+    }
+
+    static func capture(_ event: NSEvent, purpose: ShortcutPurpose = .rule) -> Result<Hotkey, FrogError>? {
         guard event.type == .keyDown, !event.isARepeat else { return nil }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         var modifiers: UInt32 = 0
@@ -101,7 +107,8 @@ final class HotkeyManager {
         if flags.contains(.control) { modifiers |= UInt32(controlKey) }
         if flags.contains(.shift) { modifiers |= UInt32(shiftKey) }
         let hotkey = Hotkey(keyCode: UInt32(event.keyCode), modifiers: modifiers)
-        return validationError(hotkey) == nil ? hotkey : nil
+        if let issue = validationError(hotkey, purpose: purpose) { return .failure(.message(issue)) }
+        return .success(hotkey)
     }
 
     static func display(_ hotkey: Hotkey) -> String {
@@ -113,11 +120,12 @@ final class HotkeyManager {
         return result + (specialKeys[hotkey.keyCode] ?? layoutLabel(hotkey.keyCode) ?? "Key \(hotkey.keyCode)")
     }
 
-    static func validationError(_ hotkey: Hotkey) -> String? {
+    static func validationError(_ hotkey: Hotkey, purpose: ShortcutPurpose = .rule) -> String? {
         let command = UInt32(cmdKey)
         let clipboard = [UInt32(8), 9, 7].contains(hotkey.keyCode) && hotkey.modifiers == command
         let pasteStyle = hotkey.keyCode == 9 && [UInt32(cmdKey | shiftKey), UInt32(cmdKey | optionKey | shiftKey)].contains(hotkey.modifiers)
-        guard !clipboard, !pasteStyle else { return "Copy, Cut and Paste shortcuts are reserved for the focused app. Choose a different Frog shortcut." }
+        let historyShortcut = purpose == .clipboardHistory && hotkey.keyCode == 9 && hotkey.modifiers == UInt32(cmdKey | shiftKey)
+        guard !clipboard, !pasteStyle || historyShortcut else { return "Copy, Cut and Paste shortcuts are reserved for the focused app. Choose a different Frog shortcut." }
         let allowed = UInt32(cmdKey | optionKey | controlKey | shiftKey)
         guard hotkey.modifiers & ~allowed == 0 else { return "The shortcut contains unsupported modifier flags." }
         guard hotkey.modifiers & UInt32(cmdKey | optionKey | controlKey) != 0 else {

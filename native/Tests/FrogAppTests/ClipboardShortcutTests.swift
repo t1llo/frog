@@ -30,4 +30,18 @@ final class ClipboardShortcutTests: XCTestCase {
             XCTAssertNotNil(HotkeyManager.validationError(Hotkey(keyCode: 9, modifiers: modifiers)))
         }
     }
+
+    func testShiftCommandVIsAllowedOnlyForClipboardHistoryAndErrorsDescribeActualRejection() throws {
+        let historyKey = Hotkey(keyCode: 9, modifiers: UInt32(cmdKey | shiftKey))
+        XCTAssertNil(HotkeyManager.validationError(historyKey, purpose: .clipboardHistory))
+        XCTAssertNotNil(HotkeyManager.validationError(historyKey))
+        for code: UInt32 in [8, 9, 7] {
+            XCTAssertNotNil(HotkeyManager.validationError(Hotkey(keyCode: code, modifiers: UInt32(cmdKey)), purpose: .clipboardHistory))
+        }
+        let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+            windowNumber: 0, context: nil, characters: "c", charactersIgnoringModifiers: "c", isARepeat: false, keyCode: 8))
+        guard case .failure(let error) = HotkeyManager.capture(event, purpose: .clipboardHistory) else { return XCTFail("Copy must be rejected") }
+        XCTAssertTrue(error.localizedDescription.contains("reserved"))
+        XCTAssertFalse(error.localizedDescription.contains("Include"))
+    }
 }

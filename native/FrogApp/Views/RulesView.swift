@@ -63,7 +63,7 @@ struct RulesView: View {
                         HotkeyRecorder(hotkey: Binding(get: { model.configuration.preferences.workflowSettings.effectiveClipboardHistoryHotkey }, set: { value in
                             var prefs = model.configuration.preferences.workflowSettings; prefs.clipboardHistoryHotkey = value
                             do { try model.saveWorkflowPreferences(prefs) } catch { model.report(error) }
-                        }), showsClearButton: false)
+                        }), showsClearButton: false, purpose: .clipboardHistory)
                         Button("Open") { model.showClipboardHistory() }
                             .disabled(model.configuration.preferences.workflowSettings.clipboardHistoryEnabled != true)
                     }

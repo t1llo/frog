@@ -49,6 +49,7 @@ final class AppModel: ObservableObject {
     private var started = false
     let localModels: LocalModels
     let dictation: DictationController
+    let clipboardHistoryStore: ClipboardHistoryStore
     private var observations = Set<AnyCancellable>()
     private var dictationHistoryEpoch: UUID?
     private var recoveryHistoryEpochs: [UUID: UUID] = [:]
@@ -57,7 +58,7 @@ final class AppModel: ObservableObject {
     static let cancelRecordingID = UUID(uuidString: "E4A8A2D5-7F72-42CA-924C-9100A213D030")!
     static let clipboardHistoryID = UUID(uuidString: "E7A2D4E5-1CBC-41DB-8B3A-7114DC77943D")!
     private lazy var clipboardHistory: ClipboardHistoryController = {
-        let controller = ClipboardHistoryController()
+        let controller = ClipboardHistoryController(history: clipboardHistoryStore)
         controller.onError = { [weak self] in self?.report($0) }
         return controller
     }()
@@ -80,10 +81,12 @@ final class AppModel: ObservableObject {
          captureSelection: (() async throws -> any CapturedTextSelection)? = nil,
          dictationController: DictationController? = nil,
          modelService: LocalModels? = nil,
+         clipboardHistoryStore: ClipboardHistoryStore? = nil,
          errorDisplayDuration: Duration = .seconds(6)) {
         let dataDirectory = dataDirectory ?? ProcessInfo.processInfo.environment["FROG_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         self.registerShortcuts = registerShortcuts
         self.dictation = dictationController ?? DictationController()
+        self.clipboardHistoryStore = clipboardHistoryStore ?? ClipboardHistoryStore()
         self.errorDisplayDuration = errorDisplayDuration
         localModels = modelService ?? LocalModels(directory: dataDirectory)
         self.readAccessibility = readAccessibility ?? { SelectionService.isTrusted }
@@ -125,6 +128,7 @@ final class AppModel: ObservableObject {
         localModels.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         dictation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         dictation.onError = { [weak self] in self?.report($0) }
+        dictation.onCopy = { [weak self] in self?.clipboardHistoryStore.recordCopiedText($0) }
         dictation.onMicrophoneChange = { [weak self] id in
             guard let self else { return }
             var preferences = self.configuration.preferences.workflowSettings
@@ -201,6 +205,7 @@ final class AppModel: ObservableObject {
         started = false
         if registerShortcuts { windowSwitcher.stop() }
         if registerShortcuts { clipboardHistory.stop() }
+        clipboardHistoryStore.configure(enabled: false)
         processingIndicator.hide()
         processingTask?.cancel()
         applicationTask?.cancel()
@@ -419,7 +424,7 @@ final class AppModel: ObservableObject {
         let shortcutChanged = workflow.shortcutPanelHotkey != previousWorkflow.shortcutPanelHotkey || workflow.cancelRecordingHotkey != previousWorkflow.cancelRecordingHotkey || workflow.clipboardHistoryHotkey != previousWorkflow.clipboardHistoryHotkey || workflow.clipboardHistoryEnabled != previousWorkflow.clipboardHistoryEnabled
         if let key = preferences.workflowSettings.shortcutPanelHotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
         if let key = preferences.workflowSettings.cancelRecordingHotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
-        if let issue = HotkeyManager.validationError(workflow.effectiveClipboardHistoryHotkey) { throw FrogError.message(issue) }
+        if let issue = HotkeyManager.validationError(workflow.effectiveClipboardHistoryHotkey, purpose: .clipboardHistory) { throw FrogError.message(issue) }
         guard (1...200).contains(preferences.historyLimit), (1...30).contains(preferences.historyRetentionDays) else {
             throw FrogError.message("History must keep 1–200 entries for 1–30 days.")
         }
@@ -445,8 +450,14 @@ final class AppModel: ObservableObject {
         catch { report(error) }
     }
     var historyFileURL: URL { historyStore.directory.appendingPathComponent("history.json") }
-    func deleteHistory(id: UUID) throws { try historyStore.delete(id: id); refreshHistory() }
-    func clearHistory() throws { try historyStore.clear(); invalidateHistoryRecovery(); refreshHistory() }
+    func deleteHistory(id: UUID) throws {
+        if clipboardHistoryStore.entries.contains(where: { $0.id == id }) { clipboardHistoryStore.delete(id: id); return }
+        try historyStore.delete(id: id); refreshHistory()
+    }
+    func clearHistory() throws {
+        clipboardHistoryStore.clear(); invalidateHistoryRecovery()
+        try historyStore.clear(); refreshHistory()
+    }
 
     private func invalidateHistoryRecovery() {
         historyEpoch = UUID(); recoveryHistoryEpochs = [:]
@@ -502,7 +513,7 @@ final class AppModel: ObservableObject {
         for rule in imported.rules {
             if let hotkey = rule.hotkey, let issue = HotkeyManager.validationError(hotkey) { throw FrogError.message(issue) }
         }
-        if let issue = HotkeyManager.validationError(imported.preferences.workflowSettings.effectiveClipboardHistoryHotkey) { throw FrogError.message(issue) }
+        if let issue = HotkeyManager.validationError(imported.preferences.workflowSettings.effectiveClipboardHistoryHotkey, purpose: .clipboardHistory) { throw FrogError.message(issue) }
         var candidate = imported
         var remapped: [UUID: UUID] = [:]
         for index in candidate.providers.indices {
@@ -538,6 +549,7 @@ final class AppModel: ObservableObject {
         registerHotkeys()
         configureWindowSwitcher()
         if registerShortcuts { clipboardHistory.stop() }
+        clipboardHistoryStore.configure(enabled: false)
         configureClipboardHistory()
         refreshHistory()
         status = "Configuration imported. Check provider credentials and shortcut status."
@@ -583,7 +595,7 @@ final class AppModel: ObservableObject {
         if configuration.preferences.workflowSettings.clipboardHistoryEnabled == true {
             rules.append(Rule(id: Self.clipboardHistoryID, name: "Clipboard history", hotkey: configuration.preferences.workflowSettings.effectiveClipboardHistoryHotkey))
         }
-        hotkeyErrors = hotkeys.register(rules: rules, onPress: { [weak self] id in self?.handleShortcut(id, pressed: true) }) { [weak self] id in self?.handleShortcut(id, pressed: false) }
+        hotkeyErrors = hotkeys.register(rules: rules, purposes: [Self.clipboardHistoryID: .clipboardHistory], onPress: { [weak self] id in self?.handleShortcut(id, pressed: true) }) { [weak self] id in self?.handleShortcut(id, pressed: false) }
     }
 
     func resolved(_ rule: Rule) throws -> ProviderConfiguration {
@@ -621,8 +633,10 @@ final class AppModel: ObservableObject {
     }
 
     private func configureClipboardHistory() {
-        guard started, registerShortcuts else { return }
-        clipboardHistory.configure(enabled: configuration.preferences.workflowSettings.clipboardHistoryEnabled == true)
+        guard started else { return }
+        let enabled = configuration.preferences.workflowSettings.clipboardHistoryEnabled == true
+        if registerShortcuts { clipboardHistory.configure(enabled: enabled) }
+        else { clipboardHistoryStore.configure(enabled: enabled, automaticallyPoll: false) }
     }
 
     func showClipboardHistory() {
@@ -754,9 +768,11 @@ final class AppModel: ObservableObject {
                         self.status = "Result ready on clipboard; replacement skipped."
                         self.report(error)
                     }
+                    self.clipboardHistoryStore.recordCopiedText(result)
                 } else {
                     self.manualResult = result
                     self.writeClipboard(result)
+                    self.clipboardHistoryStore.recordCopiedText(result)
                     self.status = "\(rule.name) complete — result copied."
                 }
                 if recordingWasEnabled && self.configuration.preferences.historyEnabled && self.historyEpoch == recordingEpoch {

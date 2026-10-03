@@ -7,6 +7,7 @@ struct HotkeyRecorder: View {
     @EnvironmentObject private var model: AppModel
     @Binding var hotkey: Hotkey?
     var showsClearButton = true
+    var purpose: HotkeyManager.ShortcutPurpose = .rule
     @State private var recording = false
     @State private var hint: String?
 
@@ -22,7 +23,7 @@ struct HotkeyRecorder: View {
                     .buttonStyle(.plain).accessibilityLabel("Clear shortcut")
             }
             if recording {
-                KeyCapture(recording: $recording, hotkey: $hotkey, hint: $hint)
+                KeyCapture(recording: $recording, hotkey: $hotkey, hint: $hint, purpose: purpose)
                     .frame(width: 1, height: 1).accessibilityHidden(true)
             }
         }.onChange(of: recording) { _, value in model.setShortcutRecording(value) }
@@ -35,18 +36,18 @@ private struct KeyCapture: NSViewRepresentable {
     @Binding var recording: Bool
     @Binding var hotkey: Hotkey?
     @Binding var hint: String?
+    let purpose: HotkeyManager.ShortcutPurpose
 
     func makeNSView(context: Context) -> CaptureView { CaptureView() }
 
     func updateNSView(_ view: CaptureView, context: Context) {
         view.onKey = { event in
             if event.keyCode == 53 { recording = false; return }
-            guard !event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
-                  let value = HotkeyManager.hotkey(from: event) else {
-                hint = "Include Control, Option, or Command in your shortcut."
-                return
+            guard let result = HotkeyManager.capture(event, purpose: purpose) else { return }
+            switch result {
+            case .success(let value): hotkey = value; hint = nil; recording = false
+            case .failure(let error): hint = error.localizedDescription
             }
-            hotkey = value; hint = nil; recording = false
         }
         view.onBlur = { recording = false }
     }
@@ -72,8 +73,10 @@ private struct KeyCapture: NSViewRepresentable {
         }
         override func resignFirstResponder() -> Bool {
             // Avoid publishing SwiftUI state during native hierarchy updates.
-            let callback = onBlur
-            DispatchQueue.main.async { callback?() }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.window?.firstResponder !== self else { return }
+                self.onBlur?()
+            }
             return true
         }
     }

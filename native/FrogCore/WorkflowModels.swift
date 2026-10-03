@@ -53,7 +53,7 @@ public struct WorkflowPreferences: Codable, Equatable, Sendable {
     public var cancelRecordingHotkey: Hotkey?
     public var clipboardHistoryEnabled: Bool?
     public var clipboardHistoryHotkey: Hotkey?
-    public var effectiveClipboardHistoryHotkey: Hotkey { clipboardHistoryHotkey ?? Hotkey(keyCode: 9, modifiers: 4096 | 2048) }
+    public var effectiveClipboardHistoryHotkey: Hotkey { clipboardHistoryHotkey ?? Hotkey(keyCode: 9, modifiers: 256 | 512) }
     public var applicationLanguage: String?
     /// One-time migration of the original factory dictation rule; custom rules are preserved.
     public var dictationDefaultsVersion: Int?
