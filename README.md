@@ -10,8 +10,6 @@ A local-first macOS app for rewriting text, turning speech into text, and managi
 
 <img src="docs/media/frog-demo.gif" alt="Frog demo showing dictation rules, local models, shortcuts and settings" width="960">
 
-**[Download the demo video](docs/media/frog-demo.mp4)** · 24 seconds · MP4
-
 - Rewrite selected text with customizable rules and shortcuts.
 - Dictate with local speech models or external transcription providers.
 - Use downloaded models, OpenAI, Claude, Gemini, Ollama or LM Studio.
