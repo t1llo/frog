@@ -55,6 +55,12 @@ final class AppModel: ObservableObject {
     static let localProviderID = UUID(uuidString: "7C05FB97-5BEF-48FD-9C28-A67605107251")!
     static let shortcutPanelID = UUID(uuidString: "85F8DE80-89BC-4506-B82D-DCFB71AFE292")!
     static let cancelRecordingID = UUID(uuidString: "E4A8A2D5-7F72-42CA-924C-9100A213D030")!
+    static let clipboardHistoryID = UUID(uuidString: "E7A2D4E5-1CBC-41DB-8B3A-7114DC77943D")!
+    private lazy var clipboardHistory: ClipboardHistoryController = {
+        let controller = ClipboardHistoryController()
+        controller.onError = { [weak self] in self?.report($0) }
+        return controller
+    }()
     private let shortcutPanel = ShortcutReferencePanel()
     private let captureSelection: () async throws -> any CapturedTextSelection
     private let processingIndicator = ProcessingIndicator()
@@ -185,6 +191,7 @@ final class AppModel: ObservableObject {
         }
         registerHotkeys()
         configureWindowSwitcher()
+        configureClipboardHistory()
         if configuration.providers.isEmpty && localModels.installed.isEmpty { status = "Add a model in Models to get started." }
     }
 
@@ -193,6 +200,7 @@ final class AppModel: ObservableObject {
         dictation.cancel(); localModels.shutdown(); shortcutPanel.hide()
         started = false
         if registerShortcuts { windowSwitcher.stop() }
+        if registerShortcuts { clipboardHistory.stop() }
         processingIndicator.hide()
         processingTask?.cancel()
         applicationTask?.cancel()
@@ -406,9 +414,12 @@ final class AppModel: ObservableObject {
     }
 
     func savePreferences(_ preferences: Preferences) throws {
-        let shortcutChanged = preferences.workflowSettings.shortcutPanelHotkey != configuration.preferences.workflowSettings.shortcutPanelHotkey || preferences.workflowSettings.cancelRecordingHotkey != configuration.preferences.workflowSettings.cancelRecordingHotkey
+        let previousWorkflow = configuration.preferences.workflowSettings
+        let workflow = preferences.workflowSettings
+        let shortcutChanged = workflow.shortcutPanelHotkey != previousWorkflow.shortcutPanelHotkey || workflow.cancelRecordingHotkey != previousWorkflow.cancelRecordingHotkey || workflow.clipboardHistoryHotkey != previousWorkflow.clipboardHistoryHotkey || workflow.clipboardHistoryEnabled != previousWorkflow.clipboardHistoryEnabled
         if let key = preferences.workflowSettings.shortcutPanelHotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
         if let key = preferences.workflowSettings.cancelRecordingHotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
+        if let issue = HotkeyManager.validationError(workflow.effectiveClipboardHistoryHotkey) { throw FrogError.message(issue) }
         guard (1...200).contains(preferences.historyLimit), (1...30).contains(preferences.historyRetentionDays) else {
             throw FrogError.message("History must keep 1–200 entries for 1–30 days.")
         }
@@ -417,6 +428,7 @@ final class AppModel: ObservableObject {
         if !preferences.historyEnabled { invalidateHistoryRecovery() }
         if !preferences.showProcessingIndicator { processingIndicator.hide() }
         configureWindowSwitcher()
+        configureClipboardHistory()
         localModels.idleSeconds = preferences.workflowSettings.idleUnloadSeconds
         if shortcutChanged || preferences.applicationShortcutsEnabled != nil { registerHotkeys(); shortcutPanel.hide() }
         refreshHistory()
@@ -490,6 +502,7 @@ final class AppModel: ObservableObject {
         for rule in imported.rules {
             if let hotkey = rule.hotkey, let issue = HotkeyManager.validationError(hotkey) { throw FrogError.message(issue) }
         }
+        if let issue = HotkeyManager.validationError(imported.preferences.workflowSettings.effectiveClipboardHistoryHotkey) { throw FrogError.message(issue) }
         var candidate = imported
         var remapped: [UUID: UUID] = [:]
         for index in candidate.providers.indices {
@@ -524,12 +537,15 @@ final class AppModel: ObservableObject {
         invalidateHistoryRecovery()
         registerHotkeys()
         configureWindowSwitcher()
+        if registerShortcuts { clipboardHistory.stop() }
+        configureClipboardHistory()
         refreshHistory()
         status = "Configuration imported. Check provider credentials and shortcut status."
     }
 
     func setShortcutRecording(_ recording: Bool) {
         if recording { dictation.cancel() }
+        if recording, registerShortcuts { clipboardHistory.cancel() }
         isRecordingShortcut = recording
         if recording { hotkeys.unregister() }
         else { registerHotkeys() }
@@ -545,7 +561,7 @@ final class AppModel: ObservableObject {
             return hotkey.keyCode == 48 && (hotkey.modifiers == 256 || hotkey.modifiers == 768)
         }
         let workflow = configuration.preferences.workflowSettings
-        let referenceConflict = [workflow.shortcutPanelHotkey, workflow.cancelRecordingHotkey].compactMap { $0 }.contains { $0.keyCode == 48 && [UInt32(256), 768].contains($0.modifiers) }
+        let referenceConflict = [workflow.shortcutPanelHotkey, workflow.cancelRecordingHotkey, workflow.clipboardHistoryEnabled == true ? workflow.effectiveClipboardHistoryHotkey : nil].compactMap { $0 }.contains { $0.keyCode == 48 && [UInt32(256), 768].contains($0.modifiers) }
         if configuration.preferences.windowSwitcherEnabled && (conflict || referenceConflict) {
             windowSwitcher.stop()
             let message = "A configured shortcut uses ⌘Tab — change it to enable window switching"
@@ -564,6 +580,9 @@ final class AppModel: ObservableObject {
             rules.append(Rule(id: Self.shortcutPanelID, name: "Show shortcuts", hotkey: key))
         }
         if let key = configuration.preferences.workflowSettings.cancelRecordingHotkey { rules.append(Rule(id: Self.cancelRecordingID, name: "Cancel recording", hotkey: key)) }
+        if configuration.preferences.workflowSettings.clipboardHistoryEnabled == true {
+            rules.append(Rule(id: Self.clipboardHistoryID, name: "Clipboard history", hotkey: configuration.preferences.workflowSettings.effectiveClipboardHistoryHotkey))
+        }
         hotkeyErrors = hotkeys.register(rules: rules, onPress: { [weak self] id in self?.handleShortcut(id, pressed: true) }) { [weak self] id in self?.handleShortcut(id, pressed: false) }
     }
 
@@ -592,7 +611,24 @@ final class AppModel: ObservableObject {
     }
     func cancelProcessing() { dictation.interrupt(); processingTask?.cancel(); status = "Cancelling…" }
 
-    func showShortcuts() { shortcutPanel.show(rules: configuration.rules.filter { configuration.preferences.shortcutsEnabled || !$0.category.isShortcut }) }
+    func showShortcuts() {
+        var rules = configuration.rules.filter { configuration.preferences.shortcutsEnabled || !$0.category.isShortcut }
+        let workflow = configuration.preferences.workflowSettings
+        if workflow.clipboardHistoryEnabled == true {
+            rules.append(Rule(id: Self.clipboardHistoryID, name: "Clipboard history", hotkey: workflow.effectiveClipboardHistoryHotkey))
+        }
+        shortcutPanel.show(rules: rules)
+    }
+
+    private func configureClipboardHistory() {
+        guard started, registerShortcuts else { return }
+        clipboardHistory.configure(enabled: configuration.preferences.workflowSettings.clipboardHistoryEnabled == true)
+    }
+
+    func showClipboardHistory() {
+        guard registerShortcuts, !isRecordingShortcut else { return }
+        clipboardHistory.show()
+    }
 
     func saveWorkflowPreferences(_ value: WorkflowPreferences) throws {
         var prefs = configuration.preferences; prefs.workflows = value
@@ -611,6 +647,7 @@ final class AppModel: ObservableObject {
     }
 
     private func handleShortcut(_ id: UUID, pressed: Bool) {
+        if id == Self.clipboardHistoryID { if !pressed { showClipboardHistory() }; return }
         if id == Self.cancelRecordingID {
             if pressed { dictation.interrupt(reason: configuration.preferences.workflowSettings.cancelRecordingHotkey?.keyCode == 53 ? .escape : .cancelled) }
             return

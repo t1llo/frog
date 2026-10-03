@@ -125,7 +125,7 @@ struct HistoryView: View {
                         Spacer()
                     }
                     interruptionStatus(item)
-                    Text(hidden(item) ? "••••••••••••" : item.processedText.isEmpty ? L10n.text("No transcript available") : item.processedText).font(.system(size: 12)).foregroundStyle(FrogStyle.ink)
+                    Text(hidden(item) ? "••••••••••••" : item.processedText.isEmpty ? L10n.text("No transcript available") : HistoryPreview.text(item.processedText)).font(.system(size: 12)).foregroundStyle(FrogStyle.ink)
                         .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
                 }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain).help("Open full entry")
@@ -156,6 +156,15 @@ struct HistoryView: View {
         IconAction(title: hidden(entry) ? "Reveal text" : "Hide text", symbol: hidden(entry) ? "eye" : "eye.slash") {
             if revealed.contains(entry.id) { revealed.remove(entry.id) } else { revealed.insert(entry.id) }
         }
+    }
+}
+
+/// A line limit clips drawing, but does not bound text layout work. Detail/search/copy
+/// continue to use the original transcript; only list previews are shortened.
+enum HistoryPreview {
+    static func text(_ original: String) -> String {
+        let prefix = original.prefix(513)
+        return prefix.count > 512 ? String(prefix.prefix(512)) + "…" : String(prefix)
     }
 }
 

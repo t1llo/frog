@@ -102,13 +102,13 @@ final class ClipboardSelection: CapturedTextSelection {
         return Self.menuCommand("v", application: application) != nil
     }
 
-    private static func command(_ character: String, keyCode: CGKeyCode, application: AXUIElement, pid: pid_t) throws {
+    static func command(_ character: String, keyCode: CGKeyCode, application: AXUIElement, pid: pid_t) throws {
         if let item = menuCommand(character, application: application),
            AXUIElementPerformAction(item, kAXPressAction as CFString) == .success { return }
         try key(keyCode, pid: pid)
     }
 
-    private static func menuCommand(_ character: String, application: AXUIElement) -> AXUIElement? {
+    static func menuCommand(_ character: String, application: AXUIElement) -> AXUIElement? {
         guard let menu = AXRead.element(application, kAXMenuBarAttribute) else { return nil }
         var pending = [(menu, 0)]
         var visited = 0
@@ -127,7 +127,7 @@ final class ClipboardSelection: CapturedTextSelection {
         return nil
     }
 
-    private static func isEditable(_ element: AXUIElement) -> Bool {
+    static func isEditable(_ element: AXUIElement) -> Bool {
         guard let role = AXRead.string(element, kAXRoleAttribute),
               [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole, "AXWebArea"].contains(role),
               AXRead.string(element, kAXSubroleAttribute) != kAXSecureTextFieldSubrole,
@@ -165,6 +165,8 @@ final class ClipboardSelection: CapturedTextSelection {
 @MainActor
 enum FreshSelectionCopy {
     static func read(pasteboard: NSPasteboard, attempts: Int = 60, copy: () throws -> Void) async throws -> String {
+        ClipboardHistoryCaptureGate.shared.begin()
+        defer { ClipboardHistoryCaptureGate.shared.end(pasteboard: pasteboard) }
         let original: [NSPasteboardItem] = pasteboard.pasteboardItems?.map { item in
             let saved = NSPasteboardItem()
             for type in item.types { if let data = item.data(forType: type) { saved.setData(data, forType: type) } }

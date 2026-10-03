@@ -52,6 +52,22 @@ struct RulesView: View {
                     if model.configuration.preferences.windowSwitcherEnabled && !model.windowSwitcherReady {
                         Text(model.windowSwitcherStatus).font(.caption).foregroundStyle(FrogStyle.muted)
                     }
+                    Divider()
+                    CompactRow(title: "Clipboard history", detail: "Last five text items, in memory only. Cleared when disabled or Frog quits.") {
+                        Toggle("Clipboard history", isOn: Binding(get: { model.configuration.preferences.workflowSettings.clipboardHistoryEnabled == true }, set: { value in
+                            var prefs = model.configuration.preferences.workflowSettings; prefs.clipboardHistoryEnabled = value
+                            do { try model.saveWorkflowPreferences(prefs) } catch { model.report(error) }
+                        })).labelsHidden().toggleStyle(.switch).controlSize(.small)
+                    }
+                    CompactRow(title: "Open clipboard history") {
+                        HotkeyRecorder(hotkey: Binding(get: { model.configuration.preferences.workflowSettings.effectiveClipboardHistoryHotkey }, set: { value in
+                            var prefs = model.configuration.preferences.workflowSettings; prefs.clipboardHistoryHotkey = value
+                            do { try model.saveWorkflowPreferences(prefs) } catch { model.report(error) }
+                        }), showsClearButton: false)
+                        Button("Open") { model.showClipboardHistory() }
+                            .disabled(model.configuration.preferences.workflowSettings.clipboardHistoryEnabled != true)
+                    }
+                    if let issue = model.hotkeyErrors[AppModel.clipboardHistoryID] { Text(issue).font(.caption).foregroundStyle(.orange) }
                 }.padding(12).frogTableSurface()
             }
             ListToolbar(placeholder: applications ? "Search shortcuts" : "Search rules", search: $search) {

@@ -55,6 +55,10 @@ public enum ConfigurationFile {
         var shortcuts = Set<Hotkey>()
         if let key = configuration.preferences.workflowSettings.shortcutPanelHotkey { shortcuts.insert(key) }
         if let key = configuration.preferences.workflowSettings.cancelRecordingHotkey, !shortcuts.insert(key).inserted { throw FrogError.message("The cancel shortcut conflicts with the shortcut panel.") }
+        let clipboard = configuration.preferences.workflowSettings
+        if clipboard.clipboardHistoryEnabled == true, !shortcuts.insert(clipboard.effectiveClipboardHistoryHotkey).inserted {
+            throw FrogError.message("The clipboard history shortcut conflicts with another shortcut.")
+        }
         for rule in configuration.rules {
             if rule.category == .system, rule.action?.systemAction == nil {
                 throw FrogError.message("Choose a system action for \(rule.name).")
