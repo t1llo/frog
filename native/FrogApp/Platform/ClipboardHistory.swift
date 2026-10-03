@@ -15,7 +15,7 @@ struct ClipboardHistoryEntry: Identifiable, Equatable, Sendable {
     }
 
     func displayPreview(revealed: Bool) -> String {
-        revealed ? preview : "•••••••• · Click to reveal"
+        !isSensitive || revealed ? preview : "Sensitive text · Click to reveal"
     }
 
     func write(to pasteboard: NSPasteboard, plainText: Bool) -> Bool {

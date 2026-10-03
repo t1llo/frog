@@ -41,7 +41,7 @@ private struct HistoryContent: View {
                 }.frame(height: 32)
                 PageHeader(title: viewing.title, subtitle: viewing.timestamp.formatted(date: .abbreviated, time: .shortened))
                 if let saved = viewing.savedEntry { interruptionStatus(saved) }
-                if viewing.requiresReveal { Text("Clipboard · Memory only · Cleared when disabled or Frog quits").font(.system(size: 11)).foregroundStyle(FrogStyle.muted) }
+                if viewing.clipboardEntry != nil { Text("Clipboard · Memory only · Cleared when disabled or Frog quits").font(.system(size: 11)).foregroundStyle(FrogStyle.muted) }
                 ScrollView {
                     if hidden(viewing) {
                         VStack(spacing: 12) {
@@ -64,7 +64,7 @@ private struct HistoryContent: View {
                 }.frogTableSurface()
                     .onCopyCommand {
                         guard !hidden(viewing) else { return [] }
-                        if viewing.requiresReveal { copy(viewing); return [] }
+                        if viewing.clipboardEntry != nil { copy(viewing); return [] }
                         return [NSItemProvider(object: viewing.text as NSString)]
                     }
             } else {
@@ -120,7 +120,7 @@ private struct HistoryContent: View {
             .onChange(of: allEntries.map(\.id)) { _, ids in
                 visibility.revealed.formIntersection(ids)
                 if let viewing, !ids.contains(viewing) { self.viewing = nil }
-                if let deleting, deleting.requiresReveal, !ids.contains(deleting.id) { self.deleting = nil }
+                if let deleting, deleting.clipboardEntry != nil, !ids.contains(deleting.id) { self.deleting = nil }
             }
             .task(id: copiedID) {
                 guard copiedID != nil else { return }
@@ -138,7 +138,7 @@ private struct HistoryContent: View {
                     }
                     deleting = nil
                 }
-            } message: { Text(deleting?.requiresReveal == true ? "The copied item will be removed from memory." : "The saved original and result will be permanently deleted from this Mac.") }
+            } message: { Text(deleting?.clipboardEntry != nil ? "The copied item will be removed from memory." : "The saved original and result will be permanently deleted from this Mac.") }
     }
 
     private func historyRow(_ item: HistoryItem) -> some View {
@@ -147,7 +147,7 @@ private struct HistoryContent: View {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack {
                         FrogBadge(text: item.filter.title)
-                        if item.requiresReveal { FrogBadge(text: "Memory only") }
+                        if item.clipboardEntry != nil { FrogBadge(text: "Memory only") }
                         Text(item.timestamp.formatted(date: .abbreviated, time: .shortened))
                             .font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
                         Spacer()

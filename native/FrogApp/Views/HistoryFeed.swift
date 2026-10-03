@@ -20,7 +20,7 @@ enum HistoryItem: Identifiable, Equatable {
     var filter: HistoryFilter { switch self { case .saved(let entry): entry.category == .audio ? .audio : .text; case .clipboard: .clipboard } }
     var clipboardEntry: ClipboardHistoryEntry? { if case .clipboard(let entry) = self { entry } else { nil } }
     var savedEntry: HistoryEntry? { if case .saved(let entry) = self { entry } else { nil } }
-    var requiresReveal: Bool { clipboardEntry != nil }
+    var requiresReveal: Bool { clipboardEntry?.isSensitive == true }
 
     func matches(_ query: String, revealed: Bool) -> Bool {
         guard !query.isEmpty else { return true }
@@ -30,7 +30,7 @@ enum HistoryItem: Identifiable, Equatable {
                 .contains { $0.localizedStandardContains(query) }
         case .clipboard(let entry):
             // Hidden contents must not leak through search results before reveal.
-            return ["Clipboard", "Memory only", entry.isSensitive ? "Sensitive" : "", revealed ? entry.text : ""]
+            return ["Clipboard", "Memory only", entry.isSensitive ? "Sensitive" : "", !entry.isSensitive || revealed ? entry.text : ""]
                 .contains { $0.localizedStandardContains(query) }
         }
     }

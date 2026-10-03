@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import SwiftUI
+import Combine
 import FrogCore
 
 @MainActor
@@ -78,6 +79,7 @@ final class ClipboardHistoryController {
     private var workspaceObserver: NSObjectProtocol?
     private var delivery: Task<Void, Never>?
     private var operation = UUID()
+    private var historyObservation: AnyCancellable?
     private let pasteboard: NSPasteboard
     private let captureTarget: () -> (any ClipboardHistoryPasteTarget)?
     private let waitForRelease: () async throws -> Void
@@ -92,6 +94,14 @@ final class ClipboardHistoryController {
         self.captureTarget = captureTarget ?? { NativeClipboardHistoryPasteTarget.capture() }
         self.waitForRelease = waitForRelease ?? { try await ClipboardSelection.waitForShortcutRelease() }
         self.activationNotifications = activationNotifications ?? NSWorkspace.shared.notificationCenter
+        historyObservation = self.history.$entries.dropFirst().sink { [weak self] entries in
+            guard let self else { return }
+            self.state.revealedIDs.formIntersection(entries.map(\.id))
+            self.state.selectedIndex = max(0, min(self.state.selectedIndex, entries.count - 1))
+            guard let panel = self.panel else { return }
+            let size = ClipboardHistoryLayout.size(entryCount: entries.count)
+            panel.setFrame(NSRect(x: panel.frame.minX, y: panel.frame.maxY - size.height, width: size.width, height: size.height), display: true)
+        }
     }
 
     func configure(enabled: Bool) {
@@ -106,15 +116,18 @@ final class ClipboardHistoryController {
         target = captureTarget()
         state.selectedIndex = 0
         state.revealedIDs = []
-        let panel = ClipboardPanel(contentRect: NSRect(x: 0, y: 0, width: 500, height: 410),
+        let size = ClipboardHistoryLayout.size(entryCount: history.entries.count)
+        let panel = ClipboardPanel(contentRect: NSRect(origin: .zero, size: size),
                                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false; panel.isOpaque = false; panel.backgroundColor = .clear
         panel.hidesOnDeactivate = false; panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.title = L10n.text("Clipboard history")
-        panel.contentView = ClipboardHistoryHostingView(rootView: ClipboardHistoryView(history: history, state: state,
+        let hosting = ClipboardHistoryHostingView(rootView: ClipboardHistoryView(history: history, state: state,
             paste: { [weak self] in self?.choose($0, plainText: $1) },
             close: { [weak self] in self?.hide() }, clear: { [weak self] in self?.history.clear() }))
+        hosting.sizingOptions = []
+        panel.contentView = hosting
         self.panel = panel
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { [weak self] event in
             MainActor.assumeIsolated {
@@ -129,7 +142,7 @@ final class ClipboardHistoryController {
                 case 125: self.state.selectedIndex = min(self.history.entries.count - 1, self.state.selectedIndex + 1); return nil
                 case 126: self.state.selectedIndex = max(0, self.state.selectedIndex - 1); return nil
                 case 49:
-                    if self.history.entries.indices.contains(self.state.selectedIndex) {
+                    if self.history.entries.indices.contains(self.state.selectedIndex), self.history.entries[self.state.selectedIndex].isSensitive {
                         self.state.toggleReveal(self.history.entries[self.state.selectedIndex].id)
                     }
                     return nil

@@ -20,7 +20,9 @@ final class HistoryFeedTests: XCTestCase {
         XCTAssertFalse(copied.displayPreview(revealed: false).contains("secret"))
         XCTAssertTrue(copied.displayPreview(revealed: true).contains("secret"))
         let ordinary = ClipboardHistoryEntry(text: "Ordinary copied text")
-        XCTAssertFalse(ordinary.displayPreview(revealed: false).contains("Ordinary"), "All copied previews start masked, not just marked passwords")
+        XCTAssertTrue(ordinary.displayPreview(revealed: false).contains("Ordinary"), "Ordinary copied text should be readable without revealing it")
+        XCTAssertFalse(HistoryItem.clipboard(ordinary).requiresReveal)
+        XCTAssertEqual(HistoryFeed.items(saved: [], clipboard: [ordinary], search: "Ordinary copied text").count, 1)
     }
 
     func testClipboardFeedRemainsMemoryOnlyWithSavedHistoryEnabledAndCanBeDeletedClearedAndDisabled() async throws {
@@ -145,7 +147,10 @@ final class HistoryFeedTests: XCTestCase {
         let model = AppModel(dataDirectory: directory, registerShortcuts: false, clipboardHistoryStore: clipboard)
         defer { model.shutdown() }
         model.start()
-        clipboard.recordCopiedText("Synthetic clipboard text — visible only after clicking.")
+        let sensitive = NSPasteboardItem()
+        sensitive.setString("Synthetic clipboard text — visible only after clicking.", forType: .string)
+        sensitive.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+        pasteboard.clearContents(); pasteboard.writeObjects([sensitive]); await clipboard.poll()
         let entry = try XCTUnwrap(clipboard.entries.first)
         let visibility = HistoryVisibility()
         let host = NSHostingView(rootView: HistoryView(visibility: visibility).environmentObject(model))

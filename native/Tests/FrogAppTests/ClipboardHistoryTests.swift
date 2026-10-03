@@ -279,11 +279,121 @@ final class ClipboardHistoryTests: XCTestCase {
         let view = try XCTUnwrap(panel.contentView)
         view.layoutSubtreeIfNeeded()
         XCTAssertEqual(history.entries.count, 5)
-        XCTAssertEqual(view.bounds.width, 500)
+        XCTAssertEqual(view.bounds.size, ClipboardHistoryLayout.size(entryCount: 5))
         if let path = ProcessInfo.processInfo.environment["FROG_TEST_CLIPBOARD_SNAPSHOT"] {
             let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
             view.cacheDisplay(in: view.bounds, to: bitmap)
             try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: path))
+        }
+    }
+
+    func testPanelResizesWithEntriesAndOnlySensitiveItemsReveal() async throws {
+        _ = NSApplication.shared
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let history = ClipboardHistoryStore(pasteboard: pasteboard)
+        history.configure(enabled: true, automaticallyPoll: false)
+        history.recordCopiedText("Ordinary copied text")
+        let controller = ClipboardHistoryController(pasteboard: pasteboard, history: history, activationNotifications: NotificationCenter())
+        defer { controller.stop() }
+        controller.show()
+        let panel = try XCTUnwrap(NSApplication.shared.windows.first { $0.isVisible && $0.title == "Clipboard history" })
+        XCTAssertEqual(panel.frame.size, ClipboardHistoryLayout.size(entryCount: 1))
+        XCTAssertEqual(history.entries.first?.displayPreview(revealed: false), "Ordinary copied text")
+        try await sendKey(49, to: panel)
+        XCTAssertTrue(controller.state.revealedIDs.isEmpty, "Space must not disguise ordinary text as a password")
+        let sensitive = NSPasteboardItem()
+        sensitive.setString("Synthetic secret", forType: .string)
+        sensitive.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+        pasteboard.clearContents(); pasteboard.writeObjects([sensitive]); await history.poll()
+        try await Task.sleep(for: .milliseconds(30))
+        let entry = try XCTUnwrap(history.entries.first)
+        XCTAssertEqual(panel.frame.size, ClipboardHistoryLayout.size(entryCount: 2))
+        XCTAssertFalse(entry.displayPreview(revealed: false).contains("Synthetic secret"))
+        try await sendKey(49, to: panel)
+        XCTAssertEqual(controller.state.revealedIDs, [entry.id])
+        history.clear()
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(panel.frame.size, ClipboardHistoryLayout.size(entryCount: 0))
+        XCTAssertTrue(controller.state.revealedIDs.isEmpty)
+    }
+
+    func testCompactPanelRendersMixedSensitiveAndFormattedEntriesInLightAndDarkThemes() async throws {
+        _ = NSApplication.shared
+        let previous = FrogAppearance.shared.settings
+        defer { FrogAppearance.shared.apply(previous) }
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let history = ClipboardHistoryStore(pasteboard: pasteboard)
+        history.configure(enabled: true, automaticallyPoll: false)
+        let controller = ClipboardHistoryController(pasteboard: pasteboard, history: history, activationNotifications: NotificationCenter())
+        defer { controller.stop() }
+        for text in ["Meeting notes — review the proposal on Monday.", "日本語のテキスト · café · 👨‍👩‍👧‍👦", "A longer copied paragraph wraps to two lines while keeping both compact paste actions visible."] {
+            history.recordCopiedText(text)
+        }
+        let formatted = NSPasteboardItem()
+        formatted.setString("Copied transcription with formatting", forType: .string)
+        formatted.setData(Data("<b>Copied transcription with formatting</b>".utf8), forType: .html)
+        pasteboard.clearContents(); pasteboard.writeObjects([formatted]); await history.poll()
+        let sensitive = NSPasteboardItem()
+        sensitive.setString("Synthetic concealed fixture", forType: .string)
+        sensitive.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+        pasteboard.clearContents(); pasteboard.writeObjects([sensitive]); await history.poll()
+        for dark in [false, true] {
+            var appearance = previous
+            appearance.mode = dark ? .dark : .light
+            appearance.theme = dark ? .tokyoNight : .frog
+            appearance.useThemeAccent = true
+            FrogAppearance.shared.apply(appearance)
+            controller.show()
+            try await Task.sleep(for: .milliseconds(50))
+            let panel = try XCTUnwrap(NSApplication.shared.windows.first { $0.isVisible && $0.title == "Clipboard history" })
+            let view = try XCTUnwrap(panel.contentView)
+            view.layoutSubtreeIfNeeded()
+            XCTAssertEqual(view.bounds.size, ClipboardHistoryLayout.size(entryCount: 5))
+            XCTAssertTrue(controller.state.revealedIDs.isEmpty)
+            if let root = ProcessInfo.processInfo.environment["FROG_TEST_COMPACT_CLIPBOARD_SNAPSHOT"] {
+                let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: root + (dark ? "-dark.png" : "-light.png")))
+            }
+            controller.hide()
+        }
+    }
+
+    func testCompactPasteIconActionsDeliverFormattedAndPlainText() async throws {
+        _ = NSApplication.shared
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let history = ClipboardHistoryStore(pasteboard: pasteboard)
+        history.configure(enabled: true, automaticallyPoll: false)
+        let item = NSPasteboardItem()
+        item.setString("Formatted fixture", forType: .string)
+        item.setData(Data("<b>Formatted fixture</b>".utf8), forType: .html)
+        pasteboard.clearContents(); pasteboard.writeObjects([item]); await history.poll()
+        let target = TestPasteTarget()
+        let controller = ClipboardHistoryController(pasteboard: pasteboard, history: history, captureTarget: { target },
+            waitForRelease: {}, activationNotifications: NotificationCenter())
+        defer { controller.stop() }
+        for plain in [false, true] {
+            pasteboard.clearContents(); pasteboard.setString("Before choosing", forType: .string)
+            controller.show()
+            try await Task.sleep(for: .milliseconds(30))
+            let panel = try XCTUnwrap(NSApplication.shared.windows.first { $0.isVisible && $0.title == "Clipboard history" })
+            let view = try XCTUnwrap(panel.contentView)
+            view.layoutSubtreeIfNeeded()
+            let y = ClipboardHistoryLayout.headerHeight + 1 + ClipboardHistoryLayout.inset + ClipboardHistoryLayout.rowHeight / 2
+            let point = view.convert(NSPoint(x: plain ? 452 : 418, y: view.isFlipped ? y : view.bounds.maxY - y), to: nil)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+                NSApplication.shared.sendEvent(event)
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            await controller.waitForDelivery()
+            XCTAssertEqual(target.requests, plain ? 2 : 1)
+            XCTAssertEqual(pasteboard.string(forType: .string), "Formatted fixture")
+            XCTAssertEqual(pasteboard.data(forType: .html) == nil, plain)
         }
     }
 
@@ -348,7 +458,10 @@ final class ClipboardHistoryTests: XCTestCase {
         defer { pasteboard.releaseGlobally() }
         let history = ClipboardHistoryStore(pasteboard: pasteboard)
         history.configure(enabled: true, automaticallyPoll: false)
-        pasteboard.clearContents(); pasteboard.setString("Synthetic private text", forType: .string); await history.poll()
+        let item = NSPasteboardItem()
+        item.setString("Synthetic private text", forType: .string)
+        item.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+        pasteboard.clearContents(); pasteboard.writeObjects([item]); await history.poll()
         let entry = try XCTUnwrap(history.entries.first)
         let controller = ClipboardHistoryController(pasteboard: pasteboard, history: history, activationNotifications: NotificationCenter())
         defer { controller.stop() }
