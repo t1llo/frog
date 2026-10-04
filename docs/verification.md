@@ -7,10 +7,12 @@ The native app builds through Swift Package Manager and Xcode. A successful buil
 Commands:
 
 ```sh
-swift test
+swift test -c release
 bash scripts/build-app.sh
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project native/Frog.xcodeproj -scheme Frog-macOS -configuration Debug -derivedDataPath .build/xcode build
 ```
+
+Run frame-budget tests in release mode, matching the packaged app and CI. The workflow also builds the Xcode project in Debug to verify that configuration compiles.
 
 ## Desktop acceptance checklist
 

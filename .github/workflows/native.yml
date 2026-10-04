@@ -18,7 +18,8 @@ jobs:
           xcodebuild -downloadComponent MetalToolchain
           xcrun metal --version
       - name: Build and test native app
-        run: swift test
+        # Frame-budget tests must measure the optimized app we ship.
+        run: swift test -c release
       - name: Package application
         run: bash scripts/build-app.sh
         env:
