@@ -87,6 +87,21 @@ final class ProcessingTests: XCTestCase {
         withExtendedLifetime(subscription) {}
     }
 
+    func testStatusRefreshDoesNotBlockShortcutDelivery() async throws {
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, readAccessibility: { true }, readLoginStatus: {
+            XCTAssertFalse(Thread.isMainThread, "Login service IPC must run off the main thread")
+            Thread.sleep(forTimeInterval: 0.1)
+            return .init(enabled: false, text: "Fixture")
+        })
+        let start = ContinuousClock.now
+        for _ in 0..<3 { model.refreshSystemStatus() }
+        let elapsed = start.duration(to: .now)
+        print("Status refresh main-thread time: \(elapsed)")
+        XCTAssertLessThan(elapsed, .milliseconds(50), "Status polling must leave the main thread available for shortcuts")
+        for _ in 0..<100 where model.loginStatus != "Fixture" { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(model.loginStatus, "Fixture", "The asynchronous result must still update Settings")
+    }
+
     func testDeletingLastProviderResetsRuleOverridesAndKeepsRules() async throws {
         let model = AppModel(dataDirectory: try directory(), registerShortcuts: false)
         let provider = ProviderConfiguration(kind: .ollama)
@@ -316,8 +331,8 @@ final class ProcessingTests: XCTestCase {
         var granted = false
         let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, readAccessibility: { granted })
         XCTAssertFalse(model.accessibilityGranted)
-        let monitor = Task { await model.monitorSystemStatus() }
-        defer { monitor.cancel() }
+        model.startSystemStatusMonitoring()
+        defer { model.shutdown() }
         await Task.yield()
         granted = true
         for _ in 0..<30 {

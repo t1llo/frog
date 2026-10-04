@@ -37,6 +37,10 @@ final class AppModel: ObservableObject {
     private let writeClipboard: (String) -> Void
     private let registerShortcuts: Bool
     private let readAccessibility: () -> Bool
+    private let readLoginStatus: @Sendable () -> LoginService.Snapshot
+    private var loginStatusTask: Task<Void, Never>?
+    private var loginStatusUpdatedAt: ContinuousClock.Instant?
+    private var systemStatusTask: Task<Void, Never>?
     private let hotkeys = HotkeyManager()
     private lazy var windowSwitcher: WindowSwitcherController = {
         let controller = WindowSwitcherController { [weak self] message, ready in
@@ -78,6 +82,7 @@ final class AppModel: ObservableObject {
          readKey: ((UUID) throws -> String?)? = nil,
          writeClipboard: ((String) -> Void)? = nil,
          readAccessibility: (() -> Bool)? = nil,
+         readLoginStatus: (@Sendable () -> LoginService.Snapshot)? = nil,
          captureSelection: (() async throws -> any CapturedTextSelection)? = nil,
          dictationController: DictationController? = nil,
          modelService: LocalModels? = nil,
@@ -90,6 +95,7 @@ final class AppModel: ObservableObject {
         self.errorDisplayDuration = errorDisplayDuration
         localModels = modelService ?? LocalModels(directory: dataDirectory)
         self.readAccessibility = readAccessibility ?? { SelectionService.isTrusted }
+        self.readLoginStatus = readLoginStatus ?? { LoginService.readStatus() }
         self.captureSelection = captureSelection ?? { try await SelectionService().capture() }
         self.complete = complete ?? { text, rule, provider, key in try await LLMClient().complete(text: text, rule: rule, provider: provider, apiKey: key) }
         self.readKey = readKey ?? { try KeychainStore().read(providerID: $0) }
@@ -181,6 +187,7 @@ final class AppModel: ObservableObject {
 
     func start() {
         started = true
+        startSystemStatusMonitoring()
         if registerShortcuts, configurationLoadError == nil,
            !configuration.rules.contains(where: { $0.category == .audio }), configuration.preferences.workflows == nil {
             var candidate = configuration
@@ -200,6 +207,9 @@ final class AppModel: ObservableObject {
     }
 
     func shutdown() {
+        systemStatusTask?.cancel(); systemStatusTask = nil
+        loginStatusTask?.cancel(); loginStatusTask = nil
+        loginStatusUpdatedAt = nil
         invalidateHistoryRecovery()
         dictation.cancel(); localModels.shutdown(); shortcutPanel.hide()
         started = false
@@ -215,27 +225,48 @@ final class AppModel: ObservableObject {
 
     func showSettings() { refreshSystemStatus(); openSettings?() }
 
-    func refreshSystemStatus() {
+    func refreshSystemStatus(forceLoginStatus: Bool = false) {
         let trusted = readAccessibility()
-        let loginEnabled = LoginService.isEnabled
-        let loginText = LoginService.statusText
         if accessibilityGranted != trusted { accessibilityGranted = trusted }
-        if startAtLogin != loginEnabled { startAtLogin = loginEnabled }
-        if loginStatus != loginText { loginStatus = loginText }
         if started { configureWindowSwitcher() }
+        refreshLoginStatus(force: forceLoginStatus)
     }
 
-    func monitorSystemStatus() async {
-        while !Task.isCancelled {
-            refreshSystemStatus()
-            do { try await Task.sleep(for: .seconds(1)) }
-            catch { return }
+    private func refreshLoginStatus(force: Bool) {
+        if force {
+            loginStatusTask?.cancel(); loginStatusTask = nil
+        } else {
+            guard loginStatusTask == nil else { return }
+            if let loginStatusUpdatedAt, loginStatusUpdatedAt.duration(to: .now) < .seconds(30) { return }
+        }
+        // ServiceManagement performs synchronous IPC that can take hundreds of
+        // milliseconds. Neither the UI nor shortcut delivery may wait for it.
+        loginStatusTask = Task { [weak self, readLoginStatus] in
+            let result = await Task.detached(priority: .utility) { readLoginStatus() }.value
+            guard !Task.isCancelled, let self else { return }
+            self.loginStatusTask = nil
+            self.loginStatusUpdatedAt = .now
+            if self.startAtLogin != result.enabled { self.startAtLogin = result.enabled }
+            if self.loginStatus != result.text { self.loginStatus = result.text }
         }
     }
 
+    func startSystemStatusMonitoring() {
+        guard systemStatusTask == nil else { return }
+        systemStatusTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard self != nil else { return }
+                self?.refreshSystemStatus()
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            }
+        }
+    }
+
+    isolated deinit { systemStatusTask?.cancel(); loginStatusTask?.cancel() }
+
     func setStartAtLogin(_ enabled: Bool) {
-        do { try LoginService.setEnabled(enabled); refreshSystemStatus() }
-        catch { refreshSystemStatus(); report(error) }
+        do { try LoginService.setEnabled(enabled); refreshSystemStatus(forceLoginStatus: true) }
+        catch { refreshSystemStatus(forceLoginStatus: true); report(error) }
     }
 
     func report(_ error: Error) {

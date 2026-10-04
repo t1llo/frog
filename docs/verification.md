@@ -17,6 +17,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project nat
 Use an installed signed app and a disposable document. Record macOS version, architecture, source application/version, provider/model, and result for each case.
 
 - Open menu-bar settings; close/reopen the window; Quit actually exits and releases shortcuts.
+- Check shortcut and Command–Tab responsiveness with both the menu and main window open, then with both hidden. Login-item status reads must run off the main thread, share pending requests, and refresh at most once per 30 seconds unless the user changes the setting. Accessibility status must continue updating while the app is in the background. Status-monitor regression tests use a slow service fixture and verify cancellation and a single polling loop.
 - Configure a cloud provider with your own key and test it; repeat with Ollama/local compatible service. An invalid key, unavailable model, offline server, rate limit and empty reply produce actionable errors.
 - Verify credentials are absent from settings/history files. Blank key retains saved key; explicit removal and provider deletion remove it.
 - Assign different providers/models to two rules, and two languages to translation rules; verify each hotkey uses its own settings after restart.

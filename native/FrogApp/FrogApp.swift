@@ -80,7 +80,7 @@ private struct FrogStatusMenu: View {
             .buttonStyle(FrogButtonStyle()).controlSize(.small).padding(18).frame(width: 320)
             .background(FrogStyle.canvas).background(FrogWindowMaterial())
             .clipShape(RoundedRectangle(cornerRadius: 12))
-            .task { await model.monitorSystemStatus() }
+            .onAppear { model.refreshSystemStatus() }
     }
 }
 

@@ -71,7 +71,6 @@ struct MainView: View {
         .sheet(isPresented: Binding(get: { model.setupPresented }, set: { if !$0 { model.finishSetup() } })) {
             SetupView().environmentObject(model).interactiveDismissDisabled()
         }
-        .task { await model.monitorSystemStatus() }
         .onChange(of: scenePhase) { _, phase in if phase == .active { model.refreshSystemStatus() } }
         .onChange(of: model.configuration.preferences.shortcutsEnabled) { _, enabled in if !enabled && section == .shortcuts { section = .settings } }
     }
