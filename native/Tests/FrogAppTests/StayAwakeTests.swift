@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import XCTest
 @testable import FrogApp
@@ -214,27 +215,29 @@ final class StayAwakeTests: XCTestCase {
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host; window.makeKeyAndOrderFront(nil)
         defer { window.orderOut(nil); window.contentView = nil }
-        try await Task.sleep(for: .milliseconds(100))
+        host.layoutSubtreeIfNeeded()
+        let control = try XCTUnwrap(descendants(host).compactMap { $0 as? NSSwitch }.first)
         for expected in [true, false] {
             host.layoutSubtreeIfNeeded()
-            let point = host.convert(NSPoint(x: 254, y: host.isFlipped ? 65 : host.bounds.maxY - 65), to: nil)
-            let down = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: [],
-                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
-                eventNumber: 0, clickCount: 1, pressure: 1))
-            let up = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseUp, location: point, modifierFlags: [],
-                timestamp: ProcessInfo.processInfo.systemUptime + 0.01, windowNumber: window.windowNumber, context: nil,
-                eventNumber: 1, clickCount: 1, pressure: 0))
-            // NSSwitch tracks until mouse-up inside mouseDown; queue its release
-            // first, rather than trying to send it after mouseDown returns.
-            NSApplication.shared.postEvent(up, atStart: true)
-            window.sendEvent(down)
-            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertTrue(control.isEnabled)
+            let point = control.convert(NSPoint(x: control.bounds.midX, y: control.bounds.midY), to: host.superview)
+            let hit = host.hitTest(point)
+            XCTAssertTrue(hit === control || hit?.isDescendant(of: control) == true, "The popup switch must remain hittable")
+            let changed = expectation(description: "Native switch changes the verified power state to \(expected)")
+            let observation = power.$isEnabled.dropFirst().filter { $0 == expected }.prefix(1).sink { _ in changed.fulfill() }
+            // Exercise the real native control action. A test's borderless window
+            // does not have MenuBarExtra's activation/event-tracking lifecycle.
+            control.performClick(nil)
+            await fulfillment(of: [changed], timeout: 2)
+            observation.cancel()
             await power.waitForOperation()
             XCTAssertEqual(power.isEnabled, expected)
         }
         let writes = await system.writes
         XCTAssertEqual(writes, [true, false])
     }
+
+    private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
 }
 
 private actor PowerFixture: StayAwakeSystem {
