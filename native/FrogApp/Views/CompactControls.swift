@@ -25,8 +25,9 @@ struct FilterTag: View {
         Button(action: action) {
             Text(L10n.text(title)).font(.system(size: 11, weight: selected ? .semibold : .regular))
                 .padding(.horizontal, 10).padding(.vertical, 7)
-                .foregroundStyle(selected ? FrogStyle.accent : FrogStyle.muted)
-                .background(selected ? FrogStyle.accentSoft : .clear, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+                .foregroundStyle(selected ? FrogStyle.ink : FrogStyle.muted)
+                .background(selected ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+                .contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -39,7 +40,7 @@ struct CompactRow<Content: View>: View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(L10n.text(title)).font(.system(size: 12))
-                if let detail { Text(L10n.text(detail)).font(.system(size: 10)).foregroundStyle(.secondary) }
+                if let detail { Text(L10n.text(detail)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true) }
             }
             Spacer(minLength: 12)
             content.controlSize(.small).fixedSize(horizontal: true, vertical: false)
@@ -78,7 +79,7 @@ struct CompactDropdownLabel: View {
             Image(systemName: "chevron.down").font(.system(size: 9)).foregroundStyle(FrogStyle.muted)
         }.font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.ink)
             .padding(.horizontal, 9).frame(width: 220, height: 32)
-            .background(hovering ? FrogStyle.accentSoft : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 7))
+            .background(hovering ? FrogStyle.selection : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 5))
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(FrogStyle.border.opacity(0.6)))
             .contentShape(RoundedRectangle(cornerRadius: 7)).onHover { hovering = $0 }
     }
@@ -114,8 +115,8 @@ struct CompactSegments<Value: Hashable>: View {
                 Button { choose(value) } label: {
                     Text(L10n.text(title(value))).font(.system(size: 11, weight: selected == value ? .semibold : .regular))
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
-                        .foregroundStyle(selected == value ? FrogStyle.accent : FrogStyle.muted)
-                        .background(selected == value ? FrogStyle.accentSoft : .clear, in: RoundedRectangle(cornerRadius: 5))
+                        .foregroundStyle(selected == value ? FrogStyle.ink : FrogStyle.muted)
+                        .background(selected == value ? FrogStyle.surface : .clear, in: RoundedRectangle(cornerRadius: 4))
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityAddTraits(selected == value ? .isSelected : [])
             }

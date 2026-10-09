@@ -19,7 +19,7 @@ final class FrogAppearance {
 
 /// Shared adaptive colors keep the app, sheets, and controls in the same visual language.
 enum FrogStyle {
-    static let corner: CGFloat = 8
+    static let corner: CGFloat = 6
     static var canvas: Color { themed(\.canvas).opacity(1 - FrogAppearance.shared.settings.transparency * 0.85) }
     static var sidebar: Color { themed(\.sidebar).opacity(1 - FrogAppearance.shared.settings.transparency * 0.85) }
     static var surface: Color { themed(\.surface).opacity(1 - FrogAppearance.shared.settings.transparency * 0.78) }
@@ -28,7 +28,8 @@ enum FrogStyle {
     /// Overlays need a stable backdrop independent of the main window's translucency.
     static var panelSurface: Color { themed(\.surface) }
     static var accent: Color {
-        if FrogAppearance.shared.settings.useThemeAccent == true {
+        if FrogAppearance.shared.settings.useThemeAccent == true ||
+            (FrogAppearance.shared.settings.useThemeAccent == nil && FrogAppearance.shared.settings.accentHex == "A3D8AF") {
             switch FrogAppearance.shared.settings.theme ?? .frog {
             case .frog: return adaptive(light: 0x397A4C, dark: 0xA3D8AF)
             case .tokyoNight: return adaptive(light: 0x34548A, dark: 0x7AA2F7)
@@ -40,6 +41,7 @@ enum FrogStyle {
         return Color(red: Double((rgb >> 16) & 255) / 255, green: Double((rgb >> 8) & 255) / 255, blue: Double(rgb & 255) / 255)
     }
     static var accentSoft: Color { accent.opacity(0.15) }
+    static var selection: Color { ink.opacity(0.07) }
     static let onAccent = adaptive(light: 0xFFFFFF, dark: 0x18261C)
     static var ink: Color { themed(\.ink) }
     static var muted: Color { themed(\.muted) }
@@ -49,8 +51,8 @@ enum FrogStyle {
     }
     private static func palette(dark: Bool) -> Palette {
         switch (FrogAppearance.shared.settings.theme ?? .frog, dark) {
-        case (.frog, false): Palette(canvas: 0xF8F9F6, sidebar: 0xEFF1EC, surface: 0xFFFFFF, inset: 0xF4F6F1, border: 0xDDE3D9, ink: 0x242D26, muted: 0x647060)
-        case (.frog, true): Palette(canvas: 0x191C1A, sidebar: 0x141715, surface: 0x232724, inset: 0x1B1F1C, border: 0x39413B, ink: 0xEDF2EA, muted: 0xADB8AB)
+        case (.frog, false): Palette(canvas: 0xFFFFFF, sidebar: 0xF7F7F5, surface: 0xFFFFFF, inset: 0xF5F5F4, border: 0xE2E2DF, ink: 0x252525, muted: 0x73736F)
+        case (.frog, true): Palette(canvas: 0x191919, sidebar: 0x151515, surface: 0x1E1E1F, inset: 0x242424, border: 0x383839, ink: 0xE8E8E8, muted: 0xA0A0A3)
         case (.tokyoNight, false): Palette(canvas: 0xE1E2E7, sidebar: 0xD5D6DB, surface: 0xEBECF0, inset: 0xDADBE0, border: 0xB4B5BD, ink: 0x343B58, muted: 0x565F89)
         case (.tokyoNight, true): Palette(canvas: 0x1A1B26, sidebar: 0x16161E, surface: 0x24283B, inset: 0x1F2335, border: 0x414868, ink: 0xC0CAF5, muted: 0xA9B1D6)
         case (.catppuccin, false): Palette(canvas: 0xEFF1F5, sidebar: 0xE6E9EF, surface: 0xFFFFFF, inset: 0xDCE0E8, border: 0xBCC0CC, ink: 0x4C4F69, muted: 0x6C6F85)
@@ -89,8 +91,8 @@ struct FrogButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 12, weight: .medium))
             .padding(.horizontal, 10).padding(.vertical, 7)
-            .foregroundStyle(primary ? FrogStyle.onAccent : FrogStyle.ink)
-            .background(primary ? FrogStyle.accent : FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+            .foregroundStyle(primary ? FrogStyle.panelSurface : FrogStyle.ink)
+            .background(primary ? FrogStyle.ink : FrogStyle.surface, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
             .overlay(RoundedRectangle(cornerRadius: FrogStyle.corner).strokeBorder(primary ? .clear : FrogStyle.border.opacity(0.6), lineWidth: 1))
             .opacity(enabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
             .contentShape(RoundedRectangle(cornerRadius: FrogStyle.corner))
@@ -118,7 +120,7 @@ struct PageHeader<Actions: View>: View {
     var body: some View {
         HStack(alignment: .center, spacing: 20) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(L10n.text(title)).font(.system(size: 21, weight: .semibold)).tracking(-0.4)
+                Text(L10n.text(title)).font(.system(size: 19, weight: .semibold)).tracking(-0.4)
                     .foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
                 if !subtitle.isEmpty { Text(L10n.text(subtitle)).font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
                     .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
@@ -150,7 +152,7 @@ struct PageScroll<Content: View>: View {
 struct SectionCaption: View {
     let text: String
     var body: some View {
-        Text(L10n.text(text).uppercased()).font(.system(size: 10, weight: .bold)).tracking(1.4)
+        Text(L10n.text(text)).font(.system(size: 11, weight: .medium))
             .foregroundStyle(FrogStyle.muted).accessibilityAddTraits(.isHeader)
     }
 }
@@ -160,8 +162,8 @@ struct SymbolTile: View {
     var size: CGFloat = 40
     var body: some View {
         Image(systemName: symbol).font(.system(size: size * 0.4, weight: .medium))
-            .foregroundStyle(FrogStyle.accent).frame(width: size, height: size)
-            .background(FrogStyle.accentSoft, in: RoundedRectangle(cornerRadius: size * 0.28))
+            .foregroundStyle(FrogStyle.muted).frame(width: size, height: size)
+            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
             .accessibilityHidden(true)
     }
 }
@@ -172,8 +174,8 @@ struct FrogBadge: View {
     var body: some View {
         Text(L10n.text(text)).font(.system(size: 10, weight: .semibold))
             .foregroundStyle(active ? FrogStyle.accent : FrogStyle.muted)
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(active ? FrogStyle.accentSoft : FrogStyle.inset, in: Capsule())
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .background(active ? FrogStyle.accentSoft : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 4))
     }
 }
 
@@ -190,8 +192,8 @@ struct CompactActionSurface: ViewModifier {
     @State private var hovering = false
     func body(content: Content) -> some View {
         content.frame(height: 24)
-            .foregroundStyle(hovering ? FrogStyle.accent : FrogStyle.ink)
-            .background(hovering ? FrogStyle.accentSoft : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 5))
+            .foregroundStyle(FrogStyle.ink)
+            .background(hovering ? FrogStyle.selection : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 4))
             .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(FrogStyle.border.opacity(0.6)))
             .contentShape(RoundedRectangle(cornerRadius: 5))
             .onHover { hovering = $0 }
@@ -269,9 +271,9 @@ struct FrogEmptyState: View {
     let title: String
     let message: String
     var body: some View {
-        VStack(spacing: 16) {
-            SymbolTile(symbol: symbol, size: 60)
-            Text(L10n.text(title)).font(.system(size: 21, weight: .semibold, design: .rounded)).foregroundStyle(FrogStyle.ink)
+        VStack(spacing: 10) {
+            SymbolTile(symbol: symbol, size: 32)
+            Text(L10n.text(title)).font(.system(size: 14, weight: .medium)).foregroundStyle(FrogStyle.ink)
             Text(L10n.text(message)).font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
                 .multilineTextAlignment(.center).lineSpacing(4).frame(maxWidth: 340)
         }.frame(maxWidth: .infinity).padding(.vertical, 44).padding(.horizontal, 24)

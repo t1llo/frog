@@ -20,6 +20,8 @@ Open `native/Frog.xcodeproj` and choose **Frog-macOS** for Xcode development. Th
 
 For isolated manual testing, launch the executable with `FROG_DATA_DIRECTORY` pointing to a temporary directory. Keys still use Keychain provider IDs; use fresh IDs for fixtures. README screenshots show the real native views with isolated example settings, not a running model request.
 
+Frog starts as a menu-bar accessory without restoring a main window. Open the window from the menu bar, reopen an already-running Frog from Finder, or pass `--settings` explicitly. `--background` always suppresses the window. `scripts/check-app-launch.py` checks the packaged activation policy and visible windows using isolated settings with shortcuts disabled.
+
 ## Release packaging
 
 For a local app without release archives or publication, run `make build`. It builds the current checkout into `dist/Frog.app`, using a locally available Developer ID identity when possible, otherwise ad-hoc signing. It does not notarize, upload or increment the release version. Each local build gets its own build number. Use `make build CONFIGURATION=debug` for a debug build; set `FROG_SIGN_IDENTITY` explicitly to choose a certificate. Full releases use the separate local release script.

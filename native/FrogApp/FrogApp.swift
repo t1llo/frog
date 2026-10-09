@@ -1,5 +1,4 @@
 import AppKit
-import Carbon
 import SwiftUI
 
 @main
@@ -24,10 +23,10 @@ private struct FrogStatusMenu: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
-                FrogMark().scaleEffect(0.78).frame(width: 36, height: 36)
-                Text("frog").font(.system(size: 22, weight: .semibold, design: .rounded))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(nsImage: FrogMenuIcon.image).renderingMode(.template)
+                Text("Frog").font(.system(size: 14, weight: .semibold))
                 Spacer()
                 HStack(spacing: 5) {
                     Circle().fill(model.dictation.phase == .recording ? Color.red : FrogStyle.accent).frame(width: 6, height: 6)
@@ -65,10 +64,10 @@ private struct FrogStatusMenu: View {
                     }
                 }.padding(12).frogTableSurface()
             }
-            MemorySparkline(showUsage: true).frame(height: 66).padding(12).frogTableSurface()
+            MemorySparkline(showUsage: true).frame(height: 36)
             VStack(spacing: 6) {
                 Button { dismiss(); model.showSettings() } label: {
-                    Label("Open Frog", systemImage: "arrow.up.forward.app").frame(maxWidth: .infinity, alignment: .leading)
+                    Label(model.setupPresented ? "Set up Frog…" : "Open Frog", systemImage: "arrow.up.forward.app").frame(maxWidth: .infinity, alignment: .leading)
                 }.keyboardShortcut(",")
             }
             HStack {
@@ -77,7 +76,7 @@ private struct FrogStatusMenu: View {
                 Button("Quit Frog") { model.shutdown(); NSApplication.shared.terminate(nil) }.keyboardShortcut("q").buttonStyle(.plain).foregroundStyle(FrogStyle.muted)
             }
         }.font(.system(size: 12)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
-            .buttonStyle(FrogButtonStyle()).controlSize(.small).padding(18).frame(width: 320)
+            .buttonStyle(FrogButtonStyle()).controlSize(.small).padding(14).frame(width: 280)
             .background(FrogStyle.canvas).background(FrogWindowMaterial())
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .onAppear { model.refreshSystemStatus() }
@@ -99,13 +98,15 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
     let model = AppModel()
     private var window: NSWindow?
     private var observer: NSObjectProtocol?
-    private var launchedAtLogin = false
+    private var finishedLaunching = false
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NSApplication.shared.setActivationPolicy(.accessory)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         DesktopNotifications.clearPreviousNotifications()
-        NSApplication.shared.setActivationPolicy(.regular)
-        let event = NSAppleEventManager.shared().currentAppleEvent
-        launchedAtLogin = event?.eventID == kAEOpenApplication && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
+        NSApplication.shared.setActivationPolicy(.accessory)
         model.openSettings = { [weak self] in self?.showWindow() }
         // Register at application launch, even if SwiftUI never mounts the menu label.
         model.start()
@@ -113,7 +114,10 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
         observer = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak model] _ in
             Task { @MainActor in model?.refreshSystemStatus() }
         }
-        if !launchedAtLogin && !ProcessInfo.processInfo.arguments.contains("--background") {
+        // Login, session restoration and updater relaunches do not reliably carry
+        // the login-item Apple event. All initial launches are menu-bar-only.
+        finishedLaunching = true
+        if ProcessInfo.processInfo.arguments.contains("--settings") && !ProcessInfo.processInfo.arguments.contains("--background") {
             showWindow()
         }
     }
@@ -132,6 +136,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
             created.setContentSize(NSSize(width: 800, height: 580))
             created.contentMinSize = NSSize(width: 740, height: 520)
             created.isReleasedWhenClosed = false
+            created.isRestorable = false
             created.delegate = self
             created.center()
             window = created
@@ -142,7 +147,12 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showWindow(); return true }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if finishedLaunching { showWindow() }
+        return false
+    }
+    func applicationShouldSaveSecureApplicationState(_ app: NSApplication) -> Bool { false }
+    func applicationShouldRestoreSecureApplicationState(_ app: NSApplication) -> Bool { false }
     func applicationWillTerminate(_ notification: Notification) {
         model.shutdown()
         if let observer { NotificationCenter.default.removeObserver(observer) }

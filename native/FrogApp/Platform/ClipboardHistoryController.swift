@@ -97,10 +97,9 @@ final class ClipboardHistoryController {
         historyObservation = self.history.$entries.dropFirst().sink { [weak self] entries in
             guard let self else { return }
             self.state.revealedIDs.formIntersection(entries.map(\.id))
-            self.state.selectedIndex = max(0, min(self.state.selectedIndex, entries.count - 1))
-            guard let panel = self.panel else { return }
-            let size = ClipboardHistoryLayout.size(entryCount: entries.count)
-            panel.setFrame(NSRect(x: panel.frame.minX, y: panel.frame.maxY - size.height, width: size.width, height: size.height), display: true)
+            let visible = self.state.visibleEntries(in: entries)
+            self.state.selectedIndex = max(0, min(self.state.selectedIndex, visible.count - 1))
+            self.resizePanel(entryCount: visible.count)
         }
     }
 
@@ -116,6 +115,7 @@ final class ClipboardHistoryController {
         target = captureTarget()
         state.selectedIndex = 0
         state.revealedIDs = []
+        state.query = ""
         let size = ClipboardHistoryLayout.size(entryCount: history.entries.count)
         let panel = ClipboardPanel(contentRect: NSRect(origin: .zero, size: size),
                                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -125,7 +125,9 @@ final class ClipboardHistoryController {
         panel.title = L10n.text("Clipboard history")
         let hosting = ClipboardHistoryHostingView(rootView: ClipboardHistoryView(history: history, state: state,
             paste: { [weak self] in self?.choose($0, plainText: $1) },
-            close: { [weak self] in self?.hide() }, clear: { [weak self] in self?.history.clear() }))
+            copy: { [weak self] in self?.copy($0) },
+            close: { [weak self] in self?.hide() }, clear: { [weak self] in self?.history.clear() },
+            resize: { [weak self] in self?.resizePanel(entryCount: $0) }))
         hosting.sizingOptions = []
         panel.contentView = hosting
         self.panel = panel
@@ -137,18 +139,28 @@ final class ClipboardHistoryController {
                     return event
                 }
                 guard event.window === self.panel else { return event }
+                let entries = self.state.visibleEntries(in: self.history.entries)
+                let editingSearch = self.panel?.firstResponder is NSTextView
+                if event.keyCode == 8, event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command {
+                    if let text = self.panel?.firstResponder as? NSTextView, text.selectedRange().length > 0 { return event }
+                    if entries.indices.contains(self.state.selectedIndex) {
+                        self.copy(entries[self.state.selectedIndex])
+                    }
+                    return nil
+                }
                 switch event.keyCode {
                 case 53: self.hide(); return nil
-                case 125: self.state.selectedIndex = min(self.history.entries.count - 1, self.state.selectedIndex + 1); return nil
+                case 125: self.state.selectedIndex = max(0, min(entries.count - 1, self.state.selectedIndex + 1)); return nil
                 case 126: self.state.selectedIndex = max(0, self.state.selectedIndex - 1); return nil
                 case 49:
-                    if self.history.entries.indices.contains(self.state.selectedIndex), self.history.entries[self.state.selectedIndex].isSensitive {
-                        self.state.toggleReveal(self.history.entries[self.state.selectedIndex].id)
+                    if editingSearch { return event }
+                    if entries.indices.contains(self.state.selectedIndex), entries[self.state.selectedIndex].isSensitive {
+                        self.state.toggleReveal(entries[self.state.selectedIndex].id)
                     }
                     return nil
                 case 36, 76:
-                    if self.history.entries.indices.contains(self.state.selectedIndex) {
-                        self.choose(self.history.entries[self.state.selectedIndex], plainText: event.modifierFlags.contains(.shift))
+                    if entries.indices.contains(self.state.selectedIndex) {
+                        self.choose(entries[self.state.selectedIndex], plainText: event.modifierFlags.contains(.shift))
                     }
                     return nil
                 default: return event
@@ -161,6 +173,20 @@ final class ClipboardHistoryController {
         workspaceObserver = activationNotifications.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
             object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.cancel() } }
         panel.center(); panel.makeKeyAndOrderFront(nil)
+        panel.makeFirstResponder(nil)
+    }
+
+    private func resizePanel(entryCount: Int) {
+        guard let panel else { return }
+        state.selectedIndex = max(0, min(state.selectedIndex, entryCount - 1))
+        let size = ClipboardHistoryLayout.size(entryCount: entryCount)
+        let top = panel.frame.maxY
+        panel.setFrame(NSRect(x: panel.frame.minX, y: top - size.height, width: size.width, height: size.height), display: true)
+    }
+
+    private func copy(_ entry: ClipboardHistoryEntry) {
+        guard history.copy(entry) else { onError?(FrogError.message("Could not copy the clipboard item.")); return }
+        cancel()
     }
 
     private func choose(_ entry: ClipboardHistoryEntry, plainText: Bool) {
@@ -220,6 +246,11 @@ private final class ClipboardHistoryHostingView: NSHostingView<ClipboardHistoryV
 final class ClipboardHistoryPanelState: ObservableObject {
     @Published var selectedIndex = 0
     @Published var revealedIDs: Set<UUID> = []
+    @Published var query = "" { didSet { if query != oldValue { selectedIndex = 0 } } }
+    func visibleEntries(in entries: [ClipboardHistoryEntry]) -> [ClipboardHistoryEntry] {
+        guard !query.isEmpty else { return entries }
+        return entries.filter { (!$0.isSensitive || revealedIDs.contains($0.id)) && $0.text.localizedStandardContains(query) }
+    }
     func toggleReveal(_ id: UUID) {
         if revealedIDs.contains(id) { revealedIDs.remove(id) } else { revealedIDs.insert(id) }
     }

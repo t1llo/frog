@@ -125,7 +125,15 @@ final class AppModel: ObservableObject {
                 do { try self.persist(candidate) } catch { self.report(error) }
             }
         }
-        localModels.onInventoryChanged = { [weak self] in self?.objectWillChange.send() }
+        localModels.onInventoryChanged = { [weak self] in
+            guard let self else { return }
+            var candidate = self.configuration
+            candidate.reconcileUnavailableModels(installed: self.localModels.installed)
+            if candidate != self.configuration {
+                do { try self.persist(candidate) } catch { self.report(error) }
+            }
+            self.objectWillChange.send()
+        }
         refreshHistory()
         refreshSystemStatus()
         if registerShortcuts { FrogAppearance.shared.apply(configuration.preferences.appearance ?? AppearancePreferences()) }

@@ -36,7 +36,7 @@ struct RulesView: View {
             PageHeader(title: applications ? "Shortcuts" : "Rules", subtitle: "") {
                 if !applications { Button("New rule", systemImage: "plus") {
                     editing = model.configuration.newRule(category: category, installed: model.localModels.installed)
-                }.keyboardShortcut("n", modifiers: .command) }
+                }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut("n", modifiers: .command) }
             }
             if applications {
                 VStack(alignment: .leading, spacing: 6) {
@@ -53,7 +53,7 @@ struct RulesView: View {
                         Text(model.windowSwitcherStatus).font(.caption).foregroundStyle(FrogStyle.muted)
                     }
                     Divider()
-                    CompactRow(title: "Clipboard history", detail: "Last five text items, in memory only. Cleared when disabled or Frog quits.") {
+                    CompactRow(title: "Clipboard history", detail: "Last 100 text items, in memory only. Cleared when disabled or Frog quits.") {
                         Toggle("Clipboard history", isOn: Binding(get: { model.configuration.preferences.workflowSettings.clipboardHistoryEnabled == true }, set: { value in
                             var prefs = model.configuration.preferences.workflowSettings; prefs.clipboardHistoryEnabled = value
                             do { try model.saveWorkflowPreferences(prefs) } catch { model.report(error) }
@@ -75,7 +75,7 @@ struct RulesView: View {
                     ForEach([RuleCategory.application, .window, .system]) { value in
                         FilterTag(title: value.title, selected: shortcutCategory == value) { shortcutCategory = value; search = "" }
                     }
-                } else { ForEach([RuleCategory.text, .audio]) { category in FilterTag(title: category.title, selected: filter == category) { filter = category } } }
+                } else { ForEach([RuleCategory.text, .audio]) { category in FilterTag(title: category.title, selected: filter == category) { filter = category; search = "" } } }
             }
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -84,6 +84,9 @@ struct RulesView: View {
                             if applications {
                                 if rule.category == .application { ApplicationIcon(path: rule.action?.applicationPath ?? "") }
                                 else { Image(systemName: rule.action?.systemAction?.symbol ?? "macwindow").font(.system(size: 20)).foregroundStyle(FrogStyle.muted).frame(width: 28, height: 28) }
+                            } else {
+                                Image(systemName: rule.category == .audio ? "waveform" : "text.alignleft")
+                                    .font(.system(size: 13)).foregroundStyle(FrogStyle.muted).frame(width: 24)
                             }
                             if applications {
                                 VStack(alignment: .leading, spacing: 4) {
@@ -107,15 +110,26 @@ struct RulesView: View {
                                 do { try model.saveRule(updated) } catch { model.report(error) }
                             }), showsClearButton: false)
                             if !applications { IconAction(title: "Edit rule", symbol: "pencil", bordered: true) { editing = rule } }
-                        }.padding(12)
+                        }.padding(.horizontal, 12).padding(.vertical, 10)
                             .overlay(alignment: .bottom) {
                                 if rule.id != lastRuleID { Divider().opacity(0.5) }
                             }
                     }
-                    if displayedRules.isEmpty { Text("No matching rules").font(.caption).foregroundStyle(FrogStyle.muted).padding(24) }
+                    if displayedRules.isEmpty {
+                        VStack(spacing: 8) {
+                            Text(search.isEmpty ? "No rules yet" : "No matching rules").font(.system(size: 12, weight: .medium))
+                            if !applications && search.isEmpty {
+                                Button("Create a rule", systemImage: "plus") {
+                                    editing = model.configuration.newRule(category: category, installed: model.localModels.installed)
+                                }
+                            } else if !search.isEmpty { Button("Clear search") { search = "" }.buttonStyle(.plain) }
+                        }.foregroundStyle(FrogStyle.muted).frame(maxWidth: .infinity).padding(24)
+                    }
                 }.minimalScrollbars()
             }.frogTableSurface()
-        }.padding(20).sheet(item: $editing) { RuleEditor(rule: $0).environmentObject(model) }
+        }.padding(20).sheet(item: $editing) { rule in
+            RuleEditor(rule: rule, onSave: { search = "" }).environmentObject(model)
+        }
             .task {
                 guard applications else { return }
                 await applicationCatalog.loadIfNeeded()
@@ -148,11 +162,13 @@ struct RuleEditor: View {
     @State private var issue: String?
     @State private var deleting = false
     @State private var step = 0
-    init(rule: Rule) {
+    private let onSave: () -> Void
+    init(rule: Rule, onSave: @escaping () -> Void = {}) {
         var draft = rule
         if !draft.targetLanguage.isEmpty { draft.instructions = draft.instructions.replacingOccurrences(of: "{{language}}", with: draft.targetLanguage); draft.targetLanguage = "" }
         if draft.action == nil { draft.action = RuleAction(category: draft.category) }
         _rule = State(initialValue: draft)
+        self.onSave = onSave
     }
     private var existing: Bool { model.configuration.rules.contains { $0.id == rule.id } }
     var body: some View {
@@ -190,8 +206,12 @@ struct RuleEditor: View {
                         }.padding(13).frogTableSurface()
                         if rule.category == .text { instructions }
                     }
-                    if let issue { Text(issue).font(.caption).foregroundStyle(.orange) }
                 }.padding(.horizontal, 20).padding(.bottom, 16).minimalScrollbars()
+            }
+            if let issue {
+                Text(issue).font(.system(size: 11)).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20).padding(.bottom, 10)
             }
             HStack(spacing: 8) {
                 if existing {
@@ -200,7 +220,7 @@ struct RuleEditor: View {
                 }
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Save") { do { try model.saveRule(rule); dismiss() } catch { issue = error.localizedDescription } }
+                Button("Save") { do { try model.saveRule(rule); onSave(); dismiss() } catch { issue = error.localizedDescription } }
                     .buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.defaultAction).disabled(rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }.font(.system(size: 12)).padding(.horizontal, 20).padding(.vertical, 15)
                 .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border.opacity(0.5)).frame(height: 1) }

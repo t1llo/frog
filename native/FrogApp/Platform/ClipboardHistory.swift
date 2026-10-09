@@ -100,6 +100,7 @@ actor ClipboardHistoryReader {
 
 @MainActor
 final class ClipboardHistoryStore: ObservableObject {
+    static let capacity = 100
     @Published private(set) var entries: [ClipboardHistoryEntry] = []
     private(set) var enabled = false
     private let pasteboard: NSPasteboard
@@ -170,7 +171,7 @@ final class ClipboardHistoryStore: ObservableObject {
         let retained = sensitive == entry.isSensitive ? entry : ClipboardHistoryEntry(text: entry.text, formatting: entry.formatting, isSensitive: sensitive, timestamp: entry.timestamp)
         entries.removeAll { $0.text == entry.text && $0.formatting == entry.formatting }
         entries.insert(retained, at: 0)
-        if entries.count > 5 { entries.removeLast(entries.count - 5) }
+        if entries.count > Self.capacity { entries.removeLast(entries.count - Self.capacity) }
     }
 
     /// Explicitly include Frog results even if a subsequent compatibility Copy

@@ -17,9 +17,10 @@
     <key>SUFeedURL</key><string>https://github.com/t1llo/frog/releases/latest/download/appcast.xml</string>
     <key>SUPublicEDKey</key><string>htCFiLHv2aTGt5JIloQzqA7A7s6bUOOQmcW3ry3rW+s=</string>
     <key>SUEnableAutomaticChecks</key><true/>
-    <key>SUAutomaticallyUpdate</key><false/>
+    <key>SUAutomaticallyUpdate</key><true/>
+    <key>SUScheduledCheckInterval</key><integer>3600</integer>
     <key>SUEnableSystemProfiling</key><false/>
-    <key>LSUIElement</key><false/>
+    <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSAccessibilityUsageDescription</key><string>Frog reads and replaces selected text for writing shortcuts, and lists and activates windows for Command-Tab switching.</string>
     <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Tillo Beffa</string>

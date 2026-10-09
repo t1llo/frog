@@ -34,7 +34,8 @@ struct MainView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar.padding(.top, 32).frame(width: 190).background(FrogStyle.sidebar)
+            sidebar.padding(.top, 32).frame(width: 176).background(FrogStyle.sidebar)
+                .overlay(alignment: .trailing) { Rectangle().fill(FrogStyle.border.opacity(0.6)).frame(width: 1) }
             VStack(spacing: 0) {
                 Group {
                     switch section {
@@ -64,9 +65,6 @@ struct MainView: View {
         .ignoresSafeArea(.container, edges: .top)
         .tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
         .frame(minWidth: 740, minHeight: 520)
-        .overlay(alignment: .top) {
-            WindowDragRegion().frame(height: 24).padding(.top, 28).accessibilityHidden(true)
-        }
         .onAppear { model.refreshSystemStatus() }
         .sheet(isPresented: Binding(get: { model.setupPresented }, set: { if !$0 { model.finishSetup() } })) {
             SetupView().environmentObject(model).interactiveDismissDisabled()
@@ -77,53 +75,53 @@ struct MainView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 11) {
-                FrogMark()
-                Text("frog").font(.system(size: 24, weight: .semibold, design: .rounded)).tracking(-0.8)
-            }.padding(.horizontal, 20).padding(.top, 24).padding(.bottom, 28)
+            HStack(spacing: 8) {
+                Image(nsImage: FrogMenuIcon.image).renderingMode(.template).frame(width: 20)
+                Text("Frog").font(.system(size: 14, weight: .semibold)).tracking(-0.2)
+            }.padding(.horizontal, 16).padding(.top, 19).padding(.bottom, 23)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .overlay { WindowDragRegion().accessibilityHidden(true) }
 
-            VStack(spacing: 4) {
+            VStack(spacing: 2) {
                 ForEach(Section.allCases.filter { $0 != .shortcuts || model.configuration.preferences.shortcutsEnabled }) { item in
                     Button { section = item } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: item.symbol).font(.system(size: 15, weight: .medium)).frame(width: 20)
-                            Text(L10n.text(item.rawValue)).font(.system(size: 13, weight: section == item ? .semibold : .medium))
+                        HStack(spacing: 9) {
+                            Image(systemName: item.symbol).font(.system(size: 13, weight: .regular)).frame(width: 18)
+                            Text(L10n.text(item.rawValue)).font(.system(size: 12, weight: section == item ? .medium : .regular))
                                 .lineLimit(1).fixedSize(horizontal: true, vertical: false)
                             Spacer(minLength: 0)
                         }
-                        .foregroundStyle(section == item ? FrogStyle.accent : FrogStyle.muted)
-                        .padding(.horizontal, 12).padding(.vertical, 10)
-                        .background(section == item ? FrogStyle.accentSoft : .clear, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+                        .foregroundStyle(section == item ? FrogStyle.ink : FrogStyle.muted)
+                        .padding(.horizontal, 9).padding(.vertical, 8)
+                        .background(section == item ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
                         .contentShape(RoundedRectangle(cornerRadius: FrogStyle.corner))
                     }.buttonStyle(.plain).keyboardShortcut(item.key, modifiers: .command)
                         .accessibilityAddTraits(section == item ? .isSelected : [])
                         .help("\(item.rawValue) (Command–\(String(item.key.character)))")
                 }
-            }.padding(.horizontal, 13)
+            }.padding(.horizontal, 8)
             Spacer(minLength: 24)
             if !model.accessibilityGranted || !DictationController.microphoneGranted {
-                VStack(alignment: .leading, spacing: 10) {
-                    Image(systemName: "sparkles").foregroundStyle(FrogStyle.accent)
-                    Text(L10n.text(!model.accessibilityGranted ? "Allow Accessibility" : "Allow Microphone"))
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(L10n.text(!model.accessibilityGranted ? "For writing and window shortcuts." : "For voice transcription."))
-                        .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
-                     Button("Finish setup") {
-                         section = .settings
-                         permissionsRequest = UUID()
-                    }.buttonStyle(FrogButtonStyle()).controlSize(.small)
-                }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(FrogStyle.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: FrogStyle.corner))
-                    .padding(.horizontal, 13).padding(.bottom, 18)
+                Button {
+                    section = .settings; permissionsRequest = UUID()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.muted)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Finish setup").font(.system(size: 11, weight: .medium))
+                            Text(L10n.text(!model.accessibilityGranted ? "Allow Accessibility" : "Allow Microphone"))
+                                .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                        }
+                        Spacer(minLength: 0)
+                    }.padding(10).contentShape(Rectangle())
+                }.buttonStyle(.plain).padding(.horizontal, 6).padding(.bottom, 10)
             }
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 8) {
                     if model.isProcessing { ProgressView().controlSize(.mini) }
                     else { Circle().fill(model.errorMessage == nil ? FrogStyle.accent : .orange).frame(width: 6, height: 6) }
                      Text(L10n.text(model.dictation.active ? model.dictation.phase.rawValue.capitalized : model.status)).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                        .lineLimit(4).textSelection(.enabled).help(model.status)
+                        .lineLimit(2).textSelection(.enabled).help(model.status)
                     Spacer(minLength: 0)
                 }
                 Button { showingLoadedModels.toggle() } label: {

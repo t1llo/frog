@@ -255,6 +255,11 @@ final class WindowSwitcherController {
         display.windows = windows
         session.begin(windows: windows.map(\.id), current: nil, backwards: false)
         display.selected = session.selected
+        if let panel, panel.isVisible {
+            let size = WindowSwitcherLayout.size(windowCount: windows.count)
+            panel.setFrame(NSRect(x: panel.frame.midX - size.width / 2, y: panel.frame.midY - size.height / 2,
+                                  width: size.width, height: size.height), display: true)
+        }
     }
 
     private func commit() {
@@ -303,7 +308,7 @@ final class WindowSwitcherController {
 
     private func preparePanel() {
         if panel == nil {
-            let created = WindowSwitcherPanel(contentRect: NSRect(x: 0, y: 0, width: 580, height: 480),
+            let created = WindowSwitcherPanel(contentRect: NSRect(origin: .zero, size: WindowSwitcherLayout.size(windowCount: display.windows.count)),
                                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             created.level = .popUpMenu
             created.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -321,6 +326,7 @@ final class WindowSwitcherController {
                 self.display.selectionFromPointer = true
                 self.session.select(id); self.display.selected = self.session.selected
             }))
+            (created.contentView as? WindowSwitcherHostingView)?.sizingOptions = []
             panel = created
             created.contentView?.layoutSubtreeIfNeeded()
         }
@@ -331,7 +337,12 @@ final class WindowSwitcherController {
         preparePanel()
         guard let panel else { return }
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
-        if let screen { panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - 290, y: screen.visibleFrame.midY - 240)) }
+        let size = WindowSwitcherLayout.size(windowCount: display.windows.count)
+        if let screen {
+            panel.setFrame(NSRect(x: screen.visibleFrame.midX - size.width / 2,
+                                  y: screen.visibleFrame.midY - size.height / 2,
+                                  width: size.width, height: size.height), display: true)
+        }
         pointerPosition = NSEvent.mouseLocation
         panel.orderFrontRegardless()
     }

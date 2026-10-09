@@ -19,7 +19,7 @@ struct PreferencesView: View {
                         Button("Open setup…") { model.showSetup() }
                     }
                     Divider()
-                    CompactRow(title: "Start at login") { Toggle("Start at login", isOn: Binding(get: { model.startAtLogin }, set: model.setStartAtLogin)).labelsHidden() }
+                    CompactRow(title: "Start at login", detail: "Start quietly in the menu bar.") { Toggle("Start at login", isOn: Binding(get: { model.startAtLogin }, set: model.setStartAtLogin)).labelsHidden() }
                     Divider()
                     CompactRow(title: "Writing indicator") { Toggle("Writing indicator", isOn: preference(\.showProcessingIndicator)).labelsHidden() }
                     Divider()

@@ -1,6 +1,15 @@
 import AppKit
 import SwiftUI
 
+enum WindowSwitcherLayout {
+    static let width: CGFloat = 500
+    static let rowHeight: CGFloat = 34
+    static let visibleRows = 10
+    static func size(windowCount: Int) -> CGSize {
+        CGSize(width: width, height: 28 + 28 + 12 + CGFloat(max(1, min(visibleRows, windowCount))) * rowHeight)
+    }
+}
+
 @MainActor
 final class WindowSwitcherDisplay: ObservableObject {
     @Published var windows: [SwitcherWindow] = []
@@ -19,10 +28,13 @@ struct WindowSwitcherOverlay: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !model.query.isEmpty {
-                HStack { Image(systemName: "magnifyingglass"); Text(model.query); Spacer() }
-                    .font(.system(size: 12)).padding(.horizontal, 16).padding(.vertical, 8)
-            }
+            HStack(spacing: 7) {
+                Image(systemName: model.query.isEmpty ? "rectangle.on.rectangle" : "magnifyingglass")
+                Text(model.query.isEmpty ? L10n.text("Windows") : model.query).lineLimit(1)
+                Spacer()
+                Text("\(model.windows.count)").monospacedDigit()
+            }.font(.system(size: 11)).foregroundStyle(FrogStyle.muted).padding(.horizontal, 12).frame(height: 28)
+            Divider().opacity(0.5)
             if model.loading {
                 Spacer(); ProgressView("Finding windows…").controlSize(.small); Spacer()
             } else if model.windows.isEmpty {
@@ -32,7 +44,7 @@ struct WindowSwitcherOverlay: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 1) {
+                        LazyVStack(spacing: 0) {
                             ForEach(model.windows) { window in
                                 Button { choose(window.id) } label: {
                                     HStack(spacing: 9) {
@@ -43,38 +55,40 @@ struct WindowSwitcherOverlay: View {
                                             Text(window.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
                                             Text(window.appName).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
                                         }.frame(maxWidth: .infinity, alignment: .leading)
-                                        if window.minimized || window.hidden {
-                                            Text(window.minimized ? "Minimized" : "Hidden").font(.system(size: 10)).foregroundStyle(.secondary)
+                                         if window.minimized || window.hidden {
+                                             Image(systemName: window.minimized ? "minus.rectangle" : "eye.slash")
+                                                 .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                                                 .help(window.minimized ? "Minimized" : "Hidden")
                                         }
                                         if let shortcut = model.shortcuts[window.pid] { Text(shortcut).font(.system(size: 10)).foregroundStyle(.secondary) }
-                                        if model.selected == window.id { Image(systemName: "return").font(.system(size: 12)).foregroundStyle(FrogStyle.accent) }
-                                    }.padding(.horizontal, 8).padding(.vertical, 3)
-                                        .background(model.selected == window.id ? FrogStyle.accentSoft : .clear, in: RoundedRectangle(cornerRadius: 9))
+                                         Image(systemName: "return").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                                             .opacity(model.selected == window.id ? 1 : 0)
+                                     }.padding(.horizontal, 8).frame(height: WindowSwitcherLayout.rowHeight)
+                                         .background(model.selected == window.id ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: 5))
                                         .contentShape(Rectangle())
                                 }.buttonStyle(.plain).id(window.id)
                                     .onContinuousHover { phase in if case .active = phase { hover(window.id) } }
                                     .accessibilityAddTraits(model.selected == window.id ? .isSelected : [])
                             }
-                        }.padding(8)
+                        }.padding(5).minimalScrollbars()
                     }
                     .onChange(of: model.selected) { _, id in if let id, !model.selectionFromPointer { proxy.scrollTo(id) } }
                     .onAppear { if let id = model.selected { proxy.scrollTo(id) } }
                 }
             }
             Divider()
-            HStack(spacing: 18) {
+            HStack(spacing: 12) {
                 Text("⇥ Next")
-                Text("⇧⇥ Previous")
                 Text("esc Cancel")
                 Text("Type to search")
                 Spacer()
                 Text("Release ⌘ to switch")
-            }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted).padding(10)
-        }.frame(width: 580, height: 480)
+            }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted).padding(.horizontal, 12).frame(height: 28)
+        }.frame(width: WindowSwitcherLayout.width)
             .environment(\.locale, L10n.locale)
-            .background(FrogStyle.panelSurface.opacity(0.97), in: RoundedRectangle(cornerRadius: 14))
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(FrogStyle.border.opacity(0.6), lineWidth: 1))
+            .background(FrogStyle.panelSurface, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(FrogStyle.border.opacity(0.7), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
             .foregroundStyle(FrogStyle.ink)
     }
 }

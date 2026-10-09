@@ -34,7 +34,9 @@ final class HotkeyManager {
                 guard let ruleID = manager.rulesByID[hotkeyID.id] else { return OSStatus(eventNotHandledErr) }
                 let down = GetEventKind(event) == UInt32(kEventHotKeyPressed)
                 if down && !manager.pressed.insert(ruleID).inserted { return noErr }
-                if !down { manager.pressed.remove(ruleID) }
+                // Carbon can deliver a release after registration/focus changes
+                // without a corresponding press. Never treat that as a shortcut.
+                if !down && manager.pressed.remove(ruleID) == nil { return noErr }
                 let generation = manager.generation
                 Task { @MainActor [weak manager] in
                     guard let manager, manager.generation == generation else { return }

@@ -8,7 +8,7 @@ enum HistoryFilter: String, CaseIterable, Identifiable {
 }
 
 /// A display feed, never a persistence payload. Clipboard items remain in their
-/// five-entry memory store rather than becoming saved transformation records.
+/// bounded memory store rather than becoming saved transformation records.
 enum HistoryItem: Identifiable, Equatable {
     case saved(HistoryEntry)
     case clipboard(ClipboardHistoryEntry)

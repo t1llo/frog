@@ -157,7 +157,8 @@ final class LocalModels: ObservableObject {
         defer { busy = false }
         unloadTask?.cancel(); unloadTask = nil
         loaded = []; await runtime.unload(keepingMetadata: false)
-        try FileManager.default.removeItem(at: directory(id))
+        do { try FileManager.default.removeItem(at: directory(id)) }
+        catch CocoaError.fileNoSuchFile { /* Already removed outside Frog. Repair the inventory below. */ }
         installed.remove(id); errors[id] = nil
         onInventoryChanged?()
     }
