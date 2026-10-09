@@ -7,79 +7,12 @@ struct FrogApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            FrogStatusMenu(model: delegate.model)
+            FrogStatusMenu(model: delegate.model, power: delegate.power)
                 .environment(\.locale, L10n.locale)
         } label: {
-            Image(nsImage: FrogMenuIcon.image)
-                .renderingMode(.template)
-                .accessibilityLabel("Frog")
+            FrogMenuLabel(power: delegate.power)
         }
         .menuBarExtraStyle(.window)
-    }
-}
-
-private struct FrogStatusMenu: View {
-    @ObservedObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(nsImage: FrogMenuIcon.image).renderingMode(.template)
-                Text("Frog").font(.system(size: 14, weight: .semibold))
-                Spacer()
-                HStack(spacing: 5) {
-                    Circle().fill(model.dictation.phase == .recording ? Color.red : FrogStyle.accent).frame(width: 6, height: 6)
-                    Text(model.dictation.active ? model.dictation.phase.rawValue.capitalized : model.isProcessing ? "Working…" : "Ready")
-                        .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                }
-            }
-            if model.dictation.active {
-                HStack {
-                    if model.dictation.phase == .recording {
-                        Button("Stop recording", systemImage: "stop.fill") { model.dictation.stop(models: model.localModels) }
-                            .buttonStyle(FrogButtonStyle(primary: true))
-                    }
-                    Button("Cancel", systemImage: "xmark") { model.dictation.interrupt() }
-                }
-            }
-            if model.isProcessing { Button("Cancel processing", systemImage: "xmark") { model.cancelProcessing() } }
-            if let error = model.errorMessage {
-                HStack(alignment: .top) {
-                    Text(error).font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                    Button { model.dismissError() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("Dismiss error")
-                }
-            }
-            if model.configuration.preferences.shortcutsEnabled {
-                VStack(alignment: .leading, spacing: 5) {
-                    Toggle(isOn: Binding(get: { model.configuration.preferences.windowSwitcherEnabled }, set: { enabled in
-                        var preferences = model.configuration.preferences; preferences.windowSwitcherEnabled = enabled
-                        do { try model.savePreferences(preferences) } catch { model.report(error) }
-                    })) {
-                        HStack { Image(systemName: "rectangle.on.rectangle").foregroundStyle(FrogStyle.muted); Text("Window switcher"); Spacer(); Text("⌘Tab").foregroundStyle(FrogStyle.muted) }
-                    }.toggleStyle(.switch)
-                    if model.configuration.preferences.windowSwitcherEnabled && !model.windowSwitcherReady {
-                        Text(model.windowSwitcherStatus).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                    }
-                }.padding(12).frogTableSurface()
-            }
-            MemorySparkline(showUsage: true).frame(height: 36)
-            VStack(spacing: 6) {
-                Button { dismiss(); model.showSettings() } label: {
-                    Label(model.setupPresented ? "Set up Frog…" : "Open Frog", systemImage: "arrow.up.forward.app").frame(maxWidth: .infinity, alignment: .leading)
-                }.keyboardShortcut(",")
-            }
-            HStack {
-                Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                Spacer()
-                Button("Quit Frog") { model.shutdown(); NSApplication.shared.terminate(nil) }.keyboardShortcut("q").buttonStyle(.plain).foregroundStyle(FrogStyle.muted)
-            }
-        }.font(.system(size: 12)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
-            .buttonStyle(FrogButtonStyle()).controlSize(.small).padding(14).frame(width: 280)
-            .background(FrogStyle.canvas).background(FrogWindowMaterial())
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .onAppear { model.refreshSystemStatus() }
     }
 }
 
@@ -96,7 +29,9 @@ enum FrogMenuIcon {
 @MainActor
 final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let model = AppModel()
+    let power = StayAwakeController()
     private var window: NSWindow?
+    private var termination: Task<Void, Never>?
     private var observer: NSObjectProtocol?
     private var finishedLaunching = false
 
@@ -110,6 +45,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
         model.openSettings = { [weak self] in self?.showWindow() }
         // Register at application launch, even if SwiftUI never mounts the menu label.
         model.start()
+        power.start()
         UpdateService.shared.start()
         observer = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak model] _ in
             Task { @MainActor in model?.refreshSystemStatus() }
@@ -147,6 +83,23 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard power.needsQuitCleanup else { return .terminateNow }
+        guard termination == nil else { return .terminateLater }
+        termination = Task {
+            let restored = await power.prepareToQuit()
+            sender.reply(toApplicationShouldTerminate: restored)
+            if !restored {
+                termination = nil
+                let alert = NSAlert()
+                alert.messageText = "Restore sleep before quitting"
+                alert.informativeText = power.error ?? "Turn off Stay awake, then quit Frog."
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+        }
+        return .terminateLater
+    }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if finishedLaunching { showWindow() }
         return false

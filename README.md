@@ -35,4 +35,4 @@ make build
 open dist/Frog.app
 ```
 
-[Providers](docs/providers.md) · [Local models](docs/local-model-sources.md) · [Configuration](docs/configuration.md) · [Privacy](docs/privacy.md) · [Development](docs/development.md)
+[Providers](docs/providers.md) · [Local models](docs/local-model-sources.md) · [Configuration](docs/configuration.md) · [Stay awake setup](docs/stay-awake.md) · [Privacy](docs/privacy.md) · [Development](docs/development.md)

@@ -32,6 +32,7 @@ Downloaded files live in `~/Library/Application Support/Frog/Models/`. Cancelled
   - Plain-text paste removes formatting. Automatic paste requires the original focused app/window/field and insertion range; otherwise the item stays copied for manual paste. The default **Shift–Command–V** shortcut intentionally replaces that combination's native paste-style action only while clipboard history is enabled; ordinary Command-C/X/V and Command-Option-Shift-V remain with the focused app.
 - **Configuration exports/backups:** settings and rule instructions only. No keys or history. Exported files are under your control.
 - **Recent errors:** Settings → Logs keeps the last 100 errors in memory for this session. Banners disappear after six seconds. Logs are not written to disk; you can explicitly copy or clear them.
+- **Stay awake:** off by default. The menu switch reads local power/battery status and changes only `pmset -a disablesleep 0/1` after one-time permission setup. The admin password is entered directly into Terminal's sudo prompt, never Frog. A machine-local `stay-awake-session.json` marker records the session deadline for interrupted-session cleanup; it is not exported or sent anywhere. See [setup and session behavior](stay-awake.md).
 
 **Hide history text** masks previews and details until you reveal an entry. This is a display preference, not password detection or encryption; the saved original and result remain unchanged.
 

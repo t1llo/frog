@@ -49,15 +49,16 @@ final class LocalModelsTests: XCTestCase {
     func testChangingIdlePolicyToImmediateUnloadsAnAlreadyResidentModel() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let unloaded = expectation(description: "Resident model responds to changed idle setting")
-        let engine = FixtureInference(onUnload: { unloaded.fulfill() })
+        let engine = FixtureInference()
         let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload)
         let descriptor = LocalModelDescriptor.find("qwen-0.6b")!
         models.download(descriptor); await models.waitForDownload(descriptor.id)
         _ = try await models.complete("hello", instructions: "Correct", modelID: descriptor.id)
         models.idleSeconds = 0
-        await fulfillment(of: [unloaded], timeout: 1)
+        await models.waitForIdleUnload()
         XCTAssertTrue(models.loaded.isEmpty)
+        let unloads = await engine.unloads
+        XCTAssertEqual(unloads, 1)
         models.shutdown()
     }
     func testResidencyIsVisibleDuringInferenceAndSurvivesInferenceFailure() async throws {
@@ -179,8 +180,7 @@ final class LocalModelsTests: XCTestCase {
 private actor FixtureInference: LocalInferenceEngine {
     let gate: DownloadGate?
     let fail: Bool
-    let onUnload: @Sendable () -> Void
-    init(gate: DownloadGate? = nil, fail: Bool = false, onUnload: @escaping @Sendable () -> Void = {}) { self.gate = gate; self.fail = fail; self.onUnload = onUnload }
+    init(gate: DownloadGate? = nil, fail: Bool = false) { self.gate = gate; self.fail = fail }
     var loadedIDs = Set<String>()
     func prepare(model: LocalModelDescriptor, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws { loadedIDs.insert(model.id); await residency(loadedIDs) }
     var unloads = 0
@@ -198,7 +198,7 @@ private actor FixtureInference: LocalInferenceEngine {
         if fail { throw FrogError.message("Fixture inference failure") }
         return text
     }
-    func unload(keepingMetadata: Bool) { cancelledUnload = Task.isCancelled; loadedIDs = []; unloads += 1; onUnload() }
+    func unload(keepingMetadata: Bool) { cancelledUnload = Task.isCancelled; loadedIDs = []; unloads += 1 }
 }
 
 private actor DownloadGate {
