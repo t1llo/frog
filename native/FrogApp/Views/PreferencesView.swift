@@ -36,6 +36,7 @@ struct PreferencesView: View {
                     }
                 }
                 SettingsSection(title: "Appearance") { AppearanceSettingsView() }
+                StayAwakeSettingsView(power: model.power)
                 SettingsSection(title: "Internal models") {
                     CompactRow(title: "Unload idle models", detail: "Applies to models running inside Frog.") {
                         CompactMenu(value: prefs.idleUnloadSeconds == 0 ? "Immediately" : "\(prefs.idleUnloadSeconds / 60) min") {

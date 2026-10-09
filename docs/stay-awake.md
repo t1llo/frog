@@ -6,11 +6,13 @@ Choose 30 minutes, one hour, four hours (the default), or until Frog quits befor
 
 ## One-time permission setup
 
-Choose **Set up access…** in Frog's popup. The bundled [Terminal guide](../native/FrogApp/Resources/StayAwakeSetup.command) walks through:
+Choose **Set up access…** in Frog's popup or **Settings → Stay awake**. The bundled [Terminal guide](../native/FrogApp/Resources/StayAwakeSetup.command) first explains what it will change, then walks through:
 
 1. Reviewing the exact two power commands.
 2. Adding a rule for your current Mac account using `sudo visudo -f /etc/sudoers.d/frog-awake`.
-3. Validating the configuration and command permissions without changing the sleep setting.
+3. Validating the configuration and both effective passwordless command permissions without changing the sleep setting.
+
+The guide summarizes the result and its dedicated Terminal window closes automatically on success. Errors stay visible for review. Frog immediately checks the actual permissions again, displays **Ready to use** in Settings, and hides **Set up access…** from the popup when both commands are available. **Check access** refreshes that status at any time. Cached administrator authentication does not count as configured access.
 
 Enter your administrator password directly into Terminal's `sudo` prompt. Frog never receives or stores it. The rule grants only these exact commands:
 
@@ -18,7 +20,17 @@ Enter your administrator password directly into Terminal's `sudo` prompt. Frog n
 YOUR_SHORT_USERNAME ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep 0, /usr/bin/pmset -a disablesleep 1
 ```
 
-Frog then executes those commands using `sudo -n`, without a shell or password prompt. Starting a session without permission leaves the switch off and shows the setup action. To remove access, edit that same file with `visudo` and remove your rule.
+Frog then executes those commands using `sudo -n`, without a shell or password prompt. Starting a session without permission leaves the switch off and shows the setup action.
+
+## Reset access
+
+Choose **Settings → Stay awake → Reset access…**. Frog first restores sleep; if that fails, it keeps the current permission and reports the error. The Terminal guide explains the reset and asks you to confirm before emptying the dedicated file with:
+
+```sh
+sudo /usr/bin/tee /etc/sudoers.d/frog-awake < /dev/null
+```
+
+It validates sudoers afterward and leaves the empty file in place. The main sudoers file is not edited. Settings returns to **Setup needed** unless another system policy independently allows both commands; availability always reflects the effective policy. Run setup again to restore access.
 
 ## Session behavior
 

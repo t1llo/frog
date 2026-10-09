@@ -187,6 +187,7 @@ final class StayAwakeTests: XCTestCase {
 
     func testNativeReadOnlyQueriesUseTheAsyncRunner() async throws {
         let system = NativeStayAwakeSystem()
+        _ = try await system.hasAccess()
         _ = try await system.sleepDisabled()
         _ = try await system.battery()
     }
@@ -249,6 +250,7 @@ private actor PowerFixture: StayAwakeSystem {
     private var currentBattery = PowerBattery(onBattery: false, percent: 80)
     private(set) var writes: [Bool] = []
     init(enabled: Bool = false) { self.enabled = enabled }
+    func hasAccess() async throws -> Bool { !denied }
     func denyWrites(_ denied: Bool) { self.denied = denied }
     func ignoreWrites() { appliesWrites = false }
     func failReadbackAfterWrite() { failAfterWrite = true }

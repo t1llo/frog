@@ -33,6 +33,7 @@ Downloaded files live in `~/Library/Application Support/Frog/Models/`. Cancelled
 - **Configuration exports/backups:** settings and rule instructions only. No keys or history. Exported files are under your control.
 - **Recent errors:** Settings → Logs keeps the last 100 errors in memory for this session. Banners disappear after six seconds. Logs are not written to disk; you can explicitly copy or clear them.
 - **Stay awake:** off by default. The menu switch reads local power/battery status and changes only `pmset -a disablesleep 0/1` after one-time permission setup. The admin password is entered directly into Terminal's sudo prompt, never Frog. A machine-local `stay-awake-session.json` marker records the session deadline for interrupted-session cleanup; it is not exported or sent anywhere. See [setup and session behavior](stay-awake.md).
+  - Access checks list only the effective permission for those two commands and ignore cached sudo credentials. Setup/reset use a private temporary completion marker containing only success/cancel/failure; Frog verifies the real permissions instead of trusting that marker. Reset restores sleep and clears the dedicated `/etc/sudoers.d/frog-awake` file after confirmation in Terminal.
 
 **Hide history text** masks previews and details until you reveal an entry. This is a display preference, not password detection or encryption; the saved original and result remain unchanged.
 

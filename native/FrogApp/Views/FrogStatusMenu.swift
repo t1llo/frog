@@ -15,7 +15,6 @@ struct FrogStatusMenu: View {
     @ObservedObject var model: AppModel
     @ObservedObject var power: StayAwakeController
     @Environment(\.dismiss) private var dismiss
-    @State private var setupError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -34,7 +33,7 @@ struct FrogStatusMenu: View {
                     Label("Stay awake", systemImage: power.isEnabled ? "cup.and.saucer.fill" : "cup.and.saucer")
                         .font(.system(size: 12, weight: .medium))
                         .frame(maxWidth: .infinity, alignment: .leading)
-                }.toggleStyle(.switch).disabled(power.isBusy || !power.hasReadState)
+                }.toggleStyle(.switch).disabled(power.isBusy || !power.hasReadState || power.isConfiguringAccess)
                     .accessibilityHint("Keep this Mac awake, including with the lid closed")
                 HStack(spacing: 4) {
                     if power.isBusy { ProgressView().controlSize(.mini) }
@@ -57,7 +56,7 @@ struct FrogStatusMenu: View {
                         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().disabled(power.isEnabled || power.isBusy)
                         .accessibilityLabel("Stay-awake duration")
                 }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                if let error = power.error ?? setupError {
+                if let error = power.error {
                     Text(error).font(.system(size: 10)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                 } else if let notice = power.notice {
                     Text(notice).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
@@ -65,10 +64,11 @@ struct FrogStatusMenu: View {
                 HStack {
                     Text("Lid closed included").foregroundStyle(FrogStyle.muted)
                     Spacer()
-                    Button("Set up access…") {
-                        do { try StayAwakeSetup.open(); setupError = nil; dismiss() }
-                        catch { setupError = error.localizedDescription }
-                    }.buttonStyle(.plain)
+                    if power.isConfiguringAccess { Text("Finish in Terminal…").foregroundStyle(FrogStyle.muted) }
+                    else if power.accessState == .checking { Text("Checking access…").foregroundStyle(FrogStyle.muted) }
+                    else if power.accessState != .ready {
+                        Button("Set up access…") { power.configureAccess(); dismiss() }.buttonStyle(.plain)
+                    }
                 }.font(.system(size: 10))
             }.padding(10).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6)).padding(6)
 
@@ -102,7 +102,7 @@ struct FrogStatusMenu: View {
         }.padding(5).frame(width: 292).fixedSize(horizontal: false, vertical: true)
             .font(.system(size: 12)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .background(FrogStyle.panelSurface)
-            .task { model.refreshSystemStatus(); await power.refresh() }
+            .task { model.refreshSystemStatus(); await power.refresh(); await power.refreshAccess() }
     }
 
     private func action(_ title: String, symbol: String, key: String? = nil, perform: @escaping () -> Void) -> some View {

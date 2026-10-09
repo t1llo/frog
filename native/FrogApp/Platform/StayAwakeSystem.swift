@@ -7,6 +7,7 @@ struct PowerBattery: Equatable, Sendable {
 }
 
 protocol StayAwakeSystem: Sendable {
+    func hasAccess() async throws -> Bool
     func sleepDisabled() async throws -> Bool
     func battery() async throws -> PowerBattery
     func setSleepDisabled(_ disabled: Bool) async throws
@@ -28,6 +29,27 @@ enum StayAwakeError: LocalizedError {
 
 /// Only these fixed pmset operations can be executed. No shell or password input.
 struct NativeStayAwakeSystem: StayAwakeSystem {
+    func hasAccess() async throws -> Bool {
+        for value in ["0", "1"] {
+            // Command-scoped verbose listing reports the effective rule without
+            // executing pmset. Ignore cached sudo credentials so an admin login
+            // cannot be mistaken for persistent passwordless access.
+            let result = try await run("/usr/bin/sudo", ["-n", "-k", "-ll", "/usr/bin/pmset", "-a", "disablesleep", value])
+            guard result.status == 0, Self.allowsWithoutPassword(result.output) else { return false }
+        }
+        return true
+    }
+
+    static func allowsWithoutPassword(_ output: String) -> Bool {
+        let options = output.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.hasPrefix("Options:") }
+        guard !options.isEmpty else { return false }
+        return options.allSatisfy { line in
+            let tokens = line.dropFirst("Options:".count).split { $0.isWhitespace || $0 == "," }
+            return tokens.contains("!authenticate") && !tokens.contains("authenticate")
+        }
+    }
+
     func sleepDisabled() async throws -> Bool {
         let result = try await run("/usr/bin/pmset", ["-g"])
         guard result.status == 0 else { throw StayAwakeError.unreadable }

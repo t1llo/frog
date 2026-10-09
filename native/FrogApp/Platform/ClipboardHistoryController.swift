@@ -46,9 +46,12 @@ struct NativeClipboardHistoryPasteTarget: ClipboardHistoryPasteTarget {
         guard let currentRange = AXRead.range(focused), currentRange.location == range.location, currentRange.length == range.length else {
             throw FrogError.message("The insertion point changed. The item is copied; paste it where you want it.")
         }
-        guard ClipboardSelection.isEditable(focused) || ClipboardSelection.menuCommand("v", application: application) != nil else {
-            throw FrogError.message("The app does not expose an editable field. The item is copied; paste it manually.")
+        guard AXRead.boolean(current, kAXEnabledAttribute) != false else {
+            throw FrogError.message("The target field is disabled. The item is copied; paste it manually.")
         }
+        // AX value editability is not native Paste support: Terminal exposes a
+        // read-only AX text area. The supported text target above is still the
+        // original one, so let command() use its keyboard fallback if needed.
         try ClipboardSelection.command("v", keyCode: 9, application: application, pid: pid)
     }
 }

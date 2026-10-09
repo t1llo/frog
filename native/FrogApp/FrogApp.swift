@@ -29,7 +29,7 @@ enum FrogMenuIcon {
 @MainActor
 final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let model = AppModel()
-    let power = StayAwakeController()
+    var power: StayAwakeController { model.power }
     private var window: NSWindow?
     private var termination: Task<Void, Never>?
     private var observer: NSObjectProtocol?
@@ -48,7 +48,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
         power.start()
         UpdateService.shared.start()
         observer = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak model] _ in
-            Task { @MainActor in model?.refreshSystemStatus() }
+            Task { @MainActor in model?.refreshSystemStatus(); await model?.power.refreshAccess() }
         }
         // Login, session restoration and updater relaunches do not reliably carry
         // the login-item Apple event. All initial launches are menu-bar-only.

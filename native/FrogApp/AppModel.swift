@@ -53,6 +53,7 @@ final class AppModel: ObservableObject {
     private var started = false
     let localModels: LocalModels
     let dictation: DictationController
+    let power: StayAwakeController
     let clipboardHistoryStore: ClipboardHistoryStore
     private var observations = Set<AnyCancellable>()
     private var dictationHistoryEpoch: UUID?
@@ -86,11 +87,13 @@ final class AppModel: ObservableObject {
          captureSelection: (() async throws -> any CapturedTextSelection)? = nil,
          dictationController: DictationController? = nil,
          modelService: LocalModels? = nil,
+         powerController: StayAwakeController? = nil,
          clipboardHistoryStore: ClipboardHistoryStore? = nil,
          errorDisplayDuration: Duration = .seconds(6)) {
         let dataDirectory = dataDirectory ?? ProcessInfo.processInfo.environment["FROG_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         self.registerShortcuts = registerShortcuts
         self.dictation = dictationController ?? DictationController()
+        self.power = powerController ?? StayAwakeController(directory: dataDirectory)
         self.clipboardHistoryStore = clipboardHistoryStore ?? ClipboardHistoryStore()
         self.errorDisplayDuration = errorDisplayDuration
         localModels = modelService ?? LocalModels(directory: dataDirectory)
