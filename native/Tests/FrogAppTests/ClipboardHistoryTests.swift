@@ -256,6 +256,27 @@ final class ClipboardHistoryTests: XCTestCase {
         XCTAssertFalse(NSApplication.shared.windows.contains { $0.isVisible && $0.title == "Clipboard history" })
     }
 
+    func testNativeSelectionFollowsItemWhenHistoryChanges() async throws {
+        _ = NSApplication.shared
+        for insert in [true, false] {
+            let pasteboard = NSPasteboard.withUniqueName()
+            defer { pasteboard.releaseGlobally() }
+            let history = ClipboardHistoryStore(pasteboard: pasteboard)
+            history.configure(enabled: true, automaticallyPoll: false)
+            for text in ["C", "B", "A"] { history.recordCopiedText(text) }
+            let controller = ClipboardHistoryController(pasteboard: pasteboard, history: history,
+                captureTarget: { nil }, activationNotifications: NotificationCenter())
+            defer { controller.stop() }
+            controller.show()
+            let panel = try XCTUnwrap(NSApplication.shared.windows.first { $0.isVisible && $0.title == "Clipboard history" })
+            try await sendKey(125, to: panel)
+            if insert { history.recordCopiedText("X") }
+            else { history.delete(id: try XCTUnwrap(history.entries.first?.id)) }
+            try await sendKey(8, flags: .command, to: panel)
+            XCTAssertEqual(pasteboard.string(forType: .string), "B", "The selected item must survive insertion or deletion above it")
+        }
+    }
+
     private func sendKey(_ code: UInt16, flags: NSEvent.ModifierFlags = [], to window: NSWindow) async throws {
         let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
             timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
@@ -283,7 +304,7 @@ final class ClipboardHistoryTests: XCTestCase {
         XCTAssertEqual(target.requests, 0)
     }
 
-    func testCopyButtonWorksWithoutAnAutomaticPasteTarget() async throws {
+    func testCopyShortcutWorksWithoutAnAutomaticPasteTarget() async throws {
         _ = NSApplication.shared
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -298,15 +319,7 @@ final class ClipboardHistoryTests: XCTestCase {
         controller.show()
         try await Task.sleep(for: .milliseconds(50))
         let panel = try XCTUnwrap(NSApplication.shared.windows.first { $0.isVisible && $0.title == "Clipboard history" })
-        let view = try XCTUnwrap(panel.contentView)
-        view.layoutSubtreeIfNeeded()
-        let y = ClipboardHistoryLayout.headerHeight + 1 + ClipboardHistoryLayout.inset + ClipboardHistoryLayout.rowHeight / 2
-        let point = view.convert(NSPoint(x: 384, y: view.isFlipped ? y : view.bounds.maxY - y), to: nil)
-        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-            NSApplication.shared.sendEvent(try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
-                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber, context: nil,
-                eventNumber: 0, clickCount: 1, pressure: 1)))
-        }
+        try await sendKey(8, flags: .command, to: panel)
         try await Task.sleep(for: .milliseconds(50))
         XCTAssertEqual(pasteboard.string(forType: .string), "Copy from history")
         XCTAssertFalse(panel.isVisible)
@@ -395,6 +408,8 @@ final class ClipboardHistoryTests: XCTestCase {
         let entry = try XCTUnwrap(history.entries.first)
         XCTAssertEqual(panel.frame.size, ClipboardHistoryLayout.size(entryCount: 2))
         XCTAssertFalse(entry.displayPreview(revealed: false).contains("Synthetic secret"))
+        XCTAssertEqual(controller.state.selectedIndex, 1, "The previously selected ordinary item stays selected")
+        try await sendKey(126, to: panel)
         try await sendKey(49, to: panel)
         XCTAssertEqual(controller.state.revealedIDs, [entry.id])
         history.clear()
@@ -446,7 +461,7 @@ final class ClipboardHistoryTests: XCTestCase {
         }
     }
 
-    func testCompactPasteIconActionsDeliverFormattedAndPlainText() async throws {
+    func testCompactPasteActionAndPlainShortcutDeliverCorrectFormatting() async throws {
         _ = NSApplication.shared
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -468,13 +483,14 @@ final class ClipboardHistoryTests: XCTestCase {
             let view = try XCTUnwrap(panel.contentView)
             view.layoutSubtreeIfNeeded()
             let y = ClipboardHistoryLayout.headerHeight + 1 + ClipboardHistoryLayout.inset + ClipboardHistoryLayout.rowHeight / 2
-            let point = view.convert(NSPoint(x: plain ? 452 : 418, y: view.isFlipped ? y : view.bounds.maxY - y), to: nil)
-            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let point = view.convert(NSPoint(x: 452, y: view.isFlipped ? y : view.bounds.maxY - y), to: nil)
+            if plain { try await sendKey(36, flags: .shift, to: panel) }
+            else { for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                 let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                     windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
                 NSApplication.shared.sendEvent(event)
                 try await Task.sleep(for: .milliseconds(20))
-            }
+            } }
             await controller.waitForDelivery()
             XCTAssertEqual(target.requests, plain ? 2 : 1)
             XCTAssertEqual(pasteboard.string(forType: .string), "Formatted fixture")

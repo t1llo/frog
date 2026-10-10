@@ -86,9 +86,7 @@ struct WindowSwitcherOverlay: View {
             }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted).padding(.horizontal, 12).frame(height: 28)
         }.frame(width: WindowSwitcherLayout.width)
             .environment(\.locale, L10n.locale)
-            .background(FrogStyle.panelSurface, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(FrogStyle.border.opacity(0.7), lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .frogPanel()
             .foregroundStyle(FrogStyle.ink)
     }
 }

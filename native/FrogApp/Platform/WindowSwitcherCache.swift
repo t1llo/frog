@@ -15,7 +15,7 @@ final class WindowSwitcherCache {
         if let refresh {
             let token = revision
             let result = await refresh.value
-            guard token == revision, !refresh.isCancelled, !Task.isCancelled else { return snapshot }
+            guard token == revision, !refresh.isCancelled, !Task.isCancelled, result.isPublishable else { return snapshot }
             return result
         }
         revision &+= 1
@@ -25,9 +25,9 @@ final class WindowSwitcherCache {
         let result = await task.value
         guard token == revision else { return snapshot }
         refresh = nil
-        guard !task.isCancelled, !Task.isCancelled else { return snapshot }
+        guard !task.isCancelled, !Task.isCancelled, result.isPublishable else { return snapshot }
         snapshot = result
-        updatedAt = .now
+        updatedAt = result.completeness == .complete ? .now : nil
         return result
     }
 
@@ -40,7 +40,8 @@ final class WindowSwitcherCache {
 
     func noteFocused(_ id: UUID) {
         guard let snapshot, let window = snapshot.windows.first(where: { $0.id == id }) else { return }
-        self.snapshot = WindowCatalog.Snapshot(windows: [window] + snapshot.windows.filter { $0.id != id }, current: id)
+        self.snapshot = WindowCatalog.Snapshot(windows: [window] + snapshot.windows.filter { $0.id != id }, current: id,
+                                              completeness: snapshot.completeness)
     }
 
     func readySnapshot(frontPID: pid_t?, at now: ContinuousClock.Instant = .now) -> WindowCatalog.Snapshot? {
@@ -49,7 +50,7 @@ final class WindowSwitcherCache {
         guard let snapshot, let updatedAt, updatedAt.duration(to: now) < .seconds(5) else { return nil }
         let current = snapshot.windows.first { $0.id == snapshot.current && $0.pid == frontPID }
             ?? snapshot.windows.first { $0.pid == frontPID }
-        return WindowCatalog.Snapshot(windows: snapshot.windows, current: current?.id)
+        return WindowCatalog.Snapshot(windows: snapshot.windows, current: current?.id, completeness: snapshot.completeness)
     }
 }
 

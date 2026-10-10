@@ -45,6 +45,7 @@ final class ProcessingTests: XCTestCase {
         let saved = try HistoryStore(directory: folder).load(preferences: preferences)
         XCTAssertEqual(saved.first?.originalText, selection.text)
         XCTAssertEqual(saved.first?.processedText, selection.replacement)
+        XCTAssertEqual(model.statistics.snapshot.allTime.ruleRuns(.local), 1)
     }
 
     func testFailedSelectionCaptureSendsNoRequestAndCreatesNoHistory() async throws {
@@ -60,6 +61,7 @@ final class ProcessingTests: XCTestCase {
         try await waitUntilFinished(model)
         XCTAssertEqual(model.errorMessage, "No selection")
         XCTAssertTrue(model.history.isEmpty)
+        XCTAssertEqual(model.statistics.snapshot.allTime.ruleRuns, 0)
     }
 
     func testReplacementFailureStillRecordsCompletedTransformation() async throws {
@@ -75,6 +77,7 @@ final class ProcessingTests: XCTestCase {
         try await waitUntilFinished(model)
         XCTAssertEqual(model.history.first?.processedText, "translated")
         XCTAssertNotNil(model.errorMessage)
+        XCTAssertEqual(model.statistics.snapshot.allTime.ruleRuns, 0, "Failed insertion is not a successful rule delivery")
     }
 
     func testUnchangedPermissionRefreshDoesNotInvalidateOpenMenus() async throws {
@@ -154,6 +157,7 @@ final class ProcessingTests: XCTestCase {
         XCTAssertEqual(copied, "Corrected: héllo\nworld")
         XCTAssertEqual(model.manualResult, copied)
         XCTAssertTrue(model.history.isEmpty)
+        XCTAssertEqual(model.statistics.snapshot.allTime.ruleRuns(.local), 1, "Aggregate statistics do not require transcript history")
     }
 
     func testDisablingHistoryDuringRequestPreventsRecordingEvenIfReenabled() async throws {
@@ -196,6 +200,7 @@ final class ProcessingTests: XCTestCase {
         XCTAssertEqual(writes, 0)
         XCTAssertTrue(model.manualResult.isEmpty)
         XCTAssertTrue(model.status.contains("Cancelled"))
+        XCTAssertEqual(model.statistics.snapshot.allTime.ruleRuns, 0)
     }
 
     func testUnknownExplicitProviderDoesNotFallBackToDefault() async throws {
@@ -214,6 +219,11 @@ final class ProcessingTests: XCTestCase {
         imported.providers[0].endpoint = "http://localhost:11435"
         imported.rules = [Rule(name: "Imported rule", providerID: existing.id)]
         imported.preferences.historyLimit = 25
+        var document = try XCTUnwrap(JSONSerialization.jsonObject(with: ConfigurationFile.encode(imported)) as? [String: Any])
+        var connections = try XCTUnwrap(document["providers"] as? [[String: Any]])
+        connections[0]["futureConnectionSetting"] = ["preserve": true]
+        document["providers"] = connections
+        imported = try ConfigurationFile.decode(JSONSerialization.data(withJSONObject: document))
         try model.importConfiguration(imported)
         let provider = try XCTUnwrap(model.configuration.providers.first)
         XCTAssertNotEqual(provider.id, existing.id)
@@ -221,6 +231,8 @@ final class ProcessingTests: XCTestCase {
         XCTAssertEqual(model.configuration.rules[0].providerID, provider.id)
         XCTAssertEqual(model.configuration.preferences.historyLimit, 25)
         XCTAssertEqual(try ConfigurationStore(directory: directory).load(), model.configuration)
+        let exported = try XCTUnwrap(JSONSerialization.jsonObject(with: ConfigurationFile.encode(model.configuration)) as? [String: Any])
+        XCTAssertNotNil((exported["providers"] as? [[String: Any]])?.first?["futureConnectionSetting"])
         let unchanged = model.configuration
         try model.importConfiguration(unchanged)
         XCTAssertEqual(model.configuration, unchanged, "An unchanged known connection can keep its Keychain identity")
@@ -238,6 +250,32 @@ final class ProcessingTests: XCTestCase {
         XCTAssertThrowsError(try model.importConfiguration(invalid))
         XCTAssertEqual(model.configuration, original)
         XCTAssertEqual(try Data(contentsOf: file), bytes)
+    }
+
+    func testTextReloadAppliesPreferencesAndRejectsInvalidOrStaleEditsWithoutCredentials() throws {
+        let directory = try directory()
+        var keyReads = 0
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in keyReads += 1; return nil }, writeClipboard: { _ in })
+        try model.savePreferences(model.configuration.preferences)
+        let file = model.configurationFileURL
+        XCTAssertEqual(file.lastPathComponent, "config")
+        let text = try String(contentsOf: file)
+        let changed = text + "theme = nord\npalette.dark.text = #ABCDEF\nfeature.scripts = true\nmodel-idle-seconds = 300\n"
+        try Data(changed.utf8).write(to: file)
+        let before = model.configuration
+        var stale = before.preferences; stale.historyLimit = 20
+        XCTAssertThrowsError(try model.savePreferences(stale))
+        XCTAssertEqual(model.configuration, before)
+        try model.reloadConfiguration()
+        XCTAssertEqual(model.configuration.preferences.appearance?.theme, .nord)
+        XCTAssertEqual(model.configuration.preferences.appearance?.darkPalette?["text"], "ABCDEF")
+        XCTAssertTrue(model.configuration.preferences.featureEnabled(.scripts))
+        XCTAssertEqual(model.localModels.idleSeconds, 300)
+        let working = model.configuration
+        try Data((changed + "unknown-setting = false\n").utf8).write(to: file)
+        XCTAssertThrowsError(try model.reloadConfiguration())
+        XCTAssertEqual(model.configuration, working)
+        XCTAssertEqual(keyReads, 0)
     }
 
     func testInvalidRuleCannotMakeConfigurationUnexportable() async throws {

@@ -103,7 +103,7 @@ final class ClipboardHistoryStore: ObservableObject {
     static let capacity = 100
     @Published private(set) var entries: [ClipboardHistoryEntry] = []
     private(set) var enabled = false
-    private let pasteboard: NSPasteboard
+    let pasteboard: NSPasteboard
     private let reader: ClipboardHistoryReader
     private var changeCount: Int
     private var epoch = UUID()

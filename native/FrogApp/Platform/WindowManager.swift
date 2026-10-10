@@ -28,6 +28,15 @@ enum WindowGeometry {
         case .topRight: return CGRect(x: display.midX, y: display.minY, width: halfWidth, height: halfHeight)
         case .bottomLeft: return CGRect(x: display.minX, y: display.midY, width: halfWidth, height: halfHeight)
         case .bottomRight: return CGRect(x: display.midX, y: display.midY, width: halfWidth, height: halfHeight)
+        case .leftThird, .centerThird, .rightThird, .leftTwoThirds, .rightTwoThirds:
+            let third = display.width / 3
+            let offset: CGFloat = action == .rightThird ? 2 : (action == .centerThird || action == .rightTwoThirds ? 1 : 0)
+            let width = (action == .leftTwoThirds || action == .rightTwoThirds) ? third * 2 : third
+            return CGRect(x: display.minX + offset * third, y: display.minY, width: width, height: display.height)
+        case .centeredSmall, .centeredMedium, .centeredLarge:
+            let fraction: CGFloat = action == .centeredSmall ? 0.5 : (action == .centeredMedium ? 0.7 : 0.9)
+            let width = display.width * fraction, height = display.height * fraction
+            return CGRect(x: display.midX - width / 2, y: display.midY - height / 2, width: width, height: height)
         case .maximize: return display
         case .center:
             let size = CGSize(width: min(window.width, display.width), height: min(window.height, display.height))

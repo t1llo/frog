@@ -27,15 +27,13 @@ final class ProcessingIndicator {
             panel = created
         }
         guard let panel else { return }
-        panel.alphaValue = 0.9
+        panel.alphaValue = 1
         panel.contentView = NSHostingView(rootView: HStack(spacing: 8) {
             if working { ProgressView().controlSize(.small) }
             else { Image(systemName: failed ? "exclamationmark.circle" : "checkmark").foregroundStyle(failed ? .orange : FrogStyle.accent) }
             Text(working ? "Working…" : (failed ? "Check Frog for details" : (message.hasPrefix("Cancelled") ? "Cancelled" : "Done")))
                 .font(.system(size: 11, weight: .medium)).lineLimit(1)
-        }.frame(width: 200, height: 36).background(.ultraThinMaterial, in: Capsule())
-            .foregroundStyle(FrogStyle.ink)
-            .overlay(Capsule().strokeBorder(FrogStyle.border.opacity(0.4), lineWidth: 0.5)))
+        }.frame(width: 200, height: 36).frogPanel(corner: 18))
         if !panel.isVisible, let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main {
             panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - 100, y: screen.visibleFrame.minY + 24))
         }

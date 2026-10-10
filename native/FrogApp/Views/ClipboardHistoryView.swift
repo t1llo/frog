@@ -2,7 +2,7 @@ import SwiftUI
 
 enum ClipboardHistoryLayout {
     static let width: CGFloat = 480
-    static let headerHeight: CGFloat = 74
+    static let headerHeight: CGFloat = 54
     static let footerHeight: CGFloat = 28
     static let rowHeight: CGFloat = 40
     static let emptyHeight: CGFloat = 76
@@ -26,21 +26,19 @@ struct ClipboardHistoryView: View {
 
     var body: some View {
         let entries = state.visibleEntries(in: history.entries)
+        let selected = entries.indices.contains(state.selectedIndex) ? entries[state.selectedIndex] : nil
         let size = ClipboardHistoryLayout.size(entryCount: entries.count)
         VStack(spacing: 0) {
-            VStack(spacing: 4) {
-                HStack(spacing: 8) {
-                    Image(systemName: "clipboard").foregroundStyle(FrogStyle.muted)
-                    Text("Clipboard history").font(.system(size: 12, weight: .semibold))
-                    Text("\(history.entries.count)/\(ClipboardHistoryStore.capacity)")
-                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(FrogStyle.muted)
-                    Spacer()
-                    IconAction(title: "Clear clipboard history", symbol: "trash", destructive: true, action: clear)
-                        .disabled(history.entries.isEmpty)
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(FrogStyle.muted)
+                    TextField("Search clipboard…", text: $state.query).textFieldStyle(.plain).font(.system(size: 14))
+                    Menu {
+                        Button("Clear clipboard history", role: .destructive, action: clear).disabled(history.entries.isEmpty)
+                    } label: { Image(systemName: "ellipsis") }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Clipboard actions")
                     IconAction(title: "Close", symbol: "xmark", action: close)
                 }
-                SearchBox(placeholder: "Search copied text", text: $state.query)
-            }.padding(.horizontal, 12).frame(height: ClipboardHistoryLayout.headerHeight)
+             .padding(.horizontal, 16).frame(height: ClipboardHistoryLayout.headerHeight)
             Divider().opacity(0.5)
 
             VStack(spacing: 0) {
@@ -67,19 +65,15 @@ struct ClipboardHistoryView: View {
             Divider().opacity(0.5)
 
             HStack(spacing: 12) {
-                Text("↑↓ Select")
-                Text("⌘C Copy")
+                 Text("\(history.entries.count) items")
+                 Spacer(minLength: 0)
+                Button("⌘C Copy") { if let selected { copy(selected) } }.buttonStyle(.plain).disabled(selected == nil)
                 Text("↩ Paste")
-                Text("⇧↩ Plain")
-                Spacer(minLength: 0)
-                Text("Memory only")
+                Button("⇧↩ Plain") { if let selected { paste(selected, true) } }.buttonStyle(.plain).disabled(selected == nil)
             }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                 .padding(.horizontal, 12).frame(height: ClipboardHistoryLayout.footerHeight)
         }.frame(width: size.width, height: size.height)
-            .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
-            .background(FrogStyle.panelSurface, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
-            .overlay(RoundedRectangle(cornerRadius: FrogStyle.corner).strokeBorder(FrogStyle.border.opacity(0.6)))
-            .clipShape(RoundedRectangle(cornerRadius: FrogStyle.corner))
+             .frogPanel()
             .environment(\.locale, L10n.locale)
             .onChange(of: entries.count, initial: true) { _, count in resize(count) }
     }
@@ -107,9 +101,8 @@ struct ClipboardHistoryView: View {
                 .accessibilityValue(hidden ? "Hidden" : entry.preview)
                 .accessibilityAction { select(entry, index: index) }
                 .help(entry.isSensitive ? (hidden ? "Click to reveal" : "Click to hide") : "Select item, then press Return to paste")
-            IconAction(title: "Copy item", symbol: "doc.on.doc", bordered: true) { copy(entry) }
-            IconAction(title: "Paste with formatting", symbol: "return", bordered: true) { paste(entry, false) }
-            IconAction(title: "Paste without formatting", symbol: "textformat", bordered: true) { paste(entry, true) }
+            IconAction(title: "Paste with formatting", symbol: "return") { paste(entry, false) }
+                .opacity(selected ? 1 : 0).allowsHitTesting(selected).accessibilityHidden(!selected)
         }.padding(.horizontal, 10).frame(height: ClipboardHistoryLayout.rowHeight)
             .background(selected ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
             .accessibilityAddTraits(selected ? .isSelected : [])

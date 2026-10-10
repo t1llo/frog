@@ -7,19 +7,26 @@ final class WindowSwitchInput: @unchecked Sendable {
     enum Event: Sendable {
         case key(WindowSwitchKeyRouter.Result, cancelActivation: UUID?)
         case mouse(CGPoint, session: UInt64?, activation: UUID?)
-        case reset(session: UInt64?)
+        case reset(session: UInt64?, activation: UUID?)
     }
     private let lock = NSLock()
     private var router = WindowSwitchKeyRouter()
     private var activation: UUID?
     private var lastKeyDown: ContinuousClock.Instant?
     private var stopped = false
-    private var tap: CFMachPort?
+    private var reenableTap: (@Sendable () -> Void)?
     private let send: @Sendable (Event) -> Void
 
-    init(send: @escaping @Sendable (Event) -> Void) { self.send = send }
+    init(reenableTap: (@Sendable () -> Void)? = nil, send: @escaping @Sendable (Event) -> Void) {
+        self.reenableTap = reenableTap; self.send = send
+    }
     var state: WindowSwitchKeyRouter { lock.withLock { router } }
-    func attach(_ tap: CFMachPort) { lock.withLock { self.tap = tap } }
+    func attach(_ tap: CFMachPort) {
+        lock.withLock {
+            guard !stopped else { return }
+            reenableTap = { if CFMachPortIsValid(tap) { CGEvent.tapEnable(tap: tap, enable: true) } }
+        }
+    }
     @discardableResult
     func finish(session: UInt64, activating id: UUID? = nil) -> Bool {
         lock.withLock {
@@ -35,19 +42,24 @@ final class WindowSwitchInput: @unchecked Sendable {
     func shouldDeferBackgroundWork(at now: ContinuousClock.Instant = .now) -> Bool {
         lock.withLock { lastKeyDown.map { $0.duration(to: now) < .seconds(1) } ?? false }
     }
-    func stop() { lock.withLock { stopped = true; router.reset(); activation = nil; tap = nil } }
+    func stop() { lock.withLock { stopped = true; router.reset(); activation = nil; reenableTap = nil } }
 
     func receive(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        let result = lock.withLock { () -> (consume: Bool, message: Event?, enable: CFMachPort?) in
-            guard !stopped else { return (false, nil, nil) }
+        let result = lock.withLock { () -> (consume: Bool, message: Event?) in
+            guard !stopped else { return (false, nil) }
             if type == .keyDown { lastKeyDown = .now }
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-                let session = router.sessionID; router.reset()
-                return (false, .reset(session: session), tap)
+                let session = router.sessionID, cancelled = activation
+                router.reset(); activation = nil
+                // stop() clears cached eligibility under this same lock. There
+                // must be no trailing re-enable after the owner retires the tap.
+                // This closure performs only the bounded CoreGraphics operation.
+                reenableTap?()
+                return (false, .reset(session: session, activation: cancelled))
             }
             if type == .leftMouseDown || type == .rightMouseDown {
-                guard router.sessionID != nil || activation != nil else { return (false, nil, nil) }
-                return (false, .mouse(event.location, session: router.sessionID, activation: activation), nil)
+                guard router.sessionID != nil || activation != nil else { return (false, nil) }
+                return (false, .mouse(event.location, session: router.sessionID, activation: activation))
             }
             let result: WindowSwitchKeyRouter.Result
             if type == .flagsChanged { result = router.modifiers(command: event.flags.contains(.maskCommand)) }
@@ -58,13 +70,12 @@ final class WindowSwitchInput: @unchecked Sendable {
                 let text = type == .keyDown && router.active && command && !other ? Self.text(event) : ""
                 result = router.key(code: UInt16(event.getIntegerValueField(.keyboardEventKeycode)), down: type == .keyDown,
                                     command: command, shift: event.flags.contains(.maskShift), otherModifiers: other, text: text)
-            } else { return (false, nil, nil) }
+            } else { return (false, nil) }
             let cancelled = type == .keyDown && result.cancelsPendingActivation ? activation : nil
             if cancelled != nil { activation = nil }
-            guard result.action != nil || cancelled != nil else { return (result.consume, nil, nil) }
-            return (result.consume, .key(result, cancelActivation: cancelled), nil)
+            guard result.action != nil || cancelled != nil else { return (result.consume, nil) }
+            return (result.consume, .key(result, cancelActivation: cancelled))
         }
-        if let tap = result.enable { CGEvent.tapEnable(tap: tap, enable: true) }
         if let message = result.message { send(message) }
         return result.consume ? nil : Unmanaged.passUnretained(event)
     }

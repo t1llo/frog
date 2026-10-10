@@ -3,6 +3,24 @@ import XCTest
 
 @MainActor
 final class WindowSwitcherCacheTests: XCTestCase {
+    func testPartialInventoryUpdatesRowsButDoesNotPretendDiscoveryIsFresh() async {
+        let cache = WindowSwitcherCache()
+        let old = window("Old", pid: 10)
+        _ = await cache.update { .init(windows: [old], current: old.id) }
+        let latest = window("New", pid: 20)
+        let result = await cache.update { .init(windows: [latest, old], current: nil, completeness: .partial) }
+        XCTAssertEqual(result?.windows.map(\.id), [latest.id, old.id])
+        XCTAssertNil(cache.readySnapshot(frontPID: 20), "An explicit invocation should retry an incomplete inventory")
+        cache.noteFocused(old.id)
+        XCTAssertEqual(cache.snapshot?.completeness, .partial)
+        _ = await cache.update { .init(windows: [], current: nil, completeness: .cancelled) }
+        XCTAssertEqual(cache.snapshot?.windows.map(\.id), [old.id, latest.id])
+        _ = await cache.update { .init(windows: [], current: nil, completeness: .unavailable) }
+        XCTAssertEqual(cache.snapshot?.windows.map(\.id), [old.id, latest.id])
+        _ = await cache.update { .init(windows: [], current: nil) }
+        XCTAssertEqual(cache.readySnapshot(frontPID: nil)?.windows.count, 0)
+    }
+
     func testAnInventoryThatAgesWhileTypingRequiresFreshDiscovery() async {
         let cache = WindowSwitcherCache()
         let old = window("Old window", pid: 10)

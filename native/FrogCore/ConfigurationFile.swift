@@ -9,6 +9,10 @@ public enum ConfigurationFile {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         var data = try encoder.encode(configuration)
+        if let original = configuration.originalJSON, let known = configuration.knownJSON {
+            let updated = try JSONDecoder().decode(ConfigurationJSON.self, from: data)
+            data = try encoder.encode(ConfigurationJSON.preserving(original, known: known, updated: updated))
+        }
         data.append(0x0A)
         guard data.count <= maximumBytes else { throw FrogError.message("The configuration file is too large (maximum 4 MB).") }
         return data
@@ -16,10 +20,12 @@ public enum ConfigurationFile {
 
     public static func decode(_ data: Data) throws -> Configuration {
         guard data.count <= maximumBytes else { throw FrogError.message("The configuration file is too large (maximum 4 MB).") }
-        let configuration: Configuration
+        var configuration: Configuration
         do { configuration = try JSONDecoder().decode(Configuration.self, from: data) }
         catch { throw FrogError.message("This is not a valid Frog configuration file. Check its JSON fields and values.") }
         try validate(configuration)
+        configuration.originalJSON = try JSONDecoder().decode(ConfigurationJSON.self, from: data)
+        configuration.knownJSON = try JSONDecoder().decode(ConfigurationJSON.self, from: JSONEncoder().encode(configuration))
         return configuration
     }
 
@@ -53,8 +59,19 @@ public enum ConfigurationFile {
         }
         for provider in configuration.providers { try validate(provider: provider) }
         var shortcuts = Set<Hotkey>()
-        if let key = configuration.preferences.workflowSettings.shortcutPanelHotkey { shortcuts.insert(key) }
-        if let key = configuration.preferences.workflowSettings.cancelRecordingHotkey, !shortcuts.insert(key).inserted { throw FrogError.message("The cancel shortcut conflicts with the shortcut panel.") }
+        if configuration.preferences.featureEnabled(.commandBar) {
+            shortcuts.insert(configuration.preferences.toolkitSettings.effectiveCommandBarHotkey)
+        }
+        if let key = configuration.preferences.toolkitSettings.menuBar?.hotkey {
+            try ConfigShortcut.validate(key)
+            if configuration.preferences.featureEnabled(.menuBar), !shortcuts.insert(key).inserted {
+                throw FrogError.message("The menu bar shortcut conflicts with the command bar.")
+            }
+        }
+        if let key = configuration.preferences.workflowSettings.shortcutPanelHotkey, !shortcuts.insert(key).inserted {
+            throw FrogError.message("The shortcut panel conflicts with another global shortcut.")
+        }
+        if let key = configuration.preferences.workflowSettings.cancelRecordingHotkey, !shortcuts.insert(key).inserted { throw FrogError.message("The cancel shortcut conflicts with another global shortcut.") }
         let clipboard = configuration.preferences.workflowSettings
         if clipboard.clipboardHistoryEnabled == true, !shortcuts.insert(clipboard.effectiveClipboardHistoryHotkey).inserted {
             throw FrogError.message("The clipboard history shortcut conflicts with another shortcut.")
@@ -104,12 +121,17 @@ public enum ConfigurationFile {
                 guard !language.isEmpty, language.utf8.count <= 256 else { throw FrogError.message("Each translation rule needs a target language.") }
             }
             if rule.enabled, let hotkey = rule.hotkey, !shortcuts.insert(hotkey).inserted {
-                throw FrogError.message("Two enabled rules use the same shortcut. Give each rule its own shortcut before importing.")
+                throw FrogError.message("Two enabled actions use the same shortcut. Give each action its own shortcut.")
             }
         }
         let preferences = configuration.preferences
+        if let menuBar = preferences.toolkitSettings.menuBar {
+            guard menuBar.autoHideSeconds.isFinite, (1...3600).contains(menuBar.autoHideSeconds) else {
+                throw FrogError.message("Menu bar auto-hide delay must be between 1 and 3600 seconds.")
+            }
+        }
         guard (preferences.appearance ?? AppearancePreferences()).valid else {
-            throw FrogError.message("Appearance requires a six-digit accent hex color and transparency between 0 and 1.")
+            throw FrogError.message("Appearance requires six-digit RGB palette colors, known semantic color names and transparency between 0 and 1.")
         }
         let workflow = preferences.workflowSettings
         if let language = workflow.applicationLanguage, !WorkflowPreferences.interfaceLanguages.contains(language) { throw FrogError.message("Choose English, German or the system language.") }
@@ -144,7 +166,11 @@ public enum ConfigurationFile {
         if provider.models.contains(where: { $0.category == .audio }), !provider.kind.supportsTranscription {
             throw FrogError.message("This service supports text models only. Use OpenAI, Gemini or a compatible transcription endpoint for speech-to-text.")
         }
-        try validateEndpoint(provider)
+        if provider.kind.localTool != nil {
+            guard provider.endpoint.isEmpty, provider.models.allSatisfy({ LocalToolRequest.isValidModel($0.id) && $0.category == .text }) else {
+                throw FrogError.message("Coding tools use their existing login and text models, without an API endpoint.")
+            }
+        } else { try validateEndpoint(provider) }
     }
 
     public static func validateEndpoint(_ provider: ProviderConfiguration) throws {

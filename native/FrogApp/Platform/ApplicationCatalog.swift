@@ -7,6 +7,7 @@ enum ApplicationCatalog {
         URL(fileURLWithPath: "/Applications", isDirectory: true),
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true),
         URL(fileURLWithPath: "/System/Applications", isDirectory: true),
+        URL(fileURLWithPath: "/System/Cryptexes/App/System/Applications", isDirectory: true),
         URL(fileURLWithPath: "/System/Library/CoreServices/Applications", isDirectory: true)
     ]) -> [Rule] {
         let manager = FileManager.default
@@ -14,9 +15,12 @@ enum ApplicationCatalog {
         var rules: [Rule] = []
         for root in roots {
             guard let contents = manager.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { continue }
-            for case let url as URL in contents {
+            // Include app links before recursive discovery. Safari's hidden link
+            // is covered by the system Cryptex Applications root above.
+            let children = (try? manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
+            let urls = children + contents.compactMap { $0 as? URL }
+            for url in urls {
                 guard url.pathExtension.lowercased() == "app" else { continue }
-                contents.skipDescendants()
                 let path = url.resolvingSymlinksInPath().standardizedFileURL.path
                 guard seen.insert(path).inserted, let bundle = Bundle(url: url), let bundleID = bundle.bundleIdentifier else { continue }
                 let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String

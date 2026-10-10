@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import FrogCore
 
 struct FrogMenuLabel: View {
     @ObservedObject var power: StayAwakeController
@@ -28,7 +29,8 @@ struct FrogStatusMenu: View {
             }.padding(.horizontal, 8).padding(.vertical, 9)
             Divider().padding(.horizontal, 8)
 
-            VStack(alignment: .leading, spacing: 7) {
+            if model.configuration.preferences.featureEnabled(.stayAwake) {
+              VStack(alignment: .leading, spacing: 7) {
                 Toggle(isOn: Binding(get: { power.isEnabled }, set: power.setEnabled)) {
                     Label("Stay awake", systemImage: power.isEnabled ? "cup.and.saucer.fill" : "cup.and.saucer")
                         .font(.system(size: 12, weight: .medium))
@@ -57,9 +59,10 @@ struct FrogStatusMenu: View {
                         .accessibilityLabel("Stay-awake duration")
                 }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                 if let error = power.error {
-                    Text(error).font(.system(size: 10)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    Text(String(error.prefix(500))).font(.system(size: 10)).foregroundStyle(.orange)
+                        .lineLimit(3).help("Open Stay awake for details.")
                 } else if let notice = power.notice {
-                    Text(notice).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                    Text(String(notice.prefix(500))).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(3)
                 }
                 HStack {
                     Text("Lid closed included").foregroundStyle(FrogStyle.muted)
@@ -70,7 +73,8 @@ struct FrogStatusMenu: View {
                         Button("Set up access…") { power.configureAccess(); dismiss() }.buttonStyle(.plain)
                     }
                 }.font(.system(size: 10))
-            }.padding(10).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6)).padding(6)
+              }.padding(10).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6)).padding(6)
+            }
 
             if model.dictation.active {
                 if model.dictation.phase == .recording {
@@ -81,7 +85,8 @@ struct FrogStatusMenu: View {
             if model.isProcessing { action("Cancel processing", symbol: "xmark") { model.cancelProcessing() } }
             if let error = model.errorMessage {
                 HStack(alignment: .top) {
-                    Text(error).font(.system(size: 10)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    Text(String(error.prefix(500))).font(.system(size: 10)).foregroundStyle(.orange)
+                        .lineLimit(3).help("Full details are in Settings → Logs.")
                     Spacer(minLength: 0)
                     IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)
                 }.padding(8)
@@ -90,6 +95,9 @@ struct FrogStatusMenu: View {
             action(model.setupPresented ? "Set up Frog…" : "Open Frog", symbol: "arrow.up.forward.app", key: "⌘,") {
                 dismiss(); model.showSettings()
             }.keyboardShortcut(",")
+            if model.configuration.preferences.featureEnabled(.commandBar) {
+                action("Command bar", symbol: "magnifyingglass") { dismiss(); model.showCommandBar() }
+            }
             if model.configuration.preferences.workflowSettings.clipboardHistoryEnabled == true {
                 action("Clipboard history", symbol: "clipboard") { dismiss(); model.showClipboardHistory() }
             }
@@ -101,7 +109,7 @@ struct FrogStatusMenu: View {
             }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted).padding(.horizontal, 9).padding(.vertical, 8)
         }.padding(5).frame(width: 292).fixedSize(horizontal: false, vertical: true)
             .font(.system(size: 12)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
-            .background(FrogStyle.panelSurface)
+            .frogPanel()
             .task { model.refreshSystemStatus(); await power.refresh(); await power.refreshAccess() }
     }
 
@@ -119,7 +127,7 @@ struct FrogStatusMenu: View {
 
 private struct MenuRowStyle: ButtonStyle {
     @State private var hovered = false
-    func makeBody(configuration: Configuration) -> some View {
+    func makeBody(configuration: ButtonStyleConfiguration) -> some View {
         configuration.label.background(hovered || configuration.isPressed ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: 5))
             .onHover { hovered = $0 }
     }

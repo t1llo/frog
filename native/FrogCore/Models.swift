@@ -1,7 +1,7 @@
 import Foundation
 
 public enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable {
-    case openAI, anthropic, gemini, ollama, lmStudio, compatible
+    case openAI, anthropic, gemini, ollama, lmStudio, compatible, claudeCode, codex, opencode
     public var id: String { rawValue }
     public var title: String {
         switch self {
@@ -11,6 +11,9 @@ public enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable 
         case .ollama: return "Ollama (local)"
         case .lmStudio: return "LM Studio (local)"
         case .compatible: return "OpenAI-compatible"
+        case .claudeCode: return "Claude Code"
+        case .codex: return "Codex"
+        case .opencode: return "OpenCode"
         }
     }
     public var endpoint: String {
@@ -20,6 +23,7 @@ public enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable 
         case .gemini: return "https://generativelanguage.googleapis.com/v1beta"
         case .ollama: return "http://localhost:11434"
         case .lmStudio: return "http://localhost:1234/v1"
+        case .claudeCode, .codex, .opencode: return ""
         }
     }
     public var defaultModel: String {
@@ -29,10 +33,19 @@ public enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable 
         case .gemini: return "gemini-3.8-flash"
         case .ollama: return "llama3.2"
         case .lmStudio, .compatible: return ""
+        case .claudeCode, .codex, .opencode: return LocalToolKind.defaultModelID
         }
     }
 
     public var isLocal: Bool { self == .ollama || self == .lmStudio }
+    public var localTool: LocalToolKind? {
+        switch self {
+        case .claudeCode: .claudeCode
+        case .codex: .codex
+        case .opencode: .opencode
+        default: nil
+        }
+    }
 
     /// Text models verified against the official catalogs on 2026-09-22.
     public var suggestedModels: [ProviderModel] {
@@ -54,6 +67,8 @@ public enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable 
         ]
         case .ollama: return [.init(id: "llama3.2", name: "Llama 3.2")]
         case .lmStudio, .compatible: return []
+        case .claudeCode, .codex, .opencode:
+            return localTool!.suggestedModels.map { ProviderModel(id: $0.id.isEmpty ? LocalToolKind.defaultModelID : $0.id, name: $0.name) }
         }
     }
 
@@ -65,6 +80,9 @@ public enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable 
         case .ollama: return URL(string: "https://ollama.com/download")!
         case .lmStudio: return URL(string: "https://lmstudio.ai/docs/developer/core/server")!
         case .compatible: return URL(string: "https://platform.openai.com/docs/api-reference")!
+        case .claudeCode: return URL(string: "https://code.claude.com/docs/en/setup")!
+        case .codex: return URL(string: "https://developers.openai.com/codex/cli/")!
+        case .opencode: return URL(string: "https://opencode.ai/docs/")!
         }
     }
 }
@@ -157,10 +175,11 @@ public struct Preferences: Codable, Equatable, Sendable {
     public var shortcutsEnabled: Bool { applicationShortcutsEnabled ?? true }
     public var workflows: WorkflowPreferences?
     public var appearance: AppearancePreferences?
+    public var toolkit: ToolkitPreferences?
     public var workflowSettings: WorkflowPreferences { workflows ?? WorkflowPreferences() }
     public init() {}
 
-    private enum CodingKeys: String, CodingKey { case historyEnabled, hideHistoryText, historyLimit, historyRetentionDays, showProcessingIndicator, windowSwitcherEnabled, applicationShortcutsEnabled, workflows, appearance }
+    private enum CodingKeys: String, CodingKey { case historyEnabled, hideHistoryText, historyLimit, historyRetentionDays, showProcessingIndicator, windowSwitcherEnabled, applicationShortcutsEnabled, workflows, appearance, toolkit }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         historyEnabled = try values.decode(Bool.self, forKey: .historyEnabled)
@@ -172,10 +191,13 @@ public struct Preferences: Codable, Equatable, Sendable {
         applicationShortcutsEnabled = try values.decodeIfPresent(Bool.self, forKey: .applicationShortcutsEnabled)
         workflows = try values.decodeIfPresent(WorkflowPreferences.self, forKey: .workflows)
         appearance = try values.decodeIfPresent(AppearancePreferences.self, forKey: .appearance)
+        toolkit = try values.decodeIfPresent(ToolkitPreferences.self, forKey: .toolkit)
     }
 }
 
 public struct Configuration: Codable, Equatable, Sendable {
+    var originalJSON: ConfigurationJSON?
+    var knownJSON: ConfigurationJSON?
     public var explicitRuleModels: Bool?
     public var recentModels: [RuleModelSelection]?
     public var localModels: [LocalModelDescriptor]?
@@ -185,6 +207,25 @@ public struct Configuration: Codable, Equatable, Sendable {
     public var rules: [Rule] = Rule.presets
     public var preferences = Preferences()
     public init() {}
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.version == rhs.version && lhs.explicitRuleModels == rhs.explicitRuleModels && lhs.recentModels == rhs.recentModels &&
+        lhs.localModels == rhs.localModels && lhs.providers == rhs.providers && lhs.defaultProviderID == rhs.defaultProviderID &&
+        lhs.rules == rhs.rules && lhs.preferences == rhs.preferences
+    }
+
+    /// Imports may change credential identities without losing connection extension fields.
+    public mutating func remapProviderIDs(_ ids: [UUID: UUID]) {
+        for index in providers.indices { providers[index].id = ids[providers[index].id] ?? providers[index].id }
+        if let id = defaultProviderID { defaultProviderID = ids[id] ?? id }
+        for index in rules.indices {
+            if let id = rules[index].providerID { rules[index].providerID = ids[id] ?? id }
+            if let id = rules[index].action?.audioProviderID { rules[index].action?.audioProviderID = ids[id] ?? id }
+        }
+        recentModels = recentModels?.map { var item = $0; if let id = item.providerID { item.providerID = ids[id] ?? id }; return item }
+        originalJSON = originalJSON?.remappingProviders(ids)
+        knownJSON = knownJSON?.remappingProviders(ids)
+    }
 
     private enum CodingKeys: String, CodingKey { case version, providers, defaultProviderID, rules, preferences, localModels, explicitRuleModels, recentModels }
     public init(from decoder: Decoder) throws {

@@ -7,6 +7,7 @@ public struct LLMClient: Sendable {
 
     public func complete(text: String, rule: Rule, provider: ProviderConfiguration, apiKey: String?) async throws -> String {
         try Task.checkCancellation()
+        guard provider.kind.localTool == nil else { throw FrogError.message("Use the installed coding-tool client for this provider.") }
         let request = try makeRequest(text: text, rule: rule, provider: provider, apiKey: apiKey)
         let data: Data
         let response: URLResponse
@@ -81,6 +82,8 @@ public struct LLMClient: Sendable {
         case .ollama:
             path = baseURL.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).hasSuffix("api") ? "chat" : "api/chat"
             body = ["model": model, "messages": messages, "stream": false]
+        case .claudeCode, .codex, .opencode:
+            throw FrogError.message("Coding tools do not use an HTTP endpoint.")
         }
         var request = URLRequest(url: baseURL.appendingPathComponent(path), cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 90)
         request.httpMethod = "POST"
@@ -127,6 +130,8 @@ public struct LLMClient: Sendable {
         case .ollama:
             output = (object["message"] as? [String: Any])?["content"] as? String
             truncated = object["done"] as? Bool == false || object["done_reason"] as? String == "length"
+        case .claudeCode, .codex, .opencode:
+            throw FrogError.message("Coding tools do not use an HTTP response.")
         }
         guard !truncated else { throw FrogError.message("The provider stopped before completing the text. Try a smaller selection.") }
         guard let output, !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {

@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import FrogCore
+import FrogUsage
 
 struct AppIssue: Identifiable {
     let id = UUID()
@@ -54,6 +55,22 @@ final class AppModel: ObservableObject {
     let localModels: LocalModels
     let dictation: DictationController
     let power: StayAwakeController
+    let toolkit: Toolkit
+    let statistics: ActivityStatisticsStore
+    let localTools: LocalToolClient
+    let scripts = ScriptRunner()
+    private var documentsModel: LocalDocuments?
+    var documents: LocalDocuments {
+        if documentsModel == nil { documentsModel = LocalDocuments(directory: configurationStore.directory.appendingPathComponent("Toolkit")) }
+        return documentsModel!
+    }
+    var hasPendingDocumentWrites: Bool { documentsModel?.needsFlush == true }
+    func flushDocuments() async -> Bool { await documentsModel?.flush() ?? true }
+    private lazy var commandBar: CommandBar = {
+        let bar = CommandBar(model: self, pasteboard: clipboardHistoryStore.pasteboard)
+        bar.onToolUse = { [weak self] in self?.statistics.recordToolUse($0) }
+        return bar
+    }()
     let clipboardHistoryStore: ClipboardHistoryStore
     private var observations = Set<AnyCancellable>()
     private var dictationHistoryEpoch: UUID?
@@ -62,9 +79,12 @@ final class AppModel: ObservableObject {
     static let shortcutPanelID = UUID(uuidString: "85F8DE80-89BC-4506-B82D-DCFB71AFE292")!
     static let cancelRecordingID = UUID(uuidString: "E4A8A2D5-7F72-42CA-924C-9100A213D030")!
     static let clipboardHistoryID = UUID(uuidString: "E7A2D4E5-1CBC-41DB-8B3A-7114DC77943D")!
+    static let commandBarID = UUID(uuidString: "76B6A364-18CC-4779-9552-9885FCE778B8")!
+    static let menuBarID = UUID(uuidString: "426A0C79-8785-4B2A-96E1-5880E7853209")!
     private lazy var clipboardHistory: ClipboardHistoryController = {
-        let controller = ClipboardHistoryController(history: clipboardHistoryStore)
+        let controller = ClipboardHistoryController(pasteboard: clipboardHistoryStore.pasteboard, history: clipboardHistoryStore)
         controller.onError = { [weak self] in self?.report($0) }
+        controller.onSuccessfulPaste = { [weak self] in self?.statistics.recordToolUse(.clipboardPaste) }
         return controller
     }()
     private let shortcutPanel = ShortcutReferencePanel()
@@ -88,10 +108,16 @@ final class AppModel: ObservableObject {
          dictationController: DictationController? = nil,
          modelService: LocalModels? = nil,
          powerController: StayAwakeController? = nil,
+         toolkit injectedToolkit: Toolkit? = nil,
          clipboardHistoryStore: ClipboardHistoryStore? = nil,
+         localToolClient: LocalToolClient? = nil,
          errorDisplayDuration: Duration = .seconds(6)) {
         let dataDirectory = dataDirectory ?? ProcessInfo.processInfo.environment["FROG_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         self.registerShortcuts = registerShortcuts
+        self.toolkit = injectedToolkit ?? Toolkit(showsUsageStatusItem: registerShortcuts, showsMenuBarOrganizer: registerShortcuts)
+        self.statistics = ActivityStatisticsStore(directory: dataDirectory)
+        let localTools = localToolClient ?? LocalToolClient()
+        self.localTools = localTools
         self.dictation = dictationController ?? DictationController()
         self.power = powerController ?? StayAwakeController(directory: dataDirectory)
         self.clipboardHistoryStore = clipboardHistoryStore ?? ClipboardHistoryStore()
@@ -100,7 +126,12 @@ final class AppModel: ObservableObject {
         self.readAccessibility = readAccessibility ?? { SelectionService.isTrusted }
         self.readLoginStatus = readLoginStatus ?? { LoginService.readStatus() }
         self.captureSelection = captureSelection ?? { try await SelectionService().capture() }
-        self.complete = complete ?? { text, rule, provider, key in try await LLMClient().complete(text: text, rule: rule, provider: provider, apiKey: key) }
+        self.complete = complete ?? { text, rule, provider, key in
+            if let kind = provider.kind.localTool {
+                return try await localTools.complete(LocalToolRequest(kind: kind, text: text, rule: rule, providerModel: provider.model))
+            }
+            return try await LLMClient().complete(text: text, rule: rule, provider: provider, apiKey: key)
+        }
         self.readKey = readKey ?? { try KeychainStore().read(providerID: $0) }
         self.writeClipboard = writeClipboard ?? { text in NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
         configurationStore = ConfigurationStore(directory: dataDirectory)
@@ -163,7 +194,7 @@ final class AppModel: ObservableObject {
             guard let self else { throw CancellationError() }
             let provider = try self.resolved(rule)
             if provider.id != Self.localProviderID {
-                return try await self.complete(text, rule, provider, self.readKey(provider.id))
+                return try await self.complete(text, rule, provider, provider.kind.localTool == nil ? self.readKey(provider.id) : nil)
             }
             return try await self.localModels.complete(text, instructions: rule.instructions, modelID: provider.model)
         }
@@ -176,6 +207,10 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             self.status = "\(rule.name) · \(delivery)"
         }
+        dictation.onSuccessfulDelivery = { [weak self] seconds, text in
+            self?.statistics.recordDictation(recordingSeconds: seconds, text: text)
+            self?.statistics.recordRuleExecution(kind: .dictation)
+        }
         dictation.onTranscript = { [weak self] id, rule, original, result in
             guard let self else { return }
             if self.configuration.preferences.historyEnabled, self.dictationHistoryEpoch == self.historyEpoch {
@@ -187,10 +222,84 @@ final class AppModel: ObservableObject {
         }
         dictation.onInterruption = { [weak self] in self?.saveInterruption($0) ?? false }
         dictation.onHistoryRecovered = { [weak self] in self?.finishHistoryRecovery(id: $0, result: $1) }
+        applyUsagePreferences(configuration.preferences)
+        toolkit.onOpenUsage = { [weak self] in self?.showSettings() }
+        toolkit.onOpenMenuBar = { [weak self] in self?.showSettings() }
+        toolkit.menuBarOrganizer.onSettingsChange = { [weak self] value in
+            guard let self else { return }
+            var preferences = self.configuration.preferences
+            var toolkit = preferences.toolkitSettings
+            toolkit.menuBar = value; preferences.toolkit = toolkit
+            do { try self.savePreferences(preferences) }
+            catch { self.report(error) }
+        }
+        scripts.onSuccessfulRun = { [weak self] in self?.statistics.recordToolUse(.scriptRun) }
+        toolkit.onUsagePreferencesChange = { [weak self] value in
+            guard let self else { return }
+            var preferences = self.configuration.preferences
+            var toolkit = preferences.toolkitSettings
+            toolkit.usage = UsageDisplayPreferences(provider: value.provider, range: value.range, metric: value.metric, allDevices: value.allDevices, loginSource: value.loginSource)
+            preferences.toolkit = toolkit
+            do { try self.savePreferences(preferences) }
+            catch { self.applyUsagePreferences(self.configuration.preferences); self.report(error) }
+        }
+        toolkit.apply(configuration.preferences)
+        power.configureFeature(enabled: configuration.preferences.featureEnabled(.stayAwake))
+        toolkit.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
+        toolkit.onDisable = { [weak self] feature in
+            guard let self else { return }
+            self.commandBar.hide()
+            switch feature {
+            case .writing: self.processingTask?.cancel(); self.processingIndicator.hide()
+            case .dictation: self.dictation.cancel(); self.invalidateHistoryRecovery()
+            case .applicationShortcuts: self.applicationTask?.cancel(); self.shortcutPanel.hide()
+            case .windowSwitcher: self.windowActionTask?.cancel()
+            case .scripts: self.scripts.stop()
+            case .commandBar: self.commandBar.stop()
+            default: break
+            }
+        }
     }
 
     func showSetup() { setupPresented = true }
-    var configurationFileURL: URL { configurationStore.file }
+    var configurationFileURL: URL { configurationStore.textFile }
+
+    func openConfiguration() {
+        do {
+            if !FileManager.default.fileExists(atPath: configurationFileURL.path) {
+                try configurationStore.save(configuration)
+            }
+            NSWorkspace.shared.open([configurationFileURL], withApplicationAt: URL(fileURLWithPath: "/System/Applications/TextEdit.app"), configuration: NSWorkspace.OpenConfiguration())
+        } catch { report(error) }
+    }
+
+    func reloadConfiguration() throws {
+        guard !isProcessing, !isTestingProvider, !dictation.active else {
+            throw FrogError.message("Finish or cancel the current request before reloading configuration.")
+        }
+        let candidate = try configurationStore.load { candidate in
+            guard candidate.preferences.featureEnabled(.stayAwake) || (!self.power.ownsSession && !self.power.isBusy) else {
+                throw FrogError.message("Restore sleep before reloading a configuration that disables Stay awake.")
+            }
+            for rule in candidate.rules {
+                if let key = rule.hotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
+            }
+            let workflow = candidate.preferences.workflowSettings
+            for key in [workflow.shortcutPanelHotkey, workflow.cancelRecordingHotkey, candidate.preferences.toolkitSettings.effectiveCommandBarHotkey].compactMap({ $0 }) {
+                if let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
+            }
+            if let issue = HotkeyManager.validationError(workflow.effectiveClipboardHistoryHotkey, purpose: .clipboardHistory) { throw FrogError.message(issue) }
+        }
+        applyConfiguration(candidate)
+        configurationLoadError = nil
+        localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds
+        if !candidate.preferences.historyEnabled { invalidateHistoryRecovery() }
+        if !candidate.preferences.showProcessingIndicator { processingIndicator.hide() }
+        registerHotkeys(); shortcutPanel.hide()
+        configureWindowSwitcher(); configureClipboardHistory(); refreshHistory()
+        dismissError()
+        status = "Configuration reloaded."
+    }
     func finishSetup() {
         do { try SetupStore(directory: historyStore.directory).complete(); setupPresented = false }
         catch { report(error) }
@@ -214,10 +323,13 @@ final class AppModel: ObservableObject {
         registerHotkeys()
         configureWindowSwitcher()
         configureClipboardHistory()
+        if configuration.preferences.featureEnabled(.commandBar) { commandBar.warm() }
         if configuration.providers.isEmpty && localModels.installed.isEmpty { status = "Add a model in Models to get started." }
     }
 
     func shutdown() {
+        commandBar.stop()
+        toolkit.stop()
         systemStatusTask?.cancel(); systemStatusTask = nil
         loginStatusTask?.cancel(); loginStatusTask = nil
         loginStatusUpdatedAt = nil
@@ -235,6 +347,64 @@ final class AppModel: ObservableObject {
     }
 
     func showSettings() { refreshSystemStatus(); openSettings?() }
+    private func applyUsagePreferences(_ preferences: Preferences) {
+        guard let value = preferences.toolkitSettings.usage else { return }
+        toolkit.applyUsagePreferences(UsageDashboardPreferences(provider: value.provider, range: value.range, metric: value.metric, allDevices: value.allDevices, loginSource: value.loginSource))
+    }
+
+    func openFeature(_ feature: FeatureID) { toolkit.select(.feature(feature)); showSettings() }
+    func showCommandBar() {
+        guard !isRecordingShortcut else { return }
+        commandBar.show()
+    }
+    func setFeature(_ feature: FeatureID, enabled: Bool) async throws {
+        if feature == .stayAwake, !enabled {
+            await power.waitForOperation()
+            if power.ownsSession {
+                power.setEnabled(false); await power.waitForOperation()
+                guard !power.ownsSession else { throw FrogError.message(power.error ?? "Restore sleep before disabling Stay awake.") }
+            }
+        }
+        var preferences = configuration.preferences
+        preferences.setFeature(feature, enabled: enabled)
+        try savePreferences(preferences)
+    }
+    func ruleFeatureEnabled(_ rule: Rule) -> Bool {
+        switch rule.category {
+        case .text: configuration.preferences.featureEnabled(.writing)
+        case .audio: configuration.preferences.featureEnabled(.dictation)
+        case .window: configuration.preferences.toolkit == nil ? configuration.preferences.shortcutsEnabled : configuration.preferences.featureEnabled(.windowSwitcher)
+        default: configuration.preferences.featureEnabled(.applicationShortcuts)
+        }
+    }
+    func openDocument(_ document: UtilityDocument) {
+        let feature: FeatureID = switch document.kind { case .note: .scratchpad; case .snippet: .snippets; case .shelf: .shelf; case .script: .scripts }
+        guard configuration.preferences.featureEnabled(feature) else { return }
+        documents.selection[document.kind] = document.id
+        openFeature(feature)
+    }
+    func runScript(_ document: UtilityDocument) {
+        guard configuration.preferences.featureEnabled(.scripts), documents.items.contains(document) else { return }
+        scripts.run(document)
+    }
+    func runRuleFromCommandBar(_ id: UUID) {
+        guard let rule = configuration.rules.first(where: { $0.id == id && $0.enabled }), ruleFeatureEnabled(rule) else { return }
+        switch rule.category {
+        case .text: processSelection(ruleID: id)
+        case .audio: startDictation(rule)
+        case .application: launchApplication(rule)
+        case .window: manageWindow(rule)
+        case .system: performSystemAction(rule)
+        }
+    }
+    func runWindowAction(_ action: WindowAction) {
+        guard configuration.preferences.featureEnabled(.windowSwitcher) else { return }
+        manageWindow(action.rule)
+    }
+    func runSystemAction(_ action: SystemAction) {
+        guard configuration.preferences.featureEnabled(.applicationShortcuts) else { return }
+        performSystemAction(action.rule)
+    }
 
     func refreshSystemStatus(forceLoginStatus: Bool = false) {
         let trusted = readAccessibility()
@@ -298,11 +468,19 @@ final class AppModel: ObservableObject {
 
     private func persist(_ candidate: Configuration) throws {
         if let error = configurationLoadError {
-            throw FrogError.message("Settings could not be loaded, so they have not been overwritten. Import a valid configuration in Settings, or repair the file in \(configurationStore.directory.path) and relaunch Frog. \(error.localizedDescription)")
+            throw FrogError.message("Settings could not be loaded, so they have not been overwritten. Repair the file in \(configurationStore.directory.path) and use Settings → Configuration → Reload, or import a valid configuration. \(error.localizedDescription)")
         }
         try ConfigurationFile.validate(candidate)
         try configurationStore.save(candidate)
+        applyConfiguration(candidate)
+    }
+
+    private func applyConfiguration(_ candidate: Configuration) {
         configuration = candidate
+        applyUsagePreferences(candidate.preferences)
+        toolkit.apply(candidate.preferences)
+        if candidate.preferences.featureEnabled(.commandBar) { commandBar.warm() }
+        power.configureFeature(enabled: candidate.preferences.featureEnabled(.stayAwake))
         localModels.updateCatalog(candidate.modelCatalog)
         if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
         if registerShortcuts { AppLanguage.shared.selection = candidate.preferences.workflowSettings.applicationLanguage ?? "system" }
@@ -375,10 +553,25 @@ final class AppModel: ObservableObject {
         configureWindowSwitcher()
     }
 
-    func hasAPIKey(_ id: UUID) -> Bool { ((try? keychain.read(providerID: id)) ?? "").isEmpty == false }
+    func hasAPIKey(_ id: UUID) -> Bool {
+        guard configuration.providers.first(where: { $0.id == id })?.kind.localTool == nil else { return false }
+        return ((try? keychain.read(providerID: id)) ?? "").isEmpty == false
+    }
+
+    func useLocalTool(_ kind: LocalToolKind, model: String) throws {
+        let providerKind: ProviderKind = switch kind { case .claudeCode: .claudeCode; case .codex: .codex; case .opencode: .opencode }
+        let id = model.isEmpty ? LocalToolKind.defaultModelID : model
+        var provider = configuration.providers.first { $0.kind == providerKind }
+            ?? ProviderConfiguration(name: kind.title, kind: providerKind)
+        if !provider.models.contains(where: { $0.id == id }) { provider.models.append(ProviderModel(id: id)) }
+        provider.model = id
+        try saveProvider(provider, apiKey: nil, clearKey: false)
+        status = "\(kind.title) is available in rule model menus."
+    }
 
     func saveProvider(_ provider: ProviderConfiguration, apiKey: String?, clearKey: Bool) throws {
         try ConfigurationFile.validate(provider: provider)
+        guard provider.kind.localTool == nil || (apiKey ?? "").isEmpty else { throw FrogError.message("Coding tools use their own login, without a Frog API key.") }
         var candidate = configuration
         let previousModels = candidate.providers.first(where: { $0.id == provider.id })?.models ?? []
         if let index = candidate.providers.firstIndex(where: { $0.id == provider.id }) { candidate.providers[index] = provider }
@@ -426,7 +619,7 @@ final class AppModel: ObservableObject {
         // Persist first: a Keychain deletion failure is explicit and can be retried by re-adding the provider ID.
         let previous = configuration
         try persist(candidate)
-        do { try keychain.delete(providerID: id) }
+        do { if previous.providers.first(where: { $0.id == id })?.kind.localTool == nil { try keychain.delete(providerID: id) } }
         catch {
             try? persist(previous)
             throw error
@@ -445,7 +638,7 @@ final class AppModel: ObservableObject {
         try ConfigurationFile.validate(provider: provider)
         isTestingProvider = true
         defer { isTestingProvider = false }
-        let key = (apiKey?.isEmpty == false) ? apiKey : try keychain.read(providerID: provider.id)
+        let key = provider.kind.localTool != nil ? nil : (apiKey?.isEmpty == false) ? apiKey : try keychain.read(providerID: provider.id)
         if let textModel = provider.models.first(where: { $0.category == .text }) {
             var test = provider; test.model = textModel.id
             _ = try await complete("Reply with OK.", Rule(name: "Connection test", instructions: "Reply briefly to the user."), test, key)
@@ -456,14 +649,22 @@ final class AppModel: ObservableObject {
     }
 
     func discoverModels(_ provider: ProviderConfiguration, apiKey: String?) async throws -> [ProviderModel] {
+        if let kind = provider.kind.localTool {
+            return try await localTools.models(for: kind).map { ProviderModel(id: $0.id.isEmpty ? LocalToolKind.defaultModelID : $0.id, name: $0.name) }
+        }
         let key = (apiKey?.isEmpty == false) ? apiKey : try keychain.read(providerID: provider.id)
         return try await LLMClient().localModels(provider: provider, apiKey: key)
     }
 
     func savePreferences(_ preferences: Preferences) throws {
+        guard preferences.featureEnabled(.stayAwake) || (!power.ownsSession && !power.isBusy) else {
+            throw FrogError.message("Restore sleep before disabling Stay awake.")
+        }
         let previousWorkflow = configuration.preferences.workflowSettings
         let workflow = preferences.workflowSettings
-        let shortcutChanged = workflow.shortcutPanelHotkey != previousWorkflow.shortcutPanelHotkey || workflow.cancelRecordingHotkey != previousWorkflow.cancelRecordingHotkey || workflow.clipboardHistoryHotkey != previousWorkflow.clipboardHistoryHotkey || workflow.clipboardHistoryEnabled != previousWorkflow.clipboardHistoryEnabled
+        let shortcutChanged = workflow.shortcutPanelHotkey != previousWorkflow.shortcutPanelHotkey || workflow.cancelRecordingHotkey != previousWorkflow.cancelRecordingHotkey || workflow.clipboardHistoryHotkey != previousWorkflow.clipboardHistoryHotkey || workflow.clipboardHistoryEnabled != previousWorkflow.clipboardHistoryEnabled || preferences.toolkit != configuration.preferences.toolkit
+        if let issue = HotkeyManager.validationError(preferences.toolkitSettings.effectiveCommandBarHotkey) { throw FrogError.message(issue) }
+        if let key = preferences.toolkitSettings.menuBar?.hotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
         if let key = preferences.workflowSettings.shortcutPanelHotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
         if let key = preferences.workflowSettings.cancelRecordingHotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
         if let issue = HotkeyManager.validationError(workflow.effectiveClipboardHistoryHotkey, purpose: .clipboardHistory) { throw FrogError.message(issue) }
@@ -556,6 +757,10 @@ final class AppModel: ObservableObject {
             if let hotkey = rule.hotkey, let issue = HotkeyManager.validationError(hotkey) { throw FrogError.message(issue) }
         }
         if let issue = HotkeyManager.validationError(imported.preferences.workflowSettings.effectiveClipboardHistoryHotkey, purpose: .clipboardHistory) { throw FrogError.message(issue) }
+        if let issue = HotkeyManager.validationError(imported.preferences.toolkitSettings.effectiveCommandBarHotkey) { throw FrogError.message(issue) }
+        guard imported.preferences.featureEnabled(.stayAwake) || (!power.ownsSession && !power.isBusy) else {
+            throw FrogError.message("Turn off the active Stay awake session before importing a configuration that disables it.")
+        }
         var candidate = imported
         var remapped: [UUID: UUID] = [:]
         for index in candidate.providers.indices {
@@ -567,23 +772,12 @@ final class AppModel: ObservableObject {
             if !matchesExisting {
                 let newID = UUID()
                 remapped[incoming.id] = newID
-                candidate.providers[index].id = newID
             }
         }
-        if let id = candidate.defaultProviderID { candidate.defaultProviderID = remapped[id] ?? id }
-        for index in candidate.rules.indices {
-            if let id = candidate.rules[index].providerID { candidate.rules[index].providerID = remapped[id] ?? id }
-            if let id = candidate.rules[index].action?.audioProviderID { candidate.rules[index].action?.audioProviderID = remapped[id] ?? id }
-        }
-        if let recent = candidate.recentModels {
-            candidate.recentModels = recent.map { var item = $0; if let id = item.providerID { item.providerID = remapped[id] ?? id }; return item }
-        }
+        candidate.remapProviderIDs(remapped)
         candidate.adoptExplicitRuleSettings(installed: localModels.installed)
         try configurationStore.replaceFromImport(candidate)
-        configuration = candidate
-        localModels.updateCatalog(candidate.modelCatalog)
-        if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
-        if registerShortcuts { AppLanguage.shared.selection = candidate.preferences.workflowSettings.applicationLanguage ?? "system" }
+        applyConfiguration(candidate)
         configurationLoadError = nil
         localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds
         errorMessage = nil
@@ -598,6 +792,8 @@ final class AppModel: ObservableObject {
     }
 
     func setShortcutRecording(_ recording: Bool) {
+        toolkit.menuBarOrganizer.setShortcutRecording(recording)
+        if recording { commandBar.hide() }
         if recording { dictation.cancel() }
         if recording, registerShortcuts { clipboardHistory.cancel() }
         isRecordingShortcut = recording
@@ -611,11 +807,11 @@ final class AppModel: ObservableObject {
         // Preserve any existing rule that owns Command–Tab instead of silently
         // intercepting it. The user can reassign that rule to enable switching.
         let conflict = configuration.rules.contains { rule in
-            guard rule.enabled, let hotkey = rule.hotkey else { return false }
+            guard rule.enabled, ruleFeatureEnabled(rule), let hotkey = rule.hotkey else { return false }
             return hotkey.keyCode == 48 && (hotkey.modifiers == 256 || hotkey.modifiers == 768)
         }
         let workflow = configuration.preferences.workflowSettings
-        let referenceConflict = [workflow.shortcutPanelHotkey, workflow.cancelRecordingHotkey, workflow.clipboardHistoryEnabled == true ? workflow.effectiveClipboardHistoryHotkey : nil].compactMap { $0 }.contains { $0.keyCode == 48 && [UInt32(256), 768].contains($0.modifiers) }
+        let referenceConflict = [workflow.shortcutPanelHotkey, configuration.preferences.featureEnabled(.dictation) ? workflow.cancelRecordingHotkey : nil, workflow.clipboardHistoryEnabled == true ? workflow.effectiveClipboardHistoryHotkey : nil, configuration.preferences.featureEnabled(.commandBar) ? configuration.preferences.toolkitSettings.effectiveCommandBarHotkey : nil, configuration.preferences.featureEnabled(.menuBar) ? configuration.preferences.toolkitSettings.menuBar?.hotkey : nil].compactMap { $0 }.contains { $0.keyCode == 48 && [UInt32(256), 768].contains($0.modifiers) }
         if configuration.preferences.windowSwitcherEnabled && (conflict || referenceConflict) {
             windowSwitcher.stop()
             let message = "A configured shortcut uses ⌘Tab — change it to enable window switching"
@@ -623,19 +819,22 @@ final class AppModel: ObservableObject {
             if windowSwitcherReady { windowSwitcherReady = false }
             return
         }
-        windowSwitcher.configure(enabled: configuration.preferences.shortcutsEnabled && configuration.preferences.windowSwitcherEnabled, suspended: isRecordingShortcut)
-        windowSwitcher.updateShortcuts(configuration.rules.filter { hotkeyErrors[$0.id] == nil })
+        windowSwitcher.configure(enabled: configuration.preferences.featureEnabled(.windowSwitcher), suspended: isRecordingShortcut)
+        windowSwitcher.updateShortcuts(configuration.rules.filter { ruleFeatureEnabled($0) && hotkeyErrors[$0.id] == nil })
     }
 
     private func registerHotkeys() {
         guard registerShortcuts, !isRecordingShortcut else { return }
-        var rules = configuration.rules.filter { configuration.preferences.shortcutsEnabled || !$0.category.isShortcut }
+        var rules = configuration.rules.filter { ruleFeatureEnabled($0) }
         if let key = configuration.preferences.workflowSettings.shortcutPanelHotkey {
             rules.append(Rule(id: Self.shortcutPanelID, name: "Show shortcuts", hotkey: key))
         }
-        if let key = configuration.preferences.workflowSettings.cancelRecordingHotkey { rules.append(Rule(id: Self.cancelRecordingID, name: "Cancel recording", hotkey: key)) }
+        if configuration.preferences.featureEnabled(.dictation), let key = configuration.preferences.workflowSettings.cancelRecordingHotkey { rules.append(Rule(id: Self.cancelRecordingID, name: "Cancel recording", hotkey: key)) }
         if configuration.preferences.workflowSettings.clipboardHistoryEnabled == true {
             rules.append(Rule(id: Self.clipboardHistoryID, name: "Clipboard history", hotkey: configuration.preferences.workflowSettings.effectiveClipboardHistoryHotkey))
+        }
+        if configuration.preferences.featureEnabled(.commandBar) {
+            rules.append(Rule(id: Self.commandBarID, name: "Command bar", hotkey: configuration.preferences.toolkitSettings.effectiveCommandBarHotkey))
         }
         hotkeyErrors = hotkeys.register(rules: rules, purposes: [Self.clipboardHistoryID: .clipboardHistory], onPress: { [weak self] id in self?.handleShortcut(id, pressed: true) }) { [weak self] id in self?.handleShortcut(id, pressed: false) }
     }
@@ -657,19 +856,27 @@ final class AppModel: ObservableObject {
     }
 
     func processSelection(ruleID: UUID) {
+        guard configuration.preferences.featureEnabled(.writing) else { return }
         begin(ruleID: ruleID, manualText: nil)
     }
 
     func processManual(text: String, ruleID: UUID, providerID: UUID? = nil, modelID: String? = nil) {
+        guard configuration.preferences.featureEnabled(.writing) else { return }
         begin(ruleID: ruleID, manualText: text, providerID: providerID, modelID: modelID)
     }
     func cancelProcessing() { dictation.interrupt(); processingTask?.cancel(); status = "Cancelling…" }
 
     func showShortcuts() {
-        var rules = configuration.rules.filter { configuration.preferences.shortcutsEnabled || !$0.category.isShortcut }
+        var rules = configuration.rules.filter { ruleFeatureEnabled($0) }
+        if configuration.preferences.featureEnabled(.menuBar), let key = configuration.preferences.toolkitSettings.menuBar?.hotkey {
+            rules.append(Rule(id: Self.menuBarID, name: "Show or hide menu bar items", hotkey: key))
+        }
         let workflow = configuration.preferences.workflowSettings
         if workflow.clipboardHistoryEnabled == true {
             rules.append(Rule(id: Self.clipboardHistoryID, name: "Clipboard history", hotkey: workflow.effectiveClipboardHistoryHotkey))
+        }
+        if configuration.preferences.featureEnabled(.commandBar) {
+            rules.append(Rule(id: Self.commandBarID, name: "Command bar", hotkey: configuration.preferences.toolkitSettings.effectiveCommandBarHotkey))
         }
         shortcutPanel.show(rules: rules)
     }
@@ -682,7 +889,7 @@ final class AppModel: ObservableObject {
     }
 
     func showClipboardHistory() {
-        guard registerShortcuts, !isRecordingShortcut else { return }
+        guard !isRecordingShortcut else { return }
         clipboardHistory.show()
     }
 
@@ -692,6 +899,7 @@ final class AppModel: ObservableObject {
     }
 
     func startDictation(_ rule: Rule) {
+        guard configuration.preferences.featureEnabled(.dictation) else { return }
         guard !isProcessing else { report(FrogError.message("Wait for the current request to finish.")); return }
         guard !dictation.active else { return }
         dictationHistoryEpoch = configuration.preferences.historyEnabled ? historyEpoch : nil
@@ -703,19 +911,20 @@ final class AppModel: ObservableObject {
     }
 
     private func handleShortcut(_ id: UUID, pressed: Bool) {
+        if id == Self.commandBarID { if !pressed { showCommandBar() }; return }
         if id == Self.clipboardHistoryID { if !pressed { showClipboardHistory() }; return }
         if id == Self.cancelRecordingID {
             if pressed { dictation.interrupt(reason: configuration.preferences.workflowSettings.cancelRecordingHotkey?.keyCode == 53 ? .escape : .cancelled) }
             return
         }
         if id == Self.shortcutPanelID { if pressed { showShortcuts() } else { shortcutPanel.hide() }; return }
-        guard let rule = configuration.rules.first(where: { $0.id == id && $0.enabled }) else { return }
+        guard let rule = configuration.rules.first(where: { $0.id == id && $0.enabled }), ruleFeatureEnabled(rule) else { return }
         switch rule.category {
         case .text: if !pressed { processSelection(ruleID: id) }
         case .application:
             if pressed && configuration.preferences.shortcutsEnabled { launchApplication(rule) }
         case .window:
-            if pressed && configuration.preferences.shortcutsEnabled { manageWindow(rule) }
+            if pressed { manageWindow(rule) }
         case .system:
             if pressed && configuration.preferences.shortcutsEnabled { performSystemAction(rule) }
         case .audio:
@@ -731,7 +940,11 @@ final class AppModel: ObservableObject {
     private func launchApplication(_ rule: Rule) {
         applicationTask?.cancel()
         applicationTask = Task {
-            do { try await ApplicationLauncher().launch(rule) }
+            do {
+                try await ApplicationLauncher().launch(rule)
+                try Task.checkCancellation()
+                statistics.recordRuleExecution(kind: .application)
+            }
             catch is CancellationError { }
             catch { report(error) }
         }
@@ -745,6 +958,9 @@ final class AppModel: ObservableObject {
                 try await ClipboardSelection.waitForShortcutRelease()
                 try Task.checkCancellation()
                 try await SystemActionController.shared.perform(action, pid: pid)
+                try Task.checkCancellation()
+                if configuration.rules.contains(where: { $0.id == rule.id }) { statistics.recordRuleExecution(kind: .system) }
+                else { statistics.recordToolUse(.systemCommand) }
             } catch is CancellationError { }
             catch { report(error) }
         }
@@ -764,7 +980,12 @@ final class AppModel: ObservableObject {
         let pid = app.processIdentifier
         windowActionTask?.cancel()
         windowActionTask = Task {
-            do { try await windowManager.perform(action, pid: pid, displays: displays) }
+            do {
+                try await windowManager.perform(action, pid: pid, displays: displays)
+                try Task.checkCancellation()
+                if configuration.rules.contains(where: { $0.id == rule.id }) { statistics.recordRuleExecution(kind: .window) }
+                else { statistics.recordToolUse(.windowCommand) }
+            }
             catch is CancellationError { }
             catch { report(error) }
         }
@@ -773,6 +994,7 @@ final class AppModel: ObservableObject {
     private func begin(ruleID: UUID, manualText: String?, providerID: UUID? = nil, modelID: String? = nil) {
         guard !isProcessing, !dictation.active else { status = "A rule is already running. Wait or cancel it from the menu."; return }
         guard var rule = configuration.rules.first(where: { $0.id == ruleID }), rule.enabled else { report(FrogError.message("Select an enabled rule.")); return }
+        if manualText != nil { manualResult = "" }
         if let providerID { rule.providerID = providerID; rule.model = modelID ?? "" }
         else if let modelID { rule.model = modelID }
         let provider: ProviderConfiguration
@@ -796,17 +1018,31 @@ final class AppModel: ObservableObject {
                 if let manualText { selection = nil; text = manualText }
                 else { let captured = try await self.captureSelection(); selection = captured; text = captured.text }
                 guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("Select or enter some text first.") }
-                let key = provider.id == Self.localProviderID ? nil : try self.readKey(provider.id)
+                let key = provider.id == Self.localProviderID || provider.kind.localTool != nil ? nil : try self.readKey(provider.id)
                 try Task.checkCancellation()
                 if manualText == nil { self.showIndicator("\(rule.name)…", working: true) }
                 let result: String
-                if provider.id == Self.localProviderID { result = try await self.localModels.complete(text, instructions: rule.instructions.replacingOccurrences(of: "{{language}}", with: rule.targetLanguage), modelID: provider.model) }
+                if provider.id == Self.localProviderID {
+                    if !self.localModels.loaded.contains(provider.model) {
+                        self.status = "Loading \(self.configuration.localModel(provider.model)?.name ?? provider.model)…"
+                        if manualText == nil { self.showIndicator(self.status, working: true) }
+                        try await self.localModels.prepare(provider.model)
+                        try Task.checkCancellation()
+                    }
+                    self.status = "\(rule.name)…"
+                    if manualText == nil { self.showIndicator(self.status, working: true) }
+                    result = try await self.localModels.complete(text, instructions: rule.instructions.replacingOccurrences(of: "{{language}}", with: rule.targetLanguage), modelID: provider.model)
+                }
                 else { result = try await self.complete(text, rule, provider, key) }
                 try Task.checkCancellation()
                 guard !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("The model returned no text. Nothing was replaced.") }
+                var delivered = true
                 if let selection {
                     do { try await selection.replace(with: result); self.status = "\(rule.name) complete — result pasted and copied." }
+                    catch is CancellationError { throw CancellationError() }
                     catch {
+                        try Task.checkCancellation()
+                        delivered = false
                         self.status = "Result ready on clipboard; replacement skipped."
                         self.report(error)
                     }
@@ -817,6 +1053,8 @@ final class AppModel: ObservableObject {
                     self.clipboardHistoryStore.recordCopiedText(result)
                     self.status = "\(rule.name) complete — result copied."
                 }
+                try Task.checkCancellation()
+                if delivered { self.statistics.recordRuleExecution(kind: provider.id == Self.localProviderID || provider.kind.isLocal ? .local : provider.kind.localTool != nil ? .cli : .remote) }
                 if recordingWasEnabled && self.configuration.preferences.historyEnabled && self.historyEpoch == recordingEpoch {
                     do {
                         try self.historyStore.append(HistoryEntry(originalText: text, processedText: result, ruleName: rule.name, providerName: provider.name, model: provider.model, targetLanguage: rule.targetLanguage), preferences: self.configuration.preferences)
@@ -840,7 +1078,7 @@ final class AppModel: ObservableObject {
     }
 
     private func showIndicator(_ message: String, working: Bool) {
-        guard registerShortcuts, configuration.preferences.showProcessingIndicator else { return }
+        guard registerShortcuts, configuration.preferences.featureEnabled(.writing), configuration.preferences.showProcessingIndicator else { return }
         processingIndicator.show(message, working: working, failed: errorMessage != nil)
     }
 }

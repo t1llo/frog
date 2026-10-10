@@ -43,14 +43,14 @@
             dependencies = ();
             fileSystemSynchronizedGroups = (A00000000000000000000004);
             name = Frog;
-            packageProductDependencies = (A00000000000000000000021, B00000000000000000000011, B00000000000000000000012, B00000000000000000000013, B00000000000000000000014, B00000000000000000000015, B00000000000000000000016);
+            packageProductDependencies = (A00000000000000000000021, C00000000000000000000001, B00000000000000000000011, B00000000000000000000012, B00000000000000000000013, B00000000000000000000014, B00000000000000000000015, B00000000000000000000016);
             productName = Frog;
             productReference = A00000000000000000000006;
             productType = "com.apple.product-type.application";
         };
         A00000000000000000000006 = { isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Frog.app; sourceTree = BUILT_PRODUCTS_DIR; };
         A00000000000000000000007 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-        A00000000000000000000008 = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000022, B00000000000000000000021, B00000000000000000000022, B00000000000000000000023, B00000000000000000000024, B00000000000000000000025, B00000000000000000000026); runOnlyForDeploymentPostprocessing = 0; };
+        A00000000000000000000008 = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000022, C00000000000000000000002, B00000000000000000000021, B00000000000000000000022, B00000000000000000000023, B00000000000000000000024, B00000000000000000000025, B00000000000000000000026); runOnlyForDeploymentPostprocessing = 0; };
         A00000000000000000000009 = { isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
         A00000000000000000000010 = { isa = XCConfigurationList; buildConfigurations = (A00000000000000000000012, A00000000000000000000013); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
         A00000000000000000000011 = { isa = XCConfigurationList; buildConfigurations = (A00000000000000000000014, A00000000000000000000015); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
@@ -61,6 +61,8 @@
         A00000000000000000000020 = { isa = XCLocalSwiftPackageReference; relativePath = ..; };
         A00000000000000000000021 = { isa = XCSwiftPackageProductDependency; package = A00000000000000000000020; productName = FrogCore; };
         A00000000000000000000022 = { isa = PBXBuildFile; productRef = A00000000000000000000021; };
+        C00000000000000000000001 = { isa = XCSwiftPackageProductDependency; package = A00000000000000000000020; productName = FrogUsage; };
+        C00000000000000000000002 = { isa = PBXBuildFile; productRef = C00000000000000000000001; };
         A00000000000000000000023 = { isa = PBXFileReference; lastKnownFileType = image.icns; path = Resources/Frog.icns; sourceTree = "<group>"; };
         A00000000000000000000024 = { isa = PBXBuildFile; fileRef = A00000000000000000000023; };
         A00000000000000000000025 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000024); runOnlyForDeploymentPostprocessing = 0; };

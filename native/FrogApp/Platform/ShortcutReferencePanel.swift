@@ -34,8 +34,7 @@ private struct ShortcutReferenceView: View {
                 if !rules.contains(where: { $0.enabled && $0.hotkey != nil }) { Text("Add shortcuts in Rules.").foregroundStyle(.secondary) }
             }.padding(20)
         }.frame(width: 380, height: 360).foregroundStyle(FrogStyle.ink)
-            .background(FrogStyle.panelSurface, in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(FrogStyle.border.opacity(0.6)))
+            .frogPanel()
             .environment(\.locale, L10n.locale)
     }
 }

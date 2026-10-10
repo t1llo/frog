@@ -7,43 +7,50 @@ struct ProvidersView: View {
     @State private var addingLocal = false
     @State private var revealedModelID: String?
     @State private var deleting: ProviderConfiguration?
-    @State private var filter = "External providers"
+    @State private var filter: String?
     @State private var kind: LocalModelDescriptor.Kind = .audio
     @State private var search = ""
+    private var selectedFilter: String { filter ?? (model.localModels.installed.isEmpty ? "Providers" : "Local models") }
     private var providers: [ProviderConfiguration] {
         model.configuration.providers.filter { search.isEmpty || ($0.name + " " + $0.models.map(\.name).joined(separator: " ")).localizedStandardContains(search) }
+    }
+    private var sourcePicker: some View {
+        CompactSegments(values: ["Local models", "Providers", "Installed tools"], selected: selectedFilter, width: 290, title: { $0 }) { filter = $0; search = "" }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            PageHeader(title: "Models", subtitle: "") {
-                if filter == "Internal models" {
+            PageHeader(title: "Models", subtitle: selectedFilter == "Local models" ? "Download and run models on this Mac." : selectedFilter == "Installed tools" ? "Use the coding tools you already signed in to." : "Connect cloud APIs, Ollama or LM Studio.") {
+                if selectedFilter == "Local models" {
                     Button("Add model…", systemImage: "plus") { addingLocal = true }
-                } else {
-                Button { editing = ProviderConfiguration() } label: { Label("Connect provider", systemImage: "plus") }
-                    .keyboardShortcut("n", modifiers: .command)
+                } else if selectedFilter == "Providers" {
+                    Button { editing = ProviderConfiguration() } label: { Label("Connect provider", systemImage: "plus") }
+                        .keyboardShortcut("n", modifiers: .command)
                 }
             }
-            ListToolbar(placeholder: "Search models", search: $search) {
-                ForEach(["External providers", "Internal models"], id: \.self) { name in FilterTag(title: name, selected: filter == name) { filter = name } }
+            if selectedFilter == "Installed tools" { HStack { sourcePicker; Spacer() }.frame(height: 32) }
+            else {
+                ListToolbar(placeholder: selectedFilter == "Local models" ? "Search models" : "Search providers", search: $search) { sourcePicker }
             }
             ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-            if filter == "Internal models" {
-                Text("Downloaded and run by Frog on this Mac.").font(.caption).foregroundStyle(.secondary)
-                HStack(spacing: 4) {
-                    FilterTag(title: "Audio", selected: kind == .audio) { kind = .audio }
-                    FilterTag(title: "Text", selected: kind == .text) { kind = .text }
+            if selectedFilter == "Installed tools" {
+                LocalToolProvidersView(client: model.localTools) { kind, selectedModel in
+                    do { try model.useLocalTool(kind, model: selectedModel); filter = "Providers"; search = "" }
+                    catch { model.report(error) }
+                }
+            } else if selectedFilter == "Local models" {
+                HStack(spacing: 12) {
+                    CompactSegments(values: [LocalModelDescriptor.Kind.audio, .text], selected: kind, title: { $0 == .audio ? "Speech" : "Text" }) { kind = $0 }
                     Spacer()
                     if !LocalModels.supported { Text("Requires Apple silicon").font(.caption).foregroundStyle(.secondary) }
                 }
                 ModelInventory(kind: kind, search: search, revealedModelID: revealedModelID)
             } else {
-                Text("Cloud APIs, Ollama and LM Studio run outside Frog.").font(.caption).foregroundStyle(.secondary)
                 VStack(spacing: 0) {
                     ForEach(providers) { provider in
                         HStack(spacing: 10) {
-                            Image(systemName: provider.kind.isLocal ? "desktopcomputer" : "cloud").foregroundStyle(.secondary)
+                            Image(systemName: provider.kind.localTool != nil ? "terminal" : provider.kind.isLocal ? "desktopcomputer" : "cloud").foregroundStyle(.secondary)
                             Button { editing = provider } label: {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(provider.name).font(.system(size: 12, weight: .medium))
@@ -54,16 +61,18 @@ struct ProvidersView: View {
                             Menu {
                                 Button("Duplicate") { var copy = provider; copy.id = UUID(); copy.name += " copy"; editing = copy }
                                 Button("Delete…", role: .destructive) { deleting = provider }
-                            } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                        }.padding(12)
+                            } label: { Image(systemName: "ellipsis").frame(width: 26).modifier(CompactActionSurface()) }
+                                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Provider actions")
+                        }.padding(.vertical, 10).padding(.horizontal, 8)
                         if provider.id != providers.last?.id { Divider().opacity(0.5) }
                     }
-                    if model.configuration.providers.isEmpty { Text("Connect a cloud provider, Ollama or LM Studio.").font(.caption).foregroundStyle(.secondary).padding(14) }
-                }.frogTableSurface()
+                    if providers.isEmpty { Text(search.isEmpty ? "Connect a cloud provider, Ollama or LM Studio." : "No providers match this search.").font(.caption).foregroundStyle(.secondary).padding(14) }
+                }
             }
             }.frame(maxWidth: .infinity, alignment: .leading)
             }
-        }.padding(20)
+        }.padding(20).frame(maxWidth: 1080).frame(maxWidth: .infinity, alignment: .top)
+        .buttonStyle(FrogButtonStyle())
         .sheet(item: $editing) { provider in ProviderEditor(provider: provider).environmentObject(model) }
         .sheet(isPresented: $addingLocal) {
             AddLocalModelView { item in kind = item.kind; revealedModelID = item.id; search = "" }.environmentObject(model)
@@ -100,6 +109,10 @@ struct ProviderEditor: View {
 
     private var validation: String? {
         if provider.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Enter a provider name." }
+        if provider.kind.localTool != nil {
+            do { try ConfigurationFile.validate(provider: normalized()); return nil }
+            catch { return error.localizedDescription }
+        }
         guard let url = URL(string: provider.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)),
               let scheme = url.scheme?.lowercased(), ["https", "http"].contains(scheme), let host = url.host, !host.isEmpty else {
             return "Enter a full HTTP or HTTPS endpoint, including its host."
@@ -128,7 +141,8 @@ struct ProviderEditor: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if step == 0 {
-                    SettingsSection(title: "Service") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        SectionCaption(text: "Service")
                         VStack(alignment: .leading, spacing: 16) {
                             FrogMenu(title: "Service", value: provider.kind.title) {
                                 ForEach(ProviderKind.allCases) { kind in
@@ -151,12 +165,24 @@ struct ProviderEditor: View {
                             }
                         }
                     }.disabled(testing || discovering)
-                    Text("Cloud APIs and services such as Ollama and LM Studio run outside Frog.").font(.caption).foregroundStyle(FrogStyle.muted)
+                    Text(provider.kind.localTool != nil ? "Requests run invisibly through your installed tool and its existing login." : "Cloud APIs and services such as Ollama and LM Studio run outside Frog.").font(.caption).foregroundStyle(FrogStyle.muted)
                     }
                     if step == 1 {
-                    SettingsSection(title: "Connection") {
+                    if let tool = provider.kind.localTool {
+                        SettingsSection(title: "Existing tool login") {
+                            Text("Frog uses \(tool.title)'s saved login. No endpoint or API key is needed here.")
+                                .font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
+                            Text(tool.loginInstructions).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                            if tool == .opencode {
+                                Text("OpenCode keeps its own CLI history, independently of Frog's history setting.")
+                                    .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                            }
+                        }
+                    } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        SectionCaption(text: "Connection")
                         VStack(alignment: .leading, spacing: 16) {
-                            CompactRow(title: "Base endpoint") { TextField("Base endpoint", text: $provider.endpoint).textFieldStyle(.roundedBorder).labelsHidden().font(.system(size: 12, design: .monospaced)) }
+                            LabeledField(title: "Base endpoint") { TextField("Base endpoint", text: $provider.endpoint).labelsHidden().font(.system(size: 12, design: .monospaced)) }
                             HStack(alignment: .top, spacing: 16) {
                                 Text(endpointHint)
                                     .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
@@ -167,7 +193,8 @@ struct ProviderEditor: View {
                             }
                         }
                     }.disabled(testing || discovering)
-                    SettingsSection(title: "Credentials") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        SectionCaption(text: "Credentials")
                         VStack(alignment: .leading, spacing: 14) {
                             LabeledField(title: model.hasAPIKey(provider.id) ? "Replacement API key" : "API key") {
                                 SecureField("API key", text: $apiKey).disabled(clearKey)
@@ -190,11 +217,12 @@ struct ProviderEditor: View {
                         }
                     }.disabled(testing || discovering)
                     }
+                    }
                     if step == 2 {
                     SectionCaption(text: "Your models")
                     modelSettings.disabled(testing)
                     SectionCaption(text: "Take it for a spin")
-                    FrogCard {
+                    VStack(alignment: .leading, spacing: 14) {
                         VStack(alignment: .leading, spacing: 14) {
                             SettingRow(title: "Connection test", description: "Send a short sample request using this draft configuration.") {
                                 HStack {
@@ -224,7 +252,7 @@ struct ProviderEditor: View {
             }.padding(20).background(FrogStyle.surface)
                 .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border).frame(height: 1) }
         }
-        .frame(width: 540, height: 560).background(FrogWindowMaterial()).background(FrogStyle.canvas)
+        .frame(width: 540, height: 560).background(FrogStyle.canvas).background(FrogWindowMaterial())
         .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
         .onDisappear { testTask?.cancel(); discoveryTask?.cancel(); apiKey = "" }
         .onChange(of: provider) { _, _ in testResult = nil }
@@ -248,10 +276,10 @@ struct ProviderEditor: View {
     }
 
     private var modelSettings: some View {
-        FrogCard {
+        VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Choose the models available to your rules.").font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
-                if provider.kind.isLocal {
+                if provider.kind.isLocal || provider.kind.localTool != nil {
                     HStack {
                         Button(discovering ? "Finding models…" : "Find installed models", systemImage: "arrow.clockwise") { discover() }.disabled(discovering)
                         if discovering { ProgressView().controlSize(.small) }

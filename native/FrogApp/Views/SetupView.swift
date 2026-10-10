@@ -54,7 +54,7 @@ struct SetupView: View {
                     if step == 3 { model.finishSetup() } else { step += 1; issue = nil }
                 }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.defaultAction)
             }.padding(20).overlay(alignment: .top) { Rectangle().fill(FrogStyle.border.opacity(0.5)).frame(height: 1) }
-        }.frame(width: 620, height: 610).foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas)
+        }.frame(width: 620, height: 610).foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).background(FrogWindowMaterial())
             .buttonStyle(FrogButtonStyle()).controlSize(.small).tint(FrogStyle.accent)
             .sheet(item: $provider) { ProviderEditor(provider: $0).environmentObject(model) }
             .confirmationDialog("Import settings and skip setup?", isPresented: Binding(get: { pendingImport != nil }, set: { if !$0 { pendingImport = nil } })) {
@@ -166,7 +166,7 @@ struct SetupView: View {
                 Spacer()
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(selected ? FrogStyle.accent : FrogStyle.muted)
             }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                .background(selected ? FrogStyle.accentSoft : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 9))
+                .background(selected ? AnyShapeStyle(FrogStyle.accentSoft) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 9))
                 .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(selected ? FrogStyle.accent.opacity(0.5) : FrogStyle.border))
         }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
     }

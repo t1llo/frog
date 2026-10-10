@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import SwiftUI
 import XCTest
+import FrogCore
 @testable import FrogApp
 
 @MainActor
@@ -236,6 +237,24 @@ final class StayAwakeTests: XCTestCase {
         }
         let writes = await system.writes
         XCTAssertEqual(writes, [true, false])
+    }
+
+    func testLongErrorKeepsMenuCompactAndRecoversAfterDismissal() async throws {
+        _ = NSApplication.shared
+        let model = AppModel(dataDirectory: directory(), registerShortcuts: false)
+        defer { model.shutdown() }
+        let power = StayAwakeController(system: PowerFixture(), directory: directory())
+        await power.refresh()
+        let initial = NSHostingView(rootView: FrogStatusMenu(model: model, power: power)).fittingSize
+        let error = Array(repeating: "Synthetic provider diagnostic with enough words to wrap on the menu.", count: 80).joined(separator: "\n")
+        model.report(FrogError.message(error))
+        let expanded = NSHostingView(rootView: FrogStatusMenu(model: model, power: power)).fittingSize
+        XCTAssertEqual(expanded.width, initial.width, accuracy: 1)
+        XCTAssertLessThan(expanded.height, initial.height + 90, "A long diagnostic must not push Open/Quit off the menu")
+        XCTAssertEqual(model.recentErrors.first?.message, error, "The full diagnostic must remain available in Logs")
+        model.dismissError()
+        let recovered = NSHostingView(rootView: FrogStatusMenu(model: model, power: power)).fittingSize
+        XCTAssertEqual(recovered.height, initial.height, accuracy: 1)
     }
 
     private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }

@@ -74,6 +74,7 @@ enum ClipboardHistoryDelivery {
 final class ClipboardHistoryController {
     let history: ClipboardHistoryStore
     var onError: ((Error) -> Void)?
+    var onSuccessfulPaste: (() -> Void)?
     private var panel: ClipboardPanel?
     let state = ClipboardHistoryPanelState()
     private var target: (any ClipboardHistoryPasteTarget)?
@@ -99,15 +100,20 @@ final class ClipboardHistoryController {
         self.activationNotifications = activationNotifications ?? NSWorkspace.shared.notificationCenter
         historyObservation = self.history.$entries.dropFirst().sink { [weak self] entries in
             guard let self else { return }
+            // @Published sends before mutation, so resolve the current selection
+            // against the old list before an insertion/deletion shifts its index.
+            let previous = self.state.visibleEntries(in: self.history.entries)
+            let selectedID = previous.indices.contains(self.state.selectedIndex) ? previous[self.state.selectedIndex].id : nil
             self.state.revealedIDs.formIntersection(entries.map(\.id))
             let visible = self.state.visibleEntries(in: entries)
-            self.state.selectedIndex = max(0, min(self.state.selectedIndex, visible.count - 1))
+            self.state.selectedIndex = selectedID.flatMap { id in visible.firstIndex { $0.id == id } }
+                ?? max(0, min(self.state.selectedIndex, visible.count - 1))
             self.resizePanel(entryCount: visible.count)
         }
     }
 
     func configure(enabled: Bool) {
-        if !enabled { hide(); delivery?.cancel(); delivery = nil; operation = UUID() }
+        if !enabled { hide(); panel?.contentView = nil; panel = nil; delivery?.cancel(); delivery = nil; operation = UUID() }
         history.configure(enabled: enabled)
     }
 
@@ -120,6 +126,7 @@ final class ClipboardHistoryController {
         state.revealedIDs = []
         state.query = ""
         let size = ClipboardHistoryLayout.size(entryCount: history.entries.count)
+        if panel == nil {
         let panel = ClipboardPanel(contentRect: NSRect(origin: .zero, size: size),
                                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false; panel.isOpaque = false; panel.backgroundColor = .clear
@@ -134,6 +141,9 @@ final class ClipboardHistoryController {
         hosting.sizingOptions = []
         panel.contentView = hosting
         self.panel = panel
+        }
+        guard let panel else { return }
+        resizePanel(entryCount: history.entries.count)
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { [weak self] event in
             MainActor.assumeIsolated {
                 guard let self else { return event }
@@ -206,6 +216,7 @@ final class ClipboardHistoryController {
                         self?.history.entries.contains(where: { $0.id == entry.id }) == true
                     },
                     waitForRelease: self.waitForRelease)
+                self.onSuccessfulPaste?()
             } catch is CancellationError { }
             catch { self?.onError?(error) }
             if self?.operation == token { self?.removeActivationObserver() }
@@ -213,7 +224,7 @@ final class ClipboardHistoryController {
     }
 
     func hide(keepingActivationObserver: Bool = false) {
-        panel?.orderOut(nil); panel?.contentView = nil; panel = nil; target = nil
+        panel?.orderOut(nil); target = nil
         state.revealedIDs = []
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }; localMonitor = nil
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }; globalMonitor = nil
@@ -228,6 +239,7 @@ final class ClipboardHistoryController {
     func stop() { configure(enabled: false) }
     func waitForDelivery() async { await delivery?.value }
     isolated deinit {
+        panel?.orderOut(nil); panel?.contentView = nil
         delivery?.cancel()
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }

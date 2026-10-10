@@ -34,7 +34,10 @@ final class RulesWorkflowTests: XCTestCase {
         defer { window.orderOut(nil); window.contentView = nil }
         host.layoutSubtreeIfNeeded()
         try await Task.sleep(for: .milliseconds(150))
-        if audio { try await click(host, x: 268, top: 114) }
+        if audio {
+            try await click(host, x: 80, top: 140)
+            XCTAssertEqual(model.toolkit.route, .feature(.dictation), "The Dictation sidebar item must open its rule editor page")
+        }
         try await click(host, x: host.bounds.maxX - 100, top: 80)
         let sheet = try XCTUnwrap(window.attachedSheet, "Clicking New rule must open the editor")
         let content = try XCTUnwrap(sheet.contentView)

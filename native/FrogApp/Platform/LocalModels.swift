@@ -131,10 +131,18 @@ final class LocalModels: ObservableObject {
     }
     func prepare(_ id: String) async throws {
         try Task.checkCancellation()
-        guard !loaded.contains(id) else { return }
+        // Readiness is use too: an already-loaded model should get the same idle
+        // interval as one that needed loading. Active work/holds own their timer.
+        if loaded.contains(id) {
+            if !busy { scheduleUnload() }
+            return
+        }
         try await waitUntilAvailable()
         try Task.checkCancellation()
-        guard !loaded.contains(id) else { return }
+        if loaded.contains(id) {
+            if !busy { scheduleUnload() }
+            return
+        }
         let url = try acquire(id); defer { release() }
         do {
             guard let model = descriptor(id) else { throw FrogError.message("The model is no longer configured.") }

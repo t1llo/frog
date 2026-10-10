@@ -39,13 +39,13 @@ private enum PrivateFile {
         return data
     }
 
-    static func write(_ data: Data, to url: URL) throws {
+    static func write(_ data: Data, to url: URL, secureDirectory: Bool = true) throws {
         let directory = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
         var info = stat()
         guard lstat(directory.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR,
-              chmod(directory.path, 0o700) == 0 else {
+              !secureDirectory || chmod(directory.path, 0o700) == 0 else {
             throw FrogError.message("Unable to secure the Frog data directory.")
         }
         let temporary = directory.appendingPathComponent(".\(UUID().uuidString).tmp")
@@ -89,10 +89,20 @@ public struct SetupStore {
 
 public final class ConfigurationStore: @unchecked Sendable {
     public let directory: URL
+    /// Complex rules, connections and custom model definitions.
     public var file: URL { directory.appendingPathComponent("config.json") }
+    public var textFile: URL { directory.appendingPathComponent("config") }
     private let legacyFile: URL?
+    private struct Snapshot: Equatable {
+        let textTarget: URL
+        let jsonTarget: URL
+        let text: Data?
+        let json: Data?
+    }
+    private var snapshot: Snapshot?
+    private var loaded: Configuration?
     public var hasExistingConfiguration: Bool {
-        FileManager.default.fileExists(atPath: file.path) || legacyFile.map { FileManager.default.fileExists(atPath: $0.path) } == true
+        FileManager.default.fileExists(atPath: textFile.path) || FileManager.default.fileExists(atPath: file.path) || legacyFile.map { FileManager.default.fileExists(atPath: $0.path) } == true
     }
     public init(directory: URL? = nil, legacyDirectory: URL? = nil) {
         self.directory = directory ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/frog", isDirectory: true)
@@ -100,25 +110,35 @@ public final class ConfigurationStore: @unchecked Sendable {
         legacyFile = legacy?.appendingPathComponent("configuration.json")
     }
 
-    public func load() throws -> Configuration {
+    public func load(validating validate: ((Configuration) throws -> Void)? = nil) throws -> Configuration {
         persistenceLock.lock(); defer { persistenceLock.unlock() }
-        let data = try PrivateFile.read(file, maximumBytes: ConfigurationFile.maximumBytes)
-        if data == nil || data.map(isPrototypeConfiguration) == true {
-            guard let legacyFile, let previous = try PrivateFile.read(legacyFile, maximumBytes: ConfigurationFile.maximumBytes) else {
-                if data != nil { throw FrogError.message("The file at \(file.path) belongs to an older Frog prototype. Import a native Frog configuration to replace it; the original file will be backed up.") }
-                return Configuration()
+        let current = try readSnapshot()
+        let configuration: Configuration
+        if let text = current.text {
+            if current.json == nil, snapshot?.json != nil {
+                throw FrogError.message("config.json is missing. Restore the companion file before reloading; the current rules and connections were kept.")
             }
-            let configuration = try PrivateFile.decode(Configuration.self, from: previous, name: "Previous configuration")
-            try validate(configuration)
-            if let data {
-                try PrivateFile.write(data, to: directory.appendingPathComponent("config-prototype-backup-\(UUID().uuidString).json"))
-            }
-            try PrivateFile.write(try ConfigurationFile.encode(configuration), to: file)
+            guard let string = String(data: text, encoding: .utf8) else { throw FrogError.message("config must be UTF-8 text. The original file was preserved.") }
+            configuration = try TextConfiguration.decode(string, companion: current.json ?? ConfigurationFile.encode(Configuration()))
+        } else if let json = current.json, !isPrototypeConfiguration(json) {
+            configuration = try ConfigurationFile.decode(json)
+            try validate?(configuration)
+            try backup(json, name: "config-legacy-backup", extension: "json")
+            try commit(configuration, preserving: nil, expected: current)
             return configuration
+        } else if let legacyFile, let previous = try readConfigurationFile(legacyFile) {
+            configuration = try ConfigurationFile.decode(previous)
+            try validate?(configuration)
+            if let json = current.json { try backup(json, name: "config-prototype-backup", extension: "json") }
+            try backup(previous, name: "config-legacy-backup", extension: "json")
+            try commit(configuration, preserving: nil, expected: current)
+            return configuration
+        } else {
+            if current.json != nil { throw FrogError.message("config.json belongs to an older Frog prototype. Import a native configuration in Settings; the original will be backed up.") }
+            configuration = Configuration()
         }
-        guard let data else { return Configuration() }
-        let configuration = try PrivateFile.decode(Configuration.self, from: data, name: "Configuration")
-        try validate(configuration)
+        try validate?(configuration)
+        snapshot = current; loaded = configuration
         return configuration
     }
 
@@ -129,37 +149,116 @@ public final class ConfigurationStore: @unchecked Sendable {
 
     public func save(_ configuration: Configuration) throws {
         persistenceLock.lock(); defer { persistenceLock.unlock() }
-        // Never silently replace corrupt data or data from a newer application version.
-        _ = try load()
-        try validate(configuration)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(configuration)
-        guard data.count <= 4 * 1_024 * 1_024 else { throw FrogError.message("Configuration is too large to save.") }
-        try PrivateFile.write(data, to: file)
+        if snapshot == nil { _ = try load() }
+        guard let snapshot else { return }
+        try ensureUnchanged(snapshot)
+        var candidate = configuration
+        // UI candidates retain extension fields from the last successfully loaded document.
+        candidate.originalJSON = loaded?.originalJSON ?? candidate.originalJSON
+        candidate.knownJSON = loaded?.knownJSON ?? candidate.knownJSON
+        try commit(candidate, preserving: snapshot.text.flatMap { String(data: $0, encoding: .utf8) }, expected: snapshot)
     }
 
     /// Explicit import can recover unreadable settings without discarding the previous file.
     @discardableResult
     public func replaceFromImport(_ configuration: Configuration) throws -> URL? {
         persistenceLock.lock(); defer { persistenceLock.unlock() }
-        let data = try ConfigurationFile.encode(configuration)
+        try ConfigurationFile.validate(configuration)
+        let current = try readSnapshot()
         var backup: URL?
-        if let previous = try PrivateFile.read(file, maximumBytes: ConfigurationFile.maximumBytes) {
-            let url = directory.appendingPathComponent("configuration-backup-\(UUID().uuidString).json")
-            try PrivateFile.write(previous, to: url)
-            backup = url
+        if let previous = current.json { backup = try self.backup(previous, name: "configuration-backup", extension: "json") }
+        if let previous = current.text {
+            let url = try self.backup(previous, name: "configuration-backup", extension: "conf")
+            if backup == nil { backup = url }
         }
-        try PrivateFile.write(data, to: file)
+        // Preserve comments on a valid text document; corrupt text is preserved in the backup.
+        let text = current.text.flatMap { String(data: $0, encoding: .utf8) }
+        let rendered = text.flatMap { try? TextConfiguration.render(configuration, preserving: $0) }
+        try commit(configuration, preserving: rendered, expected: current)
         return backup
     }
 
-    private func validate(_ configuration: Configuration) throws {
-        guard configuration.version == 1 else { throw FrogError.message("Unsupported configuration version. The original file was preserved.") }
-        guard Set(configuration.providers.map(\.id)).count == configuration.providers.count,
-              Set(configuration.rules.map(\.id)).count == configuration.rules.count else {
-            throw FrogError.message("Configuration contains duplicate identifiers. The original file was preserved.")
+    private func readConfigurationFile(_ url: URL) throws -> Data? {
+        try PrivateFile.read(url.resolvingSymlinksInPath(), maximumBytes: ConfigurationFile.maximumBytes)
+    }
+    /// Foundation may retain /private/var for a missing leaf but shorten it to /var
+    /// once that file exists. Resolve ancestors as well so our own first write does
+    /// not look like a symlink retarget. Real symlink destination changes still differ.
+    private func resolvedTarget(_ url: URL) -> URL {
+        var path = url.resolvingSymlinksInPath().path
+        var missing: [String] = []
+        while true {
+            if let resolved = realpath(path, nil) {
+                defer { free(resolved) }
+                var target = URL(fileURLWithPath: String(cString: resolved))
+                for component in missing.reversed() { target.appendPathComponent(component) }
+                return target
+            }
+            let parent = (path as NSString).deletingLastPathComponent
+            guard !parent.isEmpty, parent != path else { return url.standardizedFileURL }
+            missing.append((path as NSString).lastPathComponent)
+            path = parent
         }
+    }
+    private func readSnapshot() throws -> Snapshot {
+        let textTarget = resolvedTarget(textFile), jsonTarget = resolvedTarget(file)
+        guard textTarget != jsonTarget else { throw FrogError.message("config and config.json must point to different files.") }
+        return try Snapshot(textTarget: textTarget, jsonTarget: jsonTarget,
+                            text: PrivateFile.read(textTarget, maximumBytes: ConfigurationFile.maximumBytes),
+                            json: PrivateFile.read(jsonTarget, maximumBytes: ConfigurationFile.maximumBytes))
+    }
+    private func ensureUnchanged(_ expected: Snapshot) throws {
+        guard try readSnapshot() == expected else {
+            throw FrogError.message("Configuration changed outside Frog. Use Settings → Configuration → Reload before editing in the app. Your files and working settings were preserved.")
+        }
+    }
+    @discardableResult
+    private func backup(_ bytes: Data, name: String, extension ext: String) throws -> URL {
+        let url = directory.appendingPathComponent("\(name)-\(UUID().uuidString).\(ext)").resolvingSymlinksInPath()
+        try PrivateFile.write(bytes, to: url, secureDirectory: false)
+        return url
+    }
+    private func commit(_ configuration: Configuration, preserving text: String?, expected: Snapshot) throws {
+        let json = try TextConfiguration.companion(configuration)
+        let rendered = try TextConfiguration.render(configuration, preserving: text)
+        let bytes = Data(rendered.utf8)
+        let committed = Snapshot(textTarget: expected.textTarget, jsonTarget: expected.jsonTarget, text: bytes, json: json)
+        guard bytes.count <= ConfigurationFile.maximumBytes, json.count <= ConfigurationFile.maximumBytes else { throw FrogError.message("Configuration is too large (maximum 4 MB per file).") }
+        // Validate the actual representation before changing either file.
+        _ = try TextConfiguration.decode(rendered, companion: json)
+        try ensureUnchanged(expected)
+        // Atomic replacement follows the resolved destination, preserving chezmoi symlinks.
+        // Never chmod an existing dotfiles directory: it may be shared with other applications.
+        if expected.text == nil {
+            // During migration, text + old full JSON is readable even if the process stops
+            // before splitting JSON. Writing the stripped JSON first would lose that property.
+            try PrivateFile.write(bytes, to: expected.textTarget, secureDirectory: false)
+            do {
+                try ensureUnchanged(Snapshot(textTarget: expected.textTarget, jsonTarget: expected.jsonTarget, text: bytes, json: expected.json))
+                if json != expected.json { try PrivateFile.write(json, to: expected.jsonTarget, secureDirectory: false) }
+            } catch {
+                if resolvedTarget(textFile) == expected.textTarget,
+                   (try? readConfigurationFile(expected.textTarget)) == bytes {
+                    try? FileManager.default.removeItem(at: expected.textTarget)
+                }
+                throw error
+            }
+            snapshot = committed; loaded = configuration
+            return
+        }
+        if json != expected.json { try PrivateFile.write(json, to: expected.jsonTarget, secureDirectory: false) }
+        do {
+            try ensureUnchanged(Snapshot(textTarget: expected.textTarget, jsonTarget: expected.jsonTarget, text: expected.text, json: json))
+            if bytes != expected.text { try PrivateFile.write(bytes, to: expected.textTarget, secureDirectory: false) }
+        } catch {
+            if json != expected.json, resolvedTarget(file) == expected.jsonTarget,
+               (try? readConfigurationFile(expected.jsonTarget)) == json {
+                if let prior = expected.json { try? PrivateFile.write(prior, to: expected.jsonTarget, secureDirectory: false) }
+                else { try? FileManager.default.removeItem(at: expected.jsonTarget) }
+            }
+            throw error
+        }
+        snapshot = committed; loaded = configuration
     }
 }
 

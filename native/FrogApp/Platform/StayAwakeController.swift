@@ -41,6 +41,7 @@ final class StayAwakeController: ObservableObject {
     private var revision = 0
     private var started = false
     private var quitting = false
+    private var featureEnabled = true
     private var accessCheck: Task<Void, Never>?
     private var accessRevision = 0
     private var permissionError = false
@@ -59,7 +60,15 @@ final class StayAwakeController: ObservableObject {
     var needsQuitCleanup: Bool { ownsSession || isBusy }
     var needsSetup: Bool { accessState == .needsSetup }
 
+    func configureFeature(enabled: Bool) {
+        featureEnabled = enabled
+        if !enabled, !ownsSession, !isBusy { monitor?.cancel(); monitor = nil }
+        else if enabled, started { beginMonitoring() }
+        if enabled, started, !hasReadState { operation = Task { await refresh(); await refreshAccess() } }
+    }
+
     func refreshAccess(force: Bool = false) async {
+        guard featureEnabled || ownsSession else { return }
         if force { accessRevision += 1; accessCheck?.cancel(); accessCheck = nil }
         if let accessCheck { await accessCheck.value; return }
         let token = accessRevision
@@ -131,7 +140,7 @@ final class StayAwakeController: ObservableObject {
     }
 
     func setEnabled(_ enabled: Bool) {
-        guard !isBusy, !quitting, hasReadState, !enabled || !isConfiguringAccess else { return }
+        guard !isBusy, !quitting, hasReadState, !enabled || (featureEnabled && !isConfiguringAccess) else { return }
         isBusy = true; revision += 1
         operation = Task { _ = await change(enabled) }
     }
@@ -139,7 +148,7 @@ final class StayAwakeController: ObservableObject {
     func waitForOperation() async { await operation?.value }
 
     func refresh() async {
-        guard !isBusy, !quitting else { return }
+        guard !isBusy, !quitting, featureEnabled || ownsSession else { return }
         let token = revision
         do {
             let enabled: Bool
@@ -224,7 +233,7 @@ final class StayAwakeController: ObservableObject {
     }
 
     private func beginMonitoring() {
-        guard !quitting, monitor == nil else { return }
+        guard !quitting, monitor == nil, featureEnabled || ownsSession else { return }
         monitor = Task { [weak self] in
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(60)) } catch { return }

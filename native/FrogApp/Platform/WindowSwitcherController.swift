@@ -3,6 +3,55 @@ import ApplicationServices
 import SwiftUI
 import FrogCore
 
+/// Owns only GUI input eligibility; background jobs and wake-prevention are unrelated.
+@MainActor
+final class WindowSwitcherInputLifecycle {
+    private var enabled = false
+    private var suspended = false
+    private var active: Bool
+    private var running = false
+    private let trusted: () -> Bool
+    private let healthy: () -> Bool
+    private let startInput: () -> Bool
+    private let stopInput: () -> Void
+    private let statusChanged: (String, Bool) -> Void
+
+    init(active: Bool, trusted: @escaping () -> Bool, healthy: @escaping () -> Bool,
+         start: @escaping () -> Bool, stop: @escaping () -> Void, statusChanged: @escaping (String, Bool) -> Void) {
+        self.active = active; self.trusted = trusted; self.healthy = healthy
+        startInput = start; stopInput = stop; self.statusChanged = statusChanged
+    }
+
+    func configure(enabled: Bool, suspended: Bool) {
+        self.enabled = enabled; self.suspended = suspended
+        reconcile()
+    }
+
+    func sessionChanged(active: Bool) { self.active = active; reconcile() }
+    func wake() { reconcile() }
+    func stop() { enabled = false; reconcile() }
+
+    private func reconcile() {
+        let reason: String?
+        if !enabled { reason = "Off — macOS app switcher" }
+        else if suspended { reason = "Paused while recording a shortcut" }
+        else if !active { reason = "Paused while this session is inactive or locked" }
+        else if !trusted() { reason = "Allow Accessibility to switch windows" }
+        else { reason = nil }
+        if let reason {
+            if running { stopInput(); running = false }
+            statusChanged(reason, false)
+            return
+        }
+        if running {
+            guard !healthy() else { return }
+            stopInput(); running = false
+        }
+        running = startInput()
+        statusChanged(running ? "Ready · ⌘Tab switches windows" : "Keyboard access unavailable — check Accessibility and reopen Frog", running)
+    }
+}
+
 @MainActor
 final class WindowSwitcherController {
     private let catalog = WindowCatalog()
@@ -49,14 +98,72 @@ final class WindowSwitcherController {
     private var commitOnLoad = false
     private var unfilteredWindows: [SwitcherWindow] = []
     private var pointerPosition = NSPoint.zero
+    private var sessionOnConsole = false
+    private var screenLocked = false
+    private var sessionObservers: [(NotificationCenter, NSObjectProtocol)] = []
+    private lazy var inputLifecycle = WindowSwitcherInputLifecycle(
+        active: sessionOnConsole && !screenLocked,
+        trusted: { SelectionService.isTrusted },
+        healthy: { [weak self] in
+            guard let tap = self?.tap else { return false }
+            return CFMachPortIsValid(tap) && CGEvent.tapIsEnabled(tap: tap)
+        }, start: { [weak self] in self?.startInput() ?? false },
+        stop: { [weak self] in self?.stopInput() }, statusChanged: statusChanged)
 
-    init(statusChanged: @escaping (String, Bool) -> Void) { self.statusChanged = statusChanged }
+    init(statusChanged: @escaping (String, Bool) -> Void) {
+        self.statusChanged = statusChanged
+        let workspace = NSWorkspace.shared.notificationCenter
+        observe(workspace, NSWorkspace.sessionDidResignActiveNotification) { controller in
+            controller.sessionOnConsole = false
+            controller.updateSessionEligibility()
+        }
+        observe(workspace, NSWorkspace.sessionDidBecomeActiveNotification) { controller in
+            controller.readSessionState()
+            controller.updateSessionEligibility()
+        }
+        observe(workspace, NSWorkspace.didWakeNotification) { controller in
+            controller.readSessionState()
+            controller.updateSessionEligibility()
+            controller.inputLifecycle.wake()
+        }
+        // Session switching and screen locking are distinct on macOS. These
+        // notifications gate this GUI input service, never the process's jobs.
+        let distributed = DistributedNotificationCenter.default()
+        observe(distributed, Notification.Name("com.apple.screenIsLocked")) { controller in
+            controller.screenLocked = true
+            controller.updateSessionEligibility()
+        }
+        observe(distributed, Notification.Name("com.apple.screenIsUnlocked")) { controller in
+            controller.readSessionState()
+            controller.screenLocked = false
+            controller.updateSessionEligibility()
+        }
+        readSessionState()
+    }
+
+    private func observe(_ center: NotificationCenter, _ name: Notification.Name,
+                         action: @escaping @MainActor (WindowSwitcherController) -> Void) {
+        let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { if let self { action(self) } }
+        }
+        sessionObservers.append((center, observer))
+    }
+
+    private func readSessionState() {
+        let state = CGSessionCopyCurrentDictionary() as? [String: Any]
+        sessionOnConsole = state?[kCGSessionOnConsoleKey as String] as? Bool == true
+        screenLocked = state?["CGSSessionScreenIsLocked"] as? Bool == true
+    }
+
+    private func updateSessionEligibility() {
+        inputLifecycle.sessionChanged(active: sessionOnConsole && !screenLocked)
+    }
 
     func configure(enabled: Bool, suspended: Bool) {
-        guard enabled else { stop(); statusChanged("Off — macOS app switcher", false); return }
-        guard !suspended else { stop(); statusChanged("Paused while recording a shortcut", false); return }
-        guard SelectionService.isTrusted else { stop(); statusChanged("Allow Accessibility to switch windows", false); return }
-        guard tap == nil else { return }
+        inputLifecycle.configure(enabled: enabled, suspended: suspended)
+    }
+
+    private func startInput() -> Bool {
         let epoch = UUID(); eventEpoch = epoch
         let input = WindowSwitchInput { [weak self] message in
             DispatchQueue.main.async {
@@ -71,16 +178,18 @@ final class WindowSwitcherController {
             return Unmanaged<WindowSwitchInput>.fromOpaque(context).takeUnretainedValue().receive(type: type, event: event)
         }
         guard let created = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
-            eventsOfInterest: mask, callback: callback, userInfo: Unmanaged.passUnretained(input).toOpaque()),
-              let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, created, 0) else {
-            statusChanged("Keyboard access unavailable — check Accessibility and reopen Frog", false)
-            return
+            eventsOfInterest: mask, callback: callback, userInfo: Unmanaged.passUnretained(input).toOpaque()) else {
+            return false
+        }
+        guard let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, created, 0) else {
+            CFMachPortInvalidate(created)
+            return false
         }
         tap = created
         self.input = input; input.attach(created)
         inputRunLoop = EventTapRunLoop(source: runLoopSource, lifetime: input)
         CGEvent.tapEnable(tap: created, enable: true)
-        statusChanged("Ready · ⌘Tab switches windows", true)
+        preparePanel()
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] notification in MainActor.assumeIsolated {
@@ -97,7 +206,7 @@ final class WindowSwitcherController {
             while !Task.isCancelled {
                 guard let self else { return }
                 guard SelectionService.isTrusted else {
-                    self.stop(); self.statusChanged("Allow Accessibility to switch windows", false); return
+                    self.inputLifecycle.wake(); return
                 }
                 if self.generation == nil, self.activation == nil, self.input?.shouldDeferBackgroundWork() == false {
                     if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
@@ -113,15 +222,20 @@ final class WindowSwitcherController {
                 do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
             }
         }
+        return true
     }
 
     func stop() {
+        inputLifecycle.stop()
+    }
+
+    private func stopInput() {
         eventEpoch = UUID()
+        input?.stop()
         activation?.cancel(); activation = nil
         activationID = nil
         activationPID = nil
         cancelAll()
-        input?.stop()
         focusMonitor?.cancel(); focusMonitor = nil
         cache.clear(); iconCache = [:]
         display.windows = []; display.icons = [:]
@@ -137,6 +251,7 @@ final class WindowSwitcherController {
         cache.cancelRefresh()
         input?.stop()
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
+        for (center, observer) in sessionObservers { center.removeObserver(observer) }
         inputRunLoop?.stop()
         if let tap { CFMachPortInvalidate(tap) }
         panel?.orderOut(nil)
@@ -144,7 +259,8 @@ final class WindowSwitcherController {
 
     private func receive(_ event: WindowSwitchInput.Event) {
         switch event {
-        case .reset(let session):
+        case .reset(let session, let activation):
+            cancelActivation(activation)
             if let session { cancel(session: session) }
         case .mouse(let point, let session, let activation):
             let cocoaPoint = NSPoint(x: point.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - point.y)
@@ -197,12 +313,9 @@ final class WindowSwitcherController {
         let cached = cache.readySnapshot(frontPID: front)
         presentation.begin(token, ready: cached != nil)
         presentationTask?.cancel()
-        presentationTask = Task { [weak self] in
-            do { try await Task.sleep(for: .milliseconds(80)) } catch { return }
-            guard let self, self.generation == token else { return }
-            self.presentation.elapsed(token)
-            self.showPanelIfReady()
-        }
+        // The user asked for immediate presentation. Cached rows and the hosting
+        // view are kept warm; there is no artificial hold-to-show delay.
+        presentation.elapsed(token)
         if let cached {
             // Interrupt an in-flight background AX scan so activation isn't queued
             // behind discovery. The last complete inventory and its identities stay valid.

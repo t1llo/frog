@@ -28,16 +28,16 @@ struct PreferencesView: View {
                     }
                     if let issue = model.hotkeyErrors[AppModel.shortcutPanelID] { Text(issue).font(.caption).foregroundStyle(.orange) }
                     Divider()
-                    CompactRow(title: "App & window shortcuts", detail: "App launching, window positioning and the Command–Tab switcher.") {
-                        Toggle("App & window shortcuts", isOn: Binding(get: { model.configuration.preferences.shortcutsEnabled }, set: { value in
-                            var preferences = model.configuration.preferences; preferences.applicationShortcutsEnabled = value
-                            do { try model.savePreferences(preferences) } catch { model.report(error) }
-                        })).labelsHidden()
+                    CompactRow(title: "Your tools", detail: "Choose which features appear and run in Frog.") {
+                        Button("Manage features") { model.toolkit.select(.features) }
+                    }
+                    Divider()
+                    CompactRow(title: "Statistics", detail: "Local activity and feature statistics.") {
+                        Button("View statistics") { model.toolkit.select(.statistics) }
                     }
                 }
                 SettingsSection(title: "Appearance") { AppearanceSettingsView() }
-                StayAwakeSettingsView(power: model.power)
-                SettingsSection(title: "Internal models") {
+                SettingsSection(title: "Local models") {
                     CompactRow(title: "Unload idle models", detail: "Applies to models running inside Frog.") {
                         CompactMenu(value: prefs.idleUnloadSeconds == 0 ? "Immediately" : "\(prefs.idleUnloadSeconds / 60) min") {
                             Button("Immediately") { update { $0.idleUnloadSeconds = 0 } }
@@ -97,10 +97,17 @@ struct PreferencesView: View {
                     Text(model.historyFileURL.path).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
                 }
                 SettingsSection(title: "Configuration") {
-                    CompactRow(title: "Configuration file", detail: "Copy or sync this file between Macs. Quit Frog before replacing it; reopen to load changes.") {
-                        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.configurationFileURL]) }
+                    CompactRow(title: "Configuration file", detail: "Simple key=value settings and palette colors. Edit, save, then Reload to apply without restarting.") {
+                        HStack {
+                            Button("Open config") { model.openConfiguration() }
+                            Button("Reload") { do { try model.reloadConfiguration() } catch { model.report(error) } }
+                                .disabled(model.isProcessing || model.isTestingProvider || model.dictation.active)
+                        }
                     }
                     Text(model.configurationFileURL.path).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
+                    Text("Sync config and config.json with chezmoi. Rules, connections and custom model definitions stay in config.json. App edits preserve comments; external edits must be reloaded first.")
+                        .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                    Button("Show configuration folder") { NSWorkspace.shared.activateFileViewerSelecting([model.configurationFileURL]) }
                     Divider()
                     CompactRow(title: "Import / export", detail: "Rules, models and preferences. API keys stay in Keychain.") {
                         HStack {

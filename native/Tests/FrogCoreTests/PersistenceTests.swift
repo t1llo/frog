@@ -27,7 +27,7 @@ final class PersistenceTests: XCTestCase {
         configuration.rules[0].name = "Changed"
         try store.save(configuration)
         XCTAssertEqual(try store.load(), configuration)
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), ["config.json"])
+        XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: directory.path)), ["config", "config.json"])
     }
 
     func testCorruptAndFutureConfigurationsAreNeverOverwritten() throws {
@@ -43,16 +43,44 @@ final class PersistenceTests: XCTestCase {
         }
     }
 
-    func testConfigurationRefusesSymlink() throws {
+    func testMigrationAndNewFilesKeepStableTargetsThroughPrivateVarAlias() throws {
+        let path = directory.path
+        let alias = path.hasPrefix("/private/var/") ? path : path.hasPrefix("/var/") ? "/private" + path : path
+        let aliasedDirectory = URL(fileURLWithPath: alias, isDirectory: true)
+        try FileManager.default.createDirectory(at: aliasedDirectory, withIntermediateDirectories: true)
+        let original = Configuration()
+        try ConfigurationFile.encode(original).write(to: aliasedDirectory.appendingPathComponent("config.json"))
+        let store = ConfigurationStore(directory: aliasedDirectory)
+        XCTAssertEqual(try store.load(), original)
+        var edited = original; edited.preferences.historyLimit = 42
+        try store.save(edited)
+        XCTAssertEqual(try ConfigurationStore(directory: directory).load(), edited)
+
+        let fresh = ConfigurationStore(directory: aliasedDirectory.appendingPathComponent("new-directory"))
+        try fresh.save(original)
+        XCTAssertEqual(try fresh.load(), original)
+    }
+
+    func testConfigurationPreservesSymlinksAndSharedDirectoryPermissions() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let target = directory.appendingPathComponent("original.json")
         let bytes = try JSONEncoder().encode(Configuration())
         try bytes.write(to: target)
         try FileManager.default.createSymbolicLink(at: directory.appendingPathComponent("config.json"), withDestinationURL: target)
         let store = ConfigurationStore(directory: directory)
-        XCTAssertThrowsError(try store.load())
-        XCTAssertThrowsError(try store.save(Configuration()))
-        XCTAssertEqual(try Data(contentsOf: target), bytes)
+        let original = try store.load()
+        let textTarget = directory.appendingPathComponent("dotfiles-config")
+        try FileManager.default.moveItem(at: store.textFile, to: textTarget)
+        try FileManager.default.createSymbolicLink(at: store.textFile, withDestinationURL: textTarget)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        _ = try store.load()
+        var changed = original; changed.preferences.historyLimit = 42
+        try store.save(changed)
+        XCTAssertEqual(try store.load(), changed)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: store.file.path), target.path)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: store.textFile.path), textTarget.path)
+        XCTAssertTrue(try String(contentsOf: textTarget).contains("history-limit = 42"))
+        XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? NSNumber)?.intValue, 0o755)
     }
 
     func testNativeConfigurationMigratesWithoutRemovingPreviousFile() throws {

@@ -84,9 +84,18 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard power.needsQuitCleanup else { return .terminateNow }
+        guard power.needsQuitCleanup || model.hasPendingDocumentWrites || model.scripts.needsQuitCleanup else { return .terminateNow }
         guard termination == nil else { return .terminateLater }
         termination = Task {
+            await model.scripts.stopAndWait()
+            guard await model.flushDocuments() else {
+                sender.reply(toApplicationShouldTerminate: false); termination = nil
+                let alert = NSAlert()
+                alert.messageText = "Notes could not be saved"
+                alert.informativeText = "Review the storage error in Notes before quitting."
+                alert.runModal()
+                return
+            }
             let restored = await power.prepareToQuit()
             sender.reply(toApplicationShouldTerminate: restored)
             if !restored {

@@ -2,6 +2,21 @@ import XCTest
 @testable import FrogCore
 
 final class WorkflowConfigurationTests: XCTestCase {
+    func testTranslucencyBoundsAndAccessibilityDoNotChangePortablePreferences() throws {
+        var settings = AppearancePreferences(); settings.transparency = 0.8; settings.popupTransparency = 0.3
+        XCTAssertEqual(settings.effectiveTransparency(popup: false, reduceTransparency: false, increasedContrast: false), 0.8)
+        XCTAssertEqual(settings.effectiveTransparency(popup: true, reduceTransparency: false, increasedContrast: false), 0.3)
+        for popup in [false, true] {
+            XCTAssertEqual(settings.effectiveTransparency(popup: popup, reduceTransparency: true, increasedContrast: false), 0)
+            XCTAssertEqual(settings.effectiveTransparency(popup: popup, reduceTransparency: false, increasedContrast: true), 0)
+        }
+        XCTAssertEqual(try JSONDecoder().decode(AppearancePreferences.self, from: JSONEncoder().encode(settings)), settings)
+        for value in [-1.0, 1.01, .infinity, .nan] {
+            settings.transparency = value; XCTAssertFalse(settings.valid)
+            let rendered = settings.effectiveTransparency(popup: false, reduceTransparency: false, increasedContrast: false)
+            XCTAssertTrue(rendered.isFinite && (0...1).contains(rendered))
+        }
+    }
     func testSystemShortcutSurvivesConfigurationRoundTripWithoutATextModel() throws {
         var configuration = Configuration()
         var rule = SystemAction.lockScreen.rule
@@ -11,8 +26,22 @@ final class WorkflowConfigurationTests: XCTestCase {
         XCTAssertEqual(restored.rules.last, rule)
         XCTAssertTrue(rule.category.isShortcut)
         XCTAssertEqual(SystemAction.lockScreen.rule.id, rule.id)
+        XCTAssertEqual(rule.id.uuidString, "AC57F600-63D0-4E76-9901-000000000001")
         configuration.rules[configuration.rules.count - 1].action?.systemAction = nil
         XCTAssertThrowsError(try ConfigurationFile.validate(configuration))
+    }
+    func testAllSystemActionsStartUnassignedAndPreserveCustomizedConfiguration() throws {
+        let defaults = SystemAction.allCases.map(\.rule)
+        XCTAssertEqual(defaults.count, 28)
+        XCTAssertEqual(Set(defaults.map(\.id)).count, defaults.count)
+        XCTAssertTrue(defaults.allSatisfy { !$0.enabled && $0.hotkey == nil && $0.category == .system })
+        XCTAssertTrue(SystemAction.allCases.allSatisfy { !$0.title.isEmpty && !$0.detail.isEmpty && !$0.symbol.isEmpty })
+        var configuration = Configuration()
+        configuration.rules = defaults
+        configuration.rules[1].name = "My home folder"
+        configuration.rules[1].enabled = true
+        configuration.rules[1].hotkey = Hotkey(keyCode: 4, modifiers: 4096 | 512)
+        XCTAssertEqual(try ConfigurationFile.decode(ConfigurationFile.encode(configuration)), configuration)
     }
     func testFactoryCleanupMigrationRunsOnceAndKeepsCustomRulesAndShortcuts() throws {
         var config = Configuration()
@@ -47,7 +76,10 @@ final class WorkflowConfigurationTests: XCTestCase {
                 var config = Configuration()
                 var appearance = old
                 appearance.theme = theme; appearance.mode = mode; appearance.useThemeAccent = true
+                appearance.popupTransparency = 0.6
                 config.preferences.appearance = appearance
+                config.preferences.toolkit = ToolkitPreferences()
+                config.preferences.toolkit?.usage = UsageDisplayPreferences(provider: "OpenAI", range: "30d", metric: "Input", allDevices: true)
                 XCTAssertEqual(try ConfigurationFile.decode(ConfigurationFile.encode(config)), config)
             }
         }

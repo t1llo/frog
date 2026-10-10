@@ -3,6 +3,24 @@ import CoreGraphics
 @testable import FrogApp
 
 final class WindowSwitchInputTests: XCTestCase {
+    func testTimeoutCancelsPendingActivationAndStoppedInputCannotReenableTap() throws {
+        let messages = Messages()
+        let reenables = Rearms()
+        let input = WindowSwitchInput(reenableTap: { reenables.increment() }) { messages.append($0) }
+        let activation = UUID()
+        try armActivation(activation, input: input)
+        let event = try key(48, flags: .maskCommand)
+        _ = input.receive(type: .tapDisabledByTimeout, event: event)
+        XCTAssertFalse(input.isActivationPending(activation))
+        guard case .reset(_, let cancelled) = messages.values.last else { return XCTFail("Expected timeout reset") }
+        XCTAssertEqual(cancelled, activation)
+        XCTAssertEqual(reenables.count, 1)
+        input.stop()
+        _ = input.receive(type: .tapDisabledByTimeout, event: event)
+        _ = input.receive(type: .tapDisabledByUserInput, event: event)
+        XCTAssertEqual(reenables.count, 1)
+    }
+
     func testTypingDefersBackgroundScansUntilAQuietInterval() throws {
         let input = WindowSwitchInput { _ in }
         XCTAssertFalse(input.shouldDeferBackgroundWork())
@@ -106,5 +124,12 @@ final class WindowSwitchInputTests: XCTestCase {
         private var events: [WindowSwitchInput.Event] = []
         var values: [WindowSwitchInput.Event] { lock.withLock { events } }
         func append(_ event: WindowSwitchInput.Event) { lock.withLock { events.append(event) } }
+    }
+
+    private final class Rearms: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+        var count: Int { lock.withLock { value } }
+        func increment() { lock.withLock { value += 1 } }
     }
 }

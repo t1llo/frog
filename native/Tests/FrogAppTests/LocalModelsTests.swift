@@ -4,6 +4,55 @@ import FrogCore
 
 @MainActor
 final class LocalModelsTests: XCTestCase {
+    func testPreparingAResidentModelRefreshesItsIdleDeadlineWithoutReloading() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let engine = FixtureInference()
+        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload)
+        let descriptor = try XCTUnwrap(LocalModelDescriptor.find("parakeet-v3"))
+        models.download(descriptor); await models.waitForDownload(descriptor.id)
+        models.idleSeconds = 60
+        try await models.prepare(descriptor.id)
+        let waiting = expectation(description: "Waiting on the original idle deadline")
+        let refreshed = expectation(description: "Original idle deadline cancelled")
+        let originalDeadline = Task {
+            waiting.fulfill()
+            await models.waitForIdleUnload()
+            refreshed.fulfill()
+        }
+        await fulfillment(of: [waiting], timeout: 2)
+        try await models.prepare(descriptor.id)
+        await fulfillment(of: [refreshed], timeout: 2)
+        XCTAssertEqual(models.loaded, [descriptor.id], "A successful readiness request counts as use, even when weights are already resident")
+        let preparations = await engine.preparations
+        XCTAssertEqual(preparations, 1)
+        models.idleSeconds = 0
+        await models.waitForIdleUnload()
+        await originalDeadline.value
+        XCTAssertTrue(models.loaded.isEmpty, "Readiness must extend the chosen interval, not disable idle unloading")
+    }
+
+    func testConcurrentReadinessRequestsSharePreparation() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let gate = DownloadGate()
+        let engine = FixtureInference(preparationGate: gate)
+        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload)
+        let descriptor = try XCTUnwrap(LocalModelDescriptor.find("parakeet-v3"))
+        models.download(descriptor); await models.waitForDownload(descriptor.id)
+        let first = Task { try await models.prepare(descriptor.id) }
+        await gate.waitUntilStarted()
+        let second = Task { try await models.prepare(descriptor.id) }
+        await Task.yield()
+        await gate.resume()
+        try await first.value
+        try await second.value
+        let preparations = await engine.preparations
+        XCTAssertEqual(preparations, 1)
+        XCTAssertEqual(models.loaded, [descriptor.id])
+        await models.unload()
+    }
+
     func testLegacySpeechDownloadsSurviveRestartAndKeepTheirOriginalRuntimeSources() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -179,10 +228,17 @@ final class LocalModelsTests: XCTestCase {
 
 private actor FixtureInference: LocalInferenceEngine {
     let gate: DownloadGate?
+    let preparationGate: DownloadGate?
     let fail: Bool
-    init(gate: DownloadGate? = nil, fail: Bool = false) { self.gate = gate; self.fail = fail }
+    init(gate: DownloadGate? = nil, fail: Bool = false, preparationGate: DownloadGate? = nil) { self.gate = gate; self.fail = fail; self.preparationGate = preparationGate }
     var loadedIDs = Set<String>()
-    func prepare(model: LocalModelDescriptor, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws { loadedIDs.insert(model.id); await residency(loadedIDs) }
+    var preparations = 0
+    func prepare(model: LocalModelDescriptor, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws {
+        preparations += 1
+        if let preparationGate { await preparationGate.wait() }
+        try Task.checkCancellation()
+        loadedIDs.insert(model.id); await residency(loadedIDs)
+    }
     var unloads = 0
     var cancelledUnload = false
     var calls = 0

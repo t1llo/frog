@@ -31,7 +31,11 @@ struct ModelInventory: View {
                                      Text(item.name).font(.system(size: 12, weight: .medium))
                                      if item.isRecommended { RecommendedModelBadge() }
                                  }
-                                Text(item.size + (model.localModels.loaded.contains(item.id) ? " · In memory" : "")).font(.system(size: 10)).foregroundStyle(.secondary)
+                                Text([item.size, item.runtimeName, model.localModels.loaded.contains(item.id) ? "In memory" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                                Text(L10n.text(item.recommendationSummary ?? item.languages))
+                                    .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                                    .help(item.kind == .audio ? "Live preview uses repeated short audio chunks, not a continuous streaming decoder. Speed and accuracy are relative catalog guidance." : "Relative catalog guidance; performance depends on your Mac and input.")
                             }
                             Spacer()
                             IconAction(title: "Model information", symbol: "info.circle") { information = item }
@@ -42,7 +46,8 @@ struct ModelInventory: View {
                                 Menu {
                                     Button("Delete download", role: .destructive) { Task { do { try await model.deleteLocalModel(item) } catch { model.report(error) } } }
                                         .disabled(model.localModels.busy || model.dictation.active)
-                                } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                                } label: { Image(systemName: "ellipsis").frame(width: 26).modifier(CompactActionSurface()) }
+                                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Model actions")
                             } else {
                                 Button("Download") { model.localModels.download(item) }.controlSize(.small).disabled(!LocalModels.supported)
                                 if item.id.hasPrefix("hf-") {
@@ -52,15 +57,12 @@ struct ModelInventory: View {
                                 }
                             }
                         }
-                        Text([item.runtimeName, item.recommendationSummary ?? item.languages].map(L10n.text).joined(separator: " · "))
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
-                            .help(item.kind == .audio ? "Live preview uses repeated short audio chunks, not a continuous streaming decoder. Speed and accuracy are relative catalog guidance." : "Relative catalog guidance; performance depends on your Mac and input.")
                         if let error = model.localModels.errors[item.id] { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
-                    }.padding(12)
+                    }.padding(.vertical, 10).padding(.horizontal, 8)
                     if item.id != items.last?.id { Divider().opacity(0.5) }
                 }
                 if items.isEmpty { Text(L10n.text(installed ? "No downloaded models" : "No additional models")).font(.system(size: 11)).foregroundStyle(.secondary).padding(14).frame(maxWidth: .infinity, alignment: .leading) }
-            }.frogTableSurface()
+            }
         }
     }
 }

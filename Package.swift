@@ -7,7 +7,8 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "Frog", targets: ["FrogApp"]),
-        .library(name: "FrogCore", targets: ["FrogCore"])
+        .library(name: "FrogCore", targets: ["FrogCore"]),
+        .library(name: "FrogUsage", targets: ["FrogUsage"])
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
@@ -19,10 +20,12 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-collections.git", exact: "1.2.1")
     ],
     targets: [
+        .target(name: "FrogUsage", path: "native/FrogUsage"),
         .target(name: "FrogCore", path: "native/FrogCore"),
-        .executableTarget(name: "FrogApp", dependencies: ["FrogCore", .product(name: "Sparkle", package: "Sparkle"), .product(name: "WhisperKit", package: "WhisperKit"), .product(name: "FluidAudio", package: "FluidAudio"), .product(name: "MLXLLM", package: "mlx-swift-lm"), .product(name: "MLXLMCommon", package: "mlx-swift-lm"), .product(name: "Hub", package: "swift-transformers")], path: "native/FrogApp", resources: [.process("Resources")], linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
+        .executableTarget(name: "FrogApp", dependencies: ["FrogCore", "FrogUsage", .product(name: "Sparkle", package: "Sparkle"), .product(name: "WhisperKit", package: "WhisperKit"), .product(name: "FluidAudio", package: "FluidAudio"), .product(name: "MLXLLM", package: "mlx-swift-lm"), .product(name: "MLXLMCommon", package: "mlx-swift-lm"), .product(name: "Hub", package: "swift-transformers")], path: "native/FrogApp", resources: [.process("Resources")], linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
         .testTarget(name: "FrogCoreTests", dependencies: ["FrogCore"], path: "native/Tests/FrogCoreTests"),
-        .testTarget(name: "FrogAppTests", dependencies: ["FrogApp", "FrogCore"], path: "native/Tests/FrogAppTests")
+        .testTarget(name: "FrogAppTests", dependencies: ["FrogApp", "FrogCore", "FrogUsage"], path: "native/Tests/FrogAppTests"),
+        .testTarget(name: "FrogUsageTests", dependencies: ["FrogUsage"], path: "native/Tests/FrogUsageTests")
     ],
     swiftLanguageModes: [.v5]
 )

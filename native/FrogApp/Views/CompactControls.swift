@@ -50,11 +50,12 @@ struct CompactRow<Content: View>: View {
 
 struct CompactMenu<Content: View>: View {
     let value: String
+    var width: CGFloat = 220
     @ViewBuilder var content: Content
     @State private var showing = false
     var body: some View {
         Button { showing.toggle() } label: {
-            CompactDropdownLabel(value: L10n.text(value))
+            CompactDropdownLabel(value: L10n.text(value), width: width)
         }.buttonStyle(.plain).help(L10n.text(value))
             .popover(isPresented: $showing, arrowEdge: .bottom) {
                 ScrollView {
@@ -70,6 +71,7 @@ struct CompactMenu<Content: View>: View {
 struct CompactDropdownLabel: View {
     let value: String
     var symbol: String? = nil
+    var width: CGFloat = 220
     @State private var hovering = false
     var body: some View {
         HStack(spacing: 8) {
@@ -78,8 +80,8 @@ struct CompactDropdownLabel: View {
             Spacer(minLength: 2)
             Image(systemName: "chevron.down").font(.system(size: 9)).foregroundStyle(FrogStyle.muted)
         }.font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.ink)
-            .padding(.horizontal, 9).frame(width: 220, height: 32)
-            .background(hovering ? FrogStyle.selection : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 5))
+            .padding(.horizontal, 9).frame(width: width, height: 32)
+            .background(hovering ? AnyShapeStyle(FrogStyle.selection) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 5))
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(FrogStyle.border.opacity(0.6)))
             .contentShape(RoundedRectangle(cornerRadius: 7)).onHover { hovering = $0 }
     }
@@ -107,6 +109,7 @@ private struct CompactOptionStyle: PrimitiveButtonStyle {
 struct CompactSegments<Value: Hashable>: View {
     let values: [Value]
     let selected: Value
+    var width: CGFloat = 220
     let title: (Value) -> String
     let choose: (Value) -> Void
     var body: some View {
@@ -116,11 +119,11 @@ struct CompactSegments<Value: Hashable>: View {
                     Text(L10n.text(title(value))).font(.system(size: 11, weight: selected == value ? .semibold : .regular))
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
                         .foregroundStyle(selected == value ? FrogStyle.ink : FrogStyle.muted)
-                        .background(selected == value ? FrogStyle.surface : .clear, in: RoundedRectangle(cornerRadius: 4))
+                        .background(selected == value ? FrogStyle.surface : AnyShapeStyle(Color.clear), in: RoundedRectangle(cornerRadius: 4))
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityAddTraits(selected == value ? .isSelected : [])
             }
-        }.padding(3).frame(width: 220).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 7))
+        }.padding(3).frame(width: width).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 7))
     }
 }
 

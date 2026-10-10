@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import ApplicationServices
+import QuartzCore
 import SwiftUI
 import FrogCore
 import WhisperKit
@@ -8,8 +9,8 @@ import WhisperKit
 @MainActor
 final class DictationController: ObservableObject {
     enum Phase: String { case idle, preparing, recording, transcribing, correcting }
-    @Published private(set) var phase: Phase = .idle
-    @Published private(set) var liveText = ""
+    @Published private(set) var phase: Phase = .idle { didSet { resizePanel() } }
+    @Published private(set) var liveText = "" { didSet { resizePanel() } }
     @Published private(set) var elapsed = 0
     @Published private(set) var noMicrophoneInput = false
     @Published private(set) var selectedMicrophoneID: String?
@@ -23,6 +24,10 @@ final class DictationController: ObservableObject {
     private let makeRecorder: () -> any DictationRecording
     private let authorize: () async -> Bool
     private let copy: (String) -> Void
+    private let paste: () async throws -> Void
+    private let now: () -> ContinuousClock.Instant
+    private var recordingStarted: ContinuousClock.Instant?
+    private var recordingSeconds = 0.0
     var onCopy: ((String) -> Void)?
     private let monitorKeys: Bool
     private let previewInterval: Duration
@@ -50,6 +55,8 @@ final class DictationController: ObservableObject {
     private weak var models: LocalModels?
     private var residencyHold: UUID?
     var onFinish: ((Rule, String, String, String) -> Void)?
+    /// Raw transcript and frozen microphone-session duration, only after successful delivery.
+    var onSuccessfulDelivery: ((_ recordingSeconds: Double, _ text: String) -> Void)?
     var onTranscript: ((UUID, Rule, String, String) -> Void)?
     var onInterruption: ((DictationInterruption) -> Bool)?
     var onHistoryRecovered: ((UUID, Result<String, Error>) -> Void)?
@@ -64,10 +71,13 @@ final class DictationController: ObservableObject {
          authorize: @escaping @MainActor () async -> Bool = { DictationController.microphoneGranted ? true : await DictationController.requestMicrophone() },
          copy: @escaping (String) -> Void = { NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string) },
          monitorKeys: Bool = true, previewInterval: Duration = .seconds(2),
-         inputDevices: @escaping @MainActor () -> [AudioDevice] = { DictationController.devices }) {
+          inputDevices: @escaping @MainActor () -> [AudioDevice] = { DictationController.devices },
+          paste: @escaping @MainActor () async throws -> Void = { try await DictationTarget.pasteIntoFocusedField() },
+          now: @escaping @MainActor () -> ContinuousClock.Instant = { .now }) {
         self.makeRecorder = makeRecorder; self.authorize = authorize; self.copy = copy; self.monitorKeys = monitorKeys
         self.previewInterval = previewInterval
         self.inputDevices = inputDevices
+        self.paste = paste; self.now = now
     }
 
     func waitForWork() async { await work?.value }
@@ -93,13 +103,14 @@ final class DictationController: ObservableObject {
         self.preferences.showDictationPopup = rule.action?.showRecordingPopup ?? true
         self.preferences.transcriptionLanguage = rule.action?.transcriptionLanguage
         samples = AudioSamples(); liveText = ""; elapsed = 0
+        recordingStarted = nil; recordingSeconds = 0
         noMicrophoneInput = false; lastInputElapsed = 0; lastInputRevision = 0
         selectedMicrophoneID = preferences.microphoneID; refreshMicrophones()
         microphoneMeter.reset()
         previewPrefix = ""; previewDraft = ""
         transcript = DictationTranscript(); transcriptPublished = false
         phase = .preparing
-        preparationMessage = "Checking microphone permission…"
+        preparationMessage = "Checking microphone access…"
         let shortcut = rule.hotkey.map(HotkeyManager.display) ?? "Stop button"
         let recordingHint = rule.hotkey == nil ? "Stop to finish · Esc to cancel" : (rule.action?.recordingMode ?? preferences.recordingMode) == .hold ? "Release \(shortcut) to stop · Esc to cancel" : "\(shortcut) to stop · Esc to cancel"
         hint = "Esc to cancel"
@@ -141,14 +152,15 @@ final class DictationController: ObservableObject {
                     try self.beginRecording(microphoneID: nil)
                     self.selectedMicrophoneID = nil
                 }
+                let recordingStarted = self.now()
+                self.recordingStarted = recordingStarted
                 self.phase = .recording
                 self.hint = recordingHint
-                let recordingStarted = ContinuousClock.now
                 self.ticker = Task { [weak self] in
                     while !Task.isCancelled {
                         do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
                         guard let self, self.token == token else { return }
-                        self.refreshRecordingFeedback(elapsed: Int(recordingStarted.duration(to: .now).components.seconds))
+                        self.refreshRecordingFeedback(elapsed: Int(recordingStarted.duration(to: self.now()).components.seconds))
                         if self.elapsed >= 600 { self.stop(models: models); return }
                     }
                 }
@@ -247,6 +259,7 @@ final class DictationController: ObservableObject {
         if phase == .preparing { cancel(); return }
         guard phase == .recording else { return }
         let recognition = finishTranscription(token: token, rule: rule, models: models)
+        let recordingSeconds = self.recordingSeconds
         phase = .transcribing; hint = "Esc to cancel"
         work = Task { [weak self] in
             guard let self else { return }
@@ -276,13 +289,13 @@ final class DictationController: ObservableObject {
                 self.onCopy?(output)
                 var insertion: (() async throws -> Void)?
                 if (rule.action?.output ?? self.preferences.output) == .paste {
-                    insertion = {
-                        try await DictationTarget.pasteIntoFocusedField()
-                    }
+                    insertion = self.paste
                 }
-                try await DictationDelivery.finish(isCurrent: { self.token == token }, paste: insertion, onIssue: { self.onError?($0) }) { delivery in
+                try await DictationDelivery.finish(isCurrent: { self.token == token }, paste: insertion, onIssue: { self.onError?($0) }, onSuccess: {
+                    self.onSuccessfulDelivery?(recordingSeconds, raw)
+                }) { delivery in
                     self.onFinish?(rule, raw, output, delivery)
-                    self.cancel()
+                    if self.token == token { self.cancel() }
                 }
             } catch { self.fail(error, token: token) }
         }
@@ -290,6 +303,11 @@ final class DictationController: ObservableObject {
 
     private func finishTranscription(token: UUID, rule: Rule, models: LocalModels) -> Task<String, Error> {
         if let finalTranscription { return finalTranscription }
+        if let recordingStarted {
+            let duration = recordingStarted.duration(to: now()).components
+            recordingSeconds = max(0, Double(duration.seconds) + Double(duration.attoseconds) / 1e18)
+            self.recordingStarted = nil
+        }
         let recorder = self.recorder; self.recorder = nil
         let capturedSamples = samples, transcript = self.transcript
         let pending = previewInference, external = externalTranscription
@@ -354,6 +372,7 @@ final class DictationController: ObservableObject {
         token = nil; work?.cancel(); finalTranscription?.cancel(); preview?.cancel(); previewInference?.cancel(); ticker?.cancel()
         work = nil; finalTranscription = nil; preview = nil; previewInference = nil; ticker = nil
         recorder?.stop(); recorder = nil; samples.clear()
+        recordingStarted = nil; recordingSeconds = 0
         outputMute.restore()
         if let residencyHold { models?.releaseResidency(residencyHold) }; residencyHold = nil
         activeRule = nil; ruleID = nil; phase = .idle
@@ -382,25 +401,73 @@ final class DictationController: ObservableObject {
     }
     private func showPanel() {
         if panel == nil {
-            let panel = NSPanel(contentRect: NSRect(origin: .zero, size: DictationPopup.size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 300, height: 50), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             panel.level = .floating; panel.isOpaque = false; panel.backgroundColor = .clear
+            panel.title = "Dictation"
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             panel.hidesOnDeactivate = false; panel.isReleasedWhenClosed = false
             self.panel = panel
         }
         let content = DictationPopup(controller: self)
         if let hosting = panel?.contentView as? NSHostingView<DictationPopup> { hosting.rootView = content }
-        else { panel?.contentView = NSHostingView(rootView: content) }
-        if let screen = NSScreen.main { panel?.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - DictationPopup.size.width / 2, y: screen.visibleFrame.minY + 24)) }
+        else {
+            let hosting = NSHostingView(rootView: content)
+            // The panel owns geometry; SwiftUI must not impose its transient ideal size.
+            hosting.sizingOptions = []
+            panel?.contentView = hosting
+        }
+        resizePanel(on: NSScreen.main, animated: false)
         panel?.orderFrontRegardless()
+    }
+
+    private func resizePanel(on screen: NSScreen? = nil, animated: Bool = true) {
+        guard let panel, phase != .idle,
+              let screen = screen ?? panel.screen ?? NSScreen.main else { return }
+        let frame = DictationPopupLayout.frame(phase: phase, text: liveText, visibleFrame: screen.visibleFrame)
+        guard frame != panel.frame else { return }
+        if animated, panel.isVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = DictationPopupLayout.transitionDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                panel.animator().setFrame(frame, display: true)
+            }
+        } else { panel.setFrame(frame, display: true) }
+    }
+}
+
+/// Geometry is based on rendered text, so a short preview doesn't reserve a large blank area.
+@MainActor
+enum DictationPopupLayout {
+    static let transitionDuration = 0.22
+    static let maximumHeight = 220.0
+    static let maximumTranscriptHeight = 104.0
+    /// Presentation only. Keep native glyph layout bounded even for hours of Unicode text.
+    /// The controller and delivery pipeline always retain the complete transcript.
+    static func displayText(_ text: String) -> String { String(text.suffix(2048)) }
+    static func frame(phase: DictationController.Phase, text: String, visibleFrame: NSRect) -> NSRect {
+        let recording = phase == .recording
+        let hasTranscript = recording && !text.isEmpty
+        let width = min(recording || hasTranscript ? 360.0 : 300.0, max(1, visibleFrame.width - 32))
+        var height = recording ? 108.0 : 50.0
+        if hasTranscript {
+            let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 2
+            let bounds = (displayText(text) as NSString).boundingRect(
+                with: NSSize(width: max(1, width - 24), height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [.font: NSFont.systemFont(ofSize: 12), .paragraphStyle: paragraph])
+            height += min(maximumTranscriptHeight, ceil(bounds.height) + 2) + 8
+        }
+        height = min(height, maximumHeight, max(1, visibleFrame.height - 48))
+        return NSRect(x: visibleFrame.midX - width / 2,
+                      y: visibleFrame.minY + min(24, max(0, (visibleFrame.height - height) / 2)),
+                      width: width, height: height)
     }
 }
 
 private struct DictationPopup: View {
-    static let size = NSSize(width: 400, height: 120)
     @ObservedObject var controller: DictationController
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 if controller.phase != .recording { ProgressView().controlSize(.mini) }
                 else {
@@ -418,15 +485,23 @@ private struct DictationPopup: View {
                     .help("Change microphone").accessibilityLabel("Change microphone")
                     .simultaneousGesture(TapGesture().onEnded { controller.refreshMicrophones() })
                 }
-                Text(L10n.text(controller.phase.rawValue.capitalized)).font(.system(size: 12, weight: .semibold))
-                Spacer()
-                if controller.phase != .preparing { Text("\(controller.elapsed)s").monospacedDigit().foregroundStyle(.secondary) }
+                Text(L10n.text(status)).font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1).truncationMode(.tail).help(L10n.text(status))
+                Spacer(minLength: 0)
                 if controller.phase == .recording {
-                    Button { controller.requestStop() } label: { Image(systemName: "stop.fill").font(.system(size: 10)) }
-                        .buttonStyle(.plain).help("Stop recording").accessibilityLabel("Stop recording")
+                    Text(String(format: "%d:%02d", controller.elapsed / 60, controller.elapsed % 60))
+                        .font(.system(size: 12)).monospacedDigit().foregroundStyle(FrogStyle.muted)
+                    Button { controller.requestStop() } label: {
+                        Label("Stop", systemImage: "stop.fill").font(.system(size: 11, weight: .medium))
+                            .padding(.horizontal, 7).frame(height: 24)
+                            .background(FrogStyle.accentSoft, in: RoundedRectangle(cornerRadius: 5))
+                    }.buttonStyle(.plain).help("Stop recording").accessibilityLabel("Stop recording")
                 }
-                Button { controller.interrupt() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).help("Cancel dictation")
-            }
+                Button { controller.interrupt() } label: {
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .medium))
+                        .frame(width: 24, height: 24).contentShape(Rectangle())
+                }.buttonStyle(.plain).help("Cancel dictation · Esc").accessibilityLabel("Cancel dictation")
+            }.frame(height: 26)
             if controller.phase == .recording {
                 HStack(spacing: 8) {
                     if controller.noMicrophoneInput {
@@ -434,30 +509,118 @@ private struct DictationPopup: View {
                             .font(.system(size: 11)).foregroundStyle(.orange).fixedSize()
                     }
                     MicrophoneWaveform(meter: controller.microphoneMeter)
-                }.frame(height: 16)
+                }.frame(height: 28)
             }
-            ScrollViewReader { reader in
-                ScrollView {
-                    Text(controller.liveText.isEmpty ? L10n.text(controller.phase == .preparing ? controller.preparationMessage : controller.phase == .recording ? "Listening…" : "Processing audio…") : controller.liveText)
-                        .font(.system(size: 12)).lineSpacing(2).fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Color.clear.frame(height: 1).id("transcript-end")
-                }.onChange(of: controller.liveText) { _, _ in reader.scrollTo("transcript-end", anchor: .bottom) }
+            if controller.phase == .recording, !controller.liveText.isEmpty {
+                DictationTranscriptView(text: controller.liveText)
+                    .frame(minHeight: 0, maxHeight: DictationPopupLayout.maximumTranscriptHeight)
             }
-            Text(controller.hint).font(.system(size: 9)).foregroundStyle(FrogStyle.muted).lineLimit(1)
-        }.padding(.horizontal, 12).padding(.vertical, 8).frame(width: Self.size.width, height: Self.size.height)
+            if controller.phase == .recording {
+                Text(controller.hint).font(.system(size: 9)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+            }
+        }.padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .clipped()
             .environment(\.locale, L10n.locale)
             .foregroundStyle(FrogStyle.ink)
-            .background(FrogStyle.panelSurface, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
-            .overlay(RoundedRectangle(cornerRadius: FrogStyle.corner).strokeBorder(FrogStyle.border.opacity(0.6)))
+            .frogPanel()
+    }
+
+    private var status: String {
+        switch controller.phase {
+        case .preparing: controller.preparationMessage
+        case .recording: "Listening…"
+        case .transcribing: "Transcribing…"
+        case .correcting: "Cleaning up transcript…"
+        case .idle: "Dictation"
+        }
+    }
+}
+
+private struct DictationTranscriptView: NSViewRepresentable {
+    let text: String
+    func makeNSView(context: Context) -> DictationTranscriptViewport { DictationTranscriptViewport() }
+    func updateNSView(_ view: DictationTranscriptViewport, context: Context) {
+        view.transcriptView.textColor = NSColor(FrogStyle.ink)
+        view.setTranscript(text)
+    }
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: DictationTranscriptViewport, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 0, height: min(proposal.height ?? 0, DictationPopupLayout.maximumTranscriptHeight))
+    }
+}
+
+/// The document can grow, but its viewport never contributes an intrinsic height.
+/// AppKit follows the tail after text layout AND after each native panel resize.
+@MainActor
+final class DictationTranscriptViewport: NSScrollView {
+    let transcriptView = NSTextView()
+    private var layingOutTranscript = false
+    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
+
+    init() {
+        super.init(frame: .zero)
+        identifier = NSUserInterfaceItemIdentifier("dictation-transcript")
+        drawsBackground = false; borderType = .noBorder
+        hasVerticalScroller = true; autohidesScrollers = true; scrollerStyle = .overlay
+        transcriptView.drawsBackground = false
+        transcriptView.isEditable = false; transcriptView.isSelectable = true
+        transcriptView.isHorizontallyResizable = false; transcriptView.isVerticallyResizable = false
+        transcriptView.textContainerInset = .zero
+        transcriptView.textContainer?.lineFragmentPadding = 0
+        transcriptView.textContainer?.widthTracksTextView = true
+        transcriptView.textContainer?.heightTracksTextView = false
+        transcriptView.setAccessibilityLabel("Live transcript")
+        documentView = transcriptView
+    }
+    required init?(coder: NSCoder) { return nil }
+
+    func setTranscript(_ text: String) {
+        let text = DictationPopupLayout.displayText(text)
+        guard transcriptView.string != text else { return }
+        let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 2
+        transcriptView.textStorage?.setAttributedString(NSAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: 12), .paragraphStyle: paragraph,
+            .foregroundColor: transcriptView.textColor ?? .labelColor
+        ]))
+        needsLayout = true
+        layoutTranscript()
+    }
+
+    override func layout() {
+        super.layout()
+        layoutTranscript()
+    }
+
+    private func layoutTranscript() {
+        guard !layingOutTranscript, contentSize.width >= 16, contentSize.height > 0,
+              let container = transcriptView.textContainer,
+              let manager = transcriptView.layoutManager else { return }
+        layingOutTranscript = true
+        defer { layingOutTranscript = false }
+        let width = max(1, contentSize.width)
+        transcriptView.setFrameSize(NSSize(width: width, height: max(1, transcriptView.frame.height)))
+        container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+        manager.ensureLayout(for: container)
+        let height = max(contentSize.height, ceil(manager.usedRect(for: container).maxY) + 2)
+        transcriptView.setFrameSize(NSSize(width: width, height: height))
+        contentView.scroll(to: NSPoint(x: 0, y: max(0, height - contentSize.height)))
+        reflectScrolledClipView(contentView)
     }
 }
 
 @MainActor
 final class MicrophoneMeter: ObservableObject {
     @Published private(set) var levels = Array(repeating: 0.0, count: 40)
-    func append(_ level: Double) { levels = Array(levels.dropFirst()) + [level] }
-    func reset() { levels = Array(repeating: 0, count: 40) }
+    private var envelope = 0.0
+    func append(_ level: Double) {
+        let target = level.isFinite ? min(1, max(0, level)) : 0
+        // At the feedback ticker's 100 ms cadence, catch syllables immediately and
+        // let them decay over a few frames instead of flickering between callbacks.
+        let timeConstant = target > envelope ? 0.045 : 0.24
+        envelope += (target - envelope) * (1 - exp(-0.1 / timeConstant))
+        if envelope < 0.005 { envelope = 0 }
+        levels = Array(levels.dropFirst()) + [envelope]
+    }
+    func reset() { envelope = 0; levels = Array(repeating: 0, count: 40) }
 }
 
 private struct MicrophoneWaveform: View {
@@ -500,7 +663,11 @@ final class AudioSamples: @unchecked Sendable {
         revision &+= 1
         samples.append(contentsOf: buffer.prefix(max(0, 600 * 16000 - samples.count)))
         let energy = buffer.reduce(0.0) { $0 + Double($1) * Double($1) }
-        level = min(1, sqrt(energy / Double(max(1, buffer.count))) * 8)
+        let rms = sqrt(energy / Double(buffer.count))
+        // Display only: -56 dBFS noise floor through -12 dBFS loud speech. Ordinary
+        // microphone speech (~-34 dBFS) now fills half the waveform, not just 16%.
+        let decibels = 20 * log10(max(rms, 1e-9))
+        level = decibels.isFinite ? min(1, max(0, (decibels + 56) / 44)) : 0
         lastInput = .now
     }
     func snapshot(from offset: Int = 0, limit: Int? = nil) -> [Float] {
@@ -526,10 +693,12 @@ private struct DictationTarget {
            AXRead.string(element, kAXSubroleAttribute) == kAXSecureTextFieldSubrole {
             throw FrogError.message("The focused field is a password field. The transcript is copied.")
         }
-        let source = CGEventSource(stateID: .combinedSessionState)
-        let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true)
-        let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false)
-        down?.flags = .maskCommand; up?.flags = .maskCommand
-        down?.post(tap: .cghidEventTap); up?.post(tap: .cghidEventTap)
+        guard let source = CGEventSource(stateID: .combinedSessionState),
+              let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {
+            throw FrogError.message("Could not send the paste shortcut. The transcript is copied.")
+        }
+        down.flags = .maskCommand; up.flags = .maskCommand
+        down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
     }
 }
