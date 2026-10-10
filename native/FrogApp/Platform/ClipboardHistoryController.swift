@@ -6,54 +6,14 @@ import FrogCore
 
 @MainActor
 protocol ClipboardHistoryPasteTarget {
+    var applicationPID: pid_t? { get }
+    func prepareForPaste(isCurrent: () -> Bool) async throws
     func paste() throws
 }
 
-/// The panel never activates Frog; insertion requires the original app/window/field.
-@MainActor
-struct NativeClipboardHistoryPasteTarget: ClipboardHistoryPasteTarget {
-    let application: AXUIElement
-    let window: AXUIElement
-    let focused: AXUIElement
-    let range: CFRange
-    let pid: pid_t
-
-    static func capture() -> Self? {
-        guard SelectionService.isTrusted, let app = NSWorkspace.shared.frontmostApplication,
-              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
-        let application = AXUIElementCreateApplication(app.processIdentifier)
-        AXUIElementSetMessagingTimeout(application, 0.15)
-        guard let window = AXRead.element(application, kAXFocusedWindowAttribute),
-              let focused = AXRead.element(application, kAXFocusedUIElementAttribute),
-              let range = AXRead.range(focused),
-              range.location >= 0, range.length >= 0,
-              AXRead.string(focused, kAXRoleAttribute) != "AXWebArea",
-              AXRead.string(focused, kAXSubroleAttribute) != kAXSecureTextFieldSubrole else { return nil }
-        guard [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(AXRead.string(focused, kAXRoleAttribute) ?? "") || ClipboardSelection.isEditable(focused) else { return nil }
-        return Self(application: application, window: window, focused: focused,
-                    range: range, pid: app.processIdentifier)
-    }
-
-    func paste() throws {
-        guard SelectionService.isTrusted, NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
-              let currentWindow = AXRead.element(application, kAXFocusedWindowAttribute), CFEqual(window, currentWindow) else {
-            throw FrogError.message("The target app changed. The item is copied; paste it where you want it.")
-        }
-        guard let current = AXRead.element(application, kAXFocusedUIElementAttribute), CFEqual(focused, current),
-              AXRead.string(current, kAXSubroleAttribute) != kAXSecureTextFieldSubrole else {
-            throw FrogError.message("The target field changed. The item is copied; paste it where you want it.")
-        }
-        guard let currentRange = AXRead.range(focused), currentRange.location == range.location, currentRange.length == range.length else {
-            throw FrogError.message("The insertion point changed. The item is copied; paste it where you want it.")
-        }
-        guard AXRead.boolean(current, kAXEnabledAttribute) != false else {
-            throw FrogError.message("The target field is disabled. The item is copied; paste it manually.")
-        }
-        // AX value editability is not native Paste support: Terminal exposes a
-        // read-only AX text area. The supported text target above is still the
-        // original one, so let command() use its keyboard fallback if needed.
-        try ClipboardSelection.command("v", keyCode: 9, application: application, pid: pid)
-    }
+extension ClipboardHistoryPasteTarget {
+    var applicationPID: pid_t? { nil }
+    func prepareForPaste(isCurrent: () -> Bool) async throws { }
 }
 
 @MainActor
@@ -64,7 +24,14 @@ enum ClipboardHistoryDelivery {
         try await waitForRelease()
         try Task.checkCancellation()
         guard isCurrent() else { throw CancellationError() }
+        var preparationError: Error?
+        do { try await target?.prepareForPaste(isCurrent: isCurrent) }
+        catch is CancellationError { throw CancellationError() }
+        catch { preparationError = error }
+        try Task.checkCancellation()
+        guard isCurrent() else { throw CancellationError() }
         guard entry.write(to: pasteboard, plainText: plainText) else { throw FrogError.message("Could not copy the clipboard item.") }
+        if let preparationError { throw preparationError }
         guard let target else { throw FrogError.message("The item is copied. Focus an editable field and paste, or allow Accessibility for automatic paste.") }
         try target.paste()
     }
@@ -80,6 +47,8 @@ final class ClipboardHistoryController {
     private var target: (any ClipboardHistoryPasteTarget)?
     private var localMonitor: Any?
     private var globalMonitor: Any?
+    private var deliveryInputMonitor: Any?
+    private var deliveryLocalMonitor: Any?
     private var workspaceObserver: NSObjectProtocol?
     private var delivery: Task<Void, Never>?
     private var operation = UUID()
@@ -148,10 +117,10 @@ final class ClipboardHistoryController {
             MainActor.assumeIsolated {
                 guard let self else { return event }
                 if event.type != .keyDown {
-                    if event.window !== self.panel { self.hide() }
+                    if event.window !== self.panel { self.cancel() }
                     return event
                 }
-                guard event.window === self.panel else { return event }
+                guard event.window === self.panel else { self.cancel(); return event }
                 let entries = self.state.visibleEntries(in: self.history.entries)
                 let editingSearch = self.panel?.firstResponder is NSTextView
                 if event.keyCode == 8, event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command {
@@ -180,11 +149,21 @@ final class ClipboardHistoryController {
                 }
             }
         }
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            MainActor.assumeIsolated { self?.hide() }
+        let openedAt = ProcessInfo.processInfo.systemUptime
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]) { [weak self] event in
+            // A global callback for the invoking shortcut can arrive after show.
+            guard event.timestamp > openedAt else { return }
+            MainActor.assumeIsolated { self?.cancel() }
         }
         workspaceObserver = activationNotifications.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
-            object: nil, queue: .main) { [weak self] _ in MainActor.assumeIsolated { self?.cancel() } }
+            object: nil, queue: .main) { [weak self] notification in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let pid = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
+                    if let pid, pid == self.target?.applicationPID { return }
+                    self.cancel()
+                }
+            }
         panel.center(); panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(nil)
     }
@@ -206,7 +185,17 @@ final class ClipboardHistoryController {
         let target = target
         let retention = history.retentionGeneration
         hide(keepingActivationObserver: true)
+        self.target = target
         let token = UUID(); operation = token; delivery?.cancel()
+        // No range is exposed by some IDEs. Input after choosing is therefore
+        // an essential invalidation signal, including during focus restoration.
+        deliveryInputMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]) { [weak self] _ in
+            MainActor.assumeIsolated { self?.cancel() }
+        }
+        deliveryLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]) { [weak self] event in
+            MainActor.assumeIsolated { self?.cancel() }
+            return event
+        }
         delivery = Task { [weak self] in
             do {
                 guard let self else { return }
@@ -219,7 +208,7 @@ final class ClipboardHistoryController {
                 self.onSuccessfulPaste?()
             } catch is CancellationError { }
             catch { self?.onError?(error) }
-            if self?.operation == token { self?.removeActivationObserver() }
+            if self?.operation == token { self?.hide() }
         }
     }
 
@@ -228,6 +217,8 @@ final class ClipboardHistoryController {
         state.revealedIDs = []
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }; localMonitor = nil
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }; globalMonitor = nil
+        if let deliveryInputMonitor { NSEvent.removeMonitor(deliveryInputMonitor) }; deliveryInputMonitor = nil
+        if let deliveryLocalMonitor { NSEvent.removeMonitor(deliveryLocalMonitor) }; deliveryLocalMonitor = nil
         if !keepingActivationObserver { removeActivationObserver() }
     }
 
@@ -243,6 +234,8 @@ final class ClipboardHistoryController {
         delivery?.cancel()
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
+        if let deliveryInputMonitor { NSEvent.removeMonitor(deliveryInputMonitor) }
+        if let deliveryLocalMonitor { NSEvent.removeMonitor(deliveryLocalMonitor) }
         if let workspaceObserver { activationNotifications.removeObserver(workspaceObserver) }
     }
 }

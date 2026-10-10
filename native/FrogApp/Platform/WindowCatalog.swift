@@ -26,6 +26,7 @@ struct SwitcherWindow: Identifiable, Equatable, Sendable {
     let title: String
     let minimized: Bool
     let hidden: Bool
+    var windowID: CGWindowID? = nil
 }
 
 actor WindowCatalog {
@@ -84,6 +85,8 @@ actor WindowCatalog {
             return .success(Metadata(role: role, identifier: values[1] as? String,
                 subrole: values[2] as? String, title: values[3] as? String, minimized: values[4] as? Bool == true))
         }
+        var windowID: @Sendable (AXUIElement) -> CGWindowID? = { WindowSpaceBridge.windowID($0) }
+        var offSpaceWindows: @Sendable (Set<pid_t>) -> [WindowSpaceBridge.Window] = { WindowSpaceBridge.offSpaceWindows(owners: $0) }
     }
     struct Metadata {
         var role: String? = kAXWindowRole
@@ -105,7 +108,8 @@ actor WindowCatalog {
     struct Target: @unchecked Sendable {
         let id: UUID
         let pid: pid_t
-        let element: AXUIElement
+        let element: AXUIElement?
+        var windowID: CGWindowID? = nil
     }
     private final class ActivationTargets: @unchecked Sendable {
         private let lock = NSLock()
@@ -140,10 +144,18 @@ actor WindowCatalog {
         activator = WindowActivationExecutor(writer: writer)
     }
 
-    private func identity(_ element: AXUIElement, pid: pid_t) -> UUID {
-        if let target = targets.first(where: { $0.pid == pid && CFEqual($0.element, element) }) { return target.id }
+    private func identity(_ element: AXUIElement?, pid: pid_t, windowID: CGWindowID? = nil) -> UUID {
+        if let index = targets.firstIndex(where: { target in
+            guard target.pid == pid else { return false }
+            if let windowID, target.windowID == windowID { return true }
+            return element.flatMap { element in target.element.map { CFEqual($0, element) } } ?? false
+        }) {
+            let old = targets[index]
+            targets[index] = Target(id: old.id, pid: pid, element: element ?? old.element, windowID: windowID ?? old.windowID)
+            return old.id
+        }
         let id = UUID()
-        targets.append(Target(id: id, pid: pid, element: element))
+        targets.append(Target(id: id, pid: pid, element: element, windowID: windowID))
         return id
     }
 
@@ -151,7 +163,7 @@ actor WindowCatalog {
         guard reader.isTrusted(), !Task.isCancelled else { return nil }
         guard let element = reader.focusedWindow(pid), !Task.isCancelled else { return nil }
         mergeRaisedRecency()
-        let id = identity(element, pid: pid)
+        let id = identity(element, pid: pid, windowID: reader.windowID(element))
         recent.removeAll { $0 == id }
         recent.insert(id, at: 0)
         if recent.count > 256 { recent.removeLast(recent.count - 256) }
@@ -180,8 +192,8 @@ actor WindowCatalog {
             // Only previously described windows can be retained, for at most 30s.
             // A successful empty list (or a departed owner) never reaches this path.
             for target in previousTargets where target.pid == app.pid {
-                if let element, !CFEqual(target.element, element) { continue }
-                if let unreadElements, !unreadElements.contains(where: { CFEqual(target.element, $0) }) { continue }
+                if let element, target.element.map({ !CFEqual($0, element) }) ?? true { continue }
+                if let unreadElements, !unreadElements.contains(where: { candidate in target.element.map { CFEqual($0, candidate) } ?? false }) { continue }
                 guard let old = lastKnown[target.id], old.readAt.duration(to: timestamp) < .seconds(30),
                       !windows.contains(where: { $0.id == target.id }) else { continue }
                 windows.append(old.window)
@@ -212,15 +224,31 @@ actor WindowCatalog {
                 guard metadata.role == kAXWindowRole else { continue }
                 if metadata.identifier == SwitcherWindow.overlayIdentifier { continue }
                 if ["AXFloatingWindow", "AXSystemFloatingWindow"].contains(metadata.subrole ?? "") { continue }
-                let id = identity(element, pid: app.pid)
+                let nativeID = reader.windowID(element)
+                let id = identity(element, pid: app.pid, windowID: nativeID)
                 guard !windows.contains(where: { $0.id == id }) else { continue }
                 let title = metadata.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 let window = SwitcherWindow(id: id, pid: app.pid, appName: app.name,
                     title: title.isEmpty ? "Untitled window" : title,
-                    minimized: metadata.minimized, hidden: app.hidden)
+                    minimized: metadata.minimized, hidden: app.hidden, windowID: nativeID)
                 windows.append(window)
                 known[id] = KnownWindow(window: window, readAt: timestamp)
                 if let focused, CFEqual(focused, element) { current = id }
+            }
+        }
+        if !Task.isCancelled {
+            let owners = Dictionary(uniqueKeysWithValues: applications.map { ($0.pid, $0) })
+            for server in reader.offSpaceWindows(Set(owners.keys)) {
+                guard !Task.isCancelled else { break }
+                guard let app = owners[server.pid] else { continue }
+                let id = identity(nil, pid: server.pid, windowID: server.id)
+                guard !windows.contains(where: { $0.id == id }) else { continue }
+                let title = server.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let window = SwitcherWindow(id: id, pid: server.pid, appName: app.name,
+                    title: title.flatMap { $0.isEmpty ? nil : $0 } ?? lastKnown[id]?.window.title ?? "Window on another Desktop",
+                    minimized: lastKnown[id]?.window.minimized ?? false, hidden: app.hidden, windowID: server.id)
+                windows.append(window)
+                known[id] = KnownWindow(window: window, readAt: timestamp)
             }
         }
         guard !Task.isCancelled else {
@@ -258,6 +286,12 @@ actor WindowCatalog {
         let raised = await activator.raise(target, isCurrent: isCurrent)
         if raised { activationTargets.noteRaised(id) }
         return raised
+    }
+
+    nonisolated func prepareActivation(id: UUID, isCurrent: @escaping @Sendable () -> Bool = { true },
+                                      willChangeSpace: @escaping @Sendable () async -> Void = {}) async -> Bool {
+        guard !Task.isCancelled, isCurrent(), let target = activationTargets.target(id) else { return false }
+        return await activator.prepare(target, isCurrent: isCurrent, willChangeSpace: willChangeSpace)
     }
 
     private func mergeRaisedRecency() {

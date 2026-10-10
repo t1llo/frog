@@ -222,6 +222,7 @@ private final class CatalogFixture: @unchecked Sendable {
         WindowCatalog.Reader(isTrusted: { true }, windows: { [self] pid in
             onRead?(pid)
             return lock.withLock { lists[pid] ?? .success([]) }
-        }, focusedWindow: { [self] pid in pid == 10 ? a : b }, metadata: { [self] _ in lock.withLock { reads += 1; return metadata } })
+        }, focusedWindow: { [self] pid in pid == 10 ? a : b }, metadata: { [self] _ in lock.withLock { reads += 1; return metadata } },
+           windowID: { _ in nil }, offSpaceWindows: { _ in [] })
     }
 }
