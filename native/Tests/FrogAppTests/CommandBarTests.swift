@@ -19,9 +19,8 @@ import FrogCore
         }, fileSearch: files, openFile: { opened.append($0); return true }, loadApplications: { [] })
         defer { bar.stop() }
         bar.show(); bar.query = "Project"
-        try await Task.sleep(for: .milliseconds(180))
         let chosen = SearchRecord(id: "file:/fixture/Project notes.txt", title: "Project notes.txt")
-        files.requests.last?.receive([chosen])
+        try await files.request("Project").receive([chosen])
         bar.choose(try XCTUnwrap(bar.results.firstIndex { $0.id == chosen.id }))
         for _ in 0..<100 where opened.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
         XCTAssertEqual(opened, [URL(fileURLWithPath: "/fixture/Project notes.txt")])
@@ -31,9 +30,8 @@ import FrogCore
         XCTAssertEqual(bar.results.first?.id, chosen.id)
         waits = true
         bar.query = "Cancelled"
-        try await Task.sleep(for: .milliseconds(180))
         let cancelled = SearchRecord(id: "file:/fixture/Cancelled.txt", title: "Cancelled.txt")
-        files.requests.last?.receive([cancelled])
+        try await files.request("Cancelled").receive([cancelled])
         bar.choose(try XCTUnwrap(bar.results.firstIndex { $0.id == cancelled.id }))
         await gate.started()
         bar.show()
@@ -137,12 +135,10 @@ import FrogCore
         XCTAssertEqual(files.requests.count, 1, "An unrelated app refresh must not restart Spotlight or its debounce")
         XCTAssertEqual(bar.results[bar.selection].id, selected)
         bar.query = "Weekly"
-        try await Task.sleep(for: .milliseconds(180))
-        let weeklyRequest = try XCTUnwrap(files.requests.last)
+        let weeklyRequest = try await files.request("Weekly")
         bar.query = "Late app"
-        try await Task.sleep(for: .milliseconds(180))
         let exact = SearchRecord(id: "file:/fixture/Late app", title: "Late app", subtitle: "Folder", symbol: "folder")
-        files.requests.last?.receive([exact])
+        try await files.request("Late app").receive([exact])
         XCTAssertTrue(bar.results.prefix(2).contains(exact), "Exact files must compete with apps rather than trail all app matches")
         XCTAssertTrue(bar.results.prefix(2).contains { $0.id.hasPrefix("app:") })
         XCTAssertEqual(bar.results[bar.selection].id, exact.id, "Without manual navigation, Return follows the best arriving match")
@@ -446,6 +442,11 @@ private actor CommandIndexGate {
         requests.append(Request(text: text, receive: receive))
     }
     func stop() {}
+    /// A typed query starts its search on the bar's own debounce; wait for it rather than racing that timer.
+    func request(_ text: String) async throws -> Request {
+        for _ in 0..<600 where requests.last?.text != text { try await Task.sleep(for: .milliseconds(5)) }
+        return try XCTUnwrap(requests.last.flatMap { $0.text == text ? $0 : nil }, "No file search started for \(text)")
+    }
 }
 
 private final class CommandIconFixture: @unchecked Sendable {
