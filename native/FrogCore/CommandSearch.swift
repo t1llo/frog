@@ -24,7 +24,8 @@ public struct SearchRecord: Identifiable, Equatable, Sendable {
 }
 
 public enum CommandSearch {
-    public static func results(_ records: [SearchRecord], query: String, limit: Int = 80, preferred: [SearchRecord] = []) -> [SearchRecord] {
+    /// Within one relevance bucket `preferred` records lead, the catalogue follows and `trailing` records come last.
+    public static func results(_ records: [SearchRecord], query: String, limit: Int = 80, preferred: [SearchRecord] = [], trailing: [SearchRecord] = []) -> [SearchRecord] {
         let query = normalized(query)
         guard limit > 0 else { return [] }
         var preferredIDs = Set<String>()
@@ -57,6 +58,7 @@ public enum CommandSearch {
         }
         for record in preferred { append(record) }
         for record in records where !preferredIDs.contains(record.id) { append(record) }
+        for record in trailing where !preferredIDs.contains(record.id) { append(record) }
         return Array(ranked.reversed().joined().prefix(limit))
     }
     private static let commandContext: Set<String> = ["change", "set", "adjust", "configure", "open", "show", "find", "enable", "disable", "turn", "on", "off", "my", "the", "a", "an", "please", "how", "do", "i", "to", "me", "mac", "macos", "system", "settings", "preferences", "and", "can", "where", "is", "are", "all"]

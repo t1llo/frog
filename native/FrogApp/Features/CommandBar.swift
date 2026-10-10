@@ -406,13 +406,15 @@ import SwiftUI
         let preserveChoice = preserveSelection && selectionWasMoved
         let selectedID = preserveChoice && results.indices.contains(selection) ? results[selection].id : nil
         var preferred = recentSelections.compactMap { recordsByID[$0] }
-        if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        let typed = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if !typed {
             let files = fileRecords.prefix(4)
             let commands = records.lazy.filter { $0.id.hasPrefix("feature:") || $0.id.hasPrefix("rule:") }.prefix(4)
             preferred += files + commands
             preferred += cachedApplications.prefix(8).compactMap { $0.action?.applicationPath.flatMap { applicationRecords[$0] } }
-        } else { preferred += fileRecords }
-        var next = CommandSearch.results(records, query: query, preferred: preferred)
+        }
+        // Late Spotlight results must not bury an equally good app or Frog command.
+        var next = CommandSearch.results(records, query: query, preferred: preferred, trailing: typed ? fileRecords : [])
         if let calculationID { actions[calculationID] = nil; self.calculationID = nil }
         if let answer = QuickCalculation.result(query) {
             let id = "calculation:\(query)"
@@ -653,10 +655,10 @@ private struct CommandResultRow: View, Equatable {
         } label: {
             HStack(spacing: 12) {
                 CommandResultIcon(bar: bar, result: result)
-                Text(result.title).font(.system(size: 13)).lineLimit(1)
+                Text(result.title).font(.system(size: 13, weight: selected ? .medium : .regular)).lineLimit(1)
                 Spacer(minLength: 10)
-                Text(result.subtitle).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1).frame(maxWidth: 160, alignment: .trailing)
-                if selected { Image(systemName: "return").font(.system(size: 11)).foregroundStyle(FrogStyle.muted) }
+                Text(result.subtitle).font(.system(size: 10)).foregroundStyle(result.isFrogCommand ? FrogStyle.accent : FrogStyle.muted).lineLimit(1).frame(maxWidth: 160, alignment: .trailing)
+                if selected { Image(systemName: "return").font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.accent) }
             }.padding(.horizontal, 10).frame(height: 40)
                 .background(selected ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: 7))
                 .contentShape(Rectangle())
@@ -671,10 +673,19 @@ private struct CommandResultIcon: View {
     var body: some View {
         Group {
             if let icon { Image(nsImage: icon).resizable() }
-            else { Image(systemName: result.symbol).foregroundStyle(FrogStyle.muted) }
+            else {
+                Image(systemName: result.symbol).font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(result.isFrogCommand ? FrogStyle.accent : FrogStyle.muted).frame(width: 24, height: 24)
+                    .background(result.isFrogCommand ? FrogStyle.accentSoft : FrogStyle.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+            }
         }.frame(width: 24, height: 24)
             .task(id: result.id) { icon = await bar.icon(for: result) }
     }
+}
+
+private extension SearchRecord {
+    /// Frog's own pages, commands and answers, set apart from apps, windows, files and system destinations.
+    var isFrogCommand: Bool { id == "features" || ["feature:", "route:", "rule:", "quick:", "layout:", "system:", "calculation:"].contains { id.hasPrefix($0) } }
 }
 
 private extension URL {
