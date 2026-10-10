@@ -43,6 +43,7 @@ struct UsageDashboardView: View {
 }
 
 struct UsageStatusPopover: View {
+    static let width: CGFloat = 240
     @ObservedObject var usage: UsageDashboardModel
     var height: CGFloat = 360
     let openDashboard: () -> Void
@@ -85,7 +86,7 @@ struct UsageStatusPopover: View {
                     .buttonStyle(.plain).font(.system(size: 11, weight: .medium))
             }
         }
-        .padding(14).frame(width: 360, height: height).frogPanel()
+        .padding(14).frame(width: Self.width, height: height).frogPanel()
         .onAppear { usage.setPresented(true) }
         .onDisappear { usage.setPresented(false) }
     }
@@ -104,7 +105,7 @@ private struct UsageProviderControls: View {
     var compact = false
     var body: some View {
         HStack(spacing: compact ? 6 : 12) {
-                CompactSegments(values: usage.providers, selected: usage.preferences.provider, width: compact ? 332 : 220, title: { $0 }) {
+                CompactSegments(values: usage.providers, selected: usage.preferences.provider, width: compact ? UsageStatusPopover.width - 28 : 220, title: { $0 }) {
                     var next = usage.preferences; next.provider = $0; usage.updatePreferences(next)
                 }.accessibilityLabel("Usage provider")
                 Spacer(minLength: 0)
@@ -272,7 +273,7 @@ private struct UsageActivityView: View {
                         HStack(spacing: 12) {
                             ForEach(["Input", "Cache read", "Output"], id: \.self) { name in
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(name == "Cache read" ? "Cached input" : name).foregroundStyle(FrogStyle.muted)
+                                    Text(name == "Cache read" ? "Cached" : name).lineLimit(1).foregroundStyle(FrogStyle.muted)
                                     Text(usage.format(chart.totals.first { $0.name == name }?.value ?? 0, metric: name)).monospacedDigit()
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -452,7 +453,7 @@ private struct UsageActivityChart: View {
                 AxisValueLabel {
                     if let date = value.as(Date.self) {
                         Text(date, format: usage.preferences.range == "24h" ? .dateTime.hour() : .dateTime.month(.abbreviated).day())
-                            .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                            .font(.system(size: 10)).foregroundStyle(FrogStyle.muted).fixedSize()
                     }
                 }
             }
