@@ -19,6 +19,7 @@ public struct UsageDashboardPreferences: Codable, Equatable {
     public var provider: String
     public var range: String
     public var metric: String
+    /// Legacy configuration field, retained for round trips; activity is always combined.
     public var allDevices: Bool
     public var loginSource: String
 
@@ -130,7 +131,7 @@ public struct UsagePlanPeriod: Identifiable {
     public var onPreferencesChange: ((UsageDashboardPreferences) -> Void)?
     private var available = true
     public var providers: [String] { Provider.allCases.map(\.rawValue) }
-    public var ranges: [String] { preferences.provider == "OpenAI" && preferences.allDevices ? ["7d", "30d"] : TokenRange.allCases.map(\.rawValue) }
+    public var ranges: [String] { preferences.provider == "OpenAI" ? ["7d", "30d"] : TokenRange.allCases.map(\.rawValue) }
     public var metrics: [String] { TokenMetric.allCases.map(\.rawValue) }
     public var loginSources: [String] { ClaudeLoginSource.allCases.map(\.rawValue) }
     public var loginSource: String { claude.loginSource.rawValue }
@@ -208,7 +209,7 @@ public struct UsagePlanPeriod: Identifiable {
     }
     private static func validated(_ value: UsageDashboardPreferences) -> UsageDashboardPreferences {
         UsageDashboardPreferences(provider: Provider(rawValue: value.provider)?.rawValue ?? "Claude",
-            range: value.provider == "OpenAI" && value.allDevices && value.range == "24h" ? "7d" : TokenRange(rawValue: value.range)?.rawValue ?? "7d",
+            range: value.provider == "OpenAI" && value.range == "24h" ? "7d" : TokenRange(rawValue: value.range)?.rawValue ?? "7d",
             metric: TokenMetric(rawValue: value.metric)?.rawValue ?? "API cost",
             allDevices: value.allDevices,
             loginSource: ClaudeLoginSource(rawValue: value.loginSource)?.rawValue ?? "Automatic")
@@ -257,9 +258,9 @@ public struct UsagePlanPeriod: Identifiable {
     public func planUpdatedAt(provider: String) -> Date? {
         provider == "Claude" ? claude.lastGoodAt : tokens.codexLimits?.asOf
     }
-    public func chart(provider: String, range: String, metric: String, allDevices: Bool) -> UsageChart {
+    public func chart(provider: String, range: String, metric: String) -> UsageChart {
         let metric = TokenMetric(rawValue: metric) ?? .cost
-        let account = provider == "OpenAI" && allDevices
+        let account = provider == "OpenAI"
         let range = account && range == "24h" ? TokenRange.week : TokenRange(rawValue: range) ?? .week
         let summary = tokens.summary(Provider(rawValue: provider) ?? .claude, account: account,
             range: range, metric: metric)

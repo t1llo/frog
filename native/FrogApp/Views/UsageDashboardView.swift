@@ -62,7 +62,7 @@ struct UsageStatusPopover: View {
                 }.padding(.trailing, 4)
             }
             HStack {
-                Label(usage.preferences.provider == "OpenAI" && usage.preferences.allDevices && usage.hasAccountActivity ? "Account estimates" : "Local token history", systemImage: "chart.bar.xaxis")
+                Label(usage.preferences.provider == "OpenAI" ? "Combined activity" : "Local token history", systemImage: "chart.bar.xaxis")
                     .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                 Spacer()
                 Button("Dashboard", systemImage: "arrow.up.right") { openDashboard() }
@@ -90,16 +90,8 @@ private struct UsageProviderControls: View {
                             Button(source) { usage.selectLoginSource(source) }
                         }
                     }.accessibilityLabel("Claude login source").help("Saved login")
-            } else {
-                    CompactMenu(value: usage.preferences.allDevices ? "All devices" : "This Mac", width: compact ? 118 : 180) {
-                        Button("This Mac") { selectAllDevices(false) }
-                        Button("All devices") { selectAllDevices(true) }
-                    }.accessibilityLabel("OpenAI activity source")
             }
         }
-    }
-    private func selectAllDevices(_ value: Bool) {
-        var next = usage.preferences; next.allDevices = value; usage.updatePreferences(next)
     }
 }
 
@@ -202,8 +194,7 @@ private struct UsageActivityView: View {
     var compact = false
     var body: some View {
         let settings = usage.preferences
-        let chart = usage.chart(provider: settings.provider, range: settings.range, metric: settings.metric,
-                                allDevices: settings.provider == "OpenAI" && settings.allDevices)
+        let chart = usage.chart(provider: settings.provider, range: settings.range, metric: settings.metric)
         VStack(alignment: .leading, spacing: compact ? 8 : 14) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
@@ -286,7 +277,7 @@ private struct UsageActivityView: View {
                     }
                 }
             }
-            if !compact, settings.provider == "OpenAI", settings.allDevices {
+            if !compact, settings.provider == "OpenAI" {
                 Text(usage.hasAccountActivity
                      ? "Account totals by UTC day; local activity fills unreported days. Token splits and API cost are estimated from \(usage.accountEstimateBasis)."
                      : "Account activity is unavailable. Showing this Mac’s logs while account checks retry.")

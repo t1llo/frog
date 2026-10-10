@@ -86,16 +86,32 @@ actor OpenCodeReader {
         guard sqlite3_open_v2(url.path, &db, flags, nil) == SQLITE_OK else { sqlite3_close(db); return nil }
         defer { sqlite3_close(db) }
         sqlite3_busy_timeout(db, 2000)
-        let sql = """
-            SELECT json_extract(data,'$.providerID'), json_extract(data,'$.modelID'),
+        // V2 uses session_message and model.{providerID,id}; migrated databases can
+        // retain V1 message rows too. Project only counters, never message contents.
+        var schema: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('message','session_message')", -1, &schema, nil) == SQLITE_OK else { return nil }
+        var tables = Set<String>()
+        while sqlite3_step(schema) == SQLITE_ROW {
+            if let name = sqlite3_column_text(schema, 0) { tables.insert(String(cString: name)) }
+        }
+        sqlite3_finalize(schema)
+        guard !tables.isEmpty else { return nil }
+        let sql = ["message", "session_message"].filter { tables.contains($0) }.map { table in
+            let modern = table == "session_message"
+            let provider = modern ? "$.model.providerID" : "$.providerID"
+            let model = modern ? "$.model.id" : "$.modelID"
+            let assistant = modern ? "type = 'assistant'" : "json_extract(data,'$.role') = 'assistant'"
+            return """
+            SELECT json_extract(data,'\(provider)'), json_extract(data,'\(model)'),
                     coalesce(json_extract(data,'$.time.created'), time_created), json_extract(data,'$.time.completed'),
                    json_extract(data,'$.tokens.input'), json_extract(data,'$.tokens.output'),
                    json_extract(data,'$.tokens.reasoning'), json_extract(data,'$.tokens.cache.read'),
                    json_extract(data,'$.tokens.cache.write')
-            FROM message
-            WHERE time_created >= ?
-              AND CASE WHEN json_valid(data) THEN json_extract(data,'$.role') = 'assistant' ELSE 0 END
+            FROM \(table)
+            WHERE time_created >= ?1
+              AND CASE WHEN json_valid(data) THEN \(assistant) ELSE 0 END
             """
+        }.joined(separator: " UNION ALL ")
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
         defer { sqlite3_finalize(stmt) }
