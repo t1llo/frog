@@ -6,6 +6,13 @@
 22 usage, 277 app) after the final changes. Synthetic native popup assertions
 also passed for light, dark and Tokyo Night appearances.
 
+Installed signed universal local build **1.0.14 / 20261010144546** from `7cc78ff`
+at `/Applications/Frog.app`. Strict nested signature checks and both architectures
+passed; installed executable matches the verified build. Configuration bytes,
+semantic preferences and downloaded-model inventory remained unchanged, with one
+installed process running. Superseded generated/backup app bundles moved to Trash.
+This is a local update; the published v1.0.14 release remains the earlier build.
+
 A dynamic native MenuBarExtra fixture reproduces the outer translucent strips:
 window height 326 pt, visible panel 252 pt after an async status-row removal. Removing
 fixedSize left the mismatch. Explicit content-driven native sizing now produces
