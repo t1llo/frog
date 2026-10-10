@@ -10,6 +10,13 @@ command warm opening/search 14.6 ms, switcher first presentation 8.9 ms (warm p9
 7.0 ms), and three Usage provider changes with 200 saved rules 2.4 ms. Public-source
 secret scanning, whitespace and local documentation-link checks passed.
 
+Signed universal local **1.0.15 / 20261010155203**, built from `51d8380`, is installed
+at `/Applications/Frog.app`. Both architectures, the existing Developer ID team,
+strict nested signatures and installed executable hash were verified. JSON and text
+configuration bytes, semantic preferences and downloaded-model inventory remained
+unchanged; one matching installed process is running. Superseded generated/backup
+bundles moved to Trash. This follow-up has not been published as a new GitHub release.
+
 The shared release pipeline published **v1.0.15 / 20261010145748** from
 `2e900fed56bd5c6b51329866658e0b86216c54b3`. Its test, universal architecture,
 signature, notarization, Gatekeeper, Sparkle and uploaded-download checks passed.
