@@ -45,8 +45,15 @@ scrollbar style. Warm presentation p95 remained 7 ms.
 The combined `swift test -c release --disable-keychain` run passed **480 tests**:
 98 core, 23 Usage and 359 app tests, with the three opt-in native Spaces probes
 skipped and no failures. It was repeated unchanged after the work moved between
-agent sessions. The signed app's cross-Desktop switching and automatic paste into
-a real IDE terminal have not been exercised yet.
+agent sessions.
+
+Signed universal **1.0.15 / 20261010180351** was built from `c5db32f` and installed
+at `/Applications/Frog.app`. Its signature, existing signing team, hardened runtime,
+both architectures, executable hash and one running installed process were verified.
+Configuration bytes, semantic preferences and the downloaded-model inventory were
+unchanged, and the superseded bundle was moved to Trash. This is a local build, not
+a published release. The installed app's cross-Desktop switching and automatic paste
+into a real IDE terminal have not been exercised yet.
 
 ## Interaction follow-up after v1.0.15
 
