@@ -10,7 +10,8 @@ final class WindowSwitcherCacheTests: XCTestCase {
         let latest = window("New", pid: 20)
         let result = await cache.update { .init(windows: [latest, old], current: nil, completeness: .partial) }
         XCTAssertEqual(result?.windows.map(\.id), [latest.id, old.id])
-        XCTAssertNil(cache.readySnapshot(frontPID: 20), "An explicit invocation should retry an incomplete inventory")
+        XCTAssertEqual(cache.readySnapshot(frontPID: 20)?.windows.map(\.id), [latest.id, old.id])
+        XCTAssertTrue(cache.needsRefresh(), "An explicit invocation should retry an incomplete inventory without withholding its rows")
         cache.noteFocused(old.id)
         XCTAssertEqual(cache.snapshot?.completeness, .partial)
         _ = await cache.update { .init(windows: [], current: nil, completeness: .cancelled) }
@@ -21,15 +22,39 @@ final class WindowSwitcherCacheTests: XCTestCase {
         XCTAssertEqual(cache.readySnapshot(frontPID: nil)?.windows.count, 0)
     }
 
-    func testAnInventoryThatAgesWhileTypingRequiresFreshDiscovery() async {
+    func testAnInventoryThatAgesWhileTypingPresentsImmediatelyAndRequestsFreshDiscovery() async {
         let cache = WindowSwitcherCache()
         let old = window("Old window", pid: 10)
         _ = await cache.update { .init(windows: [old], current: old.id) }
         XCTAssertNotNil(cache.readySnapshot(frontPID: 10))
-        XCTAssertNil(cache.readySnapshot(frontPID: 10, at: .now.advanced(by: .seconds(6))))
+        XCTAssertTrue(cache.needsRefresh(at: .now.advanced(by: .seconds(6))))
+        XCTAssertNotNil(cache.readySnapshot(frontPID: 10))
         let new = window("New window", pid: 10)
         _ = await cache.update { .init(windows: [new], current: new.id) }
         XCTAssertEqual(cache.readySnapshot(frontPID: 10)?.windows.map(\.id), [new.id])
+        XCTAssertFalse(cache.needsRefresh())
+    }
+
+    func testWarmRowsExcludeDepartedOwnersWithoutWaitingForDiscovery() async {
+        let cache = WindowSwitcherCache()
+        let departed = window("Departed", pid: 10), live = window("Live", pid: 20)
+        _ = await cache.update { .init(windows: [departed, live], current: departed.id) }
+        let ready = cache.readySnapshot(frontPID: 20, livePIDs: [20])
+        XCTAssertEqual(ready?.windows.map(\.id), [live.id])
+        XCTAssertEqual(ready?.current, live.id)
+    }
+
+    func testRefreshingHeldInventoryPreservesCyclingOrderAndSelection() {
+        var session = WindowSwitchSession<Int>()
+        session.begin(windows: [1, 2, 3], current: 1, backwards: false)
+        session.reconcile(windows: [4, 3, 2, 1])
+        XCTAssertEqual(session.windows, [1, 2, 3, 4])
+        XCTAssertEqual(session.selected, 2)
+        session.step(backwards: false)
+        XCTAssertEqual(session.selected, 3)
+        session.reconcile(windows: [4, 2])
+        XCTAssertEqual(session.windows, [2, 4])
+        XCTAssertEqual(session.selected, 2)
     }
 
     func testCachedInventoryIsImmediatelyAvailableDuringSlowRefresh() async throws {

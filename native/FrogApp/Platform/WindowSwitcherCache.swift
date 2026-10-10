@@ -44,17 +44,23 @@ final class WindowSwitcherCache {
                                               completeness: snapshot.completeness)
     }
 
-    func readySnapshot(frontPID: pid_t?, at now: ContinuousClock.Instant = .now) -> WindowCatalog.Snapshot? {
-        // Background scans pause while typing. A later explicit invocation must
-        // discover new/closed windows rather than use an indefinitely old list.
-        guard let snapshot, let updatedAt, updatedAt.duration(to: now) < .seconds(5) else { return nil }
-        let current = snapshot.windows.first { $0.id == snapshot.current && $0.pid == frontPID }
-            ?? snapshot.windows.first { $0.pid == frontPID }
-        return WindowCatalog.Snapshot(windows: snapshot.windows, current: current?.id, completeness: snapshot.completeness)
+    func needsRefresh(at now: ContinuousClock.Instant = .now) -> Bool {
+        guard let updatedAt else { return true }
+        return updatedAt.duration(to: now) >= .seconds(5)
+    }
+
+    func readySnapshot(frontPID: pid_t?, livePIDs: Set<pid_t>? = nil) -> WindowCatalog.Snapshot? {
+        // Freshness controls discovery, not presentation. Typing deliberately
+        // pauses scans; the last inventory is still useful immediately afterward.
+        guard let snapshot else { return nil }
+        let windows = snapshot.windows.filter { livePIDs?.contains($0.pid) ?? true }
+        let current = windows.first { $0.id == snapshot.current && $0.pid == frontPID }
+            ?? windows.first { $0.pid == frontPID }
+        return WindowCatalog.Snapshot(windows: windows, current: current?.id, completeness: snapshot.completeness)
     }
 }
 
-/// Quick taps never present a panel; a held invocation can present only with data.
+/// Released invocations never present late data; held invocations require rows.
 struct WindowSwitchPresentation {
     private(set) var sessionID: UInt64?
     private(set) var ready = false

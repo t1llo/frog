@@ -40,7 +40,7 @@ struct RulesView: View {
         return applications ? "Shortcuts" : "Rules"
     }
     private var pageSubtitle: String {
-        if fixedCategory == .window { return "Switch windows with ⌘Tab and arrange your front window." }
+        if fixedCategory == .window { return "Arrange your front window with keyboard shortcuts." }
         if applications { return "Choose your own shortcuts for apps and everyday Mac actions." }
         if category == .audio { return "Turn speech into text with your preferred model and shortcut." }
         return "Transform selected text with reusable instructions and shortcuts."
@@ -55,15 +55,9 @@ struct RulesView: View {
                 }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut("n", modifiers: .command) }
             }
             VStack(spacing: 0) {
-                if fixedCategory == .window {
-                    CompactRow(title: "Window switcher", detail: model.windowSwitcherStatus) {
-                        Text(model.windowSwitcherReady ? "Ready" : "Not ready").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                    }.padding(12)
-                    Divider().opacity(0.5)
-                }
                 ListToolbar(placeholder: applications ? "Search shortcuts" : "Search rules", search: $search) {
                     if applications, fixedCategory == nil {
-                        CompactSegments(values: [RuleCategory.application, .system], selected: shortcutCategory, title: { $0.title }) {
+                        CompactSegments(values: [RuleCategory.application, .window, .system], selected: shortcutCategory, title: { $0 == .application ? "Application" : $0.title }) {
                             shortcutCategory = $0; search = ""
                         }
                     } else if fixedCategory == nil {

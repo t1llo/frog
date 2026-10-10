@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import FrogCore
 
 /// Synchronous input decisions only. No AppKit, AX, UI work, or main-queue waits.
 /// The short lock also lets UI completion retire an exact session/activation.
@@ -10,14 +11,16 @@ final class WindowSwitchInput: @unchecked Sendable {
         case reset(session: UInt64?, activation: UUID?)
     }
     private let lock = NSLock()
-    private var router = WindowSwitchKeyRouter()
+    private var router: WindowSwitchKeyRouter
     private var activation: UUID?
     private var lastKeyDown: ContinuousClock.Instant?
     private var stopped = false
     private var reenableTap: (@Sendable () -> Void)?
     private let send: @Sendable (Event) -> Void
 
-    init(reenableTap: (@Sendable () -> Void)? = nil, send: @escaping @Sendable (Event) -> Void) {
+    init(hotkey: Hotkey = WindowSwitchKeyRouter.defaultHotkey,
+         reenableTap: (@Sendable () -> Void)? = nil, send: @escaping @Sendable (Event) -> Void) {
+        router = WindowSwitchKeyRouter(hotkey: hotkey)
         self.reenableTap = reenableTap; self.send = send
     }
     var state: WindowSwitchKeyRouter { lock.withLock { router } }
@@ -59,17 +62,20 @@ final class WindowSwitchInput: @unchecked Sendable {
             }
             if type == .leftMouseDown || type == .rightMouseDown {
                 guard router.sessionID != nil || activation != nil else { return (false, nil) }
-                return (false, .mouse(event.location, session: router.sessionID, activation: activation))
+                // Activation only exists after the overlay session is retired;
+                // every click then invalidates it without waiting for the UI queue.
+                // Active-overlay hit testing still belongs to the controller.
+                let cancelled = activation
+                activation = nil
+                return (false, .mouse(event.location, session: router.sessionID, activation: cancelled))
             }
             let result: WindowSwitchKeyRouter.Result
-            if type == .flagsChanged { result = router.modifiers(command: event.flags.contains(.maskCommand)) }
+            if type == .flagsChanged { result = router.modifiers(flags: event.flags) }
             else if type == .keyDown || type == .keyUp {
-                let command = event.flags.contains(.maskCommand)
-                let other = !event.flags.intersection([.maskControl, .maskAlternate]).isEmpty
                 // Ordinary typing never needs a keyboard-layout/IME lookup.
-                let text = type == .keyDown && router.active && command && !other ? Self.text(event) : ""
+                let text = type == .keyDown && router.acceptsSearch(flags: event.flags) ? Self.text(event) : ""
                 result = router.key(code: UInt16(event.getIntegerValueField(.keyboardEventKeycode)), down: type == .keyDown,
-                                    command: command, shift: event.flags.contains(.maskShift), otherModifiers: other, text: text)
+                                    flags: event.flags, text: text)
             } else { return (false, nil) }
             let cancelled = type == .keyDown && result.cancelsPendingActivation ? activation : nil
             if cancelled != nil { activation = nil }

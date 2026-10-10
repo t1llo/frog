@@ -15,11 +15,13 @@ final class WindowSwitcherInputLifecycle {
     private let startInput: () -> Bool
     private let stopInput: () -> Void
     private let statusChanged: (String, Bool) -> Void
+    private let readyStatus: () -> String
 
     init(active: Bool, trusted: @escaping () -> Bool, healthy: @escaping () -> Bool,
-         start: @escaping () -> Bool, stop: @escaping () -> Void, statusChanged: @escaping (String, Bool) -> Void) {
+         start: @escaping () -> Bool, stop: @escaping () -> Void, statusChanged: @escaping (String, Bool) -> Void,
+         readyStatus: @escaping () -> String = { "Ready · ⌘Tab switches windows" }) {
         self.active = active; self.trusted = trusted; self.healthy = healthy
-        startInput = start; stopInput = stop; self.statusChanged = statusChanged
+        startInput = start; stopInput = stop; self.statusChanged = statusChanged; self.readyStatus = readyStatus
     }
 
     func configure(enabled: Bool, suspended: Bool) {
@@ -48,16 +50,18 @@ final class WindowSwitcherInputLifecycle {
             stopInput(); running = false
         }
         running = startInput()
-        statusChanged(running ? "Ready · ⌘Tab switches windows" : "Keyboard access unavailable — check Accessibility and reopen Frog", running)
+        statusChanged(running ? readyStatus() : "Keyboard access unavailable — check Accessibility and reopen Frog", running)
     }
 }
 
 @MainActor
 final class WindowSwitcherController {
+    private var hotkey = WindowSwitchKeyRouter.defaultHotkey
     private let catalog = WindowCatalog()
     private let display = WindowSwitcherDisplay()
     private let cache = WindowSwitcherCache()
     private var iconCache: [pid_t: NSImage] = [:]
+    private var iconTask: Task<Void, Never>?
     private var presentation = WindowSwitchPresentation()
     private var presentationTask: Task<Void, Never>?
     private let statusChanged: (String, Bool) -> Void
@@ -108,7 +112,8 @@ final class WindowSwitcherController {
             guard let tap = self?.tap else { return false }
             return CFMachPortIsValid(tap) && CGEvent.tapIsEnabled(tap: tap)
         }, start: { [weak self] in self?.startInput() ?? false },
-        stop: { [weak self] in self?.stopInput() }, statusChanged: statusChanged)
+        stop: { [weak self] in self?.stopInput() }, statusChanged: statusChanged,
+        readyStatus: { [weak self] in "Ready · \(HotkeyManager.display(self?.hotkey ?? WindowSwitchKeyRouter.defaultHotkey)) switches windows" })
 
     init(statusChanged: @escaping (String, Bool) -> Void) {
         self.statusChanged = statusChanged
@@ -159,13 +164,24 @@ final class WindowSwitcherController {
         inputLifecycle.sessionChanged(active: sessionOnConsole && !screenLocked)
     }
 
-    func configure(enabled: Bool, suspended: Bool) {
+    func configure(enabled: Bool, suspended: Bool, hotkey: Hotkey = WindowSwitchKeyRouter.defaultHotkey) {
+        if enabled, let issue = HotkeyManager.validationError(hotkey, purpose: .windowSwitcher) {
+            inputLifecycle.configure(enabled: false, suspended: suspended)
+            statusChanged(issue, false)
+            return
+        }
+        if self.hotkey != hotkey {
+            // Retire the complete old input epoch, including pending activation,
+            // before installing a router with a different base chord.
+            inputLifecycle.configure(enabled: false, suspended: suspended)
+            self.hotkey = hotkey
+        }
         inputLifecycle.configure(enabled: enabled, suspended: suspended)
     }
 
     private func startInput() -> Bool {
         let epoch = UUID(); eventEpoch = epoch
-        let input = WindowSwitchInput { [weak self] message in
+        let input = WindowSwitchInput(hotkey: hotkey) { [weak self] message in
             DispatchQueue.main.async {
                 guard let self, self.eventEpoch == epoch, self.tap != nil else { return }
                 self.receive(message)
@@ -238,6 +254,7 @@ final class WindowSwitcherController {
         cancelAll()
         focusMonitor?.cancel(); focusMonitor = nil
         cache.clear(); iconCache = [:]
+        iconTask?.cancel(); iconTask = nil
         display.windows = []; display.icons = [:]
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
         workspaceObserver = nil
@@ -248,6 +265,7 @@ final class WindowSwitcherController {
 
     isolated deinit {
         discovery?.cancel(); focusMonitor?.cancel(); activation?.cancel(); presentationTask?.cancel()
+        iconTask?.cancel()
         cache.cancelRefresh()
         input?.stop()
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
@@ -301,7 +319,6 @@ final class WindowSwitcherController {
     }
 
     private func begin(backwards: Bool, token: UInt64) {
-        refreshShortcuts()
         if let previous = generation, previous != token { cancel(session: previous) }
         activation?.cancel(); activation = nil; activationID = nil
         discovery?.cancel()
@@ -310,7 +327,9 @@ final class WindowSwitcherController {
         session.reset()
         display.query = ""; unfilteredWindows = []
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        let cached = cache.readySnapshot(frontPID: front)
+        let livePIDs = Set(NSWorkspace.shared.runningApplications.compactMap(SwitcherApplication.running).map(\.pid))
+        let cached = cache.readySnapshot(frontPID: front, livePIDs: livePIDs)
+        let needsRefresh = cache.needsRefresh()
         presentation.begin(token, ready: cached != nil)
         presentationTask?.cancel()
         // The user asked for immediate presentation. Cached rows and the hosting
@@ -321,6 +340,13 @@ final class WindowSwitcherController {
             // behind discovery. The last complete inventory and its identities stay valid.
             cache.cancelRefresh()
             apply(cached, backwards: backwards, token: token)
+            if needsRefresh, generation == token {
+                discovery = Task { [weak self] in
+                    guard let self, let snapshot = await self.refreshInventory(), !Task.isCancelled,
+                          self.generation == token, self.router.sessionID == token else { return }
+                    self.reconcile(snapshot)
+                }
+            }
             return
         }
         display.loading = true
@@ -333,17 +359,32 @@ final class WindowSwitcherController {
 
     private func refreshInventory() async -> WindowCatalog.Snapshot? {
         let epoch = eventEpoch
-        let applications = NSWorkspace.shared.runningApplications.filter {
-            !$0.isTerminated && $0.activationPolicy != .prohibited
-        }.map { SwitcherApplication(pid: $0.processIdentifier, name: $0.localizedName ?? "Application", hidden: $0.isHidden) }
+        let applications = NSWorkspace.shared.runningApplications.compactMap(SwitcherApplication.running)
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let snapshot = await cache.update { [catalog] in await catalog.snapshot(applications: applications, frontPID: front) }
         guard !Task.isCancelled, eventEpoch == epoch, let snapshot else { return nil }
+        refreshShortcuts()
         let pids = Set(snapshot.windows.map(\.pid))
         iconCache = iconCache.filter { pids.contains($0.key) }
-        for pid in pids where iconCache[pid] == nil {
-            iconCache[pid] = NSRunningApplication(processIdentifier: pid)?.icon
+        let missing = pids.filter { iconCache[$0] == nil }
+        iconTask?.cancel()
+        if !missing.isEmpty {
+            iconTask = Task { [weak self] in
+                let load = Task.detached(priority: .utility) {
+                    var icons: [pid_t: NSImage] = [:]
+                    for pid in missing {
+                        guard !Task.isCancelled else { break }
+                        icons[pid] = NSRunningApplication(processIdentifier: pid)?.icon
+                    }
+                    return icons
+                }
+                let icons = await withTaskCancellationHandler { await load.value } onCancel: { load.cancel() }
+                guard !Task.isCancelled, let self, self.eventEpoch == epoch else { return }
+                self.iconCache.merge(icons) { _, new in new }
+                self.display.icons = self.iconCache
+            }
         }
+        if generation == nil, activation == nil { display.preload(snapshot, in: panel) }
         return snapshot
     }
 
@@ -375,6 +416,22 @@ final class WindowSwitcherController {
         }
     }
 
+    private func reconcile(_ snapshot: WindowCatalog.Snapshot) {
+        // Refresh stale rows while held, preserving the user's cycling order and
+        // selected identity. Newly discovered windows append rather than jump ahead.
+        let byID = Dictionary(uniqueKeysWithValues: snapshot.windows.map { ($0.id, $0) })
+        let oldIDs = Set(unfilteredWindows.map(\.id))
+        unfilteredWindows = unfilteredWindows.compactMap { byID[$0.id] }
+            + snapshot.windows.filter { !oldIDs.contains($0.id) }
+        let windows = WindowSearch.filter(unfilteredWindows, query: display.query)
+        session.reconcile(windows: windows.map(\.id))
+        let ordered = session.windows.compactMap { byID[$0] }
+        if display.windows != ordered { display.windows = ordered }
+        display.selected = session.selected
+        display.icons = iconCache
+        showPanelIfReady()
+    }
+
     private func commit() {
         guard let token = generation, router.sessionID == token else { return }
         presentation.release(token)
@@ -392,15 +449,23 @@ final class WindowSwitcherController {
             }
             guard !Task.isCancelled, self?.input?.isActivationPending(activationToken) == true else { return }
             guard let app = NSRunningApplication(processIdentifier: selected.pid), !app.isTerminated else {
-                self?.onError?("That window closed. Press ⌘Tab to refresh the list."); return
+                self?.onError?("That window closed. Open the window switcher again to refresh the list."); return
             }
-            _ = app.unhide()
-            let activated = await WindowActivation.perform(raise: { await catalog.raise(id: selected.id) }, request: { app.activate(options: []) }, bringForward: { await catalog.bringApplicationForward(id: selected.id) }, isFrontmost: { NSWorkspace.shared.frontmostApplication?.processIdentifier == selected.pid })
+            guard let input = self?.input else { return }
+            let isCurrent: @Sendable () -> Bool = { input.isActivationPending(activationToken) }
+            let activated = await WindowActivation.perform(raise: { await catalog.raise(id: selected.id, isCurrent: isCurrent) }, request: {
+                guard isCurrent() else { return false }
+                if selected.hidden { _ = app.unhide() }
+                guard isCurrent() else { return false }
+                return app.activate(options: [])
+            }, bringForward: { await catalog.bringApplicationForward(id: selected.id, isCurrent: isCurrent) }, isFrontmost: {
+                NSWorkspace.shared.frontmostApplication?.processIdentifier == selected.pid
+            }, isCurrent: isCurrent)
             guard activated else {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, isCurrent() else { return }
                 self?.onError?("macOS could not bring the selected window to the front. It may have closed or become unavailable."); return
             }
-            if !Task.isCancelled { self?.cache.noteFocused(selected.id) }
+            if !Task.isCancelled, isCurrent() { self?.cache.noteFocused(selected.id) }
         }
     }
 
@@ -408,6 +473,7 @@ final class WindowSwitcherController {
         input?.finish(session: token)
         guard generation == token else { return }
         generation = nil; discovery?.cancel(); discovery = nil
+        cache.cancelRefresh()
         presentation.cancel(token); presentationTask?.cancel(); presentationTask = nil
         pendingSteps = []; commitOnLoad = false
         session.reset(); panel?.orderOut(nil)

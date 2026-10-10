@@ -5,14 +5,17 @@ import FrogUsage
 
 /// A second, independently positioned status item owned by the optional Usage feature.
 /// It presents Frog's existing model; no helper app or second collector is launched.
-@MainActor final class UsageStatusItemController: NSObject {
+@MainActor final class UsageStatusItemController: NSObject, NSPopoverDelegate {
     private let usage: UsageDashboardModel
     private let openDashboard: () -> Void
     private var item: NSStatusItem?
     private var observation: AnyCancellable?
     private var timer: Timer?
     private var updateTask: Task<Void, Never>?
-    private let popover = NSPopover()
+    let popover = NSPopover()
+    private var localClick: Any?
+    private var outsideClick: Any?
+    private var deactivation: NSObjectProtocol?
     static func popupSize(availableHeight: CGFloat) -> NSSize {
         NSSize(width: 360, height: min(360, max(180, availableHeight - 28)))
     }
@@ -26,8 +29,9 @@ import FrogUsage
         self.item = item
         item.button?.target = self
         item.button?.action = #selector(togglePopover)
-        popover.behavior = .semitransient
+        popover.behavior = .transient
         popover.animates = false
+        popover.delegate = self
         observation = usage.objectWillChange.sink { [weak self] _ in
             // ObservableObject emits before mutation. Coalesce and draw the new snapshot.
             self?.updateTask?.cancel()
@@ -47,6 +51,7 @@ import FrogUsage
         timer?.invalidate(); timer = nil
         observation?.cancel(); observation = nil
         updateTask?.cancel(); updateTask = nil
+        removeDismissalObservers()
         popover.close(); popover.contentViewController = nil
         if let item { NSStatusBar.system.removeStatusItem(item) }
         item = nil
@@ -67,15 +72,40 @@ import FrogUsage
     @objc private func togglePopover() {
         guard let button = item?.button else { return }
         if popover.isShown { popover.performClose(nil) }
-        else {
-            let size = Self.popupSize(availableHeight: button.window?.screen?.visibleFrame.height ?? 760)
-            popover.contentViewController = NSHostingController(rootView: UsageStatusPopover(usage: usage, height: size.height) { [weak self] in
-                self?.popover.close(); self?.openDashboard()
-            })
-            popover.contentSize = size
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+        else { showPopover(relativeTo: button) }
+    }
+
+    func showPopover(relativeTo anchor: NSView) {
+        let size = Self.popupSize(availableHeight: anchor.window?.screen?.visibleFrame.height ?? 760)
+        popover.contentViewController = NSHostingController(rootView: UsageStatusPopover(usage: usage, height: size.height) { [weak self] in
+            self?.popover.close(); self?.openDashboard()
+        })
+        popover.contentSize = size
+        popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+        removeDismissalObservers()
+        localClick = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self, weak anchor] event in
+            guard let self, self.popover.isShown else { return event }
+            if event.window === self.popover.contentViewController?.view.window { return event }
+            // Let the status button's own action toggle once, rather than close/reopen.
+            if let anchor, event.window === anchor.window,
+               anchor.bounds.contains(anchor.convert(event.locationInWindow, from: nil)) { return event }
+            self.popover.performClose(nil)
+            return event
         }
+        outsideClick = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+            self?.popover.performClose(nil)
+        }
+        deactivation = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.popover.performClose(nil) }
+        }
+    }
+
+    func popoverDidClose(_ notification: Notification) { removeDismissalObservers(); popover.contentViewController = nil }
+    private func removeDismissalObservers() {
+        if let localClick { NSEvent.removeMonitor(localClick) }; localClick = nil
+        if let outsideClick { NSEvent.removeMonitor(outsideClick) }; outsideClick = nil
+        if let deactivation { NotificationCenter.default.removeObserver(deactivation) }; deactivation = nil
     }
 
     isolated deinit { stop() }

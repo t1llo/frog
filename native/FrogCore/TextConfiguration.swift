@@ -39,6 +39,7 @@ enum TextConfiguration {
             .init("shortcut.cancel-recording", "workflows.cancelRecordingHotkey", .shortcut),
             .init("shortcut.clipboard", "workflows.clipboardHistoryHotkey", .shortcut),
             .init("shortcut.command-bar", "toolkit.commandBarHotkey", .shortcut),
+            .init("shortcut.window-switcher", "toolkit.windowSwitcherHotkey", .shortcut),
             .init("hidden-sidebar-items", "toolkit.hiddenSidebarItems", .strings),
             .init("usage.provider", "toolkit.usage.provider", .choice(["Claude", "OpenAI"])),
             .init("usage.range", "toolkit.usage.range", .choice(["24h", "7d", "30d"])),

@@ -154,6 +154,17 @@ Implemented:
   history details live in the dashboard. Popup height also respects the status
   item's display, leaving space for native popover framing. Popup content is created
   when opened; enabled background collection does not need a hosted popup view.
+- **Interaction follow-up:** weekly bars include On pace / Ahead of pace / Under pace
+  (or Limit reached), based on elapsed time with a ten-percentage-point tolerance.
+  Unknown/expired windows do not claim a pace. A one-limit layout uses its spare room
+  for Input / Cached input / Output totals. The normal summary fits without scrolling;
+  shorter displays retain a scrolling fallback. Outside mouse clicks and application
+  deactivation dismiss the popup; inside interactions remain active.
+- **Provider switching:** selecting a display provider no longer reconfigures hotkeys,
+  reloads history or restarts toolkit services. Configuration serialization runs on
+  an ordered background queue. Other configuration writes, reload/import and shutdown
+  drain it first. Failed writes restore the last saved display choice and report the
+  error; optimistic store checks continue to preserve external configuration edits.
 
 Synthetic verification uses `UsageParityTests.swift` alongside the existing parser
 and lifecycle suites. The initial two regression tests failed with three assertions:

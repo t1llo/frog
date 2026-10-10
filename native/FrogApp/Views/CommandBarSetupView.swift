@@ -31,7 +31,7 @@ struct CommandBarSetupView: View {
                 }
             }
             Divider()
-            step(3, "Try it", detail: "Press ⌘Space, then type an app name or 25% * 200. Use ↑↓ and Return. Drag the top grip or footer to move the panel.") {
+            step(3, "Try it", detail: "Press ⌘Space, then type an app, file name or 25% * 200. Use ↑↓ and Return. Drag beside the search field to move it; the centering button appears after moving.") {
                 Button("Open command bar") { model.showCommandBar() }
                     .disabled(!model.configuration.preferences.featureEnabled(.commandBar))
             }

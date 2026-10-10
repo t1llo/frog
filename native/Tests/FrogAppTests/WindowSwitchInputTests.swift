@@ -3,6 +3,19 @@ import CoreGraphics
 @testable import FrogApp
 
 final class WindowSwitchInputTests: XCTestCase {
+    func testMouseClickInvalidatesActivationBeforeUIReceivesTheMessage() throws {
+        let messages = Messages()
+        let input = WindowSwitchInput { messages.append($0) }
+        let activation = UUID()
+        try armActivation(activation, input: input)
+        let mouse = try XCTUnwrap(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown,
+                                         mouseCursorPosition: .zero, mouseButton: .left))
+        XCTAssertNotNil(input.receive(type: .leftMouseDown, event: mouse))
+        XCTAssertFalse(input.isActivationPending(activation), "AX must observe cancellation even while the UI queue is busy")
+        guard case .mouse(_, _, let cancelled) = messages.values.last else { return XCTFail("Expected mouse cancellation") }
+        XCTAssertEqual(cancelled, activation)
+    }
+
     func testTimeoutCancelsPendingActivationAndStoppedInputCannotReenableTap() throws {
         let messages = Messages()
         let reenables = Rearms()

@@ -1,5 +1,87 @@
 # Native verification
 
+## Interaction follow-up after v1.0.15
+
+Final integrated `swift test -c release --disable-keychain` passed **455 tests**:
+98 core, 23 Usage and 334 app (including one temporary native visual probe; 454
+repository tests). Native captures verify the compact popup, feature settings,
+rows-only switcher and “change desktop” settings results. Final fixture timings:
+command warm opening/search 14.6 ms, switcher first presentation 8.9 ms (warm p95
+7.0 ms), and three Usage provider changes with 200 saved rules 2.4 ms. Public-source
+secret scanning, whitespace and local documentation-link checks passed.
+
+The shared release pipeline published **v1.0.15 / 20261010145748** from
+`2e900fed56bd5c6b51329866658e0b86216c54b3`. Its test, universal architecture,
+signature, notarization, Gatekeeper, Sparkle and uploaded-download checks passed.
+The first attempt stopped on a missing Apple signing timestamp; a normal retry
+succeeded. The subsequent changes below are newer than that published release.
+
+Usage's native outside-click test first failed with a semitransient popup; changing
+to transient alone did not pass the local-event reproduction. Explicit local/global
+click monitors and deactivation dismissal now pass, with inside clicks preserved.
+Provider selection first triggered three unrelated history reloads and took about
+100 ms for three switches with 200 saved rules. A display-only save path plus ordered
+off-main persistence reduces that fixture to 1.47 ms and zero unrelated reloads.
+Tests cover a later rule save/import winning over queued preferences, and failed
+writes restoring the saved provider while preserving an external configuration edit.
+
+Synthetic light/dark/Tokyo Night captures verify weekly pace text and OpenAI's
+Input / Cached input / Output row. Claude and OpenAI summaries fit the 360×360
+popup without a scroll view; a short-screen fallback remains. Pace arithmetic
+tests cover ahead/on/under pace, reached limits and invalid/expired windows.
+
+Window switching now publishes aged cached rows immediately (about 9 µs lookup in
+the fixture), refreshes separately, and runs activation on an independent executor.
+The 200-row native first-presentation fixture improved from 38.5 to 12.9 ms after
+preloading; a later focused run measured 8.3 ms first presentation and 6.3 ms warm
+p95. A blocked-discovery fixture no longer delays activation, and an unresponsive
+51-window owner receives two metadata attempts instead of 51. These are synthetic
+measurements, not a physical key-to-photon or head-to-head Contexts benchmark.
+All 62 focused switcher tests passed, including configurable modifier combinations,
+Shift reversal, modifier release, rebinding, cancellation and cached-row ordering.
+
+Navigation tests verify legacy Window/Clipboard links redirect to their Features
+cards, Clipboard history remains in History, and window actions stay available
+independently of the switcher. The optional System monitor defaults off.
+
+Command-bar profiling with 2,000 synthetic applications measured 48.5→25.6 ms warm
+opening in debug (17.2 ms release), 200.7→178.2 ms for 40 query changes (118.3 ms
+release), and 830.3→348.6 ms for 79 keyboard-scroll/layout steps (329.0 ms release).
+Release opening plus search measured 20.2 ms. Bounded ranking, stable rows and
+coalesced asynchronous icons reduce repeated work; stale file results are rejected
+without resetting keyboard selection. The 28 focused release tests passed.
+
+Settings search starts with 55 curated destinations and aliases, then enriches them
+with installed Apple extension metadata and localized search terms off-main. Local
+discovery found 61 destinations in 63 ms. Tests cover natural queries, privacy
+anchors, discovery parsing and navigation fallback. Actual pane behavior across
+macOS versions and physical trackpad scrolling remain manual checks. Vorssaint's
+background-discovery approach informed an independent implementation; no reference
+source was copied.
+
+The optional System monitor samples on a utility-priority actor every two seconds
+only while its menu view is visible, bounds CPU/GPU histories to 30 samples, and
+caches disk capacity for 30 seconds. Initial native sampling measured about 7.3 ms
+cold and 0.68 ms warm. CPU uses tick deltas; GPU reports the busiest supported
+driver statistic; disk I/O covers supported devices, with startup-volume capacity
+shown separately. Power source, battery charge, thermal state and Low Power Mode
+use native readings. Unsupported GPU and total-system wattage remain unavailable.
+
+Ten focused tests passed for initial monitor integration, including optional/default-
+off behavior, delta calculations, bounded history, visibility, and late-result
+rejection. Synthetic battery/desktop/unavailable captures and native menu-height
+transitions fit and preserve the top edge; a standalone native probe passed actual
+show/hide and close/reopen lifecycle checks. Intel/macOS 14 collector type checking
+passed; physical Intel runtime remains unverified.
+
+The power follow-up adds optional native AppleSmartBattery voltage/current conversion
+to explicitly labeled battery draw or charging watts. It handles signed/unsigned
+registry encodings and rejects missing, zero, implausible or contradictory readings;
+this is not total-system or adapter wattage. Fifteen focused tests passed, including
+five conversion/availability cases and updated layout transitions. A read-only
+native smoke returned valid battery flow; the complete sampler measured about 7 ms
+warm off-main. Updated battery-draw/charging captures fit below 520 pt.
+
 ## Subsequent desktop polish
 
 `swift test -c release --disable-keychain` passed **386 tests** (87 core,

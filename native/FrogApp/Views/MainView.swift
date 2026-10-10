@@ -37,8 +37,7 @@ struct MainView: View {
             case .writing: RulesView(fixedCategory: .text)
             case .dictation: RulesView(fixedCategory: .audio)
             case .applicationShortcuts: RulesView(applications: true)
-            case .windowSwitcher: RulesView(applications: true, fixedCategory: .window)
-            case .clipboard: ClipboardFeatureView()
+            case .windowSwitcher, .clipboard, .systemMonitor: FeaturesView()
             case .commandBar: CommandBarSettingsView()
             case .usage:
                 if let usage = model.toolkit.usage() { UsageDashboardView(usage: usage) }

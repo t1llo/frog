@@ -12,6 +12,15 @@ public struct UsageWindow: Identifiable {
     public let percentage: Double
     public let resetsAt: Date?
     public let duration: TimeInterval?
+
+    public func pace(at now: Date) -> String? {
+        guard percentage.isFinite, let resetsAt, resetsAt > now,
+              let duration, duration.isFinite, duration > 0,
+              resetsAt.timeIntervalSince(now) <= duration else { return nil }
+        let elapsed = 1 - resetsAt.timeIntervalSince(now) / duration
+        let used = max(0, percentage / 100)
+        return used >= 1 ? "Limit reached" : used > elapsed + 0.1 ? "Ahead of pace" : used < elapsed - 0.1 ? "Under pace" : "On pace"
+    }
 }
 
 /// Portable display choices only. Credentials, readings and request gates stay local.
@@ -196,6 +205,7 @@ public struct UsagePlanPeriod: Identifiable {
         var next = preferences; next.loginSource = "Claude Code"; updatePreferences(next)
     }
     public func updatePreferences(_ value: UsageDashboardPreferences) {
+        guard Self.validated(value) != preferences else { return }
         applyPreferences(value)
         onPreferencesChange?(preferences)
     }

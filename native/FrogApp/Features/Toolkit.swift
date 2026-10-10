@@ -7,6 +7,7 @@ import FrogUsage
 @MainActor final class Toolkit: ObservableObject {
     @Published private(set) var preferences = Preferences()
     @Published private(set) var route: ToolkitRoute = .feature(.writing)
+    @Published private(set) var featureSettingsSelection: FeatureID?
     private var usageModel: UsageDashboardModel?
     private let makeUsage: @MainActor () -> UsageDashboardModel
     private let showsUsageStatusItem: Bool
@@ -48,7 +49,11 @@ import FrogUsage
             usageModel?.setAvailable(false)
         }
     }
-    func select(_ route: ToolkitRoute) { self.route = route.available(in: preferences) ? route : .features }
+    func select(_ route: ToolkitRoute) {
+        if case .feature(let feature) = route, !feature.hasPage { featureSettingsSelection = feature }
+        else { featureSettingsSelection = nil }
+        self.route = route.available(in: preferences) ? route : .features
+    }
     func usage() -> UsageDashboardModel? {
         guard preferences.featureEnabled(.usage) else { return nil }
         if usageModel == nil {

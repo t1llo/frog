@@ -1,4 +1,5 @@
 import XCTest
+import CoreGraphics
 @testable import FrogApp
 
 final class WindowSwitcherTests: XCTestCase {
@@ -127,4 +128,17 @@ final class WindowSwitcherTests: XCTestCase {
         let typing = router.key(code: 0, down: true, command: false, shift: false, otherModifiers: false)
         XCTAssertTrue(typing.cancelsPendingActivation)
     }
+}
+
+// Keep the original Command–Tab regression cases readable while routing them
+// through the same full modifier-mask entry point as configurable shortcuts.
+extension WindowSwitchKeyRouter {
+    mutating func key(code: UInt16, down: Bool, command: Bool, shift: Bool, otherModifiers: Bool, text: String = "") -> Result {
+        var flags: CGEventFlags = []
+        if command { flags.insert(.maskCommand) }
+        if shift { flags.insert(.maskShift) }
+        if otherModifiers { flags.insert(.maskAlternate) }
+        return key(code: code, down: down, flags: flags, text: text)
+    }
+    mutating func modifiers(command: Bool) -> Result { modifiers(flags: command ? .maskCommand : []) }
 }

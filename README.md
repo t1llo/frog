@@ -21,17 +21,24 @@ A native, local-first macOS toolkit for writing, dictation and everyday shortcut
 | | |
 | --- | --- |
 | **Writing & dictation** | Local speech models, custom rewrite rules, connected providers and installed AI tools. |
-| **Command bar & windows** | App/file search, calculations, conversions, window switching and layout shortcuts. |
+| **Command bar & windows** | App/file and macOS settings search, calculations, conversions, window switching and layout shortcuts. |
 | **Clipboard & documents** | Searchable clipboard, snippets, Markdown notes, file/link shelf and saved scripts. |
 | **Mr. Usage** | Claude/OpenAI limits, token charts and estimated costs; combined OpenCode + Codex activity. |
 | **Menu bar & Stay awake** | Hide/reveal icons, auto-hide, timed awake sessions and low-battery stop. |
+| **System monitor** | CPU/GPU charts, disk capacity and I/O, battery power and thermal status in an optional Frog menu view. |
 | **Personalization** | Ten themes including Tokyo Night, transparency, editable config files and optional local statistics. |
 
 Enable tools individually in **Features**. No Frog account. No telemetry.
 
+Window switcher and Clipboard shortcuts are configured in their Features cards;
+clipboard entries live in **History**. **Shortcuts** groups Application, Windows
+and Other actions.
+Enable **System monitor** to switch between **Frog** and **System** in the menu-bar
+popup. Readings refresh only while visible; unsupported metrics show as unavailable.
+
 ## Install
 
-Download **[Frog-macOS.zip](https://github.com/t1llo/frog/releases/latest/download/Frog-macOS.zip)**, unzip it, and move **Frog.app** to **Applications**.
+**[Download the latest release](https://github.com/t1llo/frog/releases/latest)**, open the DMG (or unzip the ZIP), and move **Frog.app** to **Applications**.
 
 macOS 14+ · Apple silicon and Intel · Built-in model inference requires Apple silicon.
 

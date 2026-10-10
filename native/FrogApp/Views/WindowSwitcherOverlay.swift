@@ -6,7 +6,7 @@ enum WindowSwitcherLayout {
     static let rowHeight: CGFloat = 34
     static let visibleRows = 10
     static func size(windowCount: Int) -> CGSize {
-        CGSize(width: width, height: 28 + 28 + 12 + CGFloat(max(1, min(visibleRows, windowCount))) * rowHeight)
+        CGSize(width: width, height: 12 + CGFloat(max(1, min(visibleRows, windowCount))) * rowHeight)
     }
 }
 
@@ -19,6 +19,17 @@ final class WindowSwitcherDisplay: ObservableObject {
     @Published var icons: [pid_t: NSImage] = [:]
     @Published var shortcuts: [pid_t: String] = [:]
     var selectionFromPointer = false
+
+    func preload(_ snapshot: WindowCatalog.Snapshot, in panel: NSPanel?) {
+        guard panel?.isVisible != true, windows != snapshot.windows else { return }
+        windows = snapshot.windows
+        selected = snapshot.current
+        loading = false
+        // Build the first visible rows during idle inventory refresh, rather than
+        // on the first Command–Tab. Subsequent selections reuse the hosted tree.
+        panel?.setContentSize(WindowSwitcherLayout.size(windowCount: windows.count))
+        panel?.contentView?.layoutSubtreeIfNeeded()
+    }
 }
 
 struct WindowSwitcherOverlay: View {
@@ -28,13 +39,6 @@ struct WindowSwitcherOverlay: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 7) {
-                Image(systemName: model.query.isEmpty ? "rectangle.on.rectangle" : "magnifyingglass")
-                Text(model.query.isEmpty ? L10n.text("Windows") : model.query).lineLimit(1)
-                Spacer()
-                Text("\(model.windows.count)").monospacedDigit()
-            }.font(.system(size: 11)).foregroundStyle(FrogStyle.muted).padding(.horizontal, 12).frame(height: 28)
-            Divider().opacity(0.5)
             if model.loading {
                 Spacer(); ProgressView("Finding windows…").controlSize(.small); Spacer()
             } else if model.windows.isEmpty {
@@ -76,14 +80,6 @@ struct WindowSwitcherOverlay: View {
                     .onAppear { if let id = model.selected { proxy.scrollTo(id) } }
                 }
             }
-            Divider()
-            HStack(spacing: 12) {
-                Text("⇥ Next")
-                Text("esc Cancel")
-                Text("Type to search")
-                Spacer()
-                Text("Release ⌘ to switch")
-            }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted).padding(.horizontal, 12).frame(height: 28)
         }.frame(width: WindowSwitcherLayout.width)
             .environment(\.locale, L10n.locale)
             .frogPanel()

@@ -59,13 +59,10 @@ struct UsageStatusPopover: View {
                 IconAction(title: "Refresh usage", symbol: "arrow.clockwise", bordered: true) { usage.refresh() }
             }
             UsageProviderControls(usage: usage, compact: true)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    UsageLimitsView(usage: usage, compact: true)
-                    Divider().overlay(FrogStyle.border.opacity(0.4))
-                    UsageActivityView(usage: usage, compact: true)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-            }
+            ViewThatFits(in: .vertical) {
+                summary.fixedSize(horizontal: false, vertical: true)
+                ScrollView { summary }
+            }.frame(maxHeight: .infinity, alignment: .top)
             HStack {
                 if usage.windows(provider: usage.preferences.provider).count > 2 {
                     Text("+\(usage.windows(provider: usage.preferences.provider).count - 2) more limits")
@@ -91,6 +88,14 @@ struct UsageStatusPopover: View {
         .padding(14).frame(width: 360, height: height).frogPanel()
         .onAppear { usage.setPresented(true) }
         .onDisappear { usage.setPresented(false) }
+    }
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            UsageLimitsView(usage: usage, compact: true)
+            Divider().overlay(FrogStyle.border.opacity(0.4))
+            UsageActivityView(usage: usage, compact: true,
+                showsCompactTokens: usage.windows(provider: usage.preferences.provider).count == 1)
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -205,8 +210,8 @@ private struct UsageLimitView: View {
                         .help(reset.formatted(date: .abbreviated, time: .shortened))
                 }
             }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted) }
-            if let elapsed, !compact {
-                Text(window.percentage >= 100 ? "Limit reached" : fraction > elapsed + 0.1 ? "Ahead of pace" : fraction < elapsed - 0.1 ? "Under pace" : "On pace")
+            if let elapsed, let pace = window.pace(at: now), !compact || (window.duration ?? 0) >= 604800 {
+                Text(pace)
                     .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                     .help("\(Int(fraction * 100))% used with \(Int(elapsed * 100))% of the window elapsed")
             }
@@ -217,10 +222,11 @@ private struct UsageLimitView: View {
 private struct UsageActivityView: View {
     @ObservedObject var usage: UsageDashboardModel
     var compact = false
+    var showsCompactTokens = false
     var body: some View {
         let settings = usage.preferences
         let chart = usage.chart(provider: settings.provider, range: settings.range, metric: settings.metric)
-        VStack(alignment: .leading, spacing: compact ? 8 : 14) {
+        VStack(alignment: .leading, spacing: compact ? 6 : 14) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(settings.metric == "API cost" ? (compact && !chart.unpricedModels.isEmpty ? "API estimate · partial" : "Estimated API cost") : "\(settings.metric) tokens")
@@ -262,6 +268,17 @@ private struct UsageActivityView: View {
                         Spacer()
                         Text(usage.format(chart.totalTokens, metric: "Input")).monospacedDigit()
                     }.font(.system(size: 11))
+                    if showsCompactTokens {
+                        HStack(spacing: 12) {
+                            ForEach(["Input", "Cache read", "Output"], id: \.self) { name in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(name == "Cache read" ? "Cached input" : name).foregroundStyle(FrogStyle.muted)
+                                    Text(usage.format(chart.totals.first { $0.name == name }?.value ?? 0, metric: name)).monospacedDigit()
+                                }.frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }.font(.system(size: 10)).padding(.top, 2)
+                            .help("Input excludes cache reads. Account token splits are estimates; full details are in the dashboard.")
+                    }
                 } else { UsageTokenTotals(usage: usage, chart: chart) }
                 if !compact {
                     VStack(spacing: 0) {
@@ -454,7 +471,7 @@ private struct UsageActivityChart: View {
         .environment(\.timeZone, chart.account ? TimeZone(secondsFromGMT: 0)! : .current)
         .onChange(of: chart.range) { _, _ in selectedDate = nil }
         .onChange(of: usage.preferences.provider) { _, _ in selectedDate = nil }
-        .frame(height: compact ? 70 : 150)
+        .frame(height: compact ? 60 : 150)
         .overlay(alignment: .topTrailing) {
             if let point = selectedPoint {
                 Text("\(point.date.formatted(date: .abbreviated, time: usage.preferences.range == "24h" ? .shortened : .omitted)) · \(usage.format(point.value, metric: usage.preferences.metric))")

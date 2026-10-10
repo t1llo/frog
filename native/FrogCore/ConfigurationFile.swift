@@ -58,6 +58,7 @@ public enum ConfigurationFile {
             throw FrogError.message("The default provider is missing from this configuration.")
         }
         for provider in configuration.providers { try validate(provider: provider) }
+        if let key = configuration.preferences.toolkitSettings.windowSwitcherHotkey { try ConfigShortcut.validate(key) }
         var shortcuts = Set<Hotkey>()
         if configuration.preferences.featureEnabled(.commandBar) {
             shortcuts.insert(configuration.preferences.toolkitSettings.effectiveCommandBarHotkey)

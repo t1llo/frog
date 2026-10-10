@@ -57,6 +57,7 @@ final class AppModel: ObservableObject {
     let dictation: DictationController
     let power: StayAwakeController
     let toolkit: Toolkit
+    let systemMonitor = SystemMonitor()
     let statistics: ActivityStatisticsStore
     let localTools: LocalToolClient
     let scripts = ScriptRunner()
@@ -97,6 +98,9 @@ final class AppModel: ObservableObject {
     private var windowActionTask: Task<Void, Never>?
     private var historyEpoch = UUID()
     private var configurationLoadError: Error?
+    private lazy var usagePreferenceWriter = UsagePreferenceWriter(store: configurationStore, initial: configuration)
+    private var usagePreferenceRevision = 0
+    private var legacyUsagePreferences = UsageDashboardPreferences()
     private var isRecordingShortcut = false
 
     init(dataDirectory: URL? = nil, registerShortcuts: Bool = true,
@@ -241,10 +245,27 @@ final class AppModel: ObservableObject {
             var toolkit = preferences.toolkitSettings
             toolkit.usage = UsageDisplayPreferences(provider: value.provider, range: value.range, metric: value.metric, allDevices: value.allDevices, loginSource: value.loginSource)
             preferences.toolkit = toolkit
-            do { try self.savePreferences(preferences) }
+            // Display choices do not change collectors, shortcuts, appearance or history.
+            do {
+                if let error = self.configurationLoadError { throw FrogError.message(error.localizedDescription) }
+                let writer = self.usagePreferenceWriter
+                var candidate = self.configuration; candidate.preferences = preferences
+                self.usagePreferenceRevision += 1
+                let revision = self.usagePreferenceRevision
+                self.configuration = candidate
+                writer.save(candidate) { [weak self] error, saved in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.usagePreferenceRevision == revision else { return }
+                        self.restoreUsagePreferences(saved)
+                        self.report(error)
+                    }
+                }
+            }
             catch { self.applyUsagePreferences(self.configuration.preferences); self.report(error) }
         }
         toolkit.apply(configuration.preferences)
+        systemMonitor.configure(enabled: configuration.preferences.featureEnabled(.systemMonitor))
+        legacyUsagePreferences = toolkit.usage()?.preferences ?? UsageDashboardPreferences()
         power.configureFeature(enabled: configuration.preferences.featureEnabled(.stayAwake))
         toolkit.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         toolkit.onDisable = { [weak self] feature in
@@ -253,8 +274,7 @@ final class AppModel: ObservableObject {
             switch feature {
             case .writing: self.processingTask?.cancel(); self.processingIndicator.hide()
             case .dictation: self.dictation.cancel(); self.invalidateHistoryRecovery()
-            case .applicationShortcuts: self.applicationTask?.cancel(); self.shortcutPanel.hide()
-            case .windowSwitcher: self.windowActionTask?.cancel()
+            case .applicationShortcuts: self.applicationTask?.cancel(); self.windowActionTask?.cancel(); self.shortcutPanel.hide()
             case .scripts: self.scripts.stop()
             case .commandBar: self.commandBar.stop()
             default: break
@@ -267,6 +287,7 @@ final class AppModel: ObservableObject {
 
     func openConfiguration() {
         do {
+            drainUsagePreferences()
             if !FileManager.default.fileExists(atPath: configurationFileURL.path) {
                 try configurationStore.save(configuration)
             }
@@ -278,6 +299,7 @@ final class AppModel: ObservableObject {
         guard !isProcessing, !isTestingProvider, !dictation.active else {
             throw FrogError.message("Finish or cancel the current request before reloading configuration.")
         }
+        drainUsagePreferences()
         let candidate = try configurationStore.load { candidate in
             guard candidate.preferences.featureEnabled(.stayAwake) || (!self.power.ownsSession && !self.power.isBusy) else {
                 throw FrogError.message("Restore sleep before reloading a configuration that disables Stay awake.")
@@ -290,8 +312,10 @@ final class AppModel: ObservableObject {
                 if let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
             }
             if let issue = HotkeyManager.validationError(workflow.effectiveClipboardHistoryHotkey, purpose: .clipboardHistory) { throw FrogError.message(issue) }
+            if let issue = HotkeyManager.validationError(candidate.preferences.toolkitSettings.effectiveWindowSwitcherHotkey, purpose: .windowSwitcher) { throw FrogError.message(issue) }
         }
         applyConfiguration(candidate)
+        usagePreferenceWriter.didSave(candidate)
         configurationLoadError = nil
         localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds
         if !candidate.preferences.historyEnabled { invalidateHistoryRecovery() }
@@ -329,6 +353,8 @@ final class AppModel: ObservableObject {
     }
 
     func shutdown() {
+        drainUsagePreferences()
+        systemMonitor.stop()
         commandBar.stop()
         toolkit.stop()
         systemStatusTask?.cancel(); systemStatusTask = nil
@@ -372,12 +398,7 @@ final class AppModel: ObservableObject {
         try savePreferences(preferences)
     }
     func ruleFeatureEnabled(_ rule: Rule) -> Bool {
-        switch rule.category {
-        case .text: configuration.preferences.featureEnabled(.writing)
-        case .audio: configuration.preferences.featureEnabled(.dictation)
-        case .window: configuration.preferences.toolkit == nil ? configuration.preferences.shortcutsEnabled : configuration.preferences.featureEnabled(.windowSwitcher)
-        default: configuration.preferences.featureEnabled(.applicationShortcuts)
-        }
+        configuration.preferences.ruleFeatureEnabled(rule)
     }
     func openDocument(_ document: UtilityDocument) {
         let feature: FeatureID = switch document.kind { case .note: .scratchpad; case .snippet: .snippets; case .shelf: .shelf; case .script: .scripts }
@@ -400,7 +421,7 @@ final class AppModel: ObservableObject {
         }
     }
     func runWindowAction(_ action: WindowAction) {
-        guard configuration.preferences.featureEnabled(.windowSwitcher) else { return }
+        guard configuration.preferences.featureEnabled(.applicationShortcuts) else { return }
         manageWindow(action.rule)
     }
     func runSystemAction(_ action: SystemAction) {
@@ -472,15 +493,30 @@ final class AppModel: ObservableObject {
         if let error = configurationLoadError {
             throw FrogError.message("Settings could not be loaded, so they have not been overwritten. Repair the file in \(configurationStore.directory.path) and use Settings → Configuration → Reload, or import a valid configuration. \(error.localizedDescription)")
         }
+        drainUsagePreferences()
         try ConfigurationFile.validate(candidate)
         try configurationStore.save(candidate)
+        usagePreferenceWriter.didSave(candidate)
         applyConfiguration(candidate)
+    }
+
+    private func drainUsagePreferences() {
+        let failure = usagePreferenceWriter.drain()
+        usagePreferenceRevision += 1
+        if let failure { restoreUsagePreferences(failure.saved); report(failure.error) }
+    }
+    private func restoreUsagePreferences(_ saved: UsageDisplayPreferences?) {
+        configuration.preferences.toolkit?.usage = saved
+        if saved == nil { toolkit.applyUsagePreferences(legacyUsagePreferences) }
+        else { applyUsagePreferences(configuration.preferences) }
     }
 
     private func applyConfiguration(_ candidate: Configuration) {
         configuration = candidate
         applyUsagePreferences(candidate.preferences)
         toolkit.apply(candidate.preferences)
+        systemMonitor.configure(enabled: candidate.preferences.featureEnabled(.systemMonitor))
+        if candidate.preferences.toolkit?.usage == nil, let usage = toolkit.usage() { legacyUsagePreferences = usage.preferences }
         if candidate.preferences.featureEnabled(.commandBar) { commandBar.warm() }
         power.configureFeature(enabled: candidate.preferences.featureEnabled(.stayAwake))
         localModels.updateCatalog(candidate.modelCatalog)
@@ -666,6 +702,7 @@ final class AppModel: ObservableObject {
         let workflow = preferences.workflowSettings
         let shortcutChanged = workflow.shortcutPanelHotkey != previousWorkflow.shortcutPanelHotkey || workflow.cancelRecordingHotkey != previousWorkflow.cancelRecordingHotkey || workflow.clipboardHistoryHotkey != previousWorkflow.clipboardHistoryHotkey || workflow.clipboardHistoryEnabled != previousWorkflow.clipboardHistoryEnabled || preferences.toolkit != configuration.preferences.toolkit
         if let issue = HotkeyManager.validationError(preferences.toolkitSettings.effectiveCommandBarHotkey) { throw FrogError.message(issue) }
+        if let issue = HotkeyManager.validationError(preferences.toolkitSettings.effectiveWindowSwitcherHotkey, purpose: .windowSwitcher) { throw FrogError.message(issue) }
         if let key = preferences.toolkitSettings.menuBar?.hotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
         if let key = preferences.workflowSettings.shortcutPanelHotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
         if let key = preferences.workflowSettings.cancelRecordingHotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
@@ -758,6 +795,7 @@ final class AppModel: ObservableObject {
 
     func exportConfiguration(to url: URL) throws {
         guard configurationLoadError == nil else { throw FrogError.message("Repair the saved settings before exporting them.") }
+        drainUsagePreferences()
         try ConfigurationFile.write(configuration, to: url)
         status = "Configuration exported. API keys and history were not included."
     }
@@ -770,6 +808,7 @@ final class AppModel: ObservableObject {
         }
         if let issue = HotkeyManager.validationError(imported.preferences.workflowSettings.effectiveClipboardHistoryHotkey, purpose: .clipboardHistory) { throw FrogError.message(issue) }
         if let issue = HotkeyManager.validationError(imported.preferences.toolkitSettings.effectiveCommandBarHotkey) { throw FrogError.message(issue) }
+        if let issue = HotkeyManager.validationError(imported.preferences.toolkitSettings.effectiveWindowSwitcherHotkey, purpose: .windowSwitcher) { throw FrogError.message(issue) }
         guard imported.preferences.featureEnabled(.stayAwake) || (!power.ownsSession && !power.isBusy) else {
             throw FrogError.message("Turn off the active Stay awake session before importing a configuration that disables it.")
         }
@@ -788,7 +827,9 @@ final class AppModel: ObservableObject {
         }
         candidate.remapProviderIDs(remapped)
         candidate.adoptExplicitRuleSettings(installed: localModels.installed)
+        drainUsagePreferences()
         try configurationStore.replaceFromImport(candidate)
+        usagePreferenceWriter.didSave(candidate)
         applyConfiguration(candidate)
         configurationLoadError = nil
         localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds
@@ -816,22 +857,26 @@ final class AppModel: ObservableObject {
 
     private func configureWindowSwitcher() {
         guard started, registerShortcuts else { return }
-        // Preserve any existing rule that owns Command–Tab instead of silently
-        // intercepting it. The user can reassign that rule to enable switching.
+        let switcherHotkey = configuration.preferences.toolkitSettings.effectiveWindowSwitcherHotkey
+        func conflicts(_ hotkey: Hotkey) -> Bool {
+            hotkey.keyCode == switcherHotkey.keyCode &&
+                (hotkey.modifiers == switcherHotkey.modifiers || hotkey.modifiers == (switcherHotkey.modifiers | 512))
+        }
+        // Preserve existing shortcuts, including the reverse-cycling combination.
         let conflict = configuration.rules.contains { rule in
             guard rule.enabled, ruleFeatureEnabled(rule), let hotkey = rule.hotkey else { return false }
-            return hotkey.keyCode == 48 && (hotkey.modifiers == 256 || hotkey.modifiers == 768)
+            return conflicts(hotkey)
         }
         let workflow = configuration.preferences.workflowSettings
-        let referenceConflict = [workflow.shortcutPanelHotkey, configuration.preferences.featureEnabled(.dictation) ? workflow.cancelRecordingHotkey : nil, workflow.clipboardHistoryEnabled == true ? workflow.effectiveClipboardHistoryHotkey : nil, configuration.preferences.featureEnabled(.commandBar) ? configuration.preferences.toolkitSettings.effectiveCommandBarHotkey : nil, configuration.preferences.featureEnabled(.menuBar) ? configuration.preferences.toolkitSettings.menuBar?.hotkey : nil].compactMap { $0 }.contains { $0.keyCode == 48 && [UInt32(256), 768].contains($0.modifiers) }
+        let referenceConflict = [workflow.shortcutPanelHotkey, configuration.preferences.featureEnabled(.dictation) ? workflow.cancelRecordingHotkey : nil, workflow.clipboardHistoryEnabled == true ? workflow.effectiveClipboardHistoryHotkey : nil, configuration.preferences.featureEnabled(.commandBar) ? configuration.preferences.toolkitSettings.effectiveCommandBarHotkey : nil, configuration.preferences.featureEnabled(.menuBar) ? configuration.preferences.toolkitSettings.menuBar?.hotkey : nil].compactMap { $0 }.contains(where: conflicts)
         if configuration.preferences.windowSwitcherEnabled && (conflict || referenceConflict) {
             windowSwitcher.stop()
-            let message = "A configured shortcut uses ⌘Tab — change it to enable window switching"
+            let message = "A configured shortcut conflicts with \(HotkeyManager.display(switcherHotkey)) — change it to enable window switching"
             if windowSwitcherStatus != message { windowSwitcherStatus = message }
             if windowSwitcherReady { windowSwitcherReady = false }
             return
         }
-        windowSwitcher.configure(enabled: configuration.preferences.featureEnabled(.windowSwitcher), suspended: isRecordingShortcut)
+        windowSwitcher.configure(enabled: configuration.preferences.featureEnabled(.windowSwitcher), suspended: isRecordingShortcut, hotkey: switcherHotkey)
         windowSwitcher.updateShortcuts(configuration.rules.filter { ruleFeatureEnabled($0) && hotkeyErrors[$0.id] == nil })
     }
 

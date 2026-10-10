@@ -4,7 +4,7 @@ import FrogCore
 
 @MainActor
 final class HotkeyManager {
-    enum ShortcutPurpose { case rule, clipboardHistory }
+    enum ShortcutPurpose { case rule, clipboardHistory, windowSwitcher }
     private static let signature: OSType = 0x46524F47 // FROG
     private static var nextRegistrationID: UInt32 = 1
     private var handler: EventHandlerRef?
@@ -135,6 +135,14 @@ final class HotkeyManager {
         }
         guard printableKeys.contains(hotkey.keyCode) || specialKeys[hotkey.keyCode] != nil else {
             return "This key cannot be used as a global shortcut."
+        }
+        if purpose == .windowSwitcher {
+            guard hotkey.modifiers & UInt32(shiftKey) == 0 else {
+                return "Shift is reserved for switching backward. Record the shortcut without Shift."
+            }
+            guard ![UInt32(36), 51, 53, 76, 123, 124, 125, 126].contains(hotkey.keyCode) else {
+                return "Escape, Return, Delete, and arrow keys control the window switcher. Choose another shortcut key."
+            }
         }
         return nil
     }

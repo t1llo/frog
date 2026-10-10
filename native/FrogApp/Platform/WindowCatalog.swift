@@ -5,9 +5,19 @@ struct SwitcherApplication: Sendable {
     let pid: pid_t
     let name: String
     let hidden: Bool
+
+    static func eligible(policy: NSApplication.ActivationPolicy, terminated: Bool, bundleURL: URL?) -> Bool {
+        // Widgets, XPC services and network helpers are not user-switchable apps.
+        !terminated && policy == .regular && bundleURL?.pathExtension == "app"
+    }
+
+    @MainActor static func running(_ application: NSRunningApplication) -> SwitcherApplication? {
+        guard eligible(policy: application.activationPolicy, terminated: application.isTerminated, bundleURL: application.bundleURL) else { return nil }
+        return SwitcherApplication(pid: application.processIdentifier, name: application.localizedName ?? "Application", hidden: application.isHidden)
+    }
 }
 
-/// AX references stay on the catalog actor, apart from immutable display metadata.
+/// Display metadata never exposes the catalog's retained native AX handles.
 struct SwitcherWindow: Identifiable, Equatable, Sendable {
     static let overlayIdentifier = "frog.window-switcher"
     let id: UUID
@@ -89,11 +99,30 @@ actor WindowCatalog {
         var completeness: Completeness = .complete
         var isPublishable: Bool { completeness == .complete || completeness == .partial }
     }
-    private struct Target {
+    // AX handles are immutable CF references. The store publishes only a completed
+    // inventory; discovery never holds its lock across an AX call. Activation uses
+    // its own serial executor so an unrelated owner's scan cannot delay selection.
+    struct Target: @unchecked Sendable {
         let id: UUID
         let pid: pid_t
         let element: AXUIElement
     }
+    private final class ActivationTargets: @unchecked Sendable {
+        private let lock = NSLock()
+        private var targets: [UUID: Target] = [:]
+        private var raised: [UUID] = []
+        func replace(_ values: [Target]) { lock.withLock { targets = Dictionary(uniqueKeysWithValues: values.map { ($0.id, $0) }) } }
+        func target(_ id: UUID) -> Target? { lock.withLock { targets[id] } }
+        func noteRaised(_ id: UUID) {
+            lock.withLock {
+                raised.removeAll { $0 == id }; raised.append(id)
+                if raised.count > 256 { raised.removeFirst(raised.count - 256) }
+            }
+        }
+        func takeRaised() -> [UUID] { lock.withLock { defer { raised = [] }; return raised } }
+    }
+    private nonisolated let activationTargets = ActivationTargets()
+    private nonisolated let activator: WindowActivationExecutor
     private var targets: [Target] = []
     private var recent: [UUID] = []
     private var snapshotIDs = Set<UUID>()
@@ -105,8 +134,10 @@ actor WindowCatalog {
     }
     private var lastKnown: [UUID: KnownWindow] = [:]
 
-    init(reader: Reader = Reader(), now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }) {
+    init(reader: Reader = Reader(), writer: WindowActivationExecutor.Writer = .init(),
+         now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }) {
         self.reader = reader; self.now = now
+        activator = WindowActivationExecutor(writer: writer)
     }
 
     private func identity(_ element: AXUIElement, pid: pid_t) -> UUID {
@@ -119,6 +150,7 @@ actor WindowCatalog {
     func noteFocus(pid: pid_t) -> UUID? {
         guard reader.isTrusted(), !Task.isCancelled else { return nil }
         guard let element = reader.focusedWindow(pid), !Task.isCancelled else { return nil }
+        mergeRaisedRecency()
         let id = identity(element, pid: pid)
         recent.removeAll { $0 == id }
         recent.insert(id, at: 0)
@@ -135,6 +167,7 @@ actor WindowCatalog {
     func snapshot(applications: [SwitcherApplication], frontPID: pid_t?) -> Snapshot {
         guard !Task.isCancelled else { return Snapshot(windows: [], current: nil, completeness: .cancelled) }
         guard reader.isTrusted() else { return Snapshot(windows: [], current: nil, completeness: .unavailable) }
+        mergeRaisedRecency()
         let previousTargets = targets
         let previousRecent = recent
         let timestamp = now()
@@ -142,12 +175,13 @@ actor WindowCatalog {
         var completeness = Snapshot.Completeness.complete
         var windows: [SwitcherWindow] = []
         var current: UUID?
-        func retain(_ app: SwitcherApplication, element: AXUIElement? = nil) {
+        func retain(_ app: SwitcherApplication, element: AXUIElement? = nil, unreadElements: ArraySlice<AXUIElement>? = nil) {
             completeness = .partial
             // Only previously described windows can be retained, for at most 30s.
             // A successful empty list (or a departed owner) never reaches this path.
             for target in previousTargets where target.pid == app.pid {
                 if let element, !CFEqual(target.element, element) { continue }
+                if let unreadElements, !unreadElements.contains(where: { CFEqual(target.element, $0) }) { continue }
                 guard let old = lastKnown[target.id], old.readAt.duration(to: timestamp) < .seconds(30),
                       !windows.contains(where: { $0.id == target.id }) else { continue }
                 windows.append(old.window)
@@ -161,9 +195,20 @@ actor WindowCatalog {
             guard case .success(let elements) = reader.windows(app.pid) else { retain(app); continue }
             guard !Task.isCancelled else { break }
             let focused = app.pid == frontPID ? reader.focusedWindow(app.pid) : nil
-            for element in elements {
+            windowLoop: for (index, element) in elements.enumerated() {
                 if Task.isCancelled { break }
-                guard case .success(let metadata) = reader.metadata(element) else { retain(app, element: element); continue }
+                let metadata: Metadata
+                switch reader.metadata(element) {
+                case .success(let value): metadata = value
+                case .failure(.cannotComplete):
+                    // A stalled owner's remaining windows share the same AX
+                    // connection. Do not multiply one timeout by its window count.
+                    retain(app, unreadElements: elements[index...])
+                    break windowLoop
+                case .failure:
+                    retain(app, element: element)
+                    continue
+                }
                 guard metadata.role == kAXWindowRole else { continue }
                 if metadata.identifier == SwitcherWindow.overlayIdentifier { continue }
                 if ["AXFloatingWindow", "AXSystemFloatingWindow"].contains(metadata.subrole ?? "") { continue }
@@ -199,31 +244,25 @@ actor WindowCatalog {
         snapshotIDs = live
         // Bound fallback metadata separately from the current live inventory.
         lastKnown = Dictionary(uniqueKeysWithValues: windows.prefix(256).compactMap { window in known[window.id].map { (window.id, $0) } })
+        activationTargets.replace(targets)
         return Snapshot(windows: windows, current: current, completeness: completeness)
     }
 
-    func bringApplicationForward(id: UUID) -> Bool {
-        guard !Task.isCancelled, AXIsProcessTrusted(), let target = targets.first(where: { $0.id == id }) else { return false }
-        let app = AXUIElementCreateApplication(target.pid)
-        AXUIElementSetMessagingTimeout(app, 0.1)
-        return AXUIElementSetAttributeValue(app, kAXFrontmostAttribute as CFString, kCFBooleanTrue) == .success
+    nonisolated func bringApplicationForward(id: UUID, isCurrent: @escaping @Sendable () -> Bool = { true }) async -> Bool {
+        guard !Task.isCancelled, isCurrent(), let target = activationTargets.target(id) else { return false }
+        return await activator.bringForward(target, isCurrent: isCurrent)
     }
 
-    func raise(id: UUID) -> Bool {
-        guard !Task.isCancelled, AXIsProcessTrusted(), let target = targets.first(where: { $0.id == id }) else { return false }
-        var pid: pid_t = 0
-        guard AXUIElementGetPid(target.element, &pid) == .success, pid == target.pid,
-              AXRead.string(target.element, kAXRoleAttribute) == kAXWindowRole else { return false }
-        if AXRead.boolean(target.element, kAXMinimizedAttribute) == true {
-            guard !Task.isCancelled else { return false }
-            guard AXUIElementSetAttributeValue(target.element, kAXMinimizedAttribute as CFString, kCFBooleanFalse) == .success else { return false }
+    nonisolated func raise(id: UUID, isCurrent: @escaping @Sendable () -> Bool = { true }) async -> Bool {
+        guard !Task.isCancelled, isCurrent(), let target = activationTargets.target(id) else { return false }
+        let raised = await activator.raise(target, isCurrent: isCurrent)
+        if raised { activationTargets.noteRaised(id) }
+        return raised
+    }
+
+    private func mergeRaisedRecency() {
+        for id in activationTargets.takeRaised() where targets.contains(where: { $0.id == id }) {
+            recent.removeAll { $0 == id }; recent.insert(id, at: 0)
         }
-        guard !Task.isCancelled else { return false }
-        let raised = AXUIElementPerformAction(target.element, kAXRaiseAction as CFString)
-        guard !Task.isCancelled else { return false }
-        _ = AXUIElementSetAttributeValue(target.element, kAXMainAttribute as CFString, kCFBooleanTrue)
-        guard !Task.isCancelled else { return false }
-        if raised == .success { recent.removeAll { $0 == id }; recent.insert(id, at: 0) }
-        return raised == .success
     }
 }

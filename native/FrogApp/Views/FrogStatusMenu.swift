@@ -16,6 +16,9 @@ struct FrogStatusMenu: View {
     @ObservedObject var model: AppModel
     @ObservedObject var power: StayAwakeController
     @Environment(\.dismiss) private var dismiss
+    @State private var selectedTab: SystemMonitorMenuTab = .frog
+
+    private var systemMonitorEnabled: Bool { model.configuration.preferences.featureEnabled(.systemMonitor) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -29,6 +32,36 @@ struct FrogStatusMenu: View {
             }.padding(.horizontal, 8).padding(.vertical, 9)
             Divider().padding(.horizontal, 8)
 
+            if systemMonitorEnabled {
+                SystemMonitorMenuSelector(selection: $selectedTab)
+            }
+            if systemMonitorEnabled && selectedTab == .system {
+                SystemMonitorView(monitor: model.systemMonitor)
+                Divider().padding(.horizontal, 8)
+                action(model.setupPresented ? "Set up Frog…" : "Open Frog", symbol: "arrow.up.forward.app", key: "⌘,") {
+                    dismiss(); model.showSettings()
+                }.keyboardShortcut(",")
+            } else {
+                frogControls
+            }
+            Divider().padding(.horizontal, 8)
+            HStack {
+                Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")")
+                Spacer()
+                Button("Quit Frog") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q").buttonStyle(.plain)
+            }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted).padding(.horizontal, 9).padding(.vertical, 8)
+        }.padding(5).frame(width: 292).fixedSize(horizontal: false, vertical: true)
+            .font(.system(size: 12)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
+            .frogPanel()
+            .background(MenuWindowSizing())
+            .task { model.refreshSystemStatus(); await power.refresh(); await power.refreshAccess() }
+            .onChange(of: systemMonitorEnabled) { _, enabled in
+                if !enabled { selectedTab = .frog; model.systemMonitor.setPresented(false) }
+            }
+    }
+
+    private var frogControls: some View {
+        Group {
             if model.configuration.preferences.featureEnabled(.stayAwake) {
               VStack(alignment: .leading, spacing: 7) {
                 Toggle(isOn: Binding(get: { power.isEnabled }, set: power.setEnabled)) {
@@ -101,17 +134,7 @@ struct FrogStatusMenu: View {
             if model.configuration.preferences.workflowSettings.clipboardHistoryEnabled == true {
                 action("Clipboard history", symbol: "clipboard") { dismiss(); model.showClipboardHistory() }
             }
-            Divider().padding(.horizontal, 8)
-            HStack {
-                Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")")
-                Spacer()
-                Button("Quit Frog") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q").buttonStyle(.plain)
-            }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted).padding(.horizontal, 9).padding(.vertical, 8)
-        }.padding(5).frame(width: 292).fixedSize(horizontal: false, vertical: true)
-            .font(.system(size: 12)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
-            .frogPanel()
-            .background(MenuWindowSizing())
-            .task { model.refreshSystemStatus(); await power.refresh(); await power.refreshAccess() }
+        }
     }
 
     private func action(_ title: String, symbol: String, key: String? = nil, perform: @escaping () -> Void) -> some View {

@@ -3,14 +3,14 @@ import Foundation
 /// Stable identities shared by configuration, navigation and command routing.
 public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
     case writing, dictation, applicationShortcuts, windowSwitcher, clipboard, stayAwake
-    case commandBar, usage, snippets, scratchpad, shelf, scripts, quickActions, menuBar
+    case commandBar, usage, snippets, scratchpad, shelf, scripts, quickActions, menuBar, systemMonitor
     public var id: String { rawValue }
     public var title: String {
         switch self {
         case .writing: "Writing"
         case .dictation: "Dictation"
         case .applicationShortcuts: "Shortcuts"
-        case .windowSwitcher: "Windows"
+        case .windowSwitcher: "Window switcher"
         case .clipboard: "Clipboard"
         case .stayAwake: "Stay awake"
         case .commandBar: "Command bar"
@@ -21,6 +21,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .scripts: "Scripts"
         case .quickActions: "Quick actions"
         case .menuBar: "Menu bar"
+        case .systemMonitor: "System monitor"
         }
     }
     public var symbol: String {
@@ -39,6 +40,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .scripts: "terminal"
         case .quickActions: "bolt"
         case .menuBar: "menubar.rectangle"
+        case .systemMonitor: "gauge.medium"
         }
     }
     public var detail: String {
@@ -46,10 +48,10 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .writing: "Rewrite selected text with your rules and local or connected models."
         case .dictation: "Turn speech into text with local or connected speech models."
         case .applicationShortcuts: "Launch applications and run window or system actions."
-        case .windowSwitcher: "Search and switch individual windows with Command–Tab."
+        case .windowSwitcher: "Switch between individual windows with your keyboard."
         case .clipboard: "Search and paste recent clipboard items kept in memory."
         case .stayAwake: "Keep background work running on a timed, opt-in session."
-        case .commandBar: "Search applications, windows, files and Frog commands from anywhere."
+        case .commandBar: "Search applications, files, macOS settings, windows and Frog commands."
         case .usage: "View plan limits, token activity and estimated costs from your AI tools."
         case .snippets: "Keep reusable text with date, time and clipboard variables."
         case .scratchpad: "Write local notes with Markdown preview."
@@ -57,24 +59,31 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .scripts: "Save and explicitly run local shell scripts with captured output."
         case .quickActions: "Common Mac actions and useful text tools in one place."
         case .menuBar: "Keep menu bar items behind a divider and reveal them when needed."
+        case .systemMonitor: "See CPU, GPU, disk and power activity in the Frog menu."
         }
     }
+
+    /// Small background tools are configured in Features rather than separate pages.
+    public var hasPage: Bool { self != .windowSwitcher && self != .clipboard && self != .systemMonitor }
 }
 
 public struct ToolkitPreferences: Codable, Equatable, Sendable {
     public var enabled: [String: Bool] = [:]
     public var hiddenSidebarItems: Set<String> = []
     public var commandBarHotkey: Hotkey?
+    public var windowSwitcherHotkey: Hotkey?
     public var usage: UsageDisplayPreferences?
     public var menuBar: MenuBarPreferences?
     public var effectiveCommandBarHotkey: Hotkey { commandBarHotkey ?? Hotkey(keyCode: 49, modifiers: 4096 | 2048) }
+    public var effectiveWindowSwitcherHotkey: Hotkey { windowSwitcherHotkey ?? Hotkey(keyCode: 48, modifiers: 256) }
     public init() {}
-    private enum CodingKeys: String, CodingKey { case enabled, hiddenSidebarItems, commandBarHotkey, usage, menuBar }
+    private enum CodingKeys: String, CodingKey { case enabled, hiddenSidebarItems, commandBarHotkey, windowSwitcherHotkey, usage, menuBar }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         enabled = try values.decodeIfPresent([String: Bool].self, forKey: .enabled) ?? [:]
         hiddenSidebarItems = try values.decodeIfPresent(Set<String>.self, forKey: .hiddenSidebarItems) ?? []
         commandBarHotkey = try values.decodeIfPresent(Hotkey.self, forKey: .commandBarHotkey)
+        windowSwitcherHotkey = try values.decodeIfPresent(Hotkey.self, forKey: .windowSwitcherHotkey)
         usage = try values.decodeIfPresent(UsageDisplayPreferences.self, forKey: .usage)
         menuBar = try values.decodeIfPresent(MenuBarPreferences.self, forKey: .menuBar)
     }
@@ -119,7 +128,15 @@ extension Preferences {
         }
     }
     public var sidebarFeatures: [FeatureID] {
-        FeatureID.allCases.filter { featureEnabled($0) && !toolkitSettings.hiddenSidebarItems.contains($0.rawValue) }
+        FeatureID.allCases.filter { $0.hasPage && featureEnabled($0) && !toolkitSettings.hiddenSidebarItems.contains($0.rawValue) }
+    }
+    /// Window arrangement belongs to Shortcuts, independently of the switcher overlay.
+    public func ruleFeatureEnabled(_ rule: Rule) -> Bool {
+        switch rule.category {
+        case .text: featureEnabled(.writing)
+        case .audio: featureEnabled(.dictation)
+        case .application, .window, .system: featureEnabled(.applicationShortcuts)
+        }
     }
 }
 
@@ -127,6 +144,6 @@ public enum ToolkitRoute: Hashable, Sendable {
     case feature(FeatureID), history, models, features, settings, statistics
     public func available(in preferences: Preferences) -> Bool {
         guard case .feature(let feature) = self else { return true }
-        return preferences.featureEnabled(feature)
+        return feature.hasPage && preferences.featureEnabled(feature)
     }
 }
