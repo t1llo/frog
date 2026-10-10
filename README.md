@@ -4,17 +4,11 @@
 [![Release](https://img.shields.io/github/v/release/t1llo/frog)](https://github.com/t1llo/frog/releases/latest)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue)
 
-A native, local-first macOS toolkit for writing, dictation and everyday shortcuts.
+A Mac app that lives in your menu bar and replaces ten small Mac apps.
 
 **[Website](https://frog.beffa.xyz/)** · **[Download](https://github.com/t1llo/frog/releases/latest)**
 
-<img src="docs/media/frog-features.png" alt="Frog’s feature overview: local writing and dictation, AI usage, command bar, clipboard, window shortcuts, Stay awake and configuration" width="860">
-
-## See it in action
-
-[![Native Frog walkthrough: Features, Mr. Usage, snippets, notes, Tokyo Night and clipboard](docs/media/frog-toolkit.gif)](docs/media/frog-toolkit.mp4)
-
-**[Watch the 24-second recording](docs/media/frog-toolkit.mp4)** · Native app UI, sample data.
+[![Native Frog walkthrough: Features, Mr. Usage, snippets, notes, Tokyo Night and clipboard](docs/media/frog-readme-demo.gif)](docs/media/frog-toolkit.mp4)
 
 ## Tools
 
