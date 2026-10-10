@@ -141,13 +141,35 @@ import FrogCore
         try await files.request("Late app").receive([exact])
         XCTAssertTrue(bar.results.prefix(2).contains(exact), "Exact files must compete with apps rather than trail all app matches")
         XCTAssertTrue(bar.results.prefix(2).contains { $0.id.hasPrefix("app:") })
-        XCTAssertEqual(bar.results[bar.selection].id, exact.id, "Without manual navigation, Return follows the best arriving match")
+        XCTAssertEqual(bar.results[bar.selection].id, "app:/fixture/Late.app", "An equally good app keeps Return when files arrive later")
         let valid = bar.results
         weeklyRequest.receive([recent])
         XCTAssertEqual(bar.results, valid, "A superseded search must not replace newer results")
         bar.hide()
         files.requests.last?.receive([exact])
         XCTAssertTrue(bar.results.isEmpty)
+    }
+
+    func testLateFilesFollowAnEquallyGoodFrogFeature() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var config = Configuration(); config.preferences.setFeature(.commandBar, enabled: true)
+        config.preferences.windowSwitcherEnabled = false
+        try ConfigurationStore(directory: root).save(config)
+        let model = AppModel(dataDirectory: root, registerShortcuts: false)
+        defer { model.shutdown() }
+        let files = CommandFileFixture()
+        let bar = CommandBar(model: model, fileScopes: [root], captureTarget: { nil }, fileSearch: files, loadSettings: { [] }, loadApplications: { [] })
+        defer { bar.stop() }
+        bar.show(); bar.query = "stay"
+        XCTAssertEqual(bar.results.first?.id, "feature:stayAwake")
+        let matches = (0..<40).map { SearchRecord(id: "file:/fixture/Stay awake \($0).md", title: "Stay awake \($0).md", subtitle: "Documents", symbol: "doc") }
+        try await files.request("stay").receive(matches)
+        XCTAssertEqual(bar.results.first?.id, "feature:stayAwake", "Arriving files must not push Frog's own feature down")
+        XCTAssertEqual(bar.results.dropFirst().first?.id, matches[0].id)
+        bar.query = "stay awake"
+        try await files.request("stay awake").receive(matches)
+        XCTAssertEqual(bar.results.first?.id, "feature:stayAwake")
     }
 
     func testEditingQuerySelectsBestMatchInsteadOfRetainingOldKeyboardChoice() async throws {
