@@ -36,6 +36,18 @@ then replaced the installed app with configuration and downloaded models unchang
 The parser regression uses generated mixed V1/V2 SQLite rows and Codex logs; it does
 not read personal conversations or authenticate against a real account.
 
+Published **v1.0.14 / 20261010140638** through the shared `release-frog.sh` workflow
+from source `3f9bb2c45f8c81b1a6f9b1ac8384e65c958f7409`. The script verified the
+universal Developer ID-signed, notarized app, ZIP, DMG, Sparkle appcast and downloaded
+release assets. Installed that release in Applications; configuration and model
+inventory remained unchanged. Superseded generated app bundles were moved to Trash.
+
+README media uses sample data: the feature-overview screenshot is from the website,
+and the 24-second recording captures the native SwiftUI view over time in an isolated
+fixture. It shows Features, Usage, snippets, notes, Tokyo Night and clipboard history.
+No personal desktop or conversations were captured; the opt-in capture probe is
+excluded from production and its temporary test link was removed afterward.
+
 ## October 10 integration
 
 The final native suite passed **366 tests**: 86 core, 14 usage and 266 app tests,
