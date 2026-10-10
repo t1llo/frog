@@ -4,7 +4,7 @@ Frog is a native SwiftUI app for macOS 14+. Building requires Xcode with Swift 6
 
 ```sh
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-swift test
+swift test -c release
 FROG_UNIVERSAL=1 bash scripts/build-app.sh
 ```
 
@@ -16,17 +16,28 @@ Open `native/Frog.xcodeproj` and choose **Frog-macOS** for Xcode development. Th
 
 - `native/FrogCore`: models, configuration files, history, Keychain, provider clients.
 - `native/FrogApp`: SwiftUI views, app lifecycle, shortcuts, Accessibility, login items.
+- `native/FrogApp/Features`: toolkit routing, cached command search, documents, script ownership and the optional second usage status item.
+- `native/FrogUsage`: usage collection and shared popup/dashboard data. Collection follows feature enablement, including with the dashboard closed; Frog owns its status item and shutdown.
 - `native/Tests`: isolated protocol, persistence, configuration transfer, and processing tests.
 
 For isolated manual testing, launch the executable with `FROG_DATA_DIRECTORY` pointing to a temporary directory. Keys still use Keychain provider IDs; use fresh IDs for fixtures. README screenshots show the real native views with isolated example settings, not a running model request.
 
 Frog starts as a menu-bar accessory without restoring a main window. Open the window from the menu bar, reopen an already-running Frog from Finder, or pass `--settings` explicitly. `--background` always suppresses the window. `scripts/check-app-launch.py` checks the packaged activation policy and visible windows using isolated settings with shortcuts disabled.
 
+Mr. Usage display choices round-trip in `preferences.toolkit.usage`; credentials,
+readings and cooldowns remain machine-local. Appearance includes ten themes and
+independent `popupTransparency` (0–1, absent means opaque), using the shared themed
+panel material. Command search reuses its app catalog/icons, discovers linked app
+bundles such as Safari, and indexes windows independently. Measure cold and warm
+opening separately before making latency claims. Native action catalogs are
+`SystemAction` (28) and `WindowAction` (23); settings destinations open panes rather
+than toggling hardware.
+
 ## Release packaging
 
 For a local app without release archives or publication, run `make build`. It builds the current checkout into `dist/Frog.app`, using a locally available Developer ID identity when possible, otherwise ad-hoc signing. It does not notarize, upload or increment the release version. Each local build gets its own build number. Use `make build CONFIGURATION=debug` for a debug build; set `FROG_SIGN_IDENTITY` explicitly to choose a certificate. Full releases use the separate local release script.
 
-Local and CI builds use ad-hoc signing. Developer ID builds use hardened runtime and a secure timestamp. Follow the setup below to sign and notarize a release for direct download.
+The packaging script defaults to ad-hoc signing; `make build` selects an available Developer ID identity when possible. CI uses ad-hoc signing. Developer ID builds use hardened runtime and a secure timestamp. Follow the setup below to sign and notarize a release for direct download.
 
 Release downloads are `Frog-macOS.zip` and `SHA256SUMS`. Updater-enabled releases also include a signed Sparkle `appcast.xml`. GitHub Actions builds and tests the app without signing credentials. Distribution releases are signed, notarized and published manually from the maintainer's Mac.
 
