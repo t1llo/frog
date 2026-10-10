@@ -17,7 +17,7 @@ import FrogUsage
     private var outsideClick: Any?
     private var deactivation: NSObjectProtocol?
     static func popupSize(availableHeight: CGFloat) -> NSSize {
-        NSSize(width: 360, height: min(360, max(180, availableHeight - 28)))
+        NSSize(width: UsageStatusPopover.width, height: min(360, max(180, availableHeight - 28)))
     }
     var isInstalled: Bool { item != nil }
 
