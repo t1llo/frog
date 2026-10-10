@@ -5,6 +5,7 @@ dist/
 /archive/
 /.scratch/
 /.agents/
+/.claude/
 /skills-lock.json
 .env
 .env.*
@@ -17,6 +18,7 @@ dist/
 node_modules
 
 /AGENTS.md
+/CLAUDE.md
 /docs/agent-workflow.md
 /docs/progress.md
 /docs/native-contract.md

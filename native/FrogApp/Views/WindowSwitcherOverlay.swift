@@ -74,8 +74,9 @@ struct WindowSwitcherOverlay: View {
                                     .onContinuousHover { phase in if case .active = phase { hover(window.id) } }
                                     .accessibilityAddTraits(model.selected == window.id ? .isSelected : [])
                             }
-                        }.padding(5).minimalScrollbars()
+                        }.padding(5)
                     }
+                    .scrollIndicators(.hidden)
                     .onChange(of: model.selected) { _, id in if let id, !model.selectionFromPointer { proxy.scrollTo(id) } }
                     .onAppear { if let id = model.selected { proxy.scrollTo(id) } }
                 }

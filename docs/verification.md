@@ -1,5 +1,53 @@
 # Native verification
 
+## Clipboard delivery and switcher follow-up
+
+The cross-Space native reproduction confirmed that AX omitted a window on another
+Desktop while WindowServer still contained it. `WindowSpaceBridge` augments the
+inventory with validated owner/window IDs, selects the existing destination Space,
+then resolves and activates the exact AX window. It dynamically resolves optional
+private macOS Space APIs; missing symbols retain the ordinary AX path. No Screen
+Recording, preference changes or window relocation are required. Window titles
+unavailable from macOS use cached AX text or a neutral off-Desktop label.
+
+The focused suite ran 66 tests: 63 passed and three opt-in native probes skipped.
+Desktop discovery/selection probes passed separately. A standalone native test app
+verified actual AX omission, correct remote-window focus and minimized restoration,
+with 10.9 ms activation in that fixture. Intel/macOS 14 type checking passed.
+Third-party apps, fullscreen and multi-display combinations remain unverified, as
+does how Mission Control and the Dock present the Desktop after a direct selection;
+the probe asserted WindowServer state only.
+
+The clipboard native pipeline reproduced the copy-only warning when an otherwise
+editable target omitted `AXSelectedTextRange`. A stronger test using AppKit's real
+Paste responder chain also reproduced focus remaining outside the original editor
+after the popup closed. The fix accepts missing ranges only with concrete target
+identity and editability/native-Paste capability, and restores focus only within
+the original still-frontmost app/window. Available range checks, secure/disabled
+field guards and input/history-generation cancellation remain enforced.
+
+The initial focused run passed 47 clipboard/selection tests. The final pipeline
+suite passes 16 regressions, exercising capture, popup search focus, Return,
+restoration and native Paste routing with named pasteboards and synthetic text.
+An isolated VS Code 1.141.0 profile verified the integrated terminal under both
+`on` and `auto` accessibility support: xterm exposes an editable textbox, its native
+Paste menu is enabled, and background terminal output preserves the separate input
+identity and caret. Its actual paste handler delivered 24 synthetic characters to
+an owned PTY without Return/newline or system-clipboard access. This verifies IDE
+input semantics, not macOS AX mapping or cross-process CGEvent delivery; the runner
+does not have Accessibility/event-posting permission. TCC was not modified.
+
+The switcher now hides scroll indicators with the native SwiftUI modifier. Eighteen
+focused tests and a synthetic 40-row native-host probe verify selection-following,
+wheel and precise-pixel scrolling at 500×352, including process-local legacy
+scrollbar style. Warm presentation p95 remained 7 ms.
+
+The combined `swift test -c release --disable-keychain` run passed **480 tests**:
+98 core, 23 Usage and 359 app tests, with the three opt-in native Spaces probes
+skipped and no failures. It was repeated unchanged after the work moved between
+agent sessions. The signed app's cross-Desktop switching and automatic paste into
+a real IDE terminal have not been exercised yet.
+
 ## Interaction follow-up after v1.0.15
 
 Final integrated `swift test -c release --disable-keychain` passed **455 tests**:

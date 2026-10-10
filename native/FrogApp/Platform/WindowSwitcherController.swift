@@ -95,6 +95,8 @@ final class WindowSwitcherController {
     private var activation: Task<Void, Never>?
     private var activationID: UUID? { didSet { if activationID == nil { input?.cancelActivation(oldValue) } } }
     private var activationPID: pid_t?
+    private var activationSpaceTransition: UUID?
+    private var activationWindowID: CGWindowID?
     private var eventEpoch = UUID()
     private var focusMonitor: Task<Void, Never>?
     private var workspaceObserver: NSObjectProtocol?
@@ -118,6 +120,17 @@ final class WindowSwitcherController {
     init(statusChanged: @escaping (String, Bool) -> Void) {
         self.statusChanged = statusChanged
         let workspace = NSWorkspace.shared.notificationCenter
+        observe(workspace, NSWorkspace.activeSpaceDidChangeNotification) { controller in
+            // Keep all cached rows immediately available; refresh native AX
+            // handles and foreground identity now that the visible Space changed.
+            controller.cache.invalidate()
+            if let token = controller.activationSpaceTransition, token == controller.activationID,
+               let windowID = controller.activationWindowID, WindowSpaceBridge.isOnVisibleSpace(windowID) == false {
+                // A gesture or another actor selected a different Desktop while
+                // our AX handoff was pending. Never travel back on a late retry.
+                controller.cancelActivation(token)
+            }
+        }
         observe(workspace, NSWorkspace.sessionDidResignActiveNotification) { controller in
             controller.sessionOnConsole = false
             controller.updateSessionEligibility()
@@ -210,7 +223,7 @@ final class WindowSwitcherController {
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] notification in MainActor.assumeIsolated {
             guard let self else { return }
-            if self.activation != nil, let target = self.activationPID,
+            if self.activation != nil, self.activationSpaceTransition != self.activationID, let target = self.activationPID,
                let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                app.processIdentifier != target {
                 self.activation?.cancel(); self.activation = nil; self.activationID = nil; self.activationPID = nil
@@ -443,9 +456,11 @@ final class WindowSwitcherController {
         cancel(session: token)
         activationID = activationToken
         activationPID = selected.pid
+        activationWindowID = selected.windowID
         activation = Task { [weak self, catalog] in
             defer {
-                if self?.activationID == activationToken { self?.activation = nil; self?.activationID = nil; self?.activationPID = nil }
+                if self?.activationSpaceTransition == activationToken { self?.activationSpaceTransition = nil }
+                if self?.activationID == activationToken { self?.activation = nil; self?.activationID = nil; self?.activationPID = nil; self?.activationWindowID = nil }
             }
             guard !Task.isCancelled, self?.input?.isActivationPending(activationToken) == true else { return }
             guard let app = NSRunningApplication(processIdentifier: selected.pid), !app.isTerminated else {
@@ -460,6 +475,13 @@ final class WindowSwitcherController {
                 return app.activate(options: [])
             }, bringForward: { await catalog.bringApplicationForward(id: selected.id, isCurrent: isCurrent) }, isFrontmost: {
                 NSWorkspace.shared.frontmostApplication?.processIdentifier == selected.pid
+            }, prepare: {
+                let ready = await catalog.prepareActivation(id: selected.id, isCurrent: isCurrent, willChangeSpace: { [weak self] in
+                    await MainActor.run {
+                        if self?.activationID == activationToken { self?.activationSpaceTransition = activationToken }
+                    }
+                })
+                return ready
             }, isCurrent: isCurrent)
             guard activated else {
                 guard !Task.isCancelled, isCurrent() else { return }

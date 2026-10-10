@@ -37,6 +37,7 @@ final class WindowSwitcherCache {
     }
 
     func clear() { cancelRefresh(); snapshot = nil; updatedAt = nil }
+    func invalidate() { updatedAt = nil }
 
     func noteFocused(_ id: UUID) {
         guard let snapshot, let window = snapshot.windows.first(where: { $0.id == id }) else { return }
