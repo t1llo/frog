@@ -18,13 +18,18 @@ public struct SearchRecord: Identifiable, Equatable, Sendable {
 public enum CommandSearch {
     public static func results(_ records: [SearchRecord], query: String, limit: Int = 80) -> [SearchRecord] {
         let query = normalized(query)
+        guard limit > 0 else { return [] }
+        if query.isEmpty { return Array(records.prefix(limit)) }
         let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
-        return records.enumerated().compactMap { index, record -> (SearchRecord, Int, Int)? in
+        // Four stable rank buckets avoid sorting the entire catalogue on every keystroke.
+        var ranked = [[SearchRecord]](repeating: [], count: 4)
+        for record in records {
             let title = record.searchTitle
-            guard words.allSatisfy({ record.searchText.contains($0) }) else { return nil }
-            let rank = query.isEmpty ? 0 : title == query ? 3 : title.hasPrefix(query) ? 2 : title.contains(query) ? 1 : 0
-            return (record, rank, index)
-        }.sorted { $0.1 == $1.1 ? $0.2 < $1.2 : $0.1 > $1.1 }.prefix(max(0, limit)).map(\.0)
+            guard words.allSatisfy({ record.searchText.contains($0) }) else { continue }
+            let rank = title == query ? 3 : title.hasPrefix(query) ? 2 : title.contains(query) ? 1 : 0
+            if ranked[rank].count < limit { ranked[rank].append(record) }
+        }
+        return Array(ranked.reversed().joined().prefix(limit))
     }
     fileprivate static func normalized(_ value: String) -> String {
         value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))

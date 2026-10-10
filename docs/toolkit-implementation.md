@@ -72,11 +72,31 @@ packaging and isolated accessory startup passed. Local build `20261010065719`
 (version 1.0.13) replaced the installed app with unchanged configuration and downloaded
 model inventory. The executable and signing team matched the verified bundle.
 
-## Separate popup defect
+## Command bar and clipboard navigation
 
-The reported intermittent oversized menu popup still needs a failing live
-geometry capture. Repeated native probes and the installed geometry-only
-diagnostic have measured normal sizing; no popup-sizing fix is claimed.
+The command bar opens on shortcut press, reuses normalized application records and
+deduplicates with a set. Search uses stable rank buckets instead of sorting the whole
+catalogue. File lookup remains asynchronous and debounced. Drag its top grip or footer
+to move it; the position survives reopening in the same session and recenters if its
+display is no longer available.
+
+First-run setup and Command bar settings share a Spotlight replacement walkthrough:
+free ⌘Space in macOS Keyboard Shortcuts, explicitly assign it to Frog, then try it.
+The setup never rewrites system shortcuts. Registration conflicts remain visible;
+retrying the same shortcut retries registration after System Settings changes.
+
+Clipboard is a settings page with the paste-picker shortcut. **Open clipboard history**
+navigates to the single History page with **Clipboard** selected. That filter's clear
+action only clears in-memory clips; saved text/audio history remains separate.
+
+## Dynamic popup sizing
+
+The later native reproduction found a 326-point MenuBarExtra window retaining its
+initial height after a conditional row disappeared and Frog's content shrank to 252.
+Removing fixedSize alone did not fix it. A non-interactive sizing background now
+coalesces content changes and resizes the native window with its top edge anchored.
+The same native reproduction then measured 252 for both host and content, removing
+the translucent strips. The existing shared rounded blur mask remains in use.
 
 ## Data and execution
 

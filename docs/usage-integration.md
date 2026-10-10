@@ -146,8 +146,11 @@ Implemented:
   Changes reread the bounded horizon, preserving mutable-row/revert/fork semantics.
   Temporary query failures retain the last readable counters with a visible warning;
   successful recovery clears it. Removed databases remove their counters.
-- **Presentation:** a bounded, scrollable 360×420 popup shows plan limits, source
-  status, a compact chart and total tokens. Metric tiles and expandable lifetime/
+- **Presentation:** a bounded 360×360 popup shows two primary full-width plan limits,
+  inline reset times, a compact chart and total tokens. A small plan badge replaces
+  the separate plan heading. Extra limits, credit balances, login-source choices and
+  model-pricing details are available in the dashboard. Partial estimates are labeled;
+  refresh failures have a status icon with details. Metric tiles and expandable lifetime/
   history details live in the dashboard. Popup height also respects the status
   item's display, leaving space for native popover framing. Popup content is created
   when opened; enabled background collection does not need a hosted popup view.

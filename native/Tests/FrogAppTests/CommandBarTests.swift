@@ -4,6 +4,66 @@ import FrogCore
 @testable import FrogApp
 
 @MainActor final class CommandBarTests: XCTestCase {
+    func testSpotlightSetupPersistsFrogShortcutWithoutChangingRules() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let config = Configuration()
+        try ConfigurationStore(directory: root).save(config)
+        let model = AppModel(dataDirectory: root, registerShortcuts: false)
+        defer { model.shutdown() }
+        let previousRules = model.configuration.rules
+        try model.useCommandBarShortcut(Hotkey(keyCode: 49, modifiers: 256))
+        try model.useCommandBarShortcut(Hotkey(keyCode: 49, modifiers: 256))
+        let saved = try ConfigurationStore(directory: root).load()
+        XCTAssertTrue(saved.preferences.featureEnabled(.commandBar))
+        XCTAssertEqual(saved.preferences.toolkitSettings.effectiveCommandBarHotkey, Hotkey(keyCode: 49, modifiers: 256))
+        XCTAssertEqual(saved.rules, previousRules)
+        XCTAssertEqual(saved.providers, model.configuration.providers)
+    }
+
+    func testWarmCatalogueIsImmediateWhileRefreshWaitsAndPanelRetainsMovedPosition() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var config = Configuration(); config.preferences.setFeature(.commandBar, enabled: true)
+        config.preferences.windowSwitcherEnabled = false
+        try ConfigurationStore(directory: root).save(config)
+        let model = AppModel(dataDirectory: root, registerShortcuts: false)
+        defer { model.shutdown() }
+        let gate = CommandIndexGate()
+        var loads = 0
+        let apps = (0..<2000).map { index in
+            var rule = Rule(name: "Sample App \(index)"); rule.action = RuleAction(category: .application)
+            rule.action?.applicationPath = "/fixture/App\(index).app"
+            return rule
+        }
+        let bar = CommandBar(model: model, fileScopes: [root], captureTarget: { nil }, loadApplications: {
+            loads += 1
+            if loads == 1 { return apps }
+            return await gate.wait()
+        })
+        defer { bar.stop() }
+        bar.warm()
+        for _ in 0..<100 where loads == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        await Task.yield()
+        let start = ContinuousClock.now
+        bar.show(); bar.query = "Sample App 1999"
+        XCTAssertEqual(bar.results.first?.title, "Sample App 1999", "Cached results must not wait for application refresh")
+        print("Command bar warm open + 2,000-app search: \(start.duration(to: .now))")
+        let panel = try XCTUnwrap(NSApp.windows.first { $0.title == "Frog command bar" && $0.isVisible })
+        let visible = try XCTUnwrap(panel.screen?.visibleFrame)
+        let moved = NSPoint(x: visible.minX + 35, y: visible.minY + 45)
+        panel.setFrameOrigin(moved)
+        await gate.started()
+        bar.hide(); await gate.release()
+        await Task.yield()
+        bar.show()
+        XCTAssertEqual(panel.frame.origin, moved)
+        bar.query = "25% * 200"
+        XCTAssertEqual(bar.results.first?.title, "50")
+        await gate.started()
+        bar.hide(); await gate.release()
+    }
+
     func testClosingDuringIndexingRejectsLateAppsAndReleasesResults() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

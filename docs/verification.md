@@ -1,5 +1,37 @@
 # Native verification
 
+## Subsequent desktop polish
+
+`swift test -c release --disable-keychain` passed **386 tests** (87 core,
+22 usage, 277 app) after the final changes. Synthetic native popup assertions
+also passed for light, dark and Tokyo Night appearances.
+
+A dynamic native MenuBarExtra fixture reproduces the outer translucent strips:
+window height 326 pt, visible panel 252 pt after an async status-row removal. Removing
+fixedSize left the mismatch. Explicit content-driven native sizing now produces
+252 pt for both, with matching rounded corners. Regression checks cover shrink/grow,
+coalescing, top-edge anchoring and non-interception of buttons.
+The first resize implementation failed the top-edge assertions because AppKit's
+setContentSize retained the bottom edge. Explicit frame sizing preserves maxY;
+the regression and actual MenuBarExtra reproduction both pass after that correction.
+
+Command-bar verification uses 2,000 generated applications and a blocked refresh:
+cached search remains immediate, moved window geometry survives reopening, and
+calculator/Return/Escape and canceled-indexing checks remain covered. A debug warm
+open+search measured 28.4 ms; this is a fixture measurement, not a system-wide guarantee.
+The final release-mode run measured 22.9 ms for the same warmed fixture.
+Spotlight setup saves Frog's shortcut while preserving rules/providers; system
+shortcut reassignment is a user action and is not exercised against real settings.
+
+Usage's subsequent compact design is 360×360: full-width limits, inline reset times,
+small plan badge and source/pricing details in the dashboard. The two primary limits
+fit without scrolling; additional limits are indicated in the footer. Partial API
+estimates remain labeled and polling warnings remain available from the status icon.
+
+Clipboard settings now navigate to History → Clipboard. The native history test
+follows that route and verifies explicit sensitive-entry reveal/remasking without
+persisting clipboard contents.
+
 ## Menu-bar follow-up
 
 Native probes reproduced and verified fixes for two organizer defects: a spacer's
@@ -15,7 +47,7 @@ and borderless content host to the same 12-point outline makes the previously op
 corner pixels transparent while keeping the content opaque. This capture contains
 only a generated menu window. The native backdrop regression checks the host and mask.
 
-The Usage popup is now **360×420 points**, down from 440×640, with a smaller chart,
+The first Usage popup revision was **360×420 points**, down from 440×640, with a smaller chart,
 compact quota rows and a total-token summary. Full breakdowns remain in the dashboard.
 Height is bounded by the anchor display. Synthetic Frog light/dark and Tokyo Night
 captures were reviewed; Tokyo Night includes both light and dark palettes.

@@ -21,7 +21,7 @@ struct SetupView: View {
     @State private var issue: String?
     @State private var pendingImport: Configuration?
     @State private var microphoneAllowed = false
-    private let titles = ["Welcome to Frog", "Choose your models", "Permissions", "You're ready"]
+    private let titles = ["Welcome to Frog", "Choose your models", "Permissions", "Your command bar", "You're ready"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -29,7 +29,7 @@ struct SetupView: View {
                 FrogMark()
                 VStack(alignment: .leading, spacing: 4) {
                     Text(titles[step]).font(.system(size: 23, weight: .semibold))
-                    Text("Step \(step + 1) of 4 · Everything can be changed later").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                    Text("Step \(step + 1) of \(titles.count) · Everything can be changed later").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
                 }
                 Spacer()
             }.padding(24)
@@ -39,6 +39,7 @@ struct SetupView: View {
                     case 0: welcome
                     case 1: models
                     case 2: permissions
+                    case 3: CommandBarSetupView()
                     default: summary
                     }
                     if let issue { InlineIssue(message: issue) }
@@ -49,9 +50,9 @@ struct SetupView: View {
                 Button("Skip setup") { model.finishSetup() }
                 Spacer()
                 if step > 0 { Button("Back") { step -= 1; issue = nil } }
-                if step == 1 || step == 2 { Button("Skip this step") { step += 1; issue = nil } }
-                Button(step == 3 ? "Open Frog" : "Continue") {
-                    if step == 3 { model.finishSetup() } else { step += 1; issue = nil }
+                if step > 0 && step < titles.count - 1 { Button("Skip this step") { step += 1; issue = nil } }
+                Button(step == titles.count - 1 ? "Open Frog" : "Continue") {
+                    if step == titles.count - 1 { model.finishSetup() } else { step += 1; issue = nil }
                 }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.defaultAction)
             }.padding(20).overlay(alignment: .top) { Rectangle().fill(FrogStyle.border.opacity(0.5)).frame(height: 1) }
         }.frame(width: 620, height: 610).foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).background(FrogWindowMaterial())

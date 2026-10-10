@@ -230,6 +230,10 @@ public struct UsagePlanPeriod: Identifiable {
         }
         return tokens.codexLimits == nil ? "Sign in to Codex or OpenCode to read plan limits." : "Newest available plan limits"
     }
+    public func planWarning(provider: String) -> String? {
+        if provider == Provider.claude.rawValue { return claude.lastError == nil ? nil : claude.status }
+        return tokens.liveError
+    }
     public func credits(provider: String) -> String? {
         if provider == Provider.claude.rawValue {
             guard let credits = claude.displayUsage()?.credits else { return nil }

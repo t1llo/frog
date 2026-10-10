@@ -13,6 +13,7 @@ struct AppIssue: Identifiable {
 final class AppModel: ObservableObject {
     @Published private(set) var configuration = Configuration()
     @Published private(set) var history: [HistoryEntry] = []
+    @Published var historyFilter: HistoryFilter?
     @Published private(set) var hotkeyErrors: [UUID: String] = [:]
     @Published private(set) var isProcessing = false
     @Published private(set) var status = "Ready"
@@ -353,6 +354,7 @@ final class AppModel: ObservableObject {
     }
 
     func openFeature(_ feature: FeatureID) { toolkit.select(.feature(feature)); showSettings() }
+    func openClipboardHistoryPage() { historyFilter = .clipboard; toolkit.select(.history); showSettings() }
     func showCommandBar() {
         guard !isRecordingShortcut else { return }
         commandBar.show()
@@ -682,6 +684,16 @@ final class AppModel: ObservableObject {
         refreshHistory()
     }
 
+    func useCommandBarShortcut(_ hotkey: Hotkey) throws {
+        var preferences = configuration.preferences
+        preferences.setFeature(.commandBar, enabled: true)
+        preferences.toolkit?.commandBarHotkey = hotkey
+        let unchanged = preferences.toolkit == configuration.preferences.toolkit
+        try savePreferences(preferences)
+        // The user may have just freed this same shortcut in System Settings.
+        if unchanged { registerHotkeys() }
+    }
+
     func refreshHistory() {
         do {
             history = try historyStore.load(preferences: configuration.preferences)
@@ -911,7 +923,7 @@ final class AppModel: ObservableObject {
     }
 
     private func handleShortcut(_ id: UUID, pressed: Bool) {
-        if id == Self.commandBarID { if !pressed { showCommandBar() }; return }
+        if id == Self.commandBarID { if pressed { showCommandBar() }; return }
         if id == Self.clipboardHistoryID { if !pressed { showClipboardHistory() }; return }
         if id == Self.cancelRecordingID {
             if pressed { dictation.interrupt(reason: configuration.preferences.workflowSettings.cancelRecordingHotkey?.keyCode == 53 ? .escape : .cancelled) }

@@ -14,7 +14,7 @@ import FrogUsage
     private var updateTask: Task<Void, Never>?
     private let popover = NSPopover()
     static func popupSize(availableHeight: CGFloat) -> NSSize {
-        NSSize(width: 360, height: min(420, max(180, availableHeight - 28)))
+        NSSize(width: 360, height: min(360, max(180, availableHeight - 28)))
     }
     var isInstalled: Bool { item != nil }
 

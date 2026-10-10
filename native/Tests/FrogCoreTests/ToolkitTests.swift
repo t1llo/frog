@@ -46,4 +46,12 @@ final class ToolkitTests: XCTestCase {
         XCTAssertEqual(QuickCalculation.result("0 c to f"), "32 f")
         for invalid in ["1/0", "1 +", "1 kg to km", "system('whoami')", String(repeating: "(", count: 1000)] { XCTAssertNil(QuickCalculation.result(invalid)) }
     }
+    func testLargeSearchKeepsLateExactMatchesAheadOfBoundedStablePrefixes() {
+        var source = (0..<2000).map { SearchRecord(id: "\($0)", title: "Café \($0)") }
+        source.append(SearchRecord(id: "exact", title: "Café"))
+        XCTAssertEqual(CommandSearch.results(source, query: "cafe", limit: 3).map(\.id), ["exact", "0", "1"])
+        XCTAssertEqual(CommandSearch.results(source, query: "   ", limit: 2).map(\.id), ["0", "1"])
+        XCTAssertTrue(CommandSearch.results(source, query: "cafe", limit: 0).isEmpty)
+        XCTAssertTrue(CommandSearch.results(source, query: "cafe", limit: -1).isEmpty)
+    }
 }

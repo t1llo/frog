@@ -10,6 +10,7 @@ import SwiftUI
     var onToolUse: ((ActivityToolKind) -> Void)?
     private weak var model: AppModel?
     private var records: [SearchRecord] = []
+    private var recordIDs = Set<String>()
     private var actions: [String: () async throws -> Void] = [:]
     private var copyActions: [String: () async throws -> Void] = [:]
     private var sourceObservation: AnyCancellable?
@@ -22,6 +23,7 @@ import SwiftUI
     private var windowIndexing: Task<Void, Never>?
     private var warming: Task<Void, Never>?
     private var cachedApplications: [Rule] = []
+    private var applicationRecords: [String: SearchRecord] = [:]
     private var cachedWindows: [SwitcherWindow] = []
     private var icons: [String: NSImage] = [:]
     @Published private(set) var invocation = UUID()
@@ -60,11 +62,17 @@ import SwiftUI
     }
     func stop() {
         hide(); warming?.cancel(); warming = nil
-        cachedApplications = []; cachedWindows = []; icons = [:]
+        cachedApplications = []; applicationRecords = [:]; cachedWindows = []; icons = [:]
         panel?.contentView = nil; panel = nil
     }
     private func cacheApplications(_ installed: [Rule]) {
+        guard installed != cachedApplications else { return }
         cachedApplications = installed
+        applicationRecords = [:]
+        for rule in installed {
+            guard let path = rule.action?.applicationPath else { continue }
+            applicationRecords[path] = SearchRecord(id: "app:\(path)", title: rule.name, subtitle: "Application", keywords: "app open launch \(rule.action?.applicationBundleID ?? "")", symbol: "app")
+        }
     }
     func icon(for result: SearchRecord) -> NSImage? {
         if let cached = icons[result.id] { return cached }
@@ -76,7 +84,8 @@ import SwiftUI
     private func addApplications(_ installed: [Rule]) {
         for rule in installed {
             guard let path = rule.action?.applicationPath else { continue }
-            add(SearchRecord(id: "app:\(path)", title: rule.name, subtitle: "Application", keywords: "app open launch \(rule.action?.applicationBundleID ?? "")", symbol: "app")) { [weak self] in
+            guard let record = applicationRecords[path] else { continue }
+            add(record) { [weak self] in
                 try await ApplicationLauncher().launch(rule)
                 try Task.checkCancellation()
                 self?.onToolUse?(.applicationCommand)
@@ -111,6 +120,7 @@ import SwiftUI
         created.isOpaque = false; created.backgroundColor = .clear; created.hasShadow = true
         created.level = .floating; created.hidesOnDeactivate = false
         created.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        created.center()
         let host = NSHostingView(rootView: CommandBarView(bar: self))
         host.sizingOptions = []; created.contentView = host; panel = created
         host.layoutSubtreeIfNeeded()
@@ -120,7 +130,7 @@ import SwiftUI
         if panel?.isVisible == true { hide(); return }
         hide()
         let target = captureTarget(), frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        records = []; actions = [:]; copyActions = [:]; query = ""; selection = 0
+        records = []; recordIDs = []; actions = [:]; copyActions = [:]; query = ""; selection = 0
         addApplications(cachedApplications)
         if model.configuration.preferences.featureEnabled(.windowSwitcher) { addWindows(cachedWindows) }
         addRoutes(model, target: target, frontPID: frontPID)
@@ -154,7 +164,9 @@ import SwiftUI
                 self?.hide()
             }
         }
-        panel.center(); panel.makeKeyAndOrderFront(nil)
+        // Retain the user's drag position; recover if its display was disconnected.
+        if !NSScreen.screens.contains(where: { $0.visibleFrame.contains(panel.frame) }) { panel.center() }
+        panel.makeKeyAndOrderFront(nil)
         let token = generation
         let applications = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }.map {
             SwitcherApplication(pid: $0.processIdentifier, name: $0.localizedName ?? "Application", hidden: $0.isHidden)
@@ -206,6 +218,7 @@ import SwiftUI
                 guard self.generation == token, !Task.isCancelled, snapshot.isPublishable else { return }
                 self.cachedWindows = snapshot.windows
                 self.records.removeAll { $0.id.hasPrefix("window:") }
+                self.recordIDs = Set(self.records.map(\.id))
                 self.actions = self.actions.filter { !$0.key.hasPrefix("window:") }
                 self.addWindows(snapshot.windows)
                 self.updateResults()
@@ -281,7 +294,7 @@ import SwiftUI
         updateResults()
     }
     private func add(_ record: SearchRecord, copy: (() async throws -> Void)? = nil, action: @escaping () async throws -> Void) {
-        if !records.contains(where: { $0.id == record.id }) { records.append(record) }
+        if recordIDs.insert(record.id).inserted { records.append(record) }
         actions[record.id] = action
         copyActions[record.id] = copy
     }
@@ -319,6 +332,7 @@ import SwiftUI
                 guard let self, self.fileRevision == revision, let search = self.fileQuery else { return }
                 search.disableUpdates(); defer { search.stop() }
                 self.records.removeAll { $0.id.hasPrefix("file:") }
+                self.recordIDs = Set(self.records.map(\.id))
                 self.actions = self.actions.filter { !$0.key.hasPrefix("file:") }
                 for index in 0..<min(40, search.resultCount) {
                     guard let item = search.result(at: index) as? NSMetadataItem,
@@ -363,10 +377,11 @@ import SwiftUI
         if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil
         if let outside { NSEvent.removeMonitor(outside) }; outside = nil
         if let activation { NSWorkspace.shared.notificationCenter.removeObserver(activation) }; activation = nil
-        records = []; actions = [:]; copyActions = [:]; results = []
+        records = []; recordIDs = []; actions = [:]; copyActions = [:]; results = []
     }
     private func removeFiles() {
         records.removeAll { $0.id.hasPrefix("file:") }
+        recordIDs = Set(records.map(\.id))
         actions = actions.filter { !$0.key.hasPrefix("file:") }
     }
     private func copy(_ value: String) { pasteboard.clearContents(); pasteboard.setString(value, forType: .string) }
@@ -382,11 +397,15 @@ private struct CommandBarView: View {
     @FocusState private var focused: Bool
     var body: some View {
         VStack(spacing: 0) {
+            Capsule().fill(FrogStyle.muted.opacity(0.35)).frame(width: 28, height: 3)
+                .frame(maxWidth: .infinity).frame(height: 14)
+                .overlay { WindowDragRegion().help("Drag to move the command bar") }
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass").foregroundStyle(FrogStyle.muted)
                 TextField("Search anything…", text: $bar.query)
                     .textFieldStyle(.plain).font(.system(size: 16)).focused($focused)
-                Text("esc").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                 Text("esc").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                     .padding(.horizontal, 5).padding(.vertical, 3).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 4))
             }.padding(.horizontal, 18).frame(height: 54)
             Divider()
             ScrollViewReader { proxy in
@@ -414,8 +433,9 @@ private struct CommandBarView: View {
                 }
             }
             Divider()
-             HStack { Text("Frog"); Spacer(); Text("↩ Open    ⌘↩ Copy") }
-                .font(.system(size: 10)).foregroundStyle(FrogStyle.muted).padding(.horizontal, 16).frame(height: 28)
+              HStack { Text("Frog"); Spacer(); Text("↑↓ Select    ↩ Open    ⌘↩ Copy") }
+                 .font(.system(size: 10)).foregroundStyle(FrogStyle.muted).padding(.horizontal, 16).frame(height: 28)
+                 .overlay { WindowDragRegion().help("Drag to move the command bar") }
          }.frame(width: 600, height: 390).frogPanel()
              .onAppear { focused = true }.onChange(of: bar.invocation) { focused = true }
     }

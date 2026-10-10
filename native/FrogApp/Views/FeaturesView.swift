@@ -52,6 +52,7 @@ struct CommandBarSettingsView: View {
             }
             Text("Type an application, window or filename. You can also calculate 25% * 200 or convert 5 mi to km. Arrow keys select a result; Return opens it and Escape closes the panel.")
                 .font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
+            CommandBarSetupView()
         }
     }
 }

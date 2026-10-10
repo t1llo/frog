@@ -110,6 +110,7 @@ struct FrogStatusMenu: View {
         }.padding(5).frame(width: 292).fixedSize(horizontal: false, vertical: true)
             .font(.system(size: 12)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()
+            .background(MenuWindowSizing())
             .task { model.refreshSystemStatus(); await power.refresh(); await power.refreshAccess() }
     }
 
