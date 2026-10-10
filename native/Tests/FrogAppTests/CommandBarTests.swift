@@ -191,6 +191,20 @@ import FrogCore
         XCTAssertFalse(named.evaluate(with: item("Other project.txt", ["public.content"])))
     }
 
+    func testSpotlightAcceptsEveryTypedQueryShape() {
+        // NSMetadataQuery raises on predicates it cannot translate. An exception escaping the bar's search task
+        // leaves the process unusable, so the real query object must accept whatever can be typed.
+        let scope = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        for text in ["", "ac", "ac ", "project CAFE", "it's", "a\"b", "100%", "*", "\\", "a(b)", "🐸", String(repeating: "long ", count: 40)] {
+            let query = NSMetadataQuery()
+            query.predicate = MetadataCommandFileSearch.predicate(text: text)
+            XCTAssertNotNil(query.predicate, text)
+            let search = MetadataCommandFileSearch()
+            search.start(text: text.trimmingCharacters(in: .whitespacesAndNewlines), scopes: [scope]) { _ in }
+            search.stop()
+        }
+    }
+
     func testSyntheticCatalogueInteractionTiming() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

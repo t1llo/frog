@@ -557,10 +557,10 @@ private actor CommandIconReader {
 
     static func predicate(text: String, now: Date = Date()) -> NSPredicate {
         let documents = NSPredicate(format: "(ANY kMDItemContentTypeTree == 'public.content' OR ANY kMDItemContentTypeTree == 'public.folder') AND NOT (ANY kMDItemContentTypeTree == 'com.apple.application-bundle')")
-        let match = text.isEmpty
-            ? NSPredicate(format: "kMDItemLastUsedDate > %@", now.addingTimeInterval(-7 * 86400) as NSDate)
-            : NSCompoundPredicate(andPredicateWithSubpredicates: text.split(whereSeparator: \.isWhitespace).map { NSPredicate(format: "%K CONTAINS[cd] %@", NSMetadataItemFSNameKey, String($0)) })
-        return NSCompoundPredicate(andPredicateWithSubpredicates: [documents, match])
+        let words = text.split(whereSeparator: \.isWhitespace).map { NSPredicate(format: "%K CONTAINS[cd] %@", NSMetadataItemFSNameKey, String($0)) }
+        let recent = NSPredicate(format: "kMDItemLastUsedDate > %@", now.addingTimeInterval(-7 * 86400) as NSDate)
+        // NSMetadataQuery raises on an AND with a single subpredicate, so every term stays at this level.
+        return NSCompoundPredicate(andPredicateWithSubpredicates: [documents] + (words.isEmpty ? [recent] : words))
     }
 
     func start(text: String, scopes: [Any], receive: @escaping @MainActor ([SearchRecord]) -> Void) {
