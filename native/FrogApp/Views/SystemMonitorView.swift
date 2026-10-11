@@ -10,9 +10,8 @@ struct SystemMonitorMenuSelector: View {
     @Binding var selection: SystemMonitorMenuTab
 
     var body: some View {
-        Picker("Menu view", selection: $selection) {
-            ForEach(SystemMonitorMenuTab.allCases) { tab in Text(tab.rawValue).tag(tab) }
-        }.pickerStyle(.segmented).labelsHidden().padding(.horizontal, 6).padding(.vertical, 8)
+        CompactSegments(values: SystemMonitorMenuTab.allCases, selected: selection, width: 132, title: { $0.rawValue }) { selection = $0 }
+            .accessibilityElement(children: .contain).accessibilityLabel("Menu view")
     }
 }
 
@@ -58,8 +57,6 @@ struct SystemMonitorOverview: View {
                     Spacer(minLength: 4)
                     Label(rate(snapshot.diskWrite), systemImage: "arrow.up")
                 }.font(.system(size: 10)).monospacedDigit().foregroundStyle(FrogStyle.muted)
-                Text("Startup volume · I/O across supported disks")
-                    .font(.system(size: 9)).foregroundStyle(FrogStyle.muted)
             }.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
 
             VStack(alignment: .leading, spacing: 6) {
@@ -89,9 +86,6 @@ struct SystemMonitorOverview: View {
                 detail("System wattage", value: "Unavailable")
                     .help("macOS does not provide a portable public total-system wattage API. Battery charge is not power consumption.")
             }.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
-
-            Text("Live while open · 2-second refresh")
-                .font(.system(size: 9)).foregroundStyle(FrogStyle.muted)
         }.padding(.horizontal, 6).padding(.bottom, 8)
             .accessibilityElement(children: .contain).accessibilityLabel("System overview")
     }

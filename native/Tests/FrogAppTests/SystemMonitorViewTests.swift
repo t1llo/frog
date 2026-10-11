@@ -126,10 +126,8 @@ private struct MonitorMenuFixtureView: View {
     @ObservedObject var state: MonitorMenuFixtureState
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack { Text("Frog").fontWeight(.semibold); Spacer(); Text("Ready").foregroundStyle(FrogStyle.muted) }
-                .padding(.horizontal, 8).padding(.vertical, 9)
-            Divider().padding(.horizontal, 8)
-            SystemMonitorMenuSelector(selection: $state.tab)
+            HStack { Text("Frog").fontWeight(.semibold); Spacer(); SystemMonitorMenuSelector(selection: $state.tab) }
+                .padding(.horizontal, 8).frame(height: 42)
             if state.tab == .system {
                 SystemMonitorOverview(snapshot: state.snapshot,
                     cpuHistory: (0..<30).map { 0.2 + Double($0 % 7) / 30 },
@@ -138,7 +136,6 @@ private struct MonitorMenuFixtureView: View {
                 Text("Stay awake").padding(12)
                 Text("Command bar").padding(12)
             }
-            Divider().padding(.horizontal, 8)
             Text("Open Frog").padding(9)
             Divider().padding(.horizontal, 8)
             HStack { Text("v1.0.0"); Spacer(); Text("Quit Frog") }

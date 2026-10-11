@@ -72,6 +72,7 @@ struct CompactDropdownLabel: View {
     let value: String
     var symbol: String? = nil
     var width: CGFloat = 220
+    var height: CGFloat = 32
     @State private var hovering = false
     var body: some View {
         HStack(spacing: 8) {
@@ -80,7 +81,7 @@ struct CompactDropdownLabel: View {
             Spacer(minLength: 2)
             Image(systemName: "chevron.down").font(.system(size: 9)).foregroundStyle(FrogStyle.muted)
         }.font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.ink)
-            .padding(.horizontal, 9).frame(width: width, height: 32)
+            .padding(.horizontal, 9).frame(width: width, height: height)
             .background(hovering ? AnyShapeStyle(FrogStyle.selection) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 5))
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(FrogStyle.border.opacity(0.6)))
             .contentShape(RoundedRectangle(cornerRadius: 7)).onHover { hovering = $0 }
