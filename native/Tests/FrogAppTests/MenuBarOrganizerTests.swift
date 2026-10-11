@@ -4,6 +4,74 @@ import FrogCore
 @testable import FrogApp
 
 @MainActor final class MenuBarOrganizerTests: XCTestCase {
+    func testMenuBarTallerThanTheStatusBarThicknessIsStillTheMenuBar() {
+        // An external display on macOS 26: a 30-point menu bar, no notch, status-bar thickness 22.
+        let screen = OrganizerScreen(frame: CGRect(x: 0, y: 0, width: 2560, height: 1440),
+                                     visibleFrame: CGRect(x: 0, y: 0, width: 2560, height: 1410),
+                                     safeAreaTop: 0, thickness: 22, notchSides: nil)
+        XCTAssertEqual(screen.menuRegions, [CGRect(x: 0, y: 1410, width: 2560, height: 30)])
+        XCTAssertTrue(screen.menuBarContains(CGPoint(x: 1200, y: 1412), thickness: 22), "The lower edge of the bar is still the bar")
+        XCTAssertFalse(screen.menuBarContains(CGPoint(x: 1200, y: 1400), thickness: 22))
+        let hidden = OrganizerScreen(frame: screen.frame, visibleFrame: screen.frame, safeAreaTop: 0, thickness: 22, notchSides: nil)
+        XCTAssertEqual(hidden.menuRegions, [CGRect(x: 0, y: 1418, width: 2560, height: 22)], "An auto-hidden bar reserves no space")
+        let notch = (CGRect(x: 0, y: 944, width: 650, height: 38), CGRect(x: 862, y: 944, width: 650, height: 38))
+        let builtIn = OrganizerScreen(frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+                                      visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 944),
+                                      safeAreaTop: 38, thickness: 22, notchSides: notch)
+        XCTAssertEqual(builtIn.menuRegions, [notch.0, notch.1])
+    }
+
+    func testCollapsesWhenStatusItemWindowsAreTallerThanTheKnownMenuBand() {
+        let fixture = OrganizerFixture()
+        // The windows fill the 30-point bar even where only the 22-point thickness is known.
+        fixture.env = OrganizerEnvironment(screens: [OrganizerScreen(frame: CGRect(x: 0, y: 0, width: 2560, height: 1440),
+            menuRegions: [CGRect(x: 0, y: 1418, width: 2560, height: 22)])])
+        fixture.items.bar = (1410, 30)
+        var settings = MenuBarPreferences(); settings.autoHideSeconds = 5
+        fixture.organizer.configure(enabled: true, settings: settings)
+        fixture.organizer.tick()
+        XCTAssertNil(fixture.organizer.issue)
+        fixture.time = 5; fixture.organizer.tick()
+        XCTAssertFalse(fixture.organizer.isExpanded, "Auto-hide must work on a display without a notch")
+        XCTAssertEqual(fixture.items.lengths[.divider], 5120)
+        fixture.organizer.toggle(); fixture.organizer.toggle()
+        XCTAssertFalse(fixture.organizer.isExpanded)
+        fixture.items.bar = (1440, 30)
+        fixture.time = 10; fixture.organizer.tick()
+        XCTAssertTrue(fixture.organizer.isExpanded, "An arrow above the screen is still unsafe")
+        fixture.organizer.stop()
+    }
+
+    func testHelpersStayNarrowWhereTheSystemPadsEveryStatusItem() {
+        let fixture = OrganizerFixture()
+        var settings = MenuBarPreferences(); settings.permanentlyHiddenSection = true
+        fixture.organizer.configure(enabled: true, settings: settings)
+        XCTAssertEqual(fixture.items.lengths, [.toggle: 24, .divider: 18, .permanentDivider: 18])
+        fixture.organizer.stop()
+        // macOS 26 adds 8 points on each side of every item.
+        fixture.env.statusItemPadding = 16; fixture.items.padding = 16
+        fixture.organizer.configure(enabled: true, settings: settings)
+        XCTAssertEqual(fixture.items.lengths, [.toggle: 12, .divider: 8, .permanentDivider: 8])
+        fixture.organizer.tick()
+        XCTAssertNil(fixture.organizer.issue)
+        fixture.organizer.toggle()
+        XCTAssertFalse(fixture.organizer.isExpanded)
+        XCTAssertEqual(fixture.items.lengths[.toggle], 12)
+        XCTAssertEqual(fixture.items.lengths[.divider], 2880)
+        fixture.organizer.reveal()
+        XCTAssertEqual(fixture.items.lengths[.divider], 8)
+        fixture.organizer.stop()
+    }
+
+    func testNarrowDividerMarkerDrawsInsideItsButton() {
+        let button = NSButton(frame: CGRect(x: 0, y: 0, width: 8, height: 22))
+        let single = OrganizerDividerView(button: button, isDouble: false, width: 8)
+        XCTAssertEqual(single.frame, CGRect(x: 0, y: 0, width: 8, height: 22))
+        XCTAssertEqual(single.lineOrigins, [4])
+        XCTAssertEqual(OrganizerDividerView(button: button, isDouble: true, width: 8).lineOrigins, [2, 6])
+        XCTAssertEqual(OrganizerDividerView(button: NSButton(frame: CGRect(x: 0, y: 0, width: 18, height: 22)), isDouble: true).lineOrigins, [7, 11])
+    }
+
     func testSpacerResizeDoesNotReopenDuringWindowServerLayout() {
         let fixture = OrganizerFixture()
         fixture.organizer.configure(enabled: true, settings: MenuBarPreferences())
@@ -331,6 +399,9 @@ import FrogCore
     var reversed = false
     var framesAvailable = true
     var delaysLayout = false
+    var bar: (y: CGFloat, height: CGFloat) = (876, 24)
+    /// What the system adds around an item's own length.
+    var padding: CGFloat = 0
     private var pendingOrigins: [OrganizerItem: CGFloat] = [:]
     func settleLayout() { pendingOrigins.removeAll() }
     var menuState: OrganizerMenuState?
@@ -350,13 +421,15 @@ import FrogCore
     func frame(of item: OrganizerItem) -> CGRect? {
         guard framesAvailable, active.contains(item) else { return nil }
         let width = lengths[item] ?? 18
+        // The divider's window ends where the arrow's begins.
+        let dividerRight = 1300 - (lengths[.toggle] ?? 24) - padding
         let right: CGFloat
         switch item {
         case .toggle: right = reversed ? 900 : 1300
-        case .divider: right = 1276
-        case .permanentDivider: right = 1276 - (lengths[.divider] ?? 18) - 100
+        case .divider: right = dividerRight
+        case .permanentDivider: right = dividerRight - (lengths[.divider] ?? 18) - padding - 100
         }
-        return CGRect(x: pendingOrigins[item] ?? right - width, y: 876, width: width, height: 24)
+        return CGRect(x: pendingOrigins[item] ?? right - width - padding, y: bar.y, width: width + padding, height: bar.height)
     }
 }
 

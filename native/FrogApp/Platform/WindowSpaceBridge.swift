@@ -90,7 +90,11 @@ enum WindowSpaceBridge {
     /// Checks the exact ID/owner before any Space change. IDs can disappear or be
     /// reused between presentation and selection; never activate a different owner.
     static func exists(_ id: CGWindowID, pid: pid_t) -> Bool {
-        guard let rows = CGWindowListCopyWindowInfo(.optionIncludingWindow, id) as? [[String: Any]] else { return false }
+        // Look the ID up directly: a window list only reports windows that are on
+        // screen, which would veto restoring minimized windows and hidden apps.
+        var value = UnsafeRawPointer(bitPattern: UInt(id))
+        guard let ids = CFArrayCreate(kCFAllocatorDefault, &value, 1, nil),
+              let rows = CGWindowListCreateDescriptionFromArray(ids) as? [[String: Any]] else { return false }
         return rows.contains {
             ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value == id
                 && ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid

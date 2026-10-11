@@ -126,7 +126,16 @@ actor WindowActivationExecutor {
         if minimized {
             guard writer.unminimize(target), eligible() else { return false }
         }
-        guard writer.raise(target), eligible() else { return false }
+        var raised = writer.raise(target)
+        if minimized {
+            // Restoring animates, and its owner may not answer until the window is back.
+            let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+            while !raised, eligible(), ContinuousClock.now < deadline {
+                do { try await Task.sleep(for: .milliseconds(40)) } catch { return false }
+                raised = writer.raise(target)
+            }
+        }
+        guard raised, eligible() else { return false }
         writer.makeMain(target)
         return eligible()
     }

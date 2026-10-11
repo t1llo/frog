@@ -5,6 +5,12 @@ import FrogCore
 enum OrganizerItem: String, CaseIterable {
     case toggle, divider, permanentDivider
     var autosaveName: String { "Frog.MenuBarOrganizer.\(rawValue)" }
+
+    /// Width while revealed. Where the system pads every status item itself,
+    /// the helper gives that much back so it takes no more room than before.
+    func revealedLength(padding: CGFloat) -> CGFloat {
+        self == .toggle ? max(12, 24 - padding) : max(8, 18 - padding)
+    }
 }
 
 struct OrganizerScreen {
@@ -13,12 +19,32 @@ struct OrganizerScreen {
     var menuRegions: [CGRect]
 }
 
+extension OrganizerScreen {
+    /// The bar is as tall as the space the screen reserves for it: 30 points on an
+    /// external display in macOS 26, more than the status-bar thickness.
+    init(frame: CGRect, visibleFrame: CGRect, safeAreaTop: CGFloat, thickness: CGFloat, notchSides: (CGRect, CGRect)?) {
+        let height = max(thickness, safeAreaTop, frame.maxY - visibleFrame.maxY)
+        let band = CGRect(x: frame.minX, y: frame.maxY - height, width: frame.width, height: height)
+        self.init(frame: frame, menuRegions: notchSides.map { [$0.0, $0.1] } ?? [band])
+    }
+
+    func menuBarContains(_ point: CGPoint, thickness: CGFloat) -> Bool {
+        point.x >= frame.minX && point.x <= frame.maxX && point.y <= frame.maxY &&
+            point.y >= frame.maxY - max(thickness, menuRegions.map(\.height).max() ?? 0)
+    }
+}
+
 struct OrganizerEnvironment {
     var screens: [OrganizerScreen]
     var pointerInMenuBar = false
     var mouseDown = false
     var competingOrganizer = false
     var supportsLengthTechnique = true
+    /// What the system adds around each status item's own length.
+    var statusItemPadding: CGFloat = 0
+
+    /// macOS 26 surrounds every status item with 8 points on each side.
+    static let systemStatusItemPadding: CGFloat = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26 ? 16 : 0
 
     var collapsedLength: CGFloat {
         min(10_000, max(500, (screens.map(\.frame.width).max() ?? 2500) * 2))
@@ -26,23 +52,18 @@ struct OrganizerEnvironment {
 
     static func live() -> Self {
         let pointer = NSEvent.mouseLocation
+        let thickness = NSStatusBar.system.thickness
         let screens = NSScreen.screens.map { screen in
-            let height = max(NSStatusBar.system.thickness, screen.safeAreaInsets.top)
-            let band = CGRect(x: screen.frame.minX, y: screen.frame.maxY - height,
-                              width: screen.frame.width, height: height)
-            let regions: [CGRect]
-            if let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
-                regions = [left, right]
-            } else { regions = [band] }
-            return OrganizerScreen(frame: screen.frame, menuRegions: regions)
+            var notchSides: (CGRect, CGRect)?
+            if let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea { notchSides = (left, right) }
+            return OrganizerScreen(frame: screen.frame, visibleFrame: screen.visibleFrame, safeAreaTop: screen.safeAreaInsets.top,
+                                   thickness: thickness, notchSides: notchSides)
         }
-        return Self(screens: screens, pointerInMenuBar: screens.contains { screen in
-            pointer.x >= screen.frame.minX && pointer.x <= screen.frame.maxX &&
-            pointer.y >= screen.frame.maxY - max(NSStatusBar.system.thickness, screen.menuRegions.map(\.height).max() ?? 0) &&
-            pointer.y <= screen.frame.maxY
-        }, mouseDown: NSEvent.pressedMouseButtons != 0,
+        return Self(screens: screens, pointerInMenuBar: screens.contains { $0.menuBarContains(pointer, thickness: thickness) },
+        mouseDown: NSEvent.pressedMouseButtons != 0,
         competingOrganizer: NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.dwarvesv.minimalbar" },
-        supportsLengthTechnique: ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27)
+        supportsLengthTechnique: ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27,
+        statusItemPadding: systemStatusItemPadding)
     }
 }
 
@@ -272,7 +293,12 @@ struct OrganizerMenuState: Equatable {
               arrow.width > 0, divider.width > 0 else {
             return "Waiting for the menu bar. If Frog's arrow is missing, quit Hidden Bar, then reopen Frog from Applications."
         }
-        guard env.screens.contains(where: { $0.menuRegions.contains(where: { $0.insetBy(dx: -1, dy: -2).contains(arrow) }) }) else {
+        // The arrow's window fills the bar, which may be taller than the band known here;
+        // what must hold is that it sits in the bar and clears the notch sideways.
+        let center = CGPoint(x: arrow.midX, y: arrow.midY)
+        guard env.screens.contains(where: { $0.menuRegions.contains(where: { region in
+            arrow.minX >= region.minX - 1 && arrow.maxX <= region.maxX + 1 && region.insetBy(dx: 0, dy: -2).contains(center)
+        }) }) else {
             return "Frog's arrow is off-screen or behind the notch. Reveal all here, then Command-drag the arrow into the visible right side of the menu bar."
         }
         guard divider.maxX <= arrow.minX + 1, abs(divider.midY - arrow.midY) < 4 else {
@@ -313,12 +339,13 @@ struct OrganizerMenuState: Equatable {
 
     private func applyLengths(_ env: OrganizerEnvironment, allowPermanentCollapse: Bool = true) {
         for item in installed {
-            let length: CGFloat
+            let revealed: Bool
             switch item {
-            case .toggle: length = 24
-            case .divider: length = isExpanded || isEditingArrangement ? 18 : env.collapsedLength
-            case .permanentDivider: length = isEditingArrangement || !allowPermanentCollapse ? 18 : env.collapsedLength
+            case .toggle: revealed = true
+            case .divider: revealed = isExpanded || isEditingArrangement
+            case .permanentDivider: revealed = isEditingArrangement || !allowPermanentCollapse
             }
+            let length = revealed ? item.revealedLength(padding: env.statusItemPadding) : env.collapsedLength
             if appliedLengths[item] != length {
                 if appliedLengths[item] != nil { layoutSettlesAt = now() + 1 }
                 items.setLength(length, for: item)
@@ -360,7 +387,8 @@ struct OrganizerMenuState: Equatable {
         timer?.invalidate(); timer = nil
         hotkeys.unregister(); registeredHotkey = nil; hotkeyError = nil
         // Restore compact widths before removal, keeping any saved placement uninflated.
-        for item in installed { items.setLength(item == .toggle ? 24 : 18, for: item) }
+        let padding = environment().statusItemPadding
+        for item in installed { items.setLength(item.revealedLength(padding: padding), for: item) }
         for item in OrganizerItem.allCases.reversed() { remove(item) }
         isInstalled = false; isExpanded = true; isEditingArrangement = false
         deadline = nil; hoverStarted = nil; pendingInitialCollapse = false
@@ -421,7 +449,8 @@ struct OrganizerMenuState: Equatable {
     func install(_ role: OrganizerItem, action: @escaping () -> Void, settings: @escaping () -> Void) {
         guard items[role] == nil else { return }
         toggle = action; self.settings = settings
-        let item = NSStatusBar.system.statusItem(withLength: role == .toggle ? 24 : 18)
+        let length = role.revealedLength(padding: OrganizerEnvironment.systemStatusItemPadding)
+        let item = NSStatusBar.system.statusItem(withLength: length)
         item.autosaveName = role.autosaveName
         item.behavior = [] // Helpers may be rearranged, but not accidentally Command-dragged off the bar.
         item.isVisible = true
@@ -432,7 +461,7 @@ struct OrganizerMenuState: Equatable {
             if role != .toggle {
                 // NSStatusBarButton centers its image in a huge spacer. Anchor our marker
                 // to the TRAILING edge instead, so the boundary remains next to the arrow.
-                _ = OrganizerDividerView(button: button, isDouble: role == .permanentDivider)
+                _ = OrganizerDividerView(button: button, isDouble: role == .permanentDivider, width: length)
             }
             let title = role == .toggle ? "Reveal or collapse menu bar items" : role == .divider ? "Frog hidden section divider" : "Frog permanently hidden section divider"
             button.toolTip = title + ". Hold Command and drag to arrange."
@@ -475,7 +504,8 @@ struct OrganizerMenuState: Equatable {
     private func showMenu(from role: OrganizerItem) {
         guard let button = items[role]?.button else { return }
         // Anchor to the visible trailing marker, including when its spacer is inflated.
-        contextMenu.popUp(positioning: nil, at: NSPoint(x: button.bounds.maxX - 18, y: button.bounds.minY), in: button)
+        let marker = OrganizerItem.divider.revealedLength(padding: OrganizerEnvironment.systemStatusItemPadding)
+        contextMenu.popUp(positioning: nil, at: NSPoint(x: button.bounds.maxX - marker, y: button.bounds.minY), in: button)
     }
     @objc private func clickedArrow() {
         if NSApp.currentEvent?.type == .rightMouseUp { showMenu(from: .toggle) }
@@ -490,17 +520,21 @@ struct OrganizerMenuState: Equatable {
 
 @MainActor final class OrganizerDividerView: NSView {
     private let isDouble: Bool
-    init(button: NSButton, isDouble: Bool) {
+    init(button: NSButton, isDouble: Bool, width: CGFloat = 18) {
         self.isDouble = isDouble
-        super.init(frame: NSRect(x: button.bounds.width - 18, y: 0, width: 18, height: button.bounds.height))
+        super.init(frame: NSRect(x: button.bounds.width - width, y: 0, width: width, height: button.bounds.height))
         autoresizingMask = [.minXMargin, .height]
         button.addSubview(self)
     }
     required init?(coder: NSCoder) { nil }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    var lineOrigins: [CGFloat] {
+        let center = (bounds.width / 2).rounded(.down)
+        return isDouble ? [center - 2, center + 2] : [center]
+    }
     override func draw(_ dirtyRect: NSRect) {
         NSColor.labelColor.withAlphaComponent(0.8).setFill()
-        for x: CGFloat in isDouble ? [7, 11] : [9] {
+        for x in lineOrigins {
             NSBezierPath(roundedRect: NSRect(x: x, y: (bounds.height - 14) / 2, width: 1, height: 14), xRadius: 0.5, yRadius: 0.5).fill()
         }
     }

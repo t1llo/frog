@@ -391,6 +391,23 @@ October 10 feedback verification used the bundled native app with the same isola
   prompts, permission grants or desktop screenshots. Temporary hooks are absent from
   production Swift sources; `git diff --check` passes.
 
+## Organizer on external displays and minimized windows — October 11
+
+- On an external display in macOS 26 the menu bar is 30 points tall while the
+  status-bar thickness is 22, and every status item's window gains 8 points on each
+  side. Frog compared the arrow's window with a 22-point band, read it as off-screen
+  and kept the organizer revealed. The band now follows the space the screen reserves,
+  the safety check uses the arrow's centre and horizontal fit, and the helpers shrink
+  by the system's padding. Tests failed first with the measured geometry. The
+  installed build auto-hid after its 10-second delay on a 2560×1440 display and
+  toggled from a click in the arrow's padding.
+- The window switcher could not restore a minimized window: its existence check used
+  an on-screen window list, and the raise right after un-minimizing could time out
+  while the owner animated. Lookup by window ID and a bounded raise retry fixed a
+  live reproduction; the window was minimized again afterwards.
+- Focused suites pass: 22 organizer tests and 33 window tests (3 opt-in Spaces
+  fixtures skipped). Diagnostics logged geometry only, never window titles.
+
 ## Distribution
 
 Developer ID signing/notarization requires the owner's Apple Developer credentials. Ad-hoc signing is suitable for local development, but is not notarization and does not establish that macOS will trust a downloaded release on another machine.

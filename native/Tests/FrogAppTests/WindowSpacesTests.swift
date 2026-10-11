@@ -163,6 +163,43 @@ final class WindowSpacesTests: XCTestCase {
         XCTAssertEqual(events, ["space"], "Input cancellation during a Space transition must prevent late focus changes")
     }
 
+    func testWindowThatIsNotOnScreenStillExistsAndCanBePreparedForActivation() async {
+        // Minimized windows and windows of hidden apps are off screen, exactly like this never-shown one.
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 120), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let id = CGWindowID(window.windowNumber), pid = ProcessInfo.processInfo.processIdentifier
+        XCTAssertFalse(window.isVisible)
+        XCTAssertTrue(WindowSpaceBridge.exists(id, pid: pid), "An off-screen window is still a window the switcher can restore")
+        XCTAssertFalse(WindowSpaceBridge.exists(id, pid: pid + 1), "Another owner's window ID is never accepted")
+        XCTAssertFalse(WindowSpaceBridge.exists(4_000_000_000, pid: pid))
+        let revealed = await WindowSpaceBridge.reveal(id, pid: pid, isCurrent: { true })
+        XCTAssertTrue(revealed, "Preparation must not veto restoring a minimized window")
+    }
+
+    func testRestoringMinimizedWindowRetriesRaiseWhileItsOwnerIsBusyAnimating() async {
+        let trace = SpaceActivationTrace()
+        var writer = WindowActivationExecutor.Writer()
+        writer.isTrusted = { true }
+        writer.reveal = { _, _, _ in true }
+        writer.isWindow = { _ in true }
+        writer.isMinimized = { _ in !trace.events.contains("unminimize") }
+        writer.unminimize = { _ in trace.append("unminimize"); return true }
+        writer.raise = { _ in trace.append("raise"); return trace.events.filter { $0 == "raise" }.count >= 3 }
+        writer.makeMain = { _ in trace.append("main") }
+        let target = WindowCatalog.Target(id: UUID(), pid: 10, element: AXUIElementCreateApplication(1010), windowID: 202)
+        let restored = await WindowActivationExecutor(writer: writer).raise(target, isCurrent: { true })
+        XCTAssertTrue(restored)
+        XCTAssertEqual(trace.events, ["unminimize", "raise", "raise", "raise", "main"])
+
+        let visible = SpaceActivationTrace()
+        writer.isMinimized = { _ in false }
+        writer.raise = { _ in visible.append("raise"); return false }
+        let refused = await WindowActivationExecutor(writer: writer).raise(target, isCurrent: { true })
+        XCTAssertFalse(refused)
+        XCTAssertEqual(visible.events, ["raise"], "Only a window that is being restored waits for its owner")
+    }
+
     func testNativeDirectSpaceSelectionCapability() async throws {
         guard ProcessInfo.processInfo.environment["FROG_RUN_SPACE_FIXTURE"] == "1" else { throw XCTSkip("Opt-in native Spaces fixture") }
         let spaces = try OwnedSpaceFixture()
