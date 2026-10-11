@@ -44,6 +44,20 @@ final class WindowCatalogTests: XCTestCase {
         XCTAssertEqual(refreshed.windows.first?.id, selected.id)
     }
 
+    func testWindowFoundInFrontWithoutARecordedFocusKeepsItsTurnInTheOrder() async throws {
+        let fixture = CatalogFixture()
+        let writes = ActivationFixture()
+        let catalog = WindowCatalog(reader: fixture.reader, writer: writes.writer)
+        let first = await catalog.snapshot(applications: fixture.apps, frontPID: 10)
+        let (recorded, unrecorded) = (try XCTUnwrap(first.windows.first), try XCTUnwrap(first.windows.last))
+        catalog.noteFront(id: unrecorded.id)
+        let raised = await catalog.raise(id: recorded.id)
+        XCTAssertTrue(raised)
+        fixture.setWindows(.success([fixture.a, AXUIElementCreateApplication(1011)]), pid: 10)
+        let refreshed = await catalog.snapshot(applications: fixture.apps, frontPID: nil)
+        XCTAssertEqual(refreshed.windows.prefix(2).map(\.id), [recorded.id, unrecorded.id])
+    }
+
     func testSelectionFinishesWhileUnrelatedDiscoveryIsStillBlocked() async throws {
         let fixture = CatalogFixture()
         let writes = ActivationFixture()

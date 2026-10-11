@@ -44,6 +44,21 @@ final class WindowSwitcherCacheTests: XCTestCase {
         XCTAssertEqual(ready?.current, live.id)
     }
 
+    func testQuickSwitchReturnsToThePreviousAppBeforeTheFrontOneWasRecorded() async throws {
+        let cache = WindowSwitcherCache()
+        let editor = window("Editor", pid: 10), browser = window("Browser", pid: 20), other = window("Other", pid: 30)
+        _ = await cache.update { .init(windows: [editor, browser, other], current: editor.id) }
+        // The browser came forward, but typing retired its activation and paused the scans.
+        let ready = try XCTUnwrap(cache.readySnapshot(frontPID: 20))
+        XCTAssertEqual(ready.windows.map(\.id), [browser.id, editor.id, other.id])
+        var session = WindowSwitchSession<UUID>()
+        session.begin(windows: ready.windows.map(\.id), current: ready.current, backwards: false)
+        XCTAssertEqual(session.selected, editor.id, "One Command-Tab must go back to the app used before, not to a third one")
+        cache.noteFocused(other.id)
+        XCTAssertEqual(cache.readySnapshot(frontPID: 30)?.windows.map(\.id), [other.id, browser.id, editor.id],
+                       "The browser's turn in front stays in the order")
+    }
+
     func testRefreshingHeldInventoryPreservesCyclingOrderAndSelection() {
         var session = WindowSwitchSession<Int>()
         session.begin(windows: [1, 2, 3], current: 1, backwards: false)

@@ -288,6 +288,9 @@ actor WindowCatalog {
         return raised
     }
 
+    /// A window the switcher found in front before any scan recorded its focus.
+    nonisolated func noteFront(id: UUID) { activationTargets.noteRaised(id) }
+
     nonisolated func prepareActivation(id: UUID, isCurrent: @escaping @Sendable () -> Bool = { true },
                                       willChangeSpace: @escaping @Sendable () async -> Void = {}) async -> Bool {
         guard !Task.isCancelled, isCurrent(), let target = activationTargets.target(id) else { return false }

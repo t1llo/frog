@@ -54,9 +54,16 @@ final class WindowSwitcherCache {
         // Freshness controls discovery, not presentation. Typing deliberately
         // pauses scans; the last inventory is still useful immediately afterward.
         guard let snapshot else { return nil }
-        let windows = snapshot.windows.filter { livePIDs?.contains($0.pid) ?? true }
+        var windows = snapshot.windows.filter { livePIDs?.contains($0.pid) ?? true }
         let current = windows.first { $0.id == snapshot.current && $0.pid == frontPID }
             ?? windows.first { $0.pid == frontPID }
+        // An app can come forward unrecorded: scans pause while typing, and a
+        // keystroke retires a pending activation. Its window leads all the same,
+        // so the next row is the one used before it rather than an arbitrary one.
+        if let current, windows.first?.id != current.id {
+            noteFocused(current.id)
+            windows = [current] + windows.filter { $0.id != current.id }
+        }
         return WindowCatalog.Snapshot(windows: windows, current: current?.id, completeness: snapshot.completeness)
     }
 }

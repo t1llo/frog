@@ -342,6 +342,8 @@ final class WindowSwitcherController {
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let livePIDs = Set(NSWorkspace.shared.runningApplications.compactMap(SwitcherApplication.running).map(\.pid))
         let cached = cache.readySnapshot(frontPID: front, livePIDs: livePIDs)
+        // The next scan must rank the window being left the same way.
+        if let current = cached?.current { catalog.noteFront(id: current) }
         let needsRefresh = cache.needsRefresh()
         presentation.begin(token, ready: cached != nil)
         presentationTask?.cancel()

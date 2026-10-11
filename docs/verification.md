@@ -408,6 +408,15 @@ October 10 feedback verification used the bundled native app with the same isola
 - Focused suites pass: 22 organizer tests and 33 window tests (3 opt-in Spaces
   fixtures skipped). Diagnostics logged geometry only, never window titles.
 
+## Quick switch between two apps — October 11
+
+A single Command–Tab sometimes landed on a third app. The switcher picked the row
+after the frontmost window in its warm list, and that list can lag: scans pause while
+typing, and a keystroke or a second Command–Tab retires a pending activation before
+its focus is recorded. The frontmost window now leads the warm list before cycling
+starts, and the next scan ranks it the same way. Two tests failed first with the
+third app selected; 57 switcher tests pass. Not reproduced live.
+
 ## Distribution
 
 Developer ID signing/notarization requires the owner's Apple Developer credentials. Ad-hoc signing is suitable for local development, but is not notarization and does not establish that macOS will trust a downloaded release on another machine.
