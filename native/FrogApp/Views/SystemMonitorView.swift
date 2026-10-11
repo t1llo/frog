@@ -10,7 +10,7 @@ struct SystemMonitorMenuSelector: View {
     @Binding var selection: SystemMonitorMenuTab
 
     var body: some View {
-        CompactSegments(values: SystemMonitorMenuTab.allCases, selected: selection, width: 132, title: { $0.rawValue }) { selection = $0 }
+        CompactSegments(values: SystemMonitorMenuTab.allCases, selected: selection, width: 132, compact: true, title: { $0.rawValue }) { selection = $0 }
             .accessibilityElement(children: .contain).accessibilityLabel("Menu view")
     }
 }
@@ -48,7 +48,7 @@ struct SystemMonitorOverview: View {
                         Spacer(minLength: 0)
                         Text("of \(bytes(capacity.total))").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                     }
-                    meter(capacity.usedFraction)
+                    meter(capacity.usedFraction, color: FrogStyle.level(capacity.usedFraction, warning: 0.85, critical: 0.95))
                 } else {
                     Text("Capacity unavailable").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
                 }
@@ -72,7 +72,8 @@ struct SystemMonitorOverview: View {
                             .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                         Spacer()
                     }
-                    meter(Double(percent) / 100)
+                    meter(Double(percent) / 100, color: snapshot.power.charging ? FrogStyle.good
+                        : percent <= 10 ? FrogStyle.critical : percent <= 20 ? FrogStyle.warning : FrogStyle.accent)
                 }
                 if let flow = snapshot.power.batteryFlow {
                     detail(flow.title, value: flow.watts < 0.1 ? "<0.1 W" : flow.watts.formatted(.number.precision(.fractionLength(1))) + " W")
@@ -99,17 +100,17 @@ struct SystemMonitorOverview: View {
             heading(title, symbol: symbol)
             Text(percent(metric)).font(.system(size: metric.value == nil ? 11 : 21, weight: .semibold, design: .rounded))
                 .monospacedDigit().frame(height: 25, alignment: .leading)
-            SystemMonitorSparkline(values: metric.value == nil ? [] : history).stroke(FrogStyle.accent, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+            SystemMonitorSparkline(values: metric.value == nil ? [] : history).stroke(FrogStyle.level(metric.value ?? 0), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                 .frame(height: 18).background(alignment: .bottom) { Rectangle().fill(FrogStyle.muted.opacity(0.15)).frame(height: 1) }
                 .accessibilityHidden(true)
         }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
             .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
     }
 
-    private func meter(_ value: Double) -> some View {
+    private func meter(_ value: Double, color: Color = FrogStyle.accent) -> some View {
         GeometryReader { geometry in
             Capsule().fill(FrogStyle.muted.opacity(0.15))
-            Capsule().fill(FrogStyle.accent).frame(width: geometry.size.width * min(1, max(0, value)))
+            Capsule().fill(color).frame(width: geometry.size.width * min(1, max(0, value)))
         }.frame(height: 4).accessibilityHidden(true)
     }
 

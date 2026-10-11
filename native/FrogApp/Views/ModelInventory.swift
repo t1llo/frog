@@ -57,7 +57,7 @@ struct ModelInventory: View {
                                 }
                             }
                         }
-                        if let error = model.localModels.errors[item.id] { Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+                        if let error = model.localModels.errors[item.id] { Text(error).font(.caption).foregroundStyle(FrogStyle.warning).textSelection(.enabled) }
                     }.padding(.vertical, 10).padding(.horizontal, 8)
                     if item.id != items.last?.id { Divider().opacity(0.5) }
                 }

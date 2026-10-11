@@ -100,6 +100,9 @@ Every preset supplies a coordinated light and dark palette. Override any of thes
 | `muted` | Secondary text and symbols |
 | `accent` | Highlights, selection, active controls |
 | `on-accent` | Content drawn on accent fills |
+| `good` | Comfortable status: usage under pace |
+| `warning` | Status worth watching: usage ahead of pace, high load, notices |
+| `critical` | Status at the limit: a nearly used plan window, very high load, a nearly full disk |
 
 Colors are six RGB hex digits, optionally prefixed with `#`. Overrides inherit all unspecified roles from the selected theme. `accent` sets a single custom accent for both modes; use `theme-accent = false` to choose it explicitly. `theme-accent = true` uses the preset accent. Per-mode palette accents take precedence over both. With no explicit `theme-accent`, Frog preserves the old custom accent behavior. Changing the accent in Settings clears only palette accent overrides; choosing a preset in Settings resets all palette overrides. Editing the `theme` key preserves your explicit overrides.
 
@@ -128,7 +131,7 @@ macOS status-item positions stay on each Mac.
 - `usage.all-devices`: legacy boolean retained for configuration round trips. OpenAI
   activity now always combines available account totals and local tool activity;
   this setting no longer changes the chart.
-- `usage.login-source`: `Automatic`, `Claude Code`, `OpenCode`, `Pi`.
+- `usage.login-source`: `Automatic`, `Claude Code`, `Claude Desktop`, `OpenCode`, `Pi`. `Claude Desktop` reads the limits the Claude app saves locally and makes no request; `Automatic` shows whichever reading is newer.
 
 These fields select the display and login-source preference only. Accounts, tokens, readings and polling state are not configuration payloads.
 

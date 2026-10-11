@@ -45,7 +45,7 @@ enum TextConfiguration {
             .init("usage.range", "toolkit.usage.range", .choice(["24h", "7d", "30d"])),
             .init("usage.metric", "toolkit.usage.metric", .choice(["API cost", "Input", "Output", "Cache write", "Cache read"])),
             .init("usage.all-devices", "toolkit.usage.allDevices", .bool),
-            .init("usage.login-source", "toolkit.usage.loginSource", .choice(["Automatic", "Claude Code", "OpenCode", "Pi"])),
+            .init("usage.login-source", "toolkit.usage.loginSource", .choice(["Automatic", "Claude Code", "Claude Desktop", "OpenCode", "Pi"])),
             .init("menubar.auto-hide", "toolkit.menuBar.autoHide", .bool),
             .init("menubar.auto-hide-seconds", "toolkit.menuBar.autoHideSeconds", .number(1...3600)),
             .init("menubar.start-collapsed", "toolkit.menuBar.startCollapsed", .bool),
@@ -216,7 +216,8 @@ enum TextConfiguration {
     # shortcut.command-bar = ctrl+alt+space
     # palette.dark.background = #1A1B26
     # palette.dark.text = #C0CAF5
-    # Palette names: background, sidebar, surface, inset, border, text, muted, accent, on-accent.
+    # Palette names: background, sidebar, surface, inset, border, text, muted, accent, on-accent,
+    # good, warning, critical.
     # Use palette.light.<name> and palette.dark.<name>; omitted colors inherit the theme.
     # Full reference: https://github.com/t1llo/frog/blob/main/docs/configuration.md
 

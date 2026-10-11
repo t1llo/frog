@@ -54,7 +54,7 @@ struct AddLocalModelView: View {
                 Button("Check source") { inspect() }.disabled(loading || source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 if loading { ProgressView().controlSize(.small) }
             }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+            if let issue { Text(issue).font(.caption).foregroundStyle(FrogStyle.warning).textSelection(.enabled) }
             if !candidates.isEmpty {
                 ScrollView {
                     VStack(spacing: 8) {

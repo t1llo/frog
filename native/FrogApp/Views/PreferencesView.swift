@@ -26,7 +26,7 @@ struct PreferencesView: View {
                     CompactRow(title: "Show rule shortcuts", detail: "Hold the shortcut to see your rules; release to dismiss.") {
                         HotkeyRecorder(hotkey: Binding(get: { prefs.shortcutPanelHotkey }, set: { value in update { $0.shortcutPanelHotkey = value } }))
                     }
-                    if let issue = model.hotkeyErrors[AppModel.shortcutPanelID] { Text(issue).font(.caption).foregroundStyle(.orange) }
+                    if let issue = model.hotkeyErrors[AppModel.shortcutPanelID] { Text(issue).font(.caption).foregroundStyle(FrogStyle.warning) }
                     Divider()
                     CompactRow(title: "Your tools", detail: "Choose which features appear and run in Frog.") {
                         Button("Manage features") { model.toolkit.select(.features) }
@@ -74,7 +74,7 @@ struct PreferencesView: View {
                     CompactRow(title: "Cancel recording", detail: "Escape always cancels.") {
                         HotkeyRecorder(hotkey: Binding(get: { prefs.cancelRecordingHotkey }, set: { value in update { $0.cancelRecordingHotkey = value } }))
                     }
-                    if let issue = model.hotkeyErrors[AppModel.cancelRecordingID] { Text(issue).font(.caption).foregroundStyle(.orange) }
+                    if let issue = model.hotkeyErrors[AppModel.cancelRecordingID] { Text(issue).font(.caption).foregroundStyle(FrogStyle.warning) }
                 }
                 SettingsSection(title: "Permissions") {
                     permission("Accessibility", allowed: model.accessibilityGranted) { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() }

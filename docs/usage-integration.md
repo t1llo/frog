@@ -93,12 +93,9 @@ can coexist with `unpricedModels`; it must not be presented as a confirmed free 
 The parent UI may render these entries with the existing `format(_:metric:)` helper.
 No exported preference fields changed.
 
-Claude Desktop's `plan-usage-history.json` was evaluated but not added as an automatic
-fallback: it lacks authoritative reset timestamps, and legacy samples lack an
-organization ID with which to prove they belong to the selected tool account.
-Frog keeps its existing authenticated source, last-good freshness rules, cancellation
-and HTTP-429 request gates. A future separately labeled Desktop readout would need
-explicit account matching and estimated-reset provenance.
+Claude Desktop's `plan-usage-history.json` was first evaluated and left out; it is now
+a second source (see "Claude app readings" below), labeled as such, with account
+matching for anything borrowed from the authenticated reading.
 
 Verification: an isolated package linking only `native/FrogUsage` and its tests ran
 under Xcode's toolchain: **14 tests passed**, including lifecycle, late-reply rejection,
@@ -146,13 +143,7 @@ Implemented:
   Changes reread the bounded horizon, preserving mutable-row/revert/fork semantics.
   Temporary query failures retain the last readable counters with a visible warning;
   successful recovery clears it. Removed databases remove their counters.
-- **Presentation:** a bounded 360×360 popup shows two primary full-width plan limits,
-  inline reset times, a compact chart and total tokens. A small plan badge replaces
-  the separate plan heading. Extra limits, credit balances, login-source choices and
-  model-pricing details are available in the dashboard. Partial estimates are labeled;
-  refresh failures have a status icon with details. Metric tiles and expandable lifetime/
-  history details live in the dashboard. Popup height also respects the status
-  item's display, leaving space for native popover framing. Popup content is created
+- **Presentation:** superseded by "Popup and readout" below. Popup content is created
   when opened; enabled background collection does not need a hosted popup view.
 - **Interaction follow-up:** weekly bars include On pace / Ahead of pace / Under pace
   (or Limit reached), based on elapsed time with a ten-percentage-point tolerance.
@@ -192,3 +183,59 @@ implemented here. The existing collectors read tool-owned saved access tokens an
 never renew them. Collector verification used no private account/log reads,
 authenticated requests or permission grants. See [verification](verification.md)
 for the integrated build and installation evidence.
+
+## Claude app readings (2026-10-11)
+
+Someone who only uses the Claude desktop app has no current Claude Code login: the app
+hands its sessions a token directly, so the Keychain item Frog reads is never renewed
+and every refresh fails. Frog still never renews or consumes another tool's tokens.
+
+- **Source:** `native/FrogUsage/ClaudeDesktopUsage.swift` reads
+  `~/Library/Application Support/Claude/plan-usage-history.json` (versions 1 and 2, at
+  most 4 MiB): the newest sample's five-hour, seven-day, Sonnet and Opus percentages.
+  The Claude app writes it every few minutes while its menu-bar icon is on. Reading it
+  needs no login and makes no request. Unknown versions and fields are skipped. The
+  reader was written for Frog; no code was taken from other trackers.
+- **Selection:** login source `Claude Desktop` uses only this file and never reads a
+  login. `Automatic` shows the newer of the authenticated reading and the saved one.
+  The popup footer and dashboard name the source ("Claude app" / "Anthropic account").
+- **Renewal times:** the file has none. They are borrowed from the last authenticated
+  reading only when it belongs to the same organization and that window has not
+  renewed; otherwise they are inferred only where two close samples bracket the start
+  of a session (30 minutes) or a weekly drop (one hour). Without either, the bar shows
+  no renewal time and no pace.
+- **Staleness:** a saved reading, from either source, stays on display until its window
+  renews, for at most 24 hours, with its age beside it ("Updated 10h ago"). This
+  replaces the one-hour cutoff that turned the popup into "Plan limits unavailable".
+  A Claude-app reading older than 30 minutes carries a warning explaining that the
+  Claude app's menu-bar icon must be on. Renewed windows are unknown, never zero.
+- **How often the Claude app saves:** it checks on a timer (every 5 to 15 minutes) only
+  while its menu-bar icon is on; with the icon off it saves a reading only when
+  someone looks at usage in the app, hours apart. Frog reads that one preference
+  (`preferences.menuBarEnabled`) so its status can say so. When no Claude Code login
+  exists and the Claude app is in use, the status explains this instead of asking
+  the person to sign in to a tool they do not use.
+- **Session row:** a Claude session that renewed after the last reading keeps its row,
+  marked "No reading since it renewed", so the week is never shown on its own.
+- **Plan badge:** the cached Claude Code profile's plan is attached to a Claude-app
+  reading only when both name the same organization.
+
+## Popup and readout (2026-10-11)
+
+- The popup is a borderless panel styled like Frog's own menu-bar popup (same 292-pt
+  width, 42-pt header, panel surface, row and footer metrics) instead of an arrowed
+  popover, opening left-aligned beneath its item. Its height follows its content.
+- Header: title, the Claude/OpenAI switch and Refresh, both in the bordered compact
+  control style. Plan limits (up to four) each show used, left, pace and renewal.
+  The estimate is labeled "API estimate"; whole-dollar axis labels drop their cents.
+  Open dashboard is a menu row; the footer shows the reading's age and source.
+- Opening either popup posts `frogMenuPopupWillOpen`; the other one closes.
+- Without a plan reading the menu-bar item shows the selected period's API estimate
+  ("7d $185") rather than only the provider name; a reading that could not be
+  refreshed is drawn dimmed.
+- Limit bars and pace labels use the theme's status tones: `good` under pace,
+  `warning` ahead of pace, `critical` from 95 % used; on pace keeps the accent. The
+  System monitor uses the same tones for load, disk and battery. Each built-in theme
+  defines them and `palette.light`/`palette.dark` can override them.
+- Frog's Stay awake row was 18 pt wider than the popup and pushed its content off
+  centre; the row now fits, so both popups share the same insets.

@@ -24,7 +24,7 @@ public struct AppearancePreferences: Codable, Equatable, Sendable {
     /// Partial semantic overrides. Missing colors inherit the selected preset.
     public var lightPalette: [String: String]?
     public var darkPalette: [String: String]?
-    public static let paletteKeys = ["background", "sidebar", "surface", "inset", "border", "text", "muted", "accent", "on-accent"]
+    public static let paletteKeys = ["background", "sidebar", "surface", "inset", "border", "text", "muted", "accent", "on-accent", "good", "warning", "critical"]
     public init() {}
     /// Accessibility overrides affect rendering only; saved preferences remain portable.
     public func effectiveTransparency(popup: Bool, reduceTransparency: Bool, increasedContrast: Bool) -> Double {

@@ -71,7 +71,7 @@ struct CommandBarSettingsView: View {
                     }), showsClearButton: false)
                     Button("Open") { model.showCommandBar() }
                 }
-                if let issue = model.hotkeyErrors[AppModel.commandBarID] { Text(issue).font(.caption).foregroundStyle(.orange) }
+                if let issue = model.hotkeyErrors[AppModel.commandBarID] { Text(issue).font(.caption).foregroundStyle(FrogStyle.warning) }
             }
             Text("Type an application, window or filename. You can also calculate 25% * 200 or convert 5 mi to km. Arrow keys select a result; Return opens it and Escape closes the panel.")
                 .font(.system(size: 12)).foregroundStyle(FrogStyle.muted)

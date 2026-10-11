@@ -96,6 +96,38 @@ enum FrogStyle {
     static var ink: Color { themed(\.ink) }
     static var muted: Color { themed(\.muted) }
 
+    /// Status tones from each theme's own palette: comfortably fine, worth watching, at the limit.
+    static var good: Color { tone(\.good, "good") }
+    static var warning: Color { tone(\.warning, "warning") }
+    static var critical: Color { tone(\.critical, "critical") }
+    /// For loads and limits where low is unremarkable: accent, then warning, then critical.
+    static func level(_ fraction: Double, warning: Double = 0.7, critical: Double = 0.9) -> Color {
+        fraction >= critical ? Self.critical : fraction >= warning ? Self.warning : accent
+    }
+
+    private struct Tones {
+        var good, warning, critical: (light: UInt32, dark: UInt32)
+    }
+    private static var presetTones: Tones {
+        switch FrogAppearance.shared.settings.theme ?? .frog {
+        case .frog: Tones(good: (0x2F8F4E, 0x8FD9A0), warning: (0xB7791F, 0xE8B866), critical: (0xC8443C, 0xF07F78))
+        case .tokyoNight: Tones(good: (0x33635C, 0x9ECE6A), warning: (0x8F5E15, 0xE0AF68), critical: (0x8C4351, 0xF7768E))
+        case .catppuccin: Tones(good: (0x40A02B, 0xA6E3A1), warning: (0xDF8E1D, 0xF9E2AF), critical: (0xD20F39, 0xF38BA8))
+        case .nord: Tones(good: (0x4F7F53, 0xA3BE8C), warning: (0xA9791C, 0xEBCB8B), critical: (0xBF616A, 0xD9737D))
+        case .gruvbox: Tones(good: (0x79740E, 0xB8BB26), warning: (0xAF3A03, 0xFE8019), critical: (0x9D0006, 0xFB4934))
+        case .dracula: Tones(good: (0x2E8B4E, 0x50FA7B), warning: (0xB26A1B, 0xFFB86C), critical: (0xC93B3B, 0xFF5555))
+        case .rosePine: Tones(good: (0x286983, 0x9CCFD8), warning: (0xC47F1A, 0xF6C177), critical: (0xB4637A, 0xEB6F92))
+        case .solarized: Tones(good: (0x859900, 0x859900), warning: (0xB58900, 0xB58900), critical: (0xDC322F, 0xDC322F))
+        case .everforest: Tones(good: (0x6F8A00, 0xA7C080), warning: (0xC98F00, 0xDBBC7F), critical: (0xE0473F, 0xE67E80))
+        case .graphite: Tones(good: (0x3E8E5A, 0x7FC796), warning: (0xB7791F, 0xDDB46A), critical: (0xC4453F, 0xE87C7C))
+        }
+    }
+    private static func tone(_ key: KeyPath<Tones, (light: UInt32, dark: UInt32)>, _ name: String) -> Color {
+        let preset = presetTones[keyPath: key], settings = FrogAppearance.shared.settings
+        return adaptive(light: settings.lightPalette?[name].flatMap { UInt32($0, radix: 16) } ?? preset.light,
+                        dark: settings.darkPalette?[name].flatMap { UInt32($0, radix: 16) } ?? preset.dark)
+    }
+
     private struct Palette {
         var canvas, sidebar, surface, inset, border, ink, muted: UInt32
     }

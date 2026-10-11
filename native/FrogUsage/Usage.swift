@@ -4,7 +4,7 @@ import CryptoKit
 import Darwin
 
 enum ClaudeLoginSource: String, CaseIterable, Identifiable, Codable {
-    case automatic = "Automatic", claudeCode = "Claude Code", opencode = "OpenCode", pi = "Pi"
+    case automatic = "Automatic", claudeCode = "Claude Code", claudeDesktop = "Claude Desktop", opencode = "OpenCode", pi = "Pi"
     var id: String { rawValue }
 }
 
@@ -53,7 +53,7 @@ func claudeKeychainServices(directory: URL) -> [String] {
         ? ["Claude Code-credentials", hashed] : [hashed]
 }
 
-struct Limit: Identifiable, Codable {
+struct Limit: Identifiable, Codable, Equatable {
     let id: String
     let label: String
     let pct: Double
@@ -76,7 +76,7 @@ enum FetchError: LocalizedError {
     case badJSON
     var errorDescription: String? {
         switch self {
-        case .noToken: return "selected tool has no usable Claude OAuth login; sign in there, or select another saved login. Claude Desktop has a separate login"
+        case .noToken: return "no current Claude login in the selected tool. Sign in there, or turn on the menu bar icon in the Claude app so its saved limits can be used"
         case .http(401, _, _): return "selected Claude login expired; renew it in the tool that owns it"
         case .http(429, _, _): return "rate limited"
         case .http(let code, _, let m): return "HTTP \(code)" + (m.map { " (\($0))" } ?? "")
@@ -142,8 +142,9 @@ private func credentialJSON(_ url: URL) -> [String: Any]? {
 /// Blocking, read-only. Call off the main thread. Explicit selections never fall through to
 /// a different tool/account; an HTTP 429 must not cause account switching or extra requests.
 func readClaudeAuth(source: ClaudeLoginSource, directory: URL) -> ClaudeAuth? {
+    // Claude Desktop keeps its login to itself; its saved readings are read separately.
     let candidates: [ClaudeLoginSource] = source == .automatic ? [.claudeCode, .opencode, .pi] : [source]
-    for candidate in candidates {
+    for candidate in candidates where candidate != .claudeDesktop {
         guard !Task.isCancelled else { return nil }
         if candidate == .claudeCode {
             var token: String?
@@ -157,10 +158,7 @@ func readClaudeAuth(source: ClaudeLoginSource, directory: URL) -> ClaudeAuth? {
                 token = claudeOAuthToken(oauth)
             }
             guard let token else { continue }
-            let config = directory.standardizedFileURL == ClaudePaths.defaultDirectory.standardizedFileURL
-                ? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json")
-                : directory.appendingPathComponent(".claude.json")
-            let account = credentialJSON(config)?["oauthAccount"] as? [String: Any] ?? [:]
+            let account = claudeProfile(directory: directory)
             let accountID = account["accountUuid"] as? String ?? ""
             let orgID = account["organizationUuid"] as? String ?? ""
             let details = [account["emailAddress"] as? String, account["organizationName"] as? String].compactMap { $0 }
@@ -176,6 +174,14 @@ func readClaudeAuth(source: ClaudeLoginSource, directory: URL) -> ClaudeAuth? {
                           label: "\(candidate.rawValue) saved Claude login (account identity not reported)")
     }
     return nil
+}
+
+/// The account profile Claude Code caches beside its settings: names, plan tier and ids, no tokens.
+func claudeProfile(directory: URL) -> [String: Any] {
+    let config = directory.standardizedFileURL == ClaudePaths.defaultDirectory.standardizedFileURL
+        ? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json")
+        : directory.appendingPathComponent(".claude.json")
+    return credentialJSON(config)?["oauthAccount"] as? [String: Any] ?? [:]
 }
 
 /// Profile metadata only; never infer a subscription from token volume or quota percentages.

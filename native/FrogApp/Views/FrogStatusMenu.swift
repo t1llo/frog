@@ -19,6 +19,7 @@ struct FrogStatusMenu: View {
     @State private var selectedTab: SystemMonitorMenuTab = .frog
     @State private var choosingDuration = false
 
+    static let popupName = "Frog"
     private var systemMonitorEnabled: Bool { model.configuration.preferences.featureEnabled(.systemMonitor) }
 
     var body: some View {
@@ -49,6 +50,10 @@ struct FrogStatusMenu: View {
             .frogPanel()
             .background(MenuWindowSizing())
             .task { model.refreshSystemStatus(); await power.refresh(); await power.refreshAccess() }
+            .onAppear { NotificationCenter.default.post(name: .frogMenuPopupWillOpen, object: Self.popupName) }
+            .onReceive(NotificationCenter.default.publisher(for: .frogMenuPopupWillOpen)) { note in
+                if note.object as? String != Self.popupName { dismiss() }
+            }
             .onChange(of: systemMonitorEnabled) { _, enabled in
                 if !enabled { selectedTab = .frog; model.systemMonitor.setPresented(false) }
             }
@@ -68,7 +73,7 @@ struct FrogStatusMenu: View {
             if model.isProcessing { action("Cancel processing", symbol: "xmark") { model.cancelProcessing() } }
             if let error = model.errorMessage {
                 HStack(alignment: .top) {
-                    Text(String(error.prefix(500))).font(.system(size: 10)).foregroundStyle(.orange)
+                    Text(String(error.prefix(500))).font(.system(size: 10)).foregroundStyle(FrogStyle.warning)
                         .lineLimit(3).help("Full details are in Settings → Logs.")
                     Spacer(minLength: 0)
                     IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)
@@ -89,7 +94,7 @@ struct FrogStatusMenu: View {
             HStack(spacing: 6) {
                 Label("Stay awake", systemImage: power.isEnabled ? "cup.and.saucer.fill" : "cup.and.saucer")
                     .font(.system(size: 12, weight: .medium)).fixedSize()
-                Spacer(minLength: 4)
+                Spacer(minLength: 0)
                 if power.isBusy { ProgressView().controlSize(.mini) }
                 if !power.hasReadState {
                     Text("Checking…").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
@@ -98,7 +103,7 @@ struct FrogStatusMenu: View {
                         .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                 } else {
                     Button { choosingDuration.toggle() } label: {
-                        CompactDropdownLabel(value: L10n.text(power.duration.title), width: 110, height: 24)
+                        CompactDropdownLabel(value: L10n.text(power.duration.title), width: 98, height: 24)
                     }.buttonStyle(.plain).disabled(power.isBusy)
                         .accessibilityLabel("Stay-awake duration").accessibilityValue(power.duration.title)
                 }
@@ -122,7 +127,7 @@ struct FrogStatusMenu: View {
                 }
             }
             if let error = power.error {
-                Text(String(error.prefix(500))).font(.system(size: 10)).foregroundStyle(.orange)
+                Text(String(error.prefix(500))).font(.system(size: 10)).foregroundStyle(FrogStyle.warning)
                     .lineLimit(3).help("Open Stay awake for details.")
             } else if let notice = power.notice {
                 Text(String(notice.prefix(500))).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(3)
@@ -136,12 +141,28 @@ struct FrogStatusMenu: View {
                     Button("Set up access…") { power.configureAccess(); dismiss() }.buttonStyle(.plain).foregroundStyle(FrogStyle.accent)
                 }.font(.system(size: 10))
             }
-        }.padding(.horizontal, 10).padding(.vertical, 8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
+        }.padding(.horizontal, 8).padding(.vertical, 8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
             .padding(.horizontal, 6).padding(.bottom, 4)
     }
 
     private func action(_ title: String, symbol: String, key: String? = nil, perform: @escaping () -> Void) -> some View {
-        Button(action: perform) {
+        MenuActionRow(title: title, symbol: symbol, key: key, action: perform)
+    }
+}
+
+/// Frog's two menu-bar popups open one at a time; opening one asks the other to close.
+extension Notification.Name {
+    static let frogMenuPopupWillOpen = Notification.Name("xyz.beffa.frog.menuPopupWillOpen")
+}
+
+/// A full-width command row shared by the menu-bar popups.
+struct MenuActionRow: View {
+    let title: String
+    let symbol: String
+    var key: String? = nil
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: symbol).frame(width: 16).foregroundStyle(FrogStyle.muted)
                 Text(L10n.text(title))
@@ -152,7 +173,7 @@ struct FrogStatusMenu: View {
     }
 }
 
-private struct MenuRowStyle: ButtonStyle {
+struct MenuRowStyle: ButtonStyle {
     @State private var hovered = false
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
         configuration.label.background(hovered || configuration.isPressed ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: 5))

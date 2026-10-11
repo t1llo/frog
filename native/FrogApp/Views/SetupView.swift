@@ -107,7 +107,7 @@ struct SetupView: View {
                                 Button("Download") { model.localModels.download(item) }.disabled(!LocalModels.supported)
                             }
                         }
-                        if let error = model.localModels.errors[item.id] { Text(error).font(.caption).foregroundStyle(.orange) }
+                        if let error = model.localModels.errors[item.id] { Text(error).font(.caption).foregroundStyle(FrogStyle.warning) }
                     }
                 }
                 Button("Download recommended pair") {
@@ -117,7 +117,7 @@ struct SetupView: View {
                 }.disabled(!LocalModels.supported || LocalModelDescriptor.recommendedPair.allSatisfy { model.localModels.installed.contains($0.id) || model.localModels.progress[$0.id] != nil })
                 Text("For faster dictation in 25 European languages, choose Parakeet v3 (≈483 MB) under other internal models below.")
                     .font(.caption).foregroundStyle(FrogStyle.muted)
-                if !LocalModels.supported { Text("Internal inference requires Apple silicon. Use an external provider on this Mac, or skip for now.").font(.caption).foregroundStyle(.orange) }
+                if !LocalModels.supported { Text("Internal inference requires Apple silicon. Use an external provider on this Mac, or skip for now.").font(.caption).foregroundStyle(FrogStyle.warning) }
                 Text("Downloads continue if you move to the next step. You can cancel them in Models.").font(.caption).foregroundStyle(FrogStyle.muted)
             }
             DisclosureGroup("Choose other internal models", isExpanded: $browse) {

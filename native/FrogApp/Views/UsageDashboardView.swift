@@ -42,79 +42,74 @@ struct UsageDashboardView: View {
     }
 }
 
+/// The menu-bar popup, laid out like Frog's own: a 42-point header, content, one command row
+/// and a quiet footer, as tall as its content.
 struct UsageStatusPopover: View {
-    static let width: CGFloat = 240
+    static let popupName = "Mr. Usage"
+    static let width: CGFloat = 292
     @ObservedObject var usage: UsageDashboardModel
-    var height: CGFloat = 360
     let openDashboard: () -> Void
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Mr. Usage").font(.system(size: 13, weight: .semibold))
-                if let plan = usage.planName(provider: usage.preferences.provider) {
-                    Text(plan).font(.system(size: 10, weight: .medium)).lineLimit(1)
-                        .padding(.horizontal, 7).padding(.vertical, 3)
-                        .background(FrogStyle.inset, in: Capsule()).foregroundStyle(FrogStyle.muted)
-                }
-                Spacer()
+        let provider = usage.preferences.provider
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Text("Mr. Usage").font(.system(size: 13, weight: .semibold)).fixedSize()
+                Spacer(minLength: 6)
+                CompactSegments(values: usage.providers, selected: provider, width: 128, compact: true, title: { $0 }) {
+                    var next = usage.preferences; next.provider = $0; usage.updatePreferences(next)
+                }.accessibilityElement(children: .contain).accessibilityLabel("Usage provider")
                 IconAction(title: "Refresh usage", symbol: "arrow.clockwise", bordered: true) { usage.refresh() }
-            }
-            UsageProviderControls(usage: usage, compact: true)
-            ViewThatFits(in: .vertical) {
-                summary.fixedSize(horizontal: false, vertical: true)
-                ScrollView { summary }
-            }.frame(maxHeight: .infinity, alignment: .top)
-            HStack {
-                if usage.windows(provider: usage.preferences.provider).count > 2 {
-                    Text("+\(usage.windows(provider: usage.preferences.provider).count - 2) more limits")
-                        .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                } else if let updated = usage.planUpdatedAt(provider: usage.preferences.provider) {
-                    TimelineView(.periodic(from: .now, by: 30)) { _ in
-                        HStack(spacing: 3) {
-                            Text(usage.planSource(provider: usage.preferences.provider) == "Local Codex log" ? "Log ·" : "Updated")
-                            Text(updated, style: .relative); Text("ago")
-                        }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                            .help(usage.status(provider: usage.preferences.provider))
+            }.padding(.horizontal, 8).frame(height: 42)
+            VStack(alignment: .leading, spacing: 14) {
+                UsageLimitsView(usage: usage, compact: true)
+                Divider().overlay(FrogStyle.border.opacity(0.4))
+                UsageActivityView(usage: usage, compact: true,
+                    showsCompactTokens: usage.windows(provider: provider).count <= 1)
+            }.padding(.horizontal, 9).padding(.top, 4).padding(.bottom, 12)
+            MenuActionRow(title: "Open dashboard", symbol: "arrow.up.forward.app", action: openDashboard)
+            Divider().padding(.horizontal, 8)
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                HStack(spacing: 4) {
+                    Text(usage.planUpdatedAt(provider: provider).map { "Updated \(Self.age(of: $0, at: context.date))" } ?? "No plan reading yet")
+                        .help(usage.status(provider: provider))
+                    if let warning = usage.planWarning(provider: provider) {
+                        Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning)
+                            .help(warning).accessibilityLabel(warning)
                     }
-                }
-                if let warning = usage.planWarning(provider: usage.preferences.provider) {
-                    Image(systemName: "exclamationmark.circle").font(.system(size: 10)).foregroundStyle(.orange)
-                        .help(warning).accessibilityLabel(warning)
-                }
-                Spacer()
-                Button("Open dashboard", systemImage: "arrow.up.right") { openDashboard() }
-                    .buttonStyle(.plain).font(.system(size: 11, weight: .medium))
-            }
+                    Spacer()
+                    if let source = usage.planSource(provider: provider) { Text(source) }
+                }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+            }.padding(.horizontal, 9).padding(.vertical, 8)
         }
-        .padding(14).frame(width: Self.width, height: height).frogPanel()
+        .padding(5).frame(width: Self.width).fixedSize(horizontal: false, vertical: true)
+        .font(.system(size: 12)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
+        .frogPanel()
         .onAppear { usage.setPresented(true) }
         .onDisappear { usage.setPresented(false) }
     }
-    private var summary: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            UsageLimitsView(usage: usage, compact: true)
-            Divider().overlay(FrogStyle.border.opacity(0.4))
-            UsageActivityView(usage: usage, compact: true,
-                showsCompactTokens: usage.windows(provider: usage.preferences.provider).count == 1)
-        }.frame(maxWidth: .infinity, alignment: .leading)
+    /// "just now", "12m ago", "10h ago", "3d ago".
+    static func age(of date: Date, at now: Date) -> String {
+        let minutes = max(0, Int(now.timeIntervalSince(date) / 60))
+        if minutes < 1 { return "just now" }
+        if minutes < 60 { return "\(minutes)m ago" }
+        return minutes < 1440 ? "\(minutes / 60)h ago" : "\(minutes / 1440)d ago"
     }
 }
 
 private struct UsageProviderControls: View {
     @ObservedObject var usage: UsageDashboardModel
-    var compact = false
     var body: some View {
-        HStack(spacing: compact ? 6 : 12) {
-                CompactSegments(values: usage.providers, selected: usage.preferences.provider, width: compact ? UsageStatusPopover.width - 28 : 220, title: { $0 }) {
-                    var next = usage.preferences; next.provider = $0; usage.updatePreferences(next)
-                }.accessibilityLabel("Usage provider")
-                Spacer(minLength: 0)
-            if !compact, usage.preferences.provider == "Claude" {
-                    CompactMenu(value: usage.loginSource, width: compact ? 118 : 180) {
-                        ForEach(usage.loginSources, id: \.self) { source in
-                            Button(source) { usage.selectLoginSource(source) }
-                        }
-                    }.accessibilityLabel("Claude login source").help("Saved login")
+        HStack(spacing: 12) {
+            CompactSegments(values: usage.providers, selected: usage.preferences.provider, width: 220, title: { $0 }) {
+                var next = usage.preferences; next.provider = $0; usage.updatePreferences(next)
+            }.accessibilityLabel("Usage provider")
+            Spacer(minLength: 0)
+            if usage.preferences.provider == "Claude" {
+                CompactMenu(value: usage.loginSource, width: 180) {
+                    ForEach(usage.loginSources, id: \.self) { source in
+                        Button(source) { usage.selectLoginSource(source) }
+                    }
+                }.accessibilityLabel("Claude login source").help("Where Claude plan limits are read from")
             }
         }
     }
@@ -127,30 +122,40 @@ private struct UsageLimitsView: View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             let provider = usage.preferences.provider
             let windows = usage.windows(provider: provider, now: context.date)
-            VStack(alignment: .leading, spacing: compact ? 8 : 12) {
-                if !compact, let plan = usage.planName(provider: provider) {
+            VStack(alignment: .leading, spacing: 12) {
+                if compact {
+                    HStack {
+                        Text("Plan limits").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                        Spacer()
+                        if let plan = usage.planName(provider: provider) {
+                            Text(plan).font(.system(size: 10, weight: .medium)).lineLimit(1)
+                                .padding(.horizontal, 7).padding(.vertical, 3)
+                                .background(FrogStyle.inset, in: Capsule()).foregroundStyle(FrogStyle.muted)
+                        }
+                    }
+                } else if let plan = usage.planName(provider: provider) {
                     Label("\(plan) plan", systemImage: "person.crop.circle")
                         .font(.system(size: 12, weight: .medium))
                 }
                 if windows.isEmpty {
                     HStack(spacing: 10) {
-                        Image(systemName: "chart.bar.xaxis").font(.system(size: 20)).foregroundStyle(FrogStyle.muted)
+                        Image(systemName: "chart.bar.xaxis").font(.system(size: compact ? 15 : 20)).foregroundStyle(FrogStyle.muted)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Plan limits unavailable").font(.system(size: 12, weight: .medium))
+                            Text("No current reading").font(.system(size: 12, weight: .medium))
                             if !compact { Text("The source status below explains the latest check.")
                                 .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
                             }
                         }
-                    }.padding(.vertical, 8)
+                    }.padding(.vertical, compact ? 2 : 8).help(usage.status(provider: provider))
                 } else {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: compact || windows.count == 1 ? 1 : 2), alignment: .leading, spacing: compact ? 12 : 18) {
-                        ForEach(compact ? Array(windows.prefix(2)) : windows) { window in UsageLimitView(window: window, now: context.date, compact: compact) }
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: compact || windows.count == 1 ? 1 : 2), alignment: .leading, spacing: compact ? 14 : 18) {
+                        ForEach(compact ? Array(windows.prefix(4)) : windows) { window in UsageLimitView(window: window, now: context.date, compact: compact) }
                     }
                 }
-                if (!compact || windows.isEmpty), usage.status(provider: provider) != "Newest available plan limits" {
-                  Text(compact ? (windows.isEmpty ? "Open dashboard to check your login" : "Saved limits · details in dashboard") : usage.status(provider: provider))
+                if !compact, usage.status(provider: provider) != "Newest available plan limits" {
+                  Text(usage.status(provider: provider))
                     .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(2)
-                     .lineLimit(compact ? 1 : nil).help(usage.status(provider: provider)).textSelection(.enabled)
+                     .help(usage.status(provider: provider)).textSelection(.enabled)
                 }
                 if !compact, let credits = usage.credits(provider: provider) {
                     Label(credits, systemImage: "creditcard").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
@@ -176,21 +181,33 @@ private struct UsageLimitView: View {
     let now: Date
     var compact = false
     private var fraction: Double { window.percentage.isFinite ? min(1, max(0, window.percentage / 100)) : 0 }
-    private var meterColor: Color { fraction >= 0.95 ? .red : fraction >= 0.8 ? .orange : FrogStyle.accent }
+    /// Nearly used is critical whatever the pace; otherwise the bar says how the window is going.
+    private var meterColor: Color {
+        if fraction >= 0.95 { return FrogStyle.critical }
+        switch window.pace(at: now) {
+        case "Ahead of pace": return FrogStyle.warning
+        case "Under pace": return FrogStyle.good
+        case nil: return FrogStyle.level(fraction, warning: 0.8, critical: 0.95)
+        default: return FrogStyle.accent
+        }
+    }
+    private func paceColor(_ pace: String) -> Color {
+        switch pace {
+        case "Ahead of pace": FrogStyle.warning
+        case "Under pace": FrogStyle.good
+        case "Limit reached": FrogStyle.critical
+        default: FrogStyle.muted
+        }
+    }
     private var elapsed: Double? {
         guard let reset = window.resetsAt, let duration = window.duration, duration > 0 else { return nil }
         return min(1, max(0, 1 - reset.timeIntervalSince(now) / duration))
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 5 : 9) {
+        VStack(alignment: .leading, spacing: compact ? 6 : 9) {
             HStack(alignment: .firstTextBaseline) {
                 Text(window.title).font(.system(size: 12, weight: .medium))
                 Spacer()
-                if compact, let reset = window.resetsAt {
-                    Text("Resets \(Duration.seconds(max(0, reset.timeIntervalSince(now))).formatted(.units(allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 1)))")
-                        .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                        .help(reset.formatted(date: .abbreviated, time: .shortened))
-                }
                 Text(window.percentage.isFinite ? String(format: "%.0f%%", window.percentage) : "—")
                     .font(.system(size: compact ? 14 : 17, weight: .semibold)).monospacedDigit()
             }
@@ -203,17 +220,20 @@ private struct UsageLimitView: View {
                         .offset(x: max(0, min(geometry.size.width - 1, geometry.size.width * elapsed)), y: -2)
                 }
             }.frame(height: 5).accessibilityHidden(true).help("The tick marks elapsed time in this plan window.")
-            if !compact { HStack {
-                Text(window.percentage.isFinite ? String(format: "%.0f%% left", (1 - fraction) * 100) : "Unknown")
+            HStack {
+                Text(window.percentage.isFinite ? String(format: "%.0f%% left", (1 - fraction) * 100) : "No reading since it renewed")
+                if compact, (window.duration ?? 0) >= 604800, let pace = window.pace(at: now) {
+                    Text("· \(pace)").foregroundStyle(paceColor(pace))
+                }
                 Spacer(minLength: 4)
                 if let reset = window.resetsAt {
-                    Text("Resets \(Duration.seconds(max(0, reset.timeIntervalSince(now))).formatted(.units(allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 1)))")
+                    Text("Resets in \(Duration.seconds(max(0, reset.timeIntervalSince(now))).formatted(.units(allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 1)))")
                         .help(reset.formatted(date: .abbreviated, time: .shortened))
                 }
-            }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted) }
-            if let elapsed, let pace = window.pace(at: now), !compact || (window.duration ?? 0) >= 604800 {
+            }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+            if !compact, let elapsed, let pace = window.pace(at: now) {
                 Text(pace)
-                    .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                    .font(.system(size: 10)).foregroundStyle(paceColor(pace))
                     .help("\(Int(fraction * 100))% used with \(Int(elapsed * 100))% of the window elapsed")
             }
         }.padding(.trailing, compact ? 0 : 8).accessibilityElement(children: .combine)
@@ -227,10 +247,10 @@ private struct UsageActivityView: View {
     var body: some View {
         let settings = usage.preferences
         let chart = usage.chart(provider: settings.provider, range: settings.range, metric: settings.metric)
-        VStack(alignment: .leading, spacing: compact ? 6 : 14) {
+        VStack(alignment: .leading, spacing: compact ? 10 : 14) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(settings.metric == "API cost" ? (compact && !chart.unpricedModels.isEmpty ? "API estimate · partial" : "Estimated API cost") : "\(settings.metric) tokens")
+                    Text(settings.metric == "API cost" ? (compact ? "API estimate" : "Estimated API cost") : "\(settings.metric) tokens")
                         .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
                     Text(chart.total).font(.system(size: compact ? 20 : 32, weight: .semibold)).tracking(-0.6).monospacedDigit()
                 }
@@ -277,7 +297,7 @@ private struct UsageActivityView: View {
                                     Text(usage.format(chart.totals.first { $0.name == name }?.value ?? 0, metric: name)).monospacedDigit()
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }
-                        }.font(.system(size: 10)).padding(.top, 2)
+                        }.font(.system(size: 10))
                             .help("Input excludes cache reads. Account token splits are estimates; full details are in the dashboard.")
                     }
                 } else { UsageTokenTotals(usage: usage, chart: chart) }
@@ -463,7 +483,7 @@ private struct UsageActivityChart: View {
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 3])).foregroundStyle(FrogStyle.border)
                 AxisValueLabel {
                     if let amount = value.as(Double.self) {
-                        Text(usage.format(amount, metric: usage.preferences.metric)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                        Text(usage.axisLabel(amount, metric: usage.preferences.metric)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                     }
                 }
             }
@@ -472,7 +492,7 @@ private struct UsageActivityChart: View {
         .environment(\.timeZone, chart.account ? TimeZone(secondsFromGMT: 0)! : .current)
         .onChange(of: chart.range) { _, _ in selectedDate = nil }
         .onChange(of: usage.preferences.provider) { _, _ in selectedDate = nil }
-        .frame(height: compact ? 60 : 150)
+        .frame(height: compact ? 76 : 150)
         .overlay(alignment: .topTrailing) {
             if let point = selectedPoint {
                 Text("\(point.date.formatted(date: .abbreviated, time: usage.preferences.range == "24h" ? .shortened : .omitted)) · \(usage.format(point.value, metric: usage.preferences.metric))")

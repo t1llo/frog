@@ -42,7 +42,7 @@ struct StayAwakeSettingsView: View {
                     .font(.system(size: 11)).foregroundStyle(power.accessState == .ready ? FrogStyle.accent : FrogStyle.muted)
             }
             if case .unavailable(let message) = power.accessState {
-                Text(message).font(.system(size: 11)).foregroundStyle(.orange)
+                Text(message).font(.system(size: 11)).foregroundStyle(FrogStyle.warning)
             } else if power.accessState == .ready {
                 Text("Both power commands are allowed without a password. Stay awake is ready to use.")
                     .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)

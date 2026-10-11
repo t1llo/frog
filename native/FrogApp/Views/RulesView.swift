@@ -86,13 +86,13 @@ struct RulesView: View {
                                         if let detail = rule.action?.systemAction?.detail {
                                             Text(detail).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
                                         }
-                                        if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(.orange) }
+                                        if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(FrogStyle.warning) }
                                     }.frame(maxWidth: .infinity, alignment: .leading)
                                 } else { Button { editing = rule } label: {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(rule.name).font(.system(size: 12, weight: .medium))
                                         Text(model.ruleModelLabel(rule)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                                        if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(.orange) }
+                                        if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(FrogStyle.warning) }
                                     }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                                 }.buttonStyle(.plain) }
                                 Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { value in
@@ -258,7 +258,7 @@ struct RuleEditor: View {
                 }.padding(.horizontal, 20).padding(.bottom, 16).minimalScrollbars()
             }
             if let issue {
-                Text(issue).font(.system(size: 11)).foregroundStyle(.orange)
+                Text(issue).font(.system(size: 11)).foregroundStyle(FrogStyle.warning)
                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20).padding(.bottom, 10)
             }

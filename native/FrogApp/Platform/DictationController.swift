@@ -506,7 +506,7 @@ private struct DictationPopup: View {
                 HStack(spacing: 8) {
                     if controller.noMicrophoneInput {
                         Label("No microphone input", systemImage: "exclamationmark.triangle.fill")
-                            .font(.system(size: 11)).foregroundStyle(.orange).fixedSize()
+                            .font(.system(size: 11)).foregroundStyle(FrogStyle.warning).fixedSize()
                     }
                     MicrophoneWaveform(meter: controller.microphoneMeter)
                 }.frame(height: 28)

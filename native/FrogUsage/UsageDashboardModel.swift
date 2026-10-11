@@ -162,7 +162,10 @@ public struct UsagePlanPeriod: Identifiable {
         let defaults = defaults ?? UsagePreferences.defaults
         self.defaults = defaults
         self.fixtureRoot = fixtureRoot
-        claude = Store(defaults: defaults, startPolling: false)
+        // Fixture models never read this Mac's real Claude app history.
+        let live = fixtureRoot == nil
+        claude = Store(defaults: defaults, startPolling: false,
+                       readDesktop: { live ? readClaudeDesktop(directory: $0) : nil })
         tokens = TokenStore(fixtureRoot: fixtureRoot, claudeDirectory: ClaudePaths.directory(defaults: defaults))
         var saved = defaults.data(forKey: "dashboardPreferences").flatMap { try? JSONDecoder().decode(UsageDashboardPreferences.self, from: $0) } ?? UsageDashboardPreferences()
         saved.loginSource = claude.loginSource.rawValue
@@ -225,10 +228,17 @@ public struct UsagePlanPeriod: Identifiable {
             loginSource: ClaudeLoginSource(rawValue: value.loginSource)?.rawValue ?? "Automatic")
     }
     public func windows(provider: String, now: Date = Date()) -> [UsageWindow] {
-        let source = provider == Provider.claude.rawValue ? claude.displayUsage(now: now) : tokens.codexLimits?.current(now: now)
-        return (source?.limits ?? []).filter { $0.resetsAt.map { $0 > now } ?? true }.map {
+        let claude = provider == Provider.claude.rawValue
+        let source = claude ? self.claude.displayUsage(now: now) : tokens.codexLimits?.current(now: now)
+        var windows = (source?.limits ?? []).filter { $0.resetsAt.map { $0 > now } ?? true }.map {
             UsageWindow(id: $0.id, title: $0.label, percentage: $0.pct, resetsAt: $0.resetsAt, duration: $0.window)
         }
+        // A Claude plan always has a session and a week. A session that renewed after the last
+        // reading keeps its row, marked unknown, instead of leaving the week on its own.
+        if claude, !windows.isEmpty, !windows.contains(where: { $0.id == "five_hour" }) {
+            windows.insert(UsageWindow(id: "five_hour", title: "Session", percentage: .nan, resetsAt: nil, duration: 5 * 3600), at: 0)
+        }
+        return windows
     }
     public func status(provider: String) -> String {
         if !active { return "Mr. Usage is disabled. Collection is paused." }
@@ -241,7 +251,7 @@ public struct UsagePlanPeriod: Identifiable {
         return tokens.codexLimits == nil ? "Sign in to Codex or OpenCode to read plan limits." : "Newest available plan limits"
     }
     public func planWarning(provider: String) -> String? {
-        if provider == Provider.claude.rawValue { return claude.lastError == nil ? nil : claude.status }
+        if provider == Provider.claude.rawValue { return claude.warning }
         return tokens.liveError
     }
     public func credits(provider: String) -> String? {
@@ -252,7 +262,7 @@ public struct UsagePlanPeriod: Identifiable {
         return tokens.codexCredits.map { "Additional usage: \($0.displayBalance) credits" }
     }
     public func planName(provider: String) -> String? {
-        if provider == "Claude" { return claude.authPlan }
+        if provider == "Claude" { return claude.plan }
         guard provider == "OpenAI", let plan = tokens.codexLimits?.plan, !plan.isEmpty else { return nil }
         switch plan {
         case "prolite": return "Pro Lite"
@@ -265,12 +275,12 @@ public struct UsagePlanPeriod: Identifiable {
         }
     }
     public func planSource(provider: String) -> String? {
-        if provider == "Claude" { return claude.displayUsage() == nil ? nil : "Anthropic account" }
+        if provider == "Claude" { return claude.reading().map { $0.source == .desktop ? "Claude app" : "Anthropic account" } }
         guard let limits = tokens.codexLimits else { return nil }
         return limits.live ? "OpenAI account" : "Local Codex log"
     }
     public func planUpdatedAt(provider: String) -> Date? {
-        provider == "Claude" ? claude.lastGoodAt : tokens.codexLimits?.asOf
+        provider == "Claude" ? claude.reading()?.at ?? claude.lastGoodAt : tokens.codexLimits?.asOf
     }
     public func chart(provider: String, range: String, metric: String) -> UsageChart {
         let metric = TokenMetric(rawValue: metric) ?? .cost
@@ -288,6 +298,12 @@ public struct UsagePlanPeriod: Identifiable {
     }
     public func format(_ value: Double, metric: String) -> String {
         (TokenMetric(rawValue: metric) ?? .cost).format(value)
+    }
+    /// Chart scale labels: whole dollars lose their cents, "$100" instead of "$100.00".
+    public func axisLabel(_ value: Double, metric: String) -> String {
+        let metric = TokenMetric(rawValue: metric) ?? .cost
+        guard metric == .cost, value < 1000, value == value.rounded() else { return metric.format(value) }
+        return String(format: "$%.0f", value)
     }
     isolated deinit { visibleTimer?.invalidate(); claude.stop(); tokens.stop() }
 }

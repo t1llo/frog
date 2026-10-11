@@ -75,13 +75,13 @@ struct CompactDropdownLabel: View {
     var height: CGFloat = 32
     @State private var hovering = false
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: height < 28 ? 5 : 8) {
             if let symbol { Image(systemName: symbol).foregroundStyle(FrogStyle.muted) }
             Text(value).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 2)
             Image(systemName: "chevron.down").font(.system(size: 9)).foregroundStyle(FrogStyle.muted)
         }.font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.ink)
-            .padding(.horizontal, 9).frame(width: width, height: height)
+            .padding(.horizontal, height < 28 ? 7 : 9).frame(width: width, height: height)
             .background(hovering ? AnyShapeStyle(FrogStyle.selection) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 5))
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(FrogStyle.border.opacity(0.6)))
             .contentShape(RoundedRectangle(cornerRadius: 7)).onHover { hovering = $0 }
@@ -111,6 +111,8 @@ struct CompactSegments<Value: Hashable>: View {
     let values: [Value]
     let selected: Value
     var width: CGFloat = 220
+    /// Popup headers: the height and outline of a bordered `IconAction` beside it.
+    var compact = false
     let title: (Value) -> String
     let choose: (Value) -> Void
     var body: some View {
@@ -118,13 +120,15 @@ struct CompactSegments<Value: Hashable>: View {
             ForEach(values, id: \.self) { value in
                 Button { choose(value) } label: {
                     Text(L10n.text(title(value))).font(.system(size: 11, weight: selected == value ? .semibold : .regular))
-                        .frame(maxWidth: .infinity).padding(.vertical, 6)
+                        .frame(maxWidth: .infinity).padding(.vertical, compact ? 3 : 6)
                         .foregroundStyle(selected == value ? FrogStyle.ink : FrogStyle.muted)
                         .background(selected == value ? FrogStyle.surface : AnyShapeStyle(Color.clear), in: RoundedRectangle(cornerRadius: 4))
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityAddTraits(selected == value ? .isSelected : [])
             }
-        }.padding(3).frame(width: width).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 7))
+        }.padding(compact ? 2 : 3).frame(width: width, height: compact ? 24 : nil)
+            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: compact ? 5 : 7))
+            .overlay { if compact { RoundedRectangle(cornerRadius: 5).strokeBorder(FrogStyle.border.opacity(0.6)) } }
     }
 }
 
