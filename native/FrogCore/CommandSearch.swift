@@ -11,8 +11,11 @@ public struct SearchRecord: Identifiable, Equatable, Sendable {
     fileprivate let searchText: String
     fileprivate let aliases: [String]
     fileprivate let queryStyle: QueryStyle
-    public init(id: String, title: String, subtitle: String = "", keywords: String = "", symbol: String = "command", aliases: [String] = [], queryStyle: QueryStyle = .literal) {
+    /// Applications: what a search is usually for, so a title match ranks one bucket higher.
+    fileprivate let prominent: Bool
+    public init(id: String, title: String, subtitle: String = "", keywords: String = "", symbol: String = "command", aliases: [String] = [], queryStyle: QueryStyle = .literal, prominent: Bool = false) {
         self.id = id; self.title = title; self.subtitle = subtitle; self.keywords = keywords; self.symbol = symbol
+        self.prominent = prominent
         self.aliases = aliases.map {
             let normalized = CommandSearch.normalized($0)
             return queryStyle == .command ? CommandSearch.commandSubject(normalized).joined(separator: " ") : normalized
@@ -24,7 +27,7 @@ public struct SearchRecord: Identifiable, Equatable, Sendable {
 }
 
 public enum CommandSearch {
-    /// Within one relevance bucket `preferred` records lead, the catalogue follows and `trailing` records come last.
+    /// Within one relevance bucket `preferred` records lead, then applications, then the catalogue; `trailing` records come last.
     public static func results(_ records: [SearchRecord], query: String, limit: Int = 80, preferred: [SearchRecord] = [], trailing: [SearchRecord] = []) -> [SearchRecord] {
         let query = normalized(query)
         guard limit > 0 else { return [] }
@@ -43,20 +46,22 @@ public enum CommandSearch {
         let canMatchCommand = !subject.isEmpty || words.contains { ["settings", "preferences", "system", "macos"].contains($0) }
         let commandWords = subject.isEmpty && canMatchCommand ? ["settings"] : subject
         let commandQuery = commandWords.joined(separator: " ")
-        // Four stable rank buckets avoid sorting the entire catalogue on every keystroke.
-        var ranked = [[SearchRecord]](repeating: [], count: 4)
-        func append(_ record: SearchRecord) {
+        // Stable rank buckets avoid sorting the entire catalogue on every keystroke: five relevance levels
+        // (the fifth holds exact application titles), each with its leading records ahead of the rest.
+        var ranked = [[SearchRecord]](repeating: [], count: 10)
+        func append(_ record: SearchRecord, leading: Bool = false) {
             let title = record.searchTitle
             if record.queryStyle == .command && !canMatchCommand { return }
             let words = record.queryStyle == .command ? commandWords : words
             let effectiveQuery = record.queryStyle == .command ? commandQuery : query
             guard words.allSatisfy({ record.searchText.contains($0) }) else { return }
-            let rank = title == query || title == effectiveQuery || record.aliases.contains(effectiveQuery) ? 3
+            let match = title == query || title == effectiveQuery || record.aliases.contains(effectiveQuery) ? 3
                 : title.hasPrefix(effectiveQuery) || record.aliases.contains(where: { $0.hasPrefix(effectiveQuery) }) ? 2
                 : title.contains(effectiveQuery) ? 1 : 0
+            let rank = (record.prominent && match > 0 ? match + 1 : match) * 2 + (leading || record.prominent ? 1 : 0)
             if ranked[rank].count < limit { ranked[rank].append(record) }
         }
-        for record in preferred { append(record) }
+        for record in preferred { append(record, leading: true) }
         for record in records where !preferredIDs.contains(record.id) { append(record) }
         for record in trailing where !preferredIDs.contains(record.id) { append(record) }
         return Array(ranked.reversed().joined().prefix(limit))

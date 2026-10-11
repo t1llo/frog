@@ -117,7 +117,7 @@ import SwiftUI
         applicationRecords = [:]
         for rule in installed {
             guard let path = rule.action?.applicationPath else { continue }
-            applicationRecords[path] = SearchRecord(id: "app:\(path)", title: rule.name, subtitle: "App", keywords: "app open launch \(rule.action?.applicationBundleID ?? "")", symbol: "app")
+            applicationRecords[path] = SearchRecord(id: "app:\(path)", title: rule.name, subtitle: "App", keywords: "app open launch \(rule.action?.applicationBundleID ?? "")", symbol: "app", prominent: true)
         }
     }
     private func refreshSettings() {

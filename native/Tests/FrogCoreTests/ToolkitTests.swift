@@ -36,6 +36,20 @@ final class ToolkitTests: XCTestCase {
         XCTAssertEqual(CommandSearch.results(source, query: "menu cafe").map(\.id), ["3"])
         XCTAssertEqual(CommandSearch.results(source, query: "", limit: 1).map(\.id), ["1"])
     }
+    func testApplicationsLeadOtherResultsThatMatchAsWellOrOneStepBetter() {
+        let source = [
+            SearchRecord(id: "clip", title: "code review notes", subtitle: "Clipboard"),
+            SearchRecord(id: "command", title: "Code", subtitle: "Frog"),
+            SearchRecord(id: "app", title: "Visual Studio Code", subtitle: "App", prominent: true),
+            SearchRecord(id: "xcode", title: "Xcode", subtitle: "App", prominent: true),
+            SearchRecord(id: "keyword", title: "Notes", subtitle: "App", keywords: "code", prominent: true)
+        ]
+        // An app whose name contains the query leads everything but an exact title; a keyword-only app gains nothing.
+        XCTAssertEqual(CommandSearch.results(source, query: "code").map(\.id), ["command", "app", "xcode", "clip", "keyword"])
+        XCTAssertEqual(CommandSearch.results(source, query: "xc").map(\.id), ["xcode"])
+        let recent = [source[0]]
+        XCTAssertEqual(CommandSearch.results(source, query: "co", preferred: recent).map(\.id), ["clip", "app", "xcode", "command", "keyword"])
+    }
     func testCalculatorBoundsAndUnitDimensions() {
         XCTAssertEqual(QuickCalculation.result("(2 + 3) * 4"), "20")
         XCTAssertEqual(QuickCalculation.result("2^3^2"), "512")
