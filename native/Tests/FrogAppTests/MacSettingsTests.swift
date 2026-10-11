@@ -49,6 +49,48 @@ import FrogCore
         XCTAssertTrue(bar.results.isEmpty, "Finishing discovery cannot reopen a dismissed command bar")
     }
 
+    func testEachSettingsPaneAppearsOnceWithTheSystemSettingsIconAndNoMacActionLabel() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var config = Configuration()
+        for feature in FeatureID.allCases { config.preferences.setFeature(feature, enabled: feature == .commandBar || feature == .applicationShortcuts) }
+        config.preferences.windowSwitcherEnabled = false
+        try ConfigurationStore(directory: root).save(config)
+        let model = AppModel(dataDirectory: root, registerShortcuts: false)
+        defer { model.shutdown() }
+        let iconPaths = SettingsIconPaths()
+        let bar = CommandBar(model: model, fileScopes: [root], captureTarget: { nil }, waitForRelease: {},
+                             loadIcon: { iconPaths.append($0); return NSImage(size: NSSize(width: 16, height: 16)) },
+                             loadSettings: { SystemSettingsCatalog.defaults }, loadApplications: { [] })
+        defer { bar.stop() }
+        bar.show()
+        for query in ["display", "displays", "display settings", "wifi", "bluetooth", "sound", "keyboard", "trackpad", "accessibility", "notifications", "storage", "privacy"] {
+            bar.query = query
+            print("Settings query \(query): \(bar.results.prefix(4).map { "\($0.title) · \($0.subtitle)" })")
+            XCTAssertEqual(bar.results.first?.subtitle, "System Settings", query)
+            XCTAssertFalse(bar.results.contains { $0.id.hasPrefix("system:") && $0.title.localizedCaseInsensitiveContains("settings") }, "\(query): one pane, one result")
+        }
+        bar.query = "display"
+        let displays = try XCTUnwrap(bar.results.first)
+        XCTAssertEqual(displays.title, "Displays")
+        _ = await bar.icon(for: displays)
+        XCTAssertEqual(iconPaths.values, ["/System/Applications/System Settings.app"], "A settings result looks like System Settings")
+        bar.query = ""
+        XCTAssertFalse(bar.results.contains { $0.subtitle == "Mac action" })
+        for (query, title, label) in [("lock", "Lock Screen", "Mac"), ("downloads", "Open Downloads", "Finder"), ("undo", "Undo", "Current app")] {
+            bar.query = query
+            let result = try XCTUnwrap(bar.results.first { $0.title == title }, query)
+            XCTAssertEqual(result.subtitle, label)
+        }
+        // Every hidden shortcut action has its pane in the catalogue, so nothing became unreachable.
+        let panes = Set(SystemSettingsCatalog.defaults.filter { $0.anchor == nil }.map(\.paneID))
+        for action in SystemAction.allCases {
+            guard let url = SystemActionController.destination(for: action), url.scheme == "x-apple.systempreferences" else { continue }
+            let pane = String(url.absoluteString.dropFirst("x-apple.systempreferences:".count))
+            XCTAssertTrue(pane.isEmpty || panes.contains(pane), "\(action.title) has no catalogue pane")
+        }
+    }
+
     func testDiscoveryRunsOffMainThreadAndIsCachedAcrossConcurrentLoads() async {
         let calls = SettingsDiscoveryCounter()
         let index = MacSettingsIndex(discover: {
@@ -106,6 +148,13 @@ private actor SettingsDiscoveryGate {
     }
     func started() async { if pending == nil { await withCheckedContinuation { start = $0 } } }
     func release() { pending?.resume(returning: SystemSettingsCatalog.defaults); pending = nil }
+}
+
+private final class SettingsIconPaths: @unchecked Sendable {
+    private let lock = NSLock()
+    private var paths: [String] = []
+    var values: [String] { lock.lock(); defer { lock.unlock() }; return paths }
+    func append(_ path: String) { lock.lock(); paths.append(path); lock.unlock() }
 }
 
 private final class SettingsDiscoveryCounter: @unchecked Sendable {

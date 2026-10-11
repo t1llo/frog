@@ -145,6 +145,7 @@ import SwiftUI
         let path: String
         if result.id.hasPrefix("app:") { path = String(result.id.dropFirst(4)) }
         else if let windowPath = windowIconPaths[result.id] { path = windowPath }
+        else if result.id.hasPrefix("mac-setting:") { path = "/System/Applications/System Settings.app" }
         else { return nil }
         if let cached = icons.object(forKey: path as NSString) { return cached }
         let readerID = UUID(), token = generation
@@ -359,8 +360,9 @@ import SwiftUI
             }
         }
         if model.configuration.preferences.featureEnabled(.applicationShortcuts) {
-            for action in SystemAction.allCases {
-                add(SearchRecord(id: "system:\(action.rawValue)", title: action.title, subtitle: "Mac action", keywords: "frog command shortcut", symbol: action.symbol)) { [weak model] in
+            // Settings panes are listed once, from the System Settings catalogue.
+            for action in SystemAction.allCases where SystemActionController.destination(for: action)?.scheme != "x-apple.systempreferences" {
+                add(SearchRecord(id: "system:\(action.rawValue)", title: action.title, subtitle: action.scope, keywords: "frog command shortcut", symbol: action.symbol)) { [weak model] in
                     guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message("The target application changed. Open the command bar again.") }
                     model?.runSystemAction(action)
                 }

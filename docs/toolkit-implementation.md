@@ -83,6 +83,10 @@ File lookup remains asynchronous and debounced. Drag its top grip or footer
 to move it; the position survives reopening in the same session and recenters if its
 display is no longer available.
 
+A System Settings pane appears once, with the System Settings icon and that name beside
+it. The shortcut actions that open the same panes stay out of the results; the other
+shortcut actions say where they act: Finder, Mac or Current app.
+
 First-run setup and Command bar settings share a Spotlight replacement walkthrough:
 free ⌘Space in macOS Keyboard Shortcuts, explicitly assign it to Frog, then try it.
 The setup never rewrites system shortcuts. Registration conflicts remain visible;

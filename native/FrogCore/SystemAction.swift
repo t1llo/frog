@@ -53,6 +53,17 @@ public enum SystemAction: String, Codable, CaseIterable, Identifiable, Sendable 
         case .undo, .redo, .cut, .copy, .paste, .selectAll, .find: "Use the current app’s menu command when available"
         }
     }
+    /// Where the action takes effect, shown beside its title in search results.
+    public var scope: String {
+        switch self {
+        case .openHome, .openDesktop, .openDocuments, .openDownloads, .openApplications, .openUtilities, .openLibrary: "Finder"
+        case .systemSettings, .wifiSettings, .bluetoothSettings, .displaySettings, .soundSettings,
+             .keyboardSettings, .trackpadSettings, .accessibilitySettings, .privacySettings, .notificationSettings, .storageSettings:
+            "System Settings"
+        case .lockScreen, .screenshot: "Mac"
+        case .hideApplication, .undo, .redo, .cut, .copy, .paste, .selectAll, .find: "Current app"
+        }
+    }
     public var symbol: String {
         switch self {
         case .lockScreen: "lock.fill"
