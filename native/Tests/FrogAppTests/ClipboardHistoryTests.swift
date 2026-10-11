@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import FrogCore
 import XCTest
 @testable import FrogApp
@@ -383,6 +384,41 @@ final class ClipboardHistoryTests: XCTestCase {
             view.cacheDisplay(in: view.bounds, to: bitmap)
             try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: path))
         }
+    }
+
+    func testDoubleClickPastesTheRowAndSingleClickOnlySelectsIt() async throws {
+        _ = NSApplication.shared
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let history = ClipboardHistoryStore(pasteboard: pasteboard)
+        history.configure(enabled: true, automaticallyPoll: false)
+        for text in ["Synthetic older", "Synthetic middle", "Synthetic newest"] { history.recordCopiedText(text) }
+        let state = ClipboardHistoryPanelState()
+        var pasted: [(String, Bool)] = []
+        let size = ClipboardHistoryLayout.size(entryCount: 3)
+        let host = NSHostingView(rootView: ClipboardHistoryView(history: history, state: state,
+            paste: { pasted.append(($0.text, $1)) }, copy: { _ in }, close: {}, clear: {}, resize: { _ in }))
+        let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: 60, y: 60), size: size), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host; window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil); window.contentView = nil }
+        try await Task.sleep(for: .milliseconds(50)); host.layoutSubtreeIfNeeded()
+        // The middle of the second row's text.
+        let top = ClipboardHistoryLayout.headerHeight + ClipboardHistoryLayout.inset + ClipboardHistoryLayout.rowHeight * 1.5
+        let point = host.convert(NSPoint(x: 160, y: host.isFlipped ? top : host.bounds.maxY - top), to: nil)
+        func click(count: Int) async throws {
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                window.sendEvent(try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                    eventNumber: 0, clickCount: count, pressure: 1)))
+            }
+            try await Task.sleep(for: .milliseconds(40))
+        }
+        try await click(count: 1)
+        XCTAssertEqual(state.selectedIndex, 1, "One click selects at once")
+        XCTAssertTrue(pasted.isEmpty, "One click must not paste")
+        try await click(count: 2)
+        XCTAssertEqual(pasted.map(\.0), ["Synthetic middle"])
+        XCTAssertEqual(pasted.first?.1, false, "A double click pastes like Return, with formatting")
     }
 
     func testPanelResizesWithEntriesAndOnlySensitiveItemsReveal() async throws {

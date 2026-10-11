@@ -95,12 +95,14 @@ struct ClipboardHistoryView: View {
                 }.font(.system(size: 9)).foregroundStyle(FrogStyle.muted)
             }.frame(maxWidth: .infinity, minHeight: 36, alignment: .leading).contentShape(Rectangle())
                 .onTapGesture { select(entry, index: index) }
+                // Alongside the single click, so selecting never waits for a possible second one.
+                .simultaneousGesture(TapGesture(count: 2).onEnded { paste(entry, false) })
                 .accessibilityElement(children: .ignore)
                 .accessibilityAddTraits(.isButton)
                 .accessibilityLabel(entry.isSensitive ? (hidden ? "Reveal sensitive text" : "Hide sensitive text") : "Select copied text")
                 .accessibilityValue(hidden ? "Hidden" : entry.preview)
                 .accessibilityAction { select(entry, index: index) }
-                .help(entry.isSensitive ? (hidden ? "Click to reveal" : "Click to hide") : "Select item, then press Return to paste")
+                .help(entry.isSensitive ? (hidden ? "Click to reveal" : "Click to hide") : "Double-click to paste, or select and press Return")
             IconAction(title: "Paste with formatting", symbol: "return") { paste(entry, false) }
                 .opacity(selected ? 1 : 0).allowsHitTesting(selected).accessibilityHidden(!selected)
         }.padding(.horizontal, 10).frame(height: ClipboardHistoryLayout.rowHeight)
