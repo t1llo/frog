@@ -59,4 +59,4 @@ See [Development](docs/development.md) for signing and packaging.
 
 ## License
 
-[MIT](LICENSE)
+Copyright © 2026 Tillo Beffa. Frog is free software under the [GNU General Public License](LICENSE), version 3 or later.
