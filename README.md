@@ -56,3 +56,7 @@ See [Development](docs/development.md) for signing and packaging.
 ## Guides
 
 [Configuration and themes](docs/configuration.md) · [Providers](docs/providers.md) · [Local models](docs/local-model-sources.md) · [Installed AI tools](docs/local-tool-providers.md) · [Mr. Usage](docs/usage-integration.md) · [Statistics](docs/statistics.md) · [Stay awake](docs/stay-awake.md) · [Verification](docs/verification.md)
+
+## License
+
+[MIT](LICENSE)
