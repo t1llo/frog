@@ -85,7 +85,7 @@ Omit rules/cancel shortcuts for no binding. Clipboard defaults to `cmd+shift+v`;
 
 ### Themes and semantic colors
 
-`appearance`: `system`, `light`, `dark`. `theme`: `frog`, `tokyoNight`, `catppuccin`, `nord`, `gruvbox`, `dracula`, `rosePine`, `solarized`, `everforest`, `graphite`.
+`appearance`: `system`, `light`, `dark`. `theme`: `minimal`, `frog`, `tokyoNight`, `catppuccin`, `nord`, `gruvbox`, `dracula`, `rosePine`, `solarized`, `everforest`, `graphite`. Without a `theme` line Frog uses `minimal`, a gray and white theme with a gray accent.
 
 Every preset supplies a coordinated light and dark palette. Override any of these roles independently with `palette.light.<role>` / `palette.dark.<role>`:
 
@@ -108,7 +108,7 @@ Colors are six RGB hex digits, optionally prefixed with `#`. Overrides inherit a
 
 `transparency` and `popup-transparency` independently range from 0 (opaque) to 1. The whole window and all Frog popups use a real, active native `NSVisualEffectView` with behind-window backdrop blur; text is never blurred or faded. Popup fields/cards use their popup setting, independent of the main window. Inset controls retain a stronger tint for readability. Visible pixels blend the palette with the blurred material. Native macOS controls, system status colors and content images retain their platform/content colors.
 
-**Reduce Transparency** or **Increase Contrast** in macOS accessibility settings makes Frog surfaces opaque without changing your saved values. Increased Contrast also strengthens panel outlines. The default Frog dark theme keeps its black surfaces and green accent.
+**Reduce Transparency** or **Increase Contrast** in macOS accessibility settings makes Frog surfaces opaque without changing your saved values. Increased Contrast also strengthens panel outlines. The `frog` theme keeps its black surfaces and green accent in dark mode.
 
 ### Menu-bar organization
 

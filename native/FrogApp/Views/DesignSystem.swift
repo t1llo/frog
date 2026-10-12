@@ -70,7 +70,7 @@ enum FrogStyle {
     private static var presetAccent: Color {
         if FrogAppearance.shared.settings.useThemeAccent == true ||
             (FrogAppearance.shared.settings.useThemeAccent == nil && FrogAppearance.shared.settings.accentHex == "A3D8AF") {
-            switch FrogAppearance.shared.settings.theme ?? .frog {
+            switch FrogAppearance.shared.settings.effectiveTheme {
             case .frog: return adaptive(light: 0x397A4C, dark: 0xA3D8AF)
             case .tokyoNight: return adaptive(light: 0x34548A, dark: 0x7AA2F7)
             case .catppuccin: return adaptive(light: 0x8839EF, dark: 0xCBA6F7)
@@ -81,6 +81,7 @@ enum FrogStyle {
             case .solarized: return adaptive(light: 0x217EAF, dark: 0x2AA198)
             case .everforest: return adaptive(light: 0x587D37, dark: 0xA7C080)
             case .graphite: return adaptive(light: 0x555D69, dark: 0xB8C1D0)
+            case .minimal: return adaptive(light: 0x3C4149, dark: 0xD0D6E0)
             }
         }
         let rgb = UInt32(FrogAppearance.shared.settings.accentHex, radix: 16) ?? 0xA3D8AF
@@ -91,7 +92,7 @@ enum FrogStyle {
     static var onAccent: Color {
         let settings = FrogAppearance.shared.settings
         return adaptive(light: settings.lightPalette?["on-accent"].flatMap { UInt32($0, radix: 16) } ?? presetPalette(dark: false).surface,
-                        dark: settings.darkPalette?["on-accent"].flatMap { UInt32($0, radix: 16) } ?? ((settings.theme ?? .frog) == .frog ? 0x18261C : presetPalette(dark: true).canvas))
+                        dark: settings.darkPalette?["on-accent"].flatMap { UInt32($0, radix: 16) } ?? (settings.effectiveTheme == .frog ? 0x18261C : presetPalette(dark: true).canvas))
     }
     static var ink: Color { themed(\.ink) }
     static var muted: Color { themed(\.muted) }
@@ -109,7 +110,7 @@ enum FrogStyle {
         var good, warning, critical: (light: UInt32, dark: UInt32)
     }
     private static var presetTones: Tones {
-        switch FrogAppearance.shared.settings.theme ?? .frog {
+        switch FrogAppearance.shared.settings.effectiveTheme {
         case .frog: Tones(good: (0x2F8F4E, 0x8FD9A0), warning: (0xB7791F, 0xE8B866), critical: (0xC8443C, 0xF07F78))
         case .tokyoNight: Tones(good: (0x33635C, 0x9ECE6A), warning: (0x8F5E15, 0xE0AF68), critical: (0x8C4351, 0xF7768E))
         case .catppuccin: Tones(good: (0x40A02B, 0xA6E3A1), warning: (0xDF8E1D, 0xF9E2AF), critical: (0xD20F39, 0xF38BA8))
@@ -120,6 +121,7 @@ enum FrogStyle {
         case .solarized: Tones(good: (0x859900, 0x859900), warning: (0xB58900, 0xB58900), critical: (0xDC322F, 0xDC322F))
         case .everforest: Tones(good: (0x6F8A00, 0xA7C080), warning: (0xC98F00, 0xDBBC7F), critical: (0xE0473F, 0xE67E80))
         case .graphite: Tones(good: (0x3E8E5A, 0x7FC796), warning: (0xB7791F, 0xDDB46A), critical: (0xC4453F, 0xE87C7C))
+        case .minimal: Tones(good: (0x2B8A57, 0x4CB782), warning: (0xB7791F, 0xF2C94C), critical: (0xD0443C, 0xEB5757))
         }
     }
     private static func tone(_ key: KeyPath<Tones, (light: UInt32, dark: UInt32)>, _ name: String) -> Color {
@@ -144,7 +146,7 @@ enum FrogStyle {
         return palette
     }
     private static func presetPalette(dark: Bool) -> Palette {
-        switch (FrogAppearance.shared.settings.theme ?? .frog, dark) {
+        switch (FrogAppearance.shared.settings.effectiveTheme, dark) {
         case (.frog, false): Palette(canvas: 0xFFFFFF, sidebar: 0xF7F7F5, surface: 0xFFFFFF, inset: 0xF5F5F4, border: 0xE2E2DF, ink: 0x252525, muted: 0x73736F)
         case (.frog, true): Palette(canvas: 0x191919, sidebar: 0x151515, surface: 0x1E1E1F, inset: 0x242424, border: 0x383839, ink: 0xE8E8E8, muted: 0xA0A0A3)
         case (.tokyoNight, false): Palette(canvas: 0xE1E2E7, sidebar: 0xD5D6DB, surface: 0xEBECF0, inset: 0xDADBE0, border: 0xB4B5BD, ink: 0x343B58, muted: 0x565F89)
@@ -165,6 +167,8 @@ enum FrogStyle {
         case (.everforest, true): Palette(canvas: 0x2D353B, sidebar: 0x272E33, surface: 0x343F44, inset: 0x3D484D, border: 0x4F5B58, ink: 0xD3C6AA, muted: 0xA7B29C)
         case (.graphite, false): Palette(canvas: 0xFAFAFB, sidebar: 0xF0F1F3, surface: 0xFFFFFF, inset: 0xE9EBEF, border: 0xD9DCE2, ink: 0x242932, muted: 0x626B78)
         case (.graphite, true): Palette(canvas: 0x17191D, sidebar: 0x121418, surface: 0x202329, inset: 0x272B32, border: 0x393F49, ink: 0xE4E7EC, muted: 0xA1A9B5)
+        case (.minimal, false): Palette(canvas: 0xFFFFFF, sidebar: 0xF5F5F6, surface: 0xFFFFFF, inset: 0xF0F0F2, border: 0xE4E4E8, ink: 0x23252A, muted: 0x6B6F76)
+        case (.minimal, true): Palette(canvas: 0x0F1011, sidebar: 0x08090A, surface: 0x141516, inset: 0x1C1C1F, border: 0x2A2C32, ink: 0xF7F8F8, muted: 0x8A8F98)
         }
     }
     private static func themed(_ key: KeyPath<Palette, UInt32>) -> Color {

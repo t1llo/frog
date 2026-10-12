@@ -3,9 +3,10 @@ import Foundation
 public struct AppearancePreferences: Codable, Equatable, Sendable {
     public enum Mode: String, Codable, CaseIterable, Sendable { case system, light, dark }
     public enum Theme: String, Codable, CaseIterable, Sendable {
-        case frog, tokyoNight, catppuccin, nord, gruvbox, dracula, rosePine, solarized, everforest, graphite
+        case minimal, frog, tokyoNight, catppuccin, nord, gruvbox, dracula, rosePine, solarized, everforest, graphite
         public var title: String {
             switch self {
+            case .minimal: "Minimal"
             case .frog: "Frog"; case .tokyoNight: "Tokyo Night"; case .catppuccin: "Catppuccin"; case .nord: "Nord"
             case .gruvbox: "Gruvbox"; case .dracula: "Dracula"; case .rosePine: "Rosé Pine"
             case .solarized: "Solarized"; case .everforest: "Everforest"; case .graphite: "Graphite"
@@ -14,6 +15,8 @@ public struct AppearancePreferences: Codable, Equatable, Sendable {
     }
     public var mode: Mode?
     public var theme: Theme?
+    /// Minimal is the theme until one is chosen.
+    public var effectiveTheme: Theme { theme ?? .minimal }
     public var useThemeAccent: Bool?
     /// Six-digit RGB, without '#'.
     public var accentHex = "A3D8AF"

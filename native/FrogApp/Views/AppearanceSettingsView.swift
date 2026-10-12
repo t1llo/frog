@@ -80,7 +80,7 @@ struct AppearanceSettingsView: View {
         }
         Divider()
         CompactRow(title: "Theme") {
-            CompactMenu(value: (appearance.theme ?? .frog).title) {
+            CompactMenu(value: appearance.effectiveTheme.title) {
                 ForEach(AppearancePreferences.Theme.allCases, id: \.self) { theme in
                     Button(theme.title) {
                         var value = appearance; value.theme = theme; value.useThemeAccent = true

@@ -65,6 +65,18 @@ final class ScrollAppearanceTests: XCTestCase {
         settings.lightPalette = nil; settings.darkPalette = nil; FrogAppearance.shared.apply(settings)
         XCTAssertEqual(try hex(FrogStyle.opaqueCanvas, .darkAqua), "2E3440")
         XCTAssertEqual(try hex(FrogStyle.accent, .aqua), "466A83")
+        // Minimal is monochrome: its accent is a gray, and content on it flips with the mode.
+        settings.theme = .minimal; FrogAppearance.shared.apply(settings)
+        XCTAssertEqual(try hex(FrogStyle.opaqueCanvas, .aqua), "FFFFFF")
+        XCTAssertEqual(try hex(FrogStyle.opaqueCanvas, .darkAqua), "0F1011")
+        XCTAssertEqual(try hex(FrogStyle.accent, .aqua), "3C4149")
+        XCTAssertEqual(try hex(FrogStyle.accent, .darkAqua), "D0D6E0")
+        XCTAssertEqual(try hex(FrogStyle.onAccent, .aqua), "FFFFFF")
+        XCTAssertEqual(try hex(FrogStyle.onAccent, .darkAqua), "0F1011")
+        // It is also what a fresh install shows, before any theme is chosen.
+        FrogAppearance.shared.apply(AppearancePreferences())
+        XCTAssertEqual(try hex(FrogStyle.opaqueCanvas, .darkAqua), "0F1011")
+        XCTAssertEqual(try hex(FrogStyle.accent, .darkAqua), "D0D6E0")
     }
     func testScrollbarAppearanceDoesNotChangeAfterTheFirstFrame() async throws {
         _ = NSApplication.shared

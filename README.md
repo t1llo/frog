@@ -22,7 +22,7 @@ A Mac app that lives in your menu bar and replaces ten small Mac apps.
 | **Mr. Usage** | Claude/OpenAI limits, token charts and estimated costs; combined OpenCode + Codex activity. |
 | **Menu bar & Stay awake** | Hide/reveal icons, auto-hide, timed awake sessions and low-battery stop. |
 | **System monitor** | CPU/GPU charts, disk capacity and I/O, battery power and thermal status in an optional Frog menu view. |
-| **Personalization** | Ten themes including Tokyo Night, transparency, editable config files and optional local statistics. |
+| **Personalization** | Eleven themes including Tokyo Night, transparency, editable config files and optional local statistics. |
 
 Enable tools individually in **Features**. No Frog account. No telemetry.
 
