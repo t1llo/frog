@@ -47,7 +47,7 @@ The combined `swift test -c release --disable-keychain` run passed **480 tests**
 skipped and no failures. It was repeated unchanged after the work moved between
 agent sessions.
 
-Signed universal **1.0.15 / 20261010180351** was built from `c5db32f` and installed
+Signed universal **1.0.15 / 20261010180351** was built from `e14cfa4` and installed
 at `/Applications/Frog.app`. Its signature, existing signing team, hardened runtime,
 both architectures, executable hash and one running installed process were verified.
 Configuration bytes, semantic preferences and the downloaded-model inventory were
