@@ -8,6 +8,8 @@ A Mac app that lives in your menu bar and replaces ten small Mac apps.
 
 **[Website](https://frog.beffa.xyz/)** · **[Download](https://github.com/t1llo/frog/releases/latest)**
 
+![Frog: ten Mac apps, one menu bar. The Features page switches tools such as Writing, Dictation and Shortcuts on and off.](docs/media/frog-preview.jpg)
+
 [![Native Frog walkthrough: Features, Mr. Usage, snippets, notes, Tokyo Night and clipboard](docs/media/frog-readme-demo.gif)](docs/media/frog-toolkit.mp4)
 
 ## Tools
