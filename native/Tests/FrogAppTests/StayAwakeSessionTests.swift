@@ -141,6 +141,69 @@ final class StayAwakeSessionTests: XCTestCase {
         XCTAssertFalse(power.isConfiguringAccess)
     }
 
+    func testAFrogStartedBesideARunningOneLeavesItsSessionAlone() async throws {
+        // The process that launched this test run stands in for the other Frog: it runs, and
+        // it is not this process.
+        let other = getppid()
+        let started = try XCTUnwrap(StayAwakeController.processStart(other))
+        let system = SessionPowerFixture(enabled: true)
+        let folder = directory()
+        try leaveMarker(#"{"pid":\#(other),"started":\#(started)}"#, in: folder)
+        let power = StayAwakeController(system: system, directory: folder)
+        power.start(); await power.waitForOperation()
+        XCTAssertTrue(power.isEnabled, "The session of the other Frog goes on and shows as on outside this one")
+        XCTAssertFalse(power.ownsSession)
+        let canQuit = await power.prepareToQuit()
+        XCTAssertTrue(canQuit)
+        let writes = await system.writes
+        XCTAssertTrue(writes.isEmpty, "Neither starting nor quitting ends a session that a running Frog owns")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("stay-awake-session.json").path))
+    }
+
+    func testAMarkerWhoseOwnerIsNotProvenToRunIsStillCleanedUp() async throws {
+        let parent = getppid()
+        let parentStart = try XCTUnwrap(StayAwakeController.processStart(parent))
+        let ownStart = try XCTUnwrap(StayAwakeController.processStart(getpid()))
+        let leftovers = [
+            #"{"pid":\#(parent),"started":\#(parentStart + 1)}"#, // the process id was reused, for example after a restart
+            #"{"pid":\#(parent)}"#, // no start time that could prove it
+            #"{"pid":\#(Int32.max),"started":\#(parentStart)}"#, // no such process
+            #"{"pid":\#(getpid()),"started":\#(ownStart)}"#, // this process: nobody else looks after it
+            #"{"deadline":0}"# // written by an earlier version
+        ]
+        for marker in leftovers {
+            let system = SessionPowerFixture(enabled: true)
+            let folder = directory()
+            try leaveMarker(marker, in: folder)
+            let power = StayAwakeController(system: system, directory: folder)
+            power.start(); await power.waitForOperation()
+            XCTAssertFalse(power.isEnabled, marker)
+            XCTAssertFalse(power.ownsSession, marker)
+            let writes = await system.writes
+            XCTAssertEqual(writes, [false], marker)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("stay-awake-session.json").path), marker)
+            let canQuit = await power.prepareToQuit()
+            XCTAssertTrue(canQuit, marker)
+        }
+    }
+
+    func testTheMarkerNamesTheProcessThatOwnsTheSession() async throws {
+        let ownStart = try XCTUnwrap(StayAwakeController.processStart(getpid()))
+        XCTAssertEqual(StayAwakeController.processStart(getpid()), ownStart, "One process has one start time")
+        XCTAssertNil(StayAwakeController.processStart(Int32.max))
+        let folder = directory()
+        let power = StayAwakeController(system: SessionPowerFixture(), directory: folder)
+        await power.refresh()
+        power.setEnabled(true); await power.waitForOperation()
+        XCTAssertTrue(power.ownsSession)
+        let data = try Data(contentsOf: folder.appendingPathComponent("stay-awake-session.json"))
+        let marker = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual((marker["pid"] as? NSNumber)?.int32Value, getpid())
+        XCTAssertEqual((marker["started"] as? NSNumber)?.int64Value, ownStart)
+        let canQuit = await power.prepareToQuit()
+        XCTAssertTrue(canQuit)
+    }
+
     private func leaveMarker(_ contents: String, in folder: URL) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try Data(contents.utf8).write(to: folder.appendingPathComponent("stay-awake-session.json"))

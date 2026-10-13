@@ -48,7 +48,18 @@ final class StayAwakeController: ObservableObject {
     private var permissionError = false
     private var accessGuide: Task<Void, Never>?
     private let openGuide: (StayAwakeSetup.Mode) async throws -> StayAwakeSetup.Session
-    private struct Session: Codable { var deadline: Date? }
+    private struct Session: Codable {
+        var deadline: Date?
+        // The process that owns the session. Markers of earlier versions have neither.
+        var pid: Int32?
+        var started: Int64?
+        /// Only an owner that is proven to be another process still running keeps its
+        /// session. In every other case the marker is a leftover that must be cleaned up.
+        var ownerRunsElsewhere: Bool {
+            guard let pid, let started, pid != getpid() else { return false }
+            return StayAwakeController.processStart(pid) == started
+        }
+    }
 
     init(system: any StayAwakeSystem = NativeStayAwakeSystem(), directory: URL? = nil, now: @escaping () -> Date = Date.init,
          monitorInterval: Duration = .seconds(60),
@@ -152,10 +163,16 @@ final class StayAwakeController: ObservableObject {
             do {
                 if FileManager.default.fileExists(atPath: sessionFile.path) {
                     let previous = try JSONDecoder().decode(Session.self, from: Data(contentsOf: sessionFile))
-                    ownsSession = true; deadline = previous.deadline
-                    // A previous process did not finish cleanup. Never resume an
-                    // enabled session automatically after a crash or restart.
-                    _ = await change(false)
+                    if previous.ownerRunsElsewhere {
+                        // Another copy of Frog is running and owns this session, for example
+                        // an installed and a development build. Show it, do not end it.
+                        await refresh()
+                    } else {
+                        ownsSession = true; deadline = previous.deadline
+                        // A previous process did not finish cleanup. Never resume an
+                        // enabled session automatically after a crash or restart.
+                        _ = await change(false)
+                    }
                 } else { await refresh() }
             } catch { self.error = error.localizedDescription }
             await refreshAccess()
@@ -226,7 +243,7 @@ final class StayAwakeController: ObservableObject {
                 try FileManager.default.createDirectory(at: sessionFile.deletingLastPathComponent(), withIntermediateDirectories: true)
                 // Save intent first so a crash between the command and readback
                 // cannot leave an untracked system-wide setting behind.
-                try JSONEncoder().encode(Session(deadline: end)).write(to: sessionFile, options: .atomic)
+                try JSONEncoder().encode(Session(deadline: end, pid: getpid(), started: Self.processStart(getpid()))).write(to: sessionFile, options: .atomic)
                 ownsSession = true; deadline = end
             }
             try await system.setSleepDisabled(enabled)
@@ -249,6 +266,19 @@ final class StayAwakeController: ObservableObject {
             } else { hasReadState = false }
             return false
         }
+    }
+
+    /// When the kernel started a process, in microseconds since 1970, or nil when no such
+    /// process runs. A process id alone is reused, also across restarts of the Mac; together
+    /// with this time it names one run of one process.
+    nonisolated static func processStart(_ pid: pid_t) -> Int64? {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var name = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        guard sysctl(&name, UInt32(name.count), &info, &size, nil, 0) == 0, size > 0,
+              info.kp_proc.p_pid == pid, Int32(info.kp_proc.p_stat) != SZOMB else { return nil }
+        let time = info.kp_proc.p_un.__p_starttime
+        return Int64(time.tv_sec) * 1_000_000 + Int64(time.tv_usec)
     }
 
     private func clearSession() throws {
