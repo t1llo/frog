@@ -48,11 +48,11 @@ enum ApplicationCatalog {
                 rule.action = action; rules.append(rule)
             }
         }
-        // Finder lives outside the normal Applications directories.
-        if roots.contains(where: { $0.path == "/System/Applications" }),
-           manager.fileExists(atPath: "/System/Library/CoreServices/Finder.app") {
+        // Finder lives outside the normal Applications directories. A link to it inside one has listed it already.
+        let finder = "/System/Library/CoreServices/Finder.app"
+        if roots.contains(where: { $0.path == "/System/Applications" }), manager.fileExists(atPath: finder), seen.insert(finder).inserted {
             var rule = Rule(name: "Finder", instructions: "", enabled: false)
-            var action = RuleAction(); action.category = .application; action.applicationPath = "/System/Library/CoreServices/Finder.app"
+            var action = RuleAction(); action.category = .application; action.applicationPath = finder
             action.applicationBundleID = "com.apple.finder"
             rule.action = action; rules.append(rule)
         }
@@ -80,28 +80,30 @@ final class ApplicationCatalogStore: ObservableObject {
     /// By application path, as the last scan found them.
     private(set) var alternativeNames: [String: [String]] = [:]
     private let discover: @Sendable () async -> ApplicationCatalog.Discovery
+    private let rescanAfter: Duration
     private var loading: Task<[Rule], Never>?
     private var scannedAt: ContinuousClock.Instant?
     private var cachedConfiguration: [Rule]?
     private var cachedRows: [Rule] = []
 
-    init(discover: @escaping @Sendable () async -> ApplicationCatalog.Discovery = {
+    init(rescanAfter: Duration = .seconds(60), discover: @escaping @Sendable () async -> ApplicationCatalog.Discovery = {
         await Task.detached(priority: .utility) { ApplicationCatalog.scan() }.value
-    }) { self.discover = discover }
+    }) { self.rescanAfter = rescanAfter; self.discover = discover }
 
     func loadIfNeeded() async { await load() }
     /// The installed applications, scanned again when the last scan is older than a minute. Callers that arrive
     /// during a scan share it. The scan stores what it found before any of them goes on, so none reads the list
     /// of the scan before.
     @discardableResult func load() async -> [Rule] {
-        if let scannedAt, scannedAt.duration(to: .now) < .seconds(60) { return installed }
+        if let scannedAt, scannedAt.duration(to: .now) < rescanAfter { return installed }
         if let loading { return await loading.value }
         let discover = self.discover
         let task = Task {
             let discovered = await discover()
-            let previousIDs = Dictionary(uniqueKeysWithValues: installed.compactMap { rule in
+            // A path listed twice must not stop Frog: `uniqueKeysWithValues` traps on it.
+            let previousIDs = Dictionary(installed.compactMap { rule in
                 rule.action?.applicationPath.map { ($0, rule.id) }
-            })
+            }, uniquingKeysWith: { first, _ in first })
             let refreshed = discovered.rules.map { rule in
                 var rule = rule
                 if let path = rule.action?.applicationPath, let id = previousIDs[path] { rule.id = id }

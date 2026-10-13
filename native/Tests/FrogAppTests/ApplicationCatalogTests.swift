@@ -51,6 +51,33 @@ final class ApplicationCatalogTests: XCTestCase {
         let scans = await gate.calls
         XCTAssertEqual(scans, 1)
     }
+    func testFinderLinkedIntoAnApplicationsFolderIsListedOnce() throws {
+        let finder = "/System/Library/CoreServices/Finder.app"
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("Finder.app"), withDestinationURL: URL(fileURLWithPath: finder))
+        // Finder is added by its own path when the system folder is scanned, and the link resolves to that path.
+        let found = ApplicationCatalog.scan(roots: [root, URL(fileURLWithPath: "/System/Applications", isDirectory: true)]).rules
+        XCTAssertEqual(found.filter { $0.action?.applicationPath == finder }.map(\.name), ["Finder"])
+        XCTAssertEqual(Set(found.compactMap { $0.action?.applicationPath }).count, found.count)
+    }
+    @MainActor
+    func testARescanKeepsIdentifiersAndSurvivesAnApplicationFoundTwice() async {
+        // Every scan builds its rules anew. The same path twice is what a scan with a linked Finder used to return.
+        let store = ApplicationCatalogStore(rescanAfter: .zero, discover: {
+            ApplicationCatalog.Discovery(rules: [("Alpha", "/Applications/Alpha.app"), ("Finder", "/fixture/Finder.app"), ("Finder", "/fixture/Finder.app")].map { name, path in
+                var rule = Rule(name: name, instructions: "", enabled: false)
+                rule.action = RuleAction(category: .application); rule.action?.applicationPath = path
+                return rule
+            })
+        })
+        let first = await store.load()
+        let second = await store.load()
+        XCTAssertEqual(first.map(\.name), ["Alpha", "Finder", "Finder"])
+        XCTAssertEqual(second.first?.id, first.first?.id)
+        XCTAssertEqual(second.map(\.name), first.map(\.name))
+    }
     func testAssignedShortcutsComeFirstEvenWhenDisabled() {
         func app(_ name: String, assigned: Bool = false) -> Rule {
             var rule = Rule(name: name, instructions: "", enabled: false)
