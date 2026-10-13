@@ -56,7 +56,7 @@ Keys are case-sensitive. Booleans are `true`/`false`; numbers use a decimal poin
 | `recording-mode` | `toggle` or `hold`; default `toggle` |
 | `recording-output` | `copy` or `paste`; default `copy` |
 | `recording-popup` | Boolean; default `true` |
-| `recording-mute-audio` | Boolean; default `false` |
+| `recording-mute-audio` | Boolean; default `false`. An output that cannot be muted does not stop the recording; Frog says so once |
 | `microphone` | Optional macOS device ID; omit for system default |
 
 Recording values are defaults/legacy compatibility; each audio rule can explicitly select its own behavior. History is local and off by default. Lowering retention limits may prune existing history. Hiding history masks previews, not stored text. Login startup, permissions and model-storage paths remain machine-local.

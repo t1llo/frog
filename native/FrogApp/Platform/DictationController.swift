@@ -39,7 +39,8 @@ final class DictationController: ObservableObject {
     private let inputDevices: () -> [AudioDevice]
     private var lastInputElapsed = 0
     private var lastInputRevision: UInt64 = 0
-    private let outputMute = RecordingMute()
+    private let outputMute: any OutputMuting
+    private var muteFailureReported = false
     private var work: Task<Void, Never>?
     private var preview: Task<Void, Never>?
     private var previewInference: Task<Void, Error>?
@@ -90,9 +91,10 @@ final class DictationController: ObservableObject {
          monitorKeys: Bool = true, previewInterval: Duration = .seconds(2),
           inputDevices: @escaping @MainActor () -> [AudioDevice] = { DictationController.devices },
           paste: @escaping @MainActor () async throws -> Void = { try await DictationTarget.pasteIntoFocusedField() },
-          now: @escaping @MainActor () -> ContinuousClock.Instant = { .now }, presentsPopup: Bool = true) {
+          now: @escaping @MainActor () -> ContinuousClock.Instant = { .now }, presentsPopup: Bool = true,
+          outputMute: any OutputMuting = RecordingMute()) {
         self.makeRecorder = makeRecorder; self.authorize = authorize; self.copy = copy; self.monitorKeys = monitorKeys
-        self.presentsPopup = presentsPopup
+        self.presentsPopup = presentsPopup; self.outputMute = outputMute
         self.previewInterval = previewInterval
         self.inputDevices = inputDevices
         self.paste = paste; self.now = now
@@ -161,7 +163,17 @@ final class DictationController: ObservableObject {
                 try Task.checkCancellation()
                 guard self.token == token else { return }
                 self.preparationMessage = "Starting microphone…"
-                if preferences.muteWhileRecording == true { try self.outputMute.begin() }
+                if preferences.muteWhileRecording == true {
+                    do { try self.outputMute.begin(); self.muteFailureReported = false }
+                    catch {
+                        // Sound that keeps playing is no reason to refuse the recording. Say why once,
+                        // not before every recording on an output that has no mute control.
+                        if !self.muteFailureReported {
+                            self.muteFailureReported = true
+                            self.onError?(FrogError.message("Recording without muting the Mac. " + error.localizedDescription))
+                        }
+                    }
+                }
                 do { try self.beginRecording(microphoneID: self.preferences.microphoneID) }
                 catch {
                     guard self.preferences.microphoneID != nil else { throw error }

@@ -2,8 +2,14 @@ import CoreAudio
 import Foundation
 import FrogCore
 
+/// What a recording asks of the Mac's sound output. Tests stand in for the real device.
+protocol OutputMuting: AnyObject {
+    func begin() throws
+    func restore()
+}
+
 /// Restores only the output device that this recording actually muted.
-final class RecordingMute {
+final class RecordingMute: OutputMuting {
     private var device: AudioObjectID?
     func begin() throws {
         var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
