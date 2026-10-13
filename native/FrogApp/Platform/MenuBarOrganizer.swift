@@ -285,7 +285,6 @@ struct OrganizerMenuState: Equatable {
         if let problem = arrangementIssue(env) {
             guard now() >= layoutSettlesAt else { return }
             isExpanded = true
-            if settings.permanentlyHiddenSection { isEditingArrangement = true }
             issue = problem
             pendingInitialCollapse = false
             applyLengths(env, allowPermanentCollapse: false)
@@ -348,7 +347,7 @@ struct OrganizerMenuState: Equatable {
         if settings.permanentlyHiddenSection {
             guard let permanent = items.frame(of: .permanentDivider), permanent.width > 0,
                   permanent.maxX <= divider.minX + 1, abs(permanent.midY - divider.midY) < 4 else {
-                return "Command-drag the double divider to the LEFT of the single divider, then finish arranging."
+                return "Command-drag the double divider to the LEFT of the single divider. Frog keeps everything revealed until it is there."
             }
         }
         return nil

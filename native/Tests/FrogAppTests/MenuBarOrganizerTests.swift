@@ -270,6 +270,41 @@ import FrogCore
         fixture.organizer.stop()
     }
 
+    func testArrangementProblemShowsTheAlwaysHiddenSectionOnlyWhileItLasts() {
+        let fixture = OrganizerFixture()
+        var settings = MenuBarPreferences(); settings.permanentlyHiddenSection = true; settings.autoHideSeconds = 5
+        fixture.organizer.configure(enabled: true, settings: settings)
+        fixture.organizer.tick()
+        XCTAssertGreaterThan(fixture.items.lengths[.permanentDivider]!, 1000)
+        fixture.items.reversed = true
+        fixture.time = 2; fixture.organizer.tick()
+        XCTAssertNotNil(fixture.organizer.issue)
+        XCTAssertEqual(fixture.items.lengths[.permanentDivider], 18, "Everything is shown while the arrow is unsafe")
+        XCTAssertFalse(fixture.organizer.isEditingArrangement, "Nobody asked to arrange")
+        fixture.items.reversed = false
+        fixture.time = 3; fixture.organizer.tick()
+        XCTAssertNil(fixture.organizer.issue)
+        XCTAssertFalse(fixture.organizer.isEditingArrangement)
+        XCTAssertGreaterThan(fixture.items.lengths[.permanentDivider]!, 1000, "The always-hidden section hides again once the order is right")
+        XCTAssertTrue(fixture.organizer.isExpanded)
+        fixture.time = 6.9; fixture.organizer.tick()
+        XCTAssertTrue(fixture.organizer.isExpanded)
+        fixture.time = 7; fixture.organizer.tick()
+        XCTAssertFalse(fixture.organizer.isExpanded, "Auto-hide counts from the last moment the problem was seen")
+        XCTAssertEqual(fixture.items.lengths[.divider], 2880)
+
+        // Arranging that was asked for is not ended by a problem that comes and goes.
+        fixture.organizer.setEditingArrangement(true)
+        fixture.items.reversed = true
+        fixture.time = 10; fixture.organizer.tick()
+        fixture.items.reversed = false
+        fixture.time = 11; fixture.organizer.tick()
+        XCTAssertNil(fixture.organizer.issue)
+        XCTAssertTrue(fixture.organizer.isEditingArrangement)
+        XCTAssertEqual(fixture.items.lengths[.permanentDivider], 18)
+        fixture.organizer.stop()
+    }
+
     func testPermanentSectionStaysHiddenDuringOrdinaryRevealAndEditingOpensBoth() {
         let fixture = OrganizerFixture()
         var settings = MenuBarPreferences(); settings.permanentlyHiddenSection = true
