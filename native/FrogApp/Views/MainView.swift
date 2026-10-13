@@ -4,7 +4,6 @@ import FrogCore
 
 struct MainView: View {
     @EnvironmentObject private var model: AppModel
-    @Environment(\.scenePhase) private var scenePhase
     private var section: ToolkitRoute { model.toolkit.route }
     @State private var permissionsRequest = ScrollRequest()
 
@@ -90,7 +89,6 @@ struct MainView: View {
         .sheet(isPresented: Binding(get: { model.setupPresented }, set: { if !$0 { model.finishSetup() } })) {
             SetupView().environmentObject(model).interactiveDismissDisabled()
         }
-        .onChange(of: scenePhase) { _, phase in if phase == .active { model.refreshSystemStatus() } }
     }
 
     private var sidebar: some View {
@@ -175,14 +173,6 @@ enum ViewActions {
 private extension View {
     @ViewBuilder func optionalNavigationShortcut(_ key: KeyEquivalent?) -> some View {
         if let key { keyboardShortcut(key, modifiers: .command) } else { self }
-    }
-}
-
-struct EditorHeading: View {
-    let title: String
-    let subtitle: String
-    var body: some View {
-        PageHeader(title: title, subtitle: subtitle).padding(24)
     }
 }
 
