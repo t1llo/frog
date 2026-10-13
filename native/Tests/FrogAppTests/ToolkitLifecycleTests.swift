@@ -27,6 +27,7 @@ import FrogUsage
         window.close()
         try await Task.sleep(for: .milliseconds(30))
         XCTAssertTrue(usage.active, "The status item keeps collecting when the dashboard closes")
+        XCTAssertFalse(usage.isVisiblePolling, "A closed window no longer asks for the ten-second refresh")
         XCTAssertTrue(statusItem.isInstalled)
         XCTAssertTrue(window.contentView === host)
         prefs.setFeature(.usage, enabled: false); toolkit.apply(prefs)

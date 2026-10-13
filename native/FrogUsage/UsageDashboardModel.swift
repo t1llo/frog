@@ -127,6 +127,9 @@ public struct UsagePlanPeriod: Identifiable {
     }
 }
 
+/// The places that show usage on screen.
+public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
+
 /// Optional usage module: construction never scans files or reads credentials.
 /// Disabling cancels owned polling and rejects results from previous generations.
 @MainActor public final class UsageDashboardModel: ObservableObject {
@@ -155,8 +158,10 @@ public struct UsagePlanPeriod: Identifiable {
     }
     public var planHistory: [UsagePlanPeriod] { (tokens.planHistory?.periods ?? []).map(UsagePlanPeriod.init) }
     public var planHistoryUpdatedAt: Date? { tokens.planHistory?.asOf }
-    private var visibleViews = 0
-    private var visibleTimer: Timer?
+    private var presenters: Set<UsagePresenter> = []
+    private(set) var visibleTimer: Timer?
+    /// Whether something on screen currently keeps the ten-second refresh going.
+    public var isVisiblePolling: Bool { visibleTimer != nil }
 
     public init(defaults: UserDefaults? = nil, fixtureRoot: URL? = nil) {
         let defaults = defaults ?? UsagePreferences.defaults
@@ -187,13 +192,17 @@ public struct UsagePlanPeriod: Identifiable {
     }
     public func refresh() { guard active else { return }; if fixtureRoot == nil { claude.tick() }; tokens.refresh(forceLocal: true) }
     /// Visible graphs update promptly; cloud polling retains its independent cooldowns.
-    public func setPresented(_ presented: Bool) {
-        visibleViews = max(0, visibleViews + (presented ? 1 : -1))
-        updateVisiblePolling()
+    /// A presenter may repeat itself: a window that keeps its page after closing reports
+    /// "hidden" on every change of its state, also in the middle of a view update.
+    public func setPresented(_ presented: Bool, for presenter: UsagePresenter) {
+        guard presented != presenters.contains(presenter) else { return }
+        if presented { presenters.insert(presenter) } else { presenters.remove(presenter) }
+        // One leaving while another still shows changes nothing for the one that stays.
+        if presented || presenters.isEmpty { updateVisiblePolling() }
     }
     private func updateVisiblePolling() {
         visibleTimer?.invalidate(); visibleTimer = nil
-        guard active, visibleViews > 0 else { return }
+        guard active, !presenters.isEmpty else { return }
         refresh()
         visibleTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }

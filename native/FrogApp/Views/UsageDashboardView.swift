@@ -26,8 +26,9 @@ struct UsageDashboardView: View {
                  .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
                  .help("Token activity comes from local tool logs; all-device data includes account estimates. Plan limits come from the labeled account or log source. Collection continues while Mr. Usage is enabled.")
         }
-        .onAppear { usage.setPresented(true) }
-        .onDisappear { usage.setPresented(false) }
+        // The main window keeps this page after it is closed or minimised, so appearing and
+        // disappearing do not say whether anyone can see it.
+        .background(FeatureVisibility { usage.setPresented($0, for: .dashboard) })
     }
     private func chooseClaudeProfile() {
         let panel = NSOpenPanel()
@@ -91,8 +92,8 @@ struct UsageStatusPopover: View {
         .padding(5).frame(width: Self.width).fixedSize(horizontal: false, vertical: true)
         .font(.system(size: 12)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
         .frogPanel()
-        .onAppear { usage.setPresented(true) }
-        .onDisappear { usage.setPresented(false) }
+        .onAppear { usage.setPresented(true, for: .popup) }
+        .onDisappear { usage.setPresented(false, for: .popup) }
     }
     /// "just now", "12m ago", "10h ago", "3d ago".
     static func age(of date: Date, at now: Date) -> String {

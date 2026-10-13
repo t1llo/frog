@@ -138,7 +138,8 @@ Implemented:
   canonical duplicates are removed. The folder is not exported in preferences.
 - **Refresh:** explicit refresh immediately rescans local counters, coalescing a
   request made during an existing scan. Visible dashboards/popups refresh local
-  counters every ten seconds; hidden collection keeps its one-minute cadence.
+  counters every ten seconds; hidden collection keeps its one-minute cadence. A
+  dashboard whose window is closed, minimised or fully covered counts as hidden.
   Anthropic/OpenAI remote request gates and credential ownership are unchanged.
 - **OpenCode reliability:** unchanged database/WAL metadata reuse parsed counters.
   Changes reread the bounded horizon, preserving mutable-row/revert/fork semantics.

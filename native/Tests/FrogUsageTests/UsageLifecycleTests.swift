@@ -64,6 +64,37 @@ import XCTest
         XCTAssertEqual(UsageDashboardModel(defaults: defaults, fixtureRoot: root).preferences, selected)
         XCTAssertEqual(try JSONDecoder().decode(UsageDashboardPreferences.self, from: JSONEncoder().encode(selected)), selected)
     }
+    func testVisibleRefreshFollowsWhoIsShowingNotHowOftenTheySaidSo() {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "frog-usage-presented-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = UsageDashboardModel(defaults: defaults, fixtureRoot: root)
+        model.setAvailable(true)
+        defer { model.setAvailable(false) }
+        XCTAssertFalse(model.isVisiblePolling)
+        // A window that keeps its page after closing reports "hidden" whenever its state changes,
+        // also before it was ever shown and while the menu-bar popup is open.
+        model.setPresented(false, for: .dashboard)
+        model.setPresented(true, for: .popup)
+        XCTAssertTrue(model.isVisiblePolling)
+        let timer = model.visibleTimer
+        model.setPresented(false, for: .dashboard)
+        XCTAssertTrue(model.isVisiblePolling, "The open popup keeps refreshing when the dashboard's window reports hidden")
+        model.setPresented(true, for: .popup)
+        XCTAssertTrue(model.visibleTimer === timer, "A report that changes nothing must not restart the refresh")
+        model.setPresented(true, for: .dashboard)
+        let shared = model.visibleTimer
+        model.setPresented(true, for: .dashboard)
+        model.setPresented(false, for: .popup)
+        XCTAssertTrue(model.isVisiblePolling, "The dashboard is still showing")
+        XCTAssertTrue(model.visibleTimer === shared, "One of two leaving changes nothing for the other")
+        model.setPresented(false, for: .dashboard)
+        XCTAssertFalse(model.isVisiblePolling, "One hidden report ends what repeated shown reports started")
+        model.setPresented(true, for: .dashboard)
+        model.setAvailable(false)
+        XCTAssertFalse(model.isVisiblePolling, "Nothing refreshes while Mr. Usage is off")
+    }
 }
 
 private final class AuthReads: @unchecked Sendable {
