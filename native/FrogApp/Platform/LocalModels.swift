@@ -12,6 +12,8 @@ import Hub
 /// Download ownership, installed paths and model residency stay behind one service.
 @MainActor
 final class LocalModels: ObservableObject {
+    /// The fraction counts the files being fetched. A downloader that reports 1 and
+    /// keeps working is preparing the model, which has no fraction (`preparing`).
     typealias Downloader = @Sendable (LocalModelDescriptor, URL, @escaping @Sendable (Double) -> Void) async throws -> URL
     static var supported: Bool {
         #if arch(arm64)
@@ -27,6 +29,8 @@ final class LocalModels: ObservableObject {
     var onInstall: ((LocalModelDescriptor) -> Void)?
     var onInventoryChanged: (() -> Void)?
     @Published private(set) var progress: [String: Double] = [:]
+    /// Downloads whose files are in and whose model is being made ready for use.
+    @Published private(set) var preparing = Set<String>()
     @Published private(set) var errors: [String: String] = [:]
     @Published private(set) var loaded = Set<String>()
     @Published private(set) var busy = false
@@ -119,7 +123,7 @@ final class LocalModels: ObservableObject {
         errors[model.id] = nil; progress[model.id] = 0
         downloads[model.id] = Task { [weak self] in
             guard let self else { return }
-            defer { self.downloads[model.id] = nil; self.progress[model.id] = nil; self.discarding.remove(model.id) }
+            defer { self.downloads[model.id] = nil; self.progress[model.id] = nil; self.preparing.remove(model.id); self.discarding.remove(model.id) }
             var marked = resuming
             do {
                 try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
@@ -129,6 +133,7 @@ final class LocalModels: ObservableObject {
                     Task { @MainActor [weak self] in
                         guard let self, self.downloads[model.id] != nil else { return }
                         self.progress[model.id] = fraction
+                        if fraction >= 1 { self.preparing.insert(model.id) }
                     }
                 }
                 try Task.checkCancellation()
@@ -356,12 +361,14 @@ actor LocalInference: LocalInferenceEngine {
         #if arch(arm64)
         if model.backend == .parakeet { return try await ParakeetRuntime.download(model, base: base, progress: progress) }
         if model.backend == .whisperKit {
-            let url = try await WhisperKit.download(variant: model.variant!, downloadBase: base, from: model.repository) { progress($0.fractionCompleted * 0.9) }
+            let url = try await WhisperKit.download(variant: model.variant!, downloadBase: base, from: model.repository) { progress($0.fractionCompleted) }
             try Task.checkCancellation()
             // Download/tokenize during explicit installation, not the first recording.
+            // Loading the model once takes a while and reports nothing: say so
+            // instead of leaving a bar that stands still.
+            progress(1)
             let kit = try await WhisperKit(WhisperKitConfig(modelFolder: url.path, tokenizerFolder: base, computeOptions: whisperCompute, verbose: false, logLevel: .none, prewarm: false, load: true, download: false))
             await kit.unloadModels()
-            progress(1)
             return url
         }
         // A kept folder must never pass for complete while the Mac is offline:

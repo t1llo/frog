@@ -41,7 +41,7 @@ struct ModelInventory: View {
                             Spacer()
                             IconAction(title: "Model information", symbol: "info.circle") { information = item }
                             if let progress = model.localModels.progress[item.id] {
-                                ProgressView(value: progress).frame(width: 70)
+                                ModelDownloadProgress(fraction: progress, preparing: model.localModels.preparing.contains(item.id), width: 70)
                                 Button("Cancel") { model.localModels.cancelDownload(item.id) }.controlSize(.small)
                             } else if installed {
                                 Menu {
@@ -66,6 +66,20 @@ struct ModelInventory: View {
                 }
                 if items.isEmpty { Text(L10n.text(installed ? "No downloaded models" : "No additional models")).font(.system(size: 11)).foregroundStyle(.secondary).padding(14).frame(maxWidth: .infinity, alignment: .leading) }
             }
+        }
+    }
+}
+
+/// A download's bar; once the files are in, the wait while the model is made ready.
+struct ModelDownloadProgress: View {
+    let fraction: Double
+    let preparing: Bool
+    let width: CGFloat
+    var body: some View {
+        if preparing {
+            HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Preparing…").font(.system(size: 11)).foregroundStyle(FrogStyle.muted) }
+        } else {
+            ProgressView(value: fraction).frame(width: width)
         }
     }
 }

@@ -213,6 +213,34 @@ final class LocalModelsTests: XCTestCase {
         XCTAssertEqual(unloads, 1, "With nothing resident there is nothing to release")
     }
 
+    func testDownloadWhoseFilesAreInSaysThatTheModelIsBeingPrepared() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let gate = DownloadGate()
+        // Like a Whisper installation: the files arrive, then the model is loaded
+        // once, which takes a while and has no fraction to report.
+        let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: { model, base, progress in
+            progress(0.5)
+            await gate.wait()
+            let folder = try await Self.fixtureDownload(model, base, progress)
+            await gate.wait()
+            return folder
+        })
+        let descriptor = LocalModelDescriptor.find("whisper-base")!
+        models.download(descriptor); await gate.waitUntilStarted()
+        for _ in 0..<1000 where models.progress[descriptor.id] != 0.5 { await Task.yield() }
+        XCTAssertEqual(models.progress[descriptor.id], 0.5)
+        XCTAssertTrue(models.preparing.isEmpty, "Files are still arriving")
+
+        await gate.resume(); await gate.waitUntilStarted()
+        for _ in 0..<1000 where models.progress[descriptor.id] != 1 { await Task.yield() }
+        XCTAssertEqual(models.preparing, [descriptor.id], "A full bar that keeps standing still says nothing about what Frog is doing")
+
+        await gate.resume(); await models.waitForDownload(descriptor.id)
+        XCTAssertTrue(models.preparing.isEmpty)
+        XCTAssertTrue(models.installed.contains(descriptor.id))
+    }
+
     func testCancelledDownloadRemovesPartialFilesAndCannotInstallLateResult() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
