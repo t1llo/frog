@@ -46,7 +46,7 @@ Discovery sends a model-list request, not your writing or recordings. Frog does 
 
 ## Internal models
 
-Built-in inference requires Apple silicon. Download speech or text models from the catalog, or [add a compatible Hugging Face source](local-model-sources.md). Models load on demand and unload after the idle delay in Settings.
+Built-in inference requires Apple silicon. Download speech or text models from the catalog, or [add a compatible Hugging Face source](local-model-sources.md). Models load on demand and unload after the idle delay in Settings. A longer delay, up to 60 minutes, spares the next dictation the wait for its model and keeps the memory in use meanwhile.
 
 Audio rules own speech language, Toggle/Hold recording, Copy/Copy and paste output, recording-popup visibility and optional transcript cleanup. Cleanup uses a separately selected text model and adds processing time. The built-in Dictate shortcut is **Option–Space**; shortcuts remain editable.
 

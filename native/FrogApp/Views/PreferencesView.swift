@@ -10,6 +10,8 @@ struct PreferencesView: View {
     @State private var confirmingImport = false
     @State private var legalDocument: LegalDocument?
     private var prefs: WorkflowPreferences { model.configuration.preferences.workflowSettings }
+    /// Seconds a local model stays loaded after its last use, besides unloading at once.
+    static let idleUnloadChoices = [120, 300, 900, 1800, 3600]
     var body: some View {
         ScrollViewReader { proxy in
         ScrollView {
@@ -49,8 +51,8 @@ struct PreferencesView: View {
                     CompactRow(title: "Unload idle models", detail: "Applies to models running inside Frog.") {
                         CompactMenu(value: LocalModelSettings.idleTitle(seconds: prefs.idleUnloadSeconds)) {
                             Button("Immediately") { update { $0.idleUnloadSeconds = 0 } }.accessibilityAddTraits(prefs.idleUnloadSeconds == 0 ? .isSelected : [])
-                            ForEach([120, 300, 900], id: \.self) { seconds in
-                                Button("\(seconds / 60) min") { update { $0.idleUnloadSeconds = seconds } }.accessibilityAddTraits(prefs.idleUnloadSeconds == seconds ? .isSelected : [])
+                            ForEach(Self.idleUnloadChoices, id: \.self) { seconds in
+                                Button(LocalModelSettings.idleTitle(seconds: seconds)) { update { $0.idleUnloadSeconds = seconds } }.accessibilityAddTraits(prefs.idleUnloadSeconds == seconds ? .isSelected : [])
                             }
                         }
                     }
