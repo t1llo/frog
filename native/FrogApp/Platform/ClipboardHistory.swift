@@ -74,7 +74,9 @@ actor ClipboardHistoryReader {
         var retry = false
         if count != previousCount, !state.suppressed, !gate.ignores(name: name, count: count) {
             let items = pasteboard.pasteboardItems ?? []
-            if items.count == 1, let item = items.first {
+            // A copied file carries its name as text, and the name is not what was copied.
+            // File names declared the old way reach the item as a file URL as well.
+            if items.count == 1, let item = items.first, !item.types.contains(.fileURL) {
                 let sensitive = ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType"]
                     .contains { item.types.contains(NSPasteboard.PasteboardType($0)) }
                 if let text = item.string(forType: .string) {
