@@ -257,7 +257,7 @@ final class InterruptedDictationTests: XCTestCase {
 private final class InterruptedRecorder: DictationRecording {
     private var receive: (@Sendable ([Float]) -> Void)?
     private(set) var stopped = false
-    func start(device: UInt32?, samples: @escaping @Sendable ([Float]) -> Void) throws {
+    func start(deviceUID: String?, samples: @escaping @Sendable ([Float]) -> Void) throws {
         receive = samples; samples(Array(repeating: 0.1, count: 1600))
     }
     func stop() { stopped = true; receive = nil }

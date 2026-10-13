@@ -1,10 +1,25 @@
 import AVFoundation
-import CoreAudio
 import FrogCore
+
+/// An input the person can choose. `uid` is the device's persistent CoreAudio UID, which
+/// `AVCaptureDevice` calls `uniqueID`. Unlike the numeric device ID that earlier versions saved,
+/// it still names the same device after a reconnection or a restart.
+struct MicrophoneDevice: Identifiable, Hashable, Sendable {
+    let uid: String
+    let name: String
+    var id: String { uid }
+
+    static var connected: [MicrophoneDevice] {
+        AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external], mediaType: .audio, position: .unspecified)
+            .devices.map { MicrophoneDevice(uid: $0.uniqueID, name: $0.localizedName) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+}
 
 @MainActor
 protocol DictationRecording: AnyObject {
-    func start(device: UInt32?, samples: @escaping @Sendable ([Float]) -> Void) throws
+    /// `deviceUID` is a `MicrophoneDevice.uid`; nil opens the macOS default input.
+    func start(deviceUID: String?, samples: @escaping @Sendable ([Float]) -> Void) throws
     func stop()
     func finish() async
 }
@@ -19,16 +34,11 @@ final class MicrophoneRecording: DictationRecording {
     private static let queue = DispatchQueue(label: "frog.microphone.capture", qos: .userInitiated)
     private var capture: MicrophoneCapture?
 
-    func start(device: UInt32?, samples: @escaping @Sendable ([Float]) -> Void) throws {
+    func start(deviceUID: String?, samples: @escaping @Sendable ([Float]) -> Void) throws {
         stop()
         let input: AVCaptureDevice?
-        if let device {
-            var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceUID, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-            var uid: CFString?
-            var size = UInt32(MemoryLayout<CFString?>.size)
-            let status = withUnsafeMutablePointer(to: &uid) { AudioObjectGetPropertyData(device, &address, 0, nil, &size, $0) }
-            input = status == noErr ? uid.flatMap { AVCaptureDevice(uniqueID: $0 as String) } : nil
-        } else { input = AVCaptureDevice.default(for: .audio) }
+        if let deviceUID { input = AVCaptureDevice(uniqueID: deviceUID) }
+        else { input = AVCaptureDevice.default(for: .audio) }
         guard let input else { throw FrogError.message("The selected microphone is unavailable. Choose another microphone.") }
         let capture = try MicrophoneCapture(device: input, queue: Self.queue, receive: samples)
         self.capture = capture

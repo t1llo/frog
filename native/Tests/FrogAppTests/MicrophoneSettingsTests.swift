@@ -9,7 +9,7 @@ final class MicrophoneSettingsTests: XCTestCase {
     /// Each read of the microphones asks Core Audio about every device. The Settings page draws
     /// again for every change of the app, once a second while dictating.
     func testTheMicrophonesAreReadWhenTheRowAppearsAndNotWhenItDrawsAgain() async throws {
-        let audio = Audio(devices: [AudioDevice(id: 42, name: "Desk microphone")])
+        let audio = Audio(devices: [MicrophoneDevice(uid: "42", name: "Desk microphone")])
         let dictation = audio.controller()
         let page = Page()
         let (host, window) = place(Screen(page: page, dictation: dictation, changes: audio.changes))
@@ -25,12 +25,12 @@ final class MicrophoneSettingsTests: XCTestCase {
     }
 
     func testAConnectedMicrophoneAppearsWithoutLeavingThePage() async throws {
-        let audio = Audio(devices: [AudioDevice(id: 42, name: "Desk microphone")])
+        let audio = Audio(devices: [MicrophoneDevice(uid: "42", name: "Desk microphone")])
         let dictation = audio.controller()
         let (_, window) = place(Screen(page: Page(), dictation: dictation, changes: audio.changes))
         defer { window.close() }
         await settle()
-        audio.devices.append(AudioDevice(id: 43, name: "Headset"))
+        audio.devices.append(MicrophoneDevice(uid: "43", name: "Headset"))
         audio.continuation.yield()
         for _ in 0..<200 where dictation.microphones.count < 2 { await settle() }
         XCTAssertEqual(dictation.microphones.map(\.name), ["Desk microphone", "Headset"])
@@ -63,11 +63,11 @@ final class MicrophoneSettingsTests: XCTestCase {
 
     @MainActor
     private final class Audio {
-        var devices: [AudioDevice]
+        var devices: [MicrophoneDevice]
         var reads = 0
         let changes: AsyncStream<Void>
         let continuation: AsyncStream<Void>.Continuation
-        init(devices: [AudioDevice]) {
+        init(devices: [MicrophoneDevice]) {
             self.devices = devices
             (changes, continuation) = AsyncStream<Void>.makeStream()
         }

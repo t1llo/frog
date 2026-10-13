@@ -285,7 +285,7 @@ final class DictationControllerTests: XCTestCase {
 
 @MainActor
 private final class FixtureRecording: DictationRecording {
-    func start(device: UInt32?, samples: @escaping @Sendable ([Float]) -> Void) throws { samples(Array(repeating: 0.1, count: 8000)) }
+    func start(deviceUID: String?, samples: @escaping @Sendable ([Float]) -> Void) throws { samples(Array(repeating: 0.1, count: 8000)) }
     func stop() {}
 }
 

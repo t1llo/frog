@@ -227,7 +227,7 @@ final class FailedTranscriptionTests: XCTestCase {
 private final class SpokenRecording: DictationRecording {
     private let seconds: Int
     init(seconds: Int) { self.seconds = seconds }
-    func start(device: UInt32?, samples: @escaping @Sendable ([Float]) -> Void) throws {
+    func start(deviceUID: String?, samples: @escaping @Sendable ([Float]) -> Void) throws {
         samples((0..<seconds).flatMap { Array(repeating: Float($0), count: 16000) })
     }
     func stop() {}
@@ -235,7 +235,7 @@ private final class SpokenRecording: DictationRecording {
 
 @MainActor
 private final class ShortRecording: DictationRecording {
-    func start(device: UInt32?, samples: @escaping @Sendable ([Float]) -> Void) throws { samples(Array(repeating: 0.1, count: 1600)) }
+    func start(deviceUID: String?, samples: @escaping @Sendable ([Float]) -> Void) throws { samples(Array(repeating: 0.1, count: 1600)) }
     func stop() {}
 }
 

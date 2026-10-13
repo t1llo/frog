@@ -98,7 +98,7 @@ private final class FixtureMute: OutputMuting {
 @MainActor
 private final class FixtureRecorder: DictationRecording {
     var starts = 0
-    func start(device: UInt32?, samples: @escaping @Sendable ([Float]) -> Void) throws {
+    func start(deviceUID: String?, samples: @escaping @Sendable ([Float]) -> Void) throws {
         starts += 1
         samples(Array(repeating: 0.1, count: 16000))
     }

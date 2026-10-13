@@ -4,7 +4,6 @@ import ApplicationServices
 import QuartzCore
 import SwiftUI
 import FrogCore
-import WhisperKit
 
 @MainActor
 final class DictationController: ObservableObject {
@@ -18,7 +17,7 @@ final class DictationController: ObservableObject {
     /// False while the opened microphone has not delivered its first buffer.
     @Published private(set) var microphoneDelivering = false
     @Published private(set) var selectedMicrophoneID: String?
-    @Published private(set) var microphones: [AudioDevice] = []
+    @Published private(set) var microphones: [MicrophoneDevice] = []
     @Published private(set) var recoveringHistoryIDs = Set<UUID>()
     let microphoneMeter = MicrophoneMeter()
     @Published private(set) var hint = ""
@@ -36,7 +35,7 @@ final class DictationController: ObservableObject {
     private let monitorKeys: Bool
     private let presentsPopup: Bool
     private let previewInterval: Duration
-    private let inputDevices: () -> [AudioDevice]
+    private let inputDevices: () -> [MicrophoneDevice]
     private var lastInputElapsed = 0
     private var lastInputRevision: UInt64 = 0
     private let outputMute: any OutputMuting
@@ -89,7 +88,7 @@ final class DictationController: ObservableObject {
          authorize: @escaping @MainActor () async -> Bool = { DictationController.microphoneGranted ? true : await DictationController.requestMicrophone() },
          copy: @escaping (String) -> Void = { NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string) },
          monitorKeys: Bool = true, previewInterval: Duration = .seconds(2),
-          inputDevices: @escaping @MainActor () -> [AudioDevice] = { DictationController.devices },
+          inputDevices: @escaping @MainActor () -> [MicrophoneDevice] = { DictationController.devices },
           paste: @escaping @MainActor () async throws -> Void = { try await DictationTarget.pasteIntoFocusedField() },
           now: @escaping @MainActor () -> ContinuousClock.Instant = { .now }, presentsPopup: Bool = true,
           outputMute: any OutputMuting = RecordingMute()) {
@@ -106,7 +105,7 @@ final class DictationController: ObservableObject {
     }
 
     static var microphoneGranted: Bool { AVCaptureDevice.authorizationStatus(for: .audio) == .authorized }
-    static var devices: [AudioDevice] { AudioProcessor.getAudioDevices() }
+    static var devices: [MicrophoneDevice] { MicrophoneDevice.connected }
     static func requestMicrophone() async -> Bool { await AVCaptureDevice.requestAccess(for: .audio) }
     static func openMicrophoneSettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
@@ -263,8 +262,9 @@ final class DictationController: ObservableObject {
     }
 
     private func beginRecording(microphoneID: String?) throws {
-        let device = microphoneID.flatMap(UInt32.init)
-        if let device, !inputDevices().contains(where: { $0.id == device }) {
+        // A saved choice is a persistent device UID. One that is not connected, or the device
+        // number an earlier version saved, names no input: the callers go on with the default.
+        if let microphoneID, !inputDevices().contains(where: { $0.uid == microphoneID }) {
             throw FrogError.message("The selected microphone is unavailable. Choose another microphone.")
         }
         let recorder = makeRecorder()
@@ -273,7 +273,7 @@ final class DictationController: ObservableObject {
         // Only this capture's buffers count as its first sound, not the last ones of a replaced input.
         lastInputRevision = samples.inputRevision
         if microphoneDelivering { microphoneDelivering = false }
-        do { try recorder.start(device: device) { samples.append($0, from: input) } }
+        do { try recorder.start(deviceUID: microphoneID) { samples.append($0, from: input) } }
         catch { recorder.stop(); throw error }
         self.recorder = recorder
     }
@@ -570,8 +570,8 @@ private struct DictationPopup: View {
                             Label("System default", systemImage: controller.selectedMicrophoneID == nil ? "checkmark" : "mic")
                         }
                         ForEach(controller.microphones) { device in
-                            Button { controller.selectMicrophone(String(device.id)) } label: {
-                                Label(device.name, systemImage: controller.selectedMicrophoneID == String(device.id) ? "checkmark" : "mic")
+                            Button { controller.selectMicrophone(device.uid) } label: {
+                                Label(device.name, systemImage: controller.selectedMicrophoneID == device.uid ? "checkmark" : "mic")
                             }
                         }
                     } label: { Image(systemName: "mic.fill").foregroundStyle(FrogStyle.accent) }

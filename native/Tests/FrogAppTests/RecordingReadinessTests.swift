@@ -224,7 +224,7 @@ private final class ReadinessRecorder: DictationRecording {
     private var receive: (@Sendable ([Float]) -> Void)?
     var starts = 0
     init(checkpoint: XCTestExpectation) { self.checkpoint = checkpoint }
-    func start(device: UInt32?, samples: @escaping @Sendable ([Float]) -> Void) throws {
+    func start(deviceUID: String?, samples: @escaping @Sendable ([Float]) -> Void) throws {
         starts += 1; receive = samples; checkpoint.fulfill()
     }
     func stop() { receive = nil }

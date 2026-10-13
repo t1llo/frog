@@ -258,7 +258,7 @@ private final class BufferedRecording: DictationRecording {
     private let seconds: Int
     private var receive: (@Sendable ([Float]) -> Void)?
     init(seconds: Int) { self.seconds = seconds }
-    func start(device: UInt32?, samples: @escaping @Sendable ([Float]) -> Void) throws {
+    func start(deviceUID: String?, samples: @escaping @Sendable ([Float]) -> Void) throws {
         receive = samples
         append(from: 0, seconds: seconds)
     }
