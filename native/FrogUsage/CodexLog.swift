@@ -121,23 +121,12 @@ actor CodexScanner {
     }
 
     private func read(_ url: URL, state st: inout FileState) -> UInt64 {
-        guard let h = try? FileHandle(forReadingFrom: url) else { return 0 }
-        defer { try? h.close() }
-        guard (try? h.seek(toOffset: st.offset)) != nil, let data = try? h.readToEnd(),
-              let end = data.lastIndex(of: 0x0A) else { return 0 }
         let needles = ["\"token_usage_record\"", "\"token_count\"", "\"turn_context\"", "\"session_meta\""]
             .map { Data($0.utf8) }
-        var lineStart = data.startIndex
-        while lineStart <= end {
-            if Task.isCancelled { return UInt64(lineStart - data.startIndex) }
-            let lineEnd = data[lineStart...end].firstIndex(of: 0x0A)!
-            let line = data[lineStart..<lineEnd]
-            lineStart = lineEnd + 1
+        return usageLines(in: url, from: st.offset) { line in
             // Skip prompts/tool output before JSON parsing, without assuming JSON key order.
-            guard needles.contains(where: { line.range(of: $0) != nil }) else { continue }
-            add(line, &st)
+            if needles.contains(where: { line.range(of: $0) != nil }) { add(line, &st) }
         }
-        return UInt64(end - data.startIndex + 1)
     }
 
     private func add(_ line: Data, _ st: inout FileState) {

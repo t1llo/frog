@@ -26,6 +26,52 @@ final class UsageParsingTests: XCTestCase {
         XCTAssertEqual(summary.buckets.reduce(0) { $0 + $1.value }, 6)
     }
 
+    func testLogLinesCrossingAReadBoundaryAreNeitherLostNorSplitNorReadTwice() throws {
+        let root = try fixtureDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("lines.jsonl")
+        let lines = ["first", "", "a line that is longer than every small read below", "x", "", "{\"k\":1}"]
+        let written = lines.joined(separator: "\n") + "\n", unfinished = "still being wri"
+        // Every byte, the byte before a newline, the newline itself and the byte after it end a read.
+        for chunk in [1, 2, 3, 5, 6, 7, 16, 64, 1 << 20] {
+            try Data((written + unfinished).utf8).write(to: file)
+            var seen: [String] = []
+            let consumed = usageLines(in: file, from: 0, chunk: chunk) { seen.append(String(decoding: $0, as: UTF8.self)) }
+            XCTAssertEqual(seen, lines, "reads of \(chunk)")
+            XCTAssertEqual(consumed, UInt64(written.utf8.count), "The unfinished last line waits for the next pass")
+            let handle = try FileHandle(forWritingTo: file)
+            try handle.seekToEnd(); try handle.write(contentsOf: Data("tten\nlast\n".utf8)); try handle.close()
+            seen = []
+            let rest = usageLines(in: file, from: consumed, chunk: chunk) { seen.append(String(decoding: $0, as: UTF8.self)) }
+            XCTAssertEqual(seen, ["still being written", "last"], "reads of \(chunk)")
+            XCTAssertEqual(consumed + rest, UInt64((written + unfinished).utf8.count + 10))
+            XCTAssertEqual(usageLines(in: file, from: consumed + rest, chunk: chunk) { _ in XCTFail("Nothing is left") }, 0)
+        }
+        XCTAssertEqual(usageLines(in: root.appendingPathComponent("missing.jsonl"), from: 0) { _ in XCTFail("No file") }, 0)
+    }
+
+    func testTranscriptLargerThanOneReadCountsEveryResponseOnce() async throws {
+        let root = try fixtureDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let time = ISO8601DateFormatter().string(from: Date()), responses = 1200
+        var data = Data()
+        for index in 0..<responses {
+            // Tool output between two replies, of a length that moves the line ends around.
+            data += try jsonLine(["type": "user", "timestamp": time, "content": String(repeating: "o", count: 900 + index % 257)])
+            data += try jsonLine(["type": "assistant", "timestamp": time,
+                "message": ["id": "reply-\(index)", "model": "claude-sonnet-4-6", "usage": ["input_tokens": 1, "output_tokens": index]]])
+        }
+        XCTAssertGreaterThan(data.count, 1 << 20, "The fixture has to span more than one read")
+        let partial = try jsonLine(["type": "assistant", "timestamp": time,
+            "message": ["id": "unfinished", "model": "claude-sonnet-4-6", "usage": ["input_tokens": 1, "output_tokens": 7]]])
+        try (data + partial.dropLast()).write(to: root.appendingPathComponent("large.jsonl"))
+        let scanner = TokenScanner(root: root)
+        let first = await scanner.scan(), repeated = await scanner.scan()
+        XCTAssertEqual(first.count, responses)
+        XCTAssertEqual(first.reduce(0) { $0 + $1.output }, responses * (responses - 1) / 2)
+        XCTAssertEqual(repeated.count, responses)
+    }
+
     func testCodexResponseRecordsSupersedeRunningTotals() async throws {
         let root = try fixtureDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

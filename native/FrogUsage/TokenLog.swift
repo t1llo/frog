@@ -86,22 +86,11 @@ actor TokenScanner {
     /// Parses complete lines from `offset` on and returns how many bytes it consumed. A final
     /// line without a newline may still be being written, so it is left for the next pass.
     private func read(_ url: URL, from offset: UInt64) -> UInt64 {
-        guard let h = try? FileHandle(forReadingFrom: url) else { return 0 }
-        defer { try? h.close() }
-        guard (try? h.seek(toOffset: offset)) != nil, let data = try? h.readToEnd(),
-              let end = data.lastIndex(of: 0x0A) else { return 0 }
         let needle = Data("\"usage\"".utf8)
-        var lineStart = data.startIndex
-        while lineStart <= end {
-            if Task.isCancelled { return UInt64(lineStart - data.startIndex) }
-            let lineEnd = data[lineStart...end].firstIndex(of: 0x0A)!
-            let line = data[lineStart..<lineEnd]
-            lineStart = lineEnd + 1
+        return usageLines(in: url, from: offset) { line in
             // Most lines are user turns and tool results; skip them before paying for JSON.
-            guard line.range(of: needle) != nil else { continue }
-            add(line)
+            if line.range(of: needle) != nil { add(line) }
         }
-        return UInt64(end - data.startIndex + 1)
     }
 
     private func add(_ line: Data) {
