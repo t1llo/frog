@@ -104,6 +104,57 @@ import FrogCore
         XCTAssertTrue(bar.results.isEmpty)
     }
 
+    func testAFileChosenWithTheArrowKeysStaysChosenWhenALaterBatchLeavesItOut() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var config = Configuration(); config.preferences.windowSwitcherEnabled = false
+        config.preferences.setFeature(.commandBar, enabled: true)
+        try ConfigurationStore(directory: root).save(config)
+        let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
+        defer { pasteboard.releaseGlobally() }
+        let model = AppModel(dataDirectory: root, registerShortcuts: false, readKey: { _ in nil },
+                             clipboardHistoryStore: ClipboardHistoryStore(pasteboard: pasteboard))
+        defer { model.shutdown() }
+        let bar = CommandBar(model: model, pasteboard: pasteboard, captureTarget: { nil }, fileSearch: CommandFileStub(),
+                             loadSettings: { [] }, loadApplications: { [] })
+        defer { bar.stop() }
+        let files = (0..<6).map { SearchRecord(id: "file:/fixture/Quarterly fixture \($0).txt", title: "Quarterly fixture \($0).txt", subtitle: "Documents", symbol: "doc") }
+        bar.prepareResults(model, frontPID: nil)
+        bar.query = "quarterly fixture"
+        // Spotlight reports while it gathers, and each report is its first rows as they stand then.
+        bar.listFiles(Array(files[0...3]), recent: false)
+        XCTAssertEqual(bar.results.map(\.id), files[0...3].map(\.id))
+        XCTAssertEqual(bar.selection, 0)
+
+        // Untouched, the first row keeps Return, whatever arrives.
+        bar.listFiles([files[4]] + files[0...2], recent: false)
+        XCTAssertEqual(bar.results[bar.selection].id, files[4].id)
+
+        // Moved to a file, the choice is that file: a later report without it must not hand Return to another row.
+        bar.selection = try XCTUnwrap(bar.results.firstIndex(of: files[2]))
+        bar.listFiles([files[4], files[5], files[0], files[1]], recent: false)
+        XCTAssertEqual(bar.results[bar.selection].id, files[2].id)
+        XCTAssertEqual(bar.results.map(\.id), [4, 5, 0, 2, 1].map { files[$0].id })
+        // The report after that may list it again, in its own place.
+        bar.listFiles([files[4], files[2], files[0]], recent: false)
+        XCTAssertEqual(bar.results.map(\.id), [files[4], files[2], files[0]].map(\.id))
+        XCTAssertEqual(bar.results[bar.selection].id, files[2].id)
+        // Once the choice moves on, the file is listed only while Spotlight reports it.
+        bar.selection = 0
+        bar.listFiles([files[4], files[0]], recent: false)
+        XCTAssertEqual(bar.results.map(\.id), [files[4], files[0]].map(\.id))
+        XCTAssertEqual(bar.selection, 0)
+
+        // The recent files listed before anything is typed follow the same rule.
+        bar.query = ""
+        bar.listFiles(Array(files[0...4]), recent: true)
+        let row = try XCTUnwrap(bar.results.firstIndex(of: files[3]))
+        bar.selection = row
+        bar.listFiles([files[5], files[4], files[0], files[1], files[2]], recent: true)
+        XCTAssertEqual(bar.results[bar.selection].id, files[3].id)
+        XCTAssertEqual(bar.selection, row)
+    }
+
     func testAnApplicationIsFoundUnderItsFinderNameAndItsBundleName() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

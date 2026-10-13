@@ -500,12 +500,25 @@ import SwiftUI
     private func startFileSearch(_ text: String, revision: Int) {
         fileSearch.start(text: text, scopes: fileScopes) { [weak self] files in
             guard let self, self.fileRevision == revision else { return }
-            self.removeFiles()
-            for file in self.selectedFiles { self.addFile(file) }
-            for file in files { self.addFile(file) }
-            if text.isEmpty { self.recentFiles = Array(files.prefix(8)) }
-            self.updateResults()
+            self.listFiles(files, recent: text.isEmpty)
         }
+    }
+    /// Lists what the file search reports now in place of what it reported before.
+    func listFiles(_ files: [SearchRecord], recent: Bool) {
+        // Spotlight reports its first rows as they stand while it gathers. A file the choice was moved to keeps its
+        // row while it is chosen, so that a report without it does not hand Return to whatever is listed first.
+        let chosen = selectionWasMoved && results.indices.contains(selection)
+            ? fileRecords.firstIndex { $0.id == results[selection].id } : nil
+        let kept = chosen.map { fileRecords[$0] }
+        removeFiles()
+        for file in selectedFiles { addFile(file) }
+        for file in files { addFile(file) }
+        if let chosen, let kept, recordsByID[kept.id] == nil {
+            addFile(kept)
+            fileRecords.insert(fileRecords.removeLast(), at: min(chosen, fileRecords.count - 1))
+        }
+        if recent { recentFiles = Array(files.prefix(8)) }
+        updateResults()
     }
     private func addFile(_ record: SearchRecord) {
         guard record.id.hasPrefix("file:") else { return }
