@@ -240,9 +240,18 @@ final class DictationController: ObservableObject {
             noMicrophoneInput = false; lastInputElapsed = elapsed; microphoneMeter.reset()
             rememberMicrophone(id)
         } catch {
-            let issue = error
-            do { try beginRecording(microphoneID: previous) }
-            catch { if let token { fail(error, token: token) }; return }
+            var issue = error
+            if (try? beginRecording(microphoneID: previous)) == nil {
+                // The input that was recording is often the one that vanished. What was said so far
+                // must survive that: go on with macOS's default without saving it as the choice.
+                if previous != nil, (try? beginRecording(microphoneID: nil)) != nil {
+                    selectedMicrophoneID = nil
+                    noMicrophoneInput = false; lastInputElapsed = elapsed; microphoneMeter.reset()
+                } else {
+                    issue = FrogError.message("No microphone could be opened, so recording stopped. What was recorded is being transcribed.")
+                    requestStop()
+                }
+            }
             onError?(issue)
         }
     }

@@ -191,6 +191,53 @@ final class MicrophoneFeedbackTests: XCTestCase {
         XCTAssertFalse(fixture.controller.noMicrophoneInput)
     }
 
+    func testMicrophoneSwitchContinuesWithSystemDefaultWhenThePreviousInputIsGoneToo() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanUp() }
+        var issues: [String] = [], saved = false
+        var audio: [Float] = []
+        fixture.controller.externalTranscription = { samples, _ in audio = samples; return "Transcript" }
+        fixture.start(microphoneID: "42")
+        await fixture.controller.waitForWork()
+        fixture.controller.onError = { issues.append($0.localizedDescription) }
+        fixture.controller.onMicrophoneChange = { _ in saved = true }
+        fixture.recorders[0].emit(0.1)
+        // The active microphone was unplugged, and the one chosen instead cannot be opened either.
+        fixture.rejectDevice = { $0 != nil }
+        fixture.controller.selectMicrophone("404")
+        XCTAssertEqual(fixture.controller.phase, .recording, "A failed switch must not end the recording")
+        XCTAssertNil(fixture.recorders.last?.device, "The macOS default input takes over")
+        XCTAssertNil(fixture.controller.selectedMicrophoneID, "The popup must show the input that is recording")
+        XCTAssertEqual(issues.count, 1)
+        XCTAssertFalse(saved, "A fallback is not the person's choice")
+        fixture.recorders.last?.emit(0.2)
+        fixture.controller.stop(models: fixture.models)
+        await fixture.controller.waitForWork()
+        XCTAssertEqual(audio, Array(repeating: Float(0.1), count: 3200) + Array(repeating: Float(0.2), count: 3200))
+    }
+
+    func testMicrophoneSwitchThatLeavesNoInputTranscribesWhatWasRecorded() async throws {
+        for preferred in [nil, "42"] {
+            let fixture = Fixture()
+            defer { fixture.cleanUp() }
+            var issues: [String] = []
+            var audio: [Float] = []
+            fixture.controller.externalTranscription = { samples, _ in audio = samples; return "Transcript" }
+            fixture.start(microphoneID: preferred)
+            await fixture.controller.waitForWork()
+            fixture.controller.onError = { issues.append($0.localizedDescription) }
+            fixture.recorders[0].emit(0.1)
+            fixture.rejectDevice = { _ in true }
+            fixture.controller.selectMicrophone("404")
+            await fixture.controller.waitForWork()
+            XCTAssertEqual(audio, Array(repeating: Float(0.1), count: 3200), "What was said before the switch must reach transcription")
+            XCTAssertEqual(fixture.copied, ["Transcript"])
+            XCTAssertEqual(issues.count, 1, "The person must learn why the recording ended")
+            XCTAssertEqual(fixture.controller.phase, .idle)
+            XCTAssertTrue(fixture.recorders.allSatisfy(\.stopped))
+        }
+    }
+
     func testNewRecordingDoesNotAcceptCallbacksFromPreviousRecording() async throws {
         let fixture = Fixture()
         defer { fixture.cleanUp() }
@@ -266,9 +313,10 @@ final class MicrophoneFeedbackTests: XCTestCase {
         lazy var models = LocalModels(directory: directory)
         var recorders: [InputRecorder] = []
         var rejectDevice: (UInt32?) -> Bool = { _ in false }
+        var copied: [String] = []
         lazy var controller = DictationController(makeRecorder: { [unowned self] in
             let recorder = InputRecorder(); recorder.rejectDevice = rejectDevice; recorders.append(recorder); return recorder
-        }, authorize: { true }, copy: { _ in }, monitorKeys: false, inputDevices: { [AudioDevice(id: 42, name: "Test microphone")] })
+        }, authorize: { true }, copy: { [unowned self] in copied.append($0) }, monitorKeys: false, inputDevices: { [AudioDevice(id: 42, name: "Test microphone")] })
         func start(microphoneID: String? = nil) {
             var rule = Rule.dictationPreset
             rule.action?.audioModelID = "fixture"; rule.action?.audioProviderID = UUID()
