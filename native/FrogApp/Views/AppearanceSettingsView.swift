@@ -69,15 +69,79 @@ private final class FrogBackdropView: NSVisualEffectView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
+/// A slider and the colour panel report every step of a drag. Each step is shown at once; the
+/// settings are written once, when the steps pause or the drag ends.
+@MainActor
+final class AppearanceDraft: ObservableObject {
+    /// What the controls show while it is not saved yet.
+    @Published private(set) var value: AppearancePreferences?
+    private let delay: Duration
+    private let preview: (AppearancePreferences) -> Void
+    private let stored: () -> AppearancePreferences
+    private let save: (AppearancePreferences) -> Void
+    /// The saved appearance the waiting value was derived from.
+    private var base: AppearancePreferences?
+    private var pending: Task<Void, Never>?
+
+    init(delay: Duration = .milliseconds(300), preview: @escaping (AppearancePreferences) -> Void,
+         stored: @escaping () -> AppearancePreferences, save: @escaping (AppearancePreferences) -> Void) {
+        self.delay = delay; self.preview = preview; self.stored = stored; self.save = save
+    }
+
+    /// The app's own appearance and settings; tests pass a preview that leaves the running app alone.
+    convenience init(model: AppModel, delay: Duration = .milliseconds(300), preview: ((AppearancePreferences) -> Void)? = nil) {
+        self.init(delay: delay, preview: preview ?? { FrogAppearance.shared.apply($0) },
+                  stored: { model.configuration.preferences.appearance ?? AppearancePreferences() },
+                  save: { value in
+                      var preferences = model.configuration.preferences; preferences.appearance = value
+                      do { try model.savePreferences(preferences) } catch { model.report(error) }
+                  })
+    }
+
+    /// One step of a drag.
+    func change(_ value: AppearancePreferences) {
+        if self.value == nil { base = stored() }
+        self.value = value
+        preview(value)
+        pending?.cancel()
+        // The task keeps the draft alive, so a page that closes inside the delay still saves.
+        pending = Task { [delay] in
+            do { try await Task.sleep(for: delay) } catch { return }
+            guard !Task.isCancelled else { return }
+            commit()
+        }
+    }
+
+    /// A single choice, saved at once together with a drag that is still waiting.
+    func set(_ value: AppearancePreferences) { change(value); commit() }
+
+    /// Saves what is waiting: the drag ended or the page is closing.
+    func commit() {
+        pending?.cancel(); pending = nil
+        guard let value else { return }
+        self.value = nil
+        // A configuration reloaded since the drag began wins over a value that was never saved.
+        if stored() == base { save(value) }
+        // A refused save must not leave the app looking like something that is not saved.
+        let saved = stored()
+        if saved != value { preview(saved) }
+    }
+}
+
 struct AppearanceSettingsView: View {
-    @EnvironmentObject private var model: AppModel
+    @ObservedObject private var model: AppModel
+    @StateObject private var draft: AppearanceDraft
     @State private var accentInput = ""
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
+    init(model: AppModel) {
+        _model = ObservedObject(wrappedValue: model)
+        _draft = StateObject(wrappedValue: AppearanceDraft(model: model))
+    }
     var body: some View {
         CompactRow(title: "Appearance") {
-            CompactSegments(values: AppearancePreferences.Mode.allCases, selected: appearance.mode ?? .system, title: { $0.rawValue.capitalized }) { mode in var value = appearance; value.mode = mode; save(value) }
-        }
+            CompactSegments(values: AppearancePreferences.Mode.allCases, selected: appearance.mode ?? .system, title: { $0.rawValue.capitalized }) { mode in var value = appearance; value.mode = mode; draft.set(value) }
+        }.onDisappear { draft.commit() }
         Divider()
         CompactRow(title: "Theme") {
             CompactMenu(value: appearance.effectiveTheme.title) {
@@ -85,7 +149,7 @@ struct AppearanceSettingsView: View {
                     Button(theme.title) {
                         var value = appearance; value.theme = theme; value.useThemeAccent = true
                         value.lightPalette = nil; value.darkPalette = nil
-                        save(value)
+                        draft.set(value)
                     }
                 }
             }
@@ -93,7 +157,7 @@ struct AppearanceSettingsView: View {
         Divider()
         CompactRow(title: "Accent color") {
             HStack(spacing: 10) {
-                Button("Reset") { var value = appearance; value.useThemeAccent = true; value.lightPalette?["accent"] = nil; value.darkPalette?["accent"] = nil; save(value) }.buttonStyle(.link)
+                Button("Reset") { var value = appearance; value.useThemeAccent = true; value.lightPalette?["accent"] = nil; value.darkPalette?["accent"] = nil; draft.set(value) }.buttonStyle(.link)
                 HStack(spacing: 2) {
                     Text("#").foregroundStyle(FrogStyle.muted)
                     TextField("RGB", text: $accentInput).textFieldStyle(.plain).frame(width: 58)
@@ -104,21 +168,21 @@ struct AppearanceSettingsView: View {
                     .onChange(of: appearance.accentHex) { _, value in accentInput = value }
                 ColorPicker("Accent color", selection: Binding(get: { FrogStyle.accent }, set: { color in
                     guard let hex = Self.hex(of: NSColor(color)) else { return }
-                    var value = appearance; value.useThemeAccent = false; value.lightPalette?["accent"] = nil; value.darkPalette?["accent"] = nil; value.accentHex = hex; save(value)
+                    var value = appearance; value.useThemeAccent = false; value.lightPalette?["accent"] = nil; value.darkPalette?["accent"] = nil; value.accentHex = hex; draft.change(value)
                 }), supportsOpacity: false).labelsHidden()
             }
         }
         Divider()
         CompactRow(title: "Window transparency", detail: "Blur the desktop behind the whole window. Text stays opaque; fields keep a readable tint.") {
             HStack(spacing: 10) {
-                Slider(value: Binding(get: { appearance.transparency }, set: { amount in var value = appearance; value.transparency = amount; save(value) }), in: 0...1).frame(width: 145)
+                Slider(value: Binding(get: { appearance.transparency }, set: { amount in var value = appearance; value.transparency = amount; draft.change(value) }), in: 0...1, onEditingChanged: { if !$0 { draft.commit() } }).frame(width: 145)
                 Text("\(Int(appearance.transparency * 100))%").font(.system(size: 11)).monospacedDigit().frame(width: 32)
             }
         }
         Divider()
         CompactRow(title: "Popup transparency", detail: "Independent backdrop blur for every Frog popup, including the menu, usage, recording and shortcut panels.") {
             HStack(spacing: 10) {
-                Slider(value: Binding(get: { appearance.popupTransparency ?? 0 }, set: { amount in var value = appearance; value.popupTransparency = amount; save(value) }), in: 0...1).frame(width: 145)
+                Slider(value: Binding(get: { appearance.popupTransparency ?? 0 }, set: { amount in var value = appearance; value.popupTransparency = amount; draft.change(value) }), in: 0...1, onEditingChanged: { if !$0 { draft.commit() } }).frame(width: 145)
                 Text("\(Int((appearance.popupTransparency ?? 0) * 100))%").font(.system(size: 11)).monospacedDigit().frame(width: 32)
             }
         }
@@ -131,7 +195,7 @@ struct AppearanceSettingsView: View {
             Button("Open config") { model.openConfiguration() }
         }
     }
-    private var appearance: AppearancePreferences { model.configuration.preferences.appearance ?? AppearancePreferences() }
+    private var appearance: AppearancePreferences { draft.value ?? model.configuration.preferences.appearance ?? AppearancePreferences() }
     /// The nearest six-digit sRGB hex of a picked colour.
     static func hex(of color: NSColor) -> String? {
         guard let rgb = color.usingColorSpace(.sRGB) else { return nil }
@@ -142,7 +206,6 @@ struct AppearanceSettingsView: View {
         var value = appearance; value.accentHex = hex; value.useThemeAccent = false
         value.lightPalette?["accent"] = nil; value.darkPalette?["accent"] = nil
         guard value.valid else { model.report(FrogError.message("Enter a six-digit RGB hex color, such as A3D8AF.")); return }
-        save(value); accentInput = hex
+        draft.set(value); accentInput = hex
     }
-    private func save(_ value: AppearancePreferences) { var preferences = model.configuration.preferences; preferences.appearance = value; do { try model.savePreferences(preferences) } catch { model.report(error) } }
 }

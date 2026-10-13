@@ -44,7 +44,7 @@ struct PreferencesView: View {
                         Button("View statistics") { model.toolkit.select(.statistics) }
                     }
                 }
-                SettingsSection(title: "Appearance") { AppearanceSettingsView() }
+                SettingsSection(title: "Appearance") { AppearanceSettingsView(model: model) }
                 SettingsSection(title: "Local models") {
                     CompactRow(title: "Unload idle models", detail: "Applies to models running inside Frog.") {
                         CompactMenu(value: prefs.idleUnloadSeconds == 0 ? "Immediately" : "\(prefs.idleUnloadSeconds / 60) min") {
