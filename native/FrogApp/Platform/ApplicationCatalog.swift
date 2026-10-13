@@ -18,7 +18,12 @@ enum ApplicationCatalog {
             // Include app links before recursive discovery. Safari's hidden link
             // is covered by the system Cryptex Applications root above.
             let children = (try? manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)) ?? []
-            let urls = children + contents.compactMap { $0 as? URL }
+            var urls = children
+            while let item = contents.nextObject() {
+                // Suites nest their apps up to three folders deep. Below that are documents and helpers, by the thousand.
+                if contents.level > 3 { contents.skipDescendants() }
+                if let url = item as? URL { urls.append(url) }
+            }
             for url in urls {
                 guard url.pathExtension.lowercased() == "app" else { continue }
                 let path = url.resolvingSymlinksInPath().standardizedFileURL.path

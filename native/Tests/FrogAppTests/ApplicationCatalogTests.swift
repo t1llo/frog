@@ -58,6 +58,17 @@ final class ApplicationCatalogTests: XCTestCase {
         XCTAssertEqual(rows.count, 2)
         XCTAssertEqual(rows.first, configured)
     }
+    func testDiscoveryStopsThreeFoldersBelowAnApplicationsFolder() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for name in ["Suite/Top.app", "Suite/Catalogue/Plants/Nested.app", "Suite/Catalogue/Plants/Support/Deep.app", "Suite/Catalogue/Plants/Support/More/Deeper.app"] {
+            let contents = root.appendingPathComponent(name).appendingPathComponent("Contents")
+            try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+            let info: [String: Any] = ["CFBundleIdentifier": "test.\(UUID().uuidString)", "CFBundleName": URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent, "CFBundlePackageType": "APPL"]
+            try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: contents.appendingPathComponent("Info.plist"))
+        }
+        XCTAssertEqual(ApplicationCatalog.scan(roots: [root]).map(\.name), ["Nested", "Top"])
+    }
 }
 
 private actor CatalogDiscovery {
