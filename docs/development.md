@@ -1,6 +1,8 @@
 # Development and releases
 
-Frog is a native SwiftUI app for macOS 14+. Building requires Xcode with Swift 6.3+; CI uses Xcode 27. Local inference uses pinned WhisperKit, FluidAudio, MLX and Hugging Face Swift packages. Sparkle provides in-app updates. See `Package.swift` and `Package.resolved`. FluidAudio's Apache-2.0 license is copied into the app's Resources during packaging.
+Frog is a native SwiftUI app for macOS 14+. Building requires Xcode with Swift 6.3+; CI uses Xcode 27. Local inference uses pinned WhisperKit, FluidAudio, MLX and Hugging Face Swift packages. Sparkle provides in-app updates. See `Package.swift` and `Package.resolved`.
+
+Packaging copies Frog's `LICENSE` into the app's Resources as `LICENSE.txt`. `scripts/third-party-notices.sh` writes `ThirdPartyNotices.txt` next to it: every license, notice and acknowledgment file in the checkout of each package pinned in `Package.resolved`, then the files in `ThirdPartyLicenses/`, which holds the licenses of code copied into this repository. Packaging stops when a pinned package has no license file at its root. **Settings → About** shows both documents.
 
 ```sh
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer

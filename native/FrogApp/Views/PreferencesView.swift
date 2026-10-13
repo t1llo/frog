@@ -8,6 +8,7 @@ struct PreferencesView: View {
     @EnvironmentObject private var model: AppModel
     @State private var pendingConfiguration: Configuration?
     @State private var confirmingImport = false
+    @State private var legalDocument: LegalDocument?
     private var prefs: WorkflowPreferences { model.configuration.preferences.workflowSettings }
     var body: some View {
         ScrollViewReader { proxy in
@@ -153,11 +154,14 @@ struct PreferencesView: View {
                 SettingsSection(title: "About") {
                     CompactRow(title: "Frog") { Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")").foregroundStyle(FrogStyle.muted) }
                     CompactRow(title: "Source code") { Link("GitHub ↗", destination: URL(string: "https://github.com/t1llo/frog")!) }
+                    ForEach(LegalDocument.allCases.filter { $0.url() != nil }) { document in
+                        CompactRow(title: document.title, detail: document.summary) { Button("View") { legalDocument = document } }
+                    }
                     CompactRow(title: "Made by Tillo") { Link("beffa.xyz ↗", destination: URL(string: "https://beffa.xyz")!) }
                     CompactRow(title: "Contact") { Link("frog@beffa.xyz", destination: URL(string: "mailto:frog@beffa.xyz")!) }
                     Text("Build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                     Text("Internal models run on your Mac. External providers receive the text or audio you send. No analytics.").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                }
+                }.sheet(item: $legalDocument) { LegalDocumentView(document: $0) }
             }.toggleStyle(.switch).controlSize(.small).padding(20).frame(maxWidth: 630).frame(maxWidth: .infinity).minimalScrollbars()
         }.onAppear { model.refreshSystemStatus() }
             .task(id: permissionsRequest) {

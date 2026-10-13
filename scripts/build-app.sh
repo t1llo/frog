@@ -13,7 +13,9 @@ app="dist/Frog.app"
 # Recreate only this generated bundle so removed resources cannot survive a rebuild.
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-ditto .build/checkouts/FluidAudio/LICENSE "$app/Contents/Resources/FluidAudio-LICENSE.txt"
+# The licenses of Frog and of everything linked into it travel with the binary.
+ditto LICENSE "$app/Contents/Resources/LICENSE.txt"
+bash scripts/third-party-notices.sh "$app/Contents/Resources/ThirdPartyNotices.txt"
 swift scripts/make-icon.swift dist/Frog.iconset
 iconutil -c icns dist/Frog.iconset -o "$app/Contents/Resources/Frog.icns"
 cp "$binary_dir/Frog" "$app/Contents/MacOS/Frog"
