@@ -226,8 +226,6 @@ import SwiftUI
         let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         prepareResults(model, frontPID: frontPID)
         let target = pasteTarget
-        // Clear/disable/eviction invalidates previews as well as pending insertion.
-        sourceObservation = model.clipboardHistoryStore.$entries.dropFirst().sink { [weak self] _ in self?.hide() }
         preparePanel()
         guard let panel else { return }
         invocation = UUID()
@@ -340,9 +338,23 @@ import SwiftUI
         addRoutes(model, frontPID: frontPID)
         addSettings()
         updateResults()
+        // A copy made while the bar is open lists its entry; clear, delete and eviction take their rows away. The
+        // publisher emits before the store changes, so the rows come from the value it passes.
+        sourceObservation = model.clipboardHistoryStore.$entries.dropFirst().sink { [weak self, weak model] entries in
+            guard let self, let model else { return }
+            // Later rows keep their place, so equally good matches do not change order under the selection.
+            let start = self.records.firstIndex { $0.id.hasPrefix("clipboard:") } ?? self.records.endIndex
+            for record in self.records where record.id.hasPrefix("clipboard:") {
+                self.recordsByID[record.id] = nil; self.actions[record.id] = nil; self.copyActions[record.id] = nil
+            }
+            self.records.removeAll { $0.id.hasPrefix("clipboard:") }
+            let later = Array(self.records[start...]); self.records.removeSubrange(start...)
+            self.addClipboard(entries, model: model)
+            self.records += later
+            self.updateResults()
+        }
     }
     private func addRoutes(_ model: AppModel, frontPID: pid_t?) {
-        let target = pasteTarget
         for feature in model.configuration.preferences.sidebarFeatures {
             add(SearchRecord(id: "feature:\(feature.rawValue)", title: feature.title, subtitle: "Frog", keywords: "frog command \(feature.detail)", symbol: feature.symbol)) { [weak model] in
                 model?.openFeature(feature)
@@ -392,21 +404,25 @@ import SwiftUI
                                 ("🤔", "thinking"), ("👀", "eyes look"), ("✨", "sparkles"), ("💡", "idea bulb"), ("📌", "pin"), ("☕️", "coffee"), ("💻", "computer laptop")] {
             add(SearchRecord(id: "emoji:\(symbol)", title: "\(symbol)  \(words.capitalized)", subtitle: "Emoji · Copy", keywords: "emoji \(words)", symbol: "face.smiling")) { [weak self] in self?.copy(symbol) }
         }
-        if model.configuration.preferences.featureEnabled(.clipboard) {
-            for entry in model.clipboardHistoryStore.entries where !entry.isSensitive {
-                let copy: () async throws -> Void = { [weak model] in
-                    guard let model, model.configuration.preferences.featureEnabled(.clipboard), model.clipboardHistoryStore.copy(entry) else {
-                        throw FrogError.message("The clipboard item is no longer available.")
-                    }
+        addClipboard(model.clipboardHistoryStore.entries, model: model)
+    }
+    /// Paste only goes ahead in the history generation its row was built in, which the store renews before it
+    /// changes its entries. The rows are therefore rebuilt whenever the entries change.
+    private func addClipboard(_ entries: [ClipboardHistoryEntry], model: AppModel) {
+        guard model.configuration.preferences.featureEnabled(.clipboard) else { return }
+        let target = pasteTarget, retention = model.clipboardHistoryStore.retentionGeneration
+        for entry in entries where !entry.isSensitive {
+            let copy: () async throws -> Void = { [weak model] in
+                guard let model, model.configuration.preferences.featureEnabled(.clipboard), model.clipboardHistoryStore.copy(entry) else {
+                    throw FrogError.message("The clipboard item is no longer available.")
                 }
-                let retention = model.clipboardHistoryStore.retentionGeneration
-                add(SearchRecord(id: "clipboard:\(entry.id)", title: String(entry.text.prefix(100)), subtitle: "Clipboard · Paste · ⌘↩ Copy", keywords: String(entry.text.prefix(512)), symbol: "clipboard"), copy: copy) { [weak self, weak model] in
-                    guard let self, let model else { return }
-                    try await ClipboardHistoryDelivery.paste(entry, plainText: false, pasteboard: self.pasteboard, target: target, isCurrent: {
-                        model.configuration.preferences.featureEnabled(.clipboard) && model.clipboardHistoryStore.retentionGeneration == retention && model.clipboardHistoryStore.entries.contains(where: { $0.id == entry.id })
-                    }, waitForRelease: self.waitForRelease)
-                    self.onToolUse?(.clipboardPaste)
-                }
+            }
+            add(SearchRecord(id: "clipboard:\(entry.id)", title: String(entry.text.prefix(100)), subtitle: "Clipboard · Paste · ⌘↩ Copy", keywords: String(entry.text.prefix(512)), symbol: "clipboard"), copy: copy) { [weak self, weak model] in
+                guard let self, let model else { return }
+                try await ClipboardHistoryDelivery.paste(entry, plainText: false, pasteboard: self.pasteboard, target: target, isCurrent: {
+                    model.configuration.preferences.featureEnabled(.clipboard) && model.clipboardHistoryStore.retentionGeneration == retention && model.clipboardHistoryStore.entries.contains(where: { $0.id == entry.id })
+                }, waitForRelease: self.waitForRelease)
+                self.onToolUse?(.clipboardPaste)
             }
         }
     }
