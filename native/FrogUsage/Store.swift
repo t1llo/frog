@@ -278,9 +278,10 @@ final class Store: ObservableObject {
         }
     }
 
-    /// The Claude app writes its file only while its own usage display runs, which nothing
-    /// outside it can keep going. A login Frog can check with is the dependable source.
-    private let signInHint = "The Claude app saves its limits only now and then. Sign in to Claude Code and Frog checks them itself."
+    /// The Claude app checks its limits only while its menu-bar icon is on, and pauses a day after
+    /// that icon was last opened, which nothing outside it can keep going. A login Frog can check
+    /// with is the dependable source.
+    private let signInHint = "The Claude app saves its limits only while its menu-bar icon is on and was opened recently. Sign in to Claude Code and Frog checks them itself."
 
     var status: String {
         if let shown = reading(), shown.source == .desktop {

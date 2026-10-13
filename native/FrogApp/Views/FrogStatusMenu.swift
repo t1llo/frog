@@ -36,6 +36,7 @@ struct FrogStatusMenu: View {
             } else {
                 frogControls
             }
+            UpdateReadyRow { dismiss(); UpdateService.shared.installReadyUpdate() }
             action(model.setupPresented ? "Set up Frog…" : "Open Frog", symbol: "arrow.up.forward.app", key: "⌘,") {
                 dismiss(); model.showSettings()
             }.keyboardShortcut(",")

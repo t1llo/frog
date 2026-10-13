@@ -210,9 +210,10 @@ and every refresh fails. Frog still never renews or consumes another tool's toke
   replaces the one-hour cutoff that turned the popup into "Plan limits unavailable".
   A Claude-app reading older than 30 minutes carries a warning (wording: see the
   2026-10-13 section). Renewed windows are unknown, never zero.
-- **How often the Claude app saves:** only while its own usage display is running,
-  which nothing outside the app can keep going; the file can stay untouched for days
-  while the app is in daily use. It is a fallback, not a dependable source.
+- **How often the Claude app saves:** only while its menu-bar icon is switched on and
+  was opened recently (conditions: see the 2026-10-13 follow-up below), which nothing
+  outside the app can keep going; the file can stay untouched for days while the app
+  is in daily use. It is a fallback, not a dependable source.
 - **Session row:** a Claude session that renewed after the last reading keeps its row,
   marked "No reading since it renewed", so the week is never shown on its own.
 - **Plan badge:** the cached Claude Code profile's plan is attached to a Claude-app
@@ -295,3 +296,37 @@ a Claude Code login that had expired.
   process runner's deadline. **Not verified live:** a real renewal (the only login on
   the development Mac answered "OAuth session expired and could not be refreshed", so
   it needs one interactive sign-in) and the Terminal launcher, which was not opened.
+
+## Follow-up: an update that never ran, and when the Claude app saves (2026-10-13)
+
+Report, after 1.0.23 to 1.0.25 were published: Claude limits still not tracked. Three
+causes on that Mac, none of them in the collector:
+
+- **The fixes were not running.** The installed Frog was still 1.0.22. Sparkle had
+  downloaded 1.0.23 and waits to install it until Frog quits, which a menu-bar app
+  that starts at login rarely does. Frog now says so: when Sparkle reports an update
+  it will install on quit (`willInstallUpdateOnQuit`), both menu-bar popups show
+  "Update to x is ready…" and Settings → Updates shows the version with "Install and
+  Relaunch…". Both run Sparkle's normal check, which resumes the staged update and
+  offers to install it and relaunch. Frog only observes; Sparkle still installs on
+  quit as before. The notice lasts until Frog quits and is not saved.
+- **The Claude app was not saving.** Observed with Claude 2.31226.1, whose menu-bar
+  icon was switched off in its settings: the file's last sample was three days old
+  although the app was in daily use. The app checks its limits only while that icon
+  exists, and then only for a limited time after the icon was last opened (a day at
+  the time of writing; the app can change this), not while the Mac is idle or
+  locked, at most every five to fifteen minutes. Frog does not read the app's
+  settings to tell which of these applies; the status says "The Claude app saves its
+  limits only while its menu-bar icon is on and was opened recently. Sign in to
+  Claude Code and Frog checks them itself."
+- **Claude Code was signed out**, so there was nothing to renew in the background.
+  One interactive sign-in is needed; Frog never signs in for the user.
+
+No other local source holds plan limits: Claude Code's transcripts and profile and the
+Claude app's session files contain none, and the Claude app's own login is not read.
+
+**Verified:** `UpdateReadinessTests` (the row exists only while a version is waiting),
+the popup sizing and outside-click tests, and the status wording in
+`ClaudeDesktopUsageTests`. Sparkle 2.10.0's source confirms that a check resumes a
+staged update with "Install and Relaunch". **Not verified live:** a real update cycle
+reaching the notice and the prompt opened from it.

@@ -27,6 +27,11 @@ final class UpdateService: NSObject, ObservableObject, SPUUpdaterDelegate {
         }
     }
     func check() { controller.checkForUpdates(nil) }
+    /// From a menu-bar popup Frog is not the active app, and Sparkle's window must not open behind others.
+    func installReadyUpdate() {
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        check()
+    }
     func setAutomaticChecks(_ enabled: Bool) {
         if !enabled { connectivityRecovery.cancel() }
         controller.updater.automaticallyChecksForUpdates = enabled
@@ -41,11 +46,46 @@ final class UpdateService: NSObject, ObservableObject, SPUUpdaterDelegate {
             return true
         }
     }
+
+    func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,
+                 immediateInstallationBlock immediateInstallHandler: @escaping () -> Void) -> Bool {
+        UpdateReadiness.shared.ready(item.displayVersionString)
+        // Sparkle keeps the update: it installs on quit, and a check offers to install and relaunch.
+        return false
+    }
+}
+
+/// The update Sparkle has downloaded and will install when Frog quits. Frog runs for days, so
+/// the menu-bar popups and Settings name it instead of leaving it unseen until then.
+@MainActor final class UpdateReadiness: ObservableObject {
+    static let shared = UpdateReadiness()
+    @Published private(set) var version: String?
+    func ready(_ version: String?) { self.version = version?.isEmpty == false ? version : nil }
+}
+
+/// In both menu-bar popups while an update waits for Frog to quit. Sparkle's own window then
+/// offers to install it and relaunch.
+struct UpdateReadyRow: View {
+    @ObservedObject private var readiness = UpdateReadiness.shared
+    let install: () -> Void
+    var body: some View {
+        if let version = readiness.version {
+            MenuActionRow(title: "Update to \(version) is ready…", symbol: "arrow.down.circle", action: install)
+                .help("Frog installs it when it quits. Choose this to install it and relaunch now.")
+        }
+    }
 }
 
 struct UpdateSettingsView: View {
     @ObservedObject private var updater = UpdateService.shared
+    @ObservedObject private var readiness = UpdateReadiness.shared
     var body: some View {
+        if let version = readiness.version {
+            CompactRow(title: "Version \(version) is ready", detail: "Frog installs it when it quits.") {
+                Button("Install and Relaunch…") { updater.check() }
+            }
+            Divider()
+        }
         CompactRow(title: "Check automatically") { Toggle("Check automatically", isOn: Binding(get: { updater.automaticChecks }, set: updater.setAutomaticChecks)).labelsHidden() }
         Divider()
         CompactRow(title: "Download updates automatically") { Toggle("Download updates automatically", isOn: Binding(get: { updater.automaticDownloads }, set: updater.setAutomaticDownloads)).labelsHidden() }

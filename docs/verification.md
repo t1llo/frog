@@ -501,6 +501,33 @@ the CPU/GPU graph already holding data when its tab is opened.
 - Not verified from this shell: pointer hover on the live graphs, the real cadence of
   the five-second timer under timer coalescing, and the energy impact macOS reports.
 
+## Claude limits still missing after the fixes shipped — October 13
+
+Report: "the llm tracking still is not really working". Checked on the reporting Mac
+without changing its settings or logins:
+
+- The installed Frog was **1.0.22**; Sparkle had staged 1.0.23 and was waiting for
+  Frog to quit. None of the 1.0.23 to 1.0.25 changes were running.
+- The Claude app's menu-bar icon was switched off, and the app saves its limits only
+  while that icon is on and was opened recently. Its last saved reading was three
+  days old.
+- Claude Code reported no login, so no background renewal was possible.
+
+Change: an update that waits for Frog to quit is now named in both menu-bar popups
+("Update to x is ready…") and in Settings → Updates ("Install and Relaunch…"), and
+the Claude-app status states what the app's saving depends on. Details in
+[usage integration](usage-integration.md).
+
+- `swift build` passes. 24 usage tests (`ClaudeDesktopUsageTests`,
+  `ClaudeLoginRenewalTests`) and 3 app tests (`UpdateReadinessTests`, the popup
+  sizing test and the outside-click test) pass.
+- Read in Sparkle 2.10.0's source: returning `false` from `willInstallUpdateOnQuit`
+  leaves installation on quit unchanged, and a user-initiated check while an update
+  is staged shows the alert with "Install and Relaunch".
+- Not verified live: a real Sparkle cycle calling the delegate, the row in the
+  running app, and the prompt opened from it. Still open from 1.0.23: a real Claude
+  Code renewal and the Terminal sign-in launcher.
+
 ## Distribution
 
 Developer ID signing/notarization requires the owner's Apple Developer credentials. Ad-hoc signing is suitable for local development, but is not notarization and does not establish that macOS will trust a downloaded release on another machine.

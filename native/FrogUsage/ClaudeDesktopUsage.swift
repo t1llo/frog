@@ -24,9 +24,10 @@ struct ClaudeDesktopReading: Equatable {
     }
 }
 
-/// The Claude app saves the percentages it checks every few minutes while its menu-bar icon is
-/// on. Reading that file needs no login and sends nothing. The format belongs to the app, so an
-/// unknown version or field is skipped instead of guessed.
+/// The Claude app saves the percentages it checks every few minutes, but only while its menu-bar
+/// icon is on and for a day after that icon was last opened. Reading that file needs no login and
+/// sends nothing. The format belongs to the app, so an unknown version or field is skipped
+/// instead of guessed.
 enum ClaudeDesktopUsage {
     /// The app saves a reading every 5 to 15 minutes; an older one has missed a check.
     static let freshness: TimeInterval = 30 * 60

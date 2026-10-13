@@ -178,6 +178,8 @@ import XCTest
         try await started(store, expectDesktop: false)
         XCTAssertNil(store.reading(), "Limits read with another login are not shown as the Claude app's")
         XCTAssertEqual(store.warning?.hasPrefix("No current reading from the Claude app."), true)
+        XCTAssertEqual(store.status.contains("only while its menu-bar icon is on and was opened recently"), true)
+        XCTAssertEqual(store.status.hasSuffix("Sign in to Claude Code and Frog checks them itself."), true)
     }
 
     func testSavedAccountLimitsStayUntilTheirWindowRenewsForADayAtMost() async throws {

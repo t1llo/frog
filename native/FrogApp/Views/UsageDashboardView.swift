@@ -50,6 +50,7 @@ struct UsageStatusPopover: View {
     @ObservedObject var usage: UsageDashboardModel
     let openDashboard: () -> Void
     var signIn: () -> Void = {}
+    var installUpdate: () -> Void = {}
     var body: some View {
         let provider = usage.preferences.provider
         VStack(alignment: .leading, spacing: 0) {
@@ -71,6 +72,7 @@ struct UsageStatusPopover: View {
                 MenuActionRow(title: "Sign in to Claude Code…", symbol: "person.crop.circle.badge.checkmark", action: signIn)
                     .help(usage.status(provider: provider))
             }
+            UpdateReadyRow(install: installUpdate)
             MenuActionRow(title: "Open dashboard", symbol: "arrow.up.forward.app", action: openDashboard)
             Divider().padding(.horizontal, 8)
             TimelineView(.periodic(from: .now, by: 30)) { context in

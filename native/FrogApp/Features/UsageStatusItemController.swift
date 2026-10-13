@@ -82,6 +82,8 @@ import FrogUsage
         }, signIn: { [weak self] in
             self?.closePopup()
             if let usage = self?.usage { ClaudeSignIn.start(usage) }
+        }, installUpdate: { [weak self] in
+            self?.closePopup(); UpdateService.shared.installReadyUpdate()
         }).background(MenuWindowSizing()))
         let size = host.fittingSize
         let panel = UsagePopupPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
