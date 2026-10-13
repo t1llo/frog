@@ -128,7 +128,8 @@ samples (at most 600); disk capacity is cached for 30 seconds. Initial native sa
 cold and 0.68 ms warm. CPU uses tick deltas; GPU reports the busiest supported
 driver statistic; disk I/O covers supported devices, with startup-volume capacity
 shown separately. Power source, battery charge, thermal state and Low Power Mode
-use native readings. Unsupported GPU and total-system wattage remain unavailable.
+use native readings. An unsupported GPU remains unavailable. Total-system wattage has
+no public reading and no row.
 
 Ten focused tests passed for initial monitor integration, including optional/default-
 off behavior, delta calculations, bounded history, visibility, and late-result

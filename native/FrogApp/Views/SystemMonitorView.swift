@@ -101,8 +101,6 @@ struct SystemMonitorOverview: View {
                 }
                 detail("Thermal state", value: snapshot.power.thermal)
                 detail("Low Power Mode", value: snapshot.power.lowPower.map { $0 ? "On" : "Off" } ?? "Measuring…")
-                detail("System wattage", value: "Unavailable")
-                    .help("macOS does not provide a portable public total-system wattage API. Battery charge is not power consumption.")
             }.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
         }.padding(.horizontal, 6).padding(.bottom, 8)
             .accessibilityElement(children: .contain).accessibilityLabel("System overview")
