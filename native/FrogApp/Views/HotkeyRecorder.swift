@@ -9,28 +9,40 @@ struct HotkeyRecorder: View {
     var showsClearButton = true
     var purpose: HotkeyManager.ShortcutPurpose = .rule
     @State private var recording = false
-    @State private var hint: String?
+    /// Why the last key press was refused. Not private, so that a layout test can show one without pressing a key.
+    @State var hint: String?
     @State private var id = UUID()
 
     var body: some View {
-        HStack(spacing: 6) {
-            Button {
-                recording.toggle(); hint = nil
-            } label: {
-                ShortcutBadge(text: recording ? L10n.text("Press shortcut…") : hotkey.map(HotkeyManager.display) ?? L10n.text("Record shortcut"))
-            }.buttonStyle(.plain).help(recording ? "Press a new shortcut, or Escape to cancel." : "Click to change shortcut")
-            if showsClearButton && (hotkey != nil || recording) {
-                Button { hotkey = nil; recording = false; hint = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
-                    .buttonStyle(.plain).accessibilityLabel("Clear shortcut")
+        // One view: a second one would land beside the recorder in the row that holds it.
+        VStack(alignment: .trailing, spacing: 4) {
+            HStack(spacing: 6) {
+                Button {
+                    recording.toggle(); hint = nil
+                } label: {
+                    ShortcutBadge(text: recording ? L10n.text("Press shortcut…") : hotkey.map(HotkeyManager.display) ?? L10n.text("Record shortcut"))
+                }.buttonStyle(.plain).help(recording ? "Press a new shortcut, or Escape to cancel." : "Click to change shortcut")
+                if showsClearButton && (hotkey != nil || recording) {
+                    Button { hotkey = nil; recording = false; hint = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                        .buttonStyle(.plain).accessibilityLabel("Clear shortcut")
+                }
+                if recording {
+                    KeyCapture(recording: $recording, hotkey: $hotkey, hint: $hint, purpose: purpose)
+                        .frame(width: 1, height: 1).accessibilityHidden(true)
+                }
             }
-            if recording {
-                KeyCapture(recording: $recording, hotkey: $hotkey, hint: $hint, purpose: purpose)
-                    .frame(width: 1, height: 1).accessibilityHidden(true)
+            if let hint {
+                // Rows give their control its one-line width, so the hint wraps only at a width of its own.
+                Text(hint).font(.caption2).foregroundStyle(FrogStyle.warning).multilineTextAlignment(.trailing)
+                    .frame(width: 220, alignment: .trailing).fixedSize(horizontal: false, vertical: true)
             }
-        }.onChange(of: recording) { _, value in if value { model.beginShortcutRecording(id) } else { model.endShortcutRecording(id) } }
+        }.onChange(of: recording) { _, value in
+            if value { model.beginShortcutRecording(id) }
+            // The refusal belongs to the recording that showed it.
+            else { hint = nil; model.endShortcutRecording(id) }
+        }
             // A recorder that comes back on screen must not still claim to be recording.
-            .onDisappear { recording = false; model.endShortcutRecording(id) }
-        if let hint { InlineIssue(message: hint) }
+            .onDisappear { recording = false; hint = nil; model.endShortcutRecording(id) }
     }
 }
 
