@@ -39,7 +39,7 @@ public struct SpeechClient: Sendable {
         let (data, response) = try await session.data(for: request)
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            throw FrogError.message("Speech request failed (HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)). Check the model, endpoint and API key.")
+            throw StatusFailure(status: (response as? HTTPURLResponse)?.statusCode ?? 0)
         }
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let text: String?
@@ -50,6 +50,19 @@ public struct SpeechClient: Sendable {
         } else { text = object?["text"] as? String }
         guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("The speech model returned no transcript.") }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    /// The service answered outside 2xx. The status tells whether the same request can succeed later.
+    public struct StatusFailure: LocalizedError, Equatable, Sendable {
+        public let status: Int
+        public init(status: Int) { self.status = status }
+        public var errorDescription: String? { "Speech request failed (HTTP \(status)). Check the model, endpoint and API key." }
+    }
+    /// Whether sending the same recording again can succeed: the request never arrived, or the
+    /// service was busy. A wrong key, model or endpoint needs a change in Frog first.
+    public static func isTransient(_ error: Error) -> Bool {
+        if let failure = error as? StatusFailure { return [408, 429].contains(failure.status) || (500...599).contains(failure.status) }
+        if let error = error as? URLError { return error.code != .cancelled }
+        return false
     }
     static func wave(_ samples: [Float]) -> Data {
         var data = Data()

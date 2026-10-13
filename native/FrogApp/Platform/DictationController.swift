@@ -8,9 +8,11 @@ import WhisperKit
 
 @MainActor
 final class DictationController: ObservableObject {
-    enum Phase: String { case idle, preparing, recording, transcribing, correcting }
+    /// `failed` keeps a recording whose final transcription can be repeated until it is retried or discarded.
+    enum Phase: String { case idle, preparing, recording, transcribing, correcting, failed }
     @Published private(set) var phase: Phase = .idle { didSet { resizePanel() } }
     @Published private(set) var liveText = "" { didSet { resizePanel() } }
+    @Published private(set) var failure = ""
     @Published private(set) var elapsed = 0
     @Published private(set) var noMicrophoneInput = false
     @Published private(set) var selectedMicrophoneID: String?
@@ -30,6 +32,7 @@ final class DictationController: ObservableObject {
     private var recordingSeconds = 0.0
     var onCopy: ((String) -> Void)?
     private let monitorKeys: Bool
+    private let presentsPopup: Bool
     private let previewInterval: Duration
     private let inputDevices: () -> [AudioDevice]
     private var lastInputElapsed = 0
@@ -73,8 +76,9 @@ final class DictationController: ObservableObject {
          monitorKeys: Bool = true, previewInterval: Duration = .seconds(2),
           inputDevices: @escaping @MainActor () -> [AudioDevice] = { DictationController.devices },
           paste: @escaping @MainActor () async throws -> Void = { try await DictationTarget.pasteIntoFocusedField() },
-          now: @escaping @MainActor () -> ContinuousClock.Instant = { .now }) {
+          now: @escaping @MainActor () -> ContinuousClock.Instant = { .now }, presentsPopup: Bool = true) {
         self.makeRecorder = makeRecorder; self.authorize = authorize; self.copy = copy; self.monitorKeys = monitorKeys
+        self.presentsPopup = presentsPopup
         self.previewInterval = previewInterval
         self.inputDevices = inputDevices
         self.paste = paste; self.now = now
@@ -258,6 +262,26 @@ final class DictationController: ObservableObject {
         guard let token, let rule = activeRule else { return }
         if phase == .preparing { cancel(); return }
         guard phase == .recording else { return }
+        deliver(token: token, rule: rule, models: models)
+    }
+
+    /// Repeats the final pass over the recording that a failed transcription left in memory.
+    func retryTranscription() {
+        guard phase == .failed, let token, let rule = activeRule, let models else { return }
+        failure = ""
+        residencyHold = models.holdResidency()
+        if monitorKeys { installEscape() }
+        deliver(token: token, rule: rule, models: models)
+    }
+
+    /// Copies what was recognised before the final pass failed. The recording stays for a retry.
+    func copyPartialTranscript() {
+        guard phase == .failed, !liveText.isEmpty else { return }
+        copy(liveText)
+        onCopy?(liveText)
+    }
+
+    private func deliver(token: UUID, rule: Rule, models: LocalModels) {
         let recognition = finishTranscription(token: token, rule: rule, models: models)
         let recordingSeconds = self.recordingSeconds
         phase = .transcribing; hint = "Esc to cancel"
@@ -297,8 +321,26 @@ final class DictationController: ObservableObject {
                     self.onFinish?(rule, raw, output, delivery)
                     if self.token == token { self.cancel() }
                 }
-            } catch { self.fail(error, token: token) }
+            } catch {
+                // Only a failed final pass leaves the recording with the transcript.
+                if self.token == token, !Task.isCancelled, self.transcript.canRetry { self.keepForRetry(error) }
+                else { self.fail(error, token: token) }
+            }
         }
+    }
+
+    /// A final pass that can be repeated must not cost the recording: keep it, show what was
+    /// already recognised and let the person retry, copy that text or discard.
+    private func keepForRetry(_ error: Error) {
+        finalTranscription = nil
+        if let residencyHold { models?.releaseResidency(residencyHold) }; residencyHold = nil
+        // Escape pressed in another app must not discard the recording unnoticed.
+        removeEscape()
+        liveText = transcript.recognized
+        failure = error.localizedDescription
+        phase = .failed
+        onError?(error)
+        if panel?.isVisible != true { showPanel() }
     }
 
     private func finishTranscription(token: UUID, rule: Rule, models: LocalModels) -> Task<String, Error> {
@@ -324,7 +366,8 @@ final class DictationController: ObservableObject {
     }
 
     func interrupt(reason: HistoryEntry.Interruption = .cancelled) {
-        guard let token, let rule = activeRule, let models, phase != .preparing else { cancel(); return }
+        // Discarding a failed transcription is a failed request: nothing goes to History.
+        guard let token, let rule = activeRule, let models, phase != .preparing, phase != .failed else { cancel(); return }
         let interruption = DictationInterruption(id: token, rule: rule, text: liveText,
                                                 reason: reason, transcriptPublished: transcriptPublished)
         guard onInterruption?(interruption) == true else { cancel(); return }
@@ -372,11 +415,16 @@ final class DictationController: ObservableObject {
         token = nil; work?.cancel(); finalTranscription?.cancel(); preview?.cancel(); previewInference?.cancel(); ticker?.cancel()
         work = nil; finalTranscription = nil; preview = nil; previewInference = nil; ticker = nil
         recorder?.stop(); recorder = nil; samples.clear()
+        // A recording kept for a retry ends with its session; interrupted history holds its own.
+        transcript = DictationTranscript(); failure = ""
         recordingStarted = nil; recordingSeconds = 0
         outputMute.restore()
         if let residencyHold { models?.releaseResidency(residencyHold) }; residencyHold = nil
         activeRule = nil; ruleID = nil; phase = .idle
         panel?.orderOut(nil)
+        removeEscape()
+    }
+    private func removeEscape() {
         if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }; escapeMonitor = nil
         if let localEscapeMonitor { NSEvent.removeMonitor(localEscapeMonitor) }; localEscapeMonitor = nil
     }
@@ -400,6 +448,7 @@ final class DictationController: ObservableObject {
         }
     }
     private func showPanel() {
+        guard presentsPopup else { return }
         if panel == nil {
             let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 300, height: 50), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             panel.level = .floating; panel.isOpaque = false; panel.backgroundColor = .clear
@@ -445,10 +494,11 @@ enum DictationPopupLayout {
     /// The controller and delivery pipeline always retain the complete transcript.
     static func displayText(_ text: String) -> String { String(text.suffix(2048)) }
     static func frame(phase: DictationController.Phase, text: String, visibleFrame: NSRect) -> NSRect {
-        let recording = phase == .recording
-        let hasTranscript = recording && !text.isEmpty
-        let width = min(recording || hasTranscript ? 360.0 : 300.0, max(1, visibleFrame.width - 32))
-        var height = recording ? 108.0 : 50.0
+        let recording = phase == .recording, failed = phase == .failed
+        let hasTranscript = (recording || failed) && !text.isEmpty
+        let width = min(recording || failed ? 360.0 : 300.0, max(1, visibleFrame.width - 32))
+        // A failed transcription shows its reason and what to do instead of the waveform and hint.
+        var height = recording ? 108.0 : failed ? 116.0 : 50.0
         if hasTranscript {
             let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 2
             let bounds = (displayText(text) as NSString).boundingRect(
@@ -466,10 +516,13 @@ enum DictationPopupLayout {
 
 private struct DictationPopup: View {
     @ObservedObject var controller: DictationController
+    @State private var copiedPartial = false
     var body: some View {
+        let failed = controller.phase == .failed
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                if controller.phase != .recording { ProgressView().controlSize(.mini) }
+                if failed { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(FrogStyle.warning) }
+                else if controller.phase != .recording { ProgressView().controlSize(.mini) }
                 else {
                     Menu {
                         Button { controller.selectMicrophone(nil) } label: {
@@ -497,11 +550,24 @@ private struct DictationPopup: View {
                             .background(FrogStyle.accentSoft, in: RoundedRectangle(cornerRadius: 5))
                     }.buttonStyle(.plain).help("Stop recording").accessibilityLabel("Stop recording")
                 }
+                if failed {
+                    Button { controller.retryTranscription() } label: {
+                        Label("Retry", systemImage: "arrow.clockwise").font(.system(size: 11, weight: .medium))
+                            .padding(.horizontal, 7).frame(height: 24)
+                            .background(FrogStyle.accentSoft, in: RoundedRectangle(cornerRadius: 5))
+                    }.buttonStyle(.plain).help("Transcribe the recording again").accessibilityLabel("Retry transcription")
+                }
                 Button { controller.interrupt() } label: {
                     Image(systemName: "xmark").font(.system(size: 10, weight: .medium))
                         .frame(width: 24, height: 24).contentShape(Rectangle())
-                }.buttonStyle(.plain).help("Cancel dictation · Esc").accessibilityLabel("Cancel dictation")
+                }.buttonStyle(.plain).help(failed ? "Discard recording" : "Cancel dictation · Esc")
+                    .accessibilityLabel(failed ? "Discard recording" : "Cancel dictation")
             }.frame(height: 26)
+            if failed {
+                Text(controller.failure).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                    .lineLimit(2).truncationMode(.tail).help(controller.failure)
+                    .frame(maxWidth: .infinity, alignment: .topLeading).frame(height: 28, alignment: .topLeading)
+            }
             if controller.phase == .recording {
                 HStack(spacing: 8) {
                     if controller.noMicrophoneInput {
@@ -511,14 +577,28 @@ private struct DictationPopup: View {
                     MicrophoneWaveform(meter: controller.microphoneMeter)
                 }.frame(height: 28)
             }
-            if controller.phase == .recording, !controller.liveText.isEmpty {
+            if controller.phase == .recording || failed, !controller.liveText.isEmpty {
                 DictationTranscriptView(text: controller.liveText)
                     .frame(minHeight: 0, maxHeight: DictationPopupLayout.maximumTranscriptHeight)
             }
             if controller.phase == .recording {
                 Text(controller.hint).font(.system(size: 9)).foregroundStyle(FrogStyle.muted).lineLimit(1)
             }
+            if failed {
+                HStack(spacing: 8) {
+                    Text("The recording is kept until you retry or discard it.")
+                        .font(.system(size: 9)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                    Spacer(minLength: 0)
+                    if !controller.liveText.isEmpty {
+                        Button(copiedPartial ? "Copied" : "Copy partial text") {
+                            controller.copyPartialTranscript(); copiedPartial = true
+                        }.buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.accent)
+                            .fixedSize().help("Copy the text recognised before the failure")
+                    }
+                }.frame(height: 20)
+            }
         }.padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .onChange(of: controller.phase) { copiedPartial = false }
             .clipped()
             .environment(\.locale, L10n.locale)
             .foregroundStyle(FrogStyle.ink)
@@ -531,6 +611,7 @@ private struct DictationPopup: View {
         case .recording: "Listening…"
         case .transcribing: "Transcribing…"
         case .correcting: "Cleaning up transcript…"
+        case .failed: "Transcription failed"
         case .idle: "Dictation"
         }
     }
