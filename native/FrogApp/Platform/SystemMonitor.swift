@@ -13,7 +13,8 @@ final class SystemMonitor: ObservableObject {
     /// The graph's samples, oldest first. Published only while shown, so recording out of
     /// sight does not redraw a menu that stays mounted after it closes.
     @Published private(set) var history: [SystemMonitorSample] = []
-    @Published private(set) var isSampling = false
+    /// Not published: no view reads it, and hiding the view must not publish while it is taken down.
+    var isSampling: Bool { task != nil }
 
     private let sampler: any SystemMonitorSampling
     private let interval: Duration
@@ -73,7 +74,6 @@ final class SystemMonitor: ObservableObject {
         let pause = full ? interval : backgroundInterval
         // Closing the view follows a sample taken a moment ago; opening it wants one now.
         let startsPaused = !full && !reset
-        isSampling = true
         // No synchronous OS reads occur here or during menu construction.
         task = Task(priority: .utility) { [weak self] in
             var reset = reset
@@ -107,7 +107,6 @@ final class SystemMonitor: ObservableObject {
         generation = UUID()
         task?.cancel()
         task = nil
-        isSampling = false
         snapshot = SystemMonitorSnapshot()
         history = []
         recorded = []

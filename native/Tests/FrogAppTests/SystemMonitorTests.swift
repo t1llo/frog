@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import FrogApp
 
@@ -52,6 +53,24 @@ import XCTest
         try await waitUntil { await sampler.calls.count > disabled }
         calls = await sampler.calls
         XCTAssertEqual(calls[disabled], .init(reset: true, full: true), "Switching back on must not average load over the time spent off")
+    }
+
+    func testHidingTheViewPublishesNothing() async throws {
+        let sampler = MonitorFixture()
+        let monitor = SystemMonitor(sampler: sampler, interval: .seconds(60), backgroundInterval: .seconds(60))
+        monitor.configure(enabled: true)
+        monitor.setPresented(true)
+        defer { monitor.stop() }
+        try await waitUntil { monitor.snapshot.cpu == .value(0.25) }
+        var changes = 0
+        let watching = monitor.objectWillChange.sink { changes += 1 }
+        defer { watching.cancel() }
+        // The view reports this while it is taken down, when nothing may be published.
+        monitor.setPresented(false)
+        XCTAssertEqual(changes, 0, "A view that is going away has nothing to redraw")
+        XCTAssertTrue(monitor.isSampling, "Recording goes on out of sight")
+        monitor.setPresented(true)
+        XCTAssertGreaterThan(changes, 0, "Showing it again brings the recorded history")
     }
 
     func testCancellationRejectsLateSamplerCompletionAcrossReenable() async throws {
