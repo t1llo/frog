@@ -104,6 +104,44 @@ final class WindowSwitcherCache {
     }
 }
 
+/// When the inventory of every app's windows is refreshed in the background. A scan costs
+/// an Accessibility round trip per window of every app, so it follows what changed and
+/// otherwise only keeps the rows as fresh as the cache asks, while someone is at the Mac.
+struct WindowInventoryPace {
+    /// A pass of the monitor and a scan short of the five seconds the cache counts as
+    /// fresh, so that Command–Tab rarely has to scan itself.
+    static let steady: Duration = .seconds(4)
+    /// Once something changed: as often as scans ever ran.
+    static let prompt: Duration = .seconds(2)
+    /// Without input for this long nobody is at the Mac, and the rows wait for the next use.
+    static let idle: Duration = .seconds(30)
+
+    private var last: ContinuousClock.Instant?
+    private(set) var mark: UInt64 = 1
+    private var seen: UInt64 = 0
+    var screensAsleep = false
+
+    /// An app launched, quit, came forward, hid or showed, or the Space or the front window changed.
+    mutating func noteChange() { mark &+= 1 }
+
+    /// The seconds since the last input as macOS reports them. A reading that is no
+    /// time at all counts as someone being there, which keeps the rows fresh.
+    static func untouched(_ seconds: Double) -> Duration { .seconds(seconds > 0 ? min(seconds, 3600) : 0) }
+
+    /// Whether the front window is worth reading on this pass.
+    func watches(idle: Duration) -> Bool { !screensAsleep && idle < Self.idle }
+
+    func isDue(at now: ContinuousClock.Instant, idle: Duration, cached: Bool = true) -> Bool {
+        guard !screensAsleep else { return false }
+        guard cached, let last else { return true }
+        guard idle < Self.idle else { return false }
+        return last.duration(to: now) >= (seen != mark ? Self.prompt : Self.steady)
+    }
+
+    /// `mark` as it was when the scan began: what changed during it needs another one.
+    mutating func scanned(_ mark: UInt64, at now: ContinuousClock.Instant) { seen = mark; last = now }
+}
+
 /// Apps the switcher asked macOS to bring forward that are not reported in front yet.
 /// Until then `NSWorkspace` still names the app being left, and the report can arrive
 /// after the next Command–Tab has opened the list or chosen another window.

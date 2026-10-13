@@ -109,6 +109,7 @@ final class WindowSwitcherController {
     /// What the list was released on, for a reading that arrives afterwards.
     private var released: (session: UInt64, window: UUID)?
     private var frontRequests = WindowSwitchFrontRequests()
+    private var inventoryPace = WindowInventoryPace()
     private var unfilteredWindows: [SwitcherWindow] = []
     private var pointer = WindowSwitchPointer()
     private var sessionOnConsole = false
@@ -136,13 +137,22 @@ final class WindowSwitcherController {
         observe(workspace, NSWorkspace.activeSpaceDidChangeNotification) { controller in
             // Keep all cached rows immediately available; refresh native AX
             // handles and foreground identity now that the visible Space changed.
-            controller.cache.invalidate()
+            controller.cache.invalidate(); controller.inventoryPace.noteChange()
             if let token = controller.activationSpaceTransition, token == controller.activationID,
                let windowID = controller.activationWindowID, WindowSpaceBridge.isOnVisibleSpace(windowID) == false {
                 // A gesture or another actor selected a different Desktop while
                 // our AX handoff was pending. Never travel back on a late retry.
                 controller.cancelActivation(token)
             }
+        }
+        // Windows come and go with their app; the periodic inventory is too slow for that.
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification,
+                     NSWorkspace.didHideApplicationNotification, NSWorkspace.didUnhideApplicationNotification] {
+            observe(workspace, name) { controller in controller.cache.invalidate(); controller.inventoryPace.noteChange() }
+        }
+        observe(workspace, NSWorkspace.screensDidSleepNotification) { controller in controller.inventoryPace.screensAsleep = true }
+        observe(workspace, NSWorkspace.screensDidWakeNotification) { controller in
+            controller.inventoryPace.screensAsleep = false; controller.inventoryPace.noteChange()
         }
         observe(workspace, NSWorkspace.sessionDidResignActiveNotification) { controller in
             controller.sessionOnConsole = false
@@ -153,6 +163,7 @@ final class WindowSwitcherController {
             controller.updateSessionEligibility()
         }
         observe(workspace, NSWorkspace.didWakeNotification) { controller in
+            controller.inventoryPace.screensAsleep = false
             controller.readSessionState()
             controller.updateSessionEligibility()
             controller.inputLifecycle.wake()
@@ -254,6 +265,7 @@ final class WindowSwitcherController {
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] notification in MainActor.assumeIsolated {
             guard let self else { return }
+            self.inventoryPace.noteChange()
             let pid = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
             // An app the switcher itself asked for can arrive after the next Command-Tab:
             // that is no reason to close the list or to drop the window chosen since.
@@ -269,7 +281,7 @@ final class WindowSwitcherController {
             }
         } }
         focusMonitor = Task { [weak self] in
-            var nextRefresh = ContinuousClock.now
+            var front: UUID?
             while !Task.isCancelled {
                 guard let self else { return }
                 guard SelectionService.isTrusted else {
@@ -279,14 +291,20 @@ final class WindowSwitcherController {
                 if self.generation == nil, self.activation == nil, self.input?.shouldDeferBackgroundWork() == false {
                     // What is read from here on is newer than a reading still out.
                     self.frontReading?.cancel(); self.frontReading = nil
-                    if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                    // Since the keyboard or the pointer was last touched, whatever the kind of event.
+                    let idle = WindowInventoryPace.untouched(CGEventSource.secondsSinceLastEventType(
+                        .combinedSessionState, eventType: CGEventType(rawValue: ~0)!))
+                    if self.inventoryPace.watches(idle: idle), let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
                        let focused = await self.catalog.noteFocus(pid: pid) {
                         self.cache.noteFocused(focused)
+                        // A window made or closed in front is listed by the next inventory only.
+                        if focused != front { front = focused; self.inventoryPace.noteChange() }
                     }
                     if !Task.isCancelled, self.generation == nil, self.activation == nil,
-                       self.cache.snapshot == nil || ContinuousClock.now >= nextRefresh {
+                       self.inventoryPace.isDue(at: .now, idle: idle, cached: self.cache.snapshot != nil) {
+                        let mark = self.inventoryPace.mark
                         _ = await self.refreshInventory()
-                        nextRefresh = .now.advanced(by: .seconds(2))
+                        self.inventoryPace.scanned(mark, at: .now)
                     }
                 }
                 do { try await Task.sleep(for: .milliseconds(400)) } catch { return }

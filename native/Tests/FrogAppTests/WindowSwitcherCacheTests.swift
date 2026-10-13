@@ -214,6 +214,55 @@ final class WindowSwitcherCacheTests: XCTestCase {
         XCTAssertEqual(requests.front(10, at: start), 10)
     }
 
+    func testBackgroundInventoryFollowsWhatChangedAndRestsWithNobodyAtTheMac() async {
+        var pace = WindowInventoryPace()
+        let start = ContinuousClock.now
+        func after(_ milliseconds: Int) -> ContinuousClock.Instant { start.advanced(by: .milliseconds(milliseconds)) }
+        let active = Duration.seconds(1), away = Duration.seconds(60)
+        XCTAssertTrue(pace.isDue(at: start, idle: away), "The first inventory waits for nothing")
+        XCTAssertTrue(pace.isDue(at: start, idle: away, cached: false))
+        pace.scanned(pace.mark, at: start)
+        XCTAssertFalse(pace.isDue(at: after(2000), idle: active), "With nothing changed there is no scan of every app every two seconds")
+        XCTAssertFalse(pace.isDue(at: after(3600), idle: active))
+        XCTAssertTrue(pace.isDue(at: after(4000), idle: active))
+        XCTAssertTrue(pace.isDue(at: after(1000), idle: active, cached: false), "Without rows there is nothing to wait for")
+        // Command-Tab must still find the rows fresh a pass of the monitor after the scan
+        // fell due, so that it rarely has to scan itself.
+        let cache = WindowSwitcherCache()
+        _ = await cache.update { .init(windows: [], current: nil) }
+        XCTAssertFalse(cache.needsRefresh(at: .now.advanced(by: WindowInventoryPace.steady + .milliseconds(400))))
+        // An app or a window came or went: as promptly as before, and no more often.
+        pace.noteChange()
+        XCTAssertFalse(pace.isDue(at: after(1000), idle: active))
+        XCTAssertTrue(pace.isDue(at: after(2000), idle: active))
+        // What changed while a scan ran needs another one.
+        let began = pace.mark
+        pace.noteChange()
+        pace.scanned(began, at: after(2000))
+        XCTAssertFalse(pace.isDue(at: after(3600), idle: active))
+        XCTAssertTrue(pace.isDue(at: after(4000), idle: active))
+        // Nobody at the Mac: no scan whatever changed, and no reading of the front window either.
+        XCTAssertFalse(pace.isDue(at: after(60_000), idle: away))
+        XCTAssertFalse(pace.watches(idle: away))
+        XCTAssertTrue(pace.watches(idle: active))
+        XCTAssertTrue(pace.isDue(at: after(60_000), idle: active), "The first pass after someone returns")
+        // The time without input comes from macOS and need not be a time.
+        XCTAssertEqual(WindowInventoryPace.untouched(12.5), .milliseconds(12_500))
+        XCTAssertFalse(pace.watches(idle: WindowInventoryPace.untouched(.infinity)))
+        XCTAssertTrue(pace.watches(idle: WindowInventoryPace.untouched(.nan)))
+        XCTAssertTrue(pace.watches(idle: WindowInventoryPace.untouched(-1)))
+        pace.scanned(pace.mark, at: after(60_000))
+        XCTAssertFalse(pace.isDue(at: after(62_000), idle: active))
+        // Screens asleep: nothing at all until they wake.
+        pace.noteChange()
+        pace.screensAsleep = true
+        XCTAssertFalse(pace.isDue(at: after(62_000), idle: active))
+        XCTAssertFalse(pace.isDue(at: after(62_000), idle: active, cached: false))
+        XCTAssertFalse(pace.watches(idle: active))
+        pace.screensAsleep = false
+        XCTAssertTrue(pace.isDue(at: after(62_000), idle: active))
+    }
+
     func testRefreshingHeldInventoryPreservesCyclingOrderAndSelection() {
         var session = WindowSwitchSession<Int>()
         session.begin(windows: [1, 2, 3], current: 1, backwards: false)
