@@ -94,9 +94,8 @@ final class DictationTranscript {
                     do {
                         var pieces: [String] = []
                         for pass in Self.passes(endingSamples: remaining.count) {
-                            try await models.waitUntilAvailable()
                             try Task.checkCancellation()
-                            pieces.append(try await models.transcribe(Array(remaining[pass]), modelID: modelID, language: rule.action?.transcriptionLanguage))
+                            pieces.append(try await models.transcribe(Array(remaining[pass]), modelID: modelID, language: rule.action?.transcriptionLanguage, waiting: true))
                         }
                         ending = Self.join(pieces)
                     } catch {

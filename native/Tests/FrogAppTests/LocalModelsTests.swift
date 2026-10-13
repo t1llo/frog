@@ -131,6 +131,39 @@ final class LocalModelsTests: XCTestCase {
         await models.unload()
         XCTAssertTrue(models.loaded.isEmpty)
     }
+    func testTranscriptionThatWaitsQueuesBehindRunningWorkInsteadOfFailingBusy() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let gate = DownloadGate()
+        let engine = FixtureInference(gate: gate)
+        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload)
+        let text = LocalModelDescriptor.find("qwen-0.6b")!
+        let speech = try XCTUnwrap(LocalModelDescriptor.find("parakeet-v3"))
+        for model in [text, speech] { models.download(model); await models.waitForDownload(model.id) }
+        let completion = Task { try await models.complete("corrected", instructions: "Correct", modelID: text.id) }
+        await gate.waitUntilStarted()
+        XCTAssertTrue(models.busy)
+
+        // A live preview only tries: it skips a busy engine and comes back later.
+        do { _ = try await models.transcribe([0.1], modelID: speech.id); XCTFail("A transcription that does not wait must not queue") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("already processing"), error.localizedDescription) }
+        let calls = await engine.calls
+        XCTAssertEqual(calls, 1)
+
+        // The transcript of a finished recording must come, however many are waiting.
+        let transcripts = (0..<3).map { _ in Task { try await models.transcribe([0.1], modelID: speech.id, waiting: true) } }
+        for _ in 0..<100 { await Task.yield() }
+        XCTAssertTrue(models.busy)
+        await gate.resume()
+        let corrected = try await completion.value
+        XCTAssertEqual(corrected, "corrected")
+        for transcript in transcripts {
+            let heard = try await transcript.value
+            XCTAssertEqual(heard, "hello")
+        }
+        XCTAssertFalse(models.busy)
+        await models.unload()
+    }
     func testChangingStoragePreservesOldDownloadsAndPersistsNewLocation() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

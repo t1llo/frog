@@ -200,21 +200,31 @@ final class LocalModels: ObservableObject {
             if !busy { scheduleUnload() }
             return
         }
-        let url = try acquire(id); defer { release() }
-        do {
+        try await exclusively(id, waiting: true) { url in
             guard let model = descriptor(id) else { throw FrogError.message("The model is no longer configured.") }
             try await runtime.prepare(model: model, url: url, residency: { [weak self] ids in await self?.updateResidency(ids) })
-            loaded = await runtime.loadedIDs
-            try Task.checkCancellation()
-        } catch { loaded = await runtime.loadedIDs; throw error }
+        }
+        try Task.checkCancellation()
     }
-    func waitUntilAvailable() async throws {
+    private func waitUntilAvailable() async throws {
         guard busy else { try Task.checkCancellation(); return }
         for await _ in $busy.values {
             try Task.checkCancellation()
             if !busy { return }
         }
         try Task.checkCancellation()
+    }
+    /// The one place that takes the inference lock for work on a model. A caller
+    /// that waits takes it in the same turn of the main actor in which it became
+    /// free, so "already processing" reaches only a caller that chose not to wait.
+    private func exclusively<T>(_ id: String, waiting: Bool, _ work: (URL) async throws -> T) async throws -> T {
+        if waiting { try await waitUntilAvailable() }
+        let url = try acquire(id); defer { release() }
+        do {
+            let result = try await work(url)
+            loaded = await runtime.loadedIDs
+            return result
+        } catch { loaded = await runtime.loadedIDs; throw error }
     }
     func remove(_ id: String) async throws {
         guard !busy, residencyHolds.isEmpty, downloads[id] == nil else { throw FrogError.message("Wait for the model operation to finish before deleting it.") }
@@ -272,25 +282,20 @@ final class LocalModels: ObservableObject {
             await self?.unload(keepingMetadata: true)
         }
     }
-    func transcribe(_ samples: [Float], modelID: String, language: String? = nil) async throws -> String {
-        let url = try acquire(modelID); defer { release() }
-        do {
+    /// The transcript of a finished recording waits for running work. A live
+    /// preview does not: it fails on a busy engine and its loop tries again.
+    func transcribe(_ samples: [Float], modelID: String, language: String? = nil, waiting: Bool = false) async throws -> String {
+        try await exclusively(modelID, waiting: waiting) { url in
             guard let model = descriptor(modelID) else { throw FrogError.message("The speech model is no longer configured.") }
             let selectedLanguage = model.englishOnly ? "en" : model.supportsLanguageSelection && language != "auto" ? language : nil
-            let result = try await runtime.transcribe(samples, model: model, url: url, language: selectedLanguage, residency: { [weak self] ids in await self?.updateResidency(ids) })
-            loaded = await runtime.loadedIDs
-            return result
-        } catch { loaded = await runtime.loadedIDs; throw error }
+            return try await runtime.transcribe(samples, model: model, url: url, language: selectedLanguage, residency: { [weak self] ids in await self?.updateResidency(ids) })
+        }
     }
     func complete(_ text: String, instructions: String, modelID: String) async throws -> String {
         // An interrupted recording may still be transcribing for History.
-        try await waitUntilAvailable()
-        let url = try acquire(modelID); defer { release() }
-        do {
-            let result = try await runtime.complete(text, instructions: instructions, id: modelID, url: url, residency: { [weak self] ids in await self?.updateResidency(ids) })
-            loaded = await runtime.loadedIDs
-            return result
-        } catch { loaded = await runtime.loadedIDs; throw error }
+        try await exclusively(modelID, waiting: true) { url in
+            try await runtime.complete(text, instructions: instructions, id: modelID, url: url, residency: { [weak self] ids in await self?.updateResidency(ids) })
+        }
     }
     private func updateResidency(_ ids: Set<String>) { loaded = ids }
     func shutdown() {
