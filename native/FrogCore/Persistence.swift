@@ -124,7 +124,11 @@ public final class ConfigurationStore: @unchecked Sendable {
                 throw FrogError.message("config.json is missing. Restore the companion file before reloading; the current rules and connections were kept.")
             }
             guard let string = String(data: text, encoding: .utf8) else { throw FrogError.message("config must be UTF-8 text. The original file was preserved.") }
-            configuration = try TextConfiguration.decode(string, companion: current.json ?? ConfigurationFile.encode(Configuration()))
+            do { configuration = try TextConfiguration.decode(string, companion: current.json ?? ConfigurationFile.encode(Configuration())) }
+            catch let FrogError.message(message) where loaded == nil && message.hasSuffix(TextConfiguration.keptRemark) {
+                // At launch nothing has loaded yet: there are no previous settings that could have been kept.
+                throw FrogError.message(message.dropLast(TextConfiguration.keptRemark.count) + "The files were left unchanged.")
+            }
         } else if let json = current.json, !isPrototypeConfiguration(json) {
             configuration = try ConfigurationFile.decode(json)
             try validate?(configuration)

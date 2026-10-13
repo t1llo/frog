@@ -193,6 +193,38 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: store.file), json)
     }
 
+    func testOnlyAFailedReloadSaysThatPreviousSettingsWereKept() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let kept = "Previous working settings were kept."
+        let json = try TextConfiguration.companion(Configuration())
+        var future = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
+        future["rules"] = [["id": UUID().uuidString]]
+        let refused: [(text: String, json: Data)] = [("unknown-key = true\n", json), ("history-limit = 0\n", json),
+                                                     ("", Data("{broken".utf8)), ("", try JSONSerialization.data(withJSONObject: future))]
+        // At launch nothing has loaded yet, so no previous settings exist that could have been kept.
+        for files in refused {
+            let store = ConfigurationStore(directory: directory)
+            try Data(files.text.utf8).write(to: store.textFile); try files.json.write(to: store.file)
+            for _ in 0..<2 {
+                XCTAssertThrowsError(try store.load()) {
+                    XCTAssertTrue($0.localizedDescription.hasPrefix("config"), $0.localizedDescription)
+                    XCTAssertFalse($0.localizedDescription.contains(kept), $0.localizedDescription)
+                    XCTAssertTrue($0.localizedDescription.hasSuffix(" The files were left unchanged."), $0.localizedDescription)
+                }
+            }
+            XCTAssertEqual(try Data(contentsOf: store.textFile), Data(files.text.utf8))
+            XCTAssertEqual(try Data(contentsOf: store.file), files.json)
+        }
+        // Once a configuration has loaded, a reload that fails does keep it.
+        let store = ConfigurationStore(directory: directory)
+        try Data("history-limit = 42\n".utf8).write(to: store.textFile); try json.write(to: store.file)
+        XCTAssertEqual(try store.load().preferences.historyLimit, 42)
+        for files in refused {
+            try Data(files.text.utf8).write(to: store.textFile); try files.json.write(to: store.file)
+            XCTAssertThrowsError(try store.load()) { XCTAssertTrue($0.localizedDescription.hasSuffix(" " + kept), $0.localizedDescription) }
+        }
+    }
+
     func testHistoryDisabledPreservesRecordsAndDoesNotCreateFiles() throws {
         let store = HistoryStore(directory: directory)
         var preferences = Preferences()

@@ -29,13 +29,32 @@ public enum ConfigurationFile {
         guard data.count <= maximumBytes else { throw FrogError.message("The configuration file is too large (maximum 4 MB).") }
         var configuration: Configuration
         do { configuration = try JSONDecoder().decode(Configuration.self, from: data) }
-        catch { throw FrogError.message("This is not a valid Frog configuration file. Check its JSON fields and values.") }
+        catch { throw FrogError.message(unreadable(error)) }
         try check(configuration)
         try validate(configuration)
         guard retainingUnknownFields else { return configuration }
         configuration.originalJSON = try JSONDecoder().decode(ConfigurationJSON.self, from: data)
         configuration.knownJSON = try JSONDecoder().decode(ConfigurationJSON.self, from: JSONEncoder().encode(configuration))
         return configuration
+    }
+
+    /// Names the field a document could not be read at, such as `rules[2].action.systemAction`:
+    /// one value from another version of Frog is otherwise indistinguishable from a broken file.
+    /// The value itself is left out; these messages are shown and logged.
+    private static func unreadable(_ error: Error) -> String {
+        let general = "This is not a valid Frog configuration file"
+        let place: [CodingKey], problem: String
+        switch error as? DecodingError {
+        case let .keyNotFound(key, context): place = context.codingPath + [key]; problem = "is missing"
+        case let .typeMismatch(_, context), let .valueNotFound(_, context), let .dataCorrupted(context):
+            place = context.codingPath; problem = "has a value this version of Frog does not support"
+        default: place = []; problem = ""
+        }
+        guard !place.isEmpty else { return general + ". Check its JSON fields and values." }
+        let path = place.reduce(into: "") { path, key in
+            if let index = key.intValue { path += "[\(index)]" } else { path += (path.isEmpty ? "" : ".") + key.stringValue }
+        }
+        return "\(general): '\(path)' \(problem)."
     }
 
     public static func read(from url: URL) throws -> Configuration {

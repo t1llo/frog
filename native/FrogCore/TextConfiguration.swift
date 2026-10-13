@@ -114,8 +114,11 @@ enum TextConfiguration {
                         suffix: String(trailing) + (comment.map { String(tail[$0...]) } ?? ""))
         }
     }
+    /// Ends every refusal of the two files. It holds once a configuration has loaded;
+    /// `ConfigurationStore.load` says something else at launch, when there is nothing previous.
+    static let keptRemark = "Previous working settings were kept."
     private static func issue(_ index: Int, _ message: String) -> FrogError {
-        .message("config:\(index + 1): \(message). Previous working settings were kept.")
+        .message("config:\(index + 1): \(message). \(keptRemark)")
     }
 
     /// Decodes the two-file representation; absent text keys use defaults, not stale JSON preferences.
@@ -123,7 +126,7 @@ enum TextConfiguration {
     static func decode(_ text: String, companion: Data, retainingUnknownFields: Bool = true) throws -> Configuration {
         var root: [String: Any]
         do { root = try object(companion) }
-        catch { throw FrogError.message("config.json: expected a valid JSON object containing rules and connections. Repair it or import a complete JSON export. Previous working settings were kept.") }
+        catch { throw FrogError.message("config.json: expected a valid JSON object containing rules and connections. Repair it or import a complete JSON export. \(keptRemark)") }
         var preferences = root["preferences"] as? [String: Any] ?? [:]
         for field in fields { set(nil, path: field.path, in: &preferences) }
         var defaults = try object(JSONEncoder().encode(Preferences()))
@@ -173,7 +176,7 @@ enum TextConfiguration {
             let assignments = lines.enumerated().compactMap { index, line in
                 line.key.map { "\($0) (line \(index + 1))" }
             }.joined(separator: ", ")
-            throw FrogError.message("config: \(error.localizedDescription) Check assignments: \(assignments). Previous working settings were kept.")
+            throw FrogError.message("config: \(error.localizedDescription) Check assignments: \(assignments). \(keptRemark)")
         }
     }
 

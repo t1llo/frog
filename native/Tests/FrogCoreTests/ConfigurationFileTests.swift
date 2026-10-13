@@ -192,6 +192,48 @@ final class ConfigurationFileTests: XCTestCase {
         XCTAssertEqual(try store.load().preferences.historyLimit, 200)
     }
 
+    func testAFieldThatCannotBeReadIsNamedByItsPlaceInTheDocument() throws {
+        let data = try ConfigurationFile.encode(configured())
+        func refusal(_ edit: (inout [String: Any]) throws -> Void) throws -> String {
+            var root = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            try edit(&root)
+            var message = ""
+            XCTAssertThrowsError(try ConfigurationFile.decode(JSONSerialization.data(withJSONObject: root))) { message = $0.localizedDescription }
+            return message
+        }
+        // A value another version of Frog wrote, for example a kind of connection this one does not have.
+        let unsupported = try refusal { root in
+            var providers = try XCTUnwrap(root["providers"] as? [[String: Any]])
+            providers[0]["kind"] = "laterService"; root["providers"] = providers
+        }
+        XCTAssertTrue(unsupported.contains("'providers[0].kind' has a value this version of Frog does not support"), unsupported)
+        let nested = try refusal { root in
+            var rules = try XCTUnwrap(root["rules"] as? [[String: Any]])
+            rules[1]["action"] = ["category": "system", "systemAction": "laterAction", "cleanup": false]; root["rules"] = rules
+        }
+        XCTAssertTrue(nested.contains("'rules[1].action.systemAction' has a value"), nested)
+        let missing = try refusal { root in
+            var rules = try XCTUnwrap(root["rules"] as? [[String: Any]])
+            rules[2].removeValue(forKey: "name"); root["rules"] = rules
+        }
+        XCTAssertTrue(missing.contains("'rules[2].name' is missing"), missing)
+        XCTAssertTrue(try refusal { $0["version"] = "one" }.contains("'version' has a value"))
+        XCTAssertTrue(try refusal { $0.removeValue(forKey: "preferences") }.contains("'preferences' is missing"))
+        // Something that is no configuration at all is still called that.
+        for bytes in ["{ broken", "[]", "7"] {
+            XCTAssertThrowsError(try ConfigurationFile.decode(Data(bytes.utf8))) {
+                XCTAssertEqual($0.localizedDescription, "This is not a valid Frog configuration file. Check its JSON fields and values.")
+            }
+        }
+        // The same place is named when the document is the companion of the text file.
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: TextConfiguration.companion(configured())) as? [String: Any])
+        var providers = try XCTUnwrap(root["providers"] as? [[String: Any]])
+        providers[0]["kind"] = "laterService"; root["providers"] = providers
+        XCTAssertThrowsError(try TextConfiguration.decode("", companion: JSONSerialization.data(withJSONObject: root))) {
+            XCTAssertTrue($0.localizedDescription.contains("'providers[0].kind'"), $0.localizedDescription)
+        }
+    }
+
     func testCheckingAPairSkipsUnknownFieldBookkeepingButNoValidation() throws {
         let configuration = configured()
         let json = try TextConfiguration.companion(configuration), text = try TextConfiguration.render(configuration)
