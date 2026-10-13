@@ -158,6 +158,62 @@ final class WindowSwitcherCacheTests: XCTestCase {
         XCTAssertEqual(cache.readySnapshot(frontPID: 20)?.current, draft.id)
     }
 
+    func testSecondSwitchBeforeTheChosenAppIsReportedInFrontGoesBackToTheWindowLeft() async throws {
+        let cache = WindowSwitcherCache()
+        var requests = WindowSwitchFrontRequests()
+        let editor = window("Editor", pid: 10), browser = window("Browser", pid: 20), other = window("Other", pid: 30)
+        _ = await cache.update { .init(windows: [editor, browser, other], current: editor.id) }
+        let start = ContinuousClock.now
+        // The browser was chosen and asked for; macOS still reports the editor in front.
+        cache.noteChosen(browser.id)
+        requests.requested(20, at: start)
+        let front = requests.front(10, at: start.advanced(by: .milliseconds(200)))
+        XCTAssertEqual(front, 20, "The app asked for is the one being left by the next Command-Tab")
+        let ready = try XCTUnwrap(cache.readySnapshot(frontPID: front))
+        var session = WindowSwitchSession<UUID>()
+        session.begin(windows: ready.windows.map(\.id), current: ready.current, backwards: false)
+        XCTAssertEqual(session.selected, editor.id, "A second Command-Tab must go back, not choose the browser again")
+        // Its report arriving with that list open is the switcher's own doing, once.
+        XCTAssertTrue(requests.activated(20, at: start.advanced(by: .milliseconds(300))),
+                      "The late report must not close the list opened since")
+        XCTAssertFalse(requests.activated(20, at: start.advanced(by: .milliseconds(400))), "Coming forward again was not asked for")
+        XCTAssertEqual(requests.front(20, at: start.advanced(by: .milliseconds(400))), 20)
+    }
+
+    func testAppsAskedForAreAwaitedInOrderAndOnlyBriefly() {
+        var requests = WindowSwitchFrontRequests()
+        let start = ContinuousClock.now
+        XCTAssertEqual(requests.front(10, at: start), 10)
+        XCTAssertFalse(requests.activated(20, at: start), "Nothing was asked for")
+        // Back and forth before either report: both are the switcher's own, the last one leads.
+        requests.requested(20, at: start)
+        requests.requested(10, at: start.advanced(by: .milliseconds(100)))
+        XCTAssertEqual(requests.front(20, at: start.advanced(by: .milliseconds(150))), 10)
+        XCTAssertTrue(requests.activated(20, at: start.advanced(by: .milliseconds(200))))
+        XCTAssertEqual(requests.front(20, at: start.advanced(by: .milliseconds(200))), 10, "The app asked for last is still to come")
+        XCTAssertTrue(requests.activated(10, at: start.advanced(by: .milliseconds(250))))
+        XCTAssertEqual(requests.front(nil, at: start.advanced(by: .milliseconds(250))), nil)
+        // A report of the later request settles the earlier one, which never arrived.
+        requests.requested(20, at: start)
+        requests.requested(10, at: start.advanced(by: .milliseconds(100)))
+        XCTAssertTrue(requests.activated(10, at: start.advanced(by: .milliseconds(200))))
+        XCTAssertFalse(requests.activated(20, at: start.advanced(by: .milliseconds(300))))
+        // Another app coming forward is someone else's doing and ends the wait.
+        requests.requested(20, at: start)
+        XCTAssertFalse(requests.activated(30, at: start.advanced(by: .milliseconds(100))))
+        XCTAssertEqual(requests.front(30, at: start.advanced(by: .milliseconds(100))), 30)
+        XCTAssertFalse(requests.activated(20, at: start.advanced(by: .milliseconds(200))))
+        // macOS may never bring an app forward: what it reports counts again after a moment.
+        requests.requested(20, at: start)
+        XCTAssertEqual(requests.front(10, at: start.advanced(by: .milliseconds(900))), 20)
+        XCTAssertEqual(requests.front(10, at: start.advanced(by: .seconds(2))), 10)
+        XCTAssertFalse(requests.activated(20, at: start.advanced(by: .seconds(2))))
+        // So does a request the switcher itself saw fail.
+        requests.requested(20, at: start)
+        requests.withdraw(20)
+        XCTAssertEqual(requests.front(10, at: start), 10)
+    }
+
     func testRefreshingHeldInventoryPreservesCyclingOrderAndSelection() {
         var session = WindowSwitchSession<Int>()
         session.begin(windows: [1, 2, 3], current: 1, backwards: false)

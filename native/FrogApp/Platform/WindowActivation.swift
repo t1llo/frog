@@ -9,6 +9,8 @@ enum WindowActivation {
         request: () -> Bool,
         bringForward: () async -> Bool,
         isFrontmost: () -> Bool,
+        /// An app asked for earlier is still on its way, so being reported in front is stale.
+        expectsAnother: () -> Bool = { false },
         prepare: (() async -> Bool)? = nil,
         isCurrent: () -> Bool = { true },
         pause: () async throws -> Void = { try await Task.sleep(for: .milliseconds(20)) }
@@ -18,8 +20,9 @@ enum WindowActivation {
             guard await prepare(), !Task.isCancelled, isCurrent() else { return false }
         }
         // Start the OS transition immediately, overlapping it with the selected
-        // window's AX work. A same-app selection needs no activation request.
-        let requested = isFrontmost() ? true : request()
+        // window's AX work. A same-app selection needs no activation request,
+        // unless the app must follow another one that has yet to arrive.
+        let requested = isFrontmost() && !expectsAnother() ? true : request()
         guard !Task.isCancelled, isCurrent() else { return false }
         let raisedInFront = isFrontmost()
         guard await raise(), !Task.isCancelled, isCurrent() else { return false }

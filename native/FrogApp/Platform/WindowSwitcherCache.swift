@@ -104,6 +104,34 @@ final class WindowSwitcherCache {
     }
 }
 
+/// Apps the switcher asked macOS to bring forward that are not reported in front yet.
+/// Until then `NSWorkspace` still names the app being left, and the report can arrive
+/// after the next Command–Tab has opened the list or chosen another window.
+struct WindowSwitchFrontRequests {
+    private var pending: [(pid: pid_t, at: ContinuousClock.Instant)] = []
+
+    /// macOS may never bring an app forward; what it reports counts again after a second.
+    private func awaited(_ now: ContinuousClock.Instant) -> [(pid: pid_t, at: ContinuousClock.Instant)] {
+        pending.filter { $0.at.duration(to: now) < .seconds(1) }
+    }
+
+    mutating func requested(_ pid: pid_t, at now: ContinuousClock.Instant = .now) { pending = awaited(now) + [(pid, now)] }
+    mutating func withdraw(_ pid: pid_t) { pending.removeAll { $0.pid == pid } }
+
+    /// Whether an app reported in front comes forward on a request made here, which must
+    /// neither close a list opened since nor cancel a selection made since. Requests are
+    /// answered in order; any other app coming forward ends the wait for all of them.
+    mutating func activated(_ pid: pid_t, at now: ContinuousClock.Instant = .now) -> Bool {
+        pending = awaited(now)
+        guard let answered = pending.firstIndex(where: { $0.pid == pid }) else { pending = []; return false }
+        pending.removeSubrange(...answered)
+        return true
+    }
+
+    /// The app to take as being in front: the last one asked for, else the one reported.
+    func front(_ reported: pid_t?, at now: ContinuousClock.Instant = .now) -> pid_t? { awaited(now).last?.pid ?? reported }
+}
+
 /// Released invocations never present late data; held invocations require rows.
 struct WindowSwitchPresentation {
     private(set) var sessionID: UInt64?

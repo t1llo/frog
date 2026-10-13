@@ -108,6 +108,7 @@ final class WindowSwitcherController {
     private var selectionMoved = false
     /// What the list was released on, for a reading that arrives afterwards.
     private var released: (session: UInt64, window: UUID)?
+    private var frontRequests = WindowSwitchFrontRequests()
     private var unfilteredWindows: [SwitcherWindow] = []
     private var pointer = WindowSwitchPointer()
     private var sessionOnConsole = false
@@ -253,12 +254,16 @@ final class WindowSwitcherController {
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] notification in MainActor.assumeIsolated {
             guard let self else { return }
-            if self.activation != nil, self.activationSpaceTransition != self.activationID, let target = self.activationPID,
-               let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-               app.processIdentifier != target {
-                self.activation?.cancel(); self.activation = nil; self.activationID = nil; self.activationPID = nil
+            let pid = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
+            // An app the switcher itself asked for can arrive after the next Command-Tab:
+            // that is no reason to close the list or to drop the window chosen since.
+            if pid.map({ self.frontRequests.activated($0) }) != true {
+                if self.activation != nil, self.activationSpaceTransition != self.activationID, let target = self.activationPID,
+                   let pid, pid != target {
+                    self.activation?.cancel(); self.activation = nil; self.activationID = nil; self.activationPID = nil
+                }
+                self.cancelAll()
             }
-            self.cancelAll()
             if let holder = self.keyboardHolder, self.keyboardNotice.applicationChanged(now: Date()) {
                 self.keyboardNoticePanel.show(SecureInput.summary(holder))
             }
@@ -303,6 +308,7 @@ final class WindowSwitcherController {
         cancelAll()
         focusMonitor?.cancel(); focusMonitor = nil
         frontReading?.cancel(); frontReading = nil; released = nil
+        frontRequests = WindowSwitchFrontRequests()
         keyboardHolder = nil; keyboardNotice = SecureInputNotice(); keyboardNoticePanel.hide()
         cache.clear(); iconCache = [:]
         iconTask?.cancel(); iconTask = nil
@@ -382,8 +388,10 @@ final class WindowSwitcherController {
         selectionMoved = false; released = nil
         session.reset()
         display.query = ""; unfilteredWindows = []
-        let frontApp = NSWorkspace.shared.frontmostApplication
-        let front = frontApp?.processIdentifier
+        // macOS still reports the app being left while the one just chosen is on its way.
+        let reported = NSWorkspace.shared.frontmostApplication
+        let front = frontRequests.front(reported?.processIdentifier)
+        let frontApp = front == reported?.processIdentifier ? reported : front.flatMap { NSRunningApplication(processIdentifier: $0) }
         let livePIDs = Set(NSWorkspace.shared.runningApplications.compactMap(SwitcherApplication.running).map(\.pid))
         let cached = cache.readySnapshot(frontPID: front, livePIDs: livePIDs)
         // The next scan must rank the window being left the same way.
@@ -535,11 +543,12 @@ final class WindowSwitcherController {
             let activated = await WindowActivation.perform(raise: { await catalog.raise(id: selected.id, isCurrent: isCurrent) }, request: {
                 guard isCurrent() else { return false }
                 if selected.hidden { _ = app.unhide() }
-                guard isCurrent() else { return false }
-                return app.activate(options: [])
+                guard isCurrent(), app.activate(options: []) else { return false }
+                self?.frontRequests.requested(selected.pid)
+                return true
             }, bringForward: { await catalog.bringApplicationForward(id: selected.id, isCurrent: isCurrent) }, isFrontmost: {
                 NSWorkspace.shared.frontmostApplication?.processIdentifier == selected.pid
-            }, prepare: {
+            }, expectsAnother: { self.map { $0.frontRequests.front(selected.pid) != selected.pid } ?? false }, prepare: {
                 let ready = await catalog.prepareActivation(id: selected.id, isCurrent: isCurrent, willChangeSpace: { [weak self] in
                     await MainActor.run {
                         if self?.activationID == activationToken { self?.activationSpaceTransition = activationToken }
@@ -549,6 +558,7 @@ final class WindowSwitcherController {
             }, isCurrent: isCurrent)
             guard activated else {
                 guard !Task.isCancelled, isCurrent() else { return }
+                self?.frontRequests.withdraw(selected.pid)
                 self?.cache.forgetChosen(selected.id)
                 self?.onError?("macOS could not bring the selected window to the front. It may have closed or become unavailable."); return
             }

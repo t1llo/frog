@@ -41,6 +41,17 @@ final class WindowActivationTests: XCTestCase {
         let result = await WindowActivation.perform(raise: { true }, request: { true }, bringForward: { false }, isFrontmost: { false }, pause: {})
         XCTAssertFalse(result)
     }
+    func testAppStillReportedInFrontIsAskedForAgainWhileAnotherIsOnItsWay() async {
+        var requests = 0
+        var raises = 0
+        // The app chosen a moment ago has not arrived; the one returned to must follow it.
+        let result = await WindowActivation.perform(raise: { raises += 1; return true }, request: { requests += 1; return true },
+            bringForward: { XCTFail("Unexpected fallback"); return false }, isFrontmost: { true },
+            expectsAnother: { requests == 0 }, pause: {})
+        XCTAssertTrue(result)
+        XCTAssertEqual(requests, 1, "Without a request the app on its way would end up in front")
+        XCTAssertEqual(raises, 1)
+    }
     func testFinalRaiseWaitsForApplicationToBecomeFrontmost() async {
         var ticks = 0
         var finalRaiseTicks: [Int] = []
