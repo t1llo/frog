@@ -103,8 +103,8 @@ struct AppearanceSettingsView: View {
                     .onAppear { accentInput = appearance.accentHex }
                     .onChange(of: appearance.accentHex) { _, value in accentInput = value }
                 ColorPicker("Accent color", selection: Binding(get: { FrogStyle.accent }, set: { color in
-                    guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return }
-                    var value = appearance; value.useThemeAccent = false; value.lightPalette?["accent"] = nil; value.darkPalette?["accent"] = nil; value.accentHex = String(format: "%02X%02X%02X", Int(rgb.redComponent * 255), Int(rgb.greenComponent * 255), Int(rgb.blueComponent * 255)); save(value)
+                    guard let hex = Self.hex(of: NSColor(color)) else { return }
+                    var value = appearance; value.useThemeAccent = false; value.lightPalette?["accent"] = nil; value.darkPalette?["accent"] = nil; value.accentHex = hex; save(value)
                 }), supportsOpacity: false).labelsHidden()
             }
         }
@@ -132,6 +132,11 @@ struct AppearanceSettingsView: View {
         }
     }
     private var appearance: AppearancePreferences { model.configuration.preferences.appearance ?? AppearancePreferences() }
+    /// The nearest six-digit sRGB hex of a picked colour.
+    static func hex(of color: NSColor) -> String? {
+        guard let rgb = color.usingColorSpace(.sRGB) else { return nil }
+        return String(format: "%02X%02X%02X", Int((rgb.redComponent * 255).rounded()), Int((rgb.greenComponent * 255).rounded()), Int((rgb.blueComponent * 255).rounded()))
+    }
     private func saveAccent() {
         let hex = accentInput.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "").uppercased()
         var value = appearance; value.accentHex = hex; value.useThemeAccent = false
