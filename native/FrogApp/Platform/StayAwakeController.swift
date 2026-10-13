@@ -36,6 +36,7 @@ final class StayAwakeController: ObservableObject {
     private let system: any StayAwakeSystem
     private let sessionFile: URL
     private let now: () -> Date
+    private let monitorInterval: Duration
     private var operation: Task<Void, Never>?
     private var monitor: Task<Void, Never>?
     private var revision = 0
@@ -50,8 +51,9 @@ final class StayAwakeController: ObservableObject {
     private struct Session: Codable { var deadline: Date? }
 
     init(system: any StayAwakeSystem = NativeStayAwakeSystem(), directory: URL? = nil, now: @escaping () -> Date = Date.init,
+         monitorInterval: Duration = .seconds(60),
          openGuide: @escaping (StayAwakeSetup.Mode) async throws -> StayAwakeSetup.Session = { try await StayAwakeSetup.open($0) }) {
-        self.system = system; self.now = now; self.openGuide = openGuide
+        self.system = system; self.now = now; self.monitorInterval = monitorInterval; self.openGuide = openGuide
         let directory = directory ?? ProcessInfo.processInfo.environment["FROG_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Frog")
         sessionFile = directory.appendingPathComponent("stay-awake-session.json")
@@ -62,7 +64,14 @@ final class StayAwakeController: ObservableObject {
 
     func configureFeature(enabled: Bool) {
         featureEnabled = enabled
-        if !enabled, !ownsSession, !isBusy { monitor?.cancel(); monitor = nil }
+        if !enabled, !ownsSession, !isBusy {
+            monitor?.cancel(); monitor = nil
+            // Nothing reads the setting while the feature is off. Do not keep showing a
+            // state that is no longer checked, and drop a read that is still under way.
+            revision += 1
+            if isEnabled { isEnabled = false }
+            if hasReadState { hasReadState = false }
+        }
         else if enabled, started { beginMonitoring() }
         if enabled, started, !hasReadState { operation = Task { await refresh(); await refreshAccess() } }
     }
@@ -234,11 +243,13 @@ final class StayAwakeController: ObservableObject {
 
     private func beginMonitoring() {
         guard !quitting, monitor == nil, featureEnabled || ownsSession else { return }
-        monitor = Task { [weak self] in
+        monitor = Task { [weak self, monitorInterval] in
             while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(60)) } catch { return }
+                do { try await Task.sleep(for: monitorInterval) } catch { return }
                 guard let self else { return }
-                if self.ownsSession || !self.hasReadState { await self.refresh() }
+                // A setting that is on is read on every tick, also when another tool switched
+                // it on, so the menu-bar cup cannot outlive it. While it is off, nothing runs.
+                if self.ownsSession || self.isEnabled || !self.hasReadState { await self.refresh() }
             }
         }
     }

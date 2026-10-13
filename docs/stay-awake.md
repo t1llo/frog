@@ -35,7 +35,7 @@ It validates sudoers afterward and leaves the empty file in place. The main sudo
 ## Session behavior
 
 - Lock the Mac separately before closing its lid. This switch controls sleep, not screen locking.
-- Frog reads back the real setting after every change. Failed reads show an unverified state and retain the session marker for cleanup. If another app already enabled it, the popup shows **Enabled outside Frog**; Frog will not claim that session or disable it when quitting. You can explicitly switch it off.
+- Frog reads back the real setting after every change. Failed reads show an unverified state and retain the session marker for cleanup. If another app already enabled it, the popup shows **On outside Frog**; Frog will not claim that session or disable it when quitting. You can explicitly switch it off.
 - A small machine-local session marker in Application Support lets the next launch restore sleep if an owned session was interrupted. A crash or forced termination cannot run normal quit cleanup; until Frog restarts, the system setting can remain enabled. It can also be restored manually with `sudo /usr/bin/pmset -a disablesleep 0`.
 - If restoring sleep fails during normal quit, Frog reports the error and remains open so you can restore access and retry.
 
