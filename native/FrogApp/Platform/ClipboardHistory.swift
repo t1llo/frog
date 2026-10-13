@@ -69,6 +69,9 @@ actor ClipboardHistoryReader {
     let gate: ClipboardHistoryCaptureGate
     init(name: NSPasteboard.Name, gate: ClipboardHistoryCaptureGate) { self.name = name; self.gate = gate }
 
+    /// The count alone, which is all the watch needs to know while nothing is copied.
+    func changeCount() -> Int { NSPasteboard(name: name).changeCount }
+
     func read(after previousCount: Int) -> Observation {
         let pasteboard = NSPasteboard(name: name)
         if Task.isCancelled { return Observation(changeCount: previousCount, entry: nil, retry: false) }
@@ -116,12 +119,17 @@ final class ClipboardHistoryStore: ObservableObject {
     private var polling: Task<Void, Never>?
     private var pendingCount: Int?
     private var pendingAttempts = 0
+    private let pollPause: @Sendable () async throws -> Void
     var retentionGeneration: UUID { epoch }
 
-    init(pasteboard: NSPasteboard = .general, gate: ClipboardHistoryCaptureGate = .shared) {
+    init(pasteboard: NSPasteboard = .general, gate: ClipboardHistoryCaptureGate = .shared,
+         pollPause: @escaping @Sendable () async throws -> Void = {
+             try await Task.sleep(for: .milliseconds(500), tolerance: .milliseconds(100))
+         }) {
         self.pasteboard = pasteboard
         reader = ClipboardHistoryReader(name: pasteboard.name, gate: gate)
         changeCount = pasteboard.changeCount
+        self.pollPause = pollPause
     }
 
     func configure(enabled: Bool, automaticallyPoll: Bool = true) {
@@ -134,16 +142,22 @@ final class ClipboardHistoryStore: ObservableObject {
         // Never ingest the clipboard that predates opt-in.
         changeCount = pasteboard.changeCount
         if automaticallyPoll {
-            let reader = reader
-            polling = Task { [weak self] in
+            let reader = reader, pause = pollPause
+            // Twice a second, and nearly every time nothing was copied. The watch runs away
+            // from the main actor and turns to it only when there is something to settle.
+            polling = Task.detached(priority: .utility) { [weak self] in
+                // The change count the store has dealt with; nil until it says so.
+                var settled: Int?
                 while !Task.isCancelled {
-                    do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
-                    guard let request = self?.readRequest else { return }
+                    do { try await pause() } catch { return }
+                    if let settled, await reader.changeCount() == settled { continue }
+                    guard let request = await self?.readRequest else { return }
                     // Do not retain the UI store across promised-data IPC, which
                     // AppKit does not expose a cancellation/timeout API for.
                     let observation = await reader.read(after: request.count)
                     guard !Task.isCancelled else { return }
-                    self?.receive(observation, epoch: request.epoch)
+                    guard let store = self else { return }
+                    settled = await store.receive(observation, epoch: request.epoch)
                 }
             }
         }
@@ -158,17 +172,21 @@ final class ClipboardHistoryStore: ObservableObject {
 
     private var readRequest: (count: Int, epoch: UUID) { (changeCount, epoch) }
 
-    private func receive(_ observation: ClipboardHistoryReader.Observation, epoch current: UUID) {
-        guard enabled, current == epoch else { return }
+    /// The change count that needs no further look; nil while the text of a copy is awaited.
+    private var settledCount: Int? { pendingCount == nil ? changeCount : nil }
+
+    @discardableResult
+    private func receive(_ observation: ClipboardHistoryReader.Observation, epoch current: UUID) -> Int? {
+        guard enabled, current == epoch else { return settledCount }
         if observation.retry {
             if pendingCount != observation.changeCount { pendingCount = observation.changeCount; pendingAttempts = 0 }
             pendingAttempts += 1
-            if pendingAttempts < 3 { return }
+            if pendingAttempts < 3 { return settledCount }
         }
         pendingCount = nil; pendingAttempts = 0
         changeCount = observation.changeCount
-        guard let entry = observation.entry else { return }
-        record(entry)
+        if let entry = observation.entry { record(entry) }
+        return settledCount
     }
 
     private func record(_ entry: ClipboardHistoryEntry) {
