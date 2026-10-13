@@ -10,6 +10,7 @@ struct HotkeyRecorder: View {
     var purpose: HotkeyManager.ShortcutPurpose = .rule
     @State private var recording = false
     @State private var hint: String?
+    @State private var id = UUID()
 
     var body: some View {
         HStack(spacing: 6) {
@@ -26,8 +27,9 @@ struct HotkeyRecorder: View {
                 KeyCapture(recording: $recording, hotkey: $hotkey, hint: $hint, purpose: purpose)
                     .frame(width: 1, height: 1).accessibilityHidden(true)
             }
-        }.onChange(of: recording) { _, value in model.setShortcutRecording(value) }
-            .onDisappear { if recording { model.setShortcutRecording(false) } }
+        }.onChange(of: recording) { _, value in if value { model.beginShortcutRecording(id) } else { model.endShortcutRecording(id) } }
+            // A recorder that comes back on screen must not still claim to be recording.
+            .onDisappear { recording = false; model.endShortcutRecording(id) }
         if let hint { InlineIssue(message: hint) }
     }
 }

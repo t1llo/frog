@@ -104,7 +104,9 @@ final class AppModel: ObservableObject {
     private lazy var usagePreferenceWriter = UsagePreferenceWriter(store: configurationStore, initial: configuration)
     private var usagePreferenceRevision = 0
     private var legacyUsagePreferences = UsageDashboardPreferences()
-    private var isRecordingShortcut = false
+    private(set) var isRecordingShortcut = false
+    /// The recorders that are recording now.
+    private var shortcutRecorders = Set<UUID>()
 
     init(dataDirectory: URL? = nil, registerShortcuts: Bool = true,
          complete: ((String, Rule, ProviderConfiguration, String?) async throws -> String)? = nil,
@@ -848,7 +850,20 @@ final class AppModel: ObservableObject {
         status = "Configuration imported. Check provider credentials and shortcut status."
     }
 
-    func setShortcutRecording(_ recording: Bool) {
+    /// Clicking a second recorder starts it before the first notices that it lost the keyboard,
+    /// so shortcuts go off with the first recorder and come back only when the last one has ended.
+    func beginShortcutRecording(_ id: UUID) {
+        guard shortcutRecorders.insert(id).inserted, shortcutRecorders.count == 1 else { return }
+        setShortcutRecording(true)
+    }
+
+    /// Harmless for a recorder that is not recording: one reports its end when it stops and again when it leaves the screen.
+    func endShortcutRecording(_ id: UUID) {
+        guard shortcutRecorders.remove(id) != nil, shortcutRecorders.isEmpty else { return }
+        setShortcutRecording(false)
+    }
+
+    private func setShortcutRecording(_ recording: Bool) {
         toolkit.menuBarOrganizer.setShortcutRecording(recording)
         if recording { commandBar.hide() }
         if recording { dictation.cancel() }
