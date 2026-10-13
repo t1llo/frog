@@ -257,6 +257,13 @@ check_access() {
     done
 }
 
+# closing "Headline" clears, then shows the headline the way the library's finish
+# shows its own. That one always reads "Setup complete", which a reset is not.
+closing() {
+    _clear
+    printf '\n%s%s  ✓ %s%s\n\n' "$BOLD" "$GREEN" "$1" "$RESET"
+}
+
 [[ "$(uname -s)" == Darwin ]] || { say "This setup is for macOS."; exit 1; }
 [[ "$(id -u)" != 0 ]] || { say "Run this guide as your normal Mac user, not as root."; exit 1; }
 [[ "$MODE" == setup || "$MODE" == reset ]] || { say "Use setup or reset."; exit 1; }
@@ -288,7 +295,7 @@ if [[ "$MODE" == reset ]]; then
     stage "Verify the reset"
     /usr/bin/sudo /usr/sbin/visudo -c
     /usr/bin/sudo /bin/test ! -s "$RULE_FILE"
-    finish
+    closing "Reset complete"
     say "Frog's access file is now empty. Sleep is allowed."
     if check_access 2>/dev/null; then
         say "Another sudoers rule still allows the power commands; Frog will show their actual availability."
