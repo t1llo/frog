@@ -85,9 +85,7 @@ import SwiftUI
          openFile: @escaping @MainActor (URL) -> Bool = { NSWorkspace.shared.open($0) },
          loadSettings: @escaping @Sendable () async -> [SystemSetting] = { await MacSettingsIndex.shared.load() },
          openSetting: @escaping @MainActor (SystemSetting) throws -> Void = { try MacSettingsNavigation.open($0) },
-         loadApplications: @escaping @MainActor () async -> [Rule] = {
-             await ApplicationCatalogStore.shared.loadIfNeeded(); return ApplicationCatalogStore.shared.installed
-         },
+         loadApplications: @escaping @MainActor () async -> [Rule] = { await ApplicationCatalogStore.shared.load() },
          applicationNames: @escaping @MainActor (String) -> [String] = { ApplicationCatalogStore.shared.alternativeNames[$0] ?? [] }) {
         self.model = model; self.pasteboard = pasteboard; self.loadApplications = loadApplications
         self.applicationNames = applicationNames

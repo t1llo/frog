@@ -80,7 +80,7 @@ final class ApplicationCatalogStore: ObservableObject {
     /// By application path, as the last scan found them.
     private(set) var alternativeNames: [String: [String]] = [:]
     private let discover: @Sendable () async -> ApplicationCatalog.Discovery
-    private var loading: Task<ApplicationCatalog.Discovery, Never>?
+    private var loading: Task<[Rule], Never>?
     private var scannedAt: ContinuousClock.Instant?
     private var cachedConfiguration: [Rule]?
     private var cachedRows: [Rule] = []
@@ -89,27 +89,34 @@ final class ApplicationCatalogStore: ObservableObject {
         await Task.detached(priority: .utility) { ApplicationCatalog.scan() }.value
     }) { self.discover = discover }
 
-    func loadIfNeeded() async {
-        if let scannedAt, scannedAt.duration(to: .now) < .seconds(60) { return }
-        if let loading { _ = await loading.value; return }
+    func loadIfNeeded() async { await load() }
+    /// The installed applications, scanned again when the last scan is older than a minute. Callers that arrive
+    /// during a scan share it. The scan stores what it found before any of them goes on, so none reads the list
+    /// of the scan before.
+    @discardableResult func load() async -> [Rule] {
+        if let scannedAt, scannedAt.duration(to: .now) < .seconds(60) { return installed }
+        if let loading { return await loading.value }
         let discover = self.discover
-        let task = Task { await discover() }
+        let task = Task {
+            let discovered = await discover()
+            let previousIDs = Dictionary(uniqueKeysWithValues: installed.compactMap { rule in
+                rule.action?.applicationPath.map { ($0, rule.id) }
+            })
+            let refreshed = discovered.rules.map { rule in
+                var rule = rule
+                if let path = rule.action?.applicationPath, let id = previousIDs[path] { rule.id = id }
+                return rule
+            }
+            alternativeNames = discovered.alternativeNames
+            if refreshed != installed {
+                cachedConfiguration = nil
+                installed = refreshed
+            }
+            scannedAt = .now; loading = nil
+            return installed
+        }
         loading = task
-        let discovered = await task.value
-        let previousIDs = Dictionary(uniqueKeysWithValues: installed.compactMap { rule in
-            rule.action?.applicationPath.map { ($0, rule.id) }
-        })
-        let refreshed = discovered.rules.map { rule in
-            var rule = rule
-            if let path = rule.action?.applicationPath, let id = previousIDs[path] { rule.id = id }
-            return rule
-        }
-        alternativeNames = discovered.alternativeNames
-        if refreshed != installed {
-            cachedConfiguration = nil
-            installed = refreshed
-        }
-        scannedAt = .now; loading = nil
+        return await task.value
     }
 
     func rows(configured: [Rule]) -> [Rule] {

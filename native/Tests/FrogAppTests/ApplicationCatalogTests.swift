@@ -25,6 +25,32 @@ final class ApplicationCatalogTests: XCTestCase {
         XCTAssertEqual(updated.first?.hotkey, zulu.hotkey)
         XCTAssertEqual(updated.first?.id, zulu.id)
     }
+    @MainActor
+    func testEveryCallerThatWaitedForAScanFindsItsApplications() async {
+        var alpha = Rule(name: "Alpha", instructions: "", enabled: false)
+        alpha.action = RuleAction(category: .application); alpha.action?.applicationPath = "/Applications/Alpha.app"
+        let gate = CatalogGate([alpha])
+        let store = ApplicationCatalogStore(discover: { ApplicationCatalog.Discovery(rules: await gate.scan()) })
+        // The command bar reads the list as soon as its wait ends. One that joined a scan already under way must
+        // not be let through before the scan's result is stored.
+        var joined = 0
+        let first = Task { @MainActor in await store.loadIfNeeded(); return store.installed.map(\.name) }
+        await gate.started()
+        let late = (0..<3).map { _ in
+            Task { @MainActor in joined += 1; return await store.load().map(\.name) }
+        }
+        while joined < late.count { await Task.yield() }
+        XCTAssertEqual(store.installed, [])
+        await gate.release()
+        for caller in late {
+            let found = await caller.value
+            XCTAssertEqual(found, ["Alpha"])
+        }
+        let found = await first.value
+        XCTAssertEqual(found, ["Alpha"])
+        let scans = await gate.calls
+        XCTAssertEqual(scans, 1)
+    }
     func testAssignedShortcutsComeFirstEvenWhenDisabled() {
         func app(_ name: String, assigned: Bool = false) -> Rule {
             var rule = Rule(name: name, instructions: "", enabled: false)
@@ -85,6 +111,25 @@ final class ApplicationCatalogTests: XCTestCase {
         let names = Dictionary(uniqueKeysWithValues: found.rules.map { ($0.name, found.alternativeNames[$0.action?.applicationPath ?? ""]) })
         XCTAssertEqual(names, ["FixtureVPN": ["Fixture VPN"], "Plain": nil, "Visual Studio Fixture": ["Code"]])
     }
+}
+
+/// A scan that waits to be let through, so that callers can arrive while it runs.
+private actor CatalogGate {
+    let applications: [Rule]
+    var calls = 0
+    private var open = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+    init(_ applications: [Rule]) { self.applications = applications }
+    func scan() async -> [Rule] {
+        calls += 1
+        for waiter in waiting { waiter.resume() }; waiting = []
+        if !open { await withCheckedContinuation { waiting.append($0) } }
+        return applications
+    }
+    func started() async {
+        if calls == 0 { await withCheckedContinuation { waiting.append($0) } }
+    }
+    func release() { open = true; for waiter in waiting { waiter.resume() }; waiting = [] }
 }
 
 private actor CatalogDiscovery {
