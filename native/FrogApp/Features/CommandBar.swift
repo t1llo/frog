@@ -233,7 +233,7 @@ import SwiftUI
             let consumed = MainActor.assumeIsolated {
                 guard let self else { return false }
                 if event.type != .keyDown { if event.window !== self.panel { self.hide() }; return false }
-                guard event.window === self.panel else { return false }
+                guard event.window === self.panel, Self.handlesKey(event.keyCode, firstResponder: self.panel?.firstResponder) else { return false }
                 switch event.keyCode {
                 case 53: self.hide(); return true
                 case 125: self.selection = min(max(0, self.results.count - 1), self.selection + 1); return true
@@ -322,6 +322,11 @@ import SwiftUI
                 self.updateResults()
             }
         }
+    }
+    /// Escape, the arrow keys and Return act on the results before the search field sees them. An input method
+    /// that is composing there needs them itself, to cancel, pick or confirm a candidate.
+    static func handlesKey(_ keyCode: UInt16, firstResponder: NSResponder?) -> Bool {
+        [53, 125, 126, 36, 76].contains(keyCode) && (firstResponder as? NSTextInputClient)?.hasMarkedText() != true
     }
     /// The rows a presentation starts with and the field they paste into. This runs before the panel takes
     /// keyboard focus and opens no window.

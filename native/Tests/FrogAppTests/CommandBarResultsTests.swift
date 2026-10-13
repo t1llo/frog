@@ -3,8 +3,21 @@ import XCTest
 import FrogCore
 @testable import FrogApp
 
-/// The rows the command bar lists, built without presenting its panel.
+/// The rows the command bar lists and the keys it takes, decided without presenting its panel.
 @MainActor final class CommandBarResultsTests: XCTestCase {
+    func testAnInputMethodThatIsComposingKeepsEscapeArrowsAndReturn() {
+        let keys: [UInt16] = [53, 125, 126, 36, 76]
+        let field = NSTextView(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        for key in keys { XCTAssertTrue(CommandBar.handlesKey(key, firstResponder: field), "Key \(key)") }
+        field.setMarkedText("にほん", selectedRange: NSRange(location: 3, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertTrue(field.hasMarkedText())
+        for key in keys { XCTAssertFalse(CommandBar.handlesKey(key, firstResponder: field), "Key \(key) while composing") }
+        field.unmarkText()
+        for key in keys { XCTAssertTrue(CommandBar.handlesKey(key, firstResponder: field), "Key \(key) after composing") }
+        XCTAssertTrue(CommandBar.handlesKey(36, firstResponder: nil))
+        XCTAssertFalse(CommandBar.handlesKey(0, firstResponder: field))
+    }
+
     func testFocusedFieldIsReadOnlyWhenClipboardRowsOrSnippetsCanPasteIntoIt() throws {
         for (features, expected) in [([FeatureID](), 0), ([.clipboard], 1), ([.snippets], 1)] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
