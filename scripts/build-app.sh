@@ -44,6 +44,12 @@ if [[ ! -s "$metal_library" ]]; then
     echo 'MLX Metal resources are missing. Build with the Xcode SwiftBuild toolchain; do not distribute this bundle.' >&2
     exit 1
 fi
+# A library that is present can still fail to load, which a person would only
+# meet at the first text model. Loading needs a Metal device, so CI runners skip it.
+if [[ -z "${CI:-}" ]] && ! swift scripts/check-metal.swift "$metal_library"; then
+    echo 'MLX Metal resources do not load; do not distribute this bundle.' >&2
+    exit 1
+fi
 chmod +x "$app/Contents/MacOS/Frog"
 sign_args=(--force --entitlements native/Frog.entitlements --sign "${FROG_SIGN_IDENTITY:--}")
 # Hardened library validation requires a real signing team for embedded frameworks.
