@@ -109,6 +109,9 @@ struct OrganizerMenuState: Equatable {
     @Published private(set) var hotkeyError: String?
     var onShowSettings: (() -> Void)?
     var onSettingsChange: ((MenuBarPreferences) -> Void)?
+    /// What Frog's own menu says while the organizer is switched on but has taken its arrow away.
+    /// With the arrow gone, nothing else in the menu bar tells why every icon is shown again.
+    var menuNotice: String? { isEnabled && !isInstalled ? issue : nil }
 
     private let items: any OrganizerStatusItems
     private let hotkeys: any OrganizerHotkey

@@ -70,6 +70,9 @@ Implemented in `native/FrogApp/Platform/MenuBarOrganizer.swift`:
   notification for it. Never terminate, uninstall or reconfigure Hidden Bar.
   Detection currently covers Hidden Bar, not every possible third-party menu-bar
   organizer.
+- While the organizer is switched on but its helpers are removed (Hidden Bar is
+  running, or the macOS version is unsupported), Frog's own menu repeats the
+  explanation. The arrow that leads to Menu bar settings is gone in that state.
 
 Right-clicking Frog's arrow or clicking a divider opens a native context menu with
 show/hide, show-all/arrange, checked auto-hide, and Menu bar settings. Option-click

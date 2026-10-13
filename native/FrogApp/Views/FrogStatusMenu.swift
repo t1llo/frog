@@ -80,6 +80,7 @@ struct FrogStatusMenu: View {
                     IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)
                 }.padding(8)
             }
+            MenuBarOrganizerNotice(organizer: model.toolkit.menuBarOrganizer)
             if model.configuration.preferences.featureEnabled(.commandBar) {
                 action("Command bar", symbol: "magnifyingglass") { dismiss(); model.showCommandBar() }
             }
@@ -148,6 +149,20 @@ struct FrogStatusMenu: View {
 
     private func action(_ title: String, symbol: String, key: String? = nil, perform: @escaping () -> Void) -> some View {
         MenuActionRow(title: title, symbol: symbol, key: key, action: perform)
+    }
+}
+
+/// The organizer takes its arrow out of the menu bar when it cannot run, so this menu says why.
+private struct MenuBarOrganizerNotice: View {
+    @ObservedObject var organizer: MenuBarOrganizer
+    var body: some View {
+        if let notice = organizer.menuNotice {
+            HStack(alignment: .top) {
+                Text(notice).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                    .lineLimit(3).help("Open Menu bar for details.")
+                Spacer(minLength: 0)
+            }.padding(8)
+        }
     }
 }
 

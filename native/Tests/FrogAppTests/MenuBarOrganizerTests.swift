@@ -433,6 +433,29 @@ import FrogCore
         fixture.organizer.stop()
     }
 
+    func testFrogMenuCarriesTheReasonOnlyWhileTheArrowIsGone() {
+        let fixture = OrganizerFixture()
+        fixture.organizer.configure(enabled: true, settings: MenuBarPreferences())
+        XCTAssertNil(fixture.organizer.menuNotice)
+        // A reversed arrangement keeps the arrow on screen, and the arrow's own menu leads to the reason.
+        fixture.items.reversed = true; fixture.organizer.tick()
+        XCTAssertNotNil(fixture.organizer.issue)
+        XCTAssertNil(fixture.organizer.menuNotice)
+        fixture.items.reversed = false
+        fixture.env.supportsLengthTechnique = false; fixture.organizer.tick()
+        XCTAssertTrue(fixture.items.active.isEmpty)
+        XCTAssertNotNil(fixture.organizer.menuNotice)
+        XCTAssertEqual(fixture.organizer.menuNotice, fixture.organizer.issue)
+        fixture.organizer.stop()
+        XCTAssertNil(fixture.organizer.menuNotice, "Switched off is not a failure to explain")
+
+        fixture.env.supportsLengthTechnique = true; fixture.env.competingOrganizer = true
+        fixture.organizer.configure(enabled: true, settings: MenuBarPreferences())
+        XCTAssertEqual(fixture.organizer.menuNotice, fixture.organizer.issue)
+        XCTAssertNotNil(fixture.organizer.menuNotice)
+        fixture.organizer.stop()
+    }
+
     func testHotkeySuspendConflictAndDefaultOptIn() {
         let fixture = OrganizerFixture()
         var settings = MenuBarPreferences()
