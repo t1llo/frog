@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 import FrogCore
 @testable import FrogApp
@@ -306,6 +307,48 @@ import FrogCore
         fixture.time = 25; fixture.organizer.tick()
         XCTAssertFalse(fixture.organizer.isExpanded)
         fixture.organizer.stop()
+    }
+
+    /// The settings page says "not showing" when it is put into its window, before it says anything else.
+    func testSettingsReportedHiddenTwiceEndNoArrangementStartedFromTheArrow() {
+        let fixture = OrganizerFixture()
+        fixture.organizer.configure(enabled: true, settings: MenuBarPreferences())
+        fixture.items.menuAction?(.arrange)
+        fixture.organizer.setSettingsVisible(false)
+        XCTAssertTrue(fixture.organizer.isEditingArrangement, "Opening Settings must not end arranging")
+        fixture.organizer.setSettingsVisible(true); fixture.organizer.setSettingsVisible(true)
+        XCTAssertTrue(fixture.organizer.isEditingArrangement)
+        fixture.organizer.setSettingsVisible(false)
+        XCTAssertFalse(fixture.organizer.isEditingArrangement, "Leaving the page that was showing still ends arranging")
+        fixture.organizer.stop()
+    }
+
+    /// A closed settings window keeps its page. Only a page that can be seen may hold the hidden icons open.
+    func testSettingsPageInAWindowThatIsNotOnScreenLeavesAutoHideAlone() {
+        // The page keeps its organizer for as long as SwiftUI keeps the page, so this one owns what it reads.
+        final class Clock { var time: TimeInterval = 0 }
+        let clock = Clock()
+        let env = OrganizerFixture().env
+        let organizer = MenuBarOrganizer(statusItems: FixtureOrganizerItems(), hotkeys: FixtureOrganizerHotkey(), automaticTicks: false,
+                                         environment: { env }, now: { clock.time })
+        var settings = MenuBarPreferences(); settings.autoHideSeconds = 5
+        organizer.configure(enabled: true, settings: settings)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false)
+        let host = NSHostingView(rootView: MenuBarSettingsView(organizer: organizer, settings: .constant(settings)).environmentObject(model))
+        // The window is never shown: it holds the page the way a closed settings window does.
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+        // What the page reports arrives on the main queue.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertTrue(organizer.isExpanded)
+        clock.time = 6; organizer.tick()
+        XCTAssertFalse(organizer.isExpanded, "A page nobody can see must not keep the icons from hiding")
+        organizer.stop()
     }
 
     func testScreenResizeUpdatesCollapsedLengthAndNotchOcclusionRecovers() {

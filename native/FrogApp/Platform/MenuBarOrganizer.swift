@@ -214,7 +214,10 @@ struct OrganizerMenuState: Equatable {
         resetDeadline()
     }
 
+    /// Whether the settings page can be seen. The page says "no" each time it is put into its window,
+    /// which must not end an arrangement that was started from the arrow.
     func setSettingsVisible(_ visible: Bool) {
+        guard settingsVisible != visible else { return }
         settingsVisible = visible
         if visible { pendingInitialCollapse = false }
         if !visible && isEditingArrangement { setEditingArrangement(false) }

@@ -63,8 +63,12 @@ struct MenuBarSettingsView: View {
             Text("macOS remembers where you drag each icon. If something is out of reach, open Frog from Applications and choose Show all & arrange. A notch can limit the space available for revealed icons.")
                 .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
         }
-        .onAppear { organizer.setSettingsVisible(true) }
-        .onDisappear { organizer.setSettingsVisible(false) }
+        // A closed, minimised or covered settings window keeps this page, so appearing and
+        // disappearing do not say whether it can be seen. Out of sight it must not hold the icons open.
+        .background(FeatureVisibility { visible in
+            // Leaving the page ends arranging, which the organizer publishes: never inside the update that removes the page.
+            DispatchQueue.main.async { organizer.setSettingsVisible(visible) }
+        })
     }
 
     private var arrangementPreview: some View {
