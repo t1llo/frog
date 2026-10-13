@@ -38,6 +38,18 @@ final class ScriptRunnerTests: XCTestCase {
         XCTAssertLessThan(start.duration(to: .now), .seconds(3))
     }
 
+    func testScriptsSearchTheHomebrewDirectoriesAheadOfTheInheritedPath() async throws {
+        XCTAssertEqual(ScriptProcess.searchPath(inherited: "/usr/bin:/bin:/usr/sbin:/sbin"), "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+        XCTAssertEqual(ScriptProcess.searchPath(inherited: "/fixture/bin:/usr/local/bin:/usr/bin:/opt/homebrew/bin:/fixture/bin"), "/opt/homebrew/bin:/usr/local/bin:/fixture/bin:/usr/bin")
+        XCTAssertEqual(ScriptProcess.searchPath(inherited: nil), "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+        let result = try await ScriptProcess.run("print -r -- $PATH")
+        XCTAssertEqual(result.status, 0)
+        let directories = result.output.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ":").map(String.init)
+        XCTAssertEqual(Array(directories.prefix(2)), ["/opt/homebrew/bin", "/usr/local/bin"])
+        XCTAssertEqual(Set(directories).count, directories.count)
+        XCTAssertTrue(directories.contains("/usr/bin"))
+    }
+
     @MainActor func testShelfAcceptsNativeFileURLAndTextProviders() async throws {
         let url = URL(fileURLWithPath: "/fixture/folder/example.txt")
         let file = await ShelfDrop.document(from: NSItemProvider(object: url as NSURL))

@@ -20,6 +20,14 @@ enum ScriptProcess {
         return try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
     }
 
+    /// Frog started from the Dock or at login inherits the system directories only, and the script's shell runs
+    /// without the startup files that add Homebrew's.
+    static func searchPath(inherited: String?) -> String {
+        var seen = Set<String>()
+        let directories = ["/opt/homebrew/bin", "/usr/local/bin"] + (inherited ?? "/usr/bin:/bin:/usr/sbin:/sbin").split(separator: ":").map(String.init)
+        return directories.filter { seen.insert($0).inserted }.joined(separator: ":")
+    }
+
     private static func execute(_ script: String, timeout: TimeInterval, outputLimit: Int) throws -> ScriptResult {
         try Task.checkCancellation()
         var descriptors: [Int32] = [0, 0]
@@ -38,7 +46,8 @@ enum ScriptProcess {
         posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT))
         posix_spawnattr_setpgroup(&attributes, 0)
         let argv = ["/bin/zsh", "-f", "-c", script].map { strdup($0) } + [nil]
-        let environment = ProcessInfo.processInfo.environment.merging(["PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"]) { old, _ in old }
+        var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = searchPath(inherited: environment["PATH"])
         let env = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
         defer { argv.forEach { free($0) }; env.forEach { free($0) } }
         var pid: pid_t = 0
