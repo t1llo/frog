@@ -35,6 +35,7 @@ private struct HistoryContent: View {
         let all = allEntries
         let displayedEntries = HistoryFeed.narrowed(all, filter: model.historyFilter, search: search, revealed: visibility.revealed)
         let lastEntryID = displayedEntries.last?.id
+        let emptyState = HistoryEmptyState.describing(all: all, shown: displayedEntries, filter: model.historyFilter, search: search)
         VStack(alignment: .leading, spacing: 14) {
             if let viewing = all.first(where: { $0.id == self.viewing }) {
                 HStack {
@@ -96,14 +97,15 @@ private struct HistoryContent: View {
                     }
                 }
 
-            if all.isEmpty {
-                FrogEmptyState(symbol: clipboardSelected ? "clipboard" : "clock.arrow.circlepath", title: clipboardSelected ? "No copied text yet" : "No history yet",
-                               message: clipboardSelected ? "Copy text in any app to add it here. Items are cleared when Clipboard is disabled or Frog quits." : model.configuration.preferences.historyEnabled
+            if emptyState == .noMatches {
+                FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another filter or clear your search.")
+                Spacer(minLength: 0)
+            } else if let emptyState {
+                let copied = emptyState == .noCopiedText
+                FrogEmptyState(symbol: copied ? "clipboard" : "clock.arrow.circlepath", title: copied ? "No copied text yet" : "No history yet",
+                               message: copied ? "Copy text in any app to add it here. Items are cleared when Clipboard is disabled or Frog quits." : model.configuration.preferences.historyEnabled
                                 ? "Transformations and interrupted recordings will appear here."
                                  : "Enable saved history in Settings or Clipboard in Features.")
-                Spacer(minLength: 0)
-            } else if displayedEntries.isEmpty {
-                FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another filter or clear your search.")
                 Spacer(minLength: 0)
             } else {
                 ScrollView {
@@ -225,6 +227,21 @@ enum HistoryPreview {
     static func text(_ original: String) -> String {
         let prefix = original.prefix(513)
         return prefix.count > 512 ? String(prefix.prefix(512)) + "…" : String(prefix)
+    }
+}
+
+/// What the page says in place of an empty list.
+enum HistoryEmptyState: Equatable {
+    case noHistory, noCopiedText, noMatches
+
+    /// "No matches" is for a filter or search that leaves nothing of an existing feed. The
+    /// Clipboard filter without copied items has nothing to match, also when saved history
+    /// exists. The feed trims the search, so spaces alone are no search.
+    static func describing(all: [HistoryItem], shown: [HistoryItem], filter: HistoryFilter?, search: String) -> Self? {
+        guard shown.isEmpty else { return nil }
+        if all.isEmpty { return filter == .clipboard ? .noCopiedText : .noHistory }
+        let searching = !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return filter == .clipboard && !searching ? .noCopiedText : .noMatches
     }
 }
 
