@@ -72,6 +72,8 @@ actor CodexScanner {
     private var records: [String: TokenRecord] = [:]
     private var limits: [String: (date: Date, json: [String: Any])] = [:]
     private var creditBalance: CodexCredits?
+    /// Counts the passes that may have changed what `scan()` returns; see `TokenScanner`.
+    private var revision = 0
     private let iso: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -106,7 +108,9 @@ actor CodexScanner {
                 files[url.path] = st
             }
         }
-        records = records.filter { $0.value.date >= cutoff }
+        let recent = records.filter { $0.value.date >= cutoff }
+        if recent.count != records.count { revision += 1 }
+        records = recent
         let main = limits["codex"].flatMap { parseCodexLogLimits($0.json, asOf: $0.date, lastCredits: creditBalance) }
         var usage = main?.usage ?? Usage()
         for id in limits.keys.sorted() where id != "codex" {
@@ -120,12 +124,17 @@ actor CodexScanner {
         return (Array(records.values), combined.hasData ? combined : nil, found)
     }
 
+    func revisedScan() -> (result: (records: [TokenRecord], limits: CodexLimits?, found: Bool), revision: Int) {
+        (scan(), revision)
+    }
+
     private func read(_ url: URL, state st: inout FileState) -> UInt64 {
         let needles = ["\"token_usage_record\"", "\"token_count\"", "\"turn_context\"", "\"session_meta\""]
             .map { Data($0.utf8) }
         return usageLines(in: url, from: st.offset) { line in
             // Skip prompts/tool output before JSON parsing, without assuming JSON key order.
-            if needles.contains(where: { line.range(of: $0) != nil }) { add(line, &st) }
+            // Records, limits and credits change through these lines only.
+            if needles.contains(where: { line.range(of: $0) != nil }) { revision += 1; add(line, &st) }
         }
     }
 

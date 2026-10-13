@@ -18,6 +18,10 @@ actor OpenCodeReader {
         let rows: [(key: String, record: TokenRecord)]
     }
     private var snapshots: [String: Snapshot] = [:]
+    /// Counts the changes to the records `scan()` returns; see `TokenScanner`. A row's key holds
+    /// everything its record is made of, so the keys of the last pass stand for its records.
+    private var revision = 0
+    private var lastKeys = Set<String>()
     init(root: URL? = nil) { self.root = root }
     static var dataDir: URL {
         openCodeDataDirectory()
@@ -59,7 +63,12 @@ actor OpenCodeReader {
                 out.append(r.record)
             }
         }
+        if seen != lastKeys { lastKeys = seen; revision += 1 }
         return (out, !dbs.isEmpty, unreadable ? "OpenCode database could not be refreshed. Any previous counters are retained until the next successful read." : nil)
+    }
+
+    func revisedScan() -> (result: (records: [TokenRecord], found: Bool, warning: String?), revision: Int) {
+        (scan(), revision)
     }
 
     private func stamps(_ url: URL) -> [Stamp?] {

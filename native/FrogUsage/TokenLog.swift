@@ -44,6 +44,9 @@ actor TokenScanner {
     /// earlier lines into a new file, so the same key shows up many times. Keep the largest.
     private var records: [String: TokenRecord] = [:]
     private var fastResponses: Set<String> = []
+    /// Counts every change to what `scan()` returns, so that a pass that brought nothing new is
+    /// told from one that did without comparing thousands of records.
+    private var revision = 0
     private let root: URL?
     private let roots: [URL]?
     init(root: URL? = nil, roots: [URL]? = nil) {
@@ -72,10 +75,16 @@ actor TokenScanner {
                 }
             }
         }
-        records = records.filter { $0.value.date >= cutoff }
+        let recent = records.filter { $0.value.date >= cutoff }
+        if recent.count != records.count { revision += 1 }
+        records = recent
         fastResponses = fastResponses.intersection(records.keys)
         return Array(records.values)
     }
+
+    /// A scan with the revision it left behind. Both come from one turn of the actor, so no
+    /// other scan can make the revision newer than the records.
+    func revisedScan() -> (result: [TokenRecord], revision: Int) { (scan(), revision) }
 
     /// Parses complete lines from `offset` on and returns how many bytes it consumed. A final
     /// line without a newline may still be being written, so it is left for the next pass.
@@ -113,6 +122,7 @@ actor TokenScanner {
         let r = TokenRecord(date: min(old?.date ?? date, date), model: model, provider: .claude, source: .claudeCode, input: input, output: output,
                             cacheWrite: cacheWrite, cacheRead: cacheRead, cost: cost, cacheWrite1h: write1h)
         records[key] = r
+        revision += 1
     }
 }
 
@@ -182,6 +192,12 @@ final class TokenStore: ObservableObject {
     @Published private(set) var loaded = false
     @Published private(set) var activityWarning: String?
     private var scanned = false
+    /// The scanners' revisions behind `records`. Nil until a scan has been taken over.
+    private var appliedRevisions: [Int]?
+    /// Where the newest hour and day began when `summaries` were worked out.
+    private var summarizedBuckets: [Date?]?
+    /// The time the charts end at. A test moves it to see them roll over.
+    private let clock: () -> Date
     private var scanning = false
     private var nextScanAt = Date.distantPast
     private var pendingScan = false
@@ -193,13 +209,15 @@ final class TokenStore: ObservableObject {
     private var active = false
     private var lifecycle = 0
     private var timer: Timer?
-    private var scanTask: Task<Void, Never>?
+    /// The scan and the aggregation can be read so that a test waits for them instead of sleeping.
+    private(set) var scanTask: Task<Void, Never>?
     private var liveTask: Task<Void, Never>?
-    private var aggregationTask: Task<Void, Never>?
+    private(set) var aggregationTask: Task<Void, Never>?
     private let fixtureRoot: URL?
 
-    init(fixtureRoot: URL? = nil, claudeDirectory: URL = ClaudePaths.directory()) {
+    init(fixtureRoot: URL? = nil, claudeDirectory: URL = ClaudePaths.directory(), clock: @escaping () -> Date = { Date() }) {
         self.fixtureRoot = fixtureRoot
+        self.clock = clock
         self.claudeDirectory = fixtureRoot?.appendingPathComponent("claude") ?? claudeDirectory
         claude = TokenScanner(root: fixtureRoot?.appendingPathComponent("claude"), roots: fixtureRoot == nil ? ClaudePaths.transcriptRoots(
             home: FileManager.default.homeDirectoryForCurrentUser, configured: claudeDirectory) : nil)
@@ -214,6 +232,7 @@ final class TokenStore: ObservableObject {
         stop()
         claudeDirectory = directory
         claude = TokenScanner(roots: ClaudePaths.transcriptRoots(home: FileManager.default.homeDirectoryForCurrentUser, configured: directory))
+        appliedRevisions = nil
         claudeActivity = nil
         nextScanAt = .distantPast
         if wasActive { start() }
@@ -249,24 +268,34 @@ final class TokenStore: ObservableObject {
         nextScanAt = Date().addingTimeInterval(60)
         let generation = lifecycle
         scanTask = Task {
-            async let a = claude.scan()
-            async let b = codex.scan()
-            async let c = opencode.scan()
-            async let d = pi.scan()
+            async let a = claude.revisedScan()
+            async let b = codex.revisedScan()
+            async let c = opencode.revisedScan()
+            async let d = pi.revisedScan()
             let statsDirectory = claudeDirectory
             async let stats = try? usageWork { readClaudeActivity(directory: statsDirectory) }
-            let (cl, cx, oc, piRecords, lifetime) = await (a, b, c, d, stats)
+            let (claudeScan, codexScan, openCodeScan, piScan, lifetime) = await (a, b, c, d, stats)
             guard active, generation == lifecycle, !Task.isCancelled else { return }
-            records = cl + cx.records + oc.records + piRecords
-            activityWarning = oc.warning
-            claudeActivity = lifetime
-            loggedLimits = cx.limits
+            let (cl, cx, oc, piRecords) = (claudeScan.result, codexScan.result, openCodeScan.result, piScan.result)
+            // Every change published here redraws the usage views and the menu bar readout, and
+            // new records are summarised afresh. A scan that found the logs as they were does neither.
+            let revisions = [claudeScan.revision, codexScan.revision, openCodeScan.revision, piScan.revision]
+            if revisions != appliedRevisions {
+                appliedRevisions = revisions
+                records = cl + cx.records + oc.records + piRecords
+                loggedLimits = cx.limits
+            } else if bucketStarts(clock()) != summarizedBuckets {
+                // The same records belong to other hours and days once the clock has moved on.
+                rebuildAccount()
+            }
+            if activityWarning != oc.warning { activityWarning = oc.warning }
+            if claudeActivity != lifetime { claudeActivity = lifetime }
             var s = Set<Source>()
             if !cl.isEmpty { s.insert(.claudeCode) }
             if cx.found { s.insert(.codex) }
             if oc.found { s.insert(.opencode) }
             if !piRecords.isEmpty { s.insert(.pi) }
-            sources = s
+            if sources != s { sources = s }
             scanned = true
             scanning = false
             if pendingScan { pendingScan = false; refresh(forceLocal: true) }
@@ -331,13 +360,12 @@ extension TokenStore {
             // Coalesce scans and account responses arriving during an aggregation.
             while !Task.isCancelled, active, life == lifecycle {
                 let generation = aggregationGeneration
-                let records = records, activity = activity
+                let records = records, activity = activity, now = clock()
                 let result = try? await usageWork {
                     let local = TokenMix(records.filter { $0.provider == .openai })
                     let estimated = activity.map { estimatedRecords($0, mix: local ?? .codex) } ?? []
                     let account = reconciledOpenAIRecords(local: records, account: estimated)
                     var summaries: [SummaryKey: TokenSummary] = [:]
-                    let now = Date()
                     for provider in Provider.allCases {
                         for useAccount in [false, true] where !useAccount || provider == .openai {
                             // OpenAI is charted by the week and the month only.
@@ -360,11 +388,19 @@ extension TokenStore {
                 providerSources = result.2
                 mixFromLogs = result.3
                 aggregating = false
-                loaded = scanned
+                summarizedBuckets = bucketStarts(now)
+                if loaded != scanned { loaded = scanned }
                 summaries = result.1
                 break
             }
         }
+    }
+
+    /// Where the newest hour and day of the charts begin, by this Mac's calendar and by the
+    /// account's UTC days. Unchanged records need new summaries only once one of them has moved on.
+    private func bucketStarts(_ now: Date) -> [Date?] {
+        [Calendar.current.dateInterval(of: .hour, for: now), Calendar.current.dateInterval(of: .day, for: now),
+         usageUTCCalendar.dateInterval(of: .day, for: now)].map { $0?.start }
     }
 }
 

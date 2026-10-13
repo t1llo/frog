@@ -2,7 +2,7 @@ import Foundation
 
 /// A local Claude Code /stats snapshot, not an account-wide API total. Its lifetime counts
 /// include older sessions outside our chart horizon and may lag current transcripts.
-struct ClaudeActivity {
+struct ClaudeActivity: Equatable {
     let totalTokens: Double
     let cacheRead: Double
     let sessions: Int?

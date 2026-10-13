@@ -11,6 +11,10 @@ actor PiScanner {
         let records: [String: TokenRecord]
     }
     private var filesByPath: [String: CachedFile] = [:]
+    /// Counts the changes to the records `scan()` returns; see `TokenScanner`. A record is made of
+    /// what its key names and its time, so those of the last pass stand for its records.
+    private var revision = 0
+    private var lastDates: [String: Date] = [:]
     private let root: URL?
     init(root: URL? = nil) { self.root = root }
 
@@ -19,7 +23,11 @@ actor PiScanner {
         let cutoff = now.addingTimeInterval(-TokenScanner.horizon)
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
         guard let files = FileManager.default.enumerator(at: root ?? piAgentDirectory.appendingPathComponent("sessions"),
-                                                        includingPropertiesForKeys: keys) else { filesByPath.removeAll(); return [] }
+                                                        includingPropertiesForKeys: keys) else {
+            filesByPath.removeAll()
+            if !lastDates.isEmpty { lastDates = [:]; revision += 1 }
+            return []
+        }
         var records: [String: TokenRecord] = [:]
         var retained: [String: CachedFile] = [:]
         let needle = Data("\"usage\"".utf8)
@@ -84,6 +92,10 @@ actor PiScanner {
             records.merge(parsed.filter { $0.value.date <= now }) { _, new in new }
         }
         filesByPath = retained
+        let dates = records.mapValues(\.date)
+        if dates != lastDates { lastDates = dates; revision += 1 }
         return Array(records.values)
     }
+
+    func revisedScan() -> (result: [TokenRecord], revision: Int) { (scan(), revision) }
 }
