@@ -2,6 +2,7 @@ import XCTest
 import FrogCore
 #if arch(arm64)
 import Hub
+import MLXLMCommon
 #endif
 @testable import FrogApp
 
@@ -358,6 +359,30 @@ final class LocalModelsTests: XCTestCase {
         XCTAssertTrue(cache.children.isEmpty, "A shared cache keeps a second copy of every file that deleting the model never removes")
         let offline = try setting("useOfflineMode", of: client)
         XCTAssertEqual(offline.children.first?.value as? Bool, false, "Offline mode would accept an unfinished folder as complete")
+    }
+    #endif
+
+    #if arch(arm64)
+    func testLocalTextThatStoppedAtTheOutputLimitOrInsideItsReasoningIsNotAResult() throws {
+        XCTAssertEqual(try LocalInference.textResult(" Corrected text.\n", stop: .stop), "Corrected text.")
+        XCTAssertEqual(try LocalInference.textResult("<think>\nFix the typo.\n</think>\n\nCorrected text.", stop: .stop), "Corrected text.")
+        XCTAssertEqual(try LocalInference.textResult("Write <think> in angle brackets.", stop: .stop), "Write <think> in angle brackets.", "Only reasoning the answer starts with is the model's own")
+
+        XCTAssertThrowsError(try LocalInference.textResult("The first half of a long rewrite", stop: .length), "Cut text would replace the selection and drop its end") {
+            XCTAssertTrue($0.localizedDescription.contains("before completing the text"), $0.localizedDescription)
+        }
+        XCTAssertThrowsError(try LocalInference.textResult("<think>\nThe user wants a correction, so", stop: .length)) {
+            XCTAssertTrue($0.localizedDescription.contains("before completing the text"), $0.localizedDescription)
+        }
+        XCTAssertThrowsError(try LocalInference.textResult("<think>\nThe user wants a correction.", stop: .stop), "Reasoning without an answer is not the answer") {
+            XCTAssertTrue($0.localizedDescription.contains("reasoning"), $0.localizedDescription)
+        }
+        XCTAssertThrowsError(try LocalInference.textResult("<think>\nDone.\n</think>\n", stop: .stop)) {
+            XCTAssertEqual($0.localizedDescription, "The local model returned no text.")
+        }
+        for unfinished in [GenerateStopReason.cancelled, nil] {
+            XCTAssertThrowsError(try LocalInference.textResult("Half a sent", stop: unfinished)) { XCTAssertTrue($0 is CancellationError, "\($0)") }
+        }
     }
     #endif
 

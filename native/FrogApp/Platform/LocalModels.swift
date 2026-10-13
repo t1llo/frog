@@ -456,18 +456,42 @@ actor LocalInference: LocalInferenceEngine {
         try Task.checkCancellation()
         let stream = try await textModel!.generate(input: input, parameters: GenerateParameters(maxTokens: 2048, temperature: 0.1))
         var output = ""
+        var stop: GenerateStopReason?
         for await generation in stream {
             try Task.checkCancellation()
-            if case .chunk(let text) = generation { output += text }
+            switch generation {
+            case .chunk(let text): output += text
+            case .info(let info): stop = info.stopReason
+            case .toolCall: break
+            }
         }
-        if let end = output.range(of: "</think>") { output = String(output[end.upperBound...]) }
-        let result = output.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !result.isEmpty else { throw FrogError.message("The local model returned no text.") }
-        return result
+        // A cancelled task ends the stream early, without a stop reason.
+        try Task.checkCancellation()
+        return try Self.textResult(output, stop: stop)
         #else
         throw FrogError.message("Built-in local models require Apple silicon.")
         #endif
     }
+    #if arch(arm64)
+    /// What a generation that has ended may hand back. Text that ran into the
+    /// token limit, or that ends inside the model's reasoning, is not a result:
+    /// it would replace the selection with part of the answer.
+    static func textResult(_ output: String, stop: GenerateStopReason?) throws -> String {
+        switch stop {
+        case .stop: break
+        case .length: throw FrogError.message("The local model stopped before completing the text. Try a smaller selection.")
+        case .cancelled, nil: throw CancellationError()
+        }
+        var output = output
+        if let end = output.range(of: "</think>") { output = String(output[end.upperBound...]) }
+        else if output.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<think>") {
+            throw FrogError.message("The local model returned its reasoning without a result. Try again or choose another model.")
+        }
+        let result = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !result.isEmpty else { throw FrogError.message("The local model returned no text.") }
+        return result
+    }
+    #endif
     func unload(keepingMetadata: Bool) async {
         await speech?.unloadModels(); speechID = nil
         // Idle expiry frees weights while retaining parsed tokenizer metadata for the
