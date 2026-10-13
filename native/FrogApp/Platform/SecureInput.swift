@@ -14,13 +14,45 @@ enum SecureInput {
         var frontmost = false
     }
 
-    static func holder(frontmost: NSRunningApplication? = NSWorkspace.shared.frontmostApplication) -> Holder? {
-        guard IsSecureEventInputEnabled() else { return nil }
+    /// The application a holding process belongs to, and the name to show for it.
+    struct Identity: Equatable {
+        var application: URL?
+        var name: String?
+    }
+
+    /// Naming the holder asks the workspace and the file system, and the switcher asks who
+    /// holds the keyboard several times a second. The answer is kept while the same process
+    /// holds it; a process that could not be named yet is asked about again.
+    struct IdentityCache {
+        private var known: (pid: pid_t, identity: Identity)?
+
+        mutating func identity(of pid: pid_t, lookup: (pid_t) -> Identity) -> Identity {
+            if let known, known.pid == pid { return known.identity }
+            let identity = lookup(pid)
+            known = identity.name == nil ? nil : (pid, identity)
+            return identity
+        }
+
+        /// Secure input ended, so the next holder is another episode, perhaps of a reused pid.
+        mutating func forget() { known = nil }
+    }
+
+    @MainActor private static var identities = IdentityCache()
+
+    @MainActor static func holder(frontmost: NSRunningApplication? = NSWorkspace.shared.frontmostApplication) -> Holder? {
+        guard IsSecureEventInputEnabled() else { identities.forget(); return nil }
         guard let pid = holderPID() else { return Holder() }
+        let holder = identities.identity(of: pid, lookup: identity)
+        let front = frontmost.map {
+            $0.processIdentifier == pid || (holder.application != nil && $0.bundleURL.map(application) == holder.application)
+        } ?? false
+        return Holder(pid: pid, name: holder.name, frontmost: front)
+    }
+
+    private static func identity(of pid: pid_t) -> Identity {
         let app = NSRunningApplication(processIdentifier: pid)
         let bundle = app?.bundleURL.map(application)
-        let front = frontmost.map { $0.processIdentifier == pid || (bundle != nil && $0.bundleURL.map(application) == bundle) } ?? false
-        return Holder(pid: pid, name: bundle.map(name) ?? app?.localizedName, frontmost: front)
+        return Identity(application: bundle, name: bundle.map(name) ?? app?.localizedName)
     }
 
     /// The window server records the owning process in the console session's description.

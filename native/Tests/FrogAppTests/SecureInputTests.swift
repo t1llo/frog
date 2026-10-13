@@ -47,6 +47,36 @@ final class SecureInputTests: XCTestCase {
         XCTAssertTrue(notice.poll(waiting, own: 1, now: start.addingTimeInterval(12)))
     }
 
+    func testHolderIsNamedOnceWhileTheSameProcessKeepsTheKeyboard() {
+        var cache = SecureInput.IdentityCache()
+        var lookups: [pid_t] = []
+        let lookup: (pid_t) -> SecureInput.Identity = { pid in
+            lookups.append(pid)
+            return SecureInput.Identity(application: URL(fileURLWithPath: "/Applications/App \(pid).app"), name: "App \(pid)")
+        }
+        // The switcher asks on every pass of its monitor, typing or not.
+        for _ in 0..<5 { XCTAssertEqual(cache.identity(of: 700, lookup: lookup).name, "App 700") }
+        XCTAssertEqual(lookups, [700])
+        XCTAssertEqual(cache.identity(of: 701, lookup: lookup).application?.path, "/Applications/App 701.app")
+        XCTAssertEqual(cache.identity(of: 701, lookup: lookup).name, "App 701")
+        XCTAssertEqual(lookups, [700, 701])
+        // Once the prompt is answered a later one is looked up afresh; process ids are reused.
+        cache.forget()
+        XCTAssertEqual(cache.identity(of: 701, lookup: lookup).name, "App 701")
+        XCTAssertEqual(lookups, [700, 701, 701])
+    }
+
+    func testHolderThatCannotBeNamedYetIsAskedAboutAgain() {
+        var cache = SecureInput.IdentityCache()
+        var answers = [SecureInput.Identity(), SecureInput.Identity(application: URL(fileURLWithPath: "/Applications/Vault.app"), name: "Vault")]
+        var lookups = 0
+        let lookup: (pid_t) -> SecureInput.Identity = { _ in lookups += 1; return answers.count > 1 ? answers.removeFirst() : answers[0] }
+        XCTAssertNil(cache.identity(of: 700, lookup: lookup).name)
+        XCTAssertEqual(cache.identity(of: 700, lookup: lookup).name, "Vault")
+        XCTAssertEqual(cache.identity(of: 700, lookup: lookup).name, "Vault")
+        XCTAssertEqual(lookups, 2)
+    }
+
     func testHelperProcessIsNamedAfterItsApplication() {
         let helper = URL(fileURLWithPath: "/Applications/Vault.app/Contents/Frameworks/Vault Helper (Renderer).app")
         XCTAssertEqual(SecureInput.application(helper).path, "/Applications/Vault.app")
