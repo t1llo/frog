@@ -102,6 +102,12 @@ final class WindowSwitcherController {
     private var workspaceObserver: NSObjectProtocol?
     private var pendingSteps: [Bool] = []
     private var commitOnLoad = false
+    /// The reading of the window being left, begun as the list opened.
+    private var frontReading: Task<Void, Never>?
+    /// A key, the search or the pointer has moved the selection of the open list.
+    private var selectionMoved = false
+    /// What the list was released on, for a reading that arrives afterwards.
+    private var released: (session: UInt64, window: UUID)?
     private var unfilteredWindows: [SwitcherWindow] = []
     private var pointer = WindowSwitchPointer()
     private var sessionOnConsole = false
@@ -266,6 +272,8 @@ final class WindowSwitcherController {
                 }
                 self.checkKeyboard()
                 if self.generation == nil, self.activation == nil, self.input?.shouldDeferBackgroundWork() == false {
+                    // What is read from here on is newer than a reading still out.
+                    self.frontReading?.cancel(); self.frontReading = nil
                     if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
                        let focused = await self.catalog.noteFocus(pid: pid) {
                         self.cache.noteFocused(focused)
@@ -294,6 +302,7 @@ final class WindowSwitcherController {
         activationPID = nil
         cancelAll()
         focusMonitor?.cancel(); focusMonitor = nil
+        frontReading?.cancel(); frontReading = nil; released = nil
         keyboardHolder = nil; keyboardNotice = SecureInputNotice(); keyboardNoticePanel.hide()
         cache.clear(); iconCache = [:]
         iconTask?.cancel(); iconTask = nil
@@ -307,7 +316,7 @@ final class WindowSwitcherController {
 
     isolated deinit {
         discovery?.cancel(); focusMonitor?.cancel(); activation?.cancel(); presentationTask?.cancel()
-        iconTask?.cancel()
+        iconTask?.cancel(); frontReading?.cancel()
         cache.cancelRefresh()
         input?.stop()
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
@@ -347,14 +356,17 @@ final class WindowSwitcherController {
         case .begin(let backwards): begin(backwards: backwards, token: sessionID)
         case .step(let backwards):
             guard generation == sessionID else { return }
+            selectionMoved = true
             if display.loading { pendingSteps.append(backwards) }
             else { session.step(backwards: backwards); display.selected = session.selected }
         case .commit: commit()
         case .cancel: break
         case .search(let text):
+            selectionMoved = true
             display.query += text
             filterWindows()
         case .deleteSearch:
+            selectionMoved = true
             if !display.query.isEmpty { display.query.removeLast() }
             filterWindows()
         }
@@ -364,11 +376,14 @@ final class WindowSwitcherController {
         if let previous = generation, previous != token { cancel(session: previous) }
         activation?.cancel(); activation = nil; activationID = nil
         discovery?.cancel()
+        frontReading?.cancel(); frontReading = nil
         generation = token
         pendingSteps = []; commitOnLoad = false
+        selectionMoved = false; released = nil
         session.reset()
         display.query = ""; unfilteredWindows = []
-        let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let frontApp = NSWorkspace.shared.frontmostApplication
+        let front = frontApp?.processIdentifier
         let livePIDs = Set(NSWorkspace.shared.runningApplications.compactMap(SwitcherApplication.running).map(\.pid))
         let cached = cache.readySnapshot(frontPID: front, livePIDs: livePIDs)
         // The next scan must rank the window being left the same way.
@@ -384,6 +399,21 @@ final class WindowSwitcherController {
             // behind discovery. The last complete inventory and its identities stay valid.
             cache.cancelRefresh()
             apply(cached, backwards: backwards, token: token)
+            // No scan has seen a window made or clicked since the last one, and scans pause
+            // while typing: read the window being left itself, ahead of any refresh.
+            if let app = frontApp.flatMap(SwitcherApplication.running) {
+                let guess = cached.current
+                frontReading = Task { [weak self, catalog] in
+                    guard let window = await catalog.noteFocus(of: app, insteadOf: guess), !Task.isCancelled, let self else { return }
+                    self.frontReading = nil
+                    guard window.id != guess else { return }
+                    self.cache.noteLeft(window, selected: self.released.flatMap { $0.session == token ? $0.window : nil })
+                    // Rank the open list again only while nothing but the shortcut has touched it.
+                    guard self.generation == token, self.router.sessionID == token, !self.selectionMoved, !self.display.loading,
+                          let ready = self.cache.readySnapshot(frontPID: app.pid, livePIDs: livePIDs) else { return }
+                    self.apply(ready, backwards: backwards, token: token)
+                }
+            }
             if needsRefresh, generation == token {
                 discovery = Task { [weak self] in
                     guard let self, let snapshot = await self.refreshInventory(), !Task.isCancelled,
@@ -488,6 +518,7 @@ final class WindowSwitcherController {
         activationID = activationToken
         activationPID = selected.pid
         activationWindowID = selected.windowID
+        released = (token, selected.id)
         // The next Command-Tab can retire this activation before its focus is recorded.
         cache.noteChosen(selected.id)
         activation = Task { [weak self, catalog] in
@@ -556,7 +587,7 @@ final class WindowSwitcherController {
             }, hover: { [weak self] id in
                 guard let self, self.panel?.isVisible == true, self.router.active, !self.display.loading else { return }
                 guard self.pointer.selects(at: NSEvent.mouseLocation) else { return }
-                self.display.selectionFromPointer = true
+                self.display.selectionFromPointer = true; self.selectionMoved = true
                 self.session.select(id); self.display.selected = self.session.selected
             }))
             (created.contentView as? WindowSwitcherHostingView)?.sizingOptions = []

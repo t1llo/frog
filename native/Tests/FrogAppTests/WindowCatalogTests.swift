@@ -58,6 +58,81 @@ final class WindowCatalogTests: XCTestCase {
         XCTAssertEqual(refreshed.windows.prefix(2).map(\.id), [recorded.id, unrecorded.id])
     }
 
+    func testWindowReadInFrontAsTheSwitcherOpensIsTheOneReturnedTo() async throws {
+        for late in [false, true] {
+            let fixture = CatalogFixture()
+            let writes = ActivationFixture()
+            let second = AXUIElementCreateApplication(1011)
+            fixture.setWindows(.success([fixture.a, second]), pid: 10)
+            let catalog = WindowCatalog(reader: fixture.reader, writer: writes.writer)
+            let first = await catalog.snapshot(applications: fixture.apps, frontPID: 10)
+            let (recorded, clicked, other) = (first.windows[0], first.windows[1], first.windows[2])
+            // The second window was clicked and typed in; scans pause while typing.
+            fixture.setFocused(second, pid: 10)
+            catalog.noteFront(id: recorded.id)
+            if late { let raised = await catalog.raise(id: other.id); XCTAssertTrue(raised) }
+            let left = await catalog.noteFocus(of: fixture.apps[0], insteadOf: recorded.id)
+            XCTAssertEqual(left, clicked)
+            if !late { let raised = await catalog.raise(id: other.id); XCTAssertTrue(raised) }
+            let refreshed = await catalog.snapshot(applications: fixture.apps, frontPID: nil)
+            XCTAssertEqual(refreshed.windows.map(\.id), [other.id, clicked.id, recorded.id],
+                           "The window that was left comes next, whether its reading arrived before the switch or after")
+        }
+    }
+
+    func testWindowReadInFrontTakesTheTurnOfTheGuessWhichGoesBack() async throws {
+        let fixture = CatalogFixture()
+        let second = AXUIElementCreateApplication(1011), earlier = AXUIElementCreateApplication(1021)
+        fixture.setWindows(.success([fixture.a, second]), pid: 10)
+        fixture.setWindows(.success([fixture.b, earlier]), pid: 20)
+        let catalog = WindowCatalog(reader: fixture.reader)
+        fixture.setFocused(earlier, pid: 20)
+        _ = await catalog.snapshot(applications: fixture.apps, frontPID: 20)
+        fixture.setFocused(fixture.b, pid: 20)
+        let first = await catalog.snapshot(applications: fixture.apps, frontPID: 20)
+        XCTAssertEqual(first.windows.count, 4)
+        let (front, before, guess, clicked) = (first.windows[0], first.windows[1], first.windows[2], first.windows[3])
+        XCTAssertEqual([front.pid, before.pid, guess.pid, clicked.pid], [20, 20, 10, 10])
+        // The other app's second window was clicked and typed in: its first row is only a guess.
+        fixture.setFocused(second, pid: 10)
+        catalog.noteFront(id: guess.id)
+        let left = await catalog.noteFocus(of: fixture.apps[0], insteadOf: guess.id)
+        XCTAssertEqual(left?.id, clicked.id)
+        let refreshed = await catalog.snapshot(applications: fixture.apps, frontPID: nil)
+        XCTAssertEqual(refreshed.windows.map(\.id), [clicked.id, front.id, before.id, guess.id],
+                       "A window that was never in front must not become the next target")
+        // A scan that ranked the guess before the reading arrived leaves the reading in front of it.
+        catalog.noteFront(id: before.id)
+        _ = await catalog.snapshot(applications: fixture.apps, frontPID: nil)
+        _ = await catalog.noteFocus(of: fixture.apps[1], insteadOf: before.id)
+        let ranked = await catalog.snapshot(applications: fixture.apps, frontPID: nil)
+        XCTAssertEqual(ranked.windows.map(\.id), [front.id, before.id, clicked.id, guess.id])
+    }
+
+    func testWindowMadeSinceTheLastScanIsListedAndCanBeChosenBeforeTheNextOne() async throws {
+        let fixture = CatalogFixture()
+        let writes = ActivationFixture()
+        let catalog = WindowCatalog(reader: fixture.reader, writer: writes.writer)
+        let first = await catalog.snapshot(applications: fixture.apps, frontPID: 10)
+        let recorded = try XCTUnwrap(first.windows.first)
+        let made = AXUIElementCreateApplication(1011)
+        fixture.setFocused(made, pid: 10)
+        fixture.setMetadata(.success(.init(subrole: "AXFloatingWindow", title: "Palette")))
+        catalog.noteFront(id: recorded.id)
+        let palette = await catalog.noteFocus(of: fixture.apps[0], insteadOf: recorded.id)
+        XCTAssertNil(palette, "A palette is not a window to switch to")
+        fixture.setMetadata(.success(.init(title: " Draft ")))
+        let read = await catalog.noteFocus(of: fixture.apps[0], insteadOf: recorded.id)
+        let row = try XCTUnwrap(read)
+        XCTAssertEqual([row.appName, row.title], ["A", "Draft"])
+        XCTAssertEqual(row.pid, 10)
+        let raised = await catalog.raise(id: row.id)
+        XCTAssertTrue(raised, "The window can be returned to before a scan has listed it")
+        fixture.setWindows(.success([fixture.a, made]), pid: 10)
+        let refreshed = await catalog.snapshot(applications: fixture.apps, frontPID: nil)
+        XCTAssertEqual(refreshed.windows.prefix(2).map(\.id), [row.id, recorded.id])
+    }
+
     func testSelectionFinishesWhileUnrelatedDiscoveryIsStillBlocked() async throws {
         let fixture = CatalogFixture()
         let writes = ActivationFixture()
@@ -232,11 +307,13 @@ private final class CatalogFixture: @unchecked Sendable {
     func setMetadata(_ result: WindowCatalog.Reading<WindowCatalog.Metadata>) { lock.withLock { metadata = result } }
     init() { lists = [10: .success([a]), 20: .success([b])] }
     func setWindows(_ result: WindowCatalog.Reading<[AXUIElement]>, pid: pid_t) { lock.withLock { lists[pid] = result } }
+    private var focus: [pid_t: AXUIElement] = [:]
+    func setFocused(_ element: AXUIElement, pid: pid_t) { lock.withLock { focus[pid] = element } }
     var reader: WindowCatalog.Reader {
         WindowCatalog.Reader(isTrusted: { true }, windows: { [self] pid in
             onRead?(pid)
             return lock.withLock { lists[pid] ?? .success([]) }
-        }, focusedWindow: { [self] pid in pid == 10 ? a : b }, metadata: { [self] _ in lock.withLock { reads += 1; return metadata } },
+        }, focusedWindow: { [self] pid in lock.withLock { focus[pid] } ?? (pid == 10 ? a : b) }, metadata: { [self] _ in lock.withLock { reads += 1; return metadata } },
            windowID: { _ in nil }, offSpaceWindows: { _ in [] })
     }
 }

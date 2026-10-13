@@ -94,6 +94,11 @@ actor WindowCatalog {
         var subrole: String? = nil
         var title: String? = nil
         var minimized = false
+        /// Palettes and Frog's own list are not windows to switch to.
+        var isSwitchable: Bool {
+            role == kAXWindowRole && identifier != SwitcherWindow.overlayIdentifier
+                && !["AXFloatingWindow", "AXSystemFloatingWindow"].contains(subrole ?? "")
+        }
     }
     struct Snapshot: Sendable {
         enum Completeness: Sendable { case complete, partial, unavailable, cancelled }
@@ -117,6 +122,7 @@ actor WindowCatalog {
         private var raised: [UUID] = []
         func replace(_ values: [Target]) { lock.withLock { targets = Dictionary(uniqueKeysWithValues: values.map { ($0.id, $0) }) } }
         func target(_ id: UUID) -> Target? { lock.withLock { targets[id] } }
+        func insert(_ target: Target) { lock.withLock { targets[target.id] = target } }
         func noteRaised(_ id: UUID) {
             lock.withLock {
                 raised.removeAll { $0 == id }; raised.append(id)
@@ -124,6 +130,16 @@ actor WindowCatalog {
             }
         }
         func takeRaised() -> [UUID] { lock.withLock { defer { raised = [] }; return raised } }
+        /// The window read in front takes the turn noted for a guess, unless it was raised since.
+        func replaceRaised(_ guess: UUID, with id: UUID) -> Bool {
+            lock.withLock {
+                guard let turn = raised.firstIndex(of: guess) else { return false }
+                if let own = raised.firstIndex(of: id), own > turn { raised.remove(at: turn); return true }
+                raised[turn] = id
+                if let earlier = raised.firstIndex(of: id), earlier < turn { raised.remove(at: earlier) }
+                return true
+            }
+        }
     }
     private nonisolated let activationTargets = ActivationTargets()
     private nonisolated let activator: WindowActivationExecutor
@@ -176,6 +192,37 @@ actor WindowCatalog {
         return id
     }
 
+    /// The front application's focused window, read as the switcher opens: scans pause while
+    /// typing, and none has seen a window made or clicked since the last one. It takes the
+    /// turn in the order that `noteFront` gave to `guess`, and comes back as a row so that
+    /// a window not scanned yet can be listed and chosen.
+    func noteFocus(of app: SwitcherApplication, insteadOf guess: UUID?) -> SwitcherWindow? {
+        guard reader.isTrusted(), !Task.isCancelled else { return nil }
+        guard let element = reader.focusedWindow(app.pid), !Task.isCancelled else { return nil }
+        let nativeID = reader.windowID(element)
+        let id = identity(element, pid: app.pid, windowID: nativeID)
+        let window: SwitcherWindow
+        if let known = lastKnown[id] { window = known.window }
+        else {
+            guard case .success(let metadata) = reader.metadata(element), metadata.isSwitchable, !Task.isCancelled else { return nil }
+            window = Self.row(id, of: app, metadata, windowID: nativeID)
+            if let target = targets.first(where: { $0.id == id }) { activationTargets.insert(target) }
+        }
+        guard id != guess, guess.map({ activationTargets.replaceRaised($0, with: id) }) != true else { return window }
+        // A scan ranked the guess meanwhile, or there was none: directly in front of it.
+        recent.removeAll { $0 == id }
+        if let turn = guess.flatMap({ recent.firstIndex(of: $0) }) { recent.insert(id, at: turn) }
+        else { mergeRaisedRecency(); recent.removeAll { $0 == id }; recent.insert(id, at: 0) }
+        if recent.count > 256 { recent.removeLast(recent.count - 256) }
+        return window
+    }
+
+    private static func row(_ id: UUID, of app: SwitcherApplication, _ metadata: Metadata, windowID: CGWindowID?) -> SwitcherWindow {
+        let title = metadata.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return SwitcherWindow(id: id, pid: app.pid, appName: app.name, title: title.isEmpty ? "Untitled window" : title,
+                              minimized: metadata.minimized, hidden: app.hidden, windowID: windowID)
+    }
+
     func snapshot(applications: [SwitcherApplication], frontPID: pid_t?) -> Snapshot {
         guard !Task.isCancelled else { return Snapshot(windows: [], current: nil, completeness: .cancelled) }
         guard reader.isTrusted() else { return Snapshot(windows: [], current: nil, completeness: .unavailable) }
@@ -221,16 +268,11 @@ actor WindowCatalog {
                     retain(app, element: element)
                     continue
                 }
-                guard metadata.role == kAXWindowRole else { continue }
-                if metadata.identifier == SwitcherWindow.overlayIdentifier { continue }
-                if ["AXFloatingWindow", "AXSystemFloatingWindow"].contains(metadata.subrole ?? "") { continue }
+                guard metadata.isSwitchable else { continue }
                 let nativeID = reader.windowID(element)
                 let id = identity(element, pid: app.pid, windowID: nativeID)
                 guard !windows.contains(where: { $0.id == id }) else { continue }
-                let title = metadata.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                let window = SwitcherWindow(id: id, pid: app.pid, appName: app.name,
-                    title: title.isEmpty ? "Untitled window" : title,
-                    minimized: metadata.minimized, hidden: app.hidden, windowID: nativeID)
+                let window = Self.row(id, of: app, metadata, windowID: nativeID)
                 windows.append(window)
                 known[id] = KnownWindow(window: window, readAt: timestamp)
                 if let focused, CFEqual(focused, element) { current = id }

@@ -90,6 +90,74 @@ final class WindowSwitcherCacheTests: XCTestCase {
         XCTAssertEqual(cache.readySnapshot(frontPID: 20)?.current, inbox.id, "A scan read the focused window itself")
     }
 
+    func testWindowClickedInTheFrontAppWithoutARecordedFocusIsTheOneLeft() async throws {
+        let cache = WindowSwitcherCache()
+        let inbox = window("Inbox", pid: 20), editor = window("Editor", pid: 10), draft = window("Draft", pid: 20)
+        _ = await cache.update { .init(windows: [inbox, editor, draft], current: inbox.id) }
+        // The draft was clicked and typed in. Scans pause while typing, so the inbox is still on record.
+        XCTAssertEqual(cache.readySnapshot(frontPID: 20)?.current, inbox.id)
+        cache.noteLeft(draft)
+        let ready = try XCTUnwrap(cache.readySnapshot(frontPID: 20))
+        XCTAssertEqual(ready.current, draft.id, "The reading taken as the switcher opens replaces the record")
+        XCTAssertEqual(ready.windows.map(\.id), [draft.id, inbox.id, editor.id])
+        // A window made since the last scan has no row yet.
+        let fresh = window("Untitled", pid: 20)
+        cache.noteLeft(fresh)
+        XCTAssertEqual(cache.readySnapshot(frontPID: 20)?.windows.map(\.id), [fresh.id, draft.id, inbox.id, editor.id])
+    }
+
+    func testWindowLeftIsReturnedToWhenItsReadingArrivesAfterTheRelease() async throws {
+        let cache = WindowSwitcherCache()
+        let inbox = window("Inbox", pid: 20), editor = window("Editor", pid: 10), draft = window("Draft", pid: 20)
+        for recorded in [false, true] {
+            _ = await cache.update { .init(windows: [inbox, editor, draft], current: inbox.id) }
+            let guessed = try XCTUnwrap(cache.readySnapshot(frontPID: 20))
+            var session = WindowSwitchSession<UUID>()
+            session.begin(windows: guessed.windows.map(\.id), current: guessed.current, backwards: false)
+            XCTAssertEqual(session.selected, editor.id)
+            // Command was released before the draft was read as the window in front.
+            cache.noteChosen(editor.id)
+            if recorded { cache.noteFocused(editor.id) }
+            cache.noteLeft(draft, selected: editor.id)
+            let back = try XCTUnwrap(cache.readySnapshot(frontPID: 10))
+            XCTAssertEqual(back.windows.map(\.id), [editor.id, draft.id, inbox.id])
+            session.begin(windows: back.windows.map(\.id), current: back.current, backwards: false)
+            XCTAssertEqual(session.selected, draft.id, "Toggling back returns to the window that was left, not to the one last recorded")
+        }
+    }
+
+    func testFrontWindowReadAfterAGuessTakesItsTurnAndPutsTheGuessBack() async throws {
+        let cache = WindowSwitcherCache()
+        let editor = window("Editor", pid: 10), other = window("Other", pid: 30)
+        let inbox = window("Inbox", pid: 20), draft = window("Draft", pid: 20)
+        _ = await cache.update { .init(windows: [editor, other, inbox, draft], current: editor.id) }
+        // The draft was clicked from the editor and typed in: its app came forward unrecorded.
+        XCTAssertEqual(cache.readySnapshot(frontPID: 20)?.current, inbox.id, "The app's first window is the guess")
+        cache.noteLeft(draft)
+        let ready = try XCTUnwrap(cache.readySnapshot(frontPID: 20))
+        XCTAssertEqual(ready.windows.map(\.id), [draft.id, editor.id, other.id, inbox.id])
+        var session = WindowSwitchSession<UUID>()
+        session.begin(windows: ready.windows.map(\.id), current: ready.current, backwards: false)
+        XCTAssertEqual(session.selected, editor.id, "One Command-Tab goes back to the editor, not to a window that was never in front")
+        // The draft was chosen, but a second Command-Tab retired its activation before the raise.
+        _ = await cache.update { .init(windows: [editor, other, inbox, draft], current: editor.id) }
+        cache.noteChosen(draft.id)
+        XCTAssertEqual(cache.readySnapshot(frontPID: 20)?.current, draft.id)
+        cache.noteLeft(inbox)
+        let retired = try XCTUnwrap(cache.readySnapshot(frontPID: 20))
+        XCTAssertEqual(retired.windows.map(\.id), [inbox.id, editor.id, other.id, draft.id])
+        // A reading that confirms the guess changes nothing.
+        _ = await cache.update { .init(windows: [editor, other, inbox, draft], current: editor.id) }
+        _ = cache.readySnapshot(frontPID: 20)
+        cache.noteLeft(inbox)
+        XCTAssertEqual(cache.readySnapshot(frontPID: 20)?.windows.map(\.id), [inbox.id, editor.id, other.id, draft.id])
+        // Nor does a reading of the app still in front take away the window chosen in another.
+        _ = await cache.update { .init(windows: [editor, other, inbox, draft], current: editor.id) }
+        cache.noteChosen(draft.id)
+        cache.noteLeft(editor)
+        XCTAssertEqual(cache.readySnapshot(frontPID: 20)?.current, draft.id)
+    }
+
     func testRefreshingHeldInventoryPreservesCyclingOrderAndSelection() {
         var session = WindowSwitchSession<Int>()
         session.begin(windows: [1, 2, 3], current: 1, backwards: false)

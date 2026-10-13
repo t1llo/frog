@@ -10,6 +10,8 @@ final class WindowSwitcherCache {
     private var revision: UInt64 = 0
     /// Selected in the switcher, with no focus recorded since.
     private var chosen: UUID?
+    /// The window `readySnapshot` last moved to the front unread, and the row it stood behind.
+    private var guess: (id: UUID, behind: UUID)?
 
     var isRefreshing: Bool { refresh != nil }
 
@@ -29,7 +31,7 @@ final class WindowSwitcherCache {
         refresh = nil
         guard !task.isCancelled, !Task.isCancelled, result.isPublishable else { return snapshot }
         snapshot = result
-        chosen = nil
+        chosen = nil; guess = nil
         updatedAt = result.completeness == .complete ? .now : nil
         return result
     }
@@ -39,7 +41,7 @@ final class WindowSwitcherCache {
         refresh?.cancel(); refresh = nil
     }
 
-    func clear() { cancelRefresh(); snapshot = nil; updatedAt = nil; chosen = nil }
+    func clear() { cancelRefresh(); snapshot = nil; updatedAt = nil; chosen = nil; guess = nil }
     func invalidate() { updatedAt = nil }
 
     func noteChosen(_ id: UUID) { chosen = id }
@@ -50,6 +52,27 @@ final class WindowSwitcherCache {
         guard let snapshot, let window = snapshot.windows.first(where: { $0.id == id }) else { return }
         self.snapshot = WindowCatalog.Snapshot(windows: [window] + snapshot.windows.filter { $0.id != id }, current: id,
                                               completeness: snapshot.completeness)
+    }
+
+    /// The window that really was in front when the switcher opened, read after the guess
+    /// in `readySnapshot`. The guess goes back to where it stood and the reading takes the
+    /// front, behind the window `selected` meanwhile once that one's focus is recorded.
+    func noteLeft(_ window: SwitcherWindow, selected: UUID? = nil) {
+        guard let snapshot else { return }
+        var windows = snapshot.windows
+        if let guess, guess.id != window.id, let from = windows.firstIndex(where: { $0.id == guess.id }) {
+            let wrong = windows.remove(at: from)
+            windows.insert(wrong, at: windows.firstIndex { $0.id == guess.behind }.map { $0 + 1 } ?? from)
+        }
+        guess = nil
+        // A reading of its own app replaces the choice, as any recorded focus does.
+        if selected == nil, windows.first(where: { $0.id == chosen })?.pid == window.pid { chosen = nil }
+        let row = windows.first { $0.id == window.id } ?? window
+        windows.removeAll { $0.id == window.id }
+        let recorded = selected != nil && windows.first?.id == selected
+        windows.insert(row, at: recorded ? 1 : 0)
+        self.snapshot = WindowCatalog.Snapshot(windows: windows, current: recorded ? snapshot.current : window.id,
+                                               completeness: snapshot.completeness)
     }
 
     func needsRefresh(at now: ContinuousClock.Instant = .now) -> Bool {
@@ -69,8 +92,12 @@ final class WindowSwitcherCache {
         let current = windows.first { $0.id == chosen && $0.pid == frontPID }
             ?? windows.first { $0.id == snapshot.current && $0.pid == frontPID }
             ?? windows.first { $0.pid == frontPID }
+        guess = nil
         if let current, windows.first?.id != current.id {
             noteFocused(current.id)
+            if let from = snapshot.windows.firstIndex(where: { $0.id == current.id }), from > 0 {
+                guess = (current.id, snapshot.windows[from - 1].id)
+            }
             windows = [current] + windows.filter { $0.id != current.id }
         }
         return WindowCatalog.Snapshot(windows: windows, current: current?.id, completeness: snapshot.completeness)
