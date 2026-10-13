@@ -57,6 +57,53 @@ import FrogCore
         }
     }
 
+    func testSnippetsNotesShelfItemsAndScriptsAreListedWithoutWaitingForTheApplicationList() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var config = Configuration(); config.preferences.windowSwitcherEnabled = false
+        for feature in [FeatureID.commandBar, .snippets, .scratchpad, .shelf, .scripts] { config.preferences.setFeature(feature, enabled: true) }
+        try ConfigurationStore(directory: root).save(config)
+        let saved = [UtilityDocument.Kind.snippet, .note, .shelf, .script].map { UtilityDocument(kind: $0, title: "Fixture \($0.rawValue)") }
+        try await UtilityDocumentStore(directory: root.appendingPathComponent("Toolkit")).save(saved, revision: 0)
+        let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
+        defer { pasteboard.releaseGlobally() }
+        let model = AppModel(dataDirectory: root, registerShortcuts: false, readKey: { _ in nil },
+                             clipboardHistoryStore: ClipboardHistoryStore(pasteboard: pasteboard))
+        defer { model.shutdown() }
+        var applicationLoads = 0
+        let bar = CommandBar(model: model, pasteboard: pasteboard, captureTarget: { nil }, fileSearch: CommandFileStub(),
+                             loadSettings: { [] }, loadApplications: { applicationLoads += 1; return [] })
+        defer { bar.stop() }
+        let expected = zip(["snippet", "note", "shelf", "script"], saved).map { "\($0):\($1.id)" }
+        func documentRows() -> [String] { bar.results.map(\.id).filter { id in expected.contains(id) } }
+
+        // The first open after launch reads the store. Its rows arrive on their own, not behind the application scan.
+        XCTAssertFalse(model.documents.loaded)
+        bar.prepareResults(model, frontPID: nil)
+        bar.query = "fixture"
+        for _ in 0..<200 where documentRows().count < expected.count { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(documentRows(), expected)
+        XCTAssertEqual(bar.query, "fixture")
+
+        // From then on they are listed with the first rows, so Return finds a snippet as soon as its name is typed.
+        bar.hide()
+        bar.prepareResults(model, frontPID: nil)
+        bar.query = "fixture snippet"
+        XCTAssertEqual(bar.results.first?.id, expected[0])
+        XCTAssertEqual(applicationLoads, 0)
+
+        // A store that is still being read when the bar closes adds nothing to the closed bar.
+        let late = AppModel(dataDirectory: root, registerShortcuts: false, readKey: { _ in nil },
+                            clipboardHistoryStore: ClipboardHistoryStore(pasteboard: pasteboard))
+        defer { late.shutdown() }
+        bar.hide()
+        bar.prepareResults(late, frontPID: nil)
+        bar.hide()
+        await late.documents.load()
+        await Task.yield()
+        XCTAssertTrue(bar.results.isEmpty)
+    }
+
     func testAnApplicationIsFoundUnderItsFinderNameAndItsBundleName() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

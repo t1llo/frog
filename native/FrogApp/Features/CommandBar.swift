@@ -38,6 +38,7 @@ import SwiftUI
     private var outside: Any?
     private var activation: NSObjectProtocol?
     private var indexing: Task<Void, Never>?
+    private var documentIndexing: Task<Void, Never>?
     private var windowIndexing: Task<Void, Never>?
     private var warming: Task<Void, Never>?
     private var settingsIndexing: Task<Void, Never>?
@@ -231,7 +232,6 @@ import SwiftUI
         hide()
         let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         prepareResults(model, frontPID: frontPID)
-        let target = pasteTarget
         preparePanel()
         guard let panel else { return }
         invocation = UUID()
@@ -270,8 +270,8 @@ import SwiftUI
         refreshSettings()
         let token = generation
         let shownApplications = cachedApplications
-        indexing = Task { [weak self, weak model] in
-            guard let self, let model else { return }
+        indexing = Task { [weak self] in
+            guard let self else { return }
             let installed = await self.loadApplications()
             guard self.generation == token, !Task.isCancelled else { return }
             if installed != shownApplications {
@@ -281,38 +281,6 @@ import SwiftUI
                 }
                 self.records.removeAll { $0.id.hasPrefix("app:") }
                 self.addApplications(installed)
-                self.updateResults()
-            }
-            if [.snippets, .scratchpad, .shelf, .scripts].contains(where: { model.configuration.preferences.featureEnabled($0) }) {
-                await model.documents.load()
-                guard self.generation == token, !Task.isCancelled else { return }
-                for item in model.documents.items {
-                    if item.kind == .snippet, model.configuration.preferences.featureEnabled(.snippets) {
-                        let deliver: (Bool) async throws -> Void = { [weak self, weak model] paste in
-                            guard let self, let model, model.configuration.preferences.featureEnabled(.snippets),
-                                  let current = model.documents.items.first(where: { $0.id == item.id }) else { return }
-                            let text = SnippetExpansion.expand(current.text, clipboard: self.pasteboard.string(forType: .string) ?? "")
-                            let sensitive = current.text.contains("{{clipboard}}") && self.pasteboard.types?.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) == true
-                            let entry = ClipboardHistoryEntry(text: text, isSensitive: sensitive)
-                            if paste {
-                                try await ClipboardHistoryDelivery.paste(entry, plainText: true, pasteboard: self.pasteboard, target: target,
-                                    isCurrent: { model.configuration.preferences.featureEnabled(.snippets) && model.documents.items.contains(where: { $0.id == item.id }) }, waitForRelease: self.waitForRelease)
-                            } else {
-                                guard entry.write(to: self.pasteboard, plainText: true) else { throw FrogError.message("Could not copy the snippet.") }
-                            }
-                            self.onToolUse?(.snippetCopy)
-                        }
-                        self.add(SearchRecord(id: "snippet:\(item.id)", title: item.title, subtitle: "Snippet · Paste · ⌘↩ Copy", symbol: "text.badge.plus"), copy: { try await deliver(false) }) { try await deliver(true) }
-                    } else if item.kind == .note, model.configuration.preferences.featureEnabled(.scratchpad) {
-                        self.add(SearchRecord(id: "note:\(item.id)", title: item.title, subtitle: "Notes", keywords: String(item.text.prefix(512)), symbol: "note.text")) { [weak model] in model?.openDocument(item) }
-                    } else if item.kind == .shelf, model.configuration.preferences.featureEnabled(.shelf) {
-                        self.add(SearchRecord(id: "shelf:\(item.id)", title: item.title, subtitle: "Shelf", symbol: "tray")) { [weak model] in model?.openDocument(item) }
-                    } else if item.kind == .script, model.configuration.preferences.featureEnabled(.scripts) {
-                        self.add(SearchRecord(id: "script:\(item.id)", title: item.title, subtitle: "Run saved script", symbol: "terminal")) { [weak model] in
-                            model?.openDocument(item); model?.runScript(item)
-                        }
-                    }
-                }
                 self.updateResults()
             }
         }
@@ -351,6 +319,21 @@ import SwiftUI
         if model.configuration.preferences.featureEnabled(.windowSwitcher) { addWindows(cachedWindows) }
         addRoutes(model, frontPID: frontPID)
         addSettings()
+        // Snippets, notes, shelf items and scripts are in memory once the store has been read. Only that first
+        // read is waited for, and on its own: a snippet must not be missing while the applications are rescanned.
+        if [.snippets, .scratchpad, .shelf, .scripts].contains(where: model.configuration.preferences.featureEnabled) {
+            if model.documents.loaded { addDocuments(model) }
+            else {
+                let token = generation
+                documentIndexing = Task { [weak self, weak model] in
+                    guard let model else { return }
+                    await model.documents.load()
+                    guard let self, self.generation == token, !Task.isCancelled else { return }
+                    self.addDocuments(model)
+                    self.updateResults()
+                }
+            }
+        }
         updateResults()
         // A copy made while the bar is open lists its entry; clear, delete and eviction take their rows away. The
         // publisher emits before the store changes, so the rows come from the value it passes.
@@ -366,6 +349,36 @@ import SwiftUI
             self.addClipboard(entries, model: model)
             self.records += later
             self.updateResults()
+        }
+    }
+    private func addDocuments(_ model: AppModel) {
+        let target = pasteTarget
+        for item in model.documents.items {
+            if item.kind == .snippet, model.configuration.preferences.featureEnabled(.snippets) {
+                let deliver: (Bool) async throws -> Void = { [weak self, weak model] paste in
+                    guard let self, let model, model.configuration.preferences.featureEnabled(.snippets),
+                          let current = model.documents.items.first(where: { $0.id == item.id }) else { return }
+                    let text = SnippetExpansion.expand(current.text, clipboard: self.pasteboard.string(forType: .string) ?? "")
+                    let sensitive = current.text.contains("{{clipboard}}") && self.pasteboard.types?.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) == true
+                    let entry = ClipboardHistoryEntry(text: text, isSensitive: sensitive)
+                    if paste {
+                        try await ClipboardHistoryDelivery.paste(entry, plainText: true, pasteboard: self.pasteboard, target: target,
+                            isCurrent: { model.configuration.preferences.featureEnabled(.snippets) && model.documents.items.contains(where: { $0.id == item.id }) }, waitForRelease: self.waitForRelease)
+                    } else {
+                        guard entry.write(to: self.pasteboard, plainText: true) else { throw FrogError.message("Could not copy the snippet.") }
+                    }
+                    self.onToolUse?(.snippetCopy)
+                }
+                add(SearchRecord(id: "snippet:\(item.id)", title: item.title, subtitle: "Snippet · Paste · ⌘↩ Copy", symbol: "text.badge.plus"), copy: { try await deliver(false) }) { try await deliver(true) }
+            } else if item.kind == .note, model.configuration.preferences.featureEnabled(.scratchpad) {
+                add(SearchRecord(id: "note:\(item.id)", title: item.title, subtitle: "Notes", keywords: String(item.text.prefix(512)), symbol: "note.text")) { [weak model] in model?.openDocument(item) }
+            } else if item.kind == .shelf, model.configuration.preferences.featureEnabled(.shelf) {
+                add(SearchRecord(id: "shelf:\(item.id)", title: item.title, subtitle: "Shelf", symbol: "tray")) { [weak model] in model?.openDocument(item) }
+            } else if item.kind == .script, model.configuration.preferences.featureEnabled(.scripts) {
+                add(SearchRecord(id: "script:\(item.id)", title: item.title, subtitle: "Run saved script", symbol: "terminal")) { [weak model] in
+                    model?.openDocument(item); model?.runScript(item)
+                }
+            }
         }
     }
     private func addRoutes(_ model: AppModel, frontPID: pid_t?) {
@@ -537,6 +550,7 @@ import SwiftUI
         generation = UUID(); indexing?.cancel(); delivery?.cancel(); indexing = nil; delivery = nil
         for load in iconLoads.values { load.task.cancel() }; iconLoads = [:]
         windowIndexing?.cancel(); windowIndexing = nil
+        documentIndexing?.cancel(); documentIndexing = nil
         fileRevision += 1
         fileSearch.stop()
         fileDelay?.cancel(); fileDelay = nil; sourceObservation = nil; pasteTarget = nil
