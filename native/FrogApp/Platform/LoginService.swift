@@ -4,9 +4,11 @@ enum LoginService {
     struct Snapshot: Sendable, Equatable {
         let enabled: Bool
         let text: String
+        /// macOS will not start Frog at login until the person acts on `text`.
+        var needsAttention = false
     }
-    static func readStatus() -> Snapshot {
-        let status = SMAppService.mainApp.status
+    static func readStatus() -> Snapshot { snapshot(for: SMAppService.mainApp.status) }
+    static func snapshot(for status: SMAppService.Status) -> Snapshot {
         let text: String
         switch status {
         case .enabled: text = "Frog starts at login."
@@ -15,8 +17,10 @@ enum LoginService {
         case .notFound: text = "Install Frog in Applications to enable start at login."
         @unknown default: text = "Login item status is unavailable."
         }
-        return Snapshot(enabled: status == .enabled || status == .requiresApproval, text: text)
+        // An item awaiting approval stays on, so switching the toggle off still unregisters it.
+        return Snapshot(enabled: status == .enabled || status == .requiresApproval, text: text, needsAttention: status == .requiresApproval)
     }
+    static func openLoginItems() { SMAppService.openSystemSettingsLoginItems() }
     @MainActor
     static func setEnabled(_ enabled: Bool) throws {
         if enabled {

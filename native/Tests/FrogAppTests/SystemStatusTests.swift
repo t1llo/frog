@@ -36,6 +36,22 @@ final class SystemStatusTests: XCTestCase {
         XCTAssertEqual(model.loginStatus, "Status 2", "Shutdown must invalidate queued completions")
     }
 
+    func testLoginItemAwaitingApprovalIsShownUntilAStatusReadSaysOtherwise() async throws {
+        let approval = LoginApprovalFixture()
+        let model = try model(readLoginStatus: {
+            approval.given ? .init(enabled: true, text: "On") : .init(enabled: true, text: "Waiting", needsAttention: true)
+        })
+        defer { model.shutdown() }
+        try await wait { model.loginStatus == "Waiting" }
+        XCTAssertTrue(model.startAtLogin)
+        XCTAssertTrue(model.loginNeedsAttention, "Settings must say that macOS still waits for approval")
+        approval.given = true
+        // Settings and returning to Frog both read the status again at once.
+        model.refreshSystemStatus(forceLoginStatus: true)
+        try await wait { model.loginStatus == "On" }
+        XCTAssertFalse(model.loginNeedsAttention, "The warning must not outlive the approval")
+    }
+
     func testMonitoringHasOneOwnerAndStopsAtShutdown() async throws {
         var permissionReads = 0
         let model = try model(readAccessibility: { permissionReads += 1; return true })
@@ -71,6 +87,15 @@ final class SystemStatusTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTFail("Timed out waiting for status refresh")
+    }
+}
+
+private final class LoginApprovalFixture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var approved = false
+    var given: Bool {
+        get { lock.withLock { approved } }
+        set { lock.withLock { approved = newValue } }
     }
 }
 

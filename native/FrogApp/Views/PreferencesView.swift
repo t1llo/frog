@@ -21,6 +21,13 @@ struct PreferencesView: View {
                     }
                     Divider()
                     CompactRow(title: "Start at login", detail: "Start quietly in the menu bar.") { Toggle("Start at login", isOn: Binding(get: { model.startAtLogin }, set: model.setStartAtLogin)).labelsHidden() }
+                    if model.loginNeedsAttention {
+                        HStack(spacing: 8) {
+                            Text(model.loginStatus).font(.caption).foregroundStyle(FrogStyle.warning).fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 8)
+                            Button("Open Login Items") { LoginService.openLoginItems() }
+                        }
+                    }
                     Divider()
                     CompactRow(title: "Writing indicator") { Toggle("Writing indicator", isOn: preference(\.showProcessingIndicator)).labelsHidden() }
                     Divider()
@@ -163,7 +170,7 @@ struct PreferencesView: View {
                     Text("Internal models run on your Mac. External providers receive the text or audio you send. No analytics.").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                 }.sheet(item: $legalDocument) { LegalDocumentView(document: $0) }
             }.toggleStyle(.switch).controlSize(.small).padding(20).frame(maxWidth: 630).frame(maxWidth: .infinity).minimalScrollbars()
-        }.onAppear { model.refreshSystemStatus() }
+        }.onAppear { model.refreshSystemStatus(forceLoginStatus: true) }
             .task(id: permissionsRequest) {
                 guard permissionsRequest != nil else { return }
                 await Task.yield()

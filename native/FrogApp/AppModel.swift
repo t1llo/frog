@@ -26,6 +26,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var startAtLogin = false
     @Published private(set) var accessibilityGranted = false
     @Published private(set) var loginStatus = ""
+    @Published private(set) var loginNeedsAttention = false
     @Published private(set) var windowSwitcherStatus = "Not started"
     @Published private(set) var windowSwitcherReady = false
     @Published private(set) var setupPresented = false
@@ -452,6 +453,7 @@ final class AppModel: ObservableObject {
             self.loginStatusUpdatedAt = .now
             if self.startAtLogin != result.enabled { self.startAtLogin = result.enabled }
             if self.loginStatus != result.text { self.loginStatus = result.text }
+            if self.loginNeedsAttention != result.needsAttention { self.loginNeedsAttention = result.needsAttention }
         }
     }
 
