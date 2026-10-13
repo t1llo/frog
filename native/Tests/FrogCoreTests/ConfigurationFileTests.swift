@@ -284,4 +284,24 @@ final class ConfigurationFileTests: XCTestCase {
         try json.write(to: store.file)
         XCTAssertEqual(try store.load(), configuration)
     }
+
+    func testASavedMicrophoneIsReadAsAnEarlierDeviceNumberAndAsAPersistentIdentifier() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ConfigurationStore(directory: directory)
+        try store.save(Configuration())
+        // Earlier versions saved the number of a connection. The key must stay readable: a file that
+        // still holds one would otherwise be refused as a whole.
+        try Data((try String(contentsOf: store.textFile) + "microphone = 42\n").utf8).write(to: store.textFile)
+        var configuration = try store.load()
+        XCTAssertEqual(configuration.preferences.workflows?.microphoneID, "42")
+        // The identifiers macOS gives built-in, USB and Bluetooth inputs are saved and read unchanged.
+        for identifier in ["BuiltInMicrophoneDevice", "AppleUSBAudioEngine:Example Audio:USB Microphone #2:14100000:1", "00-11-22-33-44-55:input"] {
+            var workflows = configuration.preferences.workflowSettings
+            workflows.microphoneID = identifier
+            configuration.preferences.workflows = workflows
+            try store.save(configuration)
+            XCTAssertEqual(try ConfigurationStore(directory: directory).load().preferences.workflows?.microphoneID, identifier)
+        }
+    }
 }
