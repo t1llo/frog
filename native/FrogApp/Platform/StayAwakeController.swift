@@ -73,7 +73,12 @@ final class StayAwakeController: ObservableObject {
             if hasReadState { hasReadState = false }
         }
         else if enabled, started { beginMonitoring() }
-        if enabled, started, !hasReadState { operation = Task { await refresh(); await refreshAccess() } }
+        if enabled, started, !hasReadState {
+            // The launch cleanup may still be restoring sleep. Follow it instead of replacing
+            // it: quitting and disabling the feature wait for `operation`.
+            let previous = operation
+            operation = Task { await previous?.value; await refresh(); await refreshAccess() }
+        }
     }
 
     func refreshAccess(force: Bool = false) async {
@@ -104,12 +109,19 @@ final class StayAwakeController: ObservableObject {
             do {
                 if mode == .reset {
                     await operation?.value
-                    // Restore sleep while the existing permission still exists.
-                    guard await change(false) else {
+                    guard !quitting else { return }
+                    // Restore sleep while the existing permission still exists. The restore
+                    // runs as `operation`, so quitting and disabling the feature wait for it.
+                    isBusy = true; revision += 1
+                    let restore = Task { await change(false) }
+                    operation = Task { _ = await restore.value }
+                    guard await restore.value else {
                         accessNotice = error ?? "Restore sleep before resetting access."
                         return
                     }
                 }
+                // Quit may have arrived meanwhile. Do not open Terminal as Frog exits.
+                guard !quitting else { return }
                 let session = try await openGuide(mode)
                 let result = try await session.waitForResult()
                 session.remove()

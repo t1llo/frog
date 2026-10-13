@@ -69,6 +69,83 @@ final class StayAwakeSessionTests: XCTestCase {
         XCTAssertFalse(power.hasReadState)
     }
 
+    func testSavingSettingsDuringTheLaunchCleanupDoesNotHideItsRestore() async throws {
+        let system = SessionPowerFixture(enabled: true)
+        let folder = directory()
+        try leaveMarker("{}", in: folder)
+        let power = StayAwakeController(system: system, directory: folder)
+        let gate = ReadGate()
+        await system.holdNextRead(gate)
+        power.start()
+        await gate.waitUntilStarted()
+        // A settings save applies the configuration while the cleanup still reads the setting.
+        power.configureFeature(enabled: true)
+        let waited = Task { await power.waitForOperation(); return power.ownsSession }
+        try await Task.sleep(for: .milliseconds(50))
+        await gate.release()
+        let ownedWhenTheWaitEnded = await waited.value
+        XCTAssertFalse(ownedWhenTheWaitEnded, "Quitting and disabling the feature wait for the restore that launch started")
+        XCTAssertFalse(power.isEnabled)
+        XCTAssertFalse(power.isBusy)
+        XCTAssertTrue(power.hasReadState)
+        let writes = await system.writes
+        XCTAssertEqual(writes, [false])
+        let canQuit = await power.prepareToQuit()
+        XCTAssertTrue(canQuit)
+    }
+
+    func testQuittingDuringAResetWaitsForItsRestoreAndOpensNoGuide() async throws {
+        let system = SessionPowerFixture()
+        let power = StayAwakeController(system: system, directory: directory(), openGuide: { _ in
+            await system.noteGuide()
+            throw StayAwakeError.command
+        })
+        await power.refresh()
+        power.setEnabled(true); await power.waitForOperation()
+        XCTAssertTrue(power.ownsSession)
+        let gate = ReadGate()
+        await system.holdNextRead(gate)
+        power.configureAccess(.reset)
+        await gate.waitUntilStarted()
+        // Quit arrives while the reset is still restoring sleep.
+        let quit = Task { await power.prepareToQuit() }
+        await Task.yield()
+        await gate.release()
+        let canQuit = await quit.value
+        await power.waitForAccessGuide()
+        XCTAssertTrue(canQuit)
+        XCTAssertFalse(power.isEnabled)
+        XCTAssertFalse(power.ownsSession)
+        let guides = await system.guides
+        XCTAssertEqual(guides, 0, "Frog must not open the reset guide in Terminal while it quits")
+        let writes = await system.writes
+        XCTAssertEqual(writes, [true, false], "Quit waits for the restore that is under way instead of starting a second one")
+    }
+
+    func testDisablingTheFeatureDuringAResetWaitsForItsRestore() async throws {
+        let system = SessionPowerFixture()
+        let power = StayAwakeController(system: system, directory: directory(), openGuide: { _ in throw StayAwakeError.command })
+        await power.refresh()
+        power.setEnabled(true); await power.waitForOperation()
+        let gate = ReadGate()
+        await system.holdNextRead(gate)
+        power.configureAccess(.reset)
+        await gate.waitUntilStarted()
+        let waited = Task { await power.waitForOperation(); return power.ownsSession }
+        try await Task.sleep(for: .milliseconds(50))
+        await gate.release()
+        let ownedWhenTheWaitEnded = await waited.value
+        XCTAssertFalse(ownedWhenTheWaitEnded, "A restore started by Reset access is a change like any other")
+        await power.waitForAccessGuide()
+        XCTAssertFalse(power.isBusy)
+        XCTAssertFalse(power.isConfiguringAccess)
+    }
+
+    private func leaveMarker(_ contents: String, in folder: URL) throws {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data(contents.utf8).write(to: folder.appendingPathComponent("stay-awake-session.json"))
+    }
+
     private func waitUntil(_ condition: () async -> Bool) async throws {
         for _ in 0..<2500 {
             if await condition() { return }
@@ -83,10 +160,12 @@ private actor SessionPowerFixture: StayAwakeSystem {
     private var held: ReadGate?
     private(set) var reads = 0
     private(set) var writes: [Bool] = []
+    private(set) var guides = 0
     init(enabled: Bool = false) { self.enabled = enabled }
     /// Another tool changes the system setting.
     func setOutside(_ value: Bool) { enabled = value }
     func holdNextRead(_ gate: ReadGate) { held = gate }
+    func noteGuide() { guides += 1 }
     func hasAccess() async throws -> Bool { true }
     func sleepDisabled() async throws -> Bool {
         reads += 1
