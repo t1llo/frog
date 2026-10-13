@@ -7,6 +7,10 @@ struct ModelInventory: View {
     var search = ""
     var revealedModelID: String?
     @State private var information: LocalModelDescriptor?
+    @State private var deleting: LocalModelDescriptor?
+    private var deletion: ModelDeletionPrompt? {
+        deleting.map { ModelDeletionPrompt($0, configuration: model.configuration, installed: model.localModels.installed) }
+    }
     private var inventory: [LocalModelDescriptor] {
         let visible = Set(model.localModels.progress.keys).union(model.localModels.errors.keys).union(model.localModels.unfinished).union([revealedModelID].compactMap { $0 })
         return model.configuration.modelInventory(installed: model.localModels.installed, including: visible)
@@ -17,6 +21,13 @@ struct ModelInventory: View {
         group("Downloaded", items: inventory.filter { model.localModels.installed.contains($0.id) }, installed: true)
         group("Available to download", items: inventory.filter { !model.localModels.installed.contains($0.id) }, installed: false)
         }.sheet(item: $information) { item in LocalModelInformation(item: item) }
+        .confirmationDialog(deletion?.title ?? "Delete download?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
+            Button("Delete download", role: .destructive) {
+                guard let item = deleting else { return }
+                deleting = nil
+                Task { do { try await model.deleteLocalModel(item) } catch { model.report(error) } }
+            }
+        } message: { Text(deletion?.message ?? "") }
     }
     private func group(_ title: String, items: [LocalModelDescriptor], installed: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -45,7 +56,7 @@ struct ModelInventory: View {
                                 Button("Cancel") { model.localModels.cancelDownload(item.id) }.controlSize(.small)
                             } else if installed {
                                 Menu {
-                                    Button("Delete download", role: .destructive) { Task { do { try await model.deleteLocalModel(item) } catch { model.report(error) } } }
+                                    Button("Delete download…", role: .destructive) { deleting = item }
                                         .disabled(model.localModels.busy || model.dictation.active)
                                 } label: { Image(systemName: "ellipsis").frame(width: 26).modifier(CompactActionSurface()) }
                                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Model actions")
@@ -67,6 +78,32 @@ struct ModelInventory: View {
                 if items.isEmpty { Text(L10n.text(installed ? "No downloaded models" : "No additional models")).font(.system(size: 11)).foregroundStyle(.secondary).padding(14).frame(maxWidth: .infinity, alignment: .leading) }
             }
         }
+    }
+}
+
+/// What Frog asks before it deletes a download: which model, how much would have
+/// to be fetched again, and what becomes of the rules that use it.
+struct ModelDeletionPrompt: Equatable {
+    let title: String
+    let message: String
+    init(_ item: LocalModelDescriptor, configuration: Configuration, installed: Set<String>) {
+        let speech = item.kind == .audio
+        func choice(_ rule: Rule) -> String? {
+            speech ? (rule.action?.audioProviderID == nil ? rule.action?.audioModelID : nil) : rule.action?.localTextModelID
+        }
+        // The repair that the deletion makes, tried on a copy.
+        var repaired = configuration
+        repaired.modelsRemoved([RuleModelSelection(modelID: item.id, category: speech ? .audio : .text)], installed: installed.subtracting([item.id]))
+        let users = configuration.rules.indices.filter { choice(configuration.rules[$0]) == item.id }
+        title = "Delete \(item.name)?"
+        // A source added by link states no size.
+        var text = "Its \(item.size.contains(where: \.isNumber) ? item.size + " " : "")download will be removed from this Mac."
+        if let first = users.first {
+            let rules = users.count == 1 ? "The rule that uses it" : "The \(users.count) rules that use it"
+            if let next = choice(repaired.rules[first]) { text += " \(rules) will switch to \(configuration.localModel(next)?.name ?? next)." }
+            else { text += " \(rules) will be left without a \(speech ? "speech" : "text") model." }
+        } else { text += " No rule uses it." }
+        message = text
     }
 }
 
