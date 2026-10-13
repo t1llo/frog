@@ -118,6 +118,36 @@ final class StayAwakeAccessTests: XCTestCase {
         }
     }
 
+    func testCancellingAResetSaysThatSleepWasAlreadyRestored() async throws {
+        let system = AccessPowerFixture(allowed: true)
+        let declined = try session(.cancelled)
+        let power = StayAwakeController(system: system, directory: try folder(), openGuide: { _ in declined })
+        await power.refresh()
+        power.setEnabled(true); await power.waitForOperation()
+        XCTAssertTrue(power.isEnabled)
+        power.configureAccess(.reset); await power.waitForAccessGuide()
+        XCTAssertFalse(power.isEnabled)
+        XCTAssertFalse(power.ownsSession)
+        XCTAssertEqual(power.accessState, .ready)
+        XCTAssertEqual(power.accessNotice, "Sleep restored. Access guide cancelled.", "Answering no in Terminal does not bring the session back, so Frog says that it ended")
+
+        let idleDeclined = try session(.cancelled)
+        let idle = StayAwakeController(system: AccessPowerFixture(allowed: true), directory: try folder(), openGuide: { _ in idleDeclined })
+        await idle.refresh()
+        idle.configureAccess(.reset); await idle.waitForAccessGuide()
+        XCTAssertEqual(idle.accessNotice, "Access guide cancelled.", "Nothing was on, so nothing was restored")
+
+        let setupDeclined = try session(.cancelled)
+        let running = StayAwakeController(system: AccessPowerFixture(allowed: true), directory: try folder(), openGuide: { _ in setupDeclined })
+        await running.refresh()
+        running.setEnabled(true); await running.waitForOperation()
+        running.configureAccess(.setup); await running.waitForAccessGuide()
+        XCTAssertTrue(running.isEnabled, "The setup guide never touches a running session")
+        XCTAssertEqual(running.accessNotice, "Access guide cancelled.")
+        let canQuit = await running.prepareToQuit()
+        XCTAssertTrue(canQuit)
+    }
+
     func testUnavailablePolicyCheckDoesNotShowReady() async throws {
         let system = AccessPowerFixture(allowed: true)
         let power = StayAwakeController(system: system, directory: try folder())

@@ -24,7 +24,7 @@ Frog then executes those commands using `sudo -n`, without a shell or password p
 
 ## Reset access
 
-Choose **Settings → Stay awake → Reset access…**. Frog first restores sleep; if that fails, it keeps the current permission and reports the error. The Terminal guide explains the reset and asks you to confirm before emptying the dedicated file with:
+Choose **Settings → Stay awake → Reset access…**. Frog first restores sleep; if that fails, it keeps the current permission and reports the error. A running session therefore ends even if you then cancel in Terminal, and Settings says that sleep was restored. The Terminal guide explains the reset and asks you to confirm before emptying the dedicated file with:
 
 ```sh
 sudo /usr/bin/tee /etc/sudoers.d/frog-awake < /dev/null

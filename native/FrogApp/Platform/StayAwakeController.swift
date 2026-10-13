@@ -107,11 +107,13 @@ final class StayAwakeController: ObservableObject {
         accessGuide = Task {
             defer { isConfiguringAccess = false }
             do {
+                var endedSession = false
                 if mode == .reset {
                     await operation?.value
                     guard !quitting else { return }
                     // Restore sleep while the existing permission still exists. The restore
                     // runs as `operation`, so quitting and disabling the feature wait for it.
+                    endedSession = isEnabled || ownsSession
                     isBusy = true; revision += 1
                     let restore = Task { await change(false) }
                     operation = Task { _ = await restore.value }
@@ -133,7 +135,8 @@ final class StayAwakeController: ObservableObject {
                     } else {
                         accessNotice = accessState == .ready ? "Access verified. You can now use Stay awake from the menu bar." : "Setup finished, but both power commands are not yet allowed. Review the setup and try again."
                     }
-                case .cancelled: accessNotice = "Access guide cancelled."
+                // Answering no in the reset guide keeps the permission, not the session.
+                case .cancelled: accessNotice = endedSession ? "Sleep restored. Access guide cancelled." : "Access guide cancelled."
                 case .failed: accessNotice = "Setup did not finish. Review the Terminal window and try again."
                 }
             } catch is CancellationError { }
