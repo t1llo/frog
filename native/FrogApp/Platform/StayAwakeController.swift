@@ -160,21 +160,20 @@ final class StayAwakeController: ObservableObject {
     func start() {
         guard !started else { return }; started = true
         operation = Task {
-            do {
-                if FileManager.default.fileExists(atPath: sessionFile.path) {
-                    let previous = try JSONDecoder().decode(Session.self, from: Data(contentsOf: sessionFile))
-                    if previous.ownerRunsElsewhere {
-                        // Another copy of Frog is running and owns this session, for example
-                        // an installed and a development build. Show it, do not end it.
-                        await refresh()
-                    } else {
-                        ownsSession = true; deadline = previous.deadline
-                        // A previous process did not finish cleanup. Never resume an
-                        // enabled session automatically after a crash or restart.
-                        _ = await change(false)
-                    }
-                } else { await refresh() }
-            } catch { self.error = error.localizedDescription }
+            if FileManager.default.fileExists(atPath: sessionFile.path) {
+                // A marker that cannot be read still says that Frog started a session.
+                let previous = try? JSONDecoder().decode(Session.self, from: Data(contentsOf: sessionFile))
+                if previous?.ownerRunsElsewhere == true {
+                    // Another copy of Frog is running and owns this session, for example
+                    // an installed and a development build. Show it, do not end it.
+                    await refresh()
+                } else {
+                    ownsSession = true; deadline = previous?.deadline
+                    // A previous process did not finish cleanup. Never resume an
+                    // enabled session automatically after a crash or restart.
+                    _ = await change(false)
+                }
+            } else { await refresh() }
             await refreshAccess()
             beginMonitoring()
         }

@@ -187,6 +187,25 @@ final class StayAwakeSessionTests: XCTestCase {
         }
     }
 
+    func testAMarkerThatCannotBeReadStillRestoresSleep() async throws {
+        for (contents, awake) in [("", true), ("not a marker", true), ("[]", true), (#"{"deadline":"soon"}"#, true), ("", false)] {
+            let system = SessionPowerFixture(enabled: awake)
+            let folder = directory()
+            try leaveMarker(contents, in: folder)
+            let power = StayAwakeController(system: system, directory: folder)
+            power.start(); await power.waitForOperation()
+            XCTAssertFalse(power.isEnabled, "A marker means that Frog started a session, readable or not: \(contents)")
+            XCTAssertTrue(power.hasReadState, contents)
+            XCTAssertFalse(power.ownsSession, contents)
+            XCTAssertNil(power.error, "Nothing is left to report once sleep is restored: \(contents)")
+            let writes = await system.writes
+            XCTAssertEqual(writes, awake ? [false] : [], contents)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("stay-awake-session.json").path), "The next launch must not meet the same marker again: \(contents)")
+            let canQuit = await power.prepareToQuit()
+            XCTAssertTrue(canQuit, contents)
+        }
+    }
+
     func testTheMarkerNamesTheProcessThatOwnsTheSession() async throws {
         let ownStart = try XCTUnwrap(StayAwakeController.processStart(getpid()))
         XCTAssertEqual(StayAwakeController.processStart(getpid()), ownStart, "One process has one start time")
