@@ -177,7 +177,6 @@ final class AppModel: ObservableObject {
         refreshHistory()
         refreshSystemStatus()
         if registerShortcuts { FrogAppearance.shared.apply(configuration.preferences.appearance ?? AppearancePreferences()) }
-        if registerShortcuts { AppLanguage.shared.selection = configuration.preferences.workflowSettings.applicationLanguage ?? "system" }
         localModels.idleSeconds = configuration.preferences.workflowSettings.idleUnloadSeconds
         localModels.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         dictation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
@@ -523,7 +522,6 @@ final class AppModel: ObservableObject {
         power.configureFeature(enabled: candidate.preferences.featureEnabled(.stayAwake))
         localModels.updateCatalog(candidate.modelCatalog)
         if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
-        if registerShortcuts { AppLanguage.shared.selection = candidate.preferences.workflowSettings.applicationLanguage ?? "system" }
     }
 
     func saveRule(_ rule: Rule) throws {

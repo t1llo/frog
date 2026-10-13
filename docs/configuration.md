@@ -42,7 +42,7 @@ Keys are case-sensitive. Booleans are `true`/`false`; numbers use a decimal poin
 
 | Key | Values / default |
 | --- | --- |
-| `language` | `system`, `en`, `de`; default `system` |
+| `language` | `system`, `en`, `de`; default `system`. Reserved: Frog's interface is English and the value has no effect. It stays accepted so that older files keep loading |
 | `writing-indicator` | Boolean; default `true` |
 | `history-enabled`, `history-hide-text` | Boolean; default `false` |
 | `history-limit` | 1–200; default 200 |

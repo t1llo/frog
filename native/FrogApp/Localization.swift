@@ -1,5 +1,4 @@
 import Foundation
-import Observation
 
 enum FrogResources {
     static var bundle: Bundle {
@@ -11,22 +10,12 @@ enum FrogResources {
     }
 }
 
-@Observable
-final class AppLanguage {
-    static let shared = AppLanguage()
-    var selection = "system"
-}
-
 enum L10n {
     static var language: String { "en" }
     static var locale: Locale { Locale(identifier: language) }
+    /// Frog's interface is English only, so the strings table is looked up once.
+    private static let table = FrogResources.bundle.path(forResource: language, ofType: "lproj").flatMap { Bundle(path: $0) }
     static func text(_ key: String) -> String {
-        #if SWIFT_PACKAGE
-        let root = Bundle.module
-        #else
-        let root = Bundle.main
-        #endif
-        guard let path = root.path(forResource: language, ofType: "lproj"), let bundle = Bundle(path: path) else { return key }
-        return bundle.localizedString(forKey: key, value: key, table: nil)
+        table?.localizedString(forKey: key, value: key, table: nil) ?? key
     }
 }
