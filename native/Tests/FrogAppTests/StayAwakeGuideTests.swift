@@ -23,6 +23,58 @@ final class StayAwakeGuideTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: guide.ruleFile, encoding: .utf8), "", "The reset empties Frog's own file")
     }
 
+    func testSetupSucceedsOnARuleThatSudoAcceptsInAnotherForm() async throws {
+        let guide = try rehearsal()
+        try guide.allowAccess()
+        // The two commands on two lines: sudo allows both, and the exact line is not in the file.
+        let account = NSUserName()
+        try guide.edit(saving: """
+            \(account) ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep 0
+            \(account) ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep 1
+
+            """)
+        let run = try await guide.run("setup", answers: "y\n\n")
+        XCTAssertEqual(run.result, "success", "The effective policy decides, not the wording of the rule: \(run.output)")
+        XCTAssertTrue(run.output.contains("✓ Setup complete"), run.output)
+        XCTAssertFalse(run.output.contains("The expected rule was not saved"), run.output)
+        XCTAssertFalse(run.output.contains("Added and verified"), "The guide did not find its own line, so it must not claim it: \(run.output)")
+        XCTAssertTrue(run.output.contains("Verified that both power commands are allowed without a password."), run.output)
+        XCTAssertTrue(run.output.contains("The exact line shown before is not in \(guide.ruleFile.path); another rule allows them."), run.output)
+
+        // Nothing was saved, and another rule of the system allows both commands already.
+        let allowedElsewhere = try rehearsal()
+        try allowedElsewhere.allowAccess()
+        let other = try await allowedElsewhere.run("setup", answers: "y\n\n")
+        XCTAssertEqual(other.result, "success", other.output)
+        XCTAssertFalse(other.output.contains("Added and verified"), other.output)
+    }
+
+    func testSetupNamesItsOwnRuleWhenTheExactLineWasSaved() async throws {
+        let guide = try rehearsal()
+        try guide.allowAccess()
+        try guide.edit(saving: guide.rule + "\n")
+        let run = try await guide.run("setup", answers: "y\n\n")
+        XCTAssertEqual(run.result, "success", run.output)
+        XCTAssertTrue(run.output.contains("Added and verified the two passwordless power permissions in \(guide.ruleFile.path)."), run.output)
+        XCTAssertFalse(run.output.contains("another rule allows them"), run.output)
+    }
+
+    func testSetupFailsWhileTheCommandsStillNeedAPassword() async throws {
+        let unsaved = try rehearsal()
+        let nothing = try await unsaved.run("setup", answers: "y\n\n")
+        XCTAssertEqual(nothing.result, "failed", nothing.output)
+        XCTAssertTrue(nothing.output.contains("The expected rule was not saved. Re-run this guide to add it."), nothing.output)
+        XCTAssertFalse(nothing.output.contains("Setup complete"), nothing.output)
+
+        // The line is there, and something else in the policy still asks for a password.
+        let overruled = try rehearsal()
+        try overruled.edit(saving: overruled.rule + "\n")
+        let refused = try await overruled.run("setup", answers: "y\n\n")
+        XCTAssertEqual(refused.result, "failed", refused.output)
+        XCTAssertTrue(refused.output.contains("Both commands must be allowed without a password."), refused.output)
+        XCTAssertFalse(refused.output.contains("Setup complete"), refused.output)
+    }
+
     private func rehearsal() throws -> Rehearsal {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

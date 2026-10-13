@@ -118,6 +118,28 @@ final class StayAwakeAccessTests: XCTestCase {
         }
     }
 
+    func testAGuideThatFailsAfterAccessWasGrantedDoesNotAskForAnotherSetup() async throws {
+        let system = AccessPowerFixture()
+        let closedEarly = try session(.failed)
+        // The rule was saved, then the guide ended before it could verify and report it.
+        let power = StayAwakeController(system: system, directory: try folder(), openGuide: { _ in
+            await system.allowAccess(true)
+            return closedEarly
+        })
+        power.configureAccess(); await power.waitForAccessGuide()
+        XCTAssertEqual(power.accessState, .ready)
+        XCTAssertEqual(power.accessNotice, "Setup did not finish, but both power commands are allowed. You can use Stay awake from the menu bar.",
+            "Settings shows Ready to use, so the notice next to it must not say that setup has to be repeated")
+
+        // A reset that fails has not removed the access it was asked to remove.
+        let failedReset = try session(.failed)
+        let reset = StayAwakeController(system: AccessPowerFixture(allowed: true), directory: try folder(), openGuide: { _ in failedReset })
+        await reset.refresh()
+        reset.configureAccess(.reset); await reset.waitForAccessGuide()
+        XCTAssertEqual(reset.accessState, .ready)
+        XCTAssertEqual(reset.accessNotice, "Setup did not finish. Review the Terminal window and try again.")
+    }
+
     func testCancellingAResetSaysThatSleepWasAlreadyRestored() async throws {
         let system = AccessPowerFixture(allowed: true)
         let declined = try session(.cancelled)

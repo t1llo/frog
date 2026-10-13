@@ -159,7 +159,12 @@ final class StayAwakeController: ObservableObject {
                     }
                 // Answering no in the reset guide keeps the permission, not the session.
                 case .cancelled: accessNotice = endedSession ? "Sleep restored. Access guide cancelled." : "Access guide cancelled."
-                case .failed: accessNotice = "Setup did not finish. Review the Terminal window and try again."
+                // A guide that ends early may have saved the rule already. A reset that fails
+                // has removed nothing, so there access that is still ready is the failure.
+                case .failed:
+                    accessNotice = mode == .setup && accessState == .ready
+                        ? "Setup did not finish, but both power commands are allowed. You can use Stay awake from the menu bar."
+                        : "Setup did not finish. Review the Terminal window and try again."
                 case nil: accessNotice = (endedSession ? "Sleep restored. " : "") + "Stopped waiting for the guide. Close its Terminal window if it is still open."
                 }
             } catch is CancellationError { }

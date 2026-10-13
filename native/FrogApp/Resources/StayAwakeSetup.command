@@ -329,16 +329,25 @@ pause "Press Enter to open the editor."
 
 stage "Verify access without changing sleep"
 /usr/bin/sudo /usr/sbin/visudo -c
-if ! /usr/bin/sudo /usr/bin/grep -Fx "$RULE" "$RULE_FILE" >/dev/null; then
-    say "The expected rule was not saved. Re-run this guide to add it."
-    exit 1
-fi
+# The effective policy decides. sudo also accepts the rule with other spacing, on
+# two lines or from another file, so the exact line only chooses the wording.
+SAVED=yes
+/usr/bin/sudo /usr/bin/grep -Fx "$RULE" "$RULE_FILE" >/dev/null || SAVED=no
 if ! check_access; then
-    say "Both commands must be allowed without a password. Review the rule and run setup again."
+    if [[ "$SAVED" == yes ]]; then
+        say "Both commands must be allowed without a password. Review the rule and run setup again."
+    else
+        say "The expected rule was not saved. Re-run this guide to add it."
+    fi
     exit 1
 fi
 finish
-say "Added and verified the two passwordless power permissions in $RULE_FILE."
+if [[ "$SAVED" == yes ]]; then
+    say "Added and verified the two passwordless power permissions in $RULE_FILE."
+else
+    say "Verified that both power commands are allowed without a password."
+    say "The exact line shown before is not in $RULE_FILE; another rule allows them."
+fi
 say "Your Mac's sleep setting was not changed. Frog is ready to use the feature."
 say "Open Frog's menu-bar popup and turn on Stay awake when you need it."
 say "Default session: four hours. Frog restores sleep on quit or below 20% battery when unplugged."
