@@ -230,7 +230,8 @@ final class InterruptedDictationTests: XCTestCase {
         let monitorKeys: Bool
         lazy var controller = DictationController(makeRecorder: { [unowned self] in
             let recorder = InterruptedRecorder(); recorders.append(recorder); return recorder
-        }, authorize: { true }, copy: { [unowned self] in copied.append($0); afterCopy?() }, monitorKeys: monitorKeys)
+        }, authorize: { true }, copy: { [unowned self] in copied.append($0); afterCopy?() }, monitorKeys: monitorKeys,
+           cancelKey: UnregisteredCancelKey())
         lazy var model = AppModel(dataDirectory: directory, registerShortcuts: false, dictationController: controller)
         init(historyEnabled: Bool = true, monitorKeys: Bool = false) throws {
             self.monitorKeys = monitorKeys
@@ -262,6 +263,13 @@ private final class InterruptedRecorder: DictationRecording {
     }
     func stop() { stopped = true; receive = nil }
     func finish() async { receive?(Array(repeating: 0.2, count: 1600)); stop() }
+}
+
+/// Tests that monitor keys send Escape to a window; they must not take the key from the whole Mac.
+@MainActor
+private final class UnregisteredCancelKey: DictationCancelKey {
+    func register(heldModifiers: UInt32, onPress: @escaping () -> Void) {}
+    func unregister() {}
 }
 
 private actor TranscriptGate {

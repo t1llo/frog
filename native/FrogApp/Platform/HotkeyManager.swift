@@ -4,7 +4,7 @@ import FrogCore
 
 @MainActor
 final class HotkeyManager {
-    enum ShortcutPurpose { case rule, clipboardHistory, windowSwitcher }
+    enum ShortcutPurpose { case rule, clipboardHistory, windowSwitcher, recordingCancel }
     private static let signature: OSType = 0x46524F47 // FROG
     private static var nextRegistrationID: UInt32 = 1
     private var handler: EventHandlerRef?
@@ -131,7 +131,9 @@ final class HotkeyManager {
         guard !clipboard, !pasteStyle || historyShortcut else { return "Copy, Cut and Paste shortcuts are reserved for the focused app. Choose a different Frog shortcut." }
         let allowed = UInt32(cmdKey | optionKey | controlKey | shiftKey)
         guard hotkey.modifiers & ~allowed == 0 else { return "The shortcut contains unsupported modifier flags." }
-        guard hotkey.modifiers & UInt32(cmdKey | optionKey | controlKey) != 0 else {
+        // Escape alone is held only while a recording runs, where it cancels that recording.
+        let cancelsRecording = purpose == .recordingCancel && hotkey.keyCode == 53
+        guard cancelsRecording || hotkey.modifiers & UInt32(cmdKey | optionKey | controlKey) != 0 else {
             return "Use Command, Option, or Control with the shortcut key."
         }
         guard printableKeys.contains(hotkey.keyCode) || specialKeys[hotkey.keyCode] != nil else {

@@ -39,6 +39,7 @@ final class DictationController: ObservableObject {
     private var lastInputElapsed = 0
     private var lastInputRevision: UInt64 = 0
     private let outputMute: any OutputMuting
+    private let cancelKey: (any DictationCancelKey)?
     private var muteFailureReported = false
     private var work: Task<Void, Never>?
     private var preview: Task<Void, Never>?
@@ -91,9 +92,10 @@ final class DictationController: ObservableObject {
           inputDevices: @escaping @MainActor () -> [MicrophoneDevice] = { DictationController.devices },
           paste: @escaping @MainActor () async throws -> Void = { try await DictationTarget.pasteIntoFocusedField() },
           now: @escaping @MainActor () -> ContinuousClock.Instant = { .now }, presentsPopup: Bool = true,
-          outputMute: any OutputMuting = RecordingMute()) {
+          outputMute: any OutputMuting = RecordingMute(), cancelKey: (any DictationCancelKey)? = nil) {
         self.makeRecorder = makeRecorder; self.authorize = authorize; self.copy = copy; self.monitorKeys = monitorKeys
         self.presentsPopup = presentsPopup; self.outputMute = outputMute
+        self.cancelKey = cancelKey ?? (monitorKeys ? EscapeHotkey() : nil)
         self.previewInterval = previewInterval
         self.inputDevices = inputDevices
         self.paste = paste; self.now = now
@@ -134,7 +136,7 @@ final class DictationController: ObservableObject {
         let recordingHint = rule.hotkey == nil ? "Stop to finish · Esc to cancel" : (rule.action?.recordingMode ?? preferences.recordingMode) == .hold ? "Release \(shortcut) to stop · Esc to cancel" : "\(shortcut) to stop · Esc to cancel"
         hint = "Esc to cancel"
         if self.preferences.showDictationPopup { showPanel() }
-        if monitorKeys { installEscape() }
+        installEscape()
         work = Task { [weak self] in
             guard let self else { return }
             let granted = await self.authorize()
@@ -328,7 +330,7 @@ final class DictationController: ObservableObject {
         guard phase == .failed, let token, let rule = activeRule, let models else { return }
         failure = ""
         residencyHold = models.holdResidency()
-        if monitorKeys { installEscape() }
+        installEscape()
         deliver(token: token, rule: rule, models: models)
     }
 
@@ -483,6 +485,7 @@ final class DictationController: ObservableObject {
         removeEscape()
     }
     private func removeEscape() {
+        cancelKey?.unregister()
         if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }; escapeMonitor = nil
         if let localEscapeMonitor { NSEvent.removeMonitor(localEscapeMonitor) }; localEscapeMonitor = nil
     }
@@ -493,6 +496,15 @@ final class DictationController: ObservableObject {
     }
     private func installEscape() {
         guard let token else { return }
+        // A registered key works without Accessibility permission and keeps Escape from the focused
+        // app. While a hold shortcut is down, Escape arrives together with that shortcut's modifiers.
+        let hold = (activeRule?.action?.recordingMode ?? preferences.recordingMode) == .hold
+        cancelKey?.register(heldModifiers: hold ? activeRule?.hotkey?.modifiers ?? 0 : 0) { [weak self] in
+            guard self?.token == token else { return }
+            self?.interrupt(reason: .escape)
+        }
+        guard monitorKeys else { return }
+        // The monitors remain for an Escape that macOS would not register for Frog.
         escapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == 53 {
                 Task { @MainActor in
