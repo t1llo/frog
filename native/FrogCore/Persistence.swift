@@ -101,6 +101,8 @@ public final class ConfigurationStore: @unchecked Sendable {
     }
     private var snapshot: Snapshot?
     private var loaded: Configuration?
+    /// Recovery copies kept for each kind of backup; writing another removes the oldest.
+    static let retainedBackups = 5
     public var hasExistingConfiguration: Bool {
         FileManager.default.fileExists(atPath: textFile.path) || FileManager.default.fileExists(atPath: file.path) || legacyFile.map { FileManager.default.fileExists(atPath: $0.path) } == true
     }
@@ -123,15 +125,18 @@ public final class ConfigurationStore: @unchecked Sendable {
         } else if let json = current.json, !isPrototypeConfiguration(json) {
             configuration = try ConfigurationFile.decode(json)
             try validate?(configuration)
+            // A migration that cannot be written is retried on every launch; it must not leave a backup each time.
+            let prepared = try prepare(configuration, preserving: nil)
             try backup(json, name: "config-legacy-backup", extension: "json")
-            try commit(configuration, preserving: nil, expected: current)
+            try apply(prepared, expected: current)
             return configuration
         } else if let legacyFile, let previous = try readConfigurationFile(legacyFile) {
             configuration = try ConfigurationFile.decode(previous)
             try validate?(configuration)
+            let prepared = try prepare(configuration, preserving: nil)
             if let json = current.json { try backup(json, name: "config-prototype-backup", extension: "json") }
             try backup(previous, name: "config-legacy-backup", extension: "json")
-            try commit(configuration, preserving: nil, expected: current)
+            try apply(prepared, expected: current)
             return configuration
         } else {
             if current.json != nil { throw FrogError.message("config.json belongs to an older Frog prototype. Import a native configuration in Settings; the original will be backed up.") }
@@ -216,16 +221,46 @@ public final class ConfigurationStore: @unchecked Sendable {
     private func backup(_ bytes: Data, name: String, extension ext: String) throws -> URL {
         let url = directory.appendingPathComponent("\(name)-\(UUID().uuidString).\(ext)").resolvingSymlinksInPath()
         try PrivateFile.write(bytes, to: url, secureDirectory: false)
+        pruneBackups(besides: url, name: name, extension: ext)
         return url
     }
-    private func commit(_ configuration: Configuration, preserving text: String?, expected: Snapshot) throws {
+    /// Keeps the newest recovery copies of one kind. Only regular files with the exact name Frog
+    /// gives a backup are candidates: the directory may be shared with other tools.
+    private func pruneBackups(besides newest: URL, name: String, extension ext: String) {
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .contentModificationDateKey]
+        guard let files = try? FileManager.default.contentsOfDirectory(at: newest.deletingLastPathComponent(), includingPropertiesForKeys: Array(keys)) else { return }
+        let prefix = name + "-"
+        let older = files.compactMap { file -> (url: URL, modified: Date)? in
+            let stem = file.deletingPathExtension().lastPathComponent
+            guard file.lastPathComponent != newest.lastPathComponent, file.pathExtension == ext, stem.hasPrefix(prefix),
+                  UUID(uuidString: String(stem.dropFirst(prefix.count))) != nil,
+                  let values = try? file.resourceValues(forKeys: keys), values.isRegularFile == true,
+                  let modified = values.contentModificationDate else { return nil }
+            return (file, modified)
+        }.sorted { $0.modified > $1.modified }
+        for backup in older.dropFirst(Self.retainedBackups - 1) { try? FileManager.default.removeItem(at: backup.url) }
+    }
+    /// A candidate that rendered, fits and reads back. Preparing one changes no file.
+    private struct Prepared {
+        let configuration: Configuration
+        let text: Data
+        let json: Data
+    }
+    private func prepare(_ configuration: Configuration, preserving text: String?) throws -> Prepared {
         let json = try TextConfiguration.companion(configuration)
         let rendered = try TextConfiguration.render(configuration, preserving: text)
         let bytes = Data(rendered.utf8)
-        let committed = Snapshot(textTarget: expected.textTarget, jsonTarget: expected.jsonTarget, text: bytes, json: json)
         guard bytes.count <= ConfigurationFile.maximumBytes, json.count <= ConfigurationFile.maximumBytes else { throw FrogError.message("Configuration is too large (maximum 4 MB per file).") }
         // Validate the actual representation before changing either file.
         _ = try TextConfiguration.decode(rendered, companion: json)
+        return Prepared(configuration: configuration, text: bytes, json: json)
+    }
+    private func commit(_ configuration: Configuration, preserving text: String?, expected: Snapshot) throws {
+        try apply(prepare(configuration, preserving: text), expected: expected)
+    }
+    private func apply(_ prepared: Prepared, expected: Snapshot) throws {
+        let configuration = prepared.configuration, bytes = prepared.text, json = prepared.json
+        let committed = Snapshot(textTarget: expected.textTarget, jsonTarget: expected.jsonTarget, text: bytes, json: json)
         try ensureUnchanged(expected)
         // Atomic replacement follows the resolved destination, preserving chezmoi symlinks.
         // Never chmod an existing dotfiles directory: it may be shared with other applications.

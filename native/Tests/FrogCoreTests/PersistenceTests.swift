@@ -117,6 +117,55 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: store.file), unknown)
     }
 
+    func testMigrationThatCannotBeWrittenLeavesNoBackupBehind() throws {
+        // A shortcut without Control, Option or Command decodes, but the text file has no spelling for it.
+        var unwritable = Configuration()
+        var workflow = WorkflowPreferences(); workflow.shortcutPanelHotkey = Hotkey(keyCode: 40, modifiers: 512)
+        unwritable.preferences.workflows = workflow
+        let bytes = try ConfigurationFile.encode(unwritable)
+
+        let current = directory.appendingPathComponent("current")
+        try FileManager.default.createDirectory(at: current, withIntermediateDirectories: true)
+        let store = ConfigurationStore(directory: current)
+        try bytes.write(to: store.file)
+        // Every launch repeats the attempt; none of them may add a file.
+        for _ in 0..<3 { XCTAssertThrowsError(try store.load()) }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: current.path), ["config.json"])
+        XCTAssertEqual(try Data(contentsOf: store.file), bytes)
+
+        let legacy = directory.appendingPathComponent("legacy")
+        let empty = directory.appendingPathComponent("empty")
+        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+        try bytes.write(to: legacy.appendingPathComponent("configuration.json"))
+        let fresh = ConfigurationStore(directory: empty, legacyDirectory: legacy)
+        for _ in 0..<3 { XCTAssertThrowsError(try fresh.load()) }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: empty.path), [])
+    }
+
+    func testOnlyTheNewestBackupsOfEachKindAreKept() throws {
+        let store = ConfigurationStore(directory: directory)
+        var configuration = try store.load()
+        try store.save(configuration)
+        // Not a name Frog writes: it must survive however many backups follow.
+        let foreign = directory.appendingPathComponent("configuration-backup-notes.json")
+        try Data("mine".utf8).write(to: foreign)
+        var written: [URL] = []
+        for limit in 1...(ConfigurationStore.retainedBackups + 3) {
+            configuration.preferences.historyLimit = limit
+            written.append(try XCTUnwrap(store.replaceFromImport(configuration)))
+        }
+        let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix("configuration-backup-") && $0 != foreign.lastPathComponent }
+        XCTAssertEqual(names.filter { $0.hasSuffix(".json") }.count, ConfigurationStore.retainedBackups)
+        XCTAssertEqual(names.filter { $0.hasSuffix(".conf") }.count, ConfigurationStore.retainedBackups)
+        XCTAssertEqual(written.map { FileManager.default.fileExists(atPath: $0.path) },
+                       Array(repeating: false, count: 3) + Array(repeating: true, count: ConfigurationStore.retainedBackups),
+                       "The oldest recovery copies go first")
+        XCTAssertEqual(try Data(contentsOf: foreign), Data("mine".utf8))
+        XCTAssertEqual(try store.load(), configuration)
+    }
+
     func testHistoryDisabledPreservesRecordsAndDoesNotCreateFiles() throws {
         let store = HistoryStore(directory: directory)
         var preferences = Preferences()
