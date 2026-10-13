@@ -32,12 +32,6 @@ struct TokenRecord {
     var cacheWrite1h: Int = 0
 }
 
-/// Publish both sources together after the initial scan and account fetch have finished.
-struct TokenSnapshot {
-    let local: [TokenRecord]
-    var account: [TokenRecord] = []
-}
-
 /// Reads transcripts incrementally: files are append-only, so each pass only parses the bytes
 /// added since the last one.
 actor TokenScanner {
@@ -168,9 +162,6 @@ final class TokenStore: ObservableObject {
     @Published private(set) var claudeActivity: ClaudeActivity?
     /// Account estimates plus local usage on UTC days the account has not reported yet.
     private(set) var accountRecords: [TokenRecord] = []
-    private var estimatedAccountRecords: [TokenRecord] = []
-    @Published private(set) var sharingSnapshot: TokenSnapshot?
-    private var checkedAccount = false
     /// Whether the estimated split of `accountRecords` comes from this Mac's OpenAI logs.
     private(set) var mixFromLogs = false
     /// Summaries are asked for on every redraw (hover, provider switch), and a 30-day one over
@@ -251,7 +242,7 @@ final class TokenStore: ObservableObject {
 
     func refresh(forceLocal: Bool = false) {
         guard active else { return }
-        if fixtureRoot == nil { fetchLive() } else { checkedAccount = true }
+        if fixtureRoot == nil { fetchLive() }
         if scanning { pendingScan = pendingScan || forceLocal; return }
         guard forceLocal || Date() >= nextScanAt else { return }
         scanning = true
@@ -277,7 +268,6 @@ final class TokenStore: ObservableObject {
             if !piRecords.isEmpty { s.insert(.pi) }
             sources = s
             scanned = true
-            publishSnapshot()
             scanning = false
             if pendingScan { pendingScan = false; refresh(forceLocal: true) }
         }
@@ -290,7 +280,7 @@ final class TokenStore: ObservableObject {
         checkingLive = true
         let generation = lifecycle
         liveTask = Task {
-            defer { if generation == lifecycle { fetchingLive = false; checkingLive = false; checkedAccount = true; publishSnapshot() } }
+            defer { if generation == lifecycle { fetchingLive = false; checkingLive = false } }
             do {
                 let auth = try await usageWork { try readCodexAuth() }
                 guard active, generation == lifecycle, !Task.isCancelled else { return }
@@ -350,7 +340,8 @@ extension TokenStore {
                     let now = Date()
                     for provider in Provider.allCases {
                         for useAccount in [false, true] where !useAccount || provider == .openai {
-                            for range in TokenRange.allCases {
+                            // OpenAI is charted by the week and the month only.
+                            for range in TokenRange.allCases where provider != .openai || range != .day {
                                 try Task.checkCancellation()
                                 let batch = summarizeMetrics(useAccount ? account : records, provider: provider, range: range,
                                                              now: now, calendar: useAccount ? usageUTCCalendar : .current)
@@ -361,26 +352,19 @@ extension TokenStore {
                         }
                     }
                     let sources = Dictionary(grouping: records, by: \.provider).mapValues { Set($0.map(\.source)) }
-                    return (estimated, account, summaries, sources, local != nil)
+                    return (account, summaries, sources, local != nil)
                 }
                 guard let result, active, life == lifecycle, !Task.isCancelled else { return }
                 guard generation == aggregationGeneration else { continue }
-                estimatedAccountRecords = result.0
-                accountRecords = result.1
-                providerSources = result.3
-                mixFromLogs = result.4
+                accountRecords = result.0
+                providerSources = result.2
+                mixFromLogs = result.3
                 aggregating = false
                 loaded = scanned
-                summaries = result.2
-                publishSnapshot()
+                summaries = result.1
                 break
             }
         }
-    }
-
-    private func publishSnapshot() {
-        guard loaded && checkedAccount && !aggregating else { return }
-        sharingSnapshot = TokenSnapshot(local: records, account: estimatedAccountRecords)
     }
 }
 
