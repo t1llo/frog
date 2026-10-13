@@ -122,6 +122,26 @@ actor TokenScanner {
     }
 }
 
+/// When the live ChatGPT limits may be asked for again.
+struct LiveFetchSchedule {
+    static let pace: TimeInterval = 120
+    private(set) var interval = pace
+    private(set) var nextAt = Date.distantPast
+
+    mutating func begin(at now: Date) -> Bool {
+        guard now >= nextAt else { return false }
+        nextAt = now.addingTimeInterval(interval)
+        return true
+    }
+    /// The slower pace lasts as long as the trouble: an answer ends it.
+    mutating func succeeded() { interval = Self.pace }
+    mutating func failed(_ error: Error, at now: Date) {
+        guard let error = error as? FetchError, error.isTransient else { return }
+        interval = min(interval * 2, 600)
+        nextAt = now.addingTimeInterval(max(interval, error.retryAfter ?? 0))
+    }
+}
+
 @MainActor
 final class TokenStore: ObservableObject {
     @Published private(set) var records: [TokenRecord] = [] { didSet { rebuildAccount() } }
@@ -163,8 +183,7 @@ final class TokenStore: ObservableObject {
         let provider: Provider, account: Bool, range: TokenRange, metric: TokenMetric
     }
     private var nextHistoryAt = Date.distantPast
-    private var liveInterval: TimeInterval = 120
-    private var nextLiveAt = Date.distantPast
+    private var liveSchedule = LiveFetchSchedule()
     private var fetchingLive = false
     @Published private(set) var checkingLive = false
     /// Tools that have logs on this Mac, even if nothing falls inside the chart range.
@@ -264,12 +283,11 @@ final class TokenStore: ObservableObject {
         }
     }
 
-    /// Every two minutes at most, doubling up to ten after a 429 or 5xx, like the Claude poll.
+    /// Every two minutes at most, doubling up to ten after a 429 or 5xx until an answer comes.
     private func fetchLive() {
-        guard !fetchingLive, Date() >= nextLiveAt else { return }
+        guard !fetchingLive, liveSchedule.begin(at: Date()) else { return }
         fetchingLive = true
         checkingLive = true
-        nextLiveAt = Date().addingTimeInterval(liveInterval)
         let generation = lifecycle
         liveTask = Task {
             defer { if generation == lifecycle { fetchingLive = false; checkingLive = false; checkedAccount = true; publishSnapshot() } }
@@ -287,6 +305,7 @@ final class TokenStore: ObservableObject {
                 async let account: AccountActivity? = Date() >= nextHistoryAt ? try? fetchAccountActivity(auth) : nil
                 let live = try await limitResult
                 guard active, generation == lifecycle, !Task.isCancelled else { return }
+                liveSchedule.succeeded()
                 if let credits = live.credits { liveCredits = credits }
                 if live.hasData { liveLimits = live }
                 liveError = live.hasData ? nil : "no limits or credits for this account"
@@ -301,10 +320,7 @@ final class TokenStore: ObservableObject {
             } catch {
                 guard active, generation == lifecycle, !Task.isCancelled else { return }
                 liveError = error.localizedDescription
-                if let fe = error as? FetchError, fe.isTransient {
-                    liveInterval = min(liveInterval * 2, 600)
-                    nextLiveAt = Date().addingTimeInterval(max(liveInterval, fe.retryAfter ?? 0))
-                }
+                liveSchedule.failed(error, at: Date())
             }
         }
     }

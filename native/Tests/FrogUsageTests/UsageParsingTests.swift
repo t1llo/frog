@@ -259,6 +259,101 @@ final class UsageParsingTests: XCTestCase {
         XCTAssertTrue(restarted.begin(at: now.addingTimeInterval(7200)))
     }
 
+    func testPollSlowedByThrottlingEasesBackAnHourAtATimeAlsoAcrossARestart() throws {
+        let start = Date(timeIntervalSince1970: 1_800_000_000), hour: TimeInterval = 3600
+        let limited = FetchError.http(429, retryAfter: nil, message: nil)
+        var state = ClaudePollingState()
+        for _ in 0..<5 { state.failed(limited, at: start) }
+        XCTAssertEqual(state.interval, 600)
+        // What throttling taught is kept while it is recent, so the poll does not swing back into it.
+        state.succeeded(Usage(), at: start.addingTimeInterval(600))
+        state.succeeded(Usage(), at: start.addingTimeInterval(hour - 1))
+        XCTAssertEqual(state.interval, 600)
+        state.succeeded(Usage(), at: start.addingTimeInterval(hour))
+        XCTAssertEqual(state.interval, 300, "An hour without throttling takes one step back")
+        state.succeeded(Usage(), at: start.addingTimeInterval(hour + 600))
+        XCTAssertEqual(state.interval, 300, "The next step waits another hour")
+        state.failed(limited, at: start.addingTimeInterval(hour + 900))
+        XCTAssertEqual(state.interval, 600)
+        state.succeeded(Usage(), at: start.addingTimeInterval(2 * hour))
+        XCTAssertEqual(state.interval, 600, "Throttled again: the hour starts over")
+        // A clock set back must not leave the slower pace waiting for a time far ahead.
+        var setBack = state
+        setBack.succeeded(Usage(), at: start.addingTimeInterval(-24 * hour))
+        setBack.succeeded(Usage(), at: start.addingTimeInterval(-23 * hour))
+        XCTAssertEqual(setBack.interval, 300)
+        for step in 1...4 { state.succeeded(Usage(), at: start.addingTimeInterval(hour + 900 + Double(step) * hour)) }
+        XCTAssertEqual(state.interval, 60)
+        XCTAssertTrue(state.begin(at: start.addingTimeInterval(9 * hour)))
+        XCTAssertEqual(state.nextFetchAt, start.addingTimeInterval(9 * hour + 60), "Every minute again")
+
+        let suite = "frog-usage-pace-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var slowed = ClaudePollingState()
+        for _ in 0..<5 { slowed.failed(FetchError.http(429, retryAfter: 7200, message: nil), at: start) }
+        slowed.save(to: defaults)
+        XCTAssertEqual(ClaudePollingState.load(from: defaults, now: start.addingTimeInterval(60)).interval, 600)
+        let later = ClaudePollingState.load(from: defaults, now: start.addingTimeInterval(8 * hour))
+        XCTAssertEqual(later.interval, 300, "A start long after the throttling takes the same one step")
+        XCTAssertEqual(later.nextFetchAt, start.addingTimeInterval(7200), "The server's own wait is never shortened")
+        // An earlier version saved the slower pace without saying when it was learned.
+        var earlier = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(slowed)) as? [String: Any])
+        earlier["slowedAt"] = nil
+        defaults.set(try JSONSerialization.data(withJSONObject: earlier), forKey: ClaudePollingState.defaultsKey)
+        var restored = ClaudePollingState.load(from: defaults, now: start.addingTimeInterval(60))
+        XCTAssertEqual(restored.interval, 300)
+        restored.succeeded(Usage(), at: start.addingTimeInterval(120))
+        XCTAssertEqual(restored.interval, 300, "And from then on an hour at a time")
+    }
+
+    func testAnOutageDelaysThePollWithoutTeachingItASlowerPace() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let down = FetchError.http(503, retryAfter: nil, message: nil)
+        var state = ClaudePollingState()
+        XCTAssertTrue(state.begin(at: start))
+        state.failed(down, at: start)
+        XCTAssertEqual(state.nextFetchAt, start.addingTimeInterval(120))
+        state.failed(down, at: start); state.failed(down, at: start)
+        XCTAssertEqual(state.nextFetchAt, start.addingTimeInterval(480), "Longer waits while the outage lasts")
+        for _ in 0..<5 { state.failed(down, at: start) }
+        XCTAssertEqual(state.nextFetchAt, start.addingTimeInterval(600), "Ten minutes at most")
+        state.failed(FetchError.http(502, retryAfter: 1800, message: nil), at: start)
+        XCTAssertEqual(state.nextFetchAt, start.addingTimeInterval(1800), "Never sooner than the server asks")
+        XCTAssertEqual(state.interval, 60, "An outage says nothing about how often the server may be asked")
+        state.succeeded(Usage(), at: start.addingTimeInterval(1800))
+        XCTAssertTrue(state.begin(at: start.addingTimeInterval(1800)))
+        XCTAssertEqual(state.nextFetchAt, start.addingTimeInterval(1860), "Every minute again once the service answers")
+        state.failed(down, at: start.addingTimeInterval(1900))
+        XCTAssertEqual(state.nextFetchAt, start.addingTimeInterval(1900 + 120), "A new outage starts with the short wait")
+        // A pace learned from throttling is kept through an outage, neither lengthened nor forgotten.
+        let limited = FetchError.http(429, retryAfter: nil, message: nil)
+        state.failed(limited, at: start.addingTimeInterval(2000)); state.failed(limited, at: start.addingTimeInterval(2000))
+        XCTAssertEqual(state.interval, 240)
+        state.failed(down, at: start.addingTimeInterval(2100))
+        XCTAssertEqual(state.interval, 240)
+        XCTAssertEqual(state.nextFetchAt, start.addingTimeInterval(2100 + 480))
+    }
+
+    func testChatGPTLimitsAreAskedForAtTheUsualPaceAgainAfterAnAnswer() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        var schedule = LiveFetchSchedule()
+        XCTAssertTrue(schedule.begin(at: start))
+        XCTAssertFalse(schedule.begin(at: start.addingTimeInterval(119)))
+        schedule.failed(FetchError.http(429, retryAfter: nil, message: nil), at: start)
+        schedule.failed(FetchError.http(503, retryAfter: nil, message: nil), at: start)
+        schedule.failed(FetchError.badJSON, at: start)
+        XCTAssertFalse(schedule.begin(at: start.addingTimeInterval(479)))
+        XCTAssertTrue(schedule.begin(at: start.addingTimeInterval(480)))
+        XCTAssertFalse(schedule.begin(at: start.addingTimeInterval(480 + 479)), "Slower until the service answers")
+        schedule.succeeded()
+        XCTAssertTrue(schedule.begin(at: start.addingTimeInterval(960)))
+        XCTAssertFalse(schedule.begin(at: start.addingTimeInterval(960 + 119)))
+        XCTAssertTrue(schedule.begin(at: start.addingTimeInterval(960 + 120)), "Two minutes again after an answer")
+        schedule.failed(FetchError.http(429, retryAfter: 3600, message: nil), at: start.addingTimeInterval(1080))
+        XCTAssertFalse(schedule.begin(at: start.addingTimeInterval(1080 + 3599)), "Never sooner than the server asks")
+        XCTAssertTrue(schedule.begin(at: start.addingTimeInterval(1080 + 3600)))
+    }
+
     private func fixtureDirectory() throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

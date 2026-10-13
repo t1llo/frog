@@ -16,6 +16,12 @@ struct ClaudePollingState: Codable {
     private(set) var nextRenewalAt: Date?
     private(set) var renewalInterval: TimeInterval?
     static let renewalFloor: TimeInterval = 1800
+    /// When throttling last slowed the poll, or when it last eased; nil at the usual pace.
+    private(set) var slowedAt: Date?
+    /// Server errors in a row. They delay the next attempt without changing the pace.
+    private(set) var outages: Int?
+    /// How long throttling has to stay away before the poll takes one step back towards a minute.
+    static let quietPeriod: TimeInterval = 3600
 
     mutating func begin(at now: Date) -> Bool {
         guard now >= nextFetchAt else { return false }
@@ -65,24 +71,53 @@ struct ClaudePollingState: Codable {
         lastFailure = nil
         // A working login makes earlier renewal failures history.
         renewalInterval = nil; nextRenewalAt = nil
-        // Success deliberately keeps the slower interval learned from previous throttling.
+        outages = nil
+        ease(at: now)
+    }
+
+    /// The slower pace learned from throttling is kept while the throttling is recent, so one
+    /// good answer does not send the poll straight back into it, and halves for every quiet
+    /// hour after that. State from a version that kept it for good says nothing about when it
+    /// was learned and counts as long ago.
+    private mutating func ease(at now: Date) {
+        guard interval > 60 else { slowedAt = nil; return }
+        let quiet = now.timeIntervalSince(slowedAt ?? .distantPast)
+        // A time ahead of the clock means the clock was set back: the hour starts over.
+        if quiet < 0 { slowedAt = now; return }
+        guard quiet >= Self.quietPeriod else { return }
+        interval = max(60, interval / 2)
+        slowedAt = interval > 60 ? now : nil
     }
 
     mutating func failed(_ error: Error, at now: Date) {
-        if let error = error as? FetchError, error.isTransient {
-            interval = min(interval * 2, 600)
-            nextFetchAt = max(nextFetchAt, now.addingTimeInterval(max(interval, error.retryAfter ?? 0)))
-            if case .http(429, _, _) = error { lastFailure = "rate limited" }
-            else { lastFailure = "service temporarily unavailable" }
-        } else {
+        guard let error = error as? FetchError, error.isTransient else {
             lastFailure = "couldn't refresh the last reading"
+            return
         }
+        let wait: TimeInterval
+        if case .http(429, _, _) = error {
+            interval = min(interval * 2, 600)
+            slowedAt = now
+            outages = nil
+            wait = interval
+            lastFailure = "rate limited"
+        } else {
+            // An outage is not an answer about how often to ask: wait longer while it lasts,
+            // and go on at the pace from before once the service is back.
+            let count = min((outages ?? 0) + 1, 4)
+            outages = count
+            wait = min(interval * pow(2, Double(count)), 600)
+            lastFailure = "service temporarily unavailable"
+        }
+        nextFetchAt = max(nextFetchAt, now.addingTimeInterval(max(wait, error.retryAfter ?? 0)))
     }
 
-    static func load(from defaults: UserDefaults) -> ClaudePollingState {
+    static func load(from defaults: UserDefaults, now: Date = Date()) -> ClaudePollingState {
         guard let data = defaults.data(forKey: defaultsKey),
-              let state = try? JSONDecoder().decode(Self.self, from: data),
+              var state = try? JSONDecoder().decode(Self.self, from: data),
               state.interval.isFinite, (60...600).contains(state.interval) else { return Self() }
+        // Frog may have been closed for longer than the throttling is worth remembering.
+        state.ease(at: now)
         return state
     }
 

@@ -1,5 +1,6 @@
-// Polling state. Same schedule as before: every minute, doubling up to 10 minutes after a 429
-// or 5xx, never faster than the server's Retry-After, and menu opens cannot bypass it.
+// Polling state. Every minute; a 429 doubles that up to 10 minutes, and the slower pace eases
+// back a step for every hour without one. A 5xx only delays the next attempt. Never faster than
+// the server's Retry-After, and menu opens cannot bypass it.
 import Foundation
 import Combine
 
@@ -51,7 +52,7 @@ final class Store: ObservableObject {
         self.renewLogin = renewLogin
         self.currentDate = currentDate
         loginSource = defaults.string(forKey: "claudeLoginSource").flatMap(ClaudeLoginSource.init(rawValue:)) ?? .automatic
-        polling = ClaudePollingState.load(from: defaults)
+        polling = ClaudePollingState.load(from: defaults, now: currentDate())
         usage = polling.usage
         lastGoodAt = polling.lastGoodAt
         lastError = polling.lastFailure
