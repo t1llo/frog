@@ -54,9 +54,17 @@ Implemented in `native/FrogApp/Platform/MenuBarOrganizer.swift`:
 - Re-check only Frog's helper frames, monitor width/notch regions, and restore
   compact lengths if the recovery arrow is obscured or the dividers are reversed.
   Display changes resize existing spacers. No foreign icon enumeration or moves.
-- A single 0.5-second timer while installed; no global pointer monitor. Mouse-down,
-  pointer in the menu strip, settings page visibility and arrangement editing defer
-  auto-hide. Arbitrary third-party open dropdowns cannot reliably be detected.
+- A single timer while installed; no global pointer monitor. It fires every 0.5
+  seconds while something waits on the clock or the pointer: shown icons with
+  auto-hide, hidden icons with hover reveal, a pending start-collapse, an arrangement
+  problem, arranging, a spacer that is still settling, a held mouse button, and a
+  start, settings change or display change that no tick has validated yet. At rest it
+  fires every 2 seconds, which is how long a rearranged bar or a newly started Hidden
+  Bar can go unnoticed. A display change brings the next tick forward instead of being
+  judged at once, because the helpers' windows follow the screens a moment later.
+  Mouse-down, pointer in the menu strip, settings page visibility and arrangement
+  editing defer auto-hide. Arbitrary third-party open dropdowns cannot reliably be
+  detected.
 - Stable autosave names `Frog.MenuBarOrganizer.toggle`, `.divider`,
   `.permanentDivider`. Keep autosave identity through helper removal, preserve macOS's
   stored positions, never touch private preferred-position defaults. Actual

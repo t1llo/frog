@@ -112,6 +112,8 @@ struct OrganizerMenuState: Equatable {
     /// What Frog's own menu says while the organizer is switched on but has taken its arrow away.
     /// With the arrow gone, nothing else in the menu bar tells why every icon is shown again.
     var menuNotice: String? { isEnabled && !isInstalled ? issue : nil }
+    /// How often the timer looks at the bar right now; nil while no timer runs.
+    var scheduledTickInterval: TimeInterval? { timer?.timeInterval }
 
     private let items: any OrganizerStatusItems
     private let hotkeys: any OrganizerHotkey
@@ -122,6 +124,7 @@ struct OrganizerMenuState: Equatable {
     private var settings = MenuBarPreferences()
     private var installed = Set<OrganizerItem>()
     private var timer: Timer?
+    private var screenObserver: NSObjectProtocol?
     private var deadline: TimeInterval?
     private var hoverStarted: TimeInterval?
     private var pendingInitialCollapse = false
@@ -134,6 +137,9 @@ struct OrganizerMenuState: Equatable {
     // AppKit updates width synchronously, but WindowServer moves the spacer later.
     // Do not interpret that intermediate rectangle as a user-reversed arrangement.
     private var layoutSettlesAt: TimeInterval = 0
+    // Something may have changed the bar since the last tick that could judge it:
+    // a start, new settings, another display, a drag.
+    private var validationDue = false
 
     init(statusItems: (any OrganizerStatusItems)? = nil, hotkeys: (any OrganizerHotkey)? = nil,
          applications: (any OrganizerApplications)? = nil,
@@ -163,12 +169,10 @@ struct OrganizerMenuState: Equatable {
             isInstalled = true
             pendingInitialCollapse = settings.startCollapsed
             if automaticTicks {
-                let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.tick() }
+                screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
+                                                                        object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.screensChanged() }
                 }
-                timer.tolerance = 0.1
-                RunLoop.main.add(timer, forMode: .common)
-                self.timer = timer
             }
         }
         if settings.permanentlyHiddenSection {
@@ -191,6 +195,8 @@ struct OrganizerMenuState: Equatable {
             }
         }
         if starting || previous != self.settings { resetDeadline() }
+        validationDue = true
+        scheduleTicks()
     }
 
     func stop() {
@@ -202,6 +208,7 @@ struct OrganizerMenuState: Equatable {
 
     func toggle() {
         guard isInstalled else { return }
+        defer { scheduleTicks() }
         if isEditingArrangement {
             setEditingArrangement(false)
             guard !isEditingArrangement else { return }
@@ -215,6 +222,7 @@ struct OrganizerMenuState: Equatable {
         isExpanded = true
         applyLengths(environment())
         resetDeadline()
+        scheduleTicks()
     }
 
     /// Window-accessible recovery also reveals the permanent section and pauses auto-hide.
@@ -223,12 +231,14 @@ struct OrganizerMenuState: Equatable {
         pendingInitialCollapse = false
         isExpanded = true
         isEditingArrangement = editing
-        if !editing, let problem = arrangementIssue(environment()) {
+        let env = environment()
+        if !editing, let problem = arrangementIssue(env) {
             isEditingArrangement = true
             issue = problem
         } else { issue = nil }
-        applyLengths(environment())
+        applyLengths(env)
         resetDeadline()
+        scheduleTicks()
     }
 
     /// Whether the settings page can be seen. The page says "no" each time it is put into its window,
@@ -239,6 +249,7 @@ struct OrganizerMenuState: Equatable {
         if visible { pendingInitialCollapse = false }
         if !visible && isEditingArrangement { setEditingArrangement(false) }
         resetDeadline()
+        scheduleTicks()
     }
 
     /// Parent calls alongside its other managers when any shortcut recorder is active.
@@ -248,19 +259,29 @@ struct OrganizerMenuState: Equatable {
         updateHotkey()
     }
 
+    /// A display was connected, removed or resized. The helpers' windows follow the screens a
+    /// moment later, so this only brings the next tick forward instead of judging the old frames.
+    func screensChanged() {
+        guard isInstalled else { return }
+        validationDue = true
+        scheduleTicks()
+    }
+
     /// One bounded timer drives geometry, display changes, hover and the auto-hide deadline.
     /// Tests call this with an injected clock and status-item adapter; no real bar is changed.
     func tick() {
         guard isInstalled else { return }
+        defer { scheduleTicks() }
         let env = environment()
         guard checkAvailability(env) else { return }
         // A dragged item temporarily crosses its neighbors or loses its window.
         // Resizing here fights macOS's placement gesture and causes visible jumping.
-        if env.mouseDown { layoutSettlesAt = 0; resetDeadline(); return }
+        if env.mouseDown { layoutSettlesAt = 0; validationDue = true; resetDeadline(); return }
         guard !menuTracking else { resetDeadline(); return }
         // Auto-hidden menu bars and Space transitions may briefly supply no frames.
         // Preserve intent until we can distinguish that from genuinely unsafe order.
         guard geometryAvailable else { resetDeadline(); return }
+        validationDue = false
         if let problem = arrangementIssue(env) {
             guard now() >= layoutSettlesAt else { return }
             isExpanded = true
@@ -403,6 +424,29 @@ struct OrganizerMenuState: Equatable {
         deadline = isExpanded && settings.autoHide ? now() + settings.autoHideSeconds : nil
     }
 
+    /// Half a second while something waits on the clock or the pointer. At rest only a
+    /// rearranged bar or a second organizer is left to notice, and that may take longer.
+    private var tickInterval: TimeInterval? {
+        guard isInstalled else { return nil }
+        let waiting = validationDue || pendingInitialCollapse || issue != nil || isEditingArrangement
+            || now() < layoutSettlesAt || (isExpanded ? settings.autoHide : settings.hoverToReveal)
+        return waiting ? 0.5 : 2
+    }
+
+    private func scheduleTicks() {
+        guard automaticTicks else { return }
+        let interval = tickInterval
+        guard timer?.timeInterval != interval else { return }
+        timer?.invalidate(); timer = nil
+        guard let interval else { return }
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tick() }
+        }
+        timer.tolerance = interval < 1 ? 0.1 : 0.5
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
     private func updateHotkey() {
         let desired = isInstalled && !shortcutsSuspended ? settings.hotkey : nil
         guard desired != registeredHotkey || hotkeyError != nil else { return }
@@ -417,6 +461,8 @@ struct OrganizerMenuState: Equatable {
 
     private func tearDown() {
         timer?.invalidate(); timer = nil
+        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+        screenObserver = nil
         hotkeys.unregister(); registeredHotkey = nil; hotkeyError = nil
         // Restore compact widths before removal, keeping any saved placement uninflated.
         let padding = environment().statusItemPadding
@@ -426,10 +472,12 @@ struct OrganizerMenuState: Equatable {
         deadline = nil; hoverStarted = nil; pendingInitialCollapse = false
         menuTracking = false
         layoutSettlesAt = 0
+        validationDue = false
     }
 
     isolated deinit {
         timer?.invalidate()
+        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
         hotkeys.unregister()
         applications.stopWatching()
         for item in OrganizerItem.allCases.reversed() where installed.contains(item) { items.remove(item) }

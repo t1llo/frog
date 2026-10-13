@@ -456,6 +456,105 @@ import FrogCore
         fixture.organizer.stop()
     }
 
+    func testTimerLooksTwiceASecondOnlyWhileSomethingWaitsOnTheClockOrThePointer() {
+        let fixture = OrganizerFixture(); fixture.automaticTicks = true
+        let organizer = fixture.organizer
+        XCTAssertNil(organizer.scheduledTickInterval, "No helpers, no timer")
+        var settings = MenuBarPreferences(); settings.autoHideSeconds = 5
+        organizer.configure(enabled: true, settings: settings)
+        XCTAssertEqual(organizer.scheduledTickInterval, 0.5, "The order macOS restored is validated without delay")
+        organizer.tick()
+        XCTAssertEqual(organizer.scheduledTickInterval, 0.5, "Shown icons wait for the auto-hide delay")
+        fixture.time = 5; organizer.tick()
+        XCTAssertFalse(organizer.isExpanded)
+        XCTAssertEqual(organizer.scheduledTickInterval, 0.5, "The spacer's new width gets its second to settle")
+        fixture.time = 6; organizer.tick()
+        XCTAssertEqual(organizer.scheduledTickInterval, 2, "Hidden icons leave only the arrangement to check")
+
+        settings.hoverToReveal = true
+        organizer.configure(enabled: true, settings: settings); organizer.tick()
+        XCTAssertFalse(organizer.isExpanded)
+        XCTAssertEqual(organizer.scheduledTickInterval, 0.5, "Hover reveal has to notice the pointer")
+        settings.hoverToReveal = false; settings.autoHide = false
+        organizer.configure(enabled: true, settings: settings)
+        XCTAssertEqual(organizer.scheduledTickInterval, 0.5, "Changed settings are validated without delay")
+        organizer.tick()
+        XCTAssertEqual(organizer.scheduledTickInterval, 2)
+
+        organizer.toggle()
+        XCTAssertTrue(organizer.isExpanded)
+        XCTAssertEqual(organizer.scheduledTickInterval, 0.5, "A click does not wait for the resting pace")
+        fixture.time = 7; organizer.tick()
+        XCTAssertEqual(organizer.scheduledTickInterval, 2, "Shown icons that never hide by themselves wait for nothing")
+
+        fixture.items.reversed = true; organizer.tick()
+        XCTAssertNotNil(organizer.issue)
+        XCTAssertEqual(organizer.scheduledTickInterval, 0.5, "A problem is rechecked until it is gone")
+        fixture.items.reversed = false; organizer.tick()
+        XCTAssertNil(organizer.issue)
+        XCTAssertEqual(organizer.scheduledTickInterval, 2)
+
+        organizer.setEditingArrangement(true)
+        XCTAssertEqual(organizer.scheduledTickInterval, 0.5, "Arranging shows a wrong order while it is being made")
+        organizer.setEditingArrangement(false)
+        XCTAssertEqual(organizer.scheduledTickInterval, 2)
+
+        fixture.env.mouseDown = true; organizer.tick()
+        XCTAssertEqual(organizer.scheduledTickInterval, 0.5, "A drag may rearrange the bar, so its end is not left waiting")
+        fixture.env.mouseDown = false; organizer.tick()
+        XCTAssertEqual(organizer.scheduledTickInterval, 2)
+
+        fixture.env.competingOrganizer = true; organizer.tick()
+        XCTAssertNil(organizer.scheduledTickInterval, "Removed helpers need no timer")
+        fixture.env.competingOrganizer = false
+        organizer.configure(enabled: true, settings: settings)
+        XCTAssertEqual(organizer.scheduledTickInterval, 0.5)
+        organizer.stop()
+        XCTAssertNil(organizer.scheduledTickInterval)
+    }
+
+    func testStartCollapsedKeepsLookingUntilThePointerHasLeftTheMenuBar() {
+        let fixture = OrganizerFixture(); fixture.automaticTicks = true
+        var settings = MenuBarPreferences(); settings.startCollapsed = true; settings.autoHide = false
+        fixture.env.pointerInMenuBar = true
+        fixture.organizer.configure(enabled: true, settings: settings)
+        fixture.organizer.tick(); fixture.time = 3; fixture.organizer.tick()
+        XCTAssertTrue(fixture.organizer.isExpanded)
+        XCTAssertEqual(fixture.organizer.scheduledTickInterval, 0.5)
+        fixture.env.pointerInMenuBar = false; fixture.organizer.tick()
+        XCTAssertFalse(fixture.organizer.isExpanded)
+        fixture.time = 4; fixture.organizer.tick()
+        XCTAssertEqual(fixture.organizer.scheduledTickInterval, 2)
+        fixture.organizer.stop()
+    }
+
+    func testChangedDisplayIsLookedAtSoonAndUntilTheMenuBarIsBack() {
+        let fixture = OrganizerFixture(); fixture.automaticTicks = true
+        var settings = MenuBarPreferences(); settings.autoHide = false
+        fixture.organizer.configure(enabled: true, settings: settings)
+        fixture.organizer.tick(); fixture.organizer.toggle()
+        fixture.time = 1; fixture.organizer.tick()
+        XCTAssertEqual(fixture.organizer.scheduledTickInterval, 2)
+        XCTAssertEqual(fixture.items.lengths[.divider], 2880)
+        // A wider display is connected; the helpers' windows are gone while the bar is rebuilt.
+        fixture.env.screens.append(OrganizerScreen(frame: CGRect(x: -4000, y: 0, width: 4000, height: 2000), menuRegions: []))
+        fixture.items.framesAvailable = false
+        fixture.organizer.screensChanged()
+        XCTAssertEqual(fixture.organizer.scheduledTickInterval, 0.5, "A wider display must not wait for the resting pace")
+        XCTAssertEqual(fixture.items.lengths[.divider], 2880, "Frames that still belong to the old arrangement are not judged")
+        fixture.time = 1.5; fixture.organizer.tick()
+        XCTAssertEqual(fixture.organizer.scheduledTickInterval, 0.5, "Nothing could be applied yet")
+        fixture.items.framesAvailable = true
+        fixture.time = 2; fixture.organizer.tick()
+        XCTAssertEqual(fixture.items.lengths[.divider], 8000)
+        XCTAssertFalse(fixture.organizer.isExpanded)
+        fixture.time = 3; fixture.organizer.tick()
+        XCTAssertEqual(fixture.organizer.scheduledTickInterval, 2)
+        fixture.organizer.stop()
+        fixture.organizer.screensChanged()
+        XCTAssertNil(fixture.organizer.scheduledTickInterval, "A late notification starts nothing")
+    }
+
     func testHotkeySuspendConflictAndDefaultOptIn() {
         let fixture = OrganizerFixture()
         var settings = MenuBarPreferences()
@@ -498,10 +597,12 @@ import FrogCore
     let items = FixtureOrganizerItems()
     let keys = FixtureOrganizerHotkey()
     let applications = FixtureOrganizerApplications()
+    /// Set before the organizer is first used. The timer is only scheduled, a test never waits for it.
+    var automaticTicks = false
     var time: TimeInterval = 0
     var env = OrganizerEnvironment(screens: [OrganizerScreen(frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
         menuRegions: [CGRect(x: 0, y: 876, width: 1440, height: 24)])])
-    lazy var organizer = MenuBarOrganizer(statusItems: items, hotkeys: keys, applications: applications, automaticTicks: false,
+    lazy var organizer = MenuBarOrganizer(statusItems: items, hotkeys: keys, applications: applications, automaticTicks: automaticTicks,
         environment: { [unowned self] in self.env }, now: { [unowned self] in self.time })
 }
 
