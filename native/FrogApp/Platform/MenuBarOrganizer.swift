@@ -210,8 +210,15 @@ struct OrganizerMenuState: Equatable {
         guard isInstalled else { return }
         defer { scheduleTicks() }
         if isEditingArrangement {
-            setEditingArrangement(false)
-            guard !isEditingArrangement else { return }
+            guard arrangementIssue(environment()) == nil else { setEditingArrangement(false); return }
+            // End arranging and hide with one resize. Hiding after the second divider has been
+            // resized would judge a spacer that has its new width but not yet its new place.
+            pendingInitialCollapse = false
+            isEditingArrangement = false
+            collapse()
+            // A held mouse button keeps the icons shown; arranging ends all the same.
+            if isExpanded { setEditingArrangement(false) }
+            return
         }
         if isExpanded { collapse() } else { reveal() }
     }
@@ -292,11 +299,13 @@ struct OrganizerMenuState: Equatable {
             return
         }
         if issue != nil { issue = nil }
-        applyLengths(env)
+        // Hide at start before anything else is resized: the order was judged just now, and
+        // the second divider at its new width would still be at its old place for collapse().
         if pendingInitialCollapse && !env.pointerInMenuBar && !env.mouseDown {
             pendingInitialCollapse = false
             if !settingsVisible && !isEditingArrangement { collapse() }
         }
+        applyLengths(env)
         if !isExpanded && settings.hoverToReveal && env.pointerInMenuBar && !env.mouseDown {
             if let start = hoverStarted, now() - start >= 0.5 { reveal(); hoverStarted = nil }
             else if hoverStarted == nil { hoverStarted = now() }

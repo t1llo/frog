@@ -93,6 +93,62 @@ import FrogCore
         XCTAssertFalse(fixture.organizer.isExpanded)
     }
 
+    func testStartCollapsedHidesBothSectionsWhileTheSecondDividerWouldStillBeMoving() {
+        let fixture = OrganizerFixture()
+        var settings = MenuBarPreferences()
+        settings.permanentlyHiddenSection = true; settings.startCollapsed = true; settings.autoHide = false
+        fixture.organizer.configure(enabled: true, settings: settings)
+        XCTAssertEqual(fixture.items.lengths[.permanentDivider], 18, "Validate restored geometry first")
+        fixture.items.delaysLayout = true
+        fixture.organizer.tick()
+        XCTAssertFalse(fixture.organizer.isExpanded, "Resizing the second divider first must not make the order look reversed")
+        XCTAssertEqual(fixture.items.lengths[.divider], 2880)
+        XCTAssertEqual(fixture.items.lengths[.permanentDivider], 2880)
+        fixture.time = 0.5; fixture.organizer.tick()
+        fixture.items.settleLayout()
+        fixture.time = 2; fixture.organizer.tick()
+        XCTAssertFalse(fixture.organizer.isExpanded)
+        XCTAssertNil(fixture.organizer.issue)
+        fixture.organizer.stop()
+    }
+
+    func testArrowEndsArrangingAndHidesWhileTheSecondDividerWouldStillBeMoving() {
+        let fixture = OrganizerFixture()
+        var settings = MenuBarPreferences(); settings.permanentlyHiddenSection = true
+        fixture.organizer.configure(enabled: true, settings: settings)
+        fixture.organizer.tick()
+        fixture.time = 5; fixture.organizer.setEditingArrangement(true)
+        XCTAssertEqual(fixture.items.lengths[.permanentDivider], 18)
+        fixture.time = 10; fixture.items.delaysLayout = true
+        fixture.organizer.toggle()
+        XCTAssertFalse(fixture.organizer.isEditingArrangement)
+        XCTAssertFalse(fixture.organizer.isExpanded, "The click hides, as it does without a second divider")
+        XCTAssertEqual(fixture.items.lengths[.divider], 2880)
+        XCTAssertEqual(fixture.items.lengths[.permanentDivider], 2880)
+        XCTAssertEqual(fixture.items.menuState, OrganizerMenuState(expanded: false, arranging: false, autoHide: true))
+        fixture.items.settleLayout(); fixture.items.delaysLayout = false
+        fixture.time = 12; fixture.organizer.tick()
+        XCTAssertFalse(fixture.organizer.isExpanded)
+        XCTAssertNil(fixture.organizer.issue)
+
+        // A wrong order keeps arranging on and says why, as before.
+        fixture.organizer.setEditingArrangement(true)
+        fixture.time = 20; fixture.items.reversed = true
+        fixture.organizer.toggle()
+        XCTAssertTrue(fixture.organizer.isEditingArrangement)
+        XCTAssertTrue(fixture.organizer.isExpanded)
+        XCTAssertNotNil(fixture.organizer.issue)
+        // A held mouse button keeps the icons shown; arranging still ends.
+        fixture.items.reversed = false; fixture.env.mouseDown = true
+        fixture.organizer.toggle()
+        XCTAssertFalse(fixture.organizer.isEditingArrangement)
+        XCTAssertTrue(fixture.organizer.isExpanded)
+        XCTAssertNil(fixture.organizer.issue)
+        XCTAssertEqual(fixture.items.lengths[.divider], 18)
+        XCTAssertEqual(fixture.items.lengths[.permanentDivider], 2880)
+        fixture.organizer.stop()
+    }
+
     func testUnsettledUnsafeGeometryStillRecoversAfterBoundedGrace() {
         let fixture = OrganizerFixture()
         fixture.organizer.configure(enabled: true, settings: MenuBarPreferences())
