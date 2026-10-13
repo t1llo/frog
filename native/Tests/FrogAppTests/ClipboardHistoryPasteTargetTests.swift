@@ -49,6 +49,29 @@ final class ClipboardHistoryPasteTargetTests: XCTestCase {
         XCTAssertNil(NativeClipboardHistoryPasteTarget.capture(pid: probe.pid, access: probe.access))
         XCTAssertEqual(probe.menuWalks, 0)
     }
+
+    func testWindowAndFieldOfTheOtherApplicationGetATimeLimitOfTheirOwn() {
+        let application = AXUIElementCreateApplication(900_100)
+        let window = AXUIElementCreateApplication(900_101), field = AXUIElementCreateApplication(900_102)
+        var steps: [String] = []
+        let name: (AXUIElement) -> String = { CFEqual($0, window) ? "window" : CFEqual($0, field) ? "field" : "other" }
+        let access = ClipboardHistoryTargetAccess.live(application: application, pid: 900_100,
+            element: { asked, attribute in
+                guard CFEqual(asked, application) else { return nil }
+                return attribute == kAXFocusedWindowAttribute ? window : attribute == kAXFocusedUIElementAttribute ? field : nil
+            },
+            limit: { steps.append("\(name($0)) \($1)") },
+            focus: { steps.append("focus \(name($0))") })
+        XCTAssertEqual(access.window().map(name), "window")
+        XCTAssertEqual(access.focused().map(name), "field")
+        // The application's own limit does not reach what it hands out.
+        XCTAssertEqual(steps, ["window 0.15", "field 0.15"])
+
+        // Handing focus back is a request, not a question: it keeps the time it always had.
+        steps = []
+        access.restoreFocus(field)
+        XCTAssertEqual(steps, ["field 0.0", "focus field", "field 0.15"])
+    }
 }
 
 @MainActor private final class TargetProbe {

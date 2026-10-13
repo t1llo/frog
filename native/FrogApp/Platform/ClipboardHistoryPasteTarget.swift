@@ -21,17 +21,34 @@ struct ClipboardHistoryTargetAccess {
     var pause: () async throws -> Void = { try await Task.sleep(for: .milliseconds(20)) }
     var command: () throws -> Void
 
-    static func live(application: AXUIElement, pid: pid_t) -> Self {
+    static func live(application: AXUIElement, pid: pid_t,
+                     element: @escaping (AXUIElement, String) -> AXUIElement? = { AXRead.element($0, $1) },
+                     limit: @escaping (AXUIElement, Float) -> Void = { _ = AXUIElementSetMessagingTimeout($0, $1) },
+                     focus: @escaping (AXUIElement) -> Void = {
+                         AXUIElementSetAttributeValue($0, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+                     }) -> Self {
         // One search of the app's menus serves every check and the paste itself.
-        live(application: application, pid: pid, menu: MenuCommandCache(application: application))
+        live(application: application, pid: pid, menu: MenuCommandCache(application: application),
+             element: element, limit: limit, focus: focus)
     }
 
-    private static func live(application: AXUIElement, pid: pid_t, menu: MenuCommandCache) -> Self {
-        Self(trusted: { SelectionService.isTrusted },
+    private static func live(application: AXUIElement, pid: pid_t, menu: MenuCommandCache,
+                             element: @escaping (AXUIElement, String) -> AXUIElement?,
+                             limit: @escaping (AXUIElement, Float) -> Void,
+                             focus: @escaping (AXUIElement) -> Void) -> Self {
+        // A time limit belongs to the one element it is set on. The window and the field an
+        // application hands out do not inherit the application's, and without their own every
+        // question about them waits for a stalled app as long as the system allows.
+        let handedOut: (String) -> AXUIElement? = { attribute in
+            let found = element(application, attribute)
+            if let found { limit(found, 0.15) }
+            return found
+        }
+        return Self(trusted: { SelectionService.isTrusted },
              frontmostPID: { NSWorkspace.shared.frontmostApplication?.processIdentifier },
              ownPID: ProcessInfo.processInfo.processIdentifier,
-             window: { AXRead.element(application, kAXFocusedWindowAttribute) },
-             focused: { AXRead.element(application, kAXFocusedUIElementAttribute) },
+             window: { handedOut(kAXFocusedWindowAttribute) },
+             focused: { handedOut(kAXFocusedUIElementAttribute) },
              range: { AXRead.range($0) }, role: { AXRead.string($0, kAXRoleAttribute) },
              secure: { AXRead.string($0, kAXSubroleAttribute) == kAXSecureTextFieldSubrole },
              enabled: { AXRead.boolean($0, kAXEnabledAttribute) != false },
@@ -43,7 +60,11 @@ struct ClipboardHistoryTargetAccess {
                  // The app can still be frontmost while a closing nonactivating
                  // panel owns keyboard focus. Activate only that same app.
                  NSRunningApplication(processIdentifier: pid)?.activate(options: [])
-                 AXUIElementSetAttributeValue(focused, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+                 // The limit is for questions. A request that is cut short may still be
+                 // carried out, so handing focus back keeps the time it always had.
+                 limit(focused, 0)
+                 focus(focused)
+                 limit(focused, 0.15)
              },
              command: { try ClipboardSelection.command("v", keyCode: 9, menu: menu, pid: pid) })
     }
