@@ -25,9 +25,13 @@ struct ClipboardHistoryEntry: Identifiable, Equatable, Sendable {
         if !plainText {
             for (type, data) in formatting { item.setData(data, forType: NSPasteboard.PasteboardType(type)) }
         }
-        pasteboard.clearContents()
+        pasteboard.prepareForNewContents(with: contentsOptions)
         return pasteboard.writeObjects([item])
     }
+
+    /// Marked-sensitive text stays on this Mac. Universal Clipboard would otherwise offer it to
+    /// the person's other devices again, long after the copy in the source application expired.
+    var contentsOptions: NSPasteboard.ContentsOptions { isSensitive ? .currentHostOnly : [] }
 }
 
 /// Prevent compatibility-selection Copy requests/restoration from becoming clipboard history.
