@@ -22,6 +22,7 @@ actor PiScanner {
                                                         includingPropertiesForKeys: keys) else { filesByPath.removeAll(); return [] }
         var records: [String: TokenRecord] = [:]
         var retained: [String: CachedFile] = [:]
+        let needle = Data("\"usage\"".utf8)
         for case let url as URL in files where url.pathExtension == "jsonl" {
             if Task.isCancelled { return [] }
             guard let values = try? url.resourceValues(forKeys: Set(keys)),
@@ -38,7 +39,9 @@ actor PiScanner {
             // Ignore incomplete final lines, even if they happen to be parseable JSON.
             for line in data[..<end].split(separator: 0x0A) {
                 if Task.isCancelled { return [] }
-                guard let entry = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+                // Most lines are user turns and tool results; skip them before paying for JSON.
+                guard line.range(of: needle) != nil,
+                      let entry = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
                       entry["type"] as? String == "message",
                       let message = entry["message"] as? [String: Any], message["role"] as? String == "assistant",
                       let usage = message["usage"] as? [String: Any],
@@ -50,10 +53,9 @@ actor PiScanner {
                 case "openai", "openai-codex": provider = .openai
                 default: continue // Bedrock, proxies and unrelated providers are not subscription accounts.
                 }
-                let date = usageNumber(message["timestamp"]).map { Date(timeIntervalSince1970: $0 / 1000) }
-                    ?? isoDate(entry["timestamp"])
-                guard let date, date >= cutoff,
-                      let fingerprint = try? JSONSerialization.data(withJSONObject: message, options: [.sortedKeys]) else { continue }
+                let stamp = usageNumber(message["timestamp"])
+                guard let date = stamp.map({ Date(timeIntervalSince1970: $0 / 1000) }) ?? isoDate(entry["timestamp"]),
+                      date >= cutoff else { continue }
                 func count(_ key: String) -> Int {
                     guard let n = usageNumber(usage[key]), n.isFinite, n >= 0, n < Double(Int.max) else { return 0 }
                     return Int(n)
@@ -62,7 +64,15 @@ actor PiScanner {
                 let input = count("input"), output = count("output")
                 let write = count("cacheWrite"), read = count("cacheRead"), hour = min(write, count("cacheWrite1h"))
                 guard input > 0 || output > 0 || write > 0 || read > 0 else { continue }
-                let key = SHA256.hash(data: fingerprint).map { String(format: "%02x", $0) }.joined()
+                // A fork copies a call with its time and counts, so those name it. Only a message
+                // that carries no time of its own is still told apart by its whole contents.
+                let key: String
+                if let stamp {
+                    key = [providerID, model, "\(stamp)", "\(input)", "\(output)", "\(write)", "\(read)", "\(hour)"].joined(separator: "|")
+                } else {
+                    guard let fingerprint = try? JSONSerialization.data(withJSONObject: message, options: [.sortedKeys]) else { continue }
+                    key = SHA256.hash(data: fingerprint).map { String(format: "%02x", $0) }.joined()
+                }
                 parsed[key] = TokenRecord(date: date, model: model, provider: provider, source: .pi,
                     input: input, output: output, cacheWrite: write, cacheRead: read,
                     cost: apiCost(model: model, input: input, output: output, cacheWrite5m: write - hour,
