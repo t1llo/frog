@@ -73,10 +73,12 @@ actor PiScanner {
                     guard let fingerprint = try? JSONSerialization.data(withJSONObject: message, options: [.sortedKeys]) else { continue }
                     key = SHA256.hash(data: fingerprint).map { String(format: "%02x", $0) }.joined()
                 }
+                let cost = provider == .openai
+                    ? openAICost(model: model, input: input, output: output, cacheWrite: write, cacheRead: read)
+                    : apiCost(model: model, input: input, output: output, cacheWrite5m: write - hour,
+                              cacheWrite1h: hour, cacheRead: read, fast: false)
                 parsed[key] = TokenRecord(date: date, model: model, provider: provider, source: .pi,
-                    input: input, output: output, cacheWrite: write, cacheRead: read,
-                    cost: apiCost(model: model, input: input, output: output, cacheWrite5m: write - hour,
-                                  cacheWrite1h: hour, cacheRead: read, fast: false), cacheWrite1h: hour)
+                    input: input, output: output, cacheWrite: write, cacheRead: read, cost: cost, cacheWrite1h: hour)
             }
             retained[url.path] = CachedFile(modified: modified, size: size, records: parsed)
             records.merge(parsed.filter { $0.value.date <= now }) { _, new in new }

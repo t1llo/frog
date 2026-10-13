@@ -66,6 +66,33 @@ final class PiLogTests: XCTestCase {
         XCTAssertEqual(scan.map(\.output).sorted(), [1, 1, 9])
     }
 
+    func testACallIsPricedFromItsOwnProvidersList() async throws {
+        let root = try fixtureDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let now = Date(), million = 1_000_000
+        try (entry(assistant(at: now.addingTimeInterval(-60), input: million, output: 100_000, cacheRead: 2 * million, cacheWrite: 400_000))
+            + entry(assistant(provider: "openai-codex", model: "gpt-5.1", at: now.addingTimeInterval(-50),
+                              input: million, output: 200_000, cacheRead: 2 * million))
+            + entry(assistant(provider: "openai", model: "gpt-5.6-sol", at: now.addingTimeInterval(-40),
+                              input: million, output: 300_000, cacheRead: million, cacheWrite: million))
+            + entry(assistant(provider: "openai", model: "a-model-without-a-price", at: now.addingTimeInterval(-30), input: 1, output: 400_000)))
+            .write(to: root.appendingPathComponent("session.jsonl"))
+        let scan = await PiScanner(root: root).scan()
+        func cost(output: Int) -> Double? { scan.first { $0.output == output }.flatMap(\.cost) }
+        XCTAssertEqual(scan.count, 4)
+
+        let claude = try XCTUnwrap(apiPrices["claude-sonnet-4-6"])
+        XCTAssertEqual(try XCTUnwrap(cost(output: 100_000)),
+                       claude.input + 0.4 * claude.input * 1.25 + 2 * claude.cacheRead + 0.1 * claude.output, accuracy: 1e-9)
+        let plain = try XCTUnwrap(openAIPrices["gpt-5.1"])
+        XCTAssertEqual(try XCTUnwrap(cost(output: 200_000), "An OpenAI model is not in Anthropic's price list"),
+                       plain.input + 2 * plain.cachedInput + 0.2 * plain.output, accuracy: 1e-9)
+        let caching = try XCTUnwrap(openAIPrices["gpt-5.6-sol"]), write = try XCTUnwrap(caching.cacheWrite)
+        XCTAssertEqual(try XCTUnwrap(cost(output: 300_000)),
+                       caching.input + caching.cachedInput + write + 0.3 * caching.output, accuracy: 1e-9)
+        XCTAssertNil(cost(output: 400_000), "A model without a list price is left unpriced rather than guessed")
+    }
+
     private func assistant(provider: String = "anthropic", model: String = "claude-sonnet-4-6", at date: Date,
                            input: Int, output: Int, cacheRead: Int = 0, cacheWrite: Int = 0) -> [String: Any] {
         ["role": "assistant", "provider": provider, "model": model, "stopReason": "stop",
