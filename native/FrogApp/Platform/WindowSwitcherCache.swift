@@ -12,6 +12,8 @@ final class WindowSwitcherCache {
     private var chosen: UUID?
     /// The window `readySnapshot` last moved to the front unread, and the row it stood behind.
     private var guess: (id: UUID, behind: UUID)?
+    /// Moves on with every list opened and every window chosen.
+    private(set) var turn: UInt64 = 0
 
     var isRefreshing: Bool { refresh != nil }
 
@@ -44,8 +46,12 @@ final class WindowSwitcherCache {
     func clear() { cancelRefresh(); snapshot = nil; updatedAt = nil; chosen = nil; guess = nil }
     func invalidate() { updatedAt = nil }
 
-    func noteChosen(_ id: UUID) { chosen = id }
+    func noteChosen(_ id: UUID) { chosen = id; turn &+= 1 }
     func forgetChosen(_ id: UUID) { if chosen == id { chosen = nil } }
+
+    /// The focus as read by a poll begun at `turn`. The answer can arrive after a list
+    /// was opened or a window chosen, and is then older than what they recorded.
+    func noteFocused(_ id: UUID, readAt turn: UInt64) { if turn == self.turn { noteFocused(id) } }
 
     func noteFocused(_ id: UUID) {
         chosen = nil
@@ -81,6 +87,7 @@ final class WindowSwitcherCache {
     }
 
     func readySnapshot(frontPID: pid_t?, livePIDs: Set<pid_t>? = nil) -> WindowCatalog.Snapshot? {
+        turn &+= 1
         // Freshness controls discovery, not presentation. Typing deliberately
         // pauses scans; the last inventory is still useful immediately afterward.
         guard let snapshot else { return nil }

@@ -90,6 +90,22 @@ final class WindowSwitcherCacheTests: XCTestCase {
         XCTAssertEqual(cache.readySnapshot(frontPID: 20)?.current, inbox.id, "A scan read the focused window itself")
     }
 
+    func testFocusReadBegunBeforeAWindowWasChosenDoesNotReplaceTheChoice() async {
+        let cache = WindowSwitcherCache()
+        let editor = window("Editor", pid: 10), inbox = window("Inbox", pid: 20), draft = window("Draft", pid: 20)
+        _ = await cache.update { .init(windows: [editor, inbox, draft], current: editor.id) }
+        // The monitor asks which window is in front. Before a slow answer arrives the list
+        // is opened and released on Draft, and a keystroke retires the activation unrecorded.
+        let asked = cache.turn
+        _ = cache.readySnapshot(frontPID: 10)
+        cache.noteChosen(draft.id)
+        cache.noteFocused(editor.id, readAt: asked)
+        XCTAssertEqual(cache.readySnapshot(frontPID: 20)?.current, draft.id, "The answer is older than the choice, not a click made after it")
+        // An answer with nothing in between counts as before.
+        cache.noteFocused(inbox.id, readAt: cache.turn)
+        XCTAssertEqual(cache.readySnapshot(frontPID: 20)?.current, inbox.id)
+    }
+
     func testWindowClickedInTheFrontAppWithoutARecordedFocusIsTheOneLeft() async throws {
         let cache = WindowSwitcherCache()
         let inbox = window("Inbox", pid: 20), editor = window("Editor", pid: 10), draft = window("Draft", pid: 20)

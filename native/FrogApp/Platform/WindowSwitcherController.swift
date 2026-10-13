@@ -294,9 +294,11 @@ final class WindowSwitcherController {
                     // Since the keyboard or the pointer was last touched, whatever the kind of event.
                     let idle = WindowInventoryPace.untouched(CGEventSource.secondsSinceLastEventType(
                         .combinedSessionState, eventType: CGEventType(rawValue: ~0)!))
+                    let turn = self.cache.turn
                     if self.inventoryPace.watches(idle: idle), let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
                        let focused = await self.catalog.noteFocus(pid: pid) {
-                        self.cache.noteFocused(focused)
+                        // Command-Tab pressed and released during the read knows better than its answer.
+                        self.cache.noteFocused(focused, readAt: turn)
                         // A window made or closed in front is listed by the next inventory only.
                         if focused != front { front = focused; self.inventoryPace.noteChange() }
                     }
