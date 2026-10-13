@@ -29,13 +29,14 @@ private struct HistoryContent: View {
     private func hidden(_ entry: HistoryItem) -> Bool { (entry.requiresReveal || model.configuration.preferences.hideHistoryText) && !visibility.revealed.contains(entry.id) }
 
     private var allEntries: [HistoryItem] { HistoryFeed.items(saved: model.history, clipboard: clipboard.entries) }
-    private var entries: [HistoryItem] { HistoryFeed.items(saved: model.history, clipboard: clipboard.entries, filter: model.historyFilter, search: search, revealed: visibility.revealed) }
 
     var body: some View {
-        let displayedEntries = entries
+        // Merged and sorted once per pass; the list shown is narrowed from it.
+        let all = allEntries
+        let displayedEntries = HistoryFeed.narrowed(all, filter: model.historyFilter, search: search, revealed: visibility.revealed)
         let lastEntryID = displayedEntries.last?.id
         VStack(alignment: .leading, spacing: 14) {
-            if let viewing = allEntries.first(where: { $0.id == self.viewing }) {
+            if let viewing = all.first(where: { $0.id == self.viewing }) {
                 HStack {
                     Button { self.viewing = nil } label: { Label("History", systemImage: "arrow.left") }
                     Spacer()
@@ -84,7 +85,7 @@ private struct HistoryContent: View {
                     }
                     Menu {
                         Button(clipboardSelected ? "Clear clipboard history…" : "Clear all history…", systemImage: "trash", role: .destructive) { confirmClear = true }
-                            .disabled(clipboardSelected ? clipboard.entries.isEmpty : allEntries.isEmpty)
+                            .disabled(clipboardSelected ? clipboard.entries.isEmpty : all.isEmpty)
                     } label: { Image(systemName: "ellipsis").frame(width: 26).modifier(CompactActionSurface()) }
                         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("History actions")
                 }
@@ -96,7 +97,7 @@ private struct HistoryContent: View {
                     }
                 }
 
-            if allEntries.isEmpty {
+            if all.isEmpty {
                 FrogEmptyState(symbol: clipboardSelected ? "clipboard" : "clock.arrow.circlepath", title: clipboardSelected ? "No copied text yet" : "No history yet",
                                message: clipboardSelected ? "Copy text in any app to add it here. Items are cleared when Clipboard is disabled or Frog quits." : model.configuration.preferences.historyEnabled
                                 ? "Transformations and interrupted recordings will appear here."
@@ -127,7 +128,7 @@ private struct HistoryContent: View {
             .onDisappear { visibility.revealed = []; deleting = nil }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { _ in visibility.revealed = []; deleting = nil }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in visibility.revealed = [] }
-            .onChange(of: allEntries.map(\.id)) { _, ids in
+            .onChange(of: all.map(\.id)) { _, ids in
                 visibility.revealed.formIntersection(ids)
                 if let viewing, !ids.contains(viewing) { self.viewing = nil }
                 if let deleting, deleting.clipboardEntry != nil, !ids.contains(deleting.id) { self.deleting = nil }

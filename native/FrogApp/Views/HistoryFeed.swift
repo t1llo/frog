@@ -39,10 +39,16 @@ enum HistoryItem: Identifiable, Equatable {
 enum HistoryFeed {
     static func items(saved: [HistoryEntry], clipboard: [ClipboardHistoryEntry], filter: HistoryFilter? = nil,
                       search: String = "", revealed: Set<UUID> = []) -> [HistoryItem] {
-        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (saved.map(HistoryItem.saved) + clipboard.map(HistoryItem.clipboard))
-            .filter { (filter == nil || $0.filter == filter) && $0.matches(query, revealed: revealed.contains($0.id)) }
+        narrowed(saved.map(HistoryItem.saved) + clipboard.map(HistoryItem.clipboard), filter: filter, search: search, revealed: revealed)
             .sorted { $0.timestamp == $1.timestamp ? $0.id.uuidString < $1.id.uuidString : $0.timestamp > $1.timestamp }
+    }
+
+    /// Narrows a feed that `items` already merged and sorted. The order is kept, so a view
+    /// builds the feed once per pass and derives the list it shows from it.
+    static func narrowed(_ items: [HistoryItem], filter: HistoryFilter?, search: String, revealed: Set<UUID>) -> [HistoryItem] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard filter != nil || !query.isEmpty else { return items }
+        return items.filter { (filter == nil || $0.filter == filter) && $0.matches(query, revealed: revealed.contains($0.id)) }
     }
 }
 
