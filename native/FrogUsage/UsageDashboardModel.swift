@@ -165,7 +165,8 @@ public struct UsagePlanPeriod: Identifiable {
         // Fixture models never read this Mac's real Claude app history.
         let live = fixtureRoot == nil
         claude = Store(defaults: defaults, startPolling: false,
-                       readDesktop: { live ? readClaudeDesktop(directory: $0) : nil })
+                       readDesktop: { live ? readClaudeDesktop(directory: $0) : nil },
+                       renewLogin: { live ? ClaudeCodeCLI.renewLogin(directory: $0) : .unavailable })
         tokens = TokenStore(fixtureRoot: fixtureRoot, claudeDirectory: ClaudePaths.directory(defaults: defaults))
         var saved = defaults.data(forKey: "dashboardPreferences").flatMap { try? JSONDecoder().decode(UsageDashboardPreferences.self, from: $0) } ?? UsageDashboardPreferences()
         saved.loginSource = claude.loginSource.rawValue
@@ -200,6 +201,18 @@ public struct UsagePlanPeriod: Identifiable {
     }
     public func selectLoginSource(_ value: String) {
         var next = preferences; next.loginSource = value; updatePreferences(next)
+    }
+    /// Claude limits cannot be read until the user signs in to Claude Code.
+    public var needsClaudeSignIn: Bool { fixtureRoot == nil && active && claude.needsClaudeCodeLogin }
+    /// The shell command for Claude Code's own sign-in; nil when Claude Code is not installed.
+    public var claudeSignInCommand: String? {
+        ClaudeCodeCLI.executable().map { ClaudeCodeCLI.signInCommand(executable: $0, directory: claude.configDirectory) }
+    }
+    /// The user asked to sign in. From now on the account is checked through Claude Code's login,
+    /// and the result says whether the user still has to sign in for that.
+    public func beginClaudeSignIn() async -> Bool {
+        if claude.loginSource == .claudeDesktop { selectLoginSource(ClaudeLoginSource.automatic.rawValue) }
+        return await claude.beginSignIn()
     }
     /// Machine-local profile selection, matching standalone; never part of portable exports.
     public func selectClaudeConfigDirectory(_ directory: URL) {

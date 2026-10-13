@@ -15,7 +15,8 @@ reaches off-main readers and aggregation as well as URL requests.
 
 The extracted parsers preserve message deduplication, token pricing, complete-day
 account reconciliation, last-good limits and request cooldowns. Credentials stay
-with their originating tools, and OAuth refresh remains their responsibility.
+with their originating tools, and OAuth refresh remains their responsibility; since
+2026-10-13 Frog may start Claude Code so that it renews its own login (see below).
 Display choices (`provider`, `range`, `metric`, `loginSource`) round-trip
 through `preferences.toolkit.usage` and are shared by the popup and dashboard.
 The legacy `allDevices` field round-trips for compatibility but no longer selects a
@@ -207,14 +208,11 @@ and every refresh fails. Frog still never renews or consumes another tool's toke
 - **Staleness:** a saved reading, from either source, stays on display until its window
   renews, for at most 24 hours, with its age beside it ("Updated 10h ago"). This
   replaces the one-hour cutoff that turned the popup into "Plan limits unavailable".
-  A Claude-app reading older than 30 minutes carries a warning explaining that the
-  Claude app's menu-bar icon must be on. Renewed windows are unknown, never zero.
-- **How often the Claude app saves:** it checks on a timer (every 5 to 15 minutes) only
-  while its menu-bar icon is on; with the icon off it saves a reading only when
-  someone looks at usage in the app, hours apart. Frog reads that one preference
-  (`preferences.menuBarEnabled`) so its status can say so. When no Claude Code login
-  exists and the Claude app is in use, the status explains this instead of asking
-  the person to sign in to a tool they do not use.
+  A Claude-app reading older than 30 minutes carries a warning (wording: see the
+  2026-10-13 section). Renewed windows are unknown, never zero.
+- **How often the Claude app saves:** only while its own usage display is running,
+  which nothing outside the app can keep going; the file can stay untouched for days
+  while the app is in daily use. It is a fallback, not a dependable source.
 - **Session row:** a Claude session that renewed after the last reading keeps its row,
   marked "No reading since it renewed", so the week is never shown on its own.
 - **Plan badge:** the cached Claude Code profile's plan is attached to a Claude-app
@@ -239,3 +237,54 @@ and every refresh fails. Frog still never renews or consumes another tool's toke
   defines them and `palette.light`/`palette.dark` can override them.
 - Frog's Stay awake row was 18 pt wider than the popup and pushed its content off
   centre; the row now fits, so both popups share the same insets.
+
+## Claude Code login renewal and sign-in (2026-10-13)
+
+Report: limits a day old and the menu bar showing the API estimate instead of what is
+left. Cause on that Mac: login source `Claude Desktop` (never reads a login), a Claude
+app file last written three days earlier, so its reading aged out after 24 hours, and
+a Claude Code login that had expired.
+
+- **Renewal stays with Claude Code.** Frog still never reads, sends or stores a
+  refresh token. When Claude Code's saved login has no current access token but can
+  still be renewed (`claudeCodeLoginLapsed`, which checks only that a refresh token is
+  present) and the login source is Automatic or Claude Code, Frog starts Claude Code
+  once (`ClaudeCodeCLI.renewLogin`):
+  `claude -p "OK" --model haiku --tools "" --no-session-persistence --strict-mcp-config
+  --safe-mode --system-prompt "Reply with OK." --output-format json`.
+  Claude Code renews its own login on the way and Frog reads the new access token.
+  **This sends one very small Haiku request on the user's plan**, and only when the
+  login has run out. OpenCode and Pi logins are never renewed this way.
+- **How it is run:** the executable is looked up in `~/.local/bin`, `~/.claude/local`,
+  `/opt/homebrew/bin` and `/usr/local/bin`, then on `PATH`. The environment is reduced
+  to home, user, locale, temporary folder, proxy and certificate variables with `PATH`
+  set to the system directories; `CLAUDE_CONFIG_DIR` is passed only for a non-default
+  profile. Working directory is the temporary folder. No tools, no MCP servers, no
+  saved session, 90-second limit; only the exit status is used.
+- **Gate** (`ClaudePollingState.nextRenewalAt`/`renewalInterval`, saved with the other
+  gates; state from earlier versions still loads): at most one attempt per 30 minutes;
+  a failed attempt waits one hour, then two, up to eight; "nothing to renew" or "no
+  Claude Code" is looked at again after five minutes because it costs nothing. A
+  successful limits read clears it.
+- **Sign in:** when no current reading can be had without a login
+  (`Store.needsClaudeCodeLogin`), the popup shows a "Sign in to Claude Code…" row and
+  the dashboard a button. The action first checks whether a login is usable or can be
+  renewed, and then opens nothing. Otherwise it switches a `Claude Desktop` source to
+  Automatic and opens Terminal with `claude auth login` through a `.terminal` launcher
+  in a 0700 temporary folder (`ClaudeSignIn`); without Claude Code or Terminal it opens
+  claude.com/claude-code. For ten minutes afterwards each 15-second tick looks for the
+  new login. That is a local Keychain read: no renewal run and no request until a
+  login exists. A check that finds no login is repeated after one minute instead of
+  waiting out the request cadence, because nothing was sent.
+- **Status texts** point to signing in to Claude Code instead of the Claude app's
+  menu-bar icon, and the read of the Claude app's `preferences.menuBarEnabled` is gone.
+- **Subprocesses** (`security`, `claude`) share `usageProcess`: no input, errors
+  discarded, output capped at 1 MiB, stopped at the deadline or on cancellation.
+- **Verified** with fakes and isolated defaults (`ClaudeLoginRenewalTests`,
+  `ClaudeDesktopUsageTests`, `ClaudeSignInTests`): one renewal then a limits read, an
+  unrenewable login asks for sign-in and backs off, other tools' logins are left
+  alone, sign-in waits without starting Claude Code, the environment filter, the
+  executable lookup, command quoting, the launcher's contents and permissions, and the
+  process runner's deadline. **Not verified live:** a real renewal (the only login on
+  the development Mac answered "OAuth session expired and could not be refreshed", so
+  it needs one interactive sign-in) and the Terminal launcher, which was not opened.

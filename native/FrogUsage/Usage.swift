@@ -76,7 +76,7 @@ enum FetchError: LocalizedError {
     case badJSON
     var errorDescription: String? {
         switch self {
-        case .noToken: return "no current Claude login in the selected tool. Sign in there, or turn on the menu bar icon in the Claude app so its saved limits can be used"
+        case .noToken: return "no current Claude login in the selected tool; sign in there to renew it"
         case .http(401, _, _): return "selected Claude login expired; renew it in the tool that owns it"
         case .http(429, _, _): return "rate limited"
         case .http(let code, _, let m): return "HTTP \(code)" + (m.map { " (\($0))" } ?? "")
@@ -101,32 +101,10 @@ enum FetchError: LocalizedError {
 /// to read it avoids both the first prompt and the prompt that used to come back after every
 /// token refresh. Blocking; call it off the main thread.
 private func readKeychainCredentials(service: String) -> [String: Any]? {
-    guard !Task.isCancelled else { return nil }
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-    p.arguments = ["find-generic-password", "-s", service, "-w"]
-    let out = Pipe()
-    p.standardOutput = out
-    p.standardError = FileHandle.nullDevice
-    guard (try? p.run()) != nil else { return nil }
-    let descriptor = out.fileHandleForReading.fileDescriptor
-    _ = fcntl(descriptor, F_SETFL, O_NONBLOCK)
-    var data = Data(), buffer = [UInt8](repeating: 0, count: 4096)
-    let deadline = ContinuousClock.now.advanced(by: .seconds(5))
-    while true {
-        if Task.isCancelled || ContinuousClock.now >= deadline || data.count > 1_048_576 {
-            if p.isRunning { kill(p.processIdentifier, SIGKILL) }
-            p.waitUntilExit()
-            return nil
-        }
-        let count = read(descriptor, &buffer, buffer.count)
-        if count > 0 { data.append(contentsOf: buffer.prefix(count)) }
-        else if !p.isRunning { break }
-        else { usleep(10_000) }
-    }
-    p.waitUntilExit()
-    guard p.terminationStatus == 0,
-          let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+    guard let result = usageProcess(URL(fileURLWithPath: "/usr/bin/security"),
+                                    arguments: ["find-generic-password", "-s", service, "-w"], timeout: 5),
+          result.status == 0,
+          let text = String(data: result.output, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
           let root = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
           let oauth = root["claudeAiOauth"] as? [String: Any]
     else { return nil }
@@ -174,6 +152,22 @@ func readClaudeAuth(source: ClaudeLoginSource, directory: URL) -> ClaudeAuth? {
                           label: "\(candidate.rawValue) saved Claude login (account identity not reported)")
     }
     return nil
+}
+
+/// Claude Code holds a login for this profile whose access token has run out, and the means to
+/// renew it. Only the presence of its renewal token is checked: renewing stays Claude Code's job.
+/// Blocking, read-only.
+func claudeCodeLoginLapsed(directory: URL, now: Date = Date()) -> Bool {
+    var logins = claudeKeychainServices(directory: directory).compactMap(readKeychainCredentials)
+    if let oauth = credentialJSON(directory.appendingPathComponent(".credentials.json"))?["claudeAiOauth"] as? [String: Any] {
+        logins.append(oauth)
+    }
+    return claudeCodeLoginLapsed(logins, now: now)
+}
+
+func claudeCodeLoginLapsed(_ logins: [[String: Any]], now: Date) -> Bool {
+    !logins.contains { claudeOAuthToken($0, now: now) != nil }
+        && logins.contains { ($0["refreshToken"] as? String)?.isEmpty == false }
 }
 
 /// The account profile Claude Code caches beside its settings: names, plan tier and ids, no tokens.

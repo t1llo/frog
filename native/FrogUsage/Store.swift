@@ -26,23 +26,29 @@ final class Store: ObservableObject {
     private let readAuth: @Sendable (ClaudeLoginSource, URL) -> ClaudeAuth?
     private let fetchLimits: @Sendable (String) async throws -> Usage
     private let readDesktop: @Sendable (URL) -> ClaudeDesktopReading?
+    private let renewLogin: @Sendable (URL) -> ClaudeLoginRenewal
     private let currentDate: @Sendable () -> Date
     private var timer: Timer?
     private var request: Task<Void, Never>?
     private var desktopRead: Task<Void, Never>?
     /// The last check found no login at all, as opposed to a request that failed.
     private var missingLogin = false
+    /// The user was sent to sign in: look for the new login often, and leave Claude Code alone.
+    private var awaitingLoginUntil: Date?
+    private var awaitingLogin: Bool { awaitingLoginUntil.map { currentDate() < $0 } ?? false }
     private var active = false
 
     init(defaults: UserDefaults = UsagePreferences.defaults, startPolling: Bool = false,
          readAuth: @escaping @Sendable (ClaudeLoginSource, URL) -> ClaudeAuth? = { readClaudeAuth(source: $0, directory: $1) },
          fetchLimits: @escaping @Sendable (String) async throws -> Usage = { try await fetchUsage(token: $0) },
          readDesktop: @escaping @Sendable (URL) -> ClaudeDesktopReading? = { _ in nil },
+         renewLogin: @escaping @Sendable (URL) -> ClaudeLoginRenewal = { _ in .unavailable },
          currentDate: @escaping @Sendable () -> Date = { Date() }) {
         self.defaults = defaults
         self.readAuth = readAuth
         self.fetchLimits = fetchLimits
         self.readDesktop = readDesktop
+        self.renewLogin = renewLogin
         self.currentDate = currentDate
         loginSource = defaults.string(forKey: "claudeLoginSource").flatMap(ClaudeLoginSource.init(rawValue:)) ?? .automatic
         polling = ClaudePollingState.load(from: defaults)
@@ -66,7 +72,7 @@ final class Store: ObservableObject {
         timer?.invalidate(); timer = nil
         request?.cancel(); request = nil
         desktopRead?.cancel(); desktopRead = nil
-        inFlight = false; cachedToken = nil
+        inFlight = false; cachedToken = nil; awaitingLoginUntil = nil
     }
 
     /// Fetch if the schedule says so. The timer, panel opens and the Refresh button all go
@@ -112,6 +118,40 @@ final class Store: ObservableObject {
         usage = nil; lastGoodAt = nil; lastError = nil; authLabel = nil; authPlan = nil; missingLogin = false
         polling.save(to: defaults)
         tick()
+    }
+
+    /// The user asked to sign in to Claude Code. Reports whether that is really needed: a login
+    /// that is current, or that Claude Code can still renew, is simply used.
+    func beginSignIn() async -> Bool {
+        guard active else { return false }
+        // Set before the first suspension, so a check already under way starts no second renewal.
+        awaitingLoginUntil = currentDate().addingTimeInterval(600)
+        let generation = loginGeneration, directory = configDirectory, reader = readAuth, renew = renewLogin
+        let found = try? await usageWork { () -> (usable: Bool, renewal: ClaudeLoginRenewal?) in
+            if reader(.claudeCode, directory) != nil { return (true, nil) }
+            let renewal = renew(directory)
+            return (renewal == .renewed && reader(.claudeCode, directory) != nil, renewal)
+        }
+        guard active, generation == loginGeneration, let found else { return false }
+        if let renewal = found.renewal { polling.renewalEnded(renewal, at: currentDate()) }
+        if found.usable { awaitingLoginUntil = nil }
+        // The last check found no login and sent nothing, so looking again now costs no request.
+        if missingLogin { polling.retry(at: currentDate()) }
+        // Automatic stays with the tool it resolved; let it find Claude Code's login instead.
+        if loginSource == .automatic, let pinned = polling.authSource, pinned != .claudeCode { clearSelectedLogin() }
+        else { polling.save(to: defaults); tick() }
+        return !found.usable
+    }
+
+    /// Limits cannot be read until the user signs in to Claude Code: its login is missing or can
+    /// no longer be renewed, and the Claude app has saved nothing recent to show instead.
+    var needsClaudeCodeLogin: Bool {
+        let current = reading().map { $0.source == .desktop && currentDate().timeIntervalSince($0.at) <= ClaudeDesktopUsage.freshness } ?? false
+        switch loginSource {
+        case .opencode, .pi: return false
+        case .claudeDesktop: return !current
+        case .automatic, .claudeCode: return missingLogin && !current
+        }
     }
 
     enum ReadingSource { case account, desktop }
@@ -163,14 +203,28 @@ final class Store: ObservableObject {
         polling.save(to: defaults)
         let generation = loginGeneration
         let source = loginSource == .automatic ? polling.authSource ?? .automatic : loginSource
-        let directory = configDirectory, reader = readAuth
+        let directory = configDirectory, reader = readAuth, renew = renewLogin
         request = Task {
             defer { if generation == loginGeneration { polling.save(to: defaults); inFlight = false } }
             do {
                 // Pin Automatic to its resolved tool after a successful read. A temporary
                 // Keychain failure must not silently select someone else's OpenCode/Pi login.
-                let auth = try await usageWork { reader(source, directory) }
+                var auth = try await usageWork { reader(source, directory) }
                 guard active, !Task.isCancelled, generation == loginGeneration else { return }
+                // A login that ran out is Claude Code's to renew. Ask it to, rarely, and look again.
+                if auth == nil, source == .automatic || source == .claudeCode, !awaitingLogin,
+                   polling.beginRenewal(at: currentDate()) {
+                    polling.save(to: defaults)
+                    let renewal = try await usageWork { renew(directory) }
+                    guard active, !Task.isCancelled, generation == loginGeneration else { return }
+                    polling.renewalEnded(renewal, at: currentDate())
+                    // Unlike a Keychain item caught mid-rewrite, this login is known to be over.
+                    if renewal != .unavailable { cachedToken = nil }
+                    if renewal == .renewed {
+                        auth = try await usageWork { reader(source, directory) }
+                        guard active, !Task.isCancelled, generation == loginGeneration else { return }
+                    }
+                }
                 if let auth {
                     if !auth.hasAccountMetadata, cachedToken != auth.token {
                         // These tools don't report account IDs. A replaced access token could
@@ -190,7 +244,7 @@ final class Store: ObservableObject {
                 polling.succeeded(fresh, at: currentDate())
                 usage = fresh
                 lastGoodAt = polling.lastGoodAt
-                lastError = nil; missingLogin = false
+                lastError = nil; missingLogin = false; awaitingLoginUntil = nil
             } catch {
                 guard active, !Task.isCancelled else { return }
                 guard generation == loginGeneration else {
@@ -201,9 +255,13 @@ final class Store: ObservableObject {
                     return
                 }
                 if case FetchError.http(401, _, _) = error { cachedToken = nil }
-                if case FetchError.noToken = error { missingLogin = true } else { missingLogin = false }
                 lastError = error.localizedDescription
                 polling.failed(error, at: currentDate())
+                if case FetchError.noToken = error {
+                    missingLogin = true
+                    // Nothing was sent, so the request cadence learned from throttling does not apply.
+                    polling.retry(at: currentDate().addingTimeInterval(awaitingLogin ? 10 : 60))
+                } else { missingLogin = false }
             }
         }
     }
@@ -220,22 +278,20 @@ final class Store: ObservableObject {
         }
     }
 
-    /// What keeps the Claude app's readings coming, said as precisely as its settings allow.
-    private var menuBarHint: String {
-        desktop?.menuBarIcon == false
-            ? "The Claude app’s menu bar icon is off, so it saves your limits only now and then. Turn the icon on in the Claude app’s settings to keep them current."
-            : "Claude saves its limits every few minutes while its menu bar icon is on; turn the icon on in the Claude app’s settings."
-    }
+    /// The Claude app writes its file only while its own usage display runs, which nothing
+    /// outside it can keep going. A login Frog can check with is the dependable source.
+    private let signInHint = "The Claude app saves its limits only now and then. Sign in to Claude Code and Frog checks them itself."
 
     var status: String {
         if let shown = reading(), shown.source == .desktop {
             let fresh = currentDate().timeIntervalSince(shown.at) <= ClaudeDesktopUsage.freshness
-            return "Saved by the Claude app at \(dayClockForStatus(shown.at))." + (fresh ? "" : " \(menuBarHint)")
+            return "Saved by the Claude app at \(dayClockForStatus(shown.at))."
+                + (fresh ? "" : needsClaudeCodeLogin ? " \(signInHint)" : lastError.map { " Couldn’t refresh from your account: \($0)." } ?? "")
         }
-        if loginSource == .claudeDesktop { return "No current reading from the Claude app. \(menuBarHint)" }
+        if loginSource == .claudeDesktop { return "No current reading from the Claude app. \(signInHint)" }
         // Someone who only uses the Claude app has no Claude Code login to check with.
-        if missingLogin, !inFlight, desktop != nil {
-            return "Claude Code is not signed in on this Mac, so Frog shows the limits the Claude app saves. \(menuBarHint)"
+        if missingLogin, !inFlight, loginSource == .automatic || loginSource == .claudeCode {
+            return "Claude Code is not signed in on this Mac, or its login can no longer be renewed. Sign in to Claude Code and Frog checks your limits itself."
                 + (lastGoodAt.map { " Last account check: \(dayClockForStatus($0))." } ?? "")
         }
         var s: String

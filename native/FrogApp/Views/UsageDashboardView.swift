@@ -49,6 +49,7 @@ struct UsageStatusPopover: View {
     static let width: CGFloat = 292
     @ObservedObject var usage: UsageDashboardModel
     let openDashboard: () -> Void
+    var signIn: () -> Void = {}
     var body: some View {
         let provider = usage.preferences.provider
         VStack(alignment: .leading, spacing: 0) {
@@ -66,6 +67,10 @@ struct UsageStatusPopover: View {
                 UsageActivityView(usage: usage, compact: true,
                     showsCompactTokens: usage.windows(provider: provider).count <= 1)
             }.padding(.horizontal, 9).padding(.top, 4).padding(.bottom, 12)
+            if provider == "Claude", usage.needsClaudeSignIn {
+                MenuActionRow(title: "Sign in to Claude Code…", symbol: "person.crop.circle.badge.checkmark", action: signIn)
+                    .help(usage.status(provider: provider))
+            }
             MenuActionRow(title: "Open dashboard", symbol: "arrow.up.forward.app", action: openDashboard)
             Divider().padding(.horizontal, 8)
             TimelineView(.periodic(from: .now, by: 30)) { context in
@@ -156,6 +161,9 @@ private struct UsageLimitsView: View {
                   Text(usage.status(provider: provider))
                     .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(2)
                      .help(usage.status(provider: provider)).textSelection(.enabled)
+                }
+                if !compact, provider == "Claude", usage.needsClaudeSignIn {
+                    Button("Sign in to Claude Code…") { ClaudeSignIn.start(usage) }.buttonStyle(FrogButtonStyle())
                 }
                 if !compact, let credits = usage.credits(provider: provider) {
                     Label(credits, systemImage: "creditcard").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)

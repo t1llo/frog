@@ -12,12 +12,38 @@ struct ClaudePollingState: Codable {
     private(set) var authIdentity: String?
     private(set) var authSource: ClaudeLoginSource?
     private(set) var authLabel: String?
+    /// Optional so state saved by earlier versions still loads.
+    private(set) var nextRenewalAt: Date?
+    private(set) var renewalInterval: TimeInterval?
+    static let renewalFloor: TimeInterval = 1800
 
     mutating func begin(at now: Date) -> Bool {
         guard now >= nextFetchAt else { return false }
         nextFetchAt = now.addingTimeInterval(interval)
         lastAttemptAt = now
         return true
+    }
+
+    /// The last attempt found no login and sent nothing, so looking again sooner costs no request.
+    mutating func retry(at date: Date) { nextFetchAt = min(nextFetchAt, date) }
+
+    /// Asking Claude Code to renew its login launches it and costs one small request: do it
+    /// rarely, and ever more rarely while it keeps failing.
+    mutating func beginRenewal(at now: Date) -> Bool {
+        guard now >= nextRenewalAt ?? .distantPast else { return false }
+        nextRenewalAt = now.addingTimeInterval(renewalInterval ?? Self.renewalFloor)
+        return true
+    }
+
+    mutating func renewalEnded(_ result: ClaudeLoginRenewal, at now: Date) {
+        switch result {
+        case .renewed: renewalInterval = nil; nextRenewalAt = now.addingTimeInterval(Self.renewalFloor)
+        // Nothing to renew is a cheap local finding; a login may lapse soon after.
+        case .unavailable: nextRenewalAt = now.addingTimeInterval(300)
+        case .failed:
+            let interval = min((renewalInterval ?? Self.renewalFloor) * 2, 8 * 3600)
+            renewalInterval = interval; nextRenewalAt = now.addingTimeInterval(interval)
+        }
     }
 
     mutating func clearReading() {
@@ -37,6 +63,8 @@ struct ClaudePollingState: Codable {
         self.usage = usage
         lastGoodAt = now
         lastFailure = nil
+        // A working login makes earlier renewal failures history.
+        renewalInterval = nil; nextRenewalAt = nil
         // Success deliberately keeps the slower interval learned from previous throttling.
     }
 

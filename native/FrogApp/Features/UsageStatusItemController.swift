@@ -77,9 +77,12 @@ import FrogUsage
         closePopup()
         // Frog's own menu-bar popup closes itself when this one opens, and the reverse.
         NotificationCenter.default.post(name: .frogMenuPopupWillOpen, object: UsageStatusPopover.popupName)
-        let host = NSHostingView(rootView: UsageStatusPopover(usage: usage) { [weak self] in
+        let host = NSHostingView(rootView: UsageStatusPopover(usage: usage, openDashboard: { [weak self] in
             self?.closePopup(); self?.openDashboard()
-        }.background(MenuWindowSizing()))
+        }, signIn: { [weak self] in
+            self?.closePopup()
+            if let usage = self?.usage { ClaudeSignIn.start(usage) }
+        }).background(MenuWindowSizing()))
         let size = host.fittingSize
         let panel = UsagePopupPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
                                     backing: .buffered, defer: false)

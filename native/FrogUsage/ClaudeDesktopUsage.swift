@@ -10,9 +10,6 @@ struct ClaudeDesktopReading: Equatable {
     var limits: [Limit]
     /// Profile metadata for the same organization, when Claude Code has cached it.
     var plan: String?
-    /// Whether the Claude app's menu bar icon is on. With it off the app checks its limits
-    /// only when someone looks at them, so readings arrive hours apart.
-    var menuBarIcon: Bool?
 
     /// What can still be shown at `now`. A reading says nothing about a window that renewed
     /// after it, and without a renewal time a day-old percentage is no longer a current one.
@@ -43,14 +40,6 @@ enum ClaudeDesktopUsage {
 
     static func historyURL(home: URL) -> URL {
         home.appendingPathComponent("Library/Application Support/Claude/plan-usage-history.json")
-    }
-
-    /// The one display preference read from the Claude app's settings file.
-    static func menuBarIcon(home: URL) -> Bool? {
-        let url = home.appendingPathComponent("Library/Application Support/Claude/claude_desktop_config.json")
-        guard let data = try? Data(contentsOf: url), data.count <= maximumSize,
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        return (root["preferences"] as? [String: Any])?["menuBarEnabled"] as? Bool
     }
 
     private struct Sample {
@@ -130,6 +119,5 @@ func readClaudeDesktop(home: URL = FileManager.default.homeDirectoryForCurrentUs
     if let organization = account["organizationUuid"] as? String, organization == reading.organization {
         reading.plan = claudePlanName(account)
     }
-    reading.menuBarIcon = ClaudeDesktopUsage.menuBarIcon(home: home)
     return reading
 }

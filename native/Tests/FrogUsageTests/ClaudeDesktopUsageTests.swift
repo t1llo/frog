@@ -80,10 +80,6 @@ import XCTest
         XCTAssertNil(readClaudeDesktop(home: home, directory: claude))
         try history([(0, "org-a", ["fh": 10])]).write(to: file)
         XCTAssertEqual(readClaudeDesktop(home: home, directory: claude)?.limits.map(\.pct), [10])
-        XCTAssertNil(readClaudeDesktop(home: home, directory: claude)?.menuBarIcon)
-        try JSONSerialization.data(withJSONObject: ["preferences": ["menuBarEnabled": false]])
-            .write(to: file.deletingLastPathComponent().appendingPathComponent("claude_desktop_config.json"))
-        XCTAssertEqual(readClaudeDesktop(home: home, directory: claude)?.menuBarIcon, false)
     }
 
     private func store(account: Usage?, accountAge: TimeInterval = 0, identity: String = "claudeCode|dir|account|org-a",
@@ -134,18 +130,20 @@ import XCTest
 
     func testAutomaticKeepsTheAccountReadingWhileItIsNewer() async throws {
         let now = Date(timeIntervalSince1970: base)
-        var saved = desktopReading(age: 5400, now: now); saved.menuBarIcon = false
+        let saved = desktopReading(age: 5400, now: now)
         let (store, defaults, suite) = store(account: accountUsage(now: now), accountAge: 600, desktop: saved, now: now)
         defer { store.stop(); defaults.removePersistentDomain(forName: suite) }
         try await started(store)
         XCTAssertEqual(store.reading()?.source, .account)
         XCTAssertEqual(store.displayUsage()?.limits.map(\.pct), [20, 25])
-        // Someone who only uses the Claude app is told what keeps its readings coming,
-        // not to sign in to a tool they do not use.
+        // The Claude app's own saving cannot be kept going from outside it, so the advice
+        // is the one thing that works: a Claude Code login Frog can check with.
         let warning = try XCTUnwrap(store.warning)
         XCTAssertTrue(warning.hasPrefix("Claude Code is not signed in on this Mac"), warning)
-        XCTAssertTrue(warning.contains("menu bar icon is off"), warning)
+        XCTAssertTrue(warning.contains("Sign in to Claude Code"), warning)
+        XCTAssertFalse(warning.contains("menu bar icon"), warning)
         XCTAssertFalse(warning.contains("Sign in there"), warning)
+        XCTAssertTrue(store.needsClaudeCodeLogin)
     }
 
     func testAnotherAccountsRenewalTimesAreNotBorrowed() async throws {
@@ -167,7 +165,8 @@ import XCTest
         XCTAssertEqual(reads.count, 0)
         XCTAssertEqual(store.reading()?.source, .desktop)
         XCTAssertEqual(store.displayUsage()?.limits.map(\.pct), [55, 30])
-        XCTAssertEqual(store.warning?.contains("menu bar icon"), true)
+        XCTAssertEqual(store.warning?.contains("Sign in to Claude Code"), true)
+        XCTAssertTrue(store.needsClaudeCodeLogin)
         XCTAssertEqual(UserDefaults(suiteName: suite)?.string(forKey: "claudeLoginSource"), "Claude Desktop")
     }
 
