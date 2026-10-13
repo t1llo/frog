@@ -11,13 +11,16 @@ final class ClipboardSelection: CapturedTextSelection {
     private let window: AXUIElement
     private let focused: AXUIElement?
     private let pid: pid_t
+    private let menu: MenuCommandCache
     private let input: [UInt32]
     private var consumed = false
     private var invalidated = false
     private var workspaceObserver: NSObjectProtocol?
 
-    init(text: String, application: AXUIElement, window: AXUIElement, focused: AXUIElement?, pid: pid_t) {
+    init(text: String, application: AXUIElement, window: AXUIElement, focused: AXUIElement?, pid: pid_t,
+         menu: MenuCommandCache? = nil) {
         self.text = text; self.application = application; self.window = window; self.focused = focused; self.pid = pid
+        self.menu = menu ?? MenuCommandCache(application: application)
         input = Self.inputSnapshot()
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
@@ -32,24 +35,25 @@ final class ClipboardSelection: CapturedTextSelection {
     }
 
     static func capture(application: AXUIElement, pid: pid_t) async throws -> ClipboardSelection {
-        guard let window = AXRead.element(application, kAXFocusedWindowAttribute) else {
+        guard let window = AXRead.element(application, kAXFocusedWindowAttribute, timeout: AXRead.selectionTimeout) else {
             throw FrogError.message("The app does not expose its active window. Copy your selection into Try text.")
         }
-        let focused = AXRead.element(application, kAXFocusedUIElementAttribute)
+        let focused = AXRead.element(application, kAXFocusedUIElementAttribute, timeout: AXRead.selectionTimeout)
         try await waitForShortcutRelease()
         guard modifiersReleased, sameTarget(application, window: window, focused: focused, pid: pid) else {
             throw FrogError.message("Release the shortcut keys and keep the selected app focused, then try again.")
         }
+        let menu = MenuCommandCache(application: application)
         let text = try await FreshSelectionCopy.read(pasteboard: .general) {
             guard sameTarget(application, window: window, focused: focused, pid: pid) else {
                 throw FrogError.message("The selected app changed before copying.")
             }
-            try command("c", keyCode: 8, application: application, pid: pid)
+            try command("c", keyCode: 8, menu: menu, pid: pid)
         }
         guard sameTarget(application, window: window, focused: focused, pid: pid) else {
             throw FrogError.message("The selected app changed while copying.")
         }
-        return ClipboardSelection(text: text, application: application, window: window, focused: focused, pid: pid)
+        return ClipboardSelection(text: text, application: application, window: window, focused: focused, pid: pid, menu: menu)
     }
 
     func replace(with result: String) async throws {
@@ -68,7 +72,7 @@ final class ClipboardSelection: CapturedTextSelection {
         // Re-copy immediately before paste: window identity alone cannot establish selection identity.
         let beforeCopy = Self.inputSnapshot()
         let current = try await FreshSelectionCopy.read(pasteboard: .general) {
-            try Self.command("c", keyCode: 8, application: self.application, pid: self.pid)
+            try Self.command("c", keyCode: 8, menu: self.menu, pid: self.pid)
         }
         let afterCopy = Self.inputSnapshot()
         guard !invalidated, current == text, afterCopy.dropFirst() == beforeCopy.dropFirst(),
@@ -78,7 +82,7 @@ final class ClipboardSelection: CapturedTextSelection {
         }
         guard canPaste else { throw FrogError.message("The field is no longer editable. The result is on the clipboard.") }
         try Task.checkCancellation()
-        try Self.command("v", keyCode: 9, application: application, pid: pid)
+        try Self.command("v", keyCode: 9, menu: menu, pid: pid)
     }
 
     private static var modifiersReleased: Bool {
@@ -99,14 +103,30 @@ final class ClipboardSelection: CapturedTextSelection {
         if let focused, Self.isEditable(focused) { return true }
         // Electron/Chromium may omit the focused AX field entirely. An enabled
         // native Paste command is another app-provided signal of editability.
-        return Self.menuCommand("v", application: application) != nil
+        return menu.item("v") != nil
     }
 
     static func command(_ character: String, keyCode: CGKeyCode, application: AXUIElement, pid: pid_t) throws {
-        if let item = menuCommand(character, application: application),
-           AXUIElementPerformAction(item, kAXPressAction as CFString) == .success { return }
+        try command(character, keyCode: keyCode, menu: MenuCommandCache(application: application), pid: pid)
+    }
+
+    static func command(_ character: String, keyCode: CGKeyCode, menu: MenuCommandCache, pid: pid_t) throws {
+        if let item = menu.item(character), press(item) { return }
         try key(keyCode, pid: pid)
     }
+
+    private static func press(_ item: AXUIElement) -> Bool {
+        // A press that outlasts its timeout reports failure although the app may
+        // still carry it out, and the key sent in its place would then repeat the
+        // command. The press therefore waits as long as macOS waits by default.
+        AXUIElementSetMessagingTimeout(item, 0)
+        defer { AXUIElementSetMessagingTimeout(item, menuTimeout) }
+        return AXUIElementPerformAction(item, kAXPressAction as CFString) == .success
+    }
+
+    /// Longest wait for one answer while reading a menu. A menu holds hundreds of
+    /// elements and a timeout covers only the element it is set on.
+    private static let menuTimeout: Float = 0.15
 
     static func menuCommand(_ character: String, application: AXUIElement) -> AXUIElement? {
         guard let menu = AXRead.element(application, kAXMenuBarAttribute) else { return nil }
@@ -114,17 +134,21 @@ final class ClipboardSelection: CapturedTextSelection {
         var visited = 0
         while let (element, depth) = pending.popLast(), visited < 1_000 {
             visited += 1
-            if AXRead.string(element, kAXRoleAttribute) == kAXMenuItemRole,
-               AXRead.string(element, kAXMenuItemCmdCharAttribute)?.lowercased() == character,
-               let modifiers = AXRead.attribute(element, kAXMenuItemCmdModifiersAttribute) as? NSNumber,
-               modifiers.intValue == 0, AXRead.boolean(element, kAXEnabledAttribute) == true {
-                return element
-            }
+            AXUIElementSetMessagingTimeout(element, menuTimeout)
+            if isMenuCommand(element, character) { return element }
             if depth < 5, let children = AXRead.attribute(element, kAXChildrenAttribute) as? [AXUIElement] {
                 pending.append(contentsOf: children.map { ($0, depth + 1) })
             }
         }
         return nil
+    }
+
+    /// Whether `element` is the enabled menu item for Command plus `character`.
+    static func isMenuCommand(_ element: AXUIElement, _ character: String) -> Bool {
+        guard AXRead.string(element, kAXRoleAttribute) == kAXMenuItemRole,
+              AXRead.string(element, kAXMenuItemCmdCharAttribute)?.lowercased() == character,
+              let modifiers = AXRead.attribute(element, kAXMenuItemCmdModifiersAttribute) as? NSNumber else { return false }
+        return modifiers.intValue == 0 && AXRead.boolean(element, kAXEnabledAttribute) == true
     }
 
     static func isEditable(_ element: AXUIElement) -> Bool {
@@ -159,6 +183,34 @@ final class ClipboardSelection: CapturedTextSelection {
         }
         down.flags = .maskCommand; up.flags = .maskCommand
         down.postToPid(pid); up.postToPid(pid)
+    }
+}
+
+/// The Copy and Paste menu items of one captured target. Finding them walks the
+/// app's menu bar, so a found item is kept for the checks and commands that follow.
+@MainActor
+final class MenuCommandCache {
+    private let find: (String) -> AXUIElement?
+    private let matches: (AXUIElement, String) -> Bool
+    private var items: [String: AXUIElement] = [:]
+
+    init(find: @escaping (String) -> AXUIElement?, matches: @escaping (AXUIElement, String) -> Bool) {
+        self.find = find; self.matches = matches
+    }
+
+    convenience init(application: AXUIElement) {
+        self.init(find: { ClipboardSelection.menuCommand($0, application: application) },
+                  matches: { ClipboardSelection.isMenuCommand($0, $1) })
+    }
+
+    func item(_ character: String) -> AXUIElement? {
+        // Apps enable, disable and rebuild menu items as their state changes. A kept
+        // item is used only while it still answers as the same enabled command; a
+        // missing one is not remembered, because Paste can become available later.
+        if let item = items[character], matches(item, character) { return item }
+        let item = find(character)
+        items[character] = item
+        return item
     }
 }
 

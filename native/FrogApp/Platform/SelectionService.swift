@@ -39,7 +39,10 @@ final class SelectionService {
             throw FrogError.message("The selected app changed before reading the selection. Try again.")
         }
         let application = AXUIElementCreateApplication(app.processIdentifier)
-        let element = AXRead.element(application, kAXFocusedUIElementAttribute)
+        // Every read below waits for the other app on the main thread. A timeout
+        // covers only the element it is set on, so each derived element gets its own.
+        AXUIElementSetMessagingTimeout(application, AXRead.selectionTimeout)
+        let element = AXRead.element(application, kAXFocusedUIElementAttribute, timeout: AXRead.selectionTimeout)
         if let element, AXRead.string(element, kAXSubroleAttribute) == kAXSecureTextFieldSubrole {
             throw FrogError.message("Frog does not read password fields.")
         }
@@ -93,7 +96,7 @@ final class TextSelection: CapturedTextSelection {
         self.pid = pid
         self.range = range
         self.value = value
-        window = AXRead.element(application, kAXFocusedWindowAttribute)
+        window = AXRead.element(application, kAXFocusedWindowAttribute, timeout: AXRead.selectionTimeout)
         if let window {
             pasteTarget = ClipboardSelection(text: text, application: application, window: window, focused: element, pid: pid)
         }
@@ -103,6 +106,9 @@ final class TextSelection: CapturedTextSelection {
             // The observer source is installed only on the main run loop.
             MainActor.assumeIsolated {
                 let selection = Unmanaged<TextSelection>.fromOpaque(context).takeUnretainedValue()
+                // Nothing reads the answer once the selection is invalid or handed to
+                // Paste, and Paste itself sends a burst of these notifications.
+                guard !selection.invalidated, !selection.consumed else { return }
                 // Browsers emit selection/focus notifications even when Copy leaves
                 // the snapshot unchanged. Validate the state instead of the notification.
                 if !selection.matchesSnapshot { selection.invalidated = true }
@@ -183,6 +189,11 @@ final class TextSelection: CapturedTextSelection {
 }
 
 enum AXRead {
+    /// Longest wait for one answer from the app that holds the selection. Without a
+    /// bound, an app that stopped answering holds Frog for the much longer system
+    /// default on every call; a shorter one would fail reads of a long document.
+    static let selectionTimeout: Float = 1
+
     static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
         var result: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, name as CFString, &result) == .success else { return nil }
@@ -193,6 +204,12 @@ enum AXRead {
     static func element(_ element: AXUIElement, _ name: String) -> AXUIElement? {
         guard let result = attribute(element, name), CFGetTypeID(result) == AXUIElementGetTypeID() else { return nil }
         return (result as! AXUIElement)
+    }
+    /// Reads an element and bounds the calls later made on it.
+    static func element(_ element: AXUIElement, _ name: String, timeout: Float) -> AXUIElement? {
+        guard let result = self.element(element, name) else { return nil }
+        AXUIElementSetMessagingTimeout(result, timeout)
+        return result
     }
     static func range(_ element: AXUIElement) -> CFRange? {
         guard let raw = attribute(element, kAXSelectedTextRangeAttribute), CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
