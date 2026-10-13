@@ -192,6 +192,29 @@ final class ConfigurationFileTests: XCTestCase {
         XCTAssertEqual(try store.load().preferences.historyLimit, 200)
     }
 
+    func testCheckingAPairSkipsUnknownFieldBookkeepingButNoValidation() throws {
+        let configuration = configured()
+        let json = try TextConfiguration.companion(configuration), text = try TextConfiguration.render(configuration)
+        let full = try TextConfiguration.decode(text, companion: json)
+        let checked = try TextConfiguration.decode(text, companion: json, retainingUnknownFields: false)
+        XCTAssertEqual(checked, full)
+        XCTAssertNotNil(full.originalJSON); XCTAssertNotNil(full.knownJSON)
+        XCTAssertNil(checked.originalJSON); XCTAssertNil(checked.knownJSON)
+        // What a save is about to write is refused for the same reasons, with the same words.
+        var conflicting = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
+        conflicting["defaultProviderID"] = UUID().uuidString
+        let pairs = [("text-model = missing\n", json), ("history-limit = 0\n", json), ("shortcut.rules = cmd+c\n", json),
+                     (text, Data("{}".utf8)), (text, try JSONSerialization.data(withJSONObject: conflicting))]
+        for (text, json) in pairs {
+            var expected = ""
+            XCTAssertThrowsError(try TextConfiguration.decode(text, companion: json)) { expected = $0.localizedDescription }
+            XCTAssertThrowsError(try TextConfiguration.decode(text, companion: json, retainingUnknownFields: false)) {
+                XCTAssertEqual($0.localizedDescription, expected)
+            }
+            XCTAssertTrue(expected.hasPrefix("config"), expected)
+        }
+    }
+
     func testInvalidTextAndExternalJSONKeepLastWorkingStateAndExactFiles() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

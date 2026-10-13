@@ -166,6 +166,33 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(try store.load(), configuration)
     }
 
+    func testSaveReadsTheFilesOnceBeforeItsFirstWriteAndStillRefusesAnOutsideEdit() throws {
+        let store = ConfigurationStore(directory: directory)
+        var configuration = try store.load()
+        try store.save(configuration)
+        var reads = store.snapshotReads
+        // A preference lives in the text file alone, as every step of a dragged slider does.
+        configuration.preferences.historyLimit = 42
+        try store.save(configuration)
+        XCTAssertEqual(store.snapshotReads - reads, 1)
+        reads = store.snapshotReads
+        // config.json is written first; the files are compared once more before the text file may follow.
+        configuration.rules[0].name = "Renamed"
+        configuration.preferences.historyLimit = 43
+        try store.save(configuration)
+        XCTAssertEqual(store.snapshotReads - reads, 2)
+        XCTAssertEqual(try ConfigurationStore(directory: directory).load(), configuration)
+
+        let outside = Data("history-limit = 7\n".utf8)
+        try outside.write(to: store.textFile)
+        let json = try Data(contentsOf: store.file)
+        configuration.rules[0].name = "Lost"
+        configuration.preferences.historyLimit = 44
+        XCTAssertThrowsError(try store.save(configuration)) { XCTAssertTrue($0.localizedDescription.contains("Reload")) }
+        XCTAssertEqual(try Data(contentsOf: store.textFile), outside)
+        XCTAssertEqual(try Data(contentsOf: store.file), json)
+    }
+
     func testHistoryDisabledPreservesRecordsAndDoesNotCreateFiles() throws {
         let store = HistoryStore(directory: directory)
         var preferences = Preferences()

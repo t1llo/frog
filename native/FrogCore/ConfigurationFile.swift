@@ -19,11 +19,20 @@ public enum ConfigurationFile {
     }
 
     public static func decode(_ data: Data) throws -> Configuration {
+        try decode(data, retainingUnknownFields: true)
+    }
+
+    /// `check` sees the decoded document before general validation, so a caller can name a more
+    /// specific cause. Without `retainingUnknownFields` the result only proves that the document
+    /// is valid; saving it would drop the fields this version does not know.
+    static func decode(_ data: Data, retainingUnknownFields: Bool, checking check: (Configuration) throws -> Void = { _ in }) throws -> Configuration {
         guard data.count <= maximumBytes else { throw FrogError.message("The configuration file is too large (maximum 4 MB).") }
         var configuration: Configuration
         do { configuration = try JSONDecoder().decode(Configuration.self, from: data) }
         catch { throw FrogError.message("This is not a valid Frog configuration file. Check its JSON fields and values.") }
+        try check(configuration)
         try validate(configuration)
+        guard retainingUnknownFields else { return configuration }
         configuration.originalJSON = try JSONDecoder().decode(ConfigurationJSON.self, from: data)
         configuration.knownJSON = try JSONDecoder().decode(ConfigurationJSON.self, from: JSONEncoder().encode(configuration))
         return configuration

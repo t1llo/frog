@@ -119,7 +119,8 @@ enum TextConfiguration {
     }
 
     /// Decodes the two-file representation; absent text keys use defaults, not stale JSON preferences.
-    static func decode(_ text: String, companion: Data) throws -> Configuration {
+    /// A caller that only checks whether the pair is valid passes `retainingUnknownFields: false`.
+    static func decode(_ text: String, companion: Data, retainingUnknownFields: Bool = true) throws -> Configuration {
         var root: [String: Any]
         do { root = try object(companion) }
         catch { throw FrogError.message("config.json: expected a valid JSON object containing rules and connections. Repair it or import a complete JSON export. Previous working settings were kept.") }
@@ -152,18 +153,23 @@ enum TextConfiguration {
         }
         root["preferences"] = defaults
         let data = try JSONSerialization.data(withJSONObject: root)
-        if let configuration = try? JSONDecoder().decode(Configuration.self, from: data) {
-            for (index, line) in lines.enumerated() {
-                guard let key = line.key, ["audio-model", "cleanup-model", "text-model"].contains(key),
-                      let field = fields.first(where: { $0.key == key }), let id = get(field.path, in: defaults) as? String else { continue }
-                let kind: LocalModelDescriptor.Kind = key == "audio-model" ? .audio : .text
-                guard configuration.localModel(id)?.kind == kind else {
-                    throw issue(index, "\(key): '\(id)' is not a configured \(kind.rawValue) model; choose a catalog ID or add its definition in config.json")
+        // A model key outside the catalog is reported with its line, ahead of general validation.
+        var modelIssue: FrogError?
+        do {
+            return try ConfigurationFile.decode(data, retainingUnknownFields: retainingUnknownFields) { configuration in
+                for (index, line) in lines.enumerated() {
+                    guard let key = line.key, ["audio-model", "cleanup-model", "text-model"].contains(key),
+                          let field = fields.first(where: { $0.key == key }), let id = get(field.path, in: defaults) as? String else { continue }
+                    let kind: LocalModelDescriptor.Kind = key == "audio-model" ? .audio : .text
+                    guard configuration.localModel(id)?.kind == kind else {
+                        let found = issue(index, "\(key): '\(id)' is not a configured \(kind.rawValue) model; choose a catalog ID or add its definition in config.json")
+                        modelIssue = found
+                        throw found
+                    }
                 }
             }
-        }
-        do { return try ConfigurationFile.decode(data) }
-        catch {
+        } catch {
+            if let modelIssue { throw modelIssue }
             let assignments = lines.enumerated().compactMap { index, line in
                 line.key.map { "\($0) (line \(index + 1))" }
             }.joined(separator: ", ")

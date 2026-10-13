@@ -103,6 +103,9 @@ public final class ConfigurationStore: @unchecked Sendable {
     private var loaded: Configuration?
     /// Recovery copies kept for each kind of backup; writing another removes the oldest.
     static let retainedBackups = 5
+    /// Times both files were read from disk. A save needs it once before its first write, and
+    /// again only after writing config.json, before config follows.
+    private(set) var snapshotReads = 0
     public var hasExistingConfiguration: Bool {
         FileManager.default.fileExists(atPath: textFile.path) || FileManager.default.fileExists(atPath: file.path) || legacyFile.map { FileManager.default.fileExists(atPath: $0.path) } == true
     }
@@ -156,7 +159,7 @@ public final class ConfigurationStore: @unchecked Sendable {
         persistenceLock.lock(); defer { persistenceLock.unlock() }
         if snapshot == nil { _ = try load() }
         guard let snapshot else { return }
-        try ensureUnchanged(snapshot)
+        // The files are compared with this snapshot once, right before the first write.
         var candidate = configuration
         // UI candidates retain extension fields from the last successfully loaded document.
         candidate.originalJSON = loaded?.originalJSON ?? candidate.originalJSON
@@ -206,6 +209,7 @@ public final class ConfigurationStore: @unchecked Sendable {
         }
     }
     private func readSnapshot() throws -> Snapshot {
+        snapshotReads += 1
         let textTarget = resolvedTarget(textFile), jsonTarget = resolvedTarget(file)
         guard textTarget != jsonTarget else { throw FrogError.message("config and config.json must point to different files.") }
         return try Snapshot(textTarget: textTarget, jsonTarget: jsonTarget,
@@ -251,8 +255,9 @@ public final class ConfigurationStore: @unchecked Sendable {
         let rendered = try TextConfiguration.render(configuration, preserving: text)
         let bytes = Data(rendered.utf8)
         guard bytes.count <= ConfigurationFile.maximumBytes, json.count <= ConfigurationFile.maximumBytes else { throw FrogError.message("Configuration is too large (maximum 4 MB per file).") }
-        // Validate the actual representation before changing either file.
-        _ = try TextConfiguration.decode(rendered, companion: json)
+        // Validate the actual representation before changing either file. Its unknown fields
+        // were already carried over by `companion`, so they need not be collected again.
+        _ = try TextConfiguration.decode(rendered, companion: json, retainingUnknownFields: false)
         return Prepared(configuration: configuration, text: bytes, json: json)
     }
     private func commit(_ configuration: Configuration, preserving text: String?, expected: Snapshot) throws {
@@ -281,12 +286,15 @@ public final class ConfigurationStore: @unchecked Sendable {
             snapshot = committed; loaded = configuration
             return
         }
-        if json != expected.json { try PrivateFile.write(json, to: expected.jsonTarget, secureDirectory: false) }
+        let wroteJSON = json != expected.json
+        if wroteJSON { try PrivateFile.write(json, to: expected.jsonTarget, secureDirectory: false) }
         do {
-            try ensureUnchanged(Snapshot(textTarget: expected.textTarget, jsonTarget: expected.jsonTarget, text: expected.text, json: json))
+            // Without that write nothing has happened since the comparison above; repeating it
+            // would only read both files again.
+            if wroteJSON { try ensureUnchanged(Snapshot(textTarget: expected.textTarget, jsonTarget: expected.jsonTarget, text: expected.text, json: json)) }
             if bytes != expected.text { try PrivateFile.write(bytes, to: expected.textTarget, secureDirectory: false) }
         } catch {
-            if json != expected.json, resolvedTarget(file) == expected.jsonTarget,
+            if wroteJSON, resolvedTarget(file) == expected.jsonTarget,
                (try? readConfigurationFile(expected.jsonTarget)) == json {
                 if let prior = expected.json { try? PrivateFile.write(prior, to: expected.jsonTarget, secureDirectory: false) }
                 else { try? FileManager.default.removeItem(at: expected.jsonTarget) }
