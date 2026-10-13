@@ -286,7 +286,7 @@ private final class SpaceCatalogFixture: @unchecked Sendable {
         .init(isTrusted: { true }, windows: { [self] _ in .success(parked || closed ? [local] : [local, remote]) }, focusedWindow: { _ in nil },
               metadata: { [self] element in .success(.init(title: CFEqual(element, local) ? "Synthetic local" : "Synthetic remote")) },
               windowID: { [self] element in CFEqual(element, local) ? 101 : 202 },
-              offSpaceWindows: { [self] _ in parked && !closed ? [.init(id: 202, pid: 10, title: nil)] : [] })
+              offSpaceWindows: { [self] _, _ in parked && !closed ? [.init(id: 202, pid: 10, title: nil)] : [] })
     }
 }
 

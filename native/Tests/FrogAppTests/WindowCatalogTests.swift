@@ -133,6 +133,35 @@ final class WindowCatalogTests: XCTestCase {
         XCTAssertEqual(refreshed.windows.prefix(2).map(\.id), [row.id, recorded.id])
     }
 
+    func testWindowsFoundThroughAccessibilityAreNotLookedUpAgainForOtherDesktops() async {
+        let fixture = CatalogFixture()
+        let asked = AskedWindows()
+        var reader = fixture.reader
+        reader.windowID = { [fixture] element in CFEqual(element, fixture.a) ? 101 : 202 }
+        reader.offSpaceWindows = { _, known in asked.record(known); return [.init(id: 303, pid: 20, title: "Parked")] }
+        let catalog = WindowCatalog(reader: reader)
+        let snapshot = await catalog.snapshot(applications: fixture.apps, frontPID: 10)
+        XCTAssertEqual(asked.known, [101, 202], "WindowServer is asked once per window for its Desktop: not for those already listed")
+        XCTAssertEqual(snapshot.windows.map(\.windowID), [101, 202, 303])
+    }
+
+    func testOnlyWindowsThatCanBeParkedOnAnotherDesktopAreAskedAboutTheirs() {
+        func row(_ id: CGWindowID, pid: pid_t = 10, layer: Int = 0, alpha: Double = 1, side: Int = 400, title: String? = nil) -> [String: Any] {
+            var row: [String: Any] = [
+                kCGWindowNumber as String: NSNumber(value: id), kCGWindowOwnerPID as String: NSNumber(value: pid),
+                kCGWindowLayer as String: NSNumber(value: layer), kCGWindowAlpha as String: NSNumber(value: alpha),
+                kCGWindowBounds as String: CGRect(x: 0, y: 0, width: side, height: side).dictionaryRepresentation]
+            if let title { row[kCGWindowName as String] = title }
+            return row
+        }
+        let rows = [row(1, title: "Parked"), row(2), row(3, side: 1), row(4, layer: 25), row(5, alpha: 0), row(6, pid: 30), row(7, pid: 20)]
+        let candidates = WindowSpaceBridge.candidates(in: rows, owners: [10, 20], known: [2])
+        XCTAssertEqual(candidates.map(\.id), [1, 7],
+                       "A window already listed, a one-point helper, another layer, an invisible window and another owner cost no lookup")
+        XCTAssertEqual(candidates.map(\.pid), [10, 20])
+        XCTAssertEqual(candidates.first?.title, "Parked")
+    }
+
     func testSelectionFinishesWhileUnrelatedDiscoveryIsStillBlocked() async throws {
         let fixture = CatalogFixture()
         let writes = ActivationFixture()
@@ -314,6 +343,13 @@ private final class CatalogFixture: @unchecked Sendable {
             onRead?(pid)
             return lock.withLock { lists[pid] ?? .success([]) }
         }, focusedWindow: { [self] pid in lock.withLock { focus[pid] } ?? (pid == 10 ? a : b) }, metadata: { [self] _ in lock.withLock { reads += 1; return metadata } },
-           windowID: { _ in nil }, offSpaceWindows: { _ in [] })
+           windowID: { _ in nil }, offSpaceWindows: { _, _ in [] })
     }
+}
+
+private final class AskedWindows: @unchecked Sendable {
+    private let lock = NSLock()
+    private var ids: Set<CGWindowID>?
+    var known: Set<CGWindowID>? { lock.withLock { ids } }
+    func record(_ known: Set<CGWindowID>) { lock.withLock { ids = known } }
 }

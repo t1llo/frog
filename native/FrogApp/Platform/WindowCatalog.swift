@@ -86,7 +86,9 @@ actor WindowCatalog {
                 subrole: values[2] as? String, title: values[3] as? String, minimized: values[4] as? Bool == true))
         }
         var windowID: @Sendable (AXUIElement) -> CGWindowID? = { WindowSpaceBridge.windowID($0) }
-        var offSpaceWindows: @Sendable (Set<pid_t>) -> [WindowSpaceBridge.Window] = { WindowSpaceBridge.offSpaceWindows(owners: $0) }
+        var offSpaceWindows: @Sendable (Set<pid_t>, Set<CGWindowID>) -> [WindowSpaceBridge.Window] = {
+            WindowSpaceBridge.offSpaceWindows(owners: $0, known: $1)
+        }
     }
     struct Metadata {
         var role: String? = kAXWindowRole
@@ -280,7 +282,7 @@ actor WindowCatalog {
         }
         if !Task.isCancelled {
             let owners = Dictionary(uniqueKeysWithValues: applications.map { ($0.pid, $0) })
-            for server in reader.offSpaceWindows(Set(owners.keys)) {
+            for server in reader.offSpaceWindows(Set(owners.keys), Set(windows.compactMap(\.windowID))) {
                 guard !Task.isCancelled else { break }
                 guard let app = owners[server.pid] else { continue }
                 let id = identity(nil, pid: server.pid, windowID: server.id)

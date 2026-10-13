@@ -62,28 +62,37 @@ enum WindowSpaceBridge {
         return Set(values.map(\.uint64Value))
     }
 
-    static func offSpaceWindows(owners: Set<pid_t>) -> [Window] {
-        guard !owners.isEmpty, windowNumber != nil, selectSpace != nil, let displays = displays(),
-              let rows = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else { return [] }
-        let visible = Set(displays.map(\.current))
-        return rows.compactMap { row in
+    /// The WindowServer rows that can be a window parked on another Desktop. Whatever the
+    /// row itself rules out, and every window Accessibility listed already (`known`), is
+    /// dropped here: Space membership costs a WindowServer call per window.
+    static func candidates(in rows: [[String: Any]], owners: Set<pid_t>, known: Set<CGWindowID>) -> [Window] {
+        rows.compactMap { row in
             guard let pid = (row[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value, owners.contains(pid),
                   (row[kCGWindowLayer as String] as? NSNumber)?.intValue == 0,
                   (row[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1 > 0,
-                  let id = (row[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
-                  let membership = spaces(id), !membership.isEmpty, membership.isDisjoint(with: visible),
+                  let id = (row[kCGWindowNumber as String] as? NSNumber)?.uint32Value, !known.contains(id),
                   let bounds = row[kCGWindowBounds as String] as? NSDictionary,
                   let frame = CGRect(dictionaryRepresentation: bounds), frame.width > 1, frame.height > 1 else { return nil }
+            return Window(id: id, pid: pid, title: row[kCGWindowName as String] as? String)
+        }
+    }
+
+    static func offSpaceWindows(owners: Set<pid_t>, known: Set<CGWindowID>) -> [Window] {
+        guard !owners.isEmpty, windowNumber != nil, selectSpace != nil, let displays = displays(),
+              let rows = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else { return [] }
+        let visible = Set(displays.map(\.current))
+        return candidates(in: rows, owners: owners, known: known).filter { window in
+            guard let membership = spaces(window.id), !membership.isEmpty, membership.isDisjoint(with: visible) else { return false }
             if let ordered {
                 var value: UInt8 = 0
-                guard ordered(connection, id, &value) == .success, value != 0 else { return nil }
+                guard ordered(connection, window.id, &value) == .success, value != 0 else { return false }
             }
             if let tags {
                 var value = [UInt32](repeating: 0, count: 2)
-                let result = value.withUnsafeMutableBufferPointer { tags(connection, id, $0.baseAddress!, 64) }
-                if result == .success, value[0] & (1 << 18) != 0 { return nil }
+                let result = value.withUnsafeMutableBufferPointer { tags(connection, window.id, $0.baseAddress!, 64) }
+                if result == .success, value[0] & (1 << 18) != 0 { return false }
             }
-            return Window(id: id, pid: pid, title: row[kCGWindowName as String] as? String)
+            return true
         }
     }
 
