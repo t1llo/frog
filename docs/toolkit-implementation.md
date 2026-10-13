@@ -81,7 +81,10 @@ ranks one level higher (a name containing the query ties with other titles that 
 with it) and leads its level, behind only recently chosen results; files come last.
 An application is listed under the name Finder shows and is also found under its bundle
 names and its file name, so "Code" still finds Visual Studio Code.
-File lookup remains asynchronous and debounced. The bar opens in the middle of the
+File lookup remains asynchronous and debounced. Files whose names begin with the typed
+text are asked of Spotlight by themselves and listed ahead of names that only contain
+it; two letters find only the former. A lookup stops gathering once it has found about
+a thousand files, far more than are listed. The bar opens in the middle of the
 display the pointer is on. Drag its top grip or footer to move it; that position
 survives reopening in the same session, until the bar is centred again or its display
 is no longer available.

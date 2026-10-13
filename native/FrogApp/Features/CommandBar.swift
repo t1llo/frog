@@ -631,49 +631,88 @@ private actor CommandIconReader {
 }
 
 @MainActor final class MetadataCommandFileSearch: CommandFileSearching {
-    private var query: NSMetadataQuery?
-    private var observers: [NSObjectProtocol] = []
+    /// One Spotlight query and the rows it reported last.
+    private struct Pass {
+        let query: NSMetadataQuery
+        let observers: [NSObjectProtocol]
+        var files: [SearchRecord] = []
+        var gathering = true
+    }
+    private var passes: [Pass] = []
+    /// Far more than is ever listed. Gathering past it only costs time, most of all on the main thread.
+    static let gatherLimit = 1_000
 
+    private static var documents: NSPredicate {
+        NSPredicate(format: "(ANY kMDItemContentTypeTree == 'public.content' OR ANY kMDItemContentTypeTree == 'public.folder') AND NOT (ANY kMDItemContentTypeTree == 'com.apple.application-bundle')")
+    }
     static func predicate(text: String, now: Date = Date()) -> NSPredicate {
-        let documents = NSPredicate(format: "(ANY kMDItemContentTypeTree == 'public.content' OR ANY kMDItemContentTypeTree == 'public.folder') AND NOT (ANY kMDItemContentTypeTree == 'com.apple.application-bundle')")
         let words = text.split(whereSeparator: \.isWhitespace).map { NSPredicate(format: "%K CONTAINS[cd] %@", NSMetadataItemFSNameKey, String($0)) }
         let recent = NSPredicate(format: "kMDItemLastUsedDate > %@", now.addingTimeInterval(-7 * 86400) as NSDate)
         // NSMetadataQuery raises on an AND with a single subpredicate, so every term stays at this level.
         return NSCompoundPredicate(andPredicateWithSubpredicates: [documents] + (words.isEmpty ? [recent] : words))
     }
+    /// The queries that answer `text`, the one whose rows are listed first leading. Spotlight hands over what it
+    /// finds in no useful order and only the first rows are read, so the names that begin with the text, which rank
+    /// highest, are asked for by themselves. Two letters are part of a great share of all names on a disk and are
+    /// looked for nowhere else; two characters of a script that writes whole words with them are longer in UTF-8.
+    static func predicates(text: String, now: Date = Date()) -> [NSPredicate] {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return [predicate(text: text, now: now)] }
+        let beginning = NSCompoundPredicate(andPredicateWithSubpredicates: [documents, NSPredicate(format: "%K BEGINSWITH[cd] %@", NSMetadataItemFSNameKey, text)])
+        return text.utf8.count < 3 ? [beginning] : [beginning, predicate(text: text, now: now)]
+    }
+    /// Whether a query for typed text has found enough. The recent files are few and come sorted by use.
+    static func stopsGathering(at count: Int, text: String) -> Bool { !text.isEmpty && count >= gatherLimit }
+    /// Every row once, those of the leading query first.
+    static func merged(_ passes: [[SearchRecord]]) -> [SearchRecord] {
+        var listed = Set<String>()
+        return passes.joined().filter { listed.insert($0.id).inserted }
+    }
 
     func start(text: String, scopes: [Any], receive: @escaping @MainActor ([SearchRecord]) -> Void) {
         stop()
-        let search = NSMetadataQuery()
-        search.searchScopes = scopes
-        search.predicate = Self.predicate(text: text)
-        search.sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
-        search.notificationBatchingInterval = 0.1
-        for notificationName in [Notification.Name.NSMetadataQueryGatheringProgress, .NSMetadataQueryDidFinishGathering] {
-            observers.append(NotificationCenter.default.addObserver(forName: notificationName, object: search, queue: .main) { [weak self] notification in
-            MainActor.assumeIsolated {
-                guard let self, let search = notification.object as? NSMetadataQuery, self.query === search else { return }
-                search.disableUpdates()
-                let files = (0..<min(text.isEmpty ? 8 : 200, search.resultCount)).compactMap { index -> SearchRecord? in
-                    guard let item = search.result(at: index) as? NSMetadataItem,
-                          let path = item.value(forAttribute: NSMetadataItemPathKey) as? String else { return nil }
-                    let url = URL(fileURLWithPath: path)
-                    let types = item.value(forAttribute: "kMDItemContentTypeTree") as? [String] ?? []
-                    return SearchRecord(id: "file:\(path)", title: url.lastPathComponent, subtitle: url.deletingLastPathComponent().abbreviatingWithTildeInPath, symbol: types.contains("public.folder") ? "folder" : "doc")
+        for predicate in Self.predicates(text: text) {
+            let search = NSMetadataQuery()
+            search.searchScopes = scopes
+            search.predicate = predicate
+            search.sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
+            // Delivered with the results. Asked of each row instead, the type is a round trip to Spotlight per row,
+            // and two hundred of them were measured to hold the main thread for a fifth of a second on every report.
+            search.valueListAttributes = [NSMetadataItemContentTypeTreeKey]
+            search.notificationBatchingInterval = 0.1
+            let observers = [Notification.Name.NSMetadataQueryGatheringProgress, .NSMetadataQueryDidFinishGathering].map { notificationName in
+                NotificationCenter.default.addObserver(forName: notificationName, object: search, queue: .main) { [weak self] notification in
+                MainActor.assumeIsolated {
+                    guard let self, let search = notification.object as? NSMetadataQuery,
+                          let pass = self.passes.firstIndex(where: { $0.query === search && $0.gathering }) else { return }
+                    search.disableUpdates()
+                    self.passes[pass].files = (0..<min(text.isEmpty ? 8 : 200, search.resultCount)).compactMap { index -> SearchRecord? in
+                        guard let item = search.result(at: index) as? NSMetadataItem,
+                              let path = item.value(forAttribute: NSMetadataItemPathKey) as? String else { return nil }
+                        let url = URL(fileURLWithPath: path)
+                        let types = item.value(forAttribute: NSMetadataItemContentTypeTreeKey) as? [String] ?? []
+                        return SearchRecord(id: "file:\(path)", title: url.lastPathComponent, subtitle: url.deletingLastPathComponent().abbreviatingWithTildeInPath, symbol: types.contains("public.folder") ? "folder" : "doc")
+                    }
+                    if notification.name == .NSMetadataQueryDidFinishGathering || Self.stopsGathering(at: search.resultCount, text: text) { self.finish(pass) }
+                    else { search.enableUpdates() }
+                    receive(Self.merged(self.passes.map(\.files)))
                 }
-                if notification.name == .NSMetadataQueryDidFinishGathering { self.stop() }
-                else { search.enableUpdates() }
-                receive(files)
+                }
             }
-            })
+            passes.append(Pass(query: search, observers: observers))
         }
-        query = search
-        if !search.start() { stop(); receive([]) }
+        for pass in passes.indices where !passes[pass].query.start() { finish(pass) }
+        if !passes.contains(where: \.gathering) { stop(); receive([]) }
     }
 
+    /// Ends one query and keeps its rows for as long as the others gather.
+    private func finish(_ pass: Int) {
+        passes[pass].query.stop(); passes[pass].gathering = false
+        for observer in passes[pass].observers { NotificationCenter.default.removeObserver(observer) }
+    }
     func stop() {
-        query?.stop(); query = nil
-        for observer in observers { NotificationCenter.default.removeObserver(observer) }; observers = []
+        for pass in passes.indices where passes[pass].gathering { finish(pass) }
+        passes = []
     }
     isolated deinit { stop() }
 }
