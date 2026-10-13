@@ -121,9 +121,10 @@ macOS versions and physical trackpad scrolling remain manual checks. Vorssaint's
 background-discovery approach informed an independent implementation; no reference
 source was copied.
 
-The optional System monitor samples on a utility-priority actor every two seconds
-only while its menu view is visible, bounds CPU/GPU histories to 30 samples, and
-caches disk capacity for 30 seconds. Initial native sampling measured about 7.3 ms
+The optional System monitor samples on a utility-priority actor: CPU and GPU every
+five seconds while the feature is on, and every two seconds together with disk and
+power while its menu view is visible. The graph keeps ten minutes of timestamped
+samples (at most 600); disk capacity is cached for 30 seconds. Initial native sampling measured about 7.3 ms
 cold and 0.68 ms warm. CPU uses tick deltas; GPU reports the busiest supported
 driver statistic; disk I/O covers supported devices, with startup-volume capacity
 shown separately. Power source, battery charge, thermal state and Low Power Mode
@@ -467,6 +468,38 @@ reproduced live (this shell has no Accessibility or event permissions).
 - 24 tests in the two affected suites pass. Not changed: a held Tab repeats after the
   system's key-repeat delay and steps further, as in the macOS switcher; a window that
   misses one inventory still returns with a new identity and no rank.
+
+## Graphs in the style of Linear's project graph, CPU/GPU recorded out of sight — October 13
+
+Request: the CPU/GPU and LLM usage graphs in the design of Linear's project graph, and
+the CPU/GPU graph already holding data when its tab is opened.
+
+- **Look** (`GraphStyle.swift`): a legend of small squares with the value below, a
+  thin smooth line over a fading fill, thin bars on the baseline, a time axis that
+  names only its two ends, no grid and no value scale. The pointer shows the exact
+  values. The System tab draws CPU and GPU in one graph over the last ten minutes;
+  the two lines keep one colour each instead of changing with the load. The activity
+  chart of Mr. Usage draws the period's running total as the line and each day's or
+  hour's amount as a bar on its own scale.
+- **Recording** (`SystemMonitor`): while the feature is on, CPU and GPU are sampled
+  every five seconds whether or not the menu is open; disk and power are still read
+  only while the view is visible, every two seconds. Samples carry their time, so a
+  missing reading or a pause over 30 seconds (sleep) breaks the line instead of being
+  bridged. What is recorded out of sight is not published until the view shows, so a
+  menu that stays mounted after closing is not redrawn. A CPU reading asked for less
+  than half a second after the last one repeats it; a late background wake-up up to
+  30 seconds still counts as the average over that stretch.
+- 17 tests in `SystemMonitorTests`, `SystemMonitorDeltaTests`, `SystemMonitorViewTests`
+  and `GraphStyleTests` pass. They cover recording while hidden, the history being
+  there on the first frame, keeping the baselines across open and close, the
+  ten-minute window, a clock set back, line breaks, and the running-total maths.
+  Synthetic renders of the System tab (battery, desktop, unavailable) and of the
+  activity chart at popup and dashboard width, dark and light, were inspected.
+- The real sampler was probed once: a sample taken out of sight (one
+  `host_processor_info` call and one IOAccelerator registry read) took 0.35 to 0.58 ms
+  and returned plausible CPU and GPU load.
+- Not verified from this shell: pointer hover on the live graphs, the real cadence of
+  the five-second timer under timer coalescing, and the energy impact macOS reports.
 
 ## Distribution
 

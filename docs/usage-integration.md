@@ -225,16 +225,23 @@ and every refresh fails. Frog still never renews or consumes another tool's toke
   popover, opening left-aligned beneath its item. Its height follows its content.
 - Header: title, the Claude/OpenAI switch and Refresh, both in the bordered compact
   control style. Plan limits (up to four) each show used, left, pace and renewal.
-  The estimate is labeled "API estimate"; whole-dollar axis labels drop their cents.
-  Open dashboard is a menu row; the footer shows the reading's age and source.
+  The estimate is labeled "API estimate". Open dashboard is a menu row; the footer shows the reading's age and source.
 - Opening either popup posts `frogMenuPopupWillOpen`; the other one closes.
 - Without a plan reading the menu-bar item shows the selected period's API estimate
   ("7d $185") rather than only the provider name; a reading that could not be
   refreshed is drawn dimmed.
 - Limit bars and pace labels use the theme's status tones: `good` under pace,
   `warning` ahead of pace, `critical` from 95 % used; on pace keeps the accent. The
-  System monitor uses the same tones for load, disk and battery. Each built-in theme
+  System monitor uses the same tones for disk and battery. Each built-in theme
   defines them and `palette.light`/`palette.dark` can override them.
+- Graphs (2026-10-13) share one look, modelled on Linear's project graph
+  (`GraphStyle.swift`): a legend of small squares with the value below, a thin smooth
+  line over a fading fill, thin bars on the baseline, and a time axis that names only
+  its two ends. No grid and no value scale; the pointer shows exact values. The
+  activity chart draws the period's running total as the line and each day's (or
+  hour's) amount as a bar on its own scale. The line colour is `FrogStyle.series`:
+  the theme accent, or indigo in Minimal, whose own accent is a neutral grey. The
+  System monitor draws CPU in that colour and GPU in the theme's `warning` tone.
 - Frog's Stay awake row was 18 pt wider than the popup and pushed its content off
   centre; the row now fits, so both popups share the same insets.
 

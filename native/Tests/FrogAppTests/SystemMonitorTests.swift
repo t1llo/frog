@@ -2,40 +2,56 @@ import XCTest
 @testable import FrogApp
 
 @MainActor final class SystemMonitorTests: XCTestCase {
-    func testDisabledAndHiddenMonitorDoNoWorkAndReopeningResetsBaselines() async throws {
+    func testDisabledMonitorDoesNoWorkEvenWhenShown() async throws {
         let sampler = MonitorFixture()
-        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5))
+        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5), backgroundInterval: .milliseconds(5))
         monitor.setPresented(true)
         try await Task.sleep(for: .milliseconds(25))
-        var calls = await sampler.resets
+        let calls = await sampler.calls
         XCTAssertTrue(calls.isEmpty, "Default-off monitor must not sample even if a view asks")
-        monitor.setPresented(false)
+        XCTAssertFalse(monitor.isSampling)
+    }
+
+    func testEnabledMonitorRecordsOutOfSightAndHasItsHistoryReadyWhenShown() async throws {
+        let sampler = MonitorFixture()
+        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5), backgroundInterval: .milliseconds(5))
         monitor.configure(enabled: true)
-        try await Task.sleep(for: .milliseconds(25))
-        calls = await sampler.resets
-        XCTAssertTrue(calls.isEmpty, "Enabling alone must not start a background collector")
-        monitor.setPresented(true)
-        try await waitUntil { await sampler.resets.count >= 2 }
+        defer { monitor.stop() }
+        try await waitUntil { await sampler.calls.count >= 3 }
+        var calls = await sampler.calls
+        XCTAssertEqual(calls.first, .init(reset: true, full: false))
+        XCTAssertTrue(calls.dropFirst().allSatisfy { $0 == .init(reset: false, full: false) }, "Out of sight only CPU and GPU are read")
         XCTAssertTrue(monitor.isSampling)
-        calls = await sampler.resets
-        XCTAssertEqual(Array(calls.prefix(2)), [true, false])
-        monitor.setPresented(false)
-        let hiddenCount = await sampler.resets.count
-        try await Task.sleep(for: .milliseconds(25))
-        let afterHidden = await sampler.resets.count
-        XCTAssertEqual(afterHidden, hiddenCount)
-        XCTAssertFalse(monitor.isSampling)
-        XCTAssertTrue(monitor.cpuHistory.isEmpty)
+        XCTAssertTrue(monitor.history.isEmpty, "Recording out of sight must not redraw a menu that stays mounted")
+        XCTAssertEqual(monitor.snapshot, SystemMonitorSnapshot())
+
         monitor.setPresented(true)
-        try await waitUntil { await sampler.resets.count > hiddenCount }
-        calls = await sampler.resets
-        XCTAssertTrue(calls[hiddenCount], "Reopening must not average load over time spent hidden")
+        XCTAssertGreaterThanOrEqual(monitor.history.count, 3, "The graph has its data on the first frame")
+        XCTAssertEqual(monitor.snapshot.cpu, .value(0.25))
+        try await waitUntil { await sampler.calls.last?.full == true }
+
+        monitor.setPresented(false)
+        let shown = monitor.history.count
+        let hidden = await sampler.calls.count
+        try await waitUntil { await sampler.calls.count >= hidden + 3 }
+        calls = await sampler.calls
+        XCTAssertTrue(calls.suffix(2).allSatisfy { !$0.full })
+        XCTAssertFalse(calls.dropFirst().contains { $0.reset }, "Opening and closing the view must keep the baselines")
+        XCTAssertEqual(monitor.history.count, shown)
+        monitor.setPresented(true)
+        XCTAssertGreaterThan(monitor.history.count, shown)
+
         monitor.configure(enabled: false)
-        let disabledCount = await sampler.resets.count
+        let disabled = await sampler.calls.count
         try await Task.sleep(for: .milliseconds(25))
-        let afterDisabled = await sampler.resets.count
-        XCTAssertEqual(afterDisabled, disabledCount)
+        let afterDisabled = await sampler.calls.count
+        XCTAssertEqual(afterDisabled, disabled)
         XCTAssertFalse(monitor.isSampling)
+        XCTAssertTrue(monitor.history.isEmpty)
+        monitor.configure(enabled: true)
+        try await waitUntil { await sampler.calls.count > disabled }
+        calls = await sampler.calls
+        XCTAssertEqual(calls[disabled], .init(reset: true, full: true), "Switching back on must not average load over the time spent off")
     }
 
     func testCancellationRejectsLateSamplerCompletionAcrossReenable() async throws {
@@ -53,26 +69,43 @@ import XCTest
         await sampler.finish(index: 0, cpu: 0.99)
         try await Task.sleep(for: .milliseconds(20))
         XCTAssertEqual(monitor.snapshot.cpu, .value(0.25))
-        XCTAssertEqual(monitor.cpuHistory, [0.25])
+        XCTAssertEqual(monitor.history.map(\.cpu), [0.25])
         monitor.stop()
         XCTAssertEqual(monitor.snapshot, SystemMonitorSnapshot())
     }
 
-    func testHistoryIsBoundedAndMissingReadingsRemainGaps() async throws {
+    func testHistoryCoversOnlyTheGraphsWindowAndMissingReadingsRemainGaps() async throws {
         let sampler = MonitorFixture(snapshot: .init(cpu: .value(0.4), gpu: .unavailable))
-        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(1))
+        let clock = ClockFixture(step: 60)
+        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(1), backgroundInterval: .milliseconds(1)) { clock.next() }
         monitor.configure(enabled: true)
         monitor.setPresented(true)
         defer { monitor.stop() }
-        try await waitUntil { await sampler.resets.count > SystemMonitor.historyLimit + 4 }
-        XCTAssertEqual(monitor.cpuHistory.count, SystemMonitor.historyLimit)
-        XCTAssertEqual(monitor.gpuHistory.count, SystemMonitor.historyLimit)
-        XCTAssertTrue(monitor.cpuHistory.allSatisfy { $0 == 0.4 })
-        XCTAssertTrue(monitor.gpuHistory.allSatisfy { $0 == nil })
+        try await waitUntil { await sampler.calls.count > 20 }
+        let history = monitor.history
+        XCTAssertEqual(history.count, Int(SystemMonitor.historyWindow / 60) + 1)
+        XCTAssertEqual(history.last!.time.timeIntervalSince(history.first!.time), SystemMonitor.historyWindow)
+        XCTAssertTrue(history.allSatisfy { $0.cpu == 0.4 && $0.gpu == nil })
+    }
+
+    func testHistoryIsBoundedAndAClockSetBackLeavesNoSampleAheadOfTheNewest() async throws {
+        let sampler = MonitorFixture()
+        let clock = ClockFixture(step: 0.01)
+        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(1), backgroundInterval: .milliseconds(1)) { clock.next() }
+        monitor.configure(enabled: true)
+        monitor.setPresented(true)
+        defer { monitor.stop() }
+        try await waitUntil { await sampler.calls.count > SystemMonitor.historyLimit + 4 }
+        XCTAssertEqual(monitor.history.count, SystemMonitor.historyLimit)
+        clock.time.addTimeInterval(-3600)
+        let count = await sampler.calls.count
+        try await waitUntil { await sampler.calls.count > count + 2 }
+        XCTAssertLessThan(monitor.history.count, 8)
+        XCTAssertEqual(monitor.history.map(\.time), monitor.history.map(\.time).sorted())
     }
 
     private func waitUntil(_ condition: () async -> Bool) async throws {
-        for _ in 0..<500 {
+        for _ in 0..<2500 {
             if await condition() { return }
             try await Task.sleep(for: .milliseconds(2))
         }
@@ -80,12 +113,20 @@ import XCTest
     }
 }
 
+@MainActor private final class ClockFixture {
+    var time = Date(timeIntervalSinceReferenceDate: 0)
+    let step: TimeInterval
+    init(step: TimeInterval) { self.step = step }
+    func next() -> Date { time.addTimeInterval(step); return time }
+}
+
 private actor MonitorFixture: SystemMonitorSampling {
-    private(set) var resets: [Bool] = []
+    struct Call: Equatable { let reset: Bool; let full: Bool }
+    private(set) var calls: [Call] = []
     let snapshot: SystemMonitorSnapshot
     init(snapshot: SystemMonitorSnapshot = .init(cpu: .value(0.25))) { self.snapshot = snapshot }
-    func sample(reset: Bool) async -> SystemMonitorSnapshot {
-        resets.append(reset)
+    func sample(reset: Bool, full: Bool) async -> SystemMonitorSnapshot {
+        calls.append(.init(reset: reset, full: full))
         return snapshot
     }
 }
@@ -93,7 +134,7 @@ private actor MonitorFixture: SystemMonitorSampling {
 private actor GatedMonitorFixture: SystemMonitorSampling {
     private var continuations: [CheckedContinuation<SystemMonitorSnapshot, Never>?] = []
     var pendingCount: Int { continuations.count }
-    func sample(reset: Bool) async -> SystemMonitorSnapshot {
+    func sample(reset: Bool, full: Bool) async -> SystemMonitorSnapshot {
         await withCheckedContinuation { continuations.append($0) }
     }
     func finish(index: Int, cpu: Double) {
@@ -112,6 +153,35 @@ final class SystemMonitorDeltaTests: XCTestCase {
         XCTAssertNil(SystemMonitorDelta.cpu(previous: before, current: before, elapsed: 2))
         XCTAssertNil(SystemMonitorDelta.cpu(previous: before, current: [after[0]], elapsed: 2))
         XCTAssertNil(SystemMonitorDelta.cpu(previous: after, current: before, elapsed: 2))
+        XCTAssertEqual(SystemMonitorDelta.cpu(previous: before, current: after, elapsed: 12), 0.35, "A late background wake-up is still a true average")
+    }
+
+    func testCPUMeterRepeatsAReadingAskedForTooSoonAndKeepsItsBaseline() {
+        var meter = SystemMonitorCPUMeter()
+        let start = [SystemMonitorDelta.CPU(user: 0, system: 0, idle: 100, nice: 0)]
+        XCTAssertEqual(meter.reading(start, at: 10), .measuring)
+        XCTAssertEqual(meter.reading([.init(user: 50, system: 0, idle: 150, nice: 0)], at: 12), .value(0.5))
+        // One busy tick in a tenth of a second would read as a fully loaded Mac.
+        XCTAssertEqual(meter.reading([.init(user: 51, system: 0, idle: 150, nice: 0)], at: 12.1), .value(0.5))
+        XCTAssertEqual(meter.reading([.init(user: 60, system: 0, idle: 190, nice: 0)], at: 14), .value(0.2), "The baseline stayed at the last real reading")
+        XCTAssertEqual(meter.reading([.init(user: 70, system: 0, idle: 200, nice: 0)], at: 80), .measuring, "A stretch too long to trust is not a reading")
+        XCTAssertEqual(meter.reading([.init(user: 75, system: 0, idle: 215, nice: 0)], at: 82), .value(0.25))
+        XCTAssertEqual(meter.reading(nil, at: 84), .unavailable)
+        XCTAssertEqual(meter.reading(start, at: 86), .measuring)
+        meter.reset()
+        XCTAssertEqual(meter.reading(start, at: 86.1), .measuring)
+    }
+
+    func testGraphLineBreaksAtMissingReadingsAndRecordingPauses() {
+        let start = Date(timeIntervalSinceReferenceDate: 1000)
+        let history = [(0.0, 0.1), (5, 0.2), (10, nil), (15, 1.4), (20, 0.3), (120, 0.5), (125, 0.6)].map {
+            SystemMonitorSample(time: start.addingTimeInterval($0.0), cpu: $0.1, gpu: nil)
+        }
+        let runs = SystemMonitorRun.runs(history, pause: 30, value: \.cpu)
+        XCTAssertEqual(runs.map { $0.points.map(\.value) }, [[0.1, 0.2], [1, 0.3], [0.5, 0.6]])
+        XCTAssertEqual(runs.map { $0.points.map(\.offset) }, [[-125, -120], [-110, -105], [-5, 0]])
+        XCTAssertTrue(SystemMonitorRun.runs(history, pause: 30, value: \.gpu).isEmpty)
+        XCTAssertTrue(SystemMonitorRun.runs([], pause: 30, value: \.cpu).isEmpty)
     }
 
     func testCPUCounterWrapIsHandledWithoutOverflow() {

@@ -6,34 +6,30 @@ import IOKit.ps
 /// Actor-isolated native reads run on the cooperative executor, never the UI
 /// thread. No process inventory, subprocesses, privileged helpers or disk scans.
 actor NativeSystemMonitorSampler: SystemMonitorSampling {
-    private var previousCPU: [SystemMonitorDelta.CPU]?
+    private var cpu = SystemMonitorCPUMeter()
     private var previousDisk: [UInt64: SystemMonitorDelta.Disk]?
-    private var previousTime: TimeInterval?
+    private var previousDiskTime: TimeInterval?
     private var capacity: SystemMonitorCapacity?
     private var capacityTime: TimeInterval?
 
-    func sample(reset: Bool) async -> SystemMonitorSnapshot {
+    func sample(reset: Bool, full: Bool) async -> SystemMonitorSnapshot {
         if reset {
-            previousCPU = nil
+            cpu.reset()
             previousDisk = nil
-            previousTime = nil
+            previousDiskTime = nil
         }
         guard !Task.isCancelled else { return SystemMonitorSnapshot() }
         let now = ProcessInfo.processInfo.systemUptime
-        let elapsed = previousTime.map { now - $0 } ?? 0
         var result = SystemMonitorSnapshot()
-        let cpu = readCPU()
-        if let cpu {
-            if let previousCPU, let usage = SystemMonitorDelta.cpu(previous: previousCPU, current: cpu, elapsed: elapsed) {
-                result.cpu = .value(usage)
-            }
-        } else { result.cpu = .unavailable }
-        previousCPU = cpu
+        result.cpu = cpu.reading(readCPU(), at: now)
         guard !Task.isCancelled else { return result }
         result.gpu = readGPU().map(SystemMonitorMetric.value) ?? .unavailable
+        // Disk and power are shown, not graphed, so only the visible view reads them.
+        guard full else { return result }
         let disks = readDiskCounters()
         if let disks {
-            if let previousDisk, let rates = SystemMonitorDelta.disk(previous: previousDisk, current: disks, elapsed: elapsed) {
+            if let previousDisk, let previousDiskTime,
+               let rates = SystemMonitorDelta.disk(previous: previousDisk, current: disks, elapsed: now - previousDiskTime) {
                 result.diskRead = .value(rates.read)
                 result.diskWrite = .value(rates.write)
             }
@@ -42,7 +38,7 @@ actor NativeSystemMonitorSampler: SystemMonitorSampling {
             result.diskWrite = .unavailable
         }
         previousDisk = disks
-        previousTime = now
+        previousDiskTime = now
         guard !Task.isCancelled else { return result }
         if capacityTime == nil || now - (capacityTime ?? 0) >= 30 {
             capacity = readCapacity()

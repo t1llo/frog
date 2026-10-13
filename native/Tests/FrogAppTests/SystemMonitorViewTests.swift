@@ -58,9 +58,10 @@ import XCTest
         XCTAssertEqual(window.frame.maxY, top, accuracy: 0.5)
     }
 
-    func testNativeWindowOrderOutStopsCollectorEvenIfSwiftUIViewStaysMounted() async throws {
+    func testNativeWindowOrderOutReturnsToRecordingOutOfSightEvenIfSwiftUIViewStaysMounted() async throws {
         _ = NSApplication.shared
-        let monitor = SystemMonitor(sampler: VisibleMonitorFixture(), interval: .milliseconds(5))
+        let sampler = VisibleMonitorFixture()
+        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5), backgroundInterval: .milliseconds(5))
         monitor.configure(enabled: true)
         let host = NSHostingView(rootView: SystemMonitorView(monitor: monitor).frame(width: 282).fixedSize(horizontal: false, vertical: true))
         let window = MonitorVisibilityFixtureWindow(contentRect: NSRect(x: 80, y: 80, width: 282, height: 350), styleMask: .borderless, backing: .buffered, defer: false)
@@ -72,20 +73,29 @@ import XCTest
         defer { monitor.stop(); window.orderOut(nil); window.contentView = nil }
         host.layoutSubtreeIfNeeded()
         NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
-        for _ in 0..<100 where !monitor.isSampling { try await Task.sleep(for: .milliseconds(5)) }
-        XCTAssertTrue(monitor.isSampling)
+        try await waitUntil { await sampler.full == true }
+        XCTAssertFalse(monitor.history.isEmpty)
         window.orderOut(nil)
         NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
-        for _ in 0..<100 where monitor.isSampling { try await Task.sleep(for: .milliseconds(5)) }
-        XCTAssertFalse(monitor.isSampling)
-        XCTAssertTrue(monitor.cpuHistory.isEmpty)
+        try await waitUntil { await sampler.full == false }
+        XCTAssertTrue(monitor.isSampling, "Closing the menu keeps the CPU and GPU recording")
+        let shown = monitor.history.count
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(monitor.history.count, shown, "Nothing is published to a view nobody sees")
         window.makeKeyAndOrderFront(nil)
         NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
-        for _ in 0..<100 where !monitor.isSampling { try await Task.sleep(for: .milliseconds(5)) }
-        XCTAssertTrue(monitor.isSampling)
+        try await waitUntil { await sampler.full == true }
+        XCTAssertGreaterThan(monitor.history.count, shown, "What was recorded out of sight is in the graph")
         NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: window)
-        for _ in 0..<100 where monitor.isSampling { try await Task.sleep(for: .milliseconds(5)) }
-        XCTAssertFalse(monitor.isSampling)
+        try await waitUntil { await sampler.full == false }
+    }
+
+    private func waitUntil(_ condition: () async -> Bool) async throws {
+        for _ in 0..<400 {
+            if await condition() { return }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTFail("Timed out waiting for monitor state")
     }
 
     private func settle(_ host: NSView) async throws {
@@ -110,7 +120,12 @@ import XCTest
 }
 
 private actor VisibleMonitorFixture: SystemMonitorSampling {
-    func sample(reset: Bool) async -> SystemMonitorSnapshot { .init(cpu: .value(0.23), gpu: .value(0.1)) }
+    /// Whether the newest sample was a full one, as taken for a visible view.
+    private(set) var full: Bool?
+    func sample(reset: Bool, full: Bool) async -> SystemMonitorSnapshot {
+        self.full = full
+        return .init(cpu: .value(0.23), gpu: .value(0.1))
+    }
 }
 
 @MainActor private final class MonitorMenuFixtureState: ObservableObject {
@@ -124,14 +139,22 @@ private actor VisibleMonitorFixture: SystemMonitorSampling {
 
 private struct MonitorMenuFixtureView: View {
     @ObservedObject var state: MonitorMenuFixtureState
+    /// Ten minutes of samples, with a line only for the readings the snapshot has.
+    private var history: [SystemMonitorSample] {
+        let cpu = state.snapshot.cpu.value != nil, gpu = state.snapshot.gpu.value != nil
+        return (0..<120).map { index in
+            let step = Double(index)
+            let load: Double = 0.28 + 0.2 * sin(step / 9) + 0.06 * sin(step / 2)
+            let render: Double = 0.12 + 0.08 * sin(step / 14 + 1)
+            return SystemMonitorSample(time: Date(timeIntervalSinceReferenceDate: step * 5), cpu: cpu ? load : nil, gpu: gpu ? render : nil)
+        }
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack { Text("Frog").fontWeight(.semibold); Spacer(); SystemMonitorMenuSelector(selection: $state.tab) }
                 .padding(.horizontal, 8).frame(height: 42)
             if state.tab == .system {
-                SystemMonitorOverview(snapshot: state.snapshot,
-                    cpuHistory: (0..<30).map { 0.2 + Double($0 % 7) / 30 },
-                    gpuHistory: (0..<30).map { 0.05 + Double($0 % 4) / 25 })
+                SystemMonitorOverview(snapshot: state.snapshot, history: history)
             } else {
                 Text("Stay awake").padding(12)
                 Text("Command bar").padding(12)

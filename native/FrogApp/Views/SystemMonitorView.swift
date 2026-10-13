@@ -1,3 +1,4 @@
+import Charts
 import SwiftUI
 
 enum SystemMonitorMenuTab: String, CaseIterable, Identifiable {
@@ -19,7 +20,7 @@ struct SystemMonitorView: View {
     @ObservedObject var monitor: SystemMonitor
 
     var body: some View {
-        SystemMonitorOverview(snapshot: monitor.snapshot, cpuHistory: monitor.cpuHistory, gpuHistory: monitor.gpuHistory)
+        SystemMonitorOverview(snapshot: monitor.snapshot, history: monitor.history)
             .background(FeatureVisibility { monitor.setPresented($0) })
     }
 }
@@ -28,17 +29,33 @@ struct SystemMonitorView: View {
 /// user's machine, settings, power source and current workload.
 struct SystemMonitorOverview: View {
     let snapshot: SystemMonitorSnapshot
-    var cpuHistory: [Double?] = []
-    var gpuHistory: [Double?] = []
+    var history: [SystemMonitorSample] = []
+    /// Seconds from the newest sample to the moment under the pointer.
+    @State private var inspected: Double?
+
+    private var inspectedSample: SystemMonitorSample? {
+        guard let inspected, let end = history.last?.time else { return nil }
+        return history.min { abs($0.time.timeIntervalSince(end) - inspected) < abs($1.time.timeIntervalSince(end) - inspected) }
+    }
 
     var body: some View {
+        let sample = inspectedSample
         VStack(spacing: 6) {
-            HStack(spacing: 6) {
-                usageCard("CPU", symbol: "cpu", metric: snapshot.cpu, history: cpuHistory)
-                    .help("Busy time across all logical CPU cores, sampled every two seconds.")
-                usageCard("GPU", symbol: "square.3.layers.3d", metric: snapshot.gpu, history: gpuHistory)
-                    .help("Busiest GPU with a supported driver utilization statistic. Unavailable when the driver does not expose it.")
-            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top, spacing: 8) {
+                    usage("CPU", color: FrogStyle.series, text: sample.map { percent($0.cpu) } ?? percent(snapshot.cpu))
+                        .help("Busy time across all logical CPU cores. Recorded while System monitor is on, also with this view closed.")
+                    usage("GPU", color: FrogStyle.seriesSecondary, text: sample.map { percent($0.gpu) } ?? percent(snapshot.gpu))
+                        .help("Busiest GPU with a supported driver utilization statistic. Unavailable when the driver does not expose it.")
+                }.overlay(alignment: .topTrailing) {
+                    if let sample, let end = history.last?.time {
+                        Text(GraphStyle.ago(end.timeIntervalSince(sample.time)))
+                            .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                    }
+                }
+                SystemMonitorGraph(history: history, inspected: $inspected, sample: sample).frame(height: 54)
+                GraphAxis(leading: GraphStyle.ago(SystemMonitor.historyWindow), trailing: "Now")
+            }.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
             VStack(alignment: .leading, spacing: 6) {
                 heading("Disk", symbol: "internaldrive")
                 if let capacity = snapshot.diskCapacity {
@@ -95,16 +112,11 @@ struct SystemMonitorOverview: View {
         Label(title, systemImage: symbol).font(.system(size: 11, weight: .medium))
     }
 
-    private func usageCard(_ title: String, symbol: String, metric: SystemMonitorMetric, history: [Double?]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            heading(title, symbol: symbol)
-            Text(percent(metric)).font(.system(size: metric.value == nil ? 11 : 21, weight: .semibold, design: .rounded))
-                .monospacedDigit().frame(height: 25, alignment: .leading)
-            SystemMonitorSparkline(values: metric.value == nil ? [] : history).stroke(FrogStyle.level(metric.value ?? 0), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                .frame(height: 18).background(alignment: .bottom) { Rectangle().fill(FrogStyle.muted.opacity(0.15)).frame(height: 1) }
-                .accessibilityHidden(true)
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
+    private func usage(_ title: String, color: Color, text: String) -> some View {
+        GraphLegend(color: color, title: title) {
+            Text(text).font(.system(size: text.hasSuffix("%") ? 20 : 11, weight: .semibold, design: .rounded))
+                .monospacedDigit().frame(height: 24, alignment: .leading)
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func meter(_ value: Double, color: Color = FrogStyle.accent) -> some View {
@@ -130,6 +142,11 @@ struct SystemMonitorOverview: View {
         }
     }
 
+    /// A recorded moment; one without a reading has nothing to show.
+    private func percent(_ recorded: Double?) -> String {
+        recorded.map { percent(.value($0)) } ?? "—"
+    }
+
     private func bytes(_ count: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: count, countStyle: .decimal)
     }
@@ -143,18 +160,46 @@ struct SystemMonitorOverview: View {
     }
 }
 
-private struct SystemMonitorSparkline: Shape {
-    let values: [Double?]
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        var connected = false
-        for (index, value) in values.suffix(SystemMonitor.historyLimit).enumerated() {
-            guard let value, value.isFinite else { connected = false; continue }
-            let x = rect.width * Double(index) / Double(max(1, SystemMonitor.historyLimit - 1))
-            let point = CGPoint(x: x, y: rect.height * (1 - min(1, max(0, value))))
-            if connected { path.addLine(to: point) } else { path.move(to: point) }
-            connected = true
+/// CPU and GPU over the recorded stretch: CPU as the filled line, GPU as a second line.
+private struct SystemMonitorGraph: View {
+    let history: [SystemMonitorSample]
+    @Binding var inspected: Double?
+    let sample: SystemMonitorSample?
+
+    var body: some View {
+        let cpu = SystemMonitorRun.runs(history, pause: SystemMonitor.recordingPause, value: \.cpu)
+        let gpu = SystemMonitorRun.runs(history, pause: SystemMonitor.recordingPause, value: \.gpu)
+        Chart {
+            ForEach(cpu) { run in
+                ForEach(run.points) { point in
+                    AreaMark(x: .value("Seconds", point.offset), y: .value("CPU", point.value), series: .value("Run", run.id), stacking: .unstacked)
+                        .interpolationMethod(.monotone).foregroundStyle(GraphStyle.fill(FrogStyle.series))
+                    LineMark(x: .value("Seconds", point.offset), y: .value("CPU", point.value), series: .value("Run", "CPU \(run.id)"))
+                        .interpolationMethod(.monotone).lineStyle(GraphStyle.line).foregroundStyle(FrogStyle.series)
+                }
+            }
+            ForEach(gpu) { run in
+                ForEach(run.points) { point in
+                    LineMark(x: .value("Seconds", point.offset), y: .value("GPU", point.value), series: .value("Run", "GPU \(run.id)"))
+                        .interpolationMethod(.monotone).lineStyle(GraphStyle.line).foregroundStyle(FrogStyle.seriesSecondary)
+                }
+            }
+            if let sample, let end = history.last?.time {
+                let offset = sample.time.timeIntervalSince(end)
+                RuleMark(x: .value("Seconds", offset)).lineStyle(StrokeStyle(lineWidth: 1)).foregroundStyle(FrogStyle.muted.opacity(0.45))
+                if let value = sample.cpu {
+                    PointMark(x: .value("Seconds", offset), y: .value("CPU", value)).symbolSize(22).foregroundStyle(FrogStyle.series)
+                }
+                if let value = sample.gpu {
+                    PointMark(x: .value("Seconds", offset), y: .value("GPU", value)).symbolSize(22).foregroundStyle(FrogStyle.seriesSecondary)
+                }
+            }
         }
-        return path
+        .chartXScale(domain: -SystemMonitor.historyWindow...0)
+        .chartYScale(domain: 0...1, range: .plotDimension(startPadding: 1, endPadding: 1))
+        .chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
+        .chartXSelection(value: $inspected)
+        .background(alignment: .bottom) { Rectangle().fill(FrogStyle.muted.opacity(0.15)).frame(height: 1) }
+        .accessibilityHidden(true)
     }
 }

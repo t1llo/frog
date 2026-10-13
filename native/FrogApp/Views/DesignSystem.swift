@@ -67,9 +67,12 @@ enum FrogStyle {
             return resolved
         })
     }
+    private static var usesThemeAccent: Bool {
+        let settings = FrogAppearance.shared.settings
+        return settings.useThemeAccent == true || (settings.useThemeAccent == nil && settings.accentHex == "A3D8AF")
+    }
     private static var presetAccent: Color {
-        if FrogAppearance.shared.settings.useThemeAccent == true ||
-            (FrogAppearance.shared.settings.useThemeAccent == nil && FrogAppearance.shared.settings.accentHex == "A3D8AF") {
+        if usesThemeAccent {
             switch FrogAppearance.shared.settings.effectiveTheme {
             case .frog: return adaptive(light: 0x397A4C, dark: 0xA3D8AF)
             case .tokyoNight: return adaptive(light: 0x34548A, dark: 0x7AA2F7)
@@ -105,6 +108,16 @@ enum FrogStyle {
     static func level(_ fraction: Double, warning: Double = 0.7, critical: Double = 0.9) -> Color {
         fraction >= critical ? Self.critical : fraction >= warning ? Self.warning : accent
     }
+
+    /// Graph lines keep one colour each, whatever the level they show. Minimal's own accent is a
+    /// neutral grey that would read as a reference line, so there the main line is indigo.
+    static var series: Color {
+        let settings = FrogAppearance.shared.settings
+        let custom = settings.lightPalette?["accent"] != nil || settings.darkPalette?["accent"] != nil
+        guard settings.effectiveTheme == .minimal, usesThemeAccent, !custom else { return accent }
+        return adaptive(light: 0x5E6AD2, dark: 0x7B84EC)
+    }
+    static var seriesSecondary: Color { warning }
 
     private struct Tones {
         var good, warning, critical: (light: UInt32, dark: UInt32)

@@ -30,7 +30,9 @@ Window switcher and Clipboard shortcuts are configured in their Features cards;
 clipboard entries live in **History**. **Shortcuts** groups Application, Windows
 and Other actions.
 Enable **System monitor** to switch between **Frog** and **System** in the menu-bar
-popup. Readings refresh only while visible; unsupported metrics show as unavailable.
+popup. While it is on, CPU and GPU load are recorded every few seconds, so the graph
+already holds the last ten minutes when you open it. Disk and power are read only
+while the view is visible; unsupported metrics show as unavailable.
 
 ## Install
 

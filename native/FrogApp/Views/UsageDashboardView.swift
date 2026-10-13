@@ -257,9 +257,7 @@ private struct UsageActivityView: View {
         let chart = usage.chart(provider: settings.provider, range: settings.range, metric: settings.metric)
         VStack(alignment: .leading, spacing: compact ? 10 : 14) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(settings.metric == "API cost" ? (compact ? "API estimate" : "Estimated API cost") : "\(settings.metric) tokens")
-                        .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                GraphLegend(color: FrogStyle.series, title: settings.metric == "API cost" ? (compact ? "API estimate" : "Estimated API cost") : "\(settings.metric) tokens", spacing: 5) {
                     Text(chart.total).font(.system(size: compact ? 20 : 32, weight: .semibold)).tracking(-0.6).monospacedDigit()
                 }
                 Spacer()
@@ -290,7 +288,10 @@ private struct UsageActivityView: View {
                     }
                 }.frame(maxWidth: .infinity, minHeight: compact ? 80 : 140)
             } else {
-                UsageActivityChart(usage: usage, chart: chart, compact: compact)
+                UsageTrendChart(steps: UsageTrend(chart.points.map { ($0.date, $0.value) }).steps, compact: compact,
+                    hourly: chart.range == "24h", timeZone: chart.account ? TimeZone(secondsFromGMT: 0)! : .current) {
+                    usage.format($0, metric: settings.metric)
+                }.id("\(settings.provider) \(settings.range)")
                 if compact {
                     HStack {
                         Text("Total tokens").foregroundStyle(FrogStyle.muted)
@@ -456,57 +457,104 @@ private struct UsageAccountDetails: View {
     }
 }
 
-private struct UsageActivityChart: View {
-    @ObservedObject var usage: UsageDashboardModel
-    let chart: UsageChart
-    let compact: Bool
-    @State private var selectedDate: Date?
-    private var selectedPoint: UsageChartPoint? {
-        guard let selectedDate else { return nil }
-        return chart.points.min { abs($0.date.timeIntervalSince(selectedDate)) < abs($1.date.timeIntervalSince(selectedDate)) }
+/// A period drawn as progress: the running total as the line, each bucket's amount as a bar.
+/// The bars have their own scale, so a single day stays visible beside a month's total.
+struct UsageTrend {
+    struct Step: Identifiable {
+        let date: Date
+        let amount: Double
+        let total: Double
+        /// Heights as shares of the plot.
+        let line: Double
+        let bar: Double
+        var id: Date { date }
     }
+    static let barShare = 0.36
+    let steps: [Step]
+
+    init(_ buckets: [(date: Date, amount: Double)]) {
+        let amounts = buckets.map { $0.amount.isFinite ? max(0, $0.amount) : 0 }
+        let sum = amounts.reduce(0, +), peak = amounts.max() ?? 0
+        var total = 0.0
+        steps = zip(buckets, amounts).map { bucket, amount in
+            total += amount
+            return Step(date: bucket.date, amount: amount, total: total,
+                        line: sum > 0 ? total / sum : 0, bar: peak > 0 ? amount / peak * Self.barShare : 0)
+        }
+    }
+}
+
+/// The running total as a line over each bucket's amount as a thin bar.
+struct UsageTrendChart: View {
+    let steps: [UsageTrend.Step]
+    let compact: Bool
+    let hourly: Bool
+    /// Account buckets are UTC days; local ones follow this Mac's time zone.
+    let timeZone: TimeZone
+    let format: (Double) -> String
+    @State private var selectedDate: Date?
+
     var body: some View {
-        Chart {
-            ForEach(chart.points) { point in
-                BarMark(x: .value("Date", point.date, unit: chart.range == "24h" ? .hour : .day),
-                        y: .value(usage.preferences.metric, point.value))
-                    .foregroundStyle(FrogStyle.accent.gradient).cornerRadius(3)
-                    .opacity(selectedPoint == nil || selectedPoint?.id == point.id ? 1 : 0.4)
-                    .accessibilityLabel(point.date.formatted(date: .abbreviated, time: usage.preferences.range == "24h" ? .shortened : .omitted))
-                    .accessibilityValue(usage.format(point.value, metric: usage.preferences.metric))
-            }
+        let selected = selectedDate.flatMap { date in
+            steps.min { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) }
         }
-        .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: compact ? 4 : 6)) { value in
-                AxisValueLabel {
-                    if let date = value.as(Date.self) {
-                        Text(date, format: usage.preferences.range == "24h" ? .dateTime.hour() : .dateTime.month(.abbreviated).day())
-                            .font(.system(size: 10)).foregroundStyle(FrogStyle.muted).fixedSize()
-                    }
+        VStack(spacing: 4) {
+            Chart {
+                ForEach(steps) { step in
+                    AreaMark(x: .value("Date", step.date), y: .value("Total", step.line))
+                        .interpolationMethod(.monotone).foregroundStyle(GraphStyle.fill(FrogStyle.series))
+                        .accessibilityHidden(true)
+                }
+                ForEach(steps) { step in
+                    BarMark(x: .value("Date", step.date), y: .value("Amount", step.bar), width: .fixed(compact ? 2 : 3))
+                        .foregroundStyle(FrogStyle.series).cornerRadius(1)
+                        .opacity(selected == nil || selected?.id == step.id ? 1 : 0.4)
+                        .accessibilityLabel(label(step.date, long: true))
+                        .accessibilityValue(format(step.amount))
+                }
+                ForEach(steps) { step in
+                    LineMark(x: .value("Date", step.date), y: .value("Total", step.line))
+                        .interpolationMethod(.monotone).lineStyle(GraphStyle.line).foregroundStyle(FrogStyle.series)
+                        .accessibilityLabel("Total by \(label(step.date, long: true))")
+                        .accessibilityValue(format(step.total))
+                }
+                if let selected {
+                    RuleMark(x: .value("Date", selected.date)).lineStyle(StrokeStyle(lineWidth: 1))
+                        .foregroundStyle(FrogStyle.muted.opacity(0.45)).accessibilityHidden(true)
+                    PointMark(x: .value("Date", selected.date), y: .value("Total", selected.line))
+                        .symbolSize(compact ? 22 : 30).foregroundStyle(FrogStyle.series).accessibilityHidden(true)
                 }
             }
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 3])).foregroundStyle(FrogStyle.border)
-                AxisValueLabel {
-                    if let amount = value.as(Double.self) {
-                        Text(usage.axisLabel(amount, metric: usage.preferences.metric)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                    }
+            .chartXScale(domain: domain(steps), range: .plotDimension(startPadding: 3, endPadding: 3))
+            .chartYScale(domain: 0...1, range: .plotDimension(startPadding: 0, endPadding: 2))
+            .chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
+            .chartXSelection(value: $selectedDate)
+            .frame(height: compact ? 64 : 150)
+            .background(alignment: .bottom) { Rectangle().fill(FrogStyle.muted.opacity(0.15)).frame(height: 1) }
+            .overlay(alignment: .topLeading) {
+                if let selected {
+                    Text("\(label(selected.date, long: true)) · \(format(selected.amount)) · \(format(selected.total)) total")
+                        .font(.system(size: 10, weight: .medium)).monospacedDigit().lineLimit(1)
+                        .padding(6).background(FrogStyle.panelSurface, in: RoundedRectangle(cornerRadius: 4))
+                        .allowsHitTesting(false)
                 }
             }
-        }
-        .chartXSelection(value: $selectedDate)
-        .environment(\.timeZone, chart.account ? TimeZone(secondsFromGMT: 0)! : .current)
-        .onChange(of: chart.range) { _, _ in selectedDate = nil }
-        .onChange(of: usage.preferences.provider) { _, _ in selectedDate = nil }
-        .frame(height: compact ? 76 : 150)
-        .overlay(alignment: .topTrailing) {
-            if let point = selectedPoint {
-                Text("\(point.date.formatted(date: .abbreviated, time: usage.preferences.range == "24h" ? .shortened : .omitted)) · \(usage.format(point.value, metric: usage.preferences.metric))")
-                    .font(.system(size: 10, weight: .medium)).padding(6).background(FrogStyle.panelSurface, in: RoundedRectangle(cornerRadius: 4))
-                    .allowsHitTesting(false)
+            .help("The line is the running total for the period. The bars are each \(hourly ? "hour" : "day")’s amount.")
+            if let first = steps.first, let last = steps.last {
+                GraphAxis(leading: label(first.date, long: false), trailing: label(last.date, long: false))
             }
         }
+    }
+
+    private func domain(_ steps: [UsageTrend.Step]) -> ClosedRange<Date> {
+        let first = steps.first?.date ?? .now, last = steps.last?.date ?? first
+        return last > first ? first...last : first.addingTimeInterval(-3600)...first.addingTimeInterval(3600)
+    }
+
+    private func label(_ date: Date, long: Bool) -> String {
+        var style = hourly ? (long ? Date.FormatStyle(date: .abbreviated, time: .shortened) : .dateTime.hour())
+            : .dateTime.month(.abbreviated).day()
+        style.timeZone = timeZone
+        return date.formatted(style)
     }
 }
