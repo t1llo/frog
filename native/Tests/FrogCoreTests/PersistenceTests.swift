@@ -197,6 +197,25 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(try store.load(preferences: preferences), [])
     }
 
+    func testCountingWhatLowerLimitsWouldDeleteLeavesHistoryAlone() throws {
+        let store = HistoryStore(directory: directory)
+        var preferences = Preferences(); preferences.historyEnabled = true
+        let now = Date()
+        for index in 0..<6 { try store.append(entry(timestamp: now.addingTimeInterval(-Double(index) * 86_400 - 60)), preferences: preferences) }
+        let file = directory.appendingPathComponent("history.json")
+        let saved = try Data(contentsOf: file)
+        var lower = preferences; lower.historyLimit = 4
+        XCTAssertEqual(try store.droppedCount(changing: preferences, to: lower), 2)
+        lower.historyRetentionDays = 2
+        XCTAssertEqual(try store.droppedCount(changing: preferences, to: lower), 4, "Entries older than the retention count as well")
+        XCTAssertEqual(try store.droppedCount(changing: lower, to: preferences), 0, "Raising a limit deletes nothing")
+        XCTAssertEqual(try store.droppedCount(changing: preferences, to: preferences), 0)
+        XCTAssertEqual(try Data(contentsOf: file), saved, "Counting must not delete anything")
+        XCTAssertEqual(try store.load(preferences: lower).count, 2, "The count is what saving the limits deletes")
+        try store.clear()
+        XCTAssertEqual(try store.droppedCount(changing: preferences, to: lower), 0)
+    }
+
     func testConcurrentStoreInstancesDoNotLoseHistory() throws {
         let entries = (0..<40).map { _ in entry() }
         let directory = directory!

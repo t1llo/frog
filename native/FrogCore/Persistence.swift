@@ -275,6 +275,13 @@ public final class HistoryStore: @unchecked Sendable {
         return retained
     }
 
+    /// How many saved entries a change of the limits deletes. Reads the file and leaves it as it is.
+    public func droppedCount(changing current: Preferences, to preferences: Preferences) throws -> Int {
+        persistenceLock.lock(); defer { persistenceLock.unlock() }
+        let entries = try read()
+        return max(0, bounded(entries, preferences: current).count - bounded(entries, preferences: preferences).count)
+    }
+
     public func append(_ entry: HistoryEntry, preferences: Preferences) throws {
         persistenceLock.lock(); defer { persistenceLock.unlock() }
         guard preferences.historyEnabled else { return }

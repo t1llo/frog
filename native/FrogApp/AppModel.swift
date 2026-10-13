@@ -748,6 +748,10 @@ final class AppModel: ObservableObject {
         catch { report(error) }
     }
     var historyFileURL: URL { historyStore.directory.appendingPathComponent("history.json") }
+    /// How many saved entries saving these preferences would delete. A history that cannot be read loses nothing.
+    func historyEntriesDropped(by preferences: Preferences) -> Int {
+        (try? historyStore.droppedCount(changing: configuration.preferences, to: preferences)) ?? 0
+    }
     func deleteHistory(id: UUID) throws {
         if clipboardHistoryStore.entries.contains(where: { $0.id == id }) { clipboardHistoryStore.delete(id: id); return }
         try historyStore.delete(id: id); refreshHistory()
