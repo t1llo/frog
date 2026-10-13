@@ -109,7 +109,7 @@ struct FrogStatusMenu: View {
                         .accessibilityLabel("Stay-awake duration").accessibilityValue(power.duration.title)
                 }
                 Toggle("Stay awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
-                    .labelsHidden().toggleStyle(.switch).disabled(power.isBusy || !power.hasReadState || power.isConfiguringAccess)
+                    .labelsHidden().toggleStyle(.switch).disabled(!power.canSwitch)
                     .accessibilityHint("Keep this Mac awake, including with the lid closed")
             }.frame(height: 24)
             if choosingDuration && !power.isEnabled {

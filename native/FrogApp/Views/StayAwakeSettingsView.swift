@@ -9,7 +9,7 @@ struct StayAwakeView: View {
                 CompactRow(title: "Keep this Mac awake", detail: "Includes lid-closed work. Stops on quit or below 20% battery while unplugged.") {
                     Toggle("Keep this Mac awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
                         .labelsHidden().toggleStyle(.switch)
-                        .disabled(power.isBusy || !power.hasReadState || power.isConfiguringAccess)
+                        .disabled(!power.canSwitch)
                 }
                 Divider()
                 CompactRow(title: "Duration") {
@@ -57,6 +57,8 @@ struct StayAwakeSettingsView: View {
                 if power.isConfiguringAccess {
                     ProgressView().controlSize(.small)
                     Text("Finish the guide in Terminal…").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                    Spacer()
+                    Button("Cancel") { power.cancelAccessGuide() }
                 } else {
                     if power.accessState != .ready { Button("Set up access…") { power.configureAccess() } }
                     Button("Check access") { Task { await power.refreshAccess(force: true) } }

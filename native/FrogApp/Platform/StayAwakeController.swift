@@ -75,6 +75,8 @@ final class StayAwakeController: ObservableObject {
 
     var needsQuitCleanup: Bool { ownsSession || isBusy }
     var needsSetup: Bool { accessState == .needsSetup }
+    /// An open guide keeps the switch from being turned on, never from being turned off.
+    var canSwitch: Bool { !isBusy && hasReadState && (isEnabled || !isConfiguringAccess) }
 
     func configureFeature(enabled: Bool) {
         featureEnabled = enabled
@@ -138,10 +140,16 @@ final class StayAwakeController: ObservableObject {
                 }
                 // Quit may have arrived meanwhile. Do not open Terminal as Frog exits.
                 guard !quitting else { return }
-                let session = try await openGuide(mode)
-                let result = try await session.waitForResult()
-                session.remove()
-                await refreshAccess(force: true); await refresh()
+                // Nor after Cancel: nothing would wait for that window.
+                var result: StayAwakeSetup.Result? = .cancelled
+                if !Task.isCancelled {
+                    let session = try await openGuide(mode)
+                    // Only Cancel ends the wait without a result.
+                    result = try? await session.waitForResult()
+                    session.remove()
+                    // Also then: the guide may have changed the rule before the wait ended.
+                    await refreshAccess(force: true); await refresh()
+                }
                 switch result {
                 case .success:
                     if mode == .reset {
@@ -152,11 +160,15 @@ final class StayAwakeController: ObservableObject {
                 // Answering no in the reset guide keeps the permission, not the session.
                 case .cancelled: accessNotice = endedSession ? "Sleep restored. Access guide cancelled." : "Access guide cancelled."
                 case .failed: accessNotice = "Setup did not finish. Review the Terminal window and try again."
+                case nil: accessNotice = (endedSession ? "Sleep restored. " : "") + "Stopped waiting for the guide. Close its Terminal window if it is still open."
                 }
             } catch is CancellationError { }
             catch { accessNotice = error.localizedDescription }
         }
     }
+
+    /// For a guide that never reports back, for example because Terminal could not run it.
+    func cancelAccessGuide() { accessGuide?.cancel() }
 
     func waitForAccessGuide() async { await accessGuide?.value }
 

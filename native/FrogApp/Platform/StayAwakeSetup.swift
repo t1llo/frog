@@ -8,14 +8,32 @@ enum StayAwakeSetup {
         let folder: URL
         var launcher: URL { folder.appendingPathComponent("Frog Stay Awake.terminal") }
         var resultFile: URL { folder.appendingPathComponent("result") }
+        /// The guide writes its process id here when it starts.
+        var processFile: URL { folder.appendingPathComponent("result.pid") }
 
+        /// The guide has no time limit: reading it and editing with visudo take as long as they
+        /// take. The wait ends with its result, with its process, or when the task is cancelled.
         func waitForResult() async throws -> Result {
+            var guide: (pid: pid_t, started: Int64?)?
             while true {
                 try Task.checkCancellation()
-                if let value = try? String(contentsOf: resultFile, encoding: .utf8),
-                   let result = Result(rawValue: value.trimmingCharacters(in: .whitespacesAndNewlines)) { return result }
+                if let result { return result }
+                if guide == nil, let pid = process { guide = (pid, StayAwakeController.processStart(pid)) }
+                // A guide that was killed never reports. One that ends in order writes its
+                // result first, so a last look after its process is gone cannot miss it.
+                if let guide, guide.started == nil || StayAwakeController.processStart(guide.pid) != guide.started {
+                    return result ?? .failed
+                }
                 try await Task.sleep(for: .milliseconds(250))
             }
+        }
+        private var result: Result? {
+            (try? String(contentsOf: resultFile, encoding: .utf8))
+                .flatMap { Result(rawValue: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        }
+        private var process: pid_t? {
+            (try? String(contentsOf: processFile, encoding: .utf8))
+                .flatMap { pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }.flatMap { $0 > 0 ? $0 : nil }
         }
         func remove() { try? FileManager.default.removeItem(at: folder) }
     }

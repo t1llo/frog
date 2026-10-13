@@ -215,12 +215,16 @@ MODE=${1:-setup}
 RESULT_FILE=${2:-}
 OUTCOME=failed
 umask 077
+if [[ -n "$RESULT_FILE" ]]; then
+    # Frog watches this process, so a guide that is killed does not keep it waiting.
+    { printf '%s\n' "$$" > "$RESULT_FILE.pid.tmp" && /bin/mv "$RESULT_FILE.pid.tmp" "$RESULT_FILE.pid"; } 2>/dev/null || true
+fi
 complete_guide() {
     local code=$?
     trap - EXIT
     if [[ -n "$RESULT_FILE" ]]; then
-        printf '%s\n' "$OUTCOME" > "$RESULT_FILE.tmp"
-        /bin/mv "$RESULT_FILE.tmp" "$RESULT_FILE"
+        # Frog may have stopped waiting and removed the folder. The guide still ends in order.
+        { printf '%s\n' "$OUTCOME" > "$RESULT_FILE.tmp" && /bin/mv "$RESULT_FILE.tmp" "$RESULT_FILE"; } 2>/dev/null || true
     fi
     if [[ "$OUTCOME" == failed ]]; then
         say "The change was not verified. Frog will check the actual permissions again."

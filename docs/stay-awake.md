@@ -14,6 +14,8 @@ Choose **Set up access…** in Frog's popup or **Settings → Stay awake**. The 
 
 The guide summarizes the result and its dedicated Terminal window closes automatically on success. Errors stay visible for review. Frog immediately checks the actual permissions again, displays **Ready to use** in Settings, and hides **Set up access…** from the popup when both commands are available. **Check access** refreshes that status at any time. Cached administrator authentication does not count as configured access.
 
+Frog waits for the guide for as long as it takes. While it is open, Stay awake cannot be switched on; a session that is already on can still be switched off. If the guide's process ends without a result, for example because it was killed, Frog reports that setup did not finish. If the guide never reports back at all, choose **Cancel** in **Settings → Stay awake** to stop waiting, then close the guide's Terminal window if one is still open.
+
 Enter your administrator password directly into Terminal's `sudo` prompt. Frog never receives or stores it. The rule grants only these exact commands:
 
 ```text

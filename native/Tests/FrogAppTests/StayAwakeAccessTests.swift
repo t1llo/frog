@@ -148,6 +148,150 @@ final class StayAwakeAccessTests: XCTestCase {
         XCTAssertTrue(canQuit)
     }
 
+    func testAGuideThatIsKilledBeforeItReportsEndsTheWait() async throws {
+        let session = try StayAwakeSetup.prepare(.setup, directory: try folder())
+        // Nobody answers its first question, so the real guide waits there, before any sudo.
+        let guide = try runGuide(session, arguments: ["setup", session.resultFile.path], answers: Pipe())
+        defer { stop(guide) }
+        try await waitUntil { FileManager.default.fileExists(atPath: session.processFile.path) }
+        let named = try String(contentsOf: session.processFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertEqual(named, String(guide.processIdentifier), "The guide names the process that Frog watches")
+
+        var ended = false
+        let wait = Task { let result = try await session.waitForResult(); ended = true; return result }
+        let limit = Task { try await Task.sleep(for: .seconds(20)); wait.cancel() }
+        defer { limit.cancel() }
+        try await Task.sleep(for: .milliseconds(700))
+        XCTAssertFalse(ended, "A guide that still runs is waited for, however long it takes")
+
+        stop(guide)
+        let result = try await wait.value
+        XCTAssertEqual(result, .failed, "A killed guide writes no result, so nothing else could end the wait")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: session.resultFile.path))
+    }
+
+    func testAGuideThatEndsInOrderStillReportsItsOwnResult() async throws {
+        let session = try StayAwakeSetup.prepare(.reset, directory: try folder())
+        // An empty answer declines the reset, so the guide ends before any sudo.
+        let guide = try runGuide(session, arguments: ["reset", session.resultFile.path], answers: FileHandle.nullDevice)
+        defer { stop(guide) }
+        let wait = Task { try await session.waitForResult() }
+        let limit = Task { try await Task.sleep(for: .seconds(20)); wait.cancel() }
+        defer { limit.cancel() }
+        let result = try await wait.value
+        XCTAssertEqual(result, .cancelled)
+
+        // A result that was written counts, also when its guide is gone by the time Frog looks.
+        let gone = try self.session(.success)
+        try "\(Int32.max)\n".write(to: gone.processFile, atomically: true, encoding: .utf8)
+        let late = try await gone.waitForResult()
+        XCTAssertEqual(late, .success)
+        // Without a readable process there is nothing to watch: only a result ends the wait.
+        var unknown: [(contents: String, session: StayAwakeSetup.Session, wait: Task<StayAwakeSetup.Result, Error>)] = []
+        for contents in ["", "soon\n", "0\n", "-1\n"] {
+            let session = StayAwakeSetup.Session(folder: try folder())
+            try contents.write(to: session.processFile, atomically: true, encoding: .utf8)
+            unknown.append((contents, session, Task { try await session.waitForResult() }))
+        }
+        try await Task.sleep(for: .milliseconds(300))
+        for entry in unknown { try "success\n".write(to: entry.session.resultFile, atomically: true, encoding: .utf8) }
+        for entry in unknown {
+            let value = try await entry.wait.value
+            XCTAssertEqual(value, .success, entry.contents)
+        }
+    }
+
+    func testTheGuideEndsInOrderAfterFrogStoppedWaitingAndRemovedItsFolder() throws {
+        let session = try StayAwakeSetup.prepare(.setup, directory: try folder())
+        let script = try folder().appendingPathComponent("StayAwakeSetup.command")
+        try FileManager.default.copyItem(at: session.folder.appendingPathComponent("StayAwakeSetup.command"), to: script)
+        session.remove()
+        let output = Pipe()
+        let guide = Process()
+        guide.executableURL = URL(fileURLWithPath: "/bin/bash")
+        // An unknown mode ends the guide as failed at once, before any question or sudo.
+        guide.arguments = [script.path, "neither", session.resultFile.path]
+        guide.standardInput = FileHandle.nullDevice
+        guide.standardOutput = output; guide.standardError = output
+        try guide.run()
+        let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        guide.waitUntilExit()
+        XCTAssertEqual(guide.terminationStatus, 1)
+        XCTAssertTrue(text.contains("Press Enter to close this guide"), "A result that cannot be written must not cut off what the guide still has to say: \(text)")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: session.folder.path))
+    }
+
+    func testAGuideThatNeverReportsCanBeCancelledAndStartedAgain() async throws {
+        let system = AccessPowerFixture()
+        var sessions: [StayAwakeSetup.Session] = []
+        for _ in 0..<2 { sessions.append(StayAwakeSetup.Session(folder: try folder())) }
+        let pending = sessions
+        let power = StayAwakeController(system: system, directory: try folder(), openGuide: { _ in pending[await system.noteGuide()] })
+        await power.refresh()
+        for (index, session) in sessions.enumerated() {
+            power.configureAccess()
+            try await waitUntil { await system.guides == index + 1 }
+            XCTAssertTrue(power.isConfiguringAccess)
+            power.configureAccess()
+            await system.allowAccess(index == 1)
+            power.cancelAccessGuide()
+            await power.waitForAccessGuide()
+            XCTAssertFalse(power.isConfiguringAccess, "Setup can be tried again without restarting Frog")
+            XCTAssertEqual(power.accessNotice, "Stopped waiting for the guide. Close its Terminal window if it is still open.")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: session.folder.path), "The guide's folder goes when nothing waits for it")
+            XCTAssertEqual(power.accessState, index == 1 ? .ready : .needsSetup, "What the guide changed before the wait ended is read")
+        }
+        let guides = await system.guides
+        XCTAssertEqual(guides, 2)
+        power.cancelAccessGuide()
+        XCTAssertFalse(power.isConfiguringAccess)
+    }
+
+    func testARunningSessionCanBeSwitchedOffWhileAGuideIsOpen() async throws {
+        let system = AccessPowerFixture(allowed: true)
+        let pending = StayAwakeSetup.Session(folder: try folder())
+        let power = StayAwakeController(system: system, directory: try folder(), openGuide: { _ in _ = await system.noteGuide(); return pending })
+        XCTAssertFalse(power.canSwitch, "Nothing is known before the first read")
+        await power.refresh()
+        XCTAssertTrue(power.canSwitch)
+        power.setEnabled(true); await power.waitForOperation()
+        XCTAssertTrue(power.isEnabled)
+        power.configureAccess()
+        try await waitUntil { await system.guides == 1 }
+        XCTAssertTrue(power.isConfiguringAccess)
+        XCTAssertTrue(power.canSwitch, "An open guide must not keep a running session from being ended")
+        power.setEnabled(false); await power.waitForOperation()
+        XCTAssertFalse(power.isEnabled)
+        XCTAssertFalse(power.canSwitch, "Switching on waits until the guide has finished")
+        power.setEnabled(true); await power.waitForOperation()
+        XCTAssertFalse(power.isEnabled)
+        power.cancelAccessGuide(); await power.waitForAccessGuide()
+        XCTAssertTrue(power.canSwitch)
+        let writes = await system.writes
+        XCTAssertEqual(writes, [true, false])
+    }
+
+    func testCancellingAResetBeforeItsGuideOpensOpensNoGuide() async throws {
+        let system = AccessPowerFixture(allowed: true)
+        let power = StayAwakeController(system: system, directory: try folder(), openGuide: { _ in
+            _ = await system.noteGuide()
+            throw StayAwakeError.command
+        })
+        await power.refresh()
+        power.setEnabled(true); await power.waitForOperation()
+        XCTAssertTrue(power.isEnabled)
+        // The reset first restores sleep; Cancel arrives before that task has run at all.
+        power.configureAccess(.reset)
+        power.cancelAccessGuide()
+        await power.waitForAccessGuide()
+        XCTAssertFalse(power.isConfiguringAccess)
+        XCTAssertFalse(power.isEnabled, "The restore that Reset began is finished, not abandoned half way")
+        XCTAssertFalse(power.ownsSession)
+        XCTAssertEqual(power.accessNotice, "Sleep restored. Access guide cancelled.")
+        let guides = await system.guides
+        XCTAssertEqual(guides, 0, "Nothing would wait for a Terminal window that opens after Cancel")
+    }
+
     func testUnavailablePolicyCheckDoesNotShowReady() async throws {
         let system = AccessPowerFixture(allowed: true)
         let power = StayAwakeController(system: system, directory: try folder())
@@ -195,6 +339,30 @@ final class StayAwakeAccessTests: XCTestCase {
         XCTAssertTrue(command.contains("user'\\''s folder"))
         XCTAssertFalse(command.contains("sudo"), "Terminal opens the guide; privilege commands require its explanation and confirmation")
     }
+
+    /// Runs the guide as Terminal would, without a window.
+    private func runGuide(_ session: StayAwakeSetup.Session, arguments: [String], answers: Any) throws -> Process {
+        let guide = Process()
+        guide.executableURL = URL(fileURLWithPath: "/bin/bash")
+        guide.arguments = [session.folder.appendingPathComponent("StayAwakeSetup.command").path] + arguments
+        guide.standardInput = answers
+        guide.standardOutput = FileHandle.nullDevice; guide.standardError = FileHandle.nullDevice
+        try guide.run()
+        return guide
+    }
+
+    /// As `kill -9` would. A process that has ended is left alone: its id may be in use again.
+    private func stop(_ guide: Process) {
+        if guide.isRunning { kill(guide.processIdentifier, SIGKILL) }
+    }
+
+    private func waitUntil(_ condition: () async -> Bool) async throws {
+        for _ in 0..<2500 {
+            if await condition() { return }
+            try await Task.sleep(for: .milliseconds(2))
+        }
+        XCTFail("Timed out waiting for the access guide")
+    }
 }
 
 private actor AccessPowerFixture: StayAwakeSystem {
@@ -204,11 +372,14 @@ private actor AccessPowerFixture: StayAwakeSystem {
     private var checksFail = false
     private var nextCheck: AccessCheckGate?
     private(set) var writes: [Bool] = []
+    private(set) var guides = 0
     init(allowed: Bool = false) { self.allowed = allowed }
     func allowAccess(_ allowed: Bool) { self.allowed = allowed }
     func denyWrites() { writesDenied = true }
     func failChecks() { checksFail = true }
     func holdNextCheck(_ gate: AccessCheckGate) { nextCheck = gate }
+    /// Counts the guides that were opened and returns the index of this one.
+    func noteGuide() -> Int { guides += 1; return guides - 1 }
     func hasAccess() async throws -> Bool {
         if checksFail { throw StayAwakeError.unreadable }
         let value = allowed
