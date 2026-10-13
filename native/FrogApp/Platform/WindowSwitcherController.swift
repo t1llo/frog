@@ -107,6 +107,11 @@ final class WindowSwitcherController {
     private var sessionOnConsole = false
     private var screenLocked = false
     private var sessionObservers: [(NotificationCenter, NSObjectProtocol)] = []
+    /// Another app's password prompt hides the keyboard from the event tap.
+    private var keyboardHolder: SecureInput.Holder?
+    private var keyboardNotice = SecureInputNotice()
+    private let keyboardNoticePanel = SecureInputNoticePanel()
+    private var lifecycleStatus = ("Not started", false)
     private lazy var inputLifecycle = WindowSwitcherInputLifecycle(
         active: sessionOnConsole && !screenLocked,
         trusted: { SelectionService.isTrusted },
@@ -114,7 +119,8 @@ final class WindowSwitcherController {
             guard let tap = self?.tap else { return false }
             return CFMachPortIsValid(tap) && CGEvent.tapIsEnabled(tap: tap)
         }, start: { [weak self] in self?.startInput() ?? false },
-        stop: { [weak self] in self?.stopInput() }, statusChanged: statusChanged,
+        stop: { [weak self] in self?.stopInput() },
+        statusChanged: { [weak self] message, ready in self?.lifecycleStatus = (message, ready); self?.publishStatus() },
         readyStatus: { [weak self] in "Ready · \(HotkeyManager.display(self?.hotkey ?? WindowSwitchKeyRouter.defaultHotkey)) switches windows" })
 
     init(statusChanged: @escaping (String, Bool) -> Void) {
@@ -177,6 +183,24 @@ final class WindowSwitcherController {
         inputLifecycle.sessionChanged(active: sessionOnConsole && !screenLocked)
     }
 
+    private func publishStatus() {
+        if lifecycleStatus.1, let keyboardHolder { statusChanged(SecureInput.status(keyboardHolder), false) }
+        else { statusChanged(lifecycleStatus.0, lifecycleStatus.1) }
+    }
+
+    private func checkKeyboard() {
+        let holder = SecureInput.holder()
+        if holder != keyboardHolder {
+            keyboardHolder = holder
+            publishStatus()
+            // The release of the modifiers would go unseen; never leave the overlay up.
+            if holder != nil { cancelAll() } else { keyboardNoticePanel.hide() }
+        }
+        if keyboardNotice.poll(holder, own: ProcessInfo.processInfo.processIdentifier, now: Date()), let holder {
+            keyboardNoticePanel.show(SecureInput.summary(holder))
+        }
+    }
+
     func configure(enabled: Bool, suspended: Bool, hotkey: Hotkey = WindowSwitchKeyRouter.defaultHotkey) {
         if enabled, let issue = HotkeyManager.validationError(hotkey, purpose: .windowSwitcher) {
             inputLifecycle.configure(enabled: false, suspended: suspended)
@@ -229,6 +253,9 @@ final class WindowSwitcherController {
                 self.activation?.cancel(); self.activation = nil; self.activationID = nil; self.activationPID = nil
             }
             self.cancelAll()
+            if let holder = self.keyboardHolder, self.keyboardNotice.applicationChanged(now: Date()) {
+                self.keyboardNoticePanel.show(SecureInput.summary(holder))
+            }
         } }
         focusMonitor = Task { [weak self] in
             var nextRefresh = ContinuousClock.now
@@ -237,6 +264,7 @@ final class WindowSwitcherController {
                 guard SelectionService.isTrusted else {
                     self.inputLifecycle.wake(); return
                 }
+                self.checkKeyboard()
                 if self.generation == nil, self.activation == nil, self.input?.shouldDeferBackgroundWork() == false {
                     if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
                        let focused = await self.catalog.noteFocus(pid: pid) {
@@ -266,6 +294,7 @@ final class WindowSwitcherController {
         activationPID = nil
         cancelAll()
         focusMonitor?.cancel(); focusMonitor = nil
+        keyboardHolder = nil; keyboardNotice = SecureInputNotice(); keyboardNoticePanel.hide()
         cache.clear(); iconCache = [:]
         iconTask?.cancel(); iconTask = nil
         display.windows = []; display.icons = [:]

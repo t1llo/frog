@@ -417,6 +417,32 @@ its focus is recorded. The frontmost window now leads the warm list before cycli
 starts, and the next scan ranks it the same way. Two tests failed first with the
 third app selected; 57 switcher tests pass. Not reproduced live.
 
+## Claude limits without a current login, and password prompts — October 13
+
+- **Mr. Usage showed day-old limits and then only the API estimate.** Nothing on the
+  Mac could supply a reading: the login source was `Claude Desktop`, the Claude app's
+  file was three days old and Claude Code's login had expired. Frog now lets Claude
+  Code renew its own login in the background and offers "Sign in to Claude Code…";
+  details and limits in [usage integration](usage-integration.md). 28 usage tests and
+  the launcher test pass with fakes. A real renewal and the Terminal launcher were
+  not exercised: the login on this Mac can only be restored by signing in.
+- **Window switcher dead while a password prompt is open.** Not reproduced with the
+  reported app. The explanation is macOS secure keyboard entry: while any app holds
+  it, key events reach that app only and Frog's event tap receives nothing, so
+  Command–Tab falls through to macOS. A synthetic probe process confirmed the
+  detection used (`IsSecureEventInputEnabled`, owner from `kCGSSessionSecureInputPID`
+  in the session dictionary and the IORegistry). Frog now reports "Paused — <app> is
+  asking for a password" in Features, shows a five-second notice once the prompt has
+  been left in the background for 1.5 seconds (again after an app switch, at most
+  every five minutes), stays silent while the user types into the prompt or into
+  Frog's own fields, and closes an open overlay when secure entry begins. 5 notice
+  tests and the 3 lifecycle tests pass. Key delivery under secure entry could not be
+  exercised from this shell (no Accessibility or event permissions), and the notice
+  was not seen on screen with a real prompt.
+- **Not built:** keeping Command–Tab working during a prompt. Public APIs cannot; the
+  known route switches off macOS's own Command–Tab through a private window-server
+  call and registers a Carbon hotkey instead. Left for the user to decide.
+
 ## Distribution
 
 Developer ID signing/notarization requires the owner's Apple Developer credentials. Ad-hoc signing is suitable for local development, but is not notarization and does not establish that macOS will trust a downloaded release on another machine.
