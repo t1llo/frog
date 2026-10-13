@@ -7,6 +7,7 @@ import FrogCore
 struct ApplicationLauncher {
     var resolve: (String) -> URL? = { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }
     var bundleIdentifier: (URL) -> String? = { Bundle(url: $0)?.bundleIdentifier }
+    var exists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
     var open: (URL) async throws -> Void = { url in
         // Launching does not synthesize keystrokes, so it need not wait for key-up.
         try Task.checkCancellation()
@@ -28,7 +29,10 @@ struct ApplicationLauncher {
         guard let id = rule.action?.applicationBundleID, let path = rule.action?.applicationPath else {
             throw FrogError.message("Choose an application for this rule.")
         }
-        let url = resolve(id) ?? URL(fileURLWithPath: path)
+        // Several copies can share one identifier, and Launch Services prefers one of them.
+        // The chosen copy opens while it is still there; the identifier finds one that moved.
+        let stored = URL(fileURLWithPath: path)
+        let url = exists(stored) && bundleIdentifier(stored) == id ? stored : (resolve(id) ?? stored)
         guard bundleIdentifier(url) == id else { throw FrogError.message("Choose the application again; it has moved or been replaced.") }
         try await open(url)
     }
