@@ -85,7 +85,8 @@ public struct LLMClient: Sendable {
         case .claudeCode, .codex, .opencode:
             throw FrogError.message("Coding tools do not use an HTTP endpoint.")
         }
-        var request = URLRequest(url: baseURL.appendingPathComponent(path), cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 90)
+        var request = URLRequest(url: baseURL.appendingPathComponent(path), cachePolicy: .reloadIgnoringLocalCacheData,
+                                 timeoutInterval: Self.timeout(for: provider.kind))
         request.httpMethod = "POST"
         request.httpShouldHandleCookies = false
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -100,6 +101,16 @@ public struct LLMClient: Sendable {
         if provider.kind == .anthropic { request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version") }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request
+    }
+
+    /// The timeout counts silence, and a non-streaming answer is silent until it is complete: it has
+    /// to cover the whole generation and, on a server that loads models on demand, the load before it.
+    /// The request stays cancellable throughout.
+    private static func timeout(for kind: ProviderKind) -> TimeInterval {
+        switch kind {
+        case .ollama, .lmStudio, .compatible: return 600
+        default: return 300
+        }
     }
 
     private func decode(_ data: Data, kind: ProviderKind) throws -> String {

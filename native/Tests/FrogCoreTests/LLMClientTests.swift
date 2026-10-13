@@ -42,7 +42,7 @@ final class LLMClientTests: XCTestCase {
             XCTAssertEqual(request.url?.path, "/v1/chat/completions")
             XCTAssertNil(request.url?.query)
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer secret-test")
-            XCTAssertEqual(request.timeoutInterval, 90)
+            XCTAssertEqual(request.timeoutInterval, 300)
             XCTAssertEqual(request.httpMethod, "POST")
             let body = try self.body(request)
             XCTAssertEqual(body["model"] as? String, "override")
@@ -114,6 +114,26 @@ final class LLMClientTests: XCTestCase {
             }
             let result = try await client.complete(text: "Text", rule: Rule(), provider: provider(kind), apiKey: nil)
             XCTAssertEqual(result, "Local")
+        }
+    }
+
+    func testServersThatLoadModelsOnDemandGetLongerBeforeTheRequestTimesOut() async throws {
+        // No byte arrives before a non-streaming answer is complete: the idle timeout has to cover
+        // loading the model and generating the whole text.
+        for (kind, seconds) in [(ProviderKind.ollama, 600.0), (.lmStudio, 600), (.compatible, 600), (.anthropic, 300), (.gemini, 300)] {
+            fixture { request in
+                XCTAssertEqual(request.timeoutInterval, seconds, "\(kind)")
+                let json: String
+                switch kind {
+                case .ollama: json = #"{"message":{"content":"Done"},"done":true}"#
+                case .anthropic: json = #"{"content":[{"type":"text","text":"Done"}],"stop_reason":"end_turn"}"#
+                case .gemini: json = #"{"candidates":[{"content":{"parts":[{"text":"Done"}]},"finishReason":"STOP"}]}"#
+                default: json = #"{"choices":[{"message":{"content":"Done"}}]}"#
+                }
+                return (200, Data(json.utf8))
+            }
+            let result = try await complete(kind)
+            XCTAssertEqual(result, "Done")
         }
     }
 
