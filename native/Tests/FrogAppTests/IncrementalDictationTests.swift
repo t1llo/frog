@@ -225,6 +225,48 @@ final class IncrementalDictationTests: XCTestCase {
         await fixture.models.unload()
     }
 
+    func testPreviewWaitsLongerTheMoreAudioEachPassHasToReadAgain() {
+        let delay = { DictationController.previewDelay(interval: .seconds(2), uncommittedSamples: $0 * 16000) }
+        XCTAssertEqual(delay(0), .seconds(2))
+        XCTAssertEqual(delay(9), .seconds(2))
+        XCTAssertEqual(delay(10), .seconds(3))
+        XCTAssertEqual(delay(19), .seconds(3))
+        XCTAssertEqual(delay(20), .seconds(4))
+        XCTAssertEqual(delay(26), .seconds(4))
+        // The pass that completes a window keeps its text, so it is not put off past the full window.
+        XCTAssertEqual(delay(27), .milliseconds(3250))
+        XCTAssertEqual(delay(29), .seconds(2))
+        XCTAssertEqual(delay(30), .seconds(2))
+        XCTAssertEqual(delay(95), .seconds(2))
+        // A test's hour-long interval must never be cut short by an almost full window.
+        XCTAssertEqual(DictationController.previewDelay(interval: .seconds(3600), uncommittedSamples: 29 * 16000), .seconds(3600))
+    }
+
+    func testLivePreviewOfALongWindowRunsHalfAsOften() async throws {
+        let fixture = await makeFixture(seconds: 21)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let interval = Duration.milliseconds(40)
+        let controller = DictationController(makeRecorder: { fixture.recorder }, authorize: { true }, copy: { _ in }, monitorKeys: false,
+                                             previewInterval: interval, inputDevices: { [] }, presentsPopup: false)
+        var live = rule; live.action?.showRecordingPopup = true
+        let began = ContinuousClock.now
+        controller.start(rule: live, preferences: WorkflowPreferences(), models: fixture.models)
+        await controller.waitForWork()
+        var passes = 0
+        for _ in 0..<1000 where passes < 6 {
+            // A live microphone has delivered new audio before every pass.
+            fixture.recorder.append(samples: 16)
+            try await Task.sleep(for: .milliseconds(10))
+            passes = await fixture.engine.calls.count
+        }
+        let elapsed = began.duration(to: .now)
+        controller.cancel()
+        XCTAssertGreaterThanOrEqual(passes, 6)
+        // With over 20 seconds to read again, each pass waits two intervals.
+        XCTAssertLessThanOrEqual(passes, Int(elapsed / (interval * 2)))
+        await fixture.models.unload()
+    }
+
     private var rule: Rule {
         var rule = Rule.dictationPreset
         rule.action?.audioModelID = "whisper-base"; rule.action?.showRecordingPopup = false
@@ -265,6 +307,7 @@ private final class BufferedRecording: DictationRecording {
     func append(from start: Int, seconds: Int) {
         receive?((start..<(start + seconds)).flatMap { Array(repeating: Float($0), count: 16000) })
     }
+    func append(samples count: Int) { receive?(Array(repeating: 0, count: count)) }
     func stop() { receive = nil }
 }
 

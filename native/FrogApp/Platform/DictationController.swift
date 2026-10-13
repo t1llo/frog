@@ -196,7 +196,7 @@ final class DictationController: ObservableObject {
                 self.preview = Task { [weak self] in
                     while !Task.isCancelled {
                         do {
-                            try await Task.sleep(for: self?.previewInterval ?? .seconds(2))
+                            try await Task.sleep(for: self?.previewDelay ?? .seconds(2))
                             guard let self, self.token == token, self.phase == .recording else { return }
                             guard !external else { continue }
                             try await self.refreshPreview(includePartial: self.preferences.showDictationPopup)
@@ -276,6 +276,23 @@ final class DictationController: ObservableObject {
         do { try recorder.start(deviceUID: microphoneID) { samples.append($0, from: input) } }
         catch { recorder.stop(); throw error }
         self.recorder = recorder
+    }
+
+    /// The wait before the preview reads the recording again.
+    private var previewDelay: Duration {
+        Self.previewDelay(interval: previewInterval, uncommittedSamples: samples.count - transcript.offset)
+    }
+
+    /// Every pass transcribes all the audio that no finished window holds yet, so passes get rarer
+    /// as that audio grows: half an interval more for every ten seconds. The pass that finds the
+    /// window full keeps its text and shortens Stop, so the longer wait never runs past that point.
+    nonisolated static func previewDelay(interval: Duration, uncommittedSamples: Int) -> Duration {
+        let window = 30 * 16000, uncommitted = max(0, uncommittedSamples)
+        guard uncommitted < window else { return interval }
+        let widened = interval * (2 + uncommitted / (10 * 16000)) / 2
+        // A quarter second later the capture buffer that completes the window has arrived too.
+        let untilFull = Duration.milliseconds((window - uncommitted) / 16 + 250)
+        return min(widened, max(interval, untilFull))
     }
 
     func refreshPreview(includePartial: Bool = true) async throws {
@@ -781,6 +798,7 @@ final class AudioSamples: @unchecked Sendable {
         level = decibels.isFinite ? min(1, max(0, (decibels + 56) / 44)) : 0
         lastInput = .now
     }
+    var count: Int { lock.lock(); defer { lock.unlock() }; return samples.count }
     func snapshot(from offset: Int = 0, limit: Int? = nil) -> [Float] {
         lock.lock(); defer { lock.unlock() }
         let start = min(offset, samples.count)
