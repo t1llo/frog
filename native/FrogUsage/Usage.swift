@@ -145,7 +145,7 @@ func readClaudeAuth(source: ClaudeLoginSource, directory: URL) -> ClaudeAuth? {
                               label: label, hasAccountMetadata: !accountID.isEmpty && !orgID.isEmpty,
                               plan: claudePlanName(account))
         }
-        let directory = candidate == .pi ? piAgentDirectory : openCodeDataDirectory
+        let directory = candidate == .pi ? piAgentDirectory : openCodeDataDirectory()
         guard let oauth = credentialJSON(directory.appendingPathComponent("auth.json"))?["anthropic"] as? [String: Any],
               oauth["type"] as? String == "oauth", let token = claudeOAuthToken(oauth, openCode: true) else { continue }
         return ClaudeAuth(token: token, source: candidate, identity: "\(candidate.rawValue)|\(directory.path)",
@@ -191,9 +191,12 @@ func claudePlanName(_ account: [String: Any]) -> String? {
     return nil
 }
 
-var openCodeDataDirectory: URL {
-    let base = ProcessInfo.processInfo.environment["XDG_DATA_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
-        ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/share")
+/// A relative `XDG_DATA_HOME` names a place in whatever folder Frog happens to run in, so only
+/// an absolute one is followed, as when Frog starts OpenCode itself.
+func openCodeDataDirectory(environment: [String: String] = ProcessInfo.processInfo.environment,
+                           home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
+    let base = environment["XDG_DATA_HOME"].flatMap { $0.hasPrefix("/") ? URL(fileURLWithPath: $0) : nil }
+        ?? home.appendingPathComponent(".local/share")
     return base.appendingPathComponent("opencode")
 }
 

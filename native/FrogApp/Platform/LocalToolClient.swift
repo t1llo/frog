@@ -243,7 +243,7 @@ struct LocalToolDiscovery: Sendable {
         // Use inherited login PATH plus common GUI-launch omissions. Never source a shell
         // profile, execute `which`, or honor relative/empty PATH entries from a project.
         let inherited = (environment["PATH"] ?? "").split(separator: ":").map(String.init).filter { $0.hasPrefix("/") }
-        let conventional = [".local/bin", ".opencode/bin", ".bun/bin", ".npm-global/bin", ".volta/bin", ".asdf/shims"]
+        let conventional = [".local/bin", ".claude/local", ".opencode/bin", ".bun/bin", ".npm-global/bin", ".volta/bin", ".asdf/shims"]
             .map { home.appendingPathComponent($0).path }
         let paths = inherited + conventional + ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
         var seen = Set<String>()

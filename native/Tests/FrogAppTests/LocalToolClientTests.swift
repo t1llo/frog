@@ -63,6 +63,15 @@ final class LocalToolClientTests: XCTestCase {
         XCTAssertNil(LocalToolDiscovery(home: root, environment: [:], searchDirectories: [bin]).executable(for: .codex))
     }
 
+    func testDiscoveryFindsClaudeCodeWhereItsOwnInstallerPutsIt() throws {
+        let root = try directory(), local = root.appendingPathComponent(".claude/local")
+        try FileManager.default.createDirectory(at: local, withIntermediateDirectories: true)
+        let claude = try executable("exit 0", in: local)
+        // Started from Finder: no shell profile has put the installer's folder on the search path.
+        let discovery = LocalToolDiscovery(home: root, environment: [:])
+        XCTAssertEqual(discovery.executable(for: .claudeCode)?.path, claude.path)
+    }
+
     func testInvocationNeverPlacesSelectedTextOrInstructionsInArgumentsAndDisablesTools() throws {
         let workspace = try LocalToolWorkspace(root: directory())
         defer { workspace.remove() }

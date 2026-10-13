@@ -20,7 +20,7 @@ actor OpenCodeReader {
     private var snapshots: [String: Snapshot] = [:]
     init(root: URL? = nil) { self.root = root }
     static var dataDir: URL {
-        openCodeDataDirectory
+        openCodeDataDirectory()
     }
 
     /// Release builds write opencode.db, dev builds opencode-<channel>.db.

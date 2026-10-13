@@ -15,14 +15,19 @@ enum ClaudeCodeCLI {
                                    "--strict-mcp-config", "--safe-mode", "--system-prompt", "Reply with OK.",
                                    "--output-format", "json"]
 
-    /// Where its installers put it, then the search path Frog was started with.
+    /// Where its installers put it, then the search path Frog was started with, then where tool
+    /// managers put it, which that path lacks when Frog was started from Finder. A relative
+    /// entry of the search path names a place in whatever folder Frog runs in and is skipped.
+    /// The list of installed tools has to agree on whether Claude Code is there.
     static func executable(home: URL = FileManager.default.homeDirectoryForCurrentUser,
                            environment: [String: String] = ProcessInfo.processInfo.environment,
                            isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }) -> URL? {
         let installed = [".local/bin/claude", ".claude/local/claude"].map { home.appendingPathComponent($0).path }
             + ["/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
-        let searched = (environment["PATH"] ?? "").split(separator: ":").map { "\($0)/claude" }
-        return (installed + searched).first(where: isExecutable).map { URL(fileURLWithPath: $0) }
+        let searched = (environment["PATH"] ?? "").split(separator: ":").filter { $0.hasPrefix("/") }.map { "\($0)/claude" }
+        let managed = [".bun/bin/claude", ".npm-global/bin/claude", ".volta/bin/claude", ".asdf/shims/claude"]
+            .map { home.appendingPathComponent($0).path }
+        return (installed + searched + managed).first(where: isExecutable).map { URL(fileURLWithPath: $0) }
     }
 
     /// Only what Claude Code needs to find its own login and reach the network. Another

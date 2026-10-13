@@ -62,8 +62,8 @@ model prompt, or clipboard was read during implementation verification.
 | OpenCode | 2.0.26 | `run --help`; `models --help`; `auth --help`; `auth list --help` |
 
 Discovery searches absolute entries in Frog's inherited PATH, then known user
-installation locations (`~/.local/bin`, `~/.opencode/bin`, `~/.bun/bin`, npm-global,
-Volta, asdf), Homebrew (`/opt/homebrew/bin`, `/usr/local/bin`), and system directories.
+installation locations (`~/.local/bin`, `~/.claude/local`, `~/.opencode/bin`, `~/.bun/bin`,
+npm-global, Volta, asdf), Homebrew (`/opt/homebrew/bin`, `/usr/local/bin`), and system directories.
 It follows installed symlinks and supports spaces. It never invokes a login shell
 or sources `.zshrc`/`.zprofile`. A GUI launch cannot recover arbitrary PATH mutations
 from executable shell profiles safely; installations in those custom locations

@@ -166,6 +166,31 @@ import XCTest
         XCTAssertNil(find([]))
     }
 
+    func testClaudeCodeIsNeverTakenFromARelativeSearchPathAndIsFoundUnderToolManagers() {
+        let home = URL(fileURLWithPath: "/Users/someone")
+        let find = { (path: String, present: Set<String>) in
+            ClaudeCodeCLI.executable(home: home, environment: ["PATH": path], isExecutable: present.contains)?.path
+        }
+        // A relative entry names a place in whatever folder Frog happens to run in.
+        XCTAssertNil(find(".:relative/bin::bin", ["./claude", "relative/bin/claude", "bin/claude"]))
+        XCTAssertEqual(find("relative:/b/bin", ["relative/claude", "/b/bin/claude"]), "/b/bin/claude")
+        // Started from Finder, the search path names none of the folders tool managers install into.
+        for folder in [".bun/bin", ".npm-global/bin", ".volta/bin", ".asdf/shims"] {
+            XCTAssertEqual(find("/usr/bin:/bin", ["/Users/someone/\(folder)/claude"]), "/Users/someone/\(folder)/claude")
+        }
+        XCTAssertEqual(find("/b/bin", ["/b/bin/claude", "/Users/someone/.volta/bin/claude"]), "/b/bin/claude")
+    }
+
+    func testOpenCodeDataIsLookedUpInAnAbsoluteDataFolderOnly() {
+        let home = URL(fileURLWithPath: "/Users/someone")
+        XCTAssertEqual(openCodeDataDirectory(environment: ["XDG_DATA_HOME": "/data"], home: home).path, "/data/opencode")
+        for value in ["", "relative/data", "./data", "~/data"] {
+            XCTAssertEqual(openCodeDataDirectory(environment: ["XDG_DATA_HOME": value], home: home).path,
+                           "/Users/someone/.local/share/opencode", value)
+        }
+        XCTAssertEqual(openCodeDataDirectory(environment: [:], home: home).path, "/Users/someone/.local/share/opencode")
+    }
+
     func testSignInCommandNamesAnotherProfileAndQuotesPaths() {
         let executable = URL(fileURLWithPath: "/Users/some one/it's/claude")
         XCTAssertEqual(ClaudeCodeCLI.signInCommand(executable: executable, directory: ClaudePaths.defaultDirectory),

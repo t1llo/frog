@@ -265,11 +265,13 @@ a Claude Code login that had expired.
   **This sends one very small Haiku request on the user's plan**, and only when the
   login has run out. OpenCode and Pi logins are never renewed this way.
 - **How it is run:** the executable is looked up in `~/.local/bin`, `~/.claude/local`,
-  `/opt/homebrew/bin` and `/usr/local/bin`, then on `PATH`. The environment is reduced
-  to home, user, locale, temporary folder, proxy and certificate variables with `PATH`
-  set to the system directories; `CLAUDE_CONFIG_DIR` is passed only for a non-default
-  profile. Working directory is the temporary folder. No tools, no MCP servers, no
-  saved session, 90-second limit; only the exit status is used.
+  `/opt/homebrew/bin` and `/usr/local/bin`, then in the absolute entries of `PATH`, then
+  in `~/.bun/bin`, npm-global, Volta and asdf, so that it agrees with the installed-tools
+  list on whether Claude Code is there. The environment is reduced to home, user,
+  locale, temporary folder, proxy and certificate variables with `PATH` set to the
+  system directories; `CLAUDE_CONFIG_DIR` is passed only for a non-default profile.
+  Working directory is the temporary folder. No tools, no MCP servers, no saved
+  session, 90-second limit; only the exit status is used.
 - **Gate** (`ClaudePollingState.nextRenewalAt`/`renewalInterval`, saved with the other
   gates; state from earlier versions still loads): at most one attempt per 30 minutes;
   a failed attempt waits one hour, then two, up to eight; "nothing to renew" or "no
