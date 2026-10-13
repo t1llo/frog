@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import FrogApp
 
@@ -223,6 +224,82 @@ final class StayAwakeSessionTests: XCTestCase {
         XCTAssertTrue(canQuit)
     }
 
+    func testAReadErrorLeavesOnceTheSettingCanBeReadAgain() async {
+        let system = SessionPowerFixture()
+        let power = StayAwakeController(system: system, directory: directory())
+        await power.refresh()
+        XCTAssertNil(power.error)
+        await system.failReads(true)
+        await power.refresh()
+        XCTAssertEqual(power.error, StayAwakeError.unreadable.localizedDescription)
+        XCTAssertFalse(power.hasReadState)
+        await system.failReads(false)
+        await power.refresh()
+        XCTAssertTrue(power.hasReadState)
+        XCTAssertNil(power.error, "A read that works again must not leave the earlier failure beside a working switch")
+
+        // The battery is read only during a session of Frog's own.
+        power.setEnabled(true); await power.waitForOperation()
+        XCTAssertTrue(power.ownsSession)
+        await system.failBattery(true)
+        await power.refresh()
+        XCTAssertEqual(power.error, StayAwakeError.unreadable.localizedDescription)
+        var shown: [String?] = []
+        let observation = power.$error.dropFirst().sink { shown.append($0) }
+        await power.refresh()
+        observation.cancel()
+        XCTAssertNotNil(power.error)
+        XCTAssertFalse(shown.contains(nil), "While the battery still cannot be read, the failure must not blink away and back")
+        await system.failBattery(false)
+        await power.refresh()
+        XCTAssertNil(power.error)
+        XCTAssertTrue(power.isEnabled)
+        let canQuit = await power.prepareToQuit()
+        XCTAssertTrue(canQuit)
+    }
+
+    func testAReadErrorDoesNotKeepHidingTheNoticeOfARestoredSession() async {
+        let system = SessionPowerFixture()
+        var now = Date(timeIntervalSince1970: 1000)
+        let power = StayAwakeController(system: system, directory: directory(), now: { now })
+        await power.refresh()
+        power.setEnabled(true); await power.waitForOperation()
+        now.addTimeInterval(4 * 3600)
+        await power.refresh()
+        XCTAssertFalse(power.isEnabled)
+        XCTAssertEqual(power.notice, "Timer finished · Sleep restored")
+        await system.failReads(true)
+        await power.refresh()
+        XCTAssertNotNil(power.error)
+        await system.failReads(false)
+        await power.refresh()
+        XCTAssertNil(power.error, "The views show an error in place of the notice")
+        XCTAssertEqual(power.notice, "Timer finished · Sleep restored")
+    }
+
+    func testAnErrorFromAChangeStaysAfterASuccessfulRead() async {
+        let system = SessionPowerFixture()
+        await system.setBattery(PowerBattery(onBattery: true, percent: 10))
+        let power = StayAwakeController(system: system, directory: directory())
+        await power.refresh()
+        power.setEnabled(true); await power.waitForOperation()
+        XCTAssertFalse(power.isEnabled)
+        XCTAssertEqual(power.error, StayAwakeError.lowBattery.localizedDescription)
+        await power.refresh()
+        XCTAssertEqual(power.error, StayAwakeError.lowBattery.localizedDescription, "Why switching on failed stays until the switch is used again")
+
+        // A read that fails and then works must not take the reason of a later change with it.
+        await system.failReads(true)
+        await power.refresh()
+        await system.failReads(false)
+        await power.refresh()
+        XCTAssertNil(power.error)
+        power.setEnabled(true); await power.waitForOperation()
+        XCTAssertEqual(power.error, StayAwakeError.lowBattery.localizedDescription)
+        await power.refresh()
+        XCTAssertEqual(power.error, StayAwakeError.lowBattery.localizedDescription)
+    }
+
     private func leaveMarker(_ contents: String, in folder: URL) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try Data(contents.utf8).write(to: folder.appendingPathComponent("stay-awake-session.json"))
@@ -240,6 +317,9 @@ final class StayAwakeSessionTests: XCTestCase {
 private actor SessionPowerFixture: StayAwakeSystem {
     private var enabled: Bool
     private var held: ReadGate?
+    private var readsFail = false
+    private var batteryFails = false
+    private var currentBattery = PowerBattery(onBattery: false, percent: 80)
     private(set) var reads = 0
     private(set) var writes: [Bool] = []
     private(set) var guides = 0
@@ -247,14 +327,21 @@ private actor SessionPowerFixture: StayAwakeSystem {
     /// Another tool changes the system setting.
     func setOutside(_ value: Bool) { enabled = value }
     func holdNextRead(_ gate: ReadGate) { held = gate }
+    func failReads(_ fail: Bool) { readsFail = fail }
+    func failBattery(_ fail: Bool) { batteryFails = fail }
+    func setBattery(_ battery: PowerBattery) { currentBattery = battery }
     func noteGuide() { guides += 1 }
     func hasAccess() async throws -> Bool { true }
     func sleepDisabled() async throws -> Bool {
         reads += 1
         if let gate = held { held = nil; await gate.wait() }
+        if readsFail { throw StayAwakeError.unreadable }
         return enabled
     }
-    func battery() async throws -> PowerBattery { PowerBattery(onBattery: false, percent: 80) }
+    func battery() async throws -> PowerBattery {
+        if batteryFails { throw StayAwakeError.unreadable }
+        return currentBattery
+    }
     func setSleepDisabled(_ value: Bool) async throws { writes.append(value); enabled = value }
 }
 

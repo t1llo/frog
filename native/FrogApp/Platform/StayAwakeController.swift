@@ -46,6 +46,9 @@ final class StayAwakeController: ObservableObject {
     private var accessCheck: Task<Void, Never>?
     private var accessRevision = 0
     private var permissionError = false
+    /// The error came from reading the setting, not from a change that was asked for, so
+    /// the next read that works takes it away again.
+    private var readError = false
     private var accessGuide: Task<Void, Never>?
     private let openGuide: (StayAwakeSetup.Mode) async throws -> StayAwakeSetup.Session
     private struct Session: Codable {
@@ -200,7 +203,7 @@ final class StayAwakeController: ObservableObject {
             guard token == revision, !isBusy, !quitting else { return }
             isEnabled = enabled; hasReadState = true
             if !enabled, ownsSession { try clearSession() }
-            guard enabled, ownsSession else { return }
+            guard enabled, ownsSession else { clearReadError(); return }
             if let deadline, now() >= deadline {
                 setEnabled(false); await waitForOperation()
                 if !isEnabled { notice = "Timer finished · Sleep restored" }
@@ -211,8 +214,13 @@ final class StayAwakeController: ObservableObject {
             if battery.onBattery, let percent = battery.percent, percent < 20 {
                 setEnabled(false); await waitForOperation()
                 if !isEnabled { notice = "Low battery · Sleep restored" }
-            }
-        } catch { if token == revision, !quitting { self.error = error.localizedDescription } }
+            } else { clearReadError() }
+        } catch { if token == revision, !quitting { self.error = error.localizedDescription; readError = true } }
+    }
+
+    /// Only after everything was read: a battery that still cannot be read keeps its message.
+    private func clearReadError() {
+        if readError { error = nil; readError = false }
     }
 
     func prepareToQuit() async -> Bool {
@@ -225,7 +233,7 @@ final class StayAwakeController: ObservableObject {
     }
 
     private func change(_ enabled: Bool) async -> Bool {
-        isBusy = true; revision += 1; error = nil; permissionError = false; notice = nil
+        isBusy = true; revision += 1; error = nil; permissionError = false; readError = false; notice = nil
         defer { isBusy = false }
         do {
             let current = try await system.sleepDisabled()
