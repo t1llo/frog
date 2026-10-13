@@ -133,7 +133,7 @@ struct UtilityDocumentsView: View {
             }
             if kind == .script { ScriptOutputView(runner: model.scripts, documentID: item.id, run: { model.runScript(item) }) }
             if preview && kind == .note {
-                ScrollView { Text(.init(item.text)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(12) }
+                MarkdownPreviewView(markdown: item.text).id(item.id)
             } else {
                 TextEditor(text: binding(item, \.text)).font(.system(size: 13)).scrollContentBackground(.hidden)
                     .padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
