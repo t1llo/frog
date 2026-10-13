@@ -40,6 +40,7 @@ final class LocalModels: ObservableObject {
     private let runtime: any LocalInferenceEngine
     private let downloader: Downloader
     private var unloadTask: Task<Void, Never>?
+    private var memoryPressure: DispatchSourceMemoryPressure?
     private var residencyHolds = Set<UUID>()
     var idleSeconds = 120 {
         didSet { if idleSeconds != oldValue, !busy, !loaded.isEmpty { scheduleUnload() } }
@@ -228,6 +229,21 @@ final class LocalModels: ObservableObject {
         unloadTask?.cancel(); unloadTask = nil
         loaded = []; await runtime.unload(keepingMetadata: keepingMetadata)
     }
+    /// The app turns this on once; tests call `relieveMemoryPressure` themselves.
+    func unloadUnderMemoryPressure() {
+        guard memoryPressure == nil else { return }
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+        source.setEventHandler { [weak self] in Task { @MainActor [weak self] in await self?.relieveMemoryPressure() } }
+        source.activate()
+        memoryPressure = source
+    }
+    /// macOS reports that memory is short: an idle model goes now instead of at the
+    /// end of its idle interval. Running work and held sessions keep theirs,
+    /// because `unload` refuses then.
+    func relieveMemoryPressure() async {
+        guard !loaded.isEmpty else { return }
+        await unload(keepingMetadata: true)
+    }
     private func acquire(_ id: String) throws -> URL {
         guard Self.supported else { throw FrogError.message("Built-in local models require Apple silicon.") }
         guard !busy else { throw FrogError.message("A local model is already processing.") }
@@ -275,6 +291,7 @@ final class LocalModels: ObservableObject {
     func shutdown() {
         downloads.values.forEach { $0.cancel() }
         unloadTask?.cancel()
+        memoryPressure?.cancel(); memoryPressure = nil
         if !busy { Task { await self.unload() } }
     }
 }

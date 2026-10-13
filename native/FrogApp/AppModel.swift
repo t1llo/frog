@@ -184,6 +184,7 @@ final class AppModel: ObservableObject {
         refreshSystemStatus()
         if registerShortcuts { FrogAppearance.shared.apply(configuration.preferences.appearance ?? AppearancePreferences()) }
         localModels.idleSeconds = configuration.preferences.workflowSettings.idleUnloadSeconds
+        if registerShortcuts { localModels.unloadUnderMemoryPressure() }
         localModels.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         dictation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         dictation.onError = { [weak self] in self?.report($0) }

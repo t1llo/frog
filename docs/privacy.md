@@ -16,7 +16,7 @@ Adding a Hugging Face model link fetches public repository metadata and, for tex
 
 Local cleanup uses downloaded MLX weights. A custom audio rule explicitly choosing a cloud text provider sends the transcript and instructions to that provider; raw audio is not sent. Results are copied, with optional insertion into the currently focused app after transcription, so you can change input fields while recording. Password fields are excluded when identified by Accessibility. Shared history, if enabled, saves the completed transcript and processed text before clipboard/paste delivery, under the same retention controls as writing results. If cleanup fails, the original transcript is preserved on the clipboard with an error message.
 
-Downloaded files live in `~/Library/Application Support/Frog/Models/`. Cancelling a download removes its partial files. A download that fails, or that quitting Frog interrupts, keeps them so that Resume continues from there; the model's row can discard them. Manage installed models in Models → Local models. Idle models unload according to Settings; downloadable inference requires Apple silicon. Models are not included in configuration exports.
+Downloaded files live in `~/Library/Application Support/Frog/Models/`. Cancelling a download removes its partial files. A download that fails, or that quitting Frog interrupts, keeps them so that Resume continues from there; the model's row can discard them. Manage installed models in Models → Local models. Idle models unload according to Settings, or sooner when macOS runs short of memory; downloadable inference requires Apple silicon. Models are not included in configuration exports.
 
 ## On your Mac
 

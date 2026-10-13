@@ -191,6 +191,28 @@ final class LocalModelsTests: XCTestCase {
         XCTAssertFalse(models.installed.contains(descriptor.id))
     }
 
+    func testMemoryPressureUnloadsAnIdleModelAtOnceButKeepsOneInUse() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let engine = FixtureInference()
+        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload)
+        let descriptor = LocalModelDescriptor.find("qwen-0.6b")!
+        models.download(descriptor); await models.waitForDownload(descriptor.id)
+        _ = try await models.complete("hello", instructions: "Correct", modelID: descriptor.id)
+        XCTAssertEqual(models.loaded, [descriptor.id], "The idle interval has two minutes left")
+
+        let session = models.holdResidency()
+        await models.relieveMemoryPressure()
+        XCTAssertEqual(models.loaded, [descriptor.id], "A running session keeps its model")
+        models.releaseResidency(session)
+
+        await models.relieveMemoryPressure()
+        XCTAssertTrue(models.loaded.isEmpty, "An idle model goes as soon as macOS reports that memory is short")
+        await models.relieveMemoryPressure()
+        let unloads = await engine.unloads
+        XCTAssertEqual(unloads, 1, "With nothing resident there is nothing to release")
+    }
+
     func testCancelledDownloadRemovesPartialFilesAndCannotInstallLateResult() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
