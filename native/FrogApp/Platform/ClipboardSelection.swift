@@ -106,10 +106,6 @@ final class ClipboardSelection: CapturedTextSelection {
         return menu.item("v") != nil
     }
 
-    static func command(_ character: String, keyCode: CGKeyCode, application: AXUIElement, pid: pid_t) throws {
-        try command(character, keyCode: keyCode, menu: MenuCommandCache(application: application), pid: pid)
-    }
-
     static func command(_ character: String, keyCode: CGKeyCode, menu: MenuCommandCache, pid: pid_t) throws {
         if let item = menu.item(character), press(item) { return }
         try key(keyCode, pid: pid)
@@ -120,35 +116,18 @@ final class ClipboardSelection: CapturedTextSelection {
         // still carry it out, and the key sent in its place would then repeat the
         // command. The press therefore waits as long as macOS waits by default.
         AXUIElementSetMessagingTimeout(item, 0)
-        defer { AXUIElementSetMessagingTimeout(item, menuTimeout) }
+        defer { AXUIElementSetMessagingTimeout(item, MenuCommandSearch.elementTimeout) }
         return AXUIElementPerformAction(item, kAXPressAction as CFString) == .success
     }
 
-    /// Longest wait for one answer while reading a menu. A menu holds hundreds of
-    /// elements and a timeout covers only the element it is set on.
-    private static let menuTimeout: Float = 0.15
-
     static func menuCommand(_ character: String, application: AXUIElement) -> AXUIElement? {
-        guard let menu = AXRead.element(application, kAXMenuBarAttribute) else { return nil }
-        var pending = [(menu, 0)]
-        var visited = 0
-        while let (element, depth) = pending.popLast(), visited < 1_000 {
-            visited += 1
-            AXUIElementSetMessagingTimeout(element, menuTimeout)
-            if isMenuCommand(element, character) { return element }
-            if depth < 5, let children = AXRead.attribute(element, kAXChildrenAttribute) as? [AXUIElement] {
-                pending.append(contentsOf: children.map { ($0, depth + 1) })
-            }
-        }
-        return nil
+        guard let bar = AXRead.element(application, kAXMenuBarAttribute) else { return nil }
+        return MenuCommandSearch.find(character: character, modifiers: 0, under: bar, depth: 5, reader: .live)
     }
 
     /// Whether `element` is the enabled menu item for Command plus `character`.
     static func isMenuCommand(_ element: AXUIElement, _ character: String) -> Bool {
-        guard AXRead.string(element, kAXRoleAttribute) == kAXMenuItemRole,
-              AXRead.string(element, kAXMenuItemCmdCharAttribute)?.lowercased() == character,
-              let modifiers = AXRead.attribute(element, kAXMenuItemCmdModifiersAttribute) as? NSNumber else { return false }
-        return modifiers.intValue == 0 && AXRead.boolean(element, kAXEnabledAttribute) == true
+        MenuCommandSearch.matches(element, character: character, modifiers: 0, reader: .live)
     }
 
     static func isEditable(_ element: AXUIElement) -> Bool {
@@ -183,6 +162,63 @@ final class ClipboardSelection: CapturedTextSelection {
         }
         down.flags = .maskCommand; up.flags = .maskCommand
         down.postToPid(pid); up.postToPid(pid)
+    }
+}
+
+/// Finds the enabled menu item for a keyboard command below a menu bar or one of its menus.
+enum MenuCommandSearch {
+    /// Longest wait for one answer while reading a menu. A menu bar holds hundreds of
+    /// elements and a timeout covers only the element it is set on.
+    static let elementTimeout: Float = 0.15
+
+    /// What the search asks of one menu element. The live reader asks the app that owns the menu.
+    struct Reader<Element> {
+        /// Called once before an element is read.
+        var prepare: (Element) -> Void = { _ in }
+        var role: (Element) -> String?
+        var character: (Element) -> String?
+        var modifiers: (Element) -> Int?
+        var enabled: (Element) -> Bool?
+        var children: (Element) -> [Element]?
+    }
+
+    /// Whether `element` is the enabled menu item for Command plus `character` with
+    /// exactly `modifiers` (Shift = 1, Option = 2, Control = 4, no Command = 8).
+    static func matches<Element>(_ element: Element, character: String, modifiers: Int, reader: Reader<Element>) -> Bool {
+        reader.role(element) == kAXMenuItemRole && reader.character(element)?.lowercased() == character
+            && reader.modifiers(element) == modifiers && reader.enabled(element) == true
+    }
+
+    /// Reads the menus in the order they are shown, so the menus on the left that hold
+    /// the common commands come first, and gives up after `seconds` or 1,000 elements.
+    static func find<Element>(character: String, modifiers: Int, under root: Element, depth limit: Int,
+                              seconds: TimeInterval = 1.5, reader: Reader<Element>,
+                              now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+                              isCancelled: () -> Bool = { false }) -> Element? {
+        var pending = [(root, 0)]
+        var visited = 0
+        let deadline = now() + seconds
+        while let (element, depth) = pending.popLast(), visited < 1_000, now() < deadline, !isCancelled() {
+            visited += 1
+            reader.prepare(element)
+            if matches(element, character: character, modifiers: modifiers, reader: reader) { return element }
+            if depth < limit, let children = reader.children(element) {
+                // The stack hands back its last entry first.
+                pending.append(contentsOf: children.prefix(1_000 - visited).reversed().map { ($0, depth + 1) })
+            }
+        }
+        return nil
+    }
+}
+
+extension MenuCommandSearch.Reader where Element == AXUIElement {
+    static var live: Self {
+        .init(prepare: { AXUIElementSetMessagingTimeout($0, MenuCommandSearch.elementTimeout) },
+              role: { AXRead.string($0, kAXRoleAttribute) },
+              character: { AXRead.string($0, kAXMenuItemCmdCharAttribute) },
+              modifiers: { (AXRead.attribute($0, kAXMenuItemCmdModifiersAttribute) as? NSNumber)?.intValue },
+              enabled: { AXRead.boolean($0, kAXEnabledAttribute) },
+              children: { AXRead.attribute($0, kAXChildrenAttribute) as? [AXUIElement] })
     }
 }
 

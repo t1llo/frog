@@ -22,6 +22,11 @@ struct ClipboardHistoryTargetAccess {
     var command: () throws -> Void
 
     static func live(application: AXUIElement, pid: pid_t) -> Self {
+        // One search of the app's menus serves every check and the paste itself.
+        live(application: application, pid: pid, menu: MenuCommandCache(application: application))
+    }
+
+    private static func live(application: AXUIElement, pid: pid_t, menu: MenuCommandCache) -> Self {
         Self(trusted: { SelectionService.isTrusted },
              frontmostPID: { NSWorkspace.shared.frontmostApplication?.processIdentifier },
              ownPID: ProcessInfo.processInfo.processIdentifier,
@@ -31,7 +36,7 @@ struct ClipboardHistoryTargetAccess {
              secure: { AXRead.string($0, kAXSubroleAttribute) == kAXSecureTextFieldSubrole },
              enabled: { AXRead.boolean($0, kAXEnabledAttribute) != false },
              editable: { ClipboardSelection.isEditable($0) },
-             nativePasteAvailable: { ClipboardSelection.menuCommand("v", application: application) != nil },
+             nativePasteAvailable: { menu.item("v") != nil },
              keyboardFocused: { AXRead.boolean($0, kAXFocusedAttribute) != false },
              restoreFocus: { focused in
                  // Only called while the original app/window still owns focus.
@@ -40,7 +45,7 @@ struct ClipboardHistoryTargetAccess {
                  NSRunningApplication(processIdentifier: pid)?.activate(options: [])
                  AXUIElementSetAttributeValue(focused, kAXFocusedAttribute as CFString, kCFBooleanTrue)
              },
-             command: { try ClipboardSelection.command("v", keyCode: 9, application: application, pid: pid) })
+             command: { try ClipboardSelection.command("v", keyCode: 9, menu: menu, pid: pid) })
     }
 }
 

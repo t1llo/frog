@@ -91,24 +91,11 @@ actor SystemActionController {
             guard let apple = (AXRead.attribute(bar, kAXChildrenAttribute) as? [AXUIElement])?.first else { throw unavailable(action) }
             root = apple
         } else { root = bar }
-        var pending = [(root, 0)]
-        var visited = 0
-        let deadline = ProcessInfo.processInfo.systemUptime + 1.5
-        while let (element, depth) = pending.popLast(), visited < 1_000, ProcessInfo.processInfo.systemUptime < deadline {
-            try Task.checkCancellation()
-            visited += 1
-            AXUIElementSetMessagingTimeout(element, 0.15)
-            if AXRead.string(element, kAXRoleAttribute) == kAXMenuItemRole,
-               AXRead.string(element, kAXMenuItemCmdCharAttribute)?.lowercased() == shortcut.character,
-               (AXRead.attribute(element, kAXMenuItemCmdModifiersAttribute) as? NSNumber)?.intValue == shortcut.modifiers,
-               AXRead.boolean(element, kAXEnabledAttribute) == true {
-                return element
-            }
-            if depth < 6, let children = AXRead.attribute(element, kAXChildrenAttribute) as? [AXUIElement] {
-                // Visit visible menu order first; bound traversal of unusually large app menus.
-                pending.append(contentsOf: children.prefix(1_000 - visited).reversed().map { ($0, depth + 1) })
-            }
+        if let item = MenuCommandSearch.find(character: shortcut.character, modifiers: shortcut.modifiers, under: root,
+                                             depth: 6, reader: .live, isCancelled: { Task.isCancelled }) {
+            return item
         }
+        try Task.checkCancellation()
         throw unavailable(action)
     }
 
