@@ -5,6 +5,7 @@ struct StatisticsView: View {
     @ObservedObject var statistics: ActivityStatisticsStore
     var onBack: (() -> Void)? = nil
     @State private var period = Period.allTime
+    @State private var confirmingReset = false
 
     private enum Period: String, CaseIterable {
         case allTime = "All time", week = "7 days", month = "30 days"
@@ -57,13 +58,16 @@ struct StatisticsView: View {
                 .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             SettingsSection(title: "Storage") {
                 CompactRow(title: "Reset all statistics", detail: "Permanently clears every total and daily count. Your recording choice is kept.") {
-                    Button("Reset statistics", role: .destructive) { statistics.reset() }
+                    Button("Reset statistics", role: .destructive) { confirmingReset = true }
                 }
                 Text("Independent of transformation history and configuration exports. Statistics start when this version is used; previous activity is not imported.")
                     .font(.system(size: 10)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             }
         }.foregroundStyle(FrogStyle.ink).buttonStyle(FrogButtonStyle())
             .onAppear { statistics.reload() }
+            .confirmationDialog("Reset all statistics?", isPresented: $confirmingReset, titleVisibility: .visible) {
+                Button("Reset statistics", role: .destructive) { statistics.reset() }
+            } message: { Text("Every total and daily count will be permanently cleared. Your recording choice is kept.") }
     }
 
     private func metric(_ title: String, value: String, symbol: String) -> some View {

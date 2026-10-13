@@ -14,6 +14,7 @@ struct UtilityDocumentsView: View {
     @State private var preview = false
     @State private var search = ""
     @State private var dropTask: Task<Void, Never>?
+    @State private var deleting: UUID?
     private var title: String { switch kind { case .note: "Notes"; case .snippet: "Snippets"; case .shelf: "Shelf"; case .script: "Scripts" } }
     private var subtitle: String {
         switch kind {
@@ -21,6 +22,14 @@ struct UtilityDocumentsView: View {
         case .snippet: "Reusable text, ready to copy."
         case .shelf: "Keep files, links and text close."
         case .script: "Your local scripts and their output."
+        }
+    }
+    private var deleteQuestion: String {
+        switch kind {
+        case .note: "Delete this note?"
+        case .snippet: "Delete this snippet?"
+        case .shelf: "Delete this shelf item?"
+        case .script: "Delete this script?"
         }
     }
     private var items: [UtilityDocument] { documents.items.filter { $0.kind == kind && (search.isEmpty || ($0.title + " " + $0.text).localizedStandardContains(search)) } }
@@ -77,6 +86,19 @@ struct UtilityDocumentsView: View {
                 return true
             }
             .onDisappear { dropTask?.cancel(); dropTask = nil }
+            .confirmationDialog(L10n.text(deleteQuestion), isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
+                Button("Delete", role: .destructive) {
+                    if let deleting { remove(deleting) }
+                    deleting = nil
+                }
+            } message: {
+                Text(kind == .shelf ? "It will be removed from the shelf for good. Files it holds stay where they are."
+                    : "It will be permanently deleted from this Mac.")
+            }
+    }
+    private func remove(_ id: UUID) {
+        documents.remove(id)
+        if selected == id { selected = nil }
     }
     private func editor(_ item: UtilityDocument) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -91,7 +113,9 @@ struct UtilityDocumentsView: View {
                     Button("Export…", systemImage: "square.and.arrow.up") { export(item) }
                     if item.files.isEmpty { ShareLink(item: item.text) { Label("Share text…", systemImage: "square.and.arrow.up.on.square") } }
                     Divider()
-                    Button("Delete item", systemImage: "trash", role: .destructive) { documents.remove(item.id); selected = nil }
+                    Button("Delete item", systemImage: "trash", role: .destructive) {
+                        if item.deletionAsksFirst { deleting = item.id } else { remove(item.id) }
+                    }
                 } label: { Image(systemName: "ellipsis").frame(width: 26).modifier(CompactActionSurface()) }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Item actions")
             }.controlSize(.small)
@@ -148,6 +172,12 @@ struct UtilityDocumentsView: View {
             for url in urls.prefix(100) { selected = documents.add(ShelfDrop.document(url: url)) }
         } else if let text = board.string(forType: .string), let item = ShelfDrop.document(text: text) { selected = documents.add(item) }
     }
+}
+
+extension UtilityDocument {
+    /// A deleted item cannot be brought back, so Frog asks before it deletes one that holds
+    /// something. An item that was only just created is removed without a question.
+    var deletionAsksFirst: Bool { !files.isEmpty || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 }
 
 struct ScriptOutputView: View {
