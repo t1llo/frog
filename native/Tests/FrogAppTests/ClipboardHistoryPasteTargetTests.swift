@@ -72,6 +72,30 @@ final class ClipboardHistoryPasteTargetTests: XCTestCase {
         access.restoreFocus(field)
         XCTAssertEqual(steps, ["field 0.0", "focus field", "field 0.15"])
     }
+
+    func testCopyOnlyMessageNamesAccessibilityOnlyWhenItIsMissing() async {
+        let granted = ClipboardHistoryDelivery.copyOnlyMessage(trusted: true, frontmostPID: 7, ownPID: 9)
+        XCTAssertFalse(granted.contains("Accessibility"), granted)
+        let missing = ClipboardHistoryDelivery.copyOnlyMessage(trusted: false, frontmostPID: 7, ownPID: 9)
+        XCTAssertTrue(missing.contains("Accessibility"), missing)
+        // A field in one of Frog's own windows: the permission has nothing to do with it.
+        let own = [true, false].map { ClipboardHistoryDelivery.copyOnlyMessage(trusted: $0, frontmostPID: 9, ownPID: 9) }
+        for message in own {
+            XCTAssertFalse(message.contains("Accessibility"), message)
+            XCTAssertTrue(message.contains("its own windows"), message)
+        }
+
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        do {
+            try await ClipboardHistoryDelivery.paste(ClipboardHistoryEntry(text: "chosen"), plainText: true, pasteboard: pasteboard,
+                                                     target: nil, isCurrent: { true }, waitForRelease: {})
+            XCTFail("Without a field there is nothing to paste into")
+        } catch {
+            XCTAssertTrue(([granted, missing] + own).contains(error.localizedDescription), error.localizedDescription)
+        }
+        XCTAssertEqual(pasteboard.string(forType: .string), "chosen")
+    }
 }
 
 @MainActor private final class TargetProbe {

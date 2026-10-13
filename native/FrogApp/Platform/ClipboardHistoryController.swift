@@ -32,8 +32,20 @@ enum ClipboardHistoryDelivery {
         guard isCurrent() else { throw CancellationError() }
         guard entry.write(to: pasteboard, plainText: plainText) else { throw FrogError.message("Could not copy the clipboard item.") }
         if let preparationError { throw preparationError }
-        guard let target else { throw FrogError.message("The item is copied. Focus an editable field and paste, or allow Accessibility for automatic paste.") }
+        guard let target else {
+            throw FrogError.message(copyOnlyMessage(trusted: SelectionService.isTrusted,
+                frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                ownPID: ProcessInfo.processInfo.processIdentifier))
+        }
         try target.paste()
+    }
+
+    /// Why an item chosen without a captured field is only copied. Accessibility is named
+    /// only when it is what is missing; a field in Frog's own windows is never a target.
+    static func copyOnlyMessage(trusted: Bool, frontmostPID: pid_t?, ownPID: pid_t) -> String {
+        if frontmostPID == ownPID { return "The item is copied. Frog does not paste into its own windows; paste it manually." }
+        if !trusted { return "The item is copied. Allow Accessibility for automatic paste, or paste it manually." }
+        return "The item is copied. Focus an editable field and paste."
     }
 }
 
