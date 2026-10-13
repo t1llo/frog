@@ -29,6 +29,7 @@ import SwiftUI
     private var actions: [String: () async throws -> Void] = [:]
     private var copyActions: [String: () async throws -> Void] = [:]
     private var sourceObservation: AnyCancellable?
+    private var pasteTarget: (any ClipboardHistoryPasteTarget)?
     private let windows = WindowCatalog()
     private var panel: NSPanel?
     private var monitor: Any?
@@ -222,16 +223,9 @@ import SwiftUI
         guard let model, model.configuration.preferences.featureEnabled(.commandBar) else { return }
         if panel?.isVisible == true { hide(); return }
         hide()
-        let target = captureTarget(), frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        records = []; recordsByID = [:]; fileRecords = []; actions = [:]; copyActions = [:]; query = ""; selection = 0
-        selectionWasMoved = false
-        addApplications(cachedApplications)
-        for file in selectedFiles { addFile(file) }
-        for file in recentFiles { addFile(file) }
-        if model.configuration.preferences.featureEnabled(.windowSwitcher) { addWindows(cachedWindows) }
-        addRoutes(model, target: target, frontPID: frontPID)
-        addSettings()
-        updateResults()
+        let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        prepareResults(model, frontPID: frontPID)
+        let target = pasteTarget
         // Clear/disable/eviction invalidates previews as well as pending insertion.
         sourceObservation = model.clipboardHistoryStore.$entries.dropFirst().sink { [weak self] _ in self?.hide() }
         preparePanel()
@@ -331,7 +325,24 @@ import SwiftUI
             }
         }
     }
-    private func addRoutes(_ model: AppModel, target: (any ClipboardHistoryPasteTarget)?, frontPID: pid_t?) {
+    /// The rows a presentation starts with and the field they paste into. This runs before the panel takes
+    /// keyboard focus and opens no window.
+    func prepareResults(_ model: AppModel, frontPID: pid_t?) {
+        // Finding the focused field is Accessibility IPC to the app in front. Only clipboard rows and snippets paste there.
+        let pastes = [.clipboard, .snippets].contains(where: model.configuration.preferences.featureEnabled)
+        pasteTarget = pastes ? captureTarget() : nil
+        records = []; recordsByID = [:]; fileRecords = []; actions = [:]; copyActions = [:]; query = ""; selection = 0
+        selectionWasMoved = false
+        addApplications(cachedApplications)
+        for file in selectedFiles { addFile(file) }
+        for file in recentFiles { addFile(file) }
+        if model.configuration.preferences.featureEnabled(.windowSwitcher) { addWindows(cachedWindows) }
+        addRoutes(model, frontPID: frontPID)
+        addSettings()
+        updateResults()
+    }
+    private func addRoutes(_ model: AppModel, frontPID: pid_t?) {
+        let target = pasteTarget
         for feature in model.configuration.preferences.sidebarFeatures {
             add(SearchRecord(id: "feature:\(feature.rawValue)", title: feature.title, subtitle: "Frog", keywords: "frog command \(feature.detail)", symbol: feature.symbol)) { [weak model] in
                 model?.openFeature(feature)
@@ -498,7 +509,7 @@ import SwiftUI
         windowIndexing?.cancel(); windowIndexing = nil
         fileRevision += 1
         fileSearch.stop()
-        fileDelay?.cancel(); fileDelay = nil; sourceObservation = nil
+        fileDelay?.cancel(); fileDelay = nil; sourceObservation = nil; pasteTarget = nil
         panel?.orderOut(nil)
         if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil
         if let outside { NSEvent.removeMonitor(outside) }; outside = nil
