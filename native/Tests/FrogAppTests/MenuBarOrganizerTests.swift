@@ -180,6 +180,102 @@ import FrogCore
         XCTAssertTrue(NativeOrganizerStatusItems.arrowImage(expanded: true).isTemplate)
     }
 
+    func testNativeContextMenuStartsWithTheReasonWhileAProblemKeepsTheIconsShown() throws {
+        _ = NSApplication.shared
+        let fixture = OrganizerFixture()
+        fixture.organizer.configure(enabled: true, settings: MenuBarPreferences())
+        fixture.items.reversed = true; fixture.organizer.tick()
+        let issue = try XCTUnwrap(fixture.organizer.issue)
+        fixture.organizer.stop()
+        let adapter = NativeOrganizerStatusItems()
+        adapter.updateMenu(OrganizerMenuState(expanded: true, arranging: false, autoHide: true, issue: issue)) { _ in }
+        // A menu does not wrap, so each sentence gets its own line.
+        let reason = Array(adapter.contextMenu.items.prefix { !$0.isSeparatorItem })
+        XCTAssertEqual(reason.map(\.title), ["Command-drag Frog's divider to the LEFT of its arrow.",
+                                             "Frog keeps everything revealed until the arrow is safely on the right."])
+        XCTAssertEqual(reason.map(\.title).joined(separator: " "), issue)
+        XCTAssertTrue(reason.allSatisfy { $0.action == nil && !$0.isEnabled }, "The reason is read, not chosen")
+        XCTAssertEqual(adapter.contextMenu.items.filter { !$0.isSeparatorItem }.dropFirst(reason.count).map(\.title),
+                       ["Hide menu bar icons", "Show all & arrange…", "Automatically hide icons", "Menu bar settings…"])
+        XCTAssertEqual(NativeOrganizerStatusItems.arrowToolTip(expanded: true, issue: issue), issue, "Resting on the arrow says it too")
+        XCTAssertEqual(NativeOrganizerStatusItems.arrowToolTip(expanded: true, issue: nil),
+                       "Hide menu bar icons. Right-click for options; Option-click to arrange all icons.")
+        XCTAssertEqual(NativeOrganizerStatusItems.arrowToolTip(expanded: false, issue: nil),
+                       "Show hidden icons. Right-click for options; Option-click to arrange all icons.")
+        adapter.updateMenu(OrganizerMenuState(expanded: true, arranging: false, autoHide: true)) { _ in }
+        XCTAssertEqual(adapter.contextMenu.items[0].title, "Hide menu bar icons", "The reason leaves with the problem")
+    }
+
+    func testArrowAndShortcutLeadToTheReasonWhenAProblemKeepsTheIconsShown() {
+        let fixture = OrganizerFixture()
+        var opened = 0
+        fixture.organizer.onShowSettings = { opened += 1 }
+        var settings = MenuBarPreferences()
+        settings.hotkey = Hotkey(keyCode: 46, modifiers: 6144); settings.permanentlyHiddenSection = true
+        fixture.organizer.configure(enabled: true, settings: settings)
+        fixture.organizer.tick()
+        XCTAssertNil(fixture.items.menuState?.issue)
+        fixture.time = 5; fixture.items.reversed = true
+        fixture.organizer.toggle()
+        XCTAssertTrue(fixture.organizer.isExpanded)
+        XCTAssertNotNil(fixture.organizer.issue)
+        XCTAssertEqual(opened, 1, "A click that cannot hide the icons opens the page that says why")
+        XCTAssertEqual(fixture.items.menuState?.issue, fixture.organizer.issue, "The arrow's menu has the reason before the timer comes round")
+        fixture.keys.action?()
+        XCTAssertEqual(opened, 2, "The shortcut ends in the same place")
+        fixture.time = 60; fixture.organizer.tick()
+        XCTAssertEqual(opened, 2, "Auto-hide that cannot hide opens nothing")
+        XCTAssertEqual(fixture.items.menuState?.issue, fixture.organizer.issue)
+
+        fixture.items.reversed = false; fixture.organizer.tick()
+        XCTAssertNil(fixture.items.menuState?.issue)
+        fixture.time = 62; fixture.organizer.toggle()
+        XCTAssertFalse(fixture.organizer.isExpanded)
+        fixture.organizer.toggle()
+        XCTAssertTrue(fixture.organizer.isExpanded)
+        XCTAssertEqual(opened, 2, "Hiding and showing that work open nothing")
+
+        fixture.time = 70; fixture.organizer.setEditingArrangement(true)
+        fixture.items.reversed = true
+        fixture.organizer.toggle()
+        XCTAssertEqual(opened, 2, "A spacer that may still be moving is not yet a problem to explain")
+        fixture.time = 72; fixture.organizer.toggle()
+        XCTAssertTrue(fixture.organizer.isEditingArrangement)
+        XCTAssertEqual(opened, 3, "Nor is a click silent while arranging")
+        XCTAssertEqual(fixture.items.menuState, OrganizerMenuState(expanded: true, arranging: true, autoHide: true, issue: fixture.organizer.issue))
+        fixture.organizer.stop()
+    }
+
+    func testHideAskedForWhileTheMenuBarGivesNoFramesHappensOnceTheyAreBack() {
+        let fixture = OrganizerFixture()
+        var opened = 0
+        fixture.organizer.onShowSettings = { opened += 1 }
+        var settings = MenuBarPreferences(); settings.hotkey = Hotkey(keyCode: 46, modifiers: 6144)
+        fixture.organizer.configure(enabled: true, settings: settings)
+        fixture.organizer.tick()
+        fixture.items.framesAvailable = false
+        fixture.keys.action?()
+        XCTAssertTrue(fixture.organizer.isExpanded)
+        XCTAssertNil(fixture.organizer.issue)
+        XCTAssertEqual(opened, 0, "A bar that is only out of sight is nothing to explain")
+        fixture.organizer.tick()
+        XCTAssertTrue(fixture.organizer.isExpanded)
+        fixture.items.framesAvailable = true
+        fixture.organizer.tick()
+        XCTAssertFalse(fixture.organizer.isExpanded, "The request is kept until the bar can be judged")
+        fixture.organizer.tick()
+        fixture.organizer.toggle()
+        XCTAssertTrue(fixture.organizer.isExpanded)
+
+        fixture.items.framesAvailable = false
+        fixture.organizer.toggle()
+        fixture.organizer.setEditingArrangement(true)
+        fixture.items.framesAvailable = true
+        fixture.organizer.tick()
+        XCTAssertTrue(fixture.organizer.isExpanded, "Asking for everything afterwards takes the request back")
+        fixture.organizer.stop()
+    }
+
     func testContextMenuDefersAutoHideAndItsChangesGoThroughPersistence() {
         let fixture = OrganizerFixture()
         var settings = MenuBarPreferences(); settings.autoHideSeconds = 5

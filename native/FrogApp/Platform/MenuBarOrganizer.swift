@@ -86,6 +86,8 @@ struct OrganizerMenuState: Equatable {
     var expanded: Bool
     var arranging: Bool
     var autoHide: Bool
+    /// Why the icons stay shown, while an arrangement problem lasts.
+    var issue: String?
 }
 
 @MainActor protocol OrganizerHotkey: AnyObject {
@@ -127,7 +129,9 @@ struct OrganizerMenuState: Equatable {
     private var screenObserver: NSObjectProtocol?
     private var deadline: TimeInterval?
     private var hoverStarted: TimeInterval?
-    private var pendingInitialCollapse = false
+    // A hide that waits for a tick that can judge the bar: at start when the icons are to
+    // start hidden, and when the arrow or the shortcut asked while the bar gave no frames.
+    private var pendingCollapse = false
     private var settingsVisible = false
     private var shortcutsSuspended = false
     private var registeredHotkey: Hotkey?
@@ -167,7 +171,7 @@ struct OrganizerMenuState: Equatable {
             // New status items are inserted on the left, so create the recovery arrow first.
             install(.toggle); install(.divider)
             isInstalled = true
-            pendingInitialCollapse = settings.startCollapsed
+            pendingCollapse = settings.startCollapsed
             if automaticTicks {
                 screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                                         object: nil, queue: .main) { [weak self] _ in
@@ -210,22 +214,33 @@ struct OrganizerMenuState: Equatable {
         guard isInstalled else { return }
         defer { scheduleTicks() }
         if isEditingArrangement {
-            guard arrangementIssue(environment()) == nil else { setEditingArrangement(false); return }
+            guard arrangementIssue(environment()) == nil else {
+                // A spacer that is still settling or a bar without frames is not yet a problem to explain.
+                let judged = geometryAvailable && now() >= layoutSettlesAt
+                setEditingArrangement(false)
+                if judged { onShowSettings?() }
+                return
+            }
             // End arranging and hide with one resize. Hiding after the second divider has been
             // resized would judge a spacer that has its new width but not yet its new place.
-            pendingInitialCollapse = false
+            pendingCollapse = false
             isEditingArrangement = false
             collapse()
             // A held mouse button keeps the icons shown; arranging ends all the same.
             if isExpanded { setEditingArrangement(false) }
             return
         }
-        if isExpanded { collapse() } else { reveal() }
+        guard isExpanded else { reveal(); return }
+        collapse()
+        guard isExpanded else { return }
+        // Nothing was hidden. An arrangement problem is explained on the page that tells how
+        // to repair it; a bar that gives no frames for a moment is asked again by the timer.
+        if issue != nil { onShowSettings?() } else if !geometryAvailable { pendingCollapse = true }
     }
 
     func reveal() {
         guard isInstalled else { return }
-        pendingInitialCollapse = false
+        pendingCollapse = false
         isExpanded = true
         applyLengths(environment())
         resetDeadline()
@@ -235,7 +250,7 @@ struct OrganizerMenuState: Equatable {
     /// Window-accessible recovery also reveals the permanent section and pauses auto-hide.
     func setEditingArrangement(_ editing: Bool) {
         guard isInstalled else { return }
-        pendingInitialCollapse = false
+        pendingCollapse = false
         isExpanded = true
         isEditingArrangement = editing
         let env = environment()
@@ -253,7 +268,7 @@ struct OrganizerMenuState: Equatable {
     func setSettingsVisible(_ visible: Bool) {
         guard settingsVisible != visible else { return }
         settingsVisible = visible
-        if visible { pendingInitialCollapse = false }
+        if visible { pendingCollapse = false }
         if !visible && isEditingArrangement { setEditingArrangement(false) }
         resetDeadline()
         scheduleTicks()
@@ -293,7 +308,7 @@ struct OrganizerMenuState: Equatable {
             guard now() >= layoutSettlesAt else { return }
             isExpanded = true
             issue = problem
-            pendingInitialCollapse = false
+            pendingCollapse = false
             applyLengths(env, allowPermanentCollapse: false)
             resetDeadline()
             return
@@ -301,8 +316,8 @@ struct OrganizerMenuState: Equatable {
         if issue != nil { issue = nil }
         // Hide at start before anything else is resized: the order was judged just now, and
         // the second divider at its new width would still be at its old place for collapse().
-        if pendingInitialCollapse && !env.pointerInMenuBar && !env.mouseDown {
-            pendingInitialCollapse = false
+        if pendingCollapse && !env.pointerInMenuBar && !env.mouseDown {
+            pendingCollapse = false
             if !settingsVisible && !isEditingArrangement { collapse() }
         }
         applyLengths(env)
@@ -321,7 +336,7 @@ struct OrganizerMenuState: Equatable {
         guard checkAvailability(env) else { return }
         guard !env.mouseDown, geometryAvailable else { return }
         if let problem = arrangementIssue(env) {
-            if now() >= layoutSettlesAt { issue = problem }
+            if now() >= layoutSettlesAt { issue = problem; updateMenu() }
             return
         }
         issue = nil
@@ -414,7 +429,12 @@ struct OrganizerMenuState: Equatable {
             }
         }
         items.setExpanded(isExpanded)
-        items.updateMenu(OrganizerMenuState(expanded: isExpanded, arranging: isEditingArrangement, autoHide: settings.autoHide)) { [weak self] action in
+        updateMenu()
+    }
+
+    private func updateMenu() {
+        items.updateMenu(OrganizerMenuState(expanded: isExpanded, arranging: isEditingArrangement, autoHide: settings.autoHide,
+                                            issue: issue)) { [weak self] action in
             guard let self else { return }
             switch action {
             case .toggle: self.toggle()
@@ -436,7 +456,7 @@ struct OrganizerMenuState: Equatable {
     /// rearranged bar or a second organizer is left to notice, and that may take longer.
     private var tickInterval: TimeInterval? {
         guard isInstalled else { return nil }
-        let waiting = validationDue || pendingInitialCollapse || issue != nil || isEditingArrangement
+        let waiting = validationDue || pendingCollapse || issue != nil || isEditingArrangement
             || now() < layoutSettlesAt || (isExpanded ? settings.autoHide : settings.hoverToReveal)
         return waiting ? 0.5 : 2
     }
@@ -477,7 +497,7 @@ struct OrganizerMenuState: Equatable {
         for item in installed { items.setLength(item.revealedLength(padding: padding), for: item) }
         for item in OrganizerItem.allCases.reversed() { remove(item) }
         isInstalled = false; isExpanded = true; isEditingArrangement = false
-        deadline = nil; hoverStarted = nil; pendingInitialCollapse = false
+        deadline = nil; hoverStarted = nil; pendingCollapse = false
         menuTracking = false
         layoutSettlesAt = 0
         validationDue = false
@@ -526,7 +546,17 @@ struct OrganizerMenuState: Equatable {
         menuAction = action
         guard menuState != state else { return }
         menuState = state
+        items[.toggle]?.button?.toolTip = Self.arrowToolTip(expanded: state.expanded, issue: state.issue)
         let menu = NSMenu(); menu.delegate = self
+        if let issue = state.issue {
+            // A menu does not wrap, so each sentence gets its own line.
+            let sentences = issue.components(separatedBy: ". ")
+            for (index, sentence) in sentences.enumerated() {
+                let item = NSMenuItem(title: index < sentences.count - 1 ? sentence + "." : sentence, action: nil, keyEquivalent: "")
+                item.isEnabled = false; menu.addItem(item)
+            }
+            menu.addItem(.separator())
+        }
         for (title, selector) in [(state.expanded ? "Hide menu bar icons" : "Show hidden icons", #selector(toggleFromMenu)),
                                   (state.arranging ? "Done arranging" : "Show all & arrange…", #selector(arrangeFromMenu))] {
             let item = NSMenuItem(title: title, action: selector, keyEquivalent: ""); item.target = self; menu.addItem(item)
@@ -588,7 +618,11 @@ struct OrganizerMenuState: Equatable {
         self.expanded = expanded
         button.image = Self.arrowImage(expanded: expanded)
         button.setAccessibilityValue(expanded ? "Expanded" : "Collapsed")
-        button.toolTip = (expanded ? "Hide menu bar icons" : "Show hidden icons") + ". Right-click for options; Option-click to arrange all icons."
+        button.toolTip = Self.arrowToolTip(expanded: expanded, issue: menuState?.issue)
+    }
+    /// While an arrangement problem keeps the icons shown, the arrow says so instead of offering to hide them.
+    static func arrowToolTip(expanded: Bool, issue: String?) -> String {
+        issue ?? (expanded ? "Hide menu bar icons" : "Show hidden icons") + ". Right-click for options; Option-click to arrange all icons."
     }
     static func arrowImage(expanded: Bool) -> NSImage {
         let image = NSImage(size: NSSize(width: 12, height: 18), flipped: false) { _ in

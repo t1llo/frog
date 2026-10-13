@@ -85,7 +85,11 @@ Implemented in `native/FrogApp/Platform/MenuBarOrganizer.swift`:
 Right-clicking Frog's arrow or clicking a divider opens a native context menu with
 show/hide, show-all/arrange, checked auto-hide, and Menu bar settings. Option-click
 opens/closes all-sections arrangement; ordinary clicking exits arrangement and hides
-instead of silently ignoring the click. Auto-hide changes use the same persisted
+instead of silently ignoring the click. While an arrangement problem keeps the icons
+shown, the menu starts with the reason, the arrow's tooltip is the reason, and a click
+or the shortcut that cannot hide opens Menu bar settings, where the same text stands
+next to the controls that repair it. A hide asked for while the bar supplies no frames
+is kept for the next tick that has them. Auto-hide changes use the same persisted
 preferences path as Settings. The existing Frog menu supplies Quit and the existing
 app preferences supply login startup. Hidden Bar's Option-click separator hiding, show-preferences-at-launch,
 and “full menu bar” activation-policy switching are not duplicated. Frog keeps its
