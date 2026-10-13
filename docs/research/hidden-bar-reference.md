@@ -64,9 +64,12 @@ Implemented in `native/FrogApp/Platform/MenuBarOrganizer.swift`:
 - No default shortcut. No Accessibility or Screen Recording permission. Teardown
   unregisters the shortcut, invalidates the timer and removes all owned items.
 - If `com.dwarvesv.minimalbar` is running, do not install (or tear down already
-  installed helpers). Display an explanation and Retry. Never terminate, uninstall
-  or reconfigure Hidden Bar. Detection currently covers Hidden Bar, not every
-  possible third-party menu-bar organizer.
+  installed helpers). Display an explanation and Retry, and start again without
+  being asked once Hidden Bar has quit. Hidden Bar is an agent app, so its exit is
+  read from the list of running applications; the workspace posts no quit
+  notification for it. Never terminate, uninstall or reconfigure Hidden Bar.
+  Detection currently covers Hidden Bar, not every possible third-party menu-bar
+  organizer.
 
 Right-clicking Frog's arrow or clicking a divider opens a native context menu with
 show/hide, show-all/arrange, checked auto-hide, and Menu bar settings. Option-click

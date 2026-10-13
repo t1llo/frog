@@ -387,6 +387,52 @@ import FrogCore
         fixture.organizer.stop()
     }
 
+    func testOrganizerStartsByItselfOnceHiddenBarQuits() {
+        let fixture = OrganizerFixture()
+        fixture.env.competingOrganizer = true
+        var settings = MenuBarPreferences(); settings.hotkey = Hotkey(keyCode: 46, modifiers: 6144)
+        fixture.organizer.configure(enabled: true, settings: settings)
+        XCTAssertFalse(fixture.organizer.isInstalled)
+        // Some other application quits while Hidden Bar is still running.
+        fixture.applications.changed?()
+        XCTAssertTrue(fixture.items.created.isEmpty)
+        XCTAssertNotNil(fixture.organizer.issue)
+        fixture.env.competingOrganizer = false
+        fixture.applications.changed?()
+        XCTAssertTrue(fixture.organizer.isInstalled, "No timer runs while the helpers are removed, so the quit itself has to restart the organizer")
+        XCTAssertNil(fixture.organizer.issue)
+        XCTAssertEqual(fixture.items.created, [.toggle, .divider])
+        XCTAssertEqual(fixture.keys.registrations, 1)
+        XCTAssertNil(fixture.applications.changed, "Nothing is left to wait for")
+        // Hidden Bar starts while Frog's helpers are installed, and quits again.
+        fixture.env.competingOrganizer = true; fixture.organizer.tick()
+        XCTAssertTrue(fixture.items.active.isEmpty)
+        fixture.env.competingOrganizer = false
+        fixture.applications.changed?()
+        XCTAssertEqual(fixture.items.active, [.toggle, .divider])
+        fixture.organizer.stop()
+    }
+
+    func testOrganizerSwitchedOffNeverStartsWhenHiddenBarQuits() {
+        let fixture = OrganizerFixture()
+        fixture.env.competingOrganizer = true
+        fixture.organizer.configure(enabled: true, settings: MenuBarPreferences())
+        let late = fixture.applications.changed
+        XCTAssertNotNil(late)
+        fixture.organizer.stop()
+        XCTAssertNil(fixture.applications.changed, "Switching the feature off ends the wait")
+        fixture.env.competingOrganizer = false
+        late?()
+        XCTAssertTrue(fixture.items.created.isEmpty, "A change that was already on its way must not install helpers")
+        XCTAssertFalse(fixture.organizer.isEnabled)
+        // An unsupported macOS has nothing to wait for.
+        fixture.env.supportsLengthTechnique = false
+        fixture.organizer.configure(enabled: true, settings: MenuBarPreferences())
+        XCTAssertNotNil(fixture.organizer.issue)
+        XCTAssertNil(fixture.applications.changed)
+        fixture.organizer.stop()
+    }
+
     func testHotkeySuspendConflictAndDefaultOptIn() {
         let fixture = OrganizerFixture()
         var settings = MenuBarPreferences()
@@ -428,10 +474,11 @@ import FrogCore
 @MainActor private final class OrganizerFixture {
     let items = FixtureOrganizerItems()
     let keys = FixtureOrganizerHotkey()
+    let applications = FixtureOrganizerApplications()
     var time: TimeInterval = 0
     var env = OrganizerEnvironment(screens: [OrganizerScreen(frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
         menuRegions: [CGRect(x: 0, y: 876, width: 1440, height: 24)])])
-    lazy var organizer = MenuBarOrganizer(statusItems: items, hotkeys: keys, automaticTicks: false,
+    lazy var organizer = MenuBarOrganizer(statusItems: items, hotkeys: keys, applications: applications, automaticTicks: false,
         environment: { [unowned self] in self.env }, now: { [unowned self] in self.time })
 }
 
@@ -486,4 +533,10 @@ import FrogCore
         return error
     }
     func unregister() { action = nil }
+}
+
+@MainActor private final class FixtureOrganizerApplications: OrganizerApplications {
+    var changed: (() -> Void)?
+    func watch(_ changed: @escaping () -> Void) { self.changed = changed }
+    func stopWatching() { changed = nil }
 }

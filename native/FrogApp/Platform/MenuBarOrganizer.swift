@@ -93,6 +93,13 @@ struct OrganizerMenuState: Equatable {
     func unregister()
 }
 
+/// Hidden Bar is an agent app, and the workspace announces neither the launch nor the
+/// exit of one. The list of running applications is the only place that shows it leave.
+@MainActor protocol OrganizerApplications: AnyObject {
+    func watch(_ changed: @escaping () -> Void)
+    func stopWatching()
+}
+
 @MainActor final class MenuBarOrganizer: ObservableObject {
     @Published private(set) var isEnabled = false
     @Published private(set) var isInstalled = false
@@ -105,6 +112,7 @@ struct OrganizerMenuState: Equatable {
 
     private let items: any OrganizerStatusItems
     private let hotkeys: any OrganizerHotkey
+    private let applications: any OrganizerApplications
     private let environment: () -> OrganizerEnvironment
     private let now: () -> TimeInterval
     private let automaticTicks: Bool
@@ -119,15 +127,18 @@ struct OrganizerMenuState: Equatable {
     private var registeredHotkey: Hotkey?
     private var appliedLengths: [OrganizerItem: CGFloat] = [:]
     private var menuTracking = false
+    private var awaitingCompetitorQuit = false
     // AppKit updates width synchronously, but WindowServer moves the spacer later.
     // Do not interpret that intermediate rectangle as a user-reversed arrangement.
     private var layoutSettlesAt: TimeInterval = 0
 
     init(statusItems: (any OrganizerStatusItems)? = nil, hotkeys: (any OrganizerHotkey)? = nil,
+         applications: (any OrganizerApplications)? = nil,
          automaticTicks: Bool = true, environment: (() -> OrganizerEnvironment)? = nil,
          now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.items = statusItems ?? NativeOrganizerStatusItems()
         self.hotkeys = hotkeys ?? NativeOrganizerHotkey()
+        self.applications = applications ?? NativeOrganizerApplications()
         self.automaticTicks = automaticTicks
         self.environment = environment ?? { OrganizerEnvironment.live() }
         self.now = now
@@ -142,6 +153,8 @@ struct OrganizerMenuState: Equatable {
         guard checkAvailability(env) else { return }
         let starting = !isInstalled
         if starting {
+            // Whatever kept the helpers away is over.
+            if issue != nil { issue = nil }
             // New status items are inserted on the left, so create the recovery arrow first.
             install(.toggle); install(.divider)
             isInstalled = true
@@ -179,6 +192,7 @@ struct OrganizerMenuState: Equatable {
 
     func stop() {
         tearDown()
+        awaitCompetitorQuit(false)
         isEnabled = false
         issue = nil
     }
@@ -319,14 +333,26 @@ struct OrganizerMenuState: Equatable {
     private func checkAvailability(_ env: OrganizerEnvironment) -> Bool {
         let problem: String?
         if env.competingOrganizer {
-            problem = "Hidden Bar is running. Quit it yourself before enabling Frog's organizer, then click Retry."
+            problem = "Hidden Bar is running. Frog's organizer starts once you quit Hidden Bar."
         } else if !env.supportsLengthTechnique {
             problem = "This macOS version does not support the public status-item spacing technique. Frog has left your menu bar revealed."
         } else { problem = nil }
+        // No timer runs while the helpers are removed, so the quit has to be noticed apart from it.
+        awaitCompetitorQuit(env.competingOrganizer)
         guard let problem else { return true }
         tearDown()
         issue = problem
         return false
+    }
+
+    private func awaitCompetitorQuit(_ waiting: Bool) {
+        guard waiting != awaitingCompetitorQuit else { return }
+        awaitingCompetitorQuit = waiting
+        guard waiting else { applications.stopWatching(); return }
+        applications.watch { [weak self] in
+            guard let self, self.isEnabled, !self.isInstalled, !self.environment().competingOrganizer else { return }
+            self.configure(enabled: true, settings: self.settings)
+        }
     }
 
     private func install(_ item: OrganizerItem) {
@@ -402,6 +428,7 @@ struct OrganizerMenuState: Equatable {
     isolated deinit {
         timer?.invalidate()
         hotkeys.unregister()
+        applications.stopWatching()
         for item in OrganizerItem.allCases.reversed() where installed.contains(item) { items.remove(item) }
     }
 }
@@ -413,6 +440,18 @@ struct OrganizerMenuState: Equatable {
         manager.register(rules: [Rule(id: id, name: "Menu bar", hotkey: hotkey)], onTrigger: { _ in action() })[id]
     }
     func unregister() { manager.unregister() }
+}
+
+@MainActor private final class NativeOrganizerApplications: OrganizerApplications {
+    private var observation: NSKeyValueObservation?
+    func watch(_ changed: @escaping () -> Void) {
+        guard observation == nil else { return }
+        observation = NSWorkspace.shared.observe(\.runningApplications) { _, _ in
+            // Decide after the workspace has finished updating its list.
+            DispatchQueue.main.async { MainActor.assumeIsolated { changed() } }
+        }
+    }
+    func stopWatching() { observation = nil }
 }
 
 @MainActor final class NativeOrganizerStatusItems: NSObject, OrganizerStatusItems, NSMenuDelegate {
