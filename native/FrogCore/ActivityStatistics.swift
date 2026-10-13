@@ -85,7 +85,8 @@ public struct ActivityStatisticsSnapshot: Codable, Equatable, Sendable {
         return count
     }
 
-    fileprivate mutating func record(_ event: ActivityStatisticsEvent, at date: Date, timeZone: TimeZone) throws {
+    /// Counts one completed event in memory. Saving it stays with `ActivityStatisticsPersistence`.
+    public mutating func record(_ event: ActivityStatisticsEvent, at date: Date = Date(), timeZone: TimeZone = .current) throws {
         guard recordingEnabled else { return }
         let delta = try ActivityStatisticsTotals(event: event)
         allTime.add(delta)
@@ -142,10 +143,16 @@ public final class ActivityStatisticsPersistence: @unchecked Sendable {
 
     @discardableResult
     public func record(_ event: ActivityStatisticsEvent, at date: Date = Date(), timeZone: TimeZone = .current) throws -> ActivityStatisticsSnapshot {
+        try record([event], at: date, timeZone: timeZone)
+    }
+
+    /// Events that complete together are saved in one transaction, or not at all.
+    @discardableResult
+    public func record(_ events: [ActivityStatisticsEvent], at date: Date = Date(), timeZone: TimeZone = .current) throws -> ActivityStatisticsSnapshot {
         activityStatisticsLock.lock(); defer { activityStatisticsLock.unlock() }
         var result = try read()
-        guard result.recordingEnabled else { return result }
-        try result.record(event, at: date, timeZone: timeZone)
+        guard result.recordingEnabled, !events.isEmpty else { return result }
+        for event in events { try result.record(event, at: date, timeZone: timeZone) }
         try write(result)
         return result
     }

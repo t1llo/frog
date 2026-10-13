@@ -213,8 +213,7 @@ final class AppModel: ObservableObject {
             self.status = "\(rule.name) · \(delivery)"
         }
         dictation.onSuccessfulDelivery = { [weak self] seconds, text in
-            self?.statistics.recordDictation(recordingSeconds: seconds, text: text)
-            self?.statistics.recordRuleExecution(kind: .dictation)
+            self?.statistics.recordDictation(recordingSeconds: seconds, text: text, rule: .dictation)
         }
         dictation.onTranscript = { [weak self] id, rule, original, result in
             guard let self else { return }
@@ -354,6 +353,7 @@ final class AppModel: ObservableObject {
 
     func shutdown() {
         drainUsagePreferences()
+        statistics.waitForWrites()
         systemMonitor.stop()
         commandBar.stop()
         toolkit.stop()

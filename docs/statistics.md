@@ -34,8 +34,12 @@ breakdowns and tool counts. A parent view hosts `StatisticsView(statistics:onBac
 ## Parent integration API
 
 The service is `@MainActor final class ActivityStatisticsStore: ObservableObject`.
-It loads during initialization. There is no asynchronous load/flush requirement;
-each low-frequency completion persists one small transaction synchronously.
+It loads during initialization. A completion hook counts its event in `snapshot`
+before it returns and saves it as one small transaction on a private serial queue,
+off the main thread. `reload()`, `setRecordingEnabled(_:)` and `reset()` first wait
+for events still being saved, so none of them can drop or resurrect a count. The
+parent calls `waitForWrites()` when Frog quits (`AppModel.shutdown()`). An event that
+could not be saved is reported in `issue` and leaves the counts again.
 
 ```swift
 // AppModel stored property:
@@ -51,7 +55,8 @@ StatisticsView(statistics: model.statistics, onBack: { showingStatistics = false
 // Successful completion hooks (exact API):
 statistics.recordRuleExecution(kind: .local) // .remote, .cli, .dictation,
                                             // .application, .window, .system
-statistics.recordDictation(recordingSeconds: microphoneSeconds, text: rawTranscript)
+statistics.recordDictation(recordingSeconds: microphoneSeconds, text: rawTranscript, rule: .dictation)
+// `rule:` saves the run of the delivering rule in the same transaction.
 statistics.recordToolUse(.clipboardPaste)
 // Other tool kinds: .applicationCommand, .windowCommand, .systemCommand,
 // .commandSelection, .scriptRun, .snippetCopy
@@ -59,6 +64,7 @@ statistics.recordToolUse(.clipboardPaste)
 statistics.setRecordingEnabled(false)
 statistics.reset()
 statistics.reload()
+statistics.waitForWrites() // before quitting
 ```
 
 Published read-only state: `snapshot`, `issue: String?`, `loaded: Bool`.
@@ -71,6 +77,7 @@ Core API, when needed outside the UI:
 ```swift
 let store = ActivityStatisticsPersistence(directory: isolatedDirectory)
 let state = try store.record(.dictation(recordingSeconds: 30, words: 60))
+// Events that complete together: try store.record([.dictation(…), .rule(.dictation)])
 let recent = state.totals(lastDays: 7)
 let count = state.allTime.ruleRuns(.local)
 let pastes = state.allTime.toolUses(.clipboardPaste)
@@ -90,7 +97,8 @@ subpage. The page observes its store directly.
    Connection tests/model discovery/previews must not increment rules.
 2. **Dictation — `DictationController.onSuccessfulDelivery`:** count after current-token,
    cancellation and delivery success checks, never `onTranscript` (fires before delivery),
-   preview, recovery, `onCopy`, or start. Also count `.dictation` rule execution once.
+   preview, recovery, `onCopy`, or start. Also count `.dictation` rule execution once,
+   in the same call (`rule: .dictation`), so both are saved together.
    Pass the **raw** transcript for dictated-word counts rather than cleanup-expanded text.
    The callback carries fractional monotonic capture-start/stop seconds, frozen at Stop.
    It excludes preparation, decoding, cleanup and insertion waits. The separate
