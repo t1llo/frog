@@ -127,7 +127,7 @@ private struct HistoryContent: View {
             .onChange(of: model.configuration.preferences.hideHistoryText) { _, _ in visibility.revealed = [] }
             .onChange(of: model.historyFilter) { _, _ in viewing = nil; visibility.revealed = []; search = "" }
             .onDisappear { visibility.revealed = []; deleting = nil }
-            .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { _ in visibility.revealed = []; deleting = nil }
+            .background(WindowClosing { visibility.revealed = []; deleting = nil })
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in visibility.revealed = [] }
             .onChange(of: all.map(\.id)) { _, ids in
                 visibility.revealed.formIntersection(ids)
@@ -227,6 +227,36 @@ enum HistoryPreview {
     static func text(_ original: String) -> String {
         let prefix = original.prefix(513)
         return prefix.count > 512 ? String(prefix.prefix(512)) + "…" : String(prefix)
+    }
+}
+
+/// Reports that the window holding the view closes. The settings window is kept after it
+/// closes, so onDisappear does not run then. Other windows of the process close as well,
+/// an update window for one, and must not count as this page closing.
+struct WindowClosing: NSViewRepresentable {
+    let closed: () -> Void
+    func makeNSView(context: Context) -> ObserverView { ObserverView(closed: closed) }
+    func updateNSView(_ view: ObserverView, context: Context) { view.closed = closed }
+    static func dismantleNSView(_ view: ObserverView, coordinator: ()) { view.observe(nil) }
+
+    final class ObserverView: NSView {
+        var closed: () -> Void
+        private var observer: NSObjectProtocol?
+        init(closed: @escaping () -> Void) { self.closed = closed; super.init(frame: .zero) }
+        required init?(coder: NSCoder) { fatalError() }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); observe(window) }
+
+        /// Listens to `window` alone, and to nothing when the view has left its window.
+        func observe(_ window: AnyObject?) {
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            observer = nil
+            guard let window else { return }
+            observer = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.closed() }
+            }
+        }
+        isolated deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
     }
 }
 
