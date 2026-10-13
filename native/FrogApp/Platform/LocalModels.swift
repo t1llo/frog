@@ -301,6 +301,41 @@ actor LocalInference: LocalInferenceEngine {
     var loadedIDs: Set<String> { Set([speechID, textID].compactMap { $0 }) }
 
     static func download(_ model: LocalModelDescriptor, base: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+        do { return try await fetch(model, base: base, progress: progress) }
+        catch is CancellationError { throw CancellationError() }
+        catch { throw Task.isCancelled ? error : FrogError.message(downloadFailure(error, model: model)) }
+    }
+    /// The libraries word their failures for developers ("Offline mode error:
+    /// Repository not available locally", "Please provide a valid Hugging Face
+    /// token"). The Models row says what happened to this download instead.
+    static func downloadFailure(_ error: Error, model: LocalModelDescriptor) -> String {
+        let offline = "No internet connection. Reconnect and try again; the files already downloaded are kept."
+        var cause = error
+        #if arch(arm64)
+        let limited = "Hugging Face is limiting downloads at the moment. Try again in a few minutes; the files already downloaded are kept."
+        switch error {
+        case Hub.HubClientError.networkError(let inner): cause = inner
+        case Hub.HubClientError.fileSystemError(let inner): cause = inner
+        case HubApi.EnvironmentError.offlineModeError: return offline
+        case Hub.HubClientError.authorizationRequired:
+            return "Hugging Face asks for an account or an accepted license for \(model.repository). Frog downloads without signing in and cannot fetch this model."
+        case Hub.HubClientError.fileNotFound, Hub.HubClientError.resourceNotFound:
+            return "A file of \(model.name) is missing from \(model.repository) on Hugging Face. The repository may have been renamed or removed."
+        case Hub.HubClientError.httpStatusCode(429): return limited
+        case Hub.HubClientError.downloadError(let text) where text.hasPrefix("Rate limited"): return limited
+        default: break
+        }
+        #endif
+        if error is FrogError { return error.localizedDescription }
+        let unreachable: [URLError.Code] = [.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .dataNotAllowed, .internationalRoamingOff]
+        if let network = cause as? URLError, unreachable.contains(network.code) { return offline }
+        let code = cause as NSError
+        if (code.domain == NSCocoaErrorDomain && code.code == NSFileWriteOutOfSpaceError) || (code.domain == NSPOSIXErrorDomain && code.code == Int(ENOSPC)) {
+            return "Not enough free disk space for \(model.name) (\(model.size)). Free up space and try again; the files already downloaded are kept."
+        }
+        return "Could not download \(model.name). \(error.localizedDescription)"
+    }
+    private static func fetch(_ model: LocalModelDescriptor, base: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         #if arch(arm64)
         if model.backend == .parakeet { return try await ParakeetRuntime.download(model, base: base, progress: progress) }
         if model.backend == .whisperKit {

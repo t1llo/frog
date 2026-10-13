@@ -1,5 +1,8 @@
 import XCTest
 import FrogCore
+#if arch(arm64)
+import Hub
+#endif
 @testable import FrogApp
 
 @MainActor
@@ -264,6 +267,31 @@ final class LocalModelsTests: XCTestCase {
         XCTAssertNil(models.errors[descriptor.id])
         XCTAssertTrue(models.installed.contains(descriptor.id))
         XCTAssertTrue(models.unfinished.isEmpty)
+    }
+
+    func testDownloadFailuresSayWhatToDoInsteadOfQuotingTheLibrary() {
+        let model = LocalModelDescriptor.find("qwen-1.7b")!
+        func message(_ error: Error) -> String { LocalInference.downloadFailure(error, model: model) }
+        let offline = message(URLError(.notConnectedToInternet))
+        XCTAssertTrue(offline.contains("internet connection"), offline)
+        XCTAssertEqual(message(URLError(.networkConnectionLost)), offline)
+        for full in [message(CocoaError(.fileWriteOutOfSpace)), message(POSIXError(.ENOSPC))] {
+            XCTAssertTrue(full.contains("disk space") && full.contains(model.name), full)
+        }
+        XCTAssertEqual(message(FrogError.message("Built-in local models require Apple silicon.")), "Built-in local models require Apple silicon.")
+        let odd = NSError(domain: "Fixture", code: 1, userInfo: [NSLocalizedDescriptionKey: "Odd failure"])
+        XCTAssertEqual(message(odd), "Could not download \(model.name). Odd failure")
+        #if arch(arm64)
+        XCTAssertEqual(message(HubApi.EnvironmentError.offlineModeError("Repository not available locally")), offline)
+        XCTAssertEqual(message(Hub.HubClientError.networkError(URLError(.timedOut))), offline)
+        let gated = message(Hub.HubClientError.authorizationRequired)
+        XCTAssertTrue(gated.contains(model.repository) && !gated.contains("token"), gated)
+        XCTAssertTrue(message(Hub.HubClientError.fileNotFound("\(model.repository)@main/model.safetensors")).contains(model.repository))
+        let limited = message(Hub.HubClientError.downloadError("Rate limited while downloading \(model.repository)@main/model.safetensors (https://example.invalid/model.safetensors -> /Volumes/Disk/Models/model.safetensors)"))
+        XCTAssertTrue(limited.contains("few minutes"), limited)
+        XCTAssertFalse(limited.contains("/Volumes") || limited.contains("https://"), "No paths or addresses of the library's making: \(limited)")
+        XCTAssertEqual(message(Hub.HubClientError.httpStatusCode(429)), limited)
+        #endif
     }
 
     func testUnfinishedDownloadCanBeDiscardedButAFolderFrogDidNotStartCannot() async throws {
