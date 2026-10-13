@@ -84,10 +84,20 @@ final class LocalModels: ObservableObject {
         let url = base.appendingPathComponent(relative)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
+    /// Lies in a model folder from the start of its download until `installed.txt`
+    /// exists. A quit or a crash in between leaves both the folder and this file,
+    /// which tells Frog's own unfinished download from a folder it must not touch.
+    private static let downloadMarker = ".frog-download"
+    nonisolated private static func discard(_ folder: URL) async throws {
+        do { try FileManager.default.removeItem(at: folder) }
+        catch CocoaError.fileNoSuchFile { /* Already gone. */ }
+    }
     func download(_ model: LocalModelDescriptor) {
         guard Self.supported, !changingDirectory, downloads[model.id] == nil, !installed.contains(model.id) else { return }
         let base = directory(model.id)
-        guard !FileManager.default.fileExists(atPath: base.path) else {
+        let marker = base.appendingPathComponent(Self.downloadMarker)
+        let unfinished = FileManager.default.fileExists(atPath: marker.path)
+        guard unfinished || !FileManager.default.fileExists(atPath: base.path) else {
             errors[model.id] = "A folder named \(model.id) already exists without a completed Frog installation. Choose another download folder or move that folder aside."
             return
         }
@@ -96,7 +106,10 @@ final class LocalModels: ObservableObject {
             guard let self else { return }
             defer { self.downloads[model.id] = nil; self.progress[model.id] = nil }
             do {
+                // Frog's own leftovers can be gigabytes: remove them off the main thread.
+                if unfinished { try await Self.discard(base) }
                 try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+                try Data().write(to: marker)
                 let url = try await self.downloader(model, base) { [weak self] fraction in
                     Task { @MainActor [weak self] in
                         guard let self, self.downloads[model.id] != nil else { return }
@@ -107,6 +120,7 @@ final class LocalModels: ObservableObject {
                 guard url.path.hasPrefix(base.path + "/") else { throw FrogError.message("Invalid model installation path.") }
                 let relative = String(url.path.dropFirst(base.path.count + 1))
                 try relative.write(to: base.appendingPathComponent("installed.txt"), atomically: true, encoding: .utf8)
+                try? FileManager.default.removeItem(at: marker)
                 self.installed.insert(model.id)
                 self.onInstall?(model)
             } catch {

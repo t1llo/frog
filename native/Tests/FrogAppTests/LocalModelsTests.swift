@@ -208,6 +208,31 @@ final class LocalModelsTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("Models/\(descriptor.id)").path))
     }
 
+    func testDownloadInterruptedByQuittingCanBeStartedAgainAfterRelaunch() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let gate = DownloadGate()
+        // The process ends inside the downloader: nothing after it gets to run.
+        let quit = LocalModels(directory: directory, runtime: FixtureInference(), downloader: { model, base, progress in
+            let folder = try await Self.fixtureDownload(model, base, progress)
+            await gate.wait()
+            return folder
+        })
+        let descriptor = LocalModelDescriptor.find("whisper-base")!
+        quit.download(descriptor); await gate.waitUntilStarted()
+        let folder = directory.appendingPathComponent("Models/\(descriptor.id)")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.path))
+
+        let relaunched = LocalModels(directory: directory, runtime: FixtureInference(), downloader: Self.fixtureDownload)
+        XCTAssertFalse(relaunched.installed.contains(descriptor.id), "An unfinished folder is not an installation")
+        relaunched.download(descriptor); await relaunched.waitForDownload(descriptor.id)
+        XCTAssertNil(relaunched.errors[descriptor.id])
+        XCTAssertTrue(relaunched.installed.contains(descriptor.id), "Frog's own unfinished folder must not block the model for good")
+        XCTAssertTrue(LocalModels(directory: directory).installed.contains(descriptor.id))
+
+        quit.shutdown(); await gate.resume(); await quit.waitForDownload(descriptor.id)
+    }
+
     func testUnavailableModelFailsWithoutCallingInference() async throws {
         let engine = FixtureInference()
         let models = LocalModels(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString), runtime: engine)
