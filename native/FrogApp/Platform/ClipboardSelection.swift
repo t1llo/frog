@@ -44,11 +44,17 @@ final class ClipboardSelection: CapturedTextSelection {
             throw FrogError.message("Release the shortcut keys and keep the selected app focused, then try again.")
         }
         let menu = MenuCommandCache(application: application)
-        let text = try await FreshSelectionCopy.read(pasteboard: .general) {
+        var sent: [UInt32]?
+        let text = try await FreshSelectionCopy.read(pasteboard: .general, lateCopy: { _ in
+            // The selected text is unknown here. A clipboard change passes for the late
+            // answer only while nothing was typed or clicked since and the app is still in front.
+            sent == inputSnapshot() && NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+        }) {
             guard sameTarget(application, window: window, focused: focused, pid: pid) else {
                 throw FrogError.message("The selected app changed before copying.")
             }
             try command("c", keyCode: 8, menu: menu, pid: pid)
+            sent = inputSnapshot()
         }
         guard sameTarget(application, window: window, focused: focused, pid: pid) else {
             throw FrogError.message("The selected app changed while copying.")
@@ -57,8 +63,9 @@ final class ClipboardSelection: CapturedTextSelection {
     }
 
     func replace(with result: String) async throws {
-        // Set once before validation. FreshSelectionCopy restores this result on
-        // failure; do not clear the pasteboard again while Paste is consuming it.
+        // Set before validation. FreshSelectionCopy restores this result on failure,
+        // also when the app answers Copy late; do not clear the pasteboard again
+        // while Paste is consuming it.
         NSPasteboard.general.clearContents()
         guard NSPasteboard.general.setString(result, forType: .string) else { throw FrogError.message("Could not copy the result.") }
         guard !consumed, !invalidated, Self.inputSnapshot() == input, Self.modifiersReleased,
@@ -71,7 +78,7 @@ final class ClipboardSelection: CapturedTextSelection {
         consumed = true
         // Re-copy immediately before paste: window identity alone cannot establish selection identity.
         let beforeCopy = Self.inputSnapshot()
-        let current = try await FreshSelectionCopy.read(pasteboard: .general) {
+        let current = try await FreshSelectionCopy.read(pasteboard: .general, lateCopy: { [text] in $0 == text }) {
             try Self.command("c", keyCode: 8, menu: self.menu, pid: self.pid)
         }
         let afterCopy = Self.inputSnapshot()
@@ -82,6 +89,7 @@ final class ClipboardSelection: CapturedTextSelection {
         }
         guard canPaste else { throw FrogError.message("The field is no longer editable. The result is on the clipboard.") }
         try Task.checkCancellation()
+        try Self.putBack(result, on: .general)
         try Self.command("v", keyCode: 9, menu: menu, pid: pid)
     }
 
@@ -109,6 +117,14 @@ final class ClipboardSelection: CapturedTextSelection {
     static func command(_ character: String, keyCode: CGKeyCode, menu: MenuCommandCache, pid: pid_t) throws {
         if let item = menu.item(character), press(item) { return }
         try key(keyCode, pid: pid)
+    }
+
+    /// Paste inserts whatever the clipboard holds at that moment. The Copy that
+    /// checked the selection, or another writer, may have replaced the result since.
+    static func putBack(_ result: String, on pasteboard: NSPasteboard) throws {
+        guard pasteboard.string(forType: .string) != result else { return }
+        pasteboard.clearContents()
+        guard pasteboard.setString(result, forType: .string) else { throw FrogError.message("Could not copy the result.") }
     }
 
     private static func press(_ item: AXUIElement) -> Bool {
@@ -252,7 +268,16 @@ final class MenuCommandCache {
 
 @MainActor
 enum FreshSelectionCopy {
-    static func read(pasteboard: NSPasteboard, attempts: Int = 60, copy: () throws -> Void) async throws -> String {
+    /// The wait for an answer to a Copy that `read` gave up on.
+    private(set) static var lateCopyWatch: Task<Void, Never>?
+
+    /// `lateCopy` is asked about text that reaches the clipboard after `read` gave up
+    /// without seeing any change. Return true only for the answer to this Copy request:
+    /// the clipboard is then put back as it was, as it is after an answer in time.
+    static func read(pasteboard: NSPasteboard, attempts: Int = 60, lateCopy: ((String) -> Bool)? = nil,
+                     copy: () throws -> Void) async throws -> String {
+        // An answer that arrives from now on belongs to this request.
+        lateCopyWatch?.cancel(); lateCopyWatch = nil
         ClipboardHistoryCaptureGate.shared.begin()
         defer { ClipboardHistoryCaptureGate.shared.end(pasteboard: pasteboard) }
         let original: [NSPasteboardItem] = pasteboard.pasteboardItems?.map { item in
@@ -262,15 +287,19 @@ enum FreshSelectionCopy {
         } ?? []
         let previousCount = pasteboard.changeCount
         var copiedCount: Int?
+        var requested = false
         defer {
             // Do not overwrite a clipboard update that happened after ours.
             if let copiedCount, pasteboard.changeCount == copiedCount {
                 pasteboard.clearContents()
                 if !original.isEmpty { pasteboard.writeObjects(original) }
+            } else if requested, copiedCount == nil, let lateCopy {
+                undoLateCopy(on: pasteboard, after: previousCount, restoring: original, when: lateCopy)
             }
         }
         try Task.checkCancellation()
         try copy()
+        requested = true
         for _ in 0..<attempts {
             if pasteboard.changeCount != previousCount {
                 copiedCount = pasteboard.changeCount
@@ -290,5 +319,27 @@ enum FreshSelectionCopy {
         try Task.checkCancellation()
         if copiedCount != nil { throw FrogError.message("Copy did not return selected text. Select text in an editable field and try again.") }
         throw FrogError.message("The app did not copy a selection. Select text first, then try the shortcut again.")
+    }
+
+    /// A busy app can answer Copy seconds after it was asked. By then nobody waits for
+    /// the text, and it would silently replace what the clipboard held.
+    private static func undoLateCopy(on pasteboard: NSPasteboard, after count: Int, restoring original: [NSPasteboardItem],
+                                     when isLateCopy: @escaping (String) -> Bool) {
+        lateCopyWatch = Task { @MainActor in
+            // Clipboard history stays open meanwhile: the person may copy something.
+            for _ in 0..<250 {
+                try? await Task.sleep(for: .milliseconds(20))
+                if Task.isCancelled { return }
+                // Some apps clear the clipboard first and supply the text a moment later.
+                guard pasteboard.changeCount != count, let text = pasteboard.string(forType: .string),
+                      !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                guard isLateCopy(text) else { return }
+                ClipboardHistoryCaptureGate.shared.begin()
+                defer { ClipboardHistoryCaptureGate.shared.end(pasteboard: pasteboard) }
+                pasteboard.clearContents()
+                if !original.isEmpty { pasteboard.writeObjects(original) }
+                return
+            }
+        }
     }
 }
