@@ -76,7 +76,9 @@ struct NativeClipboardHistoryPasteTarget: ClipboardHistoryPasteTarget {
         guard [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(access.role(focused) ?? "") || access.editable(focused) else { return nil }
         let range = access.range(focused)
         if let range, range.location < 0 || range.length < 0 { return nil }
-        if range == nil, !access.editable(focused), !access.nativePasteAvailable() { return nil }
+        // A text field with neither a range nor an editable value is taken on trust here.
+        // Whether its app offers a Paste command is found by reading the whole menu bar,
+        // so that waits until an item is chosen: validateField asks before anything is pasted.
         guard access.frontmostPID() == pid else { return nil }
         return Self(window: window, focused: focused, range: range, pid: pid, access: access)
     }
@@ -129,7 +131,7 @@ struct NativeClipboardHistoryPasteTarget: ClipboardHistoryPasteTarget {
             throw FrogError.message("The target field is disabled. The item is copied; paste it manually.")
         }
         guard range != nil || access.editable(current) || access.nativePasteAvailable() else {
-            throw FrogError.message("The original field no longer accepts Paste. The item is copied; paste it manually.")
+            throw FrogError.message("The original field does not accept Paste. The item is copied; paste it manually.")
         }
     }
 
