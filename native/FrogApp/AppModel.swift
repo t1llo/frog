@@ -227,7 +227,7 @@ final class AppModel: ObservableObject {
             if self.configuration.preferences.historyEnabled, self.dictationHistoryEpoch == self.historyEpoch {
                 var entry = HistoryEntry(id: id, originalText: original, processedText: result, ruleName: rule.name, providerName: "Transcription", model: rule.action?.audioModelID ?? self.configuration.preferences.workflowSettings.audioModelID)
                 entry.category = .audio
-                do { try self.historyStore.append(entry, preferences: self.configuration.preferences); self.refreshHistory() }
+                do { if let retained = try self.historyStore.append(entry, preferences: self.configuration.preferences) { self.adoptHistory(retained) } }
                 catch { self.report(error) }
             }
         }
@@ -699,6 +699,7 @@ final class AppModel: ObservableObject {
         }
         let previousWorkflow = configuration.preferences.workflowSettings
         let workflow = preferences.workflowSettings
+        let historyChanged = preferences.historyEnabled != configuration.preferences.historyEnabled || preferences.historyLimit != configuration.preferences.historyLimit || preferences.historyRetentionDays != configuration.preferences.historyRetentionDays
         let shortcutChanged = workflow.shortcutPanelHotkey != previousWorkflow.shortcutPanelHotkey || workflow.cancelRecordingHotkey != previousWorkflow.cancelRecordingHotkey || workflow.clipboardHistoryHotkey != previousWorkflow.clipboardHistoryHotkey || workflow.clipboardHistoryEnabled != previousWorkflow.clipboardHistoryEnabled || preferences.toolkit != configuration.preferences.toolkit
         if let issue = HotkeyManager.validationError(preferences.toolkitSettings.effectiveCommandBarHotkey) { throw FrogError.message(issue) }
         if let issue = HotkeyManager.validationError(preferences.toolkitSettings.effectiveWindowSwitcherHotkey, purpose: .windowSwitcher) { throw FrogError.message(issue) }
@@ -717,7 +718,8 @@ final class AppModel: ObservableObject {
         configureClipboardHistory()
         localModels.idleSeconds = preferences.workflowSettings.idleUnloadSeconds
         if shortcutChanged || preferences.applicationShortcutsEnabled != nil { registerHotkeys(); shortcutPanel.hide() }
-        refreshHistory()
+        // Only these settings decide what is kept; any other save need not read the history file.
+        if historyChanged { refreshHistory() }
     }
 
     func useCommandBarShortcut(_ hotkey: Hotkey) throws {
@@ -731,14 +733,17 @@ final class AppModel: ObservableObject {
     }
 
     func refreshHistory() {
-        do {
-            history = try historyStore.load(preferences: configuration.preferences)
-            let retained = Set(history.map(\.id))
-            for id in Array(recoveryHistoryEpochs.keys) where !retained.contains(id) {
-                recoveryHistoryEpochs[id] = nil; dictation.cancelHistoryRecovery(id: id)
-            }
-        }
+        do { adoptHistory(try historyStore.load(preferences: configuration.preferences)) }
         catch { report(error) }
+    }
+    /// Takes over what the store kept after a change, which saves reading the file a second time.
+    private func adoptHistory(_ retained: [HistoryEntry]) {
+        // Publishing an equal array would still redraw every view that observes the model.
+        if history != retained { history = retained }
+        let ids = Set(retained.map(\.id))
+        for id in Array(recoveryHistoryEpochs.keys) where !ids.contains(id) {
+            recoveryHistoryEpochs[id] = nil; dictation.cancelHistoryRecovery(id: id)
+        }
     }
     var historyFileURL: URL { historyStore.directory.appendingPathComponent("history.json") }
     /// How many saved entries saving these preferences would delete. A history that cannot be read loses nothing.
@@ -747,7 +752,7 @@ final class AppModel: ObservableObject {
     }
     func deleteHistory(id: UUID) throws {
         if clipboardHistoryStore.entries.contains(where: { $0.id == id }) { clipboardHistoryStore.delete(id: id); return }
-        try historyStore.delete(id: id); refreshHistory()
+        adoptHistory(try historyStore.delete(id: id, preferences: configuration.preferences))
     }
     func clearHistory() throws {
         clipboardHistoryStore.clear(); invalidateHistoryRecovery()
@@ -775,9 +780,9 @@ final class AppModel: ObservableObject {
                                      ruleName: interruption.rule.name, providerName: "Transcription",
                                      model: interruption.rule.action?.audioModelID ?? configuration.preferences.workflowSettings.audioModelID)
             entry.category = .audio; entry.interruption = interruption.reason; entry.transcriptState = .partial
-            try historyStore.append(entry, preferences: configuration.preferences)
+            guard let retained = try historyStore.append(entry, preferences: configuration.preferences) else { return false }
             recoveryHistoryEpochs[entry.id] = historyEpoch
-            refreshHistory()
+            adoptHistory(retained)
             return recoveryHistoryEpochs[entry.id] != nil
         } catch { report(error); return false }
     }
@@ -1130,8 +1135,7 @@ final class AppModel: ObservableObject {
                 if delivered { self.statistics.recordRuleExecution(kind: provider.id == Self.localProviderID || provider.kind.isLocal ? .local : provider.kind.localTool != nil ? .cli : .remote) }
                 if recordingWasEnabled && self.configuration.preferences.historyEnabled && self.historyEpoch == recordingEpoch {
                     do {
-                        try self.historyStore.append(HistoryEntry(originalText: text, processedText: result, ruleName: rule.name, providerName: provider.name, model: provider.model, targetLanguage: rule.targetLanguage), preferences: self.configuration.preferences)
-                        self.refreshHistory()
+                        if let retained = try self.historyStore.append(HistoryEntry(originalText: text, processedText: result, ruleName: rule.name, providerName: provider.name, model: provider.model, targetLanguage: rule.targetLanguage), preferences: self.configuration.preferences) { self.adoptHistory(retained) }
                     } catch { self.report(FrogError.message("Text processed, but history could not be saved: \(error.localizedDescription)")) }
                 }
             } catch { self.finishFailure(error, background: manualText == nil) }

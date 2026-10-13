@@ -312,14 +312,15 @@ public final class ConfigurationStore: @unchecked Sendable {
 public final class HistoryStore: @unchecked Sendable {
     public let directory: URL
     private var file: URL { directory.appendingPathComponent("history.json") }
+    /// Every change reads and writes the whole file, so it stays well below what `read` accepts.
+    private static let maximumBytes = 48 * 1_024 * 1_024
     public init(directory: URL? = nil) { self.directory = directory ?? PrivateFile.defaultDirectory }
 
     public func load(preferences: Preferences) throws -> [HistoryEntry] {
         persistenceLock.lock(); defer { persistenceLock.unlock() }
         let entries = try read()
         let retained = bounded(entries, preferences: preferences)
-        if entries != retained { try write(retained) }
-        return retained
+        return entries == retained ? retained : try write(retained)
     }
 
     /// How many saved entries a change of the limits deletes. Reads the file and leaves it as it is.
@@ -329,12 +330,14 @@ public final class HistoryStore: @unchecked Sendable {
         return max(0, bounded(entries, preferences: current).count - bounded(entries, preferences: preferences).count)
     }
 
-    public func append(_ entry: HistoryEntry, preferences: Preferences) throws {
+    /// Returns what is kept afterwards, as `load` would, or nil when history is off and nothing was saved.
+    @discardableResult
+    public func append(_ entry: HistoryEntry, preferences: Preferences) throws -> [HistoryEntry]? {
         persistenceLock.lock(); defer { persistenceLock.unlock() }
-        guard preferences.historyEnabled else { return }
+        guard preferences.historyEnabled else { return nil }
         var entries = try read().filter { $0.id != entry.id }
         entries.append(entry)
-        try write(bounded(entries, preferences: preferences))
+        return try write(bounded(entries, preferences: preferences))
     }
 
     /// A late transcription may update a retained entry, never recreate a deleted one.
@@ -345,15 +348,17 @@ public final class HistoryStore: @unchecked Sendable {
         var entries = bounded(try read(), preferences: preferences)
         guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return false }
         entries[index] = entry
-        try write(bounded(entries, preferences: preferences))
-        return true
+        return try write(bounded(entries, preferences: preferences)).contains { $0.id == entry.id }
     }
 
-    public func delete(id: UUID) throws {
+    /// Returns what is kept afterwards. With preferences the rest is pruned as `load` would.
+    @discardableResult
+    public func delete(id: UUID, preferences: Preferences? = nil) throws -> [HistoryEntry] {
         persistenceLock.lock(); defer { persistenceLock.unlock() }
         let entries = try read()
-        let retained = entries.filter { $0.id != id }
-        if retained != entries { try write(retained) }
+        var retained = entries.filter { $0.id != id }
+        if let preferences { retained = bounded(retained, preferences: preferences) }
+        return retained == entries ? retained : try write(retained)
     }
 
     public func clear() throws {
@@ -367,10 +372,22 @@ public final class HistoryStore: @unchecked Sendable {
         return try PrivateFile.decode([HistoryEntry].self, from: data, name: "History")
     }
 
-    private func write(_ entries: [HistoryEntry]) throws {
-        let data = try JSONEncoder().encode(entries)
+    /// Writes the entries, newest first, and returns the ones that fitted. The oldest are left out
+    /// when the file would pass its limit, so long texts never stop newer history from being saved.
+    private func write(_ entries: [HistoryEntry]) throws -> [HistoryEntry] {
+        let encoder = JSONEncoder()
+        var data = Data("[".utf8), kept = 0
+        for entry in entries {
+            let encoded = try encoder.encode(entry)
+            // The newest entry is saved whatever its size.
+            if kept > 0, data.count + encoded.count + 2 > Self.maximumBytes { break }
+            if kept > 0 { data.append(UInt8(ascii: ",")) }
+            data.append(encoded); kept += 1
+        }
+        data.append(UInt8(ascii: "]"))
         guard data.count <= 64 * 1_024 * 1_024 else { throw FrogError.message("History is too large to save. Reduce the history limit or clear history.") }
         try PrivateFile.write(data, to: file)
+        return Array(entries.prefix(kept))
     }
 
     private func bounded(_ entries: [HistoryEntry], preferences: Preferences) -> [HistoryEntry] {

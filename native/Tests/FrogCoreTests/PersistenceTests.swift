@@ -335,6 +335,46 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(Set(try HistoryStore(directory: directory).load(preferences: Preferences()).map(\.id)), Set(entries.map(\.id)))
     }
 
+    func testHistoryTooLargeForItsFileDropsTheOldestInsteadOfRefusingTheNewest() throws {
+        let store = HistoryStore(directory: directory)
+        var preferences = Preferences(); preferences.historyEnabled = true
+        // Two of these fit in the file, three do not.
+        let text = String(repeating: "a", count: 11 * 1_024 * 1_024)
+        let now = Date()
+        let entries = (0..<3).map {
+            HistoryEntry(timestamp: now.addingTimeInterval(Double($0) - 10), originalText: text, processedText: text, ruleName: "Proofread", providerName: "Local", model: "test")
+        }
+        try store.append(entries[0], preferences: preferences); try store.append(entries[1], preferences: preferences)
+        XCTAssertEqual(try store.append(entries[2], preferences: preferences)?.map(\.id), [entries[2].id, entries[1].id])
+        XCTAssertEqual(try store.load(preferences: preferences).map(\.id), [entries[2].id, entries[1].id])
+        var grown = entries[1]; grown.processedText = text + text
+        XCTAssertFalse(try store.update(grown, preferences: preferences))
+        XCTAssertEqual(try store.load(preferences: preferences).map(\.id), [entries[2].id])
+    }
+
+    func testHistoryChangesReturnWhatIsKeptAfterwards() throws {
+        let store = HistoryStore(directory: directory)
+        var preferences = Preferences(); preferences.historyLimit = 2
+        XCTAssertNil(try store.append(entry(), preferences: preferences))
+        preferences.historyEnabled = true
+        let now = Date()
+        let entries = (0..<3).map { entry(timestamp: now.addingTimeInterval(Double($0) - 10)) }
+        XCTAssertEqual(try store.append(entries[0], preferences: preferences), [entries[0]])
+        XCTAssertEqual(try store.append(entries[1], preferences: preferences), [entries[1], entries[0]])
+        XCTAssertEqual(try store.append(entries[2], preferences: preferences), [entries[2], entries[1]])
+        XCTAssertEqual(try store.append(entry(timestamp: now.addingTimeInterval(-60)), preferences: preferences), [entries[2], entries[1]])
+        XCTAssertEqual(try store.load(preferences: preferences), [entries[2], entries[1]])
+        preferences.historyLimit = 200
+        let expiring = entry(timestamp: now.addingTimeInterval(-2 * 86_400))
+        XCTAssertEqual(try store.append(expiring, preferences: preferences), [entries[2], entries[1], expiring])
+        // Deleting with the preferences also prunes what loading would prune.
+        var shorter = preferences; shorter.historyRetentionDays = 1
+        XCTAssertEqual(try store.delete(id: entries[2].id, preferences: shorter), [entries[1]])
+        XCTAssertEqual(try store.load(preferences: preferences), [entries[1]])
+        XCTAssertEqual(try store.delete(id: UUID(), preferences: preferences), [entries[1]])
+        XCTAssertEqual(try store.delete(id: entries[1].id), [])
+    }
+
     func testKeyValidationRejectsEmptyAndHeaderInjectionWithoutKeychainAccess() throws {
         XCTAssertEqual(try KeychainStore.validatedKey("  sk-test\n"), "sk-test")
         for key in ["", " \n", "sk-a\r\nx-injected: value", "a b", "a\u{0}b", String(repeating: "x", count: 8193)] {
