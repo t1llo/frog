@@ -123,6 +123,33 @@ final class ActivityStatisticsTests: XCTestCase {
         XCTAssertFalse(try store.load().recordingEnabled)
     }
 
+    func testOnlyRealCalendarDaysAreAcceptedAsDailyKeys() throws {
+        let store = ActivityStatisticsPersistence(directory: directory)
+        let today = day("2026-10-10")
+        try store.record(.rule(.local), at: today, timeZone: utc)
+        let valid = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: store.file)) as? [String: Any])
+        let daily = try XCTUnwrap(valid["daily"] as? [String: Any]), totals = try XCTUnwrap(daily["2026-10-10"])
+        func file(days: [String]) throws -> Data {
+            var object = valid; object["daily"] = Dictionary(uniqueKeysWithValues: days.map { ($0, totals) })
+            return try JSONSerialization.data(withJSONObject: object)
+        }
+        for key in ["2026-02-30", "2025-02-29", "2026-13-01", "2026-00-10", "2026-10-00", "2026-1-010", "26-10-2010", "2026/10/10", "2026-10-10T", "yesterday!!"] {
+            let bytes = try file(days: ["2026-10-09", key])
+            try bytes.write(to: store.file)
+            XCTAssertThrowsError(try store.load(at: today, timeZone: utc), key)
+            XCTAssertThrowsError(try store.record(.rule(.local), at: today, timeZone: utc), key)
+            XCTAssertEqual(try Data(contentsOf: store.file), bytes, key)
+        }
+        // A leap day is a day like any other, and a file with all 365 days still opens and is added to.
+        let year = (0..<365).map { offset in
+            ISO8601DateFormatter().string(from: day("2024-01-01").addingTimeInterval(Double(offset) * 86_400)).prefix(10).description
+        }
+        XCTAssertTrue(year.contains("2024-02-29")); XCTAssertEqual(year.last, "2024-12-30")
+        try file(days: year).write(to: store.file)
+        XCTAssertEqual(try store.load(at: day("2024-12-30"), timeZone: utc).daily.count, 365)
+        XCTAssertEqual(try store.record(.rule(.local), at: day("2024-12-31"), timeZone: utc).daily.count, 365)
+    }
+
     func testSymlinkRefusedAndExplicitResetDoesNotModifyTarget() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let target = directory.appendingPathComponent("unrelated.json"), bytes = Data("preserve me".utf8)

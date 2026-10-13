@@ -99,17 +99,21 @@ public struct ActivityStatisticsSnapshot: Codable, Equatable, Sendable {
         daily = daily.filter { range.contains($0.key) }
     }
     fileprivate var isValid: Bool {
-        version == 1 && allTime.isValid && daily.count <= 365 && daily.allSatisfy { key, value in
+        // One calendar checks every day: this runs for each counted action, over up to 365 days.
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return version == 1 && allTime.isValid && daily.count <= 365 && daily.allSatisfy { key, value in
             let parts = key.split(separator: "-").compactMap { Int($0) }
-            var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(secondsFromGMT: 0)!
             guard key.count == 10, parts.count == 3,
                   let date = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])),
-                  Self.dayKey(date, timeZone: calendar.timeZone) == key else { return false }
+                  Self.dayKey(date, calendar: calendar) == key else { return false }
             return value.isValid
         }
     }
     private static func dayKey(_ date: Date, timeZone: TimeZone) -> String {
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = timeZone
+        return dayKey(date, calendar: calendar)
+    }
+    private static func dayKey(_ date: Date, calendar: Calendar) -> String {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year!, parts.month!, parts.day!)
     }
