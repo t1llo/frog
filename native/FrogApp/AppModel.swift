@@ -571,7 +571,7 @@ final class AppModel: ObservableObject {
             throw FrogError.message("Delete the downloaded model before removing its source.")
         }
         var candidate = configuration
-        candidate.localModels?.removeAll { $0.id == item.id }
+        candidate.removeLocalModelSource(item.id)
         try persist(candidate)
     }
 

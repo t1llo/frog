@@ -95,6 +95,48 @@ final class RuleConfigurationTests: XCTestCase {
         try ConfigurationFile.validate(config)
     }
 
+    func testRemovingACustomModelSourceResetsTheFormerDefaultsThatNamedIt() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("frog-tests-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        func custom(_ kind: LocalModelDescriptor.Kind, variant: String? = nil) -> LocalModelDescriptor {
+            let repository = "owner/custom-\(kind.rawValue)-default-test", backend: LocalModelDescriptor.Backend = kind == .audio ? .whisperKit : .mlx
+            return LocalModelDescriptor(id: HuggingFaceSource.modelID(repository: repository, variant: variant, backend: backend),
+                                        name: "Custom \(kind.rawValue)", kind: kind, repository: repository, variant: variant, size: "1 GB", backend: backend)
+        }
+        let text = custom(.text), audio = custom(.audio, variant: "openai_whisper-tiny")
+        var configuration = Configuration()
+        configuration.localModels = [text, audio]
+        var workflow = WorkflowPreferences()
+        workflow.audioModelID = audio.id; workflow.cleanupModelID = text.id; workflow.defaultLocalTextModelID = text.id
+        configuration.preferences.workflows = workflow
+        let store = ConfigurationStore(directory: directory)
+        try store.save(configuration)
+
+        // Settings has no control for the former global defaults, so they must not hold a source back.
+        var candidate = try store.load()
+        candidate.removeLocalModelSource(text.id)
+        try ConfigurationFile.validate(candidate)
+        try store.save(candidate)
+        var saved = try store.load()
+        XCTAssertEqual(saved.localModels, [audio])
+        XCTAssertEqual(saved.preferences.workflowSettings.cleanupModelID, WorkflowPreferences().cleanupModelID)
+        XCTAssertNil(saved.preferences.workflowSettings.defaultLocalTextModelID)
+        XCTAssertEqual(saved.preferences.workflowSettings.audioModelID, audio.id)
+        saved.removeLocalModelSource(audio.id)
+        try store.save(saved)
+        saved = try store.load()
+        XCTAssertEqual(saved.localModels, [])
+        XCTAssertEqual(saved.preferences.workflowSettings.audioModelID, LocalModelDescriptor.defaultAudioModelID)
+
+        // A rule that uses the model is the user's own choice and still has to change first.
+        var used = configuration
+        var rule = Rule(); rule.action = RuleAction(category: .text); rule.action?.localTextModelID = text.id
+        used.rules.append(rule)
+        try ConfigurationFile.validate(used)
+        used.removeLocalModelSource(text.id)
+        XCTAssertThrowsError(try ConfigurationFile.validate(used)) { XCTAssertFalse($0.localizedDescription.contains("default local models"), $0.localizedDescription) }
+    }
+
     func testRemovedExternalAudioPrefersSameProviderAndCompatibleCategory() throws {
         var config = Configuration()
         let provider = ProviderConfiguration(model: "text", models: [.init(id: "text"), .init(id: "new-speech", category: .audio)])

@@ -167,6 +167,19 @@ extension Configuration {
         recentModels?.removeAll { removed.contains($0) }
     }
 
+    /// Removes a custom model definition. The former global defaults have no control in Settings,
+    /// so one that still names the model returns to its built-in value instead of refusing the
+    /// save. A rule that uses the model is left alone and keeps the removal from being saved.
+    public mutating func removeLocalModelSource(_ id: String) {
+        localModels?.removeAll { $0.id == id }
+        guard localModel(id) == nil, var workflow = preferences.workflows else { return }
+        let builtIn = WorkflowPreferences()
+        if workflow.audioModelID == id { workflow.audioModelID = builtIn.audioModelID }
+        if workflow.cleanupModelID == id { workflow.cleanupModelID = builtIn.cleanupModelID }
+        if workflow.defaultLocalTextModelID == id { workflow.defaultLocalTextModelID = builtIn.defaultLocalTextModelID }
+        preferences.workflows = workflow
+    }
+
     public func newRule(category: RuleCategory, installed: Set<String>) -> Rule {
         var rule = category == .audio ? Rule.dictationPreset : Rule()
         rule.id = UUID(); rule.preset = false; rule.hotkey = nil
