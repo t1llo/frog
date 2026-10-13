@@ -61,8 +61,7 @@ private struct HistoryContent: View {
                                 Spacer()
                                 Button("Copy") { copy(viewing) }
                             }
-                            Text(entry.text).font(.system(size: 13)).textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                            HistoryLongText(text: entry.text)
                         }.padding(16).minimalScrollbars()
                     }
                 }.frogTableSurface()
@@ -229,6 +228,57 @@ enum HistoryPreview {
     }
 }
 
+/// Laying out one text takes time that grows faster than its length: half a megabyte in a
+/// single Text holds the window for many seconds. The detail shows a long text a page at a
+/// time, each page a text of its own; copying and searching keep using the whole text.
+enum HistoryPages {
+    static let length = 20_000
+
+    /// The first `count` pages of `text` and whether text remains after them.
+    static func leading(_ text: String, count: Int) -> (pages: [Substring], more: Bool) {
+        var pages: [Substring] = []
+        var start = text.startIndex
+        while pages.count < count, start < text.endIndex {
+            let end = pageEnd(text, from: start)
+            pages.append(text[start..<end]); start = end
+        }
+        return (pages, start < text.endIndex)
+    }
+
+    /// After a line end, otherwise after a space, otherwise between two characters. The cut is
+    /// looked for in the last tenth of the page only, so no page is much shorter than the others.
+    private static func pageEnd(_ text: String, from start: String.Index) -> String.Index {
+        guard let limit = text.index(start, offsetBy: length, limitedBy: text.endIndex), limit < text.endIndex else { return text.endIndex }
+        let tail = text[text.index(limit, offsetBy: -length / 10)..<limit]
+        guard let cut = tail.lastIndex(where: \.isNewline) ?? tail.lastIndex(where: \.isWhitespace) else { return limit }
+        return text.index(after: cut)
+    }
+}
+
+private struct HistoryLongText: View {
+    let text: String
+    var lineSpacing: CGFloat = 0
+    @State private var shown = 1
+
+    var body: some View {
+        let leading = HistoryPages.leading(text, count: shown)
+        VStack(alignment: .leading, spacing: lineSpacing) {
+            ForEach(Array(leading.pages.enumerated()), id: \.offset) { _, page in
+                // The next page starts on a new line, which stands for the line end that closes this one.
+                Text(page.last?.isNewline == true ? page.dropLast() : page).font(.system(size: 13)).lineSpacing(lineSpacing)
+                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if leading.more {
+                HStack(spacing: 10) {
+                    Button("Show more") { shown += 1 }
+                    Text("Long text is shown in parts. Copy takes all of it.").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                }.padding(.top, 10)
+            }
+        }
+    }
+}
+
 private struct HistoryDetail: View {
     let entry: HistoryEntry
     @State private var copied: String?
@@ -253,9 +303,7 @@ private struct HistoryDetail: View {
                         ViewActions.copy(text); copied = title
                     }.accessibilityLabel("Copy \(title.lowercased())").disabled(text.isEmpty)
                 }
-                Text(text).font(.system(size: 13)).lineSpacing(4).textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HistoryLongText(text: text, lineSpacing: 4)
             }
     }
 }
