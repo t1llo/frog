@@ -98,13 +98,13 @@ final class ClipboardSelection: CapturedTextSelection {
         ![54, 55, 56, 60, 58, 61, 59, 62].contains { CGEventSource.keyState(.hidSystemState, key: CGKeyCode($0)) }
     }
 
-    static func waitForShortcutRelease() async throws {
+    static func waitForShortcutRelease(message: String = "Release the shortcut keys before Frog copies the selection, then try again.") async throws {
         for _ in 0..<80 {
             try Task.checkCancellation()
             if modifiersReleased { return }
             try await Task.sleep(for: .milliseconds(25))
         }
-        throw FrogError.message("Release the shortcut keys before Frog copies the selection, then try again.")
+        throw FrogError.message(message)
     }
 
     private var canPaste: Bool {

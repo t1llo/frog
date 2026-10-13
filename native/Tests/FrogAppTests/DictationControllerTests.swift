@@ -146,6 +146,19 @@ final class DictationControllerTests: XCTestCase {
         XCTAssertEqual(issues, 1)
         XCTAssertEqual(successes, 0)
     }
+    func testPasteThatCannotHappenNamesWhatStandsInItsWay() throws {
+        XCTAssertEqual(try DictationTarget.application(trusted: true, frontmost: 40, own: 7), 40)
+        XCTAssertThrowsError(try DictationTarget.application(trusted: false, frontmost: 40, own: 7)) {
+            // Focusing a field does not help someone whose Mac does not let Frog paste at all.
+            XCTAssertEqual($0.localizedDescription, "Allow Frog in System Settings → Privacy & Security → Accessibility to paste. The transcript is copied.")
+        }
+        for frontmost: pid_t? in [7, nil] {
+            XCTAssertThrowsError(try DictationTarget.application(trusted: true, frontmost: frontmost, own: 7)) {
+                XCTAssertEqual($0.localizedDescription, "Focus an input field in another app to paste. The transcript is copied.")
+            }
+        }
+    }
+
     func testSilentPreviewDoesNotEraseRecognizedSpeech() {
         let controller = DictationController(monitorKeys: false)
         controller.updatePreview("First sentence. Second sentence.")

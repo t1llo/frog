@@ -820,15 +820,26 @@ final class AudioSamples: @unchecked Sendable {
 }
 
 @MainActor
-private struct DictationTarget {
-    static func pasteIntoFocusedField() async throws {
-        try await ClipboardSelection.waitForShortcutRelease()
-        try Task.checkCancellation()
-        guard SelectionService.isTrusted, let app = NSWorkspace.shared.frontmostApplication,
-              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
+struct DictationTarget {
+    /// The app that receives the paste. Each obstacle has its own message, because the remedies
+    /// differ; the transcript is on the clipboard in every case.
+    nonisolated static func application(trusted: Bool, frontmost: pid_t?,
+                                        own: pid_t = ProcessInfo.processInfo.processIdentifier) throws -> pid_t {
+        guard trusted else {
+            throw FrogError.message("Allow Frog in System Settings → Privacy & Security → Accessibility to paste. The transcript is copied.")
+        }
+        guard let frontmost, frontmost != own else {
             throw FrogError.message("Focus an input field in another app to paste. The transcript is copied.")
         }
-        let ax = AXUIElementCreateApplication(app.processIdentifier)
+        return frontmost
+    }
+
+    static func pasteIntoFocusedField() async throws {
+        try await ClipboardSelection.waitForShortcutRelease(message: "Release the shortcut keys so Frog can paste. The transcript is copied.")
+        try Task.checkCancellation()
+        let application = try application(trusted: SelectionService.isTrusted,
+                                          frontmost: NSWorkspace.shared.frontmostApplication?.processIdentifier)
+        let ax = AXUIElementCreateApplication(application)
         AXUIElementSetMessagingTimeout(ax, 0.1)
         if let element = AXRead.element(ax, kAXFocusedUIElementAttribute),
            AXRead.string(element, kAXSubroleAttribute) == kAXSecureTextFieldSubrole {
