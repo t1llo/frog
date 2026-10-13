@@ -48,8 +48,10 @@ struct PreferencesView: View {
                 SettingsSection(title: "Local models") {
                     CompactRow(title: "Unload idle models", detail: "Applies to models running inside Frog.") {
                         CompactMenu(value: prefs.idleUnloadSeconds == 0 ? "Immediately" : "\(prefs.idleUnloadSeconds / 60) min") {
-                            Button("Immediately") { update { $0.idleUnloadSeconds = 0 } }
-                            ForEach([120, 300, 900], id: \.self) { seconds in Button("\(seconds / 60) min") { update { $0.idleUnloadSeconds = seconds } } }
+                            Button("Immediately") { update { $0.idleUnloadSeconds = 0 } }.accessibilityAddTraits(prefs.idleUnloadSeconds == 0 ? .isSelected : [])
+                            ForEach([120, 300, 900], id: \.self) { seconds in
+                                Button("\(seconds / 60) min") { update { $0.idleUnloadSeconds = seconds } }.accessibilityAddTraits(prefs.idleUnloadSeconds == seconds ? .isSelected : [])
+                            }
                         }
                     }
                     Divider()
@@ -71,8 +73,10 @@ struct PreferencesView: View {
                     CompactRow(title: "Microphone") {
                         CompactMenu(value: DictationController.devices.first { String($0.id) == prefs.microphoneID }?.name ?? "System default") {
                             Button { update { $0.microphoneID = nil } } label: { Label("System default", systemImage: prefs.microphoneID == nil ? "checkmark" : "mic") }
+                                .accessibilityAddTraits(prefs.microphoneID == nil ? .isSelected : [])
                             ForEach(DictationController.devices, id: \.id) { device in
                                 Button { update { $0.microphoneID = String(device.id) } } label: { Label(device.name, systemImage: prefs.microphoneID == String(device.id) ? "checkmark" : "mic") }
+                                    .accessibilityAddTraits(prefs.microphoneID == String(device.id) ? .isSelected : [])
                             }
                         }
                     }

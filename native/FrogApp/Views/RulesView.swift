@@ -297,7 +297,10 @@ struct RuleEditor: View {
             Divider()
             CompactRow(title: "Language") {
                 CompactMenu(value: languageName(rule.action?.transcriptionLanguage ?? languageChoices.first ?? "auto")) {
-                    ForEach(languageChoices, id: \.self) { language in Button(languageName(language)) { rule.action?.transcriptionLanguage = language } }
+                    ForEach(languageChoices, id: \.self) { language in
+                        Button(languageName(language)) { rule.action?.transcriptionLanguage = language }
+                            .accessibilityAddTraits(language == (rule.action?.transcriptionLanguage ?? languageChoices.first ?? "auto") ? .isSelected : [])
+                    }
                 }
             }
             Divider()

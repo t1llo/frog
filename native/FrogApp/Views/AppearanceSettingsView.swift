@@ -150,7 +150,7 @@ struct AppearanceSettingsView: View {
                         var value = appearance; value.theme = theme; value.useThemeAccent = true
                         value.lightPalette = nil; value.darkPalette = nil
                         draft.set(value)
-                    }
+                    }.accessibilityAddTraits(theme == appearance.effectiveTheme ? .isSelected : [])
                 }
             }
         }

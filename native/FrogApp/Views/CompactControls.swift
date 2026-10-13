@@ -32,6 +32,15 @@ struct FilterTag: View {
     }
 }
 
+private struct CompactRowTitleKey: EnvironmentKey { static let defaultValue: String? = nil }
+extension EnvironmentValues {
+    /// The title of the row a control sits in. A control that shows nothing but its value is named by it.
+    var compactRowTitle: String? {
+        get { self[CompactRowTitleKey.self] }
+        set { self[CompactRowTitleKey.self] = newValue }
+    }
+}
+
 struct CompactRow<Content: View>: View {
     let title: String
     var detail: String? = nil
@@ -43,20 +52,23 @@ struct CompactRow<Content: View>: View {
                 if let detail { Text(L10n.text(detail)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true) }
             }
             Spacer(minLength: 12)
-            content.controlSize(.small).fixedSize(horizontal: true, vertical: false)
+            content.controlSize(.small).fixedSize(horizontal: true, vertical: false).environment(\.compactRowTitle, title)
         }.padding(.vertical, 3)
     }
 }
 
+/// Mark the option that is chosen with `.accessibilityAddTraits(.isSelected)`.
 struct CompactMenu<Content: View>: View {
     let value: String
     var width: CGFloat = 220
     @ViewBuilder var content: Content
     @State private var showing = false
+    @Environment(\.compactRowTitle) private var rowTitle
     var body: some View {
         Button { showing.toggle() } label: {
             CompactDropdownLabel(value: L10n.text(value), width: width)
         }.buttonStyle(.plain).help(L10n.text(value))
+            .modifier(RowControlName(title: rowTitle, value: L10n.text(value)))
             .popover(isPresented: $showing, arrowEdge: .bottom) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 2) { content }
@@ -64,7 +76,19 @@ struct CompactMenu<Content: View>: View {
                         .padding(8)
                 }.frame(width: 280).frame(maxHeight: 280).fixedSize(horizontal: false, vertical: true)
                     .foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
+                    // The options are not controls of the row.
+                    .environment(\.compactRowTitle, nil)
             }
+    }
+}
+
+/// The dropdown draws only its choice. In a row VoiceOver reads the row's title as its name and the
+/// choice as its value; outside a row it keeps the name it is given where it is used.
+private struct RowControlName: ViewModifier {
+    let title: String?
+    let value: String
+    func body(content: Content) -> some View {
+        if let title { content.accessibilityLabel(L10n.text(title)).accessibilityValue(value) } else { content }
     }
 }
 

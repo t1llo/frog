@@ -39,7 +39,7 @@ struct MenuBarSettingsView: View {
                     CompactRow(title: "Hide after") {
                         CompactMenu(value: "\(settings.autoHideSeconds.formatted(.number.precision(.fractionLength(0...1)))) seconds", width: 180) {
                             ForEach([5.0, 10, 15, 30, 60], id: \.self) { seconds in
-                                Button("\(Int(seconds)) seconds") { settings.autoHideSeconds = seconds }
+                                Button("\(Int(seconds)) seconds") { settings.autoHideSeconds = seconds }.accessibilityAddTraits(settings.autoHideSeconds == seconds ? .isSelected : [])
                             }
                         }
                     }

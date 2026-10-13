@@ -148,7 +148,7 @@ struct ProviderEditor: View {
                                 ForEach(ProviderKind.allCases) { kind in
                                     Button { provider.kind = kind } label: {
                                         Label(kind.title, systemImage: kind.isLocal ? "desktopcomputer" : "cloud")
-                                    }
+                                    }.accessibilityAddTraits(provider.kind == kind ? .isSelected : [])
                                 }
                             }.onChange(of: provider.kind) { old, new in
                                 if provider.name == old.title || provider.name == "OpenAI" { provider.name = new.title }
