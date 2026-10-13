@@ -3,16 +3,23 @@ import Combine
 import FrogCore
 
 enum ApplicationCatalog {
+    /// What a scan finds: the applications under the name Finder shows and, by application path, the bundle and
+    /// file names that differ from it. Search matches those as well.
+    struct Discovery: Sendable {
+        var rules: [Rule] = []
+        var alternativeNames: [String: [String]] = [:]
+    }
     static func scan(roots: [URL] = [
         URL(fileURLWithPath: "/Applications", isDirectory: true),
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true),
         URL(fileURLWithPath: "/System/Applications", isDirectory: true),
         URL(fileURLWithPath: "/System/Cryptexes/App/System/Applications", isDirectory: true),
         URL(fileURLWithPath: "/System/Library/CoreServices/Applications", isDirectory: true)
-    ]) -> [Rule] {
+    ]) -> Discovery {
         let manager = FileManager.default
         var seen = Set<String>()
         var rules: [Rule] = []
+        var alternativeNames: [String: [String]] = [:]
         for root in roots {
             guard let contents = manager.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { continue }
             // Include app links before recursive discovery. Safari's hidden link
@@ -28,9 +35,13 @@ enum ApplicationCatalog {
                 guard url.pathExtension.lowercased() == "app" else { continue }
                 let path = url.resolvingSymlinksInPath().standardizedFileURL.path
                 guard seen.insert(path).inserted, let bundle = Bundle(url: url), let bundleID = bundle.bundleIdentifier else { continue }
-                let name = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-                    ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
-                    ?? url.deletingPathExtension().lastPathComponent
+                // Finder appends the extension when it is set to show all of them.
+                let shown = manager.displayName(atPath: path)
+                let name = shown.lowercased().hasSuffix(".app") ? String(shown.dropLast(4)) : shown
+                var listed: Set = [name]
+                let others = (["CFBundleDisplayName", "CFBundleName"].compactMap { bundle.object(forInfoDictionaryKey: $0) as? String }
+                    + [url.deletingPathExtension().lastPathComponent]).filter { !$0.isEmpty && listed.insert($0).inserted }
+                if !others.isEmpty { alternativeNames[path] = others }
                 var rule = Rule(name: name, instructions: "", enabled: false)
                 var action = RuleAction(); action.category = .application; action.applicationPath = path
                 action.applicationBundleID = bundleID
@@ -45,7 +56,7 @@ enum ApplicationCatalog {
             action.applicationBundleID = "com.apple.finder"
             rule.action = action; rules.append(rule)
         }
-        return rules.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        return Discovery(rules: rules.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }, alternativeNames: alternativeNames)
     }
 
     static func rows(installed: [Rule], configured: [Rule]) -> [Rule] {
@@ -66,13 +77,15 @@ enum ApplicationCatalog {
 final class ApplicationCatalogStore: ObservableObject {
     static let shared = ApplicationCatalogStore()
     @Published private(set) var installed: [Rule] = []
-    private let discover: @Sendable () async -> [Rule]
-    private var loading: Task<[Rule], Never>?
+    /// By application path, as the last scan found them.
+    private(set) var alternativeNames: [String: [String]] = [:]
+    private let discover: @Sendable () async -> ApplicationCatalog.Discovery
+    private var loading: Task<ApplicationCatalog.Discovery, Never>?
     private var scannedAt: ContinuousClock.Instant?
     private var cachedConfiguration: [Rule]?
     private var cachedRows: [Rule] = []
 
-    init(discover: @escaping @Sendable () async -> [Rule] = {
+    init(discover: @escaping @Sendable () async -> ApplicationCatalog.Discovery = {
         await Task.detached(priority: .utility) { ApplicationCatalog.scan() }.value
     }) { self.discover = discover }
 
@@ -86,11 +99,12 @@ final class ApplicationCatalogStore: ObservableObject {
         let previousIDs = Dictionary(uniqueKeysWithValues: installed.compactMap { rule in
             rule.action?.applicationPath.map { ($0, rule.id) }
         })
-        let refreshed = discovered.map { rule in
+        let refreshed = discovered.rules.map { rule in
             var rule = rule
             if let path = rule.action?.applicationPath, let id = previousIDs[path] { rule.id = id }
             return rule
         }
+        alternativeNames = discovered.alternativeNames
         if refreshed != installed {
             cachedConfiguration = nil
             installed = refreshed

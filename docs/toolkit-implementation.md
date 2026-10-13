@@ -79,6 +79,8 @@ deduplicates with a set. Search uses stable rank buckets instead of sorting the 
 catalogue. Applications are what a search is usually for: an app whose name matches
 ranks one level higher (a name containing the query ties with other titles that start
 with it) and leads its level, behind only recently chosen results; files come last.
+An application is listed under the name Finder shows and is also found under its bundle
+names and its file name, so "Code" still finds Visual Studio Code.
 File lookup remains asynchronous and debounced. Drag its top grip or footer
 to move it; the position survives reopening in the same session and recenters if its
 display is no longer available.

@@ -10,7 +10,7 @@ final class ApplicationCatalogTests: XCTestCase {
         var zulu = Rule(name: "Zulu", instructions: "", enabled: false)
         zulu.action = RuleAction(category: .application); zulu.action?.applicationPath = "/Applications/Zulu.app"
         let discovery = CatalogDiscovery([alpha, zulu])
-        let store = ApplicationCatalogStore(discover: { await discovery.scan() })
+        let store = ApplicationCatalogStore(discover: { ApplicationCatalog.Discovery(rules: await discovery.scan(), alternativeNames: ["/Applications/Zulu.app": ["Zed"]]) })
         async let first: Void = store.loadIfNeeded()
         async let second: Void = store.loadIfNeeded()
         _ = await (first, second)
@@ -18,6 +18,7 @@ final class ApplicationCatalogTests: XCTestCase {
         let scans = await discovery.calls
         XCTAssertEqual(scans, 1)
         XCTAssertEqual(store.rows(configured: []).map(\.name), ["Alpha", "Zulu"])
+        XCTAssertEqual(store.alternativeNames, ["/Applications/Zulu.app": ["Zed"]])
         zulu.hotkey = Hotkey(keyCode: 0, modifiers: 4096 | 512)
         let updated = store.rows(configured: [zulu])
         XCTAssertEqual(updated.map(\.name), ["Zulu", "Alpha"])
@@ -47,7 +48,7 @@ final class ApplicationCatalogTests: XCTestCase {
             let info: [String: Any] = ["CFBundleIdentifier": "test.\(UUID().uuidString)", "CFBundleName": URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent, "CFBundlePackageType": "APPL"]
             try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: contents.appendingPathComponent("Info.plist"))
         }
-        let installed = ApplicationCatalog.scan(roots: [root, root])
+        let installed = ApplicationCatalog.scan(roots: [root, root]).rules
         XCTAssertEqual(installed.map(\.name), ["Editor", "Tool"])
         XCTAssertTrue(installed.allSatisfy { !$0.enabled && $0.hotkey == nil && $0.category == .application })
         var configuration = Configuration(); configuration.rules = installed
@@ -67,7 +68,22 @@ final class ApplicationCatalogTests: XCTestCase {
             let info: [String: Any] = ["CFBundleIdentifier": "test.\(UUID().uuidString)", "CFBundleName": URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent, "CFBundlePackageType": "APPL"]
             try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: contents.appendingPathComponent("Info.plist"))
         }
-        XCTAssertEqual(ApplicationCatalog.scan(roots: [root]).map(\.name), ["Nested", "Top"])
+        XCTAssertEqual(ApplicationCatalog.scan(roots: [root]).rules.map(\.name), ["Nested", "Top"])
+    }
+    func testApplicationsCarryTheNameFinderShowsAndKeepTheirBundleNamesForSearch() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for (file, name, displayName) in [("Visual Studio Fixture.app", "Code", "Code"), ("FixtureVPN.app", "FixtureVPN", "Fixture VPN"), ("Plain.app", "Plain", nil)] {
+            let contents = root.appendingPathComponent(file).appendingPathComponent("Contents")
+            try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+            var info: [String: Any] = ["CFBundleIdentifier": "test.\(UUID().uuidString)", "CFBundleName": name, "CFBundlePackageType": "APPL"]
+            info["CFBundleDisplayName"] = displayName
+            try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: contents.appendingPathComponent("Info.plist"))
+        }
+        let found = ApplicationCatalog.scan(roots: [root])
+        XCTAssertEqual(found.rules.map(\.name), ["FixtureVPN", "Plain", "Visual Studio Fixture"])
+        let names = Dictionary(uniqueKeysWithValues: found.rules.map { ($0.name, found.alternativeNames[$0.action?.applicationPath ?? ""]) })
+        XCTAssertEqual(names, ["FixtureVPN": ["Fixture VPN"], "Plain": nil, "Visual Studio Fixture": ["Code"]])
     }
 }
 

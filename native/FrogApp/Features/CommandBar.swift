@@ -65,6 +65,7 @@ import SwiftUI
     private var fileDelay: Task<Void, Never>?
     private let pasteboard: NSPasteboard
     private let loadApplications: @MainActor () async -> [Rule]
+    private let applicationNames: @MainActor (String) -> [String]
     private let iconReader: CommandIconReader
     private let openFile: @MainActor (URL) -> Bool
     private let loadSettings: @Sendable () async -> [SystemSetting]
@@ -83,8 +84,10 @@ import SwiftUI
          openSetting: @escaping @MainActor (SystemSetting) throws -> Void = { try MacSettingsNavigation.open($0) },
          loadApplications: @escaping @MainActor () async -> [Rule] = {
              await ApplicationCatalogStore.shared.loadIfNeeded(); return ApplicationCatalogStore.shared.installed
-         }) {
+         },
+         applicationNames: @escaping @MainActor (String) -> [String] = { ApplicationCatalogStore.shared.alternativeNames[$0] ?? [] }) {
         self.model = model; self.pasteboard = pasteboard; self.loadApplications = loadApplications
+        self.applicationNames = applicationNames
         self.iconReader = CommandIconReader(load: loadIcon); self.openFile = openFile
         self.loadSettings = loadSettings; self.openSetting = openSetting
         self.fileSearch = fileSearch ?? MetadataCommandFileSearch()
@@ -112,13 +115,14 @@ import SwiftUI
         recentSelections = []; recentFiles = []; selectedFiles = []
         panel?.contentView = nil; panel = nil
     }
-    private func cacheApplications(_ installed: [Rule]) {
+    /// An application is found under the name Finder shows and under its bundle and file names.
+    func cacheApplications(_ installed: [Rule]) {
         guard installed != cachedApplications else { return }
         cachedApplications = installed
         applicationRecords = [:]
         for rule in installed {
             guard let path = rule.action?.applicationPath else { continue }
-            applicationRecords[path] = SearchRecord(id: "app:\(path)", title: rule.name, subtitle: "App", keywords: "app open launch \(rule.action?.applicationBundleID ?? "")", symbol: "app", prominent: true)
+            applicationRecords[path] = SearchRecord(id: "app:\(path)", title: rule.name, subtitle: "App", keywords: "app open launch \(rule.action?.applicationBundleID ?? "")", symbol: "app", aliases: applicationNames(path), prominent: true)
         }
     }
     private func refreshSettings() {

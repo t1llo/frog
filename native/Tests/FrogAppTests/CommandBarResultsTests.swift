@@ -40,6 +40,32 @@ import FrogCore
         }
     }
 
+    func testAnApplicationIsFoundUnderItsFinderNameAndItsBundleName() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var config = Configuration(); config.preferences.windowSwitcherEnabled = false
+        config.preferences.setFeature(.commandBar, enabled: true)
+        try ConfigurationStore(directory: root).save(config)
+        let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
+        defer { pasteboard.releaseGlobally() }
+        let model = AppModel(dataDirectory: root, registerShortcuts: false, readKey: { _ in nil },
+                             clipboardHistoryStore: ClipboardHistoryStore(pasteboard: pasteboard))
+        defer { model.shutdown() }
+        let path = "/Fixture/Visual Studio Fixture.app"
+        var app = Rule(name: "Visual Studio Fixture", instructions: "", enabled: false)
+        app.action = RuleAction(category: .application); app.action?.applicationPath = path
+        let bar = CommandBar(model: model, pasteboard: pasteboard, captureTarget: { nil }, fileSearch: CommandFileStub(),
+                             loadSettings: { [] }, loadApplications: { [app] }, applicationNames: { $0 == path ? ["Code"] : [] })
+        defer { bar.stop() }
+        bar.cacheApplications([app])
+        bar.prepareResults(model, frontPID: nil)
+        for query in ["visual studio", "code"] {
+            bar.query = query
+            XCTAssertEqual(bar.results.first?.id, "app:\(path)", query)
+            XCTAssertEqual(bar.results.first?.title, "Visual Studio Fixture")
+        }
+    }
+
     func testCopyWhileTheBarIsOpenListsTheEntryAndEarlierRowsStillPaste() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
