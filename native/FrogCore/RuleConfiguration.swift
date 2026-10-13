@@ -28,17 +28,34 @@ extension Configuration {
         var draft = self
         draft.rules = [rule]
         draft.reconcileUnavailableModels(installed: installed)
+        // A draft keeps a missing local model only while a saved rule still names it:
+        // one that was deleted while the editor was open must not come back on Save.
+        let saved = Set(rules.flatMap { selections(of: $0) })
+        let deleted = selections(of: draft.rules[0]).filter {
+            $0.providerID == nil && !saved.contains($0) && !selectionAvailable($0, installed: installed)
+        }
+        if !deleted.isEmpty { draft.modelsRemoved(deleted, installed: installed) }
         return draft.rules[0]
+    }
+
+    private func selections(of rule: Rule) -> [RuleModelSelection] {
+        let audio = rule.action?.audioModelID.map { RuleModelSelection(providerID: rule.action?.audioProviderID, modelID: $0, category: .audio) }
+        let text = rule.action?.localTextModelID.map { RuleModelSelection(modelID: $0, category: .text) }
+            ?? rule.providerID.flatMap { id in rule.model.isEmpty ? nil : RuleModelSelection(providerID: id, modelID: rule.model, category: .text) }
+        return [audio, text].compactMap { $0 }
     }
 
     /// Recover saved selections whose downloads disappeared between app launches.
     /// An intentionally empty selection is never filled by this reconciliation.
     public mutating func reconcileUnavailableModels(installed: Set<String>) {
-        let unavailable = rules.flatMap { rule -> [RuleModelSelection] in
-            let audio = rule.action?.audioModelID.map { RuleModelSelection(providerID: rule.action?.audioProviderID, modelID: $0, category: .audio) }
-            let text = rule.action?.localTextModelID.map { RuleModelSelection(modelID: $0, category: .text) }
-                ?? rule.providerID.flatMap { id in rule.model.isEmpty ? nil : RuleModelSelection(providerID: id, modelID: rule.model, category: .text) }
-            return [audio, text].compactMap { $0 }.filter { !selectionAvailable($0, installed: installed) }
+        // A local model gives way only to an installed model of its kind. With none,
+        // it stays selected: its download may only be out of reach, in another model
+        // folder or on a disk that is not connected. Deleting it is what clears it.
+        // A model that the catalog no longer lists cannot come back and is cleared.
+        let installedKinds = Set(modelCatalog.filter { installed.contains($0.id) }.map { $0.kind == .audio ? ProviderModel.Category.audio : .text })
+        let unavailable = rules.flatMap { selections(of: $0) }.filter { selection in
+            !selectionAvailable(selection, installed: installed) && (selection.providerID != nil || installedKinds.contains(selection.category)
+                || localModel(selection.modelID)?.kind != (selection.category == .audio ? .audio : .text))
         }
         guard !unavailable.isEmpty else { return }
         modelsRemoved(unavailable, installed: installed)

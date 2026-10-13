@@ -37,7 +37,7 @@ WhisperKit folder links such as `https://huggingface.co/argmaxinc/whisperkit-cor
 
 Custom text sources need MLX format, SafeTensors weights and tokenizer files. A supported MLX architecture is still required at load time; format inspection alone cannot establish inference correctness. Custom speech sources need complete WhisperKit Core ML variant bundles. Parakeet currently supports the two version-specific catalog sources. Raw PyTorch, GGUF and arbitrary NeMo weights are not interchangeable with these formats. Gated/private repositories need authentication and are not supported by this import flow.
 
-Custom descriptors are included in portable JSON under `localModels`; downloaded weights stay device-local. Removing a source requires deleting its download first and changing references to it. Changing the download folder rescans the configured catalog and preserves old files.
+Custom descriptors are included in portable JSON under `localModels`; downloaded weights stay device-local. Removing a source requires deleting its download first and changing references to it. Changing the download folder rescans the configured catalog and preserves old files. A rule whose model is not in the new folder takes an installed model of the same kind from it. When the folder holds none, or cannot be reached at launch, the rule keeps its model, shown as not downloaded, and uses it again once the folder that holds it is selected or reachable.
 
 ## Selection and language
 
