@@ -344,6 +344,23 @@ final class LocalModelsTests: XCTestCase {
         #endif
     }
 
+    #if arch(arm64)
+    func testMLXAndParakeetDownloadsBypassTheSharedHuggingFaceCacheAndNeverRunOffline() throws {
+        let client = HubApi.modelFolder(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        // Both settings are private to the pinned Hub package. If its layout changes
+        // and these lookups find nothing, verify with one real download instead:
+        // nothing may appear under the home folder's .cache/huggingface/hub.
+        func setting(_ name: String, of value: Any) throws -> Mirror {
+            Mirror(reflecting: try XCTUnwrap(Mirror(reflecting: value).children.first { $0.label == name }?.value, "\(name) is gone"))
+        }
+        let cache = try setting("cache", of: try XCTUnwrap(Mirror(reflecting: client).children.first { $0.label == "foregroundCachedClient" }?.value))
+        XCTAssertEqual(cache.displayStyle, .optional)
+        XCTAssertTrue(cache.children.isEmpty, "A shared cache keeps a second copy of every file that deleting the model never removes")
+        let offline = try setting("useOfflineMode", of: client)
+        XCTAssertEqual(offline.children.first?.value as? Bool, false, "Offline mode would accept an unfinished folder as complete")
+    }
+    #endif
+
     func testUnfinishedDownloadCanBeDiscardedButAFolderFrogDidNotStartCannot() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

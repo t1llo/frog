@@ -11,8 +11,7 @@ actor ParakeetRuntime {
     private var manager: AsrManager?
     static func download(_ model: LocalModelDescriptor, base: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         let patterns = ["Preprocessor.mlmodelc/*", "Encoder.mlmodelc/*", "Decoder.mlmodelc/*", "JointDecision.mlmodelc/*", "parakeet_vocab.json"]
-        // Forced online: offline mode would accept an unfinished folder as it is.
-        return try await HubApi(downloadBase: base, useOfflineMode: false).snapshot(from: model.repository, matching: patterns) { progress($0.fractionCompleted) }
+        return try await HubApi.modelFolder(base).snapshot(from: model.repository, matching: patterns) { progress($0.fractionCompleted) }
     }
     func load(from directory: URL, version: AsrModelVersion) async throws {
         func component(_ name: String, cpuOnly: Bool = false) async throws -> MLModel {

@@ -371,9 +371,7 @@ actor LocalInference: LocalInferenceEngine {
             await kit.unloadModels()
             return url
         }
-        // A kept folder must never pass for complete while the Mac is offline:
-        // offline mode would accept whichever files are already there.
-        return try await HubApi(downloadBase: base, useOfflineMode: false).snapshot(from: model.repository, matching: ["*.json", "*.safetensors", "*.jinja", "*.txt", "*.model"]) { progress($0.fractionCompleted) }
+        return try await HubApi.modelFolder(base).snapshot(from: model.repository, matching: ["*.json", "*.safetensors", "*.jinja", "*.txt", "*.model"]) { progress($0.fractionCompleted) }
         #else
         throw FrogError.message("Built-in local models require Apple silicon.")
         #endif
@@ -483,3 +481,13 @@ actor LocalInference: LocalInferenceEngine {
         textID = nil
     }
 }
+
+#if arch(arm64)
+extension HubApi {
+    /// The client for MLX and Parakeet files. It bypasses the shared Hugging Face
+    /// cache in the home folder, which would keep a second copy of every file that
+    /// deleting the model in Frog never removes. And it is forced online: offline
+    /// mode would accept an unfinished folder with whichever files it already holds.
+    static func modelFolder(_ base: URL) -> HubApi { HubApi(downloadBase: base, cache: nil, useOfflineMode: false) }
+}
+#endif
