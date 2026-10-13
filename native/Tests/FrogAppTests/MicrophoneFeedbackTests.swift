@@ -207,6 +207,48 @@ final class MicrophoneFeedbackTests: XCTestCase {
         XCTAssertFalse(fixture.controller.noMicrophoneInput)
     }
 
+    func testPopupInvitesSpeechOnlyOnceTheMicrophoneDeliversSound() async {
+        let fixture = Fixture()
+        defer { fixture.cleanUp() }
+        fixture.start()
+        await fixture.controller.waitForWork()
+        XCTAssertEqual(fixture.controller.phase, .recording)
+        fixture.controller.refreshRecordingFeedback(elapsed: 0)
+        XCTAssertEqual(fixture.controller.statusText, "Starting microphone…", "The opened microphone has not delivered a buffer yet")
+        fixture.recorders[0].emit(0)
+        fixture.controller.refreshRecordingFeedback(elapsed: 0)
+        XCTAssertEqual(fixture.controller.statusText, "Listening…", "Silence is sound from a running microphone")
+        fixture.controller.cancel()
+        fixture.start()
+        await fixture.controller.waitForWork()
+        fixture.recorders[0].emit(0.8)
+        fixture.controller.refreshRecordingFeedback(elapsed: 0)
+        XCTAssertEqual(fixture.controller.statusText, "Starting microphone…", "The next recording waits for its own microphone")
+        fixture.recorders[1].emit(0.1)
+        fixture.controller.refreshRecordingFeedback(elapsed: 0)
+        XCTAssertEqual(fixture.controller.statusText, "Listening…")
+    }
+
+    func testChangingMicrophoneWaitsForTheNewMicrophoneBeforeListeningAgain() async {
+        let fixture = Fixture()
+        defer { fixture.cleanUp() }
+        fixture.start()
+        await fixture.controller.waitForWork()
+        fixture.recorders[0].emit(0.1)
+        fixture.controller.refreshRecordingFeedback(elapsed: 0)
+        XCTAssertEqual(fixture.controller.statusText, "Listening…")
+        // Sound that arrived after the last feedback tick belongs to the microphone being replaced.
+        fixture.recorders[0].emit(0.1)
+        fixture.controller.selectMicrophone("42")
+        fixture.recorders[0].emit(0.9)
+        fixture.controller.refreshRecordingFeedback(elapsed: 0)
+        XCTAssertEqual(fixture.controller.statusText, "Starting microphone…")
+        XCTAssertFalse(fixture.controller.noMicrophoneInput)
+        fixture.recorders[1].emit(0.2)
+        fixture.controller.refreshRecordingFeedback(elapsed: 0)
+        XCTAssertEqual(fixture.controller.statusText, "Listening…")
+    }
+
     func testPopupMicrophoneSelectionIsSavedForTheNextRecording() async throws {
         let fixture = Fixture()
         defer { fixture.cleanUp() }

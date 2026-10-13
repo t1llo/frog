@@ -15,6 +15,8 @@ final class DictationController: ObservableObject {
     @Published private(set) var failure = ""
     @Published private(set) var elapsed = 0
     @Published private(set) var noMicrophoneInput = false
+    /// False while the opened microphone has not delivered its first buffer.
+    @Published private(set) var microphoneDelivering = false
     @Published private(set) var selectedMicrophoneID: String?
     @Published private(set) var microphones: [AudioDevice] = []
     @Published private(set) var recoveringHistoryIDs = Set<UUID>()
@@ -69,6 +71,18 @@ final class DictationController: ObservableObject {
     var localCleanupModel: ((Rule) throws -> String?)?
     var externalTranscription: (([Float], Rule) async throws -> String)?
     var active: Bool { phase != .idle }
+    /// The popup's one-line account of the session.
+    var statusText: String {
+        switch phase {
+        case .preparing: preparationMessage
+        // The capture session starts after the microphone opens; words spoken before it runs are lost.
+        case .recording: microphoneDelivering ? "Listening…" : "Starting microphone…"
+        case .transcribing: "Transcribing…"
+        case .correcting: "Cleaning up transcript…"
+        case .failed: "Transcription failed"
+        case .idle: "Dictation"
+        }
+    }
 
     init(makeRecorder: @escaping @MainActor () -> any DictationRecording = { MicrophoneRecording() },
          authorize: @escaping @MainActor () async -> Bool = { DictationController.microphoneGranted ? true : await DictationController.requestMicrophone() },
@@ -187,7 +201,10 @@ final class DictationController: ObservableObject {
         let level = samples.inputLevel
         microphoneMeter.append(level)
         let revision = samples.inputRevision
-        if revision != lastInputRevision { lastInputElapsed = elapsed; lastInputRevision = revision }
+        if revision != lastInputRevision {
+            lastInputElapsed = elapsed; lastInputRevision = revision
+            if !microphoneDelivering { microphoneDelivering = true }
+        }
         let missing = phase == .recording && elapsed - lastInputElapsed >= 2
         if noMicrophoneInput != missing { noMicrophoneInput = missing }
     }
@@ -232,6 +249,9 @@ final class DictationController: ObservableObject {
         let recorder = makeRecorder()
         let samples = self.samples
         let input = samples.beginInput()
+        // Only this capture's buffers count as its first sound, not the last ones of a replaced input.
+        lastInputRevision = samples.inputRevision
+        if microphoneDelivering { microphoneDelivering = false }
         do { try recorder.start(device: device) { samples.append($0, from: input) } }
         catch { recorder.stop(); throw error }
         self.recorder = recorder
@@ -538,8 +558,8 @@ private struct DictationPopup: View {
                     .help("Change microphone").accessibilityLabel("Change microphone")
                     .simultaneousGesture(TapGesture().onEnded { controller.refreshMicrophones() })
                 }
-                Text(L10n.text(status)).font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1).truncationMode(.tail).help(L10n.text(status))
+                Text(L10n.text(controller.statusText)).font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1).truncationMode(.tail).help(L10n.text(controller.statusText))
                 Spacer(minLength: 0)
                 if controller.phase == .recording {
                     Text(String(format: "%d:%02d", controller.elapsed / 60, controller.elapsed % 60))
@@ -603,17 +623,6 @@ private struct DictationPopup: View {
             .environment(\.locale, L10n.locale)
             .foregroundStyle(FrogStyle.ink)
             .frogPanel()
-    }
-
-    private var status: String {
-        switch controller.phase {
-        case .preparing: controller.preparationMessage
-        case .recording: "Listening…"
-        case .transcribing: "Transcribing…"
-        case .correcting: "Cleaning up transcript…"
-        case .failed: "Transcription failed"
-        case .idle: "Dictation"
-        }
     }
 }
 
