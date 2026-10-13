@@ -47,7 +47,7 @@ struct PreferencesView: View {
                 SettingsSection(title: "Appearance") { AppearanceSettingsView(model: model) }
                 SettingsSection(title: "Local models") {
                     CompactRow(title: "Unload idle models", detail: "Applies to models running inside Frog.") {
-                        CompactMenu(value: prefs.idleUnloadSeconds == 0 ? "Immediately" : "\(prefs.idleUnloadSeconds / 60) min") {
+                        CompactMenu(value: LocalModelSettings.idleTitle(seconds: prefs.idleUnloadSeconds)) {
                             Button("Immediately") { update { $0.idleUnloadSeconds = 0 } }.accessibilityAddTraits(prefs.idleUnloadSeconds == 0 ? .isSelected : [])
                             ForEach([120, 300, 900], id: \.self) { seconds in
                                 Button("\(seconds / 60) min") { update { $0.idleUnloadSeconds = seconds } }.accessibilityAddTraits(prefs.idleUnloadSeconds == seconds ? .isSelected : [])
@@ -55,7 +55,7 @@ struct PreferencesView: View {
                         }
                     }
                     Divider()
-                    CompactRow(title: model.localModels.loaded.isEmpty ? "No models loaded" : "Models in memory") {
+                    CompactRow(title: model.localModels.loaded.isEmpty ? "No models loaded" : "Models in memory", detail: LocalModelSettings.inMemory(model.localModels.loaded, catalog: model.configuration.modelCatalog)) {
                         Button("Unload now") { Task { await model.localModels.unload() } }.disabled(model.localModels.loaded.isEmpty || model.localModels.busy || model.dictation.active)
                     }
                 }
@@ -212,6 +212,23 @@ struct PreferencesView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }; setModelFolder(url)
     }
     private func setModelFolder(_ url: URL) { guard !model.dictation.active else { return }; Task { do { try await model.localModels.changeDirectory(to: url) } catch { model.report(error) } } }
+}
+
+/// What the Local models section says about the idle time and about the models in memory.
+enum LocalModelSettings {
+    /// The idle time as it is saved. The configuration file takes any number of seconds, not only the menu's choices.
+    static func idleTitle(seconds: Int) -> String {
+        guard seconds > 0 else { return "Immediately" }
+        let minutes = seconds / 60, rest = seconds % 60
+        if minutes == 0 { return "\(rest) sec" }
+        return rest == 0 ? "\(minutes) min" : "\(minutes) min \(rest) sec"
+    }
+    /// The names of the models in memory, in the order of the catalog.
+    static func inMemory(_ loaded: Set<String>, catalog: [LocalModelDescriptor]) -> String? {
+        guard !loaded.isEmpty else { return nil }
+        let known = catalog.filter { loaded.contains($0.id) }
+        return (known.map(\.name) + loaded.subtracting(known.map(\.id)).sorted()).joined(separator: ", ")
+    }
 }
 
 /// The two history limits while their steppers move. Saving a lower limit deletes the saved

@@ -94,7 +94,7 @@ struct SetupView: View {
                 }
             }
             SettingsSection(title: "Recommended offline pair") {
-                Text("Whisper Turbo for broad multilingual dictation and Qwen3 1.7B for writing or optional cleanup. Approximately 1.6 GB to download; no model account required.")
+                Text("Whisper Turbo for broad multilingual dictation and Qwen3 1.7B for writing or optional cleanup. No model account required.")
                     .font(.caption).foregroundStyle(FrogStyle.muted)
                 ForEach(LocalModelDescriptor.recommendedPair) { item in
                     VStack(alignment: .leading, spacing: 6) {
@@ -115,7 +115,8 @@ struct SetupView: View {
                         model.localModels.download(item)
                     }
                 }.disabled(!LocalModels.supported || LocalModelDescriptor.recommendedPair.allSatisfy { model.localModels.installed.contains($0.id) || model.localModels.progress[$0.id] != nil })
-                Text("For faster dictation in 25 European languages, choose Parakeet v3 (≈483 MB) under other internal models below.")
+                // The size is the catalog's, like the sizes in the rows above.
+                Text("For faster dictation in 25 European languages, choose Parakeet v3\(LocalModelDescriptor.find("parakeet-v3").map { " (\($0.size))" } ?? "") under other internal models below.")
                     .font(.caption).foregroundStyle(FrogStyle.muted)
                 if !LocalModels.supported { Text("Internal inference requires Apple silicon. Use an external provider on this Mac, or skip for now.").font(.caption).foregroundStyle(FrogStyle.warning) }
                 Text("Downloads continue if you move to the next step. You can cancel them in Models.").font(.caption).foregroundStyle(FrogStyle.muted)
