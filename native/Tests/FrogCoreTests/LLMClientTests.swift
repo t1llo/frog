@@ -64,7 +64,7 @@ final class LLMClientTests: XCTestCase {
             XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
             let body = try self.body(request)
             XCTAssertEqual(body["system"] as? String, "Instructions")
-            XCTAssertEqual(body["max_tokens"] as? Int, 8192)
+            XCTAssertEqual(body["max_tokens"] as? Int, 16_000)
             XCTAssertEqual(body["messages"] as? [[String: String]], [["role": "user", "content": "Text"]])
             return (200, Data(#"{"content":[{"type":"thinking","thinking":"private"},{"type":"text","text":"One"},{"type":"text","text":" two"}],"stop_reason":"end_turn"}"#.utf8))
         }

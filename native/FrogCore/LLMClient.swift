@@ -70,7 +70,9 @@ public struct LLMClient: Sendable {
             body = ["model": model, "messages": messages, "stream": false]
         case .anthropic:
             path = baseURL.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).hasSuffix("v1") ? "messages" : "v1/messages"
-            body = ["model": model, "system": instructions, "messages": [["role": "user", "content": text]], "max_tokens": 8192, "stream": false]
+            // The limit covers the model's thinking as well as the text. A request that does not
+            // stream should not ask for more: the whole answer has to arrive within the timeout.
+            body = ["model": model, "system": instructions, "messages": [["role": "user", "content": text]], "max_tokens": 16_000, "stream": false]
         case .gemini:
             let name = model.hasPrefix("models/") ? String(model.dropFirst(7)) : model
             guard !name.isEmpty, name.unicodeScalars.allSatisfy({ CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.").contains($0) }) else {
