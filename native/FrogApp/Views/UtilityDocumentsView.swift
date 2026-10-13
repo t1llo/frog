@@ -45,7 +45,8 @@ struct UtilityDocumentsView: View {
                 Text("\(items.count) \(items.count == 1 ? "item" : "items")")
                     .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
             }
-            if let issue = documents.issue { InlineIssue(message: issue) }
+            if let issue = documents.issue { notice(issue) }
+            if let unreadable = documents.unreadable { notice(unreadable.message) }
             HStack(alignment: .top, spacing: 14) {
                 VStack(spacing: 8) {
                     ScrollView {
@@ -99,6 +100,12 @@ struct UtilityDocumentsView: View {
     private func remove(_ id: UUID) {
         documents.remove(id)
         if selected == id { selected = nil }
+    }
+    private func notice(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            InlineIssue(message: message)
+            if let file = documents.fileToReveal { Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([file]) } }
+        }
     }
     private func editor(_ item: UtilityDocument) -> some View {
         VStack(alignment: .leading, spacing: 10) {

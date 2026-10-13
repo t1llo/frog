@@ -5,6 +5,8 @@ import FrogCore
 @MainActor final class LocalDocuments: ObservableObject {
     @Published private(set) var items: [UtilityDocument] = []
     @Published private(set) var issue: String?
+    /// Items the file holds that this version of Frog cannot read. They stay out of `items`, and the first save leaves them out of the file.
+    @Published private(set) var unreadable: UtilityDocumentStore.Unreadable?
     @Published var selection: [UtilityDocument.Kind: UUID] = [:]
     private let store: UtilityDocumentStore
     private(set) var loaded = false
@@ -13,12 +15,17 @@ import FrogCore
     private var revision = 0
     private var unsaved = false
     var needsFlush: Bool { unsaved }
+    /// The file to show in Finder while one needs attention: the documents file that could not be opened or holds unreadable items, or its copy once a save has kept it.
+    var fileToReveal: URL? {
+        guard !loaded || unreadable != nil else { return nil }
+        return [unreadable?.backup, store.file].compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0.path) }
+    }
     init(directory: URL) { store = UtilityDocumentStore(directory: directory) }
     func load() async {
         if let loading { await loading.value; return }
         guard !loaded else { return }
         let task = Task {
-            do { items = try await store.load(); loaded = true; issue = nil }
+            do { items = try await store.load(); unreadable = await store.unreadable; loaded = true; issue = nil }
             catch { issue = "Could not open local documents: \(error.localizedDescription)" }
         }
         loading = task; await task.value; loading = nil

@@ -4,7 +4,7 @@ import Darwin
 // Serializes read/modify/write transactions across store instances in this process.
 private let persistenceLock = NSRecursiveLock()
 
-private enum PrivateFile {
+enum PrivateFile {
     static var defaultDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Frog", isDirectory: true)

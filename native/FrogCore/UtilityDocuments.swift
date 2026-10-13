@@ -15,14 +15,41 @@ public struct UtilityDocument: Identifiable, Codable, Equatable, Sendable {
 
 /// User documents have their own private store, never part of portable settings.
 public actor UtilityDocumentStore {
-    private let file: URL
+    /// What a `load` had to leave out of the list it returned.
+    public struct Unreadable: Equatable, Sendable {
+        /// Items this version of Frog could not read, out of `total` in the file.
+        public let count: Int
+        public let total: Int
+        public let file: URL
+        /// Where the file is kept as it was, before the first save replaces it.
+        public let backup: URL
+        public var message: String {
+            "\(count) of \(total) items in \(file.shownPath) could not be read and \(count == 1 ? "is" : "are") not shown. Before Frog saves a change, it keeps that file as \(backup.lastPathComponent) in the same folder."
+        }
+    }
+    public nonisolated let file: URL
     private var revision = -1
+    /// Set by a `load` that could not read every item, nil after one that could.
+    public private(set) var unreadable: Unreadable?
+    /// The file as that `load` found it, until a save has kept it as `unreadable.backup`.
+    private var unsavedOriginal: Data?
     public init(directory: URL) { file = directory.appendingPathComponent("toolkit-documents.json") }
     public func load() throws -> [UtilityDocument] {
-        guard FileManager.default.fileExists(atPath: file.path) else { return [] }
-        let data = try Data(contentsOf: file)
-        guard data.count <= 16 * 1024 * 1024 else { throw FrogError.message("The local document store exceeds 16 MB.") }
-        return try JSONDecoder().decode([UtilityDocument].self, from: data)
+        guard FileManager.default.fileExists(atPath: file.path) else { unreadable = nil; unsavedOriginal = nil; return [] }
+        let data: Data
+        do { data = try Data(contentsOf: file) }
+        catch { throw FrogError.message("\(file.shownPath) could not be read: \(error.localizedDescription)") }
+        guard data.count <= 16 * 1024 * 1024 else { throw FrogError.message("The local document store at \(file.shownPath) exceeds 16 MB.") }
+        // One item this version cannot read, such as a kind a later version added, must not hide the others.
+        guard let elements = try? JSONDecoder().decode([ReadableDocument].self, from: data) else {
+            throw FrogError.message("\(file.shownPath) is not a list of Frog documents. The file was left unchanged. Repair it, or move it aside to start again without its items.")
+        }
+        let documents = elements.compactMap(\.document)
+        if documents.count == elements.count { unreadable = nil; unsavedOriginal = nil; return documents }
+        let backup = file.deletingLastPathComponent().appendingPathComponent("toolkit-documents-backup-\(UUID().uuidString).json").resolvingSymlinksInPath()
+        unreadable = Unreadable(count: elements.count - documents.count, total: elements.count, file: file, backup: backup)
+        unsavedOriginal = data
+        return documents
     }
     public func save(_ documents: [UtilityDocument], revision: Int) throws {
         try Task.checkCancellation()
@@ -34,10 +61,27 @@ public actor UtilityDocumentStore {
         let data = try JSONEncoder().encode(documents)
         guard data.count <= 16 * 1024 * 1024 else { throw FrogError.message("The local document store exceeds 16 MB.") }
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        if let original = unsavedOriginal, let backup = unreadable?.backup {
+            // This write drops the items that could not be read. Keep the file as it was first, once.
+            do { try PrivateFile.write(original, to: backup, secureDirectory: false) }
+            catch { throw FrogError.message("Nothing was saved, because the file with the unreadable items could not be kept as \(backup.lastPathComponent) first. \(error.localizedDescription)") }
+            unsavedOriginal = nil
+        }
         try data.write(to: file, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         self.revision = revision
     }
+}
+
+/// One element of the saved list, or nothing where this version of Frog cannot read it.
+private struct ReadableDocument: Decodable {
+    let document: UtilityDocument?
+    init(from decoder: Decoder) throws { document = try? UtilityDocument(from: decoder) }
+}
+
+private extension URL {
+    /// The path as a person would write it, with the home folder as a tilde.
+    var shownPath: String { (path as NSString).abbreviatingWithTildeInPath }
 }
 
 public enum SnippetExpansion {
