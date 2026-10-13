@@ -4,7 +4,7 @@ import FrogCore
 import UniformTypeIdentifiers
 
 struct PreferencesView: View {
-    var permissionsRequest: UUID? = nil
+    @Binding var permissionsRequest: ScrollRequest
     @EnvironmentObject private var model: AppModel
     @State private var pendingConfiguration: Configuration?
     @State private var confirmingImport = false
@@ -171,10 +171,10 @@ struct PreferencesView: View {
                 }.sheet(item: $legalDocument) { LegalDocumentView(document: $0) }
             }.toggleStyle(.switch).controlSize(.small).padding(20).frame(maxWidth: 630).frame(maxWidth: .infinity).minimalScrollbars()
         }.onAppear { model.refreshSystemStatus(forceLoginStatus: true) }
-            .task(id: permissionsRequest) {
-                guard permissionsRequest != nil else { return }
+            .task(id: permissionsRequest.id) {
+                guard permissionsRequest.id != nil else { return }
                 await Task.yield()
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, permissionsRequest.take() else { return }
                 withAnimation { proxy.scrollTo("permissions", anchor: .top) }
             }
             .confirmationDialog("Replace configuration?", isPresented: $confirmingImport) {

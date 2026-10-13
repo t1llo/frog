@@ -6,7 +6,7 @@ struct MainView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
     private var section: ToolkitRoute { model.toolkit.route }
-    @State private var permissionsRequest: UUID?
+    @State private var permissionsRequest = ScrollRequest()
 
     private struct NavigationItem: Identifiable {
         let id: ToolkitRoute
@@ -30,7 +30,7 @@ struct MainView: View {
         case .history: HistoryView()
         case .models: ProvidersView()
         case .features: FeaturesView()
-        case .settings: PreferencesView(permissionsRequest: permissionsRequest)
+        case .settings: PreferencesView(permissionsRequest: $permissionsRequest)
         case .statistics: StatisticsView(statistics: model.statistics, onBack: { model.toolkit.select(.settings) })
         case .feature(let feature):
             switch feature {
@@ -121,7 +121,7 @@ struct MainView: View {
                 .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border.opacity(0.6)).frame(height: 1) }
             if !model.accessibilityGranted || !DictationController.microphoneGranted {
                 Button {
-                    model.toolkit.select(.settings); permissionsRequest = UUID()
+                    model.toolkit.select(.settings); permissionsRequest.ask()
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.muted)
@@ -150,6 +150,18 @@ struct MainView: View {
             .contentShape(RoundedRectangle(cornerRadius: FrogStyle.corner))
         }.buttonStyle(.plain).optionalNavigationShortcut(item.key)
             .accessibilityAddTraits(section == item.id ? .isSelected : []).help(item.title)
+    }
+}
+
+/// A request to open a page at one of its sections. The page takes the request when it
+/// scrolls there, so it is answered once and a later visit opens the page at its top.
+struct ScrollRequest {
+    private(set) var id: UUID?
+    mutating func ask() { id = UUID() }
+    /// Whether a scroll is still owed. Taking it uses the request up.
+    mutating func take() -> Bool {
+        defer { id = nil }
+        return id != nil
     }
 }
 
