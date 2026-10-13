@@ -34,4 +34,16 @@ final class CommandSearchTests: XCTestCase {
         XCTAssertEqual(CommandSearch.results([app, feature], query: "stay", preferred: [files[7]], trailing: files).prefix(2).map(\.id), ["file:7", "app:stay"])
         XCTAssertEqual(Set(CommandSearch.results([app, feature], query: "stay", preferred: [files[7]], trailing: files).map(\.id)).count, 80)
     }
+
+    func testTextShapedLikeADateIsNotACalculation() {
+        // A file named after a date is what such text looks for. An answer above it would take Return.
+        for text in ["2025-01-15", "2025-1-5", "15/01/2025", "1/5/2025", "2025-01", "09-17", " 2025-01-15 "] {
+            XCTAssertNil(QuickCalculation.result(text), text)
+        }
+        // Spaces, or groups no date has, still ask for arithmetic.
+        for (text, answer) in [("2025 - 1 - 15", "2009"), ("2000-500-300", "1200"), ("100-20", "80"), ("12/25/25", "0.0192"),
+                               ("0.5*4", "2"), ("1.05+1", "2.05"), ("10-0", "10"), ("25% * 200", "50"), ("(3+4)*6", "42")] {
+            XCTAssertEqual(QuickCalculation.result(text), answer, text)
+        }
+    }
 }

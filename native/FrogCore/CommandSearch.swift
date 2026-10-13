@@ -82,10 +82,20 @@ public enum QuickCalculation {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.count <= 256 else { return nil }
         if let converted = convert(text) { return converted }
-        guard text.contains(where: { "+-*/^%()".contains($0) }), text.contains(where: \.isNumber) else { return nil }
+        guard text.contains(where: { "+-*/^%()".contains($0) }), text.contains(where: \.isNumber), !namesADay(text) else { return nil }
         var parser = Parser(Array(text))
         guard let value = parser.expression(), parser.atEnd, value.isFinite else { return nil }
         return format(value)
+    }
+    /// `2025-1-15` and `15/1/2025`: two short groups and a year at one end, joined without spaces by one sign.
+    /// That is a day, and usually a file named after it, so no answer may stand above the matches.
+    private static func namesADay(_ text: String) -> Bool {
+        ["-", "/"].contains { (sign: Character) in
+            let groups = text.split(separator: sign, omittingEmptySubsequences: false)
+            guard groups.count == 3, groups.joined().allSatisfy({ ("0"..."9").contains($0) }) else { return false }
+            let lengths = groups.map(\.count)
+            return (1...2).contains(lengths[1]) && (lengths[0] == 4 && (1...2).contains(lengths[2]) || (1...2).contains(lengths[0]) && lengths[2] == 4)
+        }
     }
     private static func format(_ value: Double) -> String {
         let formatter = NumberFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -153,6 +163,8 @@ public enum QuickCalculation {
             if take("(") { guard let value = expression(), take(")") else { return nil }; return value }
             skip(); let start = index
             while index < input.count, input[index].isNumber || input[index] == "." { index += 1 }
+            // No written number starts with a spare zero. `01` belongs to a date or a file name.
+            if index - start > 1, input[start] == "0", input[start + 1] != "." { return nil }
             return Double(String(input[start..<index]))
         }
     }
