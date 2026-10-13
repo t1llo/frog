@@ -103,7 +103,7 @@ final class WindowSwitcherController {
     private var pendingSteps: [Bool] = []
     private var commitOnLoad = false
     private var unfilteredWindows: [SwitcherWindow] = []
-    private var pointerPosition = NSPoint.zero
+    private var pointer = WindowSwitchPointer()
     private var sessionOnConsole = false
     private var screenLocked = false
     private var sessionObservers: [(NotificationCenter, NSObjectProtocol)] = []
@@ -342,7 +342,7 @@ final class WindowSwitcherController {
         if action == .cancel { cancel(session: sessionID); return }
         guard router.sessionID == sessionID else { return }
         display.selectionFromPointer = false
-        pointerPosition = NSEvent.mouseLocation
+        pointer.rest(at: NSEvent.mouseLocation)
         switch action {
         case .begin(let backwards): begin(backwards: backwards, token: sessionID)
         case .step(let backwards):
@@ -488,6 +488,8 @@ final class WindowSwitcherController {
         activationID = activationToken
         activationPID = selected.pid
         activationWindowID = selected.windowID
+        // The next Command-Tab can retire this activation before its focus is recorded.
+        cache.noteChosen(selected.id)
         activation = Task { [weak self, catalog] in
             defer {
                 if self?.activationSpaceTransition == activationToken { self?.activationSpaceTransition = nil }
@@ -516,6 +518,7 @@ final class WindowSwitcherController {
             }, isCurrent: isCurrent)
             guard activated else {
                 guard !Task.isCancelled, isCurrent() else { return }
+                self?.cache.forgetChosen(selected.id)
                 self?.onError?("macOS could not bring the selected window to the front. It may have closed or become unavailable."); return
             }
             if !Task.isCancelled, isCurrent() { self?.cache.noteFocused(selected.id) }
@@ -552,9 +555,7 @@ final class WindowSwitcherController {
                 self?.session.select(id); self?.commit()
             }, hover: { [weak self] id in
                 guard let self, self.panel?.isVisible == true, self.router.active, !self.display.loading else { return }
-                let point = NSEvent.mouseLocation
-                guard point != self.pointerPosition else { return }
-                self.pointerPosition = point
+                guard self.pointer.selects(at: NSEvent.mouseLocation) else { return }
                 self.display.selectionFromPointer = true
                 self.session.select(id); self.display.selected = self.session.selected
             }))
@@ -575,7 +576,8 @@ final class WindowSwitcherController {
                                   y: screen.visibleFrame.midY - size.height / 2,
                                   width: size.width, height: size.height), display: true)
         }
-        pointerPosition = NSEvent.mouseLocation
+        // A refresh while the list is up must not take the selection back from the pointer.
+        if panel.isVisible { pointer.relaid(at: NSEvent.mouseLocation) } else { pointer.rest(at: NSEvent.mouseLocation) }
         panel.orderFrontRegardless()
     }
 }

@@ -110,6 +110,49 @@ final class WindowSwitcherTests: XCTestCase {
         XCTAssertEqual(commit.sessionID, second.sessionID)
     }
 
+    func testPointerRestingUnderTheListDoesNotChooseARow() {
+        let shown = ContinuousClock.now
+        var pointer = WindowSwitchPointer()
+        XCTAssertFalse(pointer.selects(at: CGPoint(x: 400, y: 300), now: shown), "Nothing is selected before the list is up")
+        pointer.rest(at: CGPoint(x: 400, y: 300), now: shown)
+        // A hand on the mouse while Command-Tab is tapped: one point, then a real bump.
+        XCTAssertFalse(pointer.selects(at: CGPoint(x: 401, y: 300), now: shown.advanced(by: .milliseconds(30))))
+        XCTAssertFalse(pointer.selects(at: CGPoint(x: 440, y: 330), now: shown.advanced(by: .milliseconds(200))))
+        // Still holding Command: what the bump covered does not count, nor does a small drift.
+        XCTAssertFalse(pointer.selects(at: CGPoint(x: 446, y: 334), now: shown.advanced(by: .milliseconds(500))))
+        XCTAssertFalse(pointer.selects(at: CGPoint(x: 446, y: 334), now: shown.advanced(by: .seconds(3))))
+    }
+
+    func testDeliberatePointerMovementSelectsAndThenFollows() {
+        let shown = ContinuousClock.now
+        var pointer = WindowSwitchPointer()
+        pointer.rest(at: CGPoint(x: 400, y: 300), now: shown)
+        XCTAssertFalse(pointer.selects(at: CGPoint(x: 400, y: 310), now: shown.advanced(by: .milliseconds(500))))
+        XCTAssertTrue(pointer.selects(at: CGPoint(x: 400, y: 320), now: shown.advanced(by: .milliseconds(520))))
+        XCTAssertTrue(pointer.selects(at: CGPoint(x: 400, y: 321), now: shown.advanced(by: .milliseconds(530))),
+                      "Once the pointer is in use every row it reaches is selected")
+        XCTAssertFalse(pointer.selects(at: CGPoint(x: 400, y: 321), now: shown.advanced(by: .milliseconds(540))),
+                       "Rows scrolling under a pointer that stays put select nothing")
+        // The list grew under the pointer while it was moved off the rows.
+        pointer.relaid(at: CGPoint(x: 400, y: 380))
+        XCTAssertFalse(pointer.selects(at: CGPoint(x: 400, y: 380), now: shown.advanced(by: .milliseconds(600))))
+        XCTAssertTrue(pointer.selects(at: CGPoint(x: 400, y: 381), now: shown.advanced(by: .milliseconds(610))))
+    }
+
+    func testKeyTakesTheSelectionBackFromThePointer() {
+        let shown = ContinuousClock.now
+        var pointer = WindowSwitchPointer()
+        pointer.rest(at: CGPoint(x: 400, y: 300), now: shown)
+        XCTAssertTrue(pointer.selects(at: CGPoint(x: 400, y: 360), now: shown.advanced(by: .seconds(1))))
+        // Tab moved the selection on; the hand still on the mouse must not pull it back.
+        let stepped = shown.advanced(by: .seconds(2))
+        pointer.rest(at: CGPoint(x: 400, y: 360), now: stepped)
+        XCTAssertFalse(pointer.selects(at: CGPoint(x: 400, y: 362), now: stepped.advanced(by: .milliseconds(50))))
+        XCTAssertFalse(pointer.selects(at: CGPoint(x: 400, y: 366), now: stepped.advanced(by: WindowSwitchPointer.settle)))
+        XCTAssertTrue(pointer.selects(at: CGPoint(x: 400, y: 362 + WindowSwitchPointer.travel),
+                                      now: stepped.advanced(by: .milliseconds(600))))
+    }
+
     func testLargeWindowListsAreNotTruncatedByCyclingState() {
         var session = WindowSwitchSession<Int>()
         session.begin(windows: Array(0..<300), current: 0, backwards: true)

@@ -8,6 +8,8 @@ final class WindowSwitcherCache {
     private var updatedAt: ContinuousClock.Instant?
     private var refresh: Task<WindowCatalog.Snapshot, Never>?
     private var revision: UInt64 = 0
+    /// Selected in the switcher, with no focus recorded since.
+    private var chosen: UUID?
 
     var isRefreshing: Bool { refresh != nil }
 
@@ -27,6 +29,7 @@ final class WindowSwitcherCache {
         refresh = nil
         guard !task.isCancelled, !Task.isCancelled, result.isPublishable else { return snapshot }
         snapshot = result
+        chosen = nil
         updatedAt = result.completeness == .complete ? .now : nil
         return result
     }
@@ -36,10 +39,14 @@ final class WindowSwitcherCache {
         refresh?.cancel(); refresh = nil
     }
 
-    func clear() { cancelRefresh(); snapshot = nil; updatedAt = nil }
+    func clear() { cancelRefresh(); snapshot = nil; updatedAt = nil; chosen = nil }
     func invalidate() { updatedAt = nil }
 
+    func noteChosen(_ id: UUID) { chosen = id }
+    func forgetChosen(_ id: UUID) { if chosen == id { chosen = nil } }
+
     func noteFocused(_ id: UUID) {
+        chosen = nil
         guard let snapshot, let window = snapshot.windows.first(where: { $0.id == id }) else { return }
         self.snapshot = WindowCatalog.Snapshot(windows: [window] + snapshot.windows.filter { $0.id != id }, current: id,
                                               completeness: snapshot.completeness)
@@ -55,11 +62,13 @@ final class WindowSwitcherCache {
         // pauses scans; the last inventory is still useful immediately afterward.
         guard let snapshot else { return nil }
         var windows = snapshot.windows.filter { livePIDs?.contains($0.pid) ?? true }
-        let current = windows.first { $0.id == snapshot.current && $0.pid == frontPID }
-            ?? windows.first { $0.pid == frontPID }
         // An app can come forward unrecorded: scans pause while typing, and a
-        // keystroke retires a pending activation. Its window leads all the same,
-        // so the next row is the one used before it rather than an arbitrary one.
+        // keystroke retires a pending activation. The window chosen in it leads all
+        // the same, ahead of the app's other windows, so the next row is the one
+        // used before it rather than an arbitrary one.
+        let current = windows.first { $0.id == chosen && $0.pid == frontPID }
+            ?? windows.first { $0.id == snapshot.current && $0.pid == frontPID }
+            ?? windows.first { $0.pid == frontPID }
         if let current, windows.first?.id != current.id {
             noteFocused(current.id)
             windows = [current] + windows.filter { $0.id != current.id }

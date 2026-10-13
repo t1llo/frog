@@ -32,6 +32,38 @@ struct WindowSwitchSession<ID: Hashable> {
     mutating func reset() { windows = []; selected = nil }
 }
 
+/// The list opens under the pointer, so a resting hand must not choose a row. The pointer
+/// selects only once it has settled and then travelled on purpose; a click needs neither.
+struct WindowSwitchPointer {
+    static let settle: Duration = .milliseconds(350)
+    static let travel: CGFloat = 16
+    private var anchor: CGPoint?
+    private var last: CGPoint?
+    private var since: ContinuousClock.Instant?
+    private var engaged = false
+
+    /// The list appeared, or a key moved the selection.
+    mutating func rest(at point: CGPoint, now: ContinuousClock.Instant = .now) {
+        anchor = point; last = point; since = now; engaged = false
+    }
+
+    /// The rows were laid out again; a pointer that stays where it is selects nothing.
+    mutating func relaid(at point: CGPoint) { last = point }
+
+    /// Whether the pointer, now at `point`, may select the row under it.
+    mutating func selects(at point: CGPoint, now: ContinuousClock.Instant = .now) -> Bool {
+        // Rows also pass under a pointer that is not moving.
+        guard let anchor, let since, point != last else { return false }
+        last = point
+        if engaged { return true }
+        // Movement carried over from before the list was there is not a choice.
+        guard since.duration(to: now) >= Self.settle else { self.anchor = point; return false }
+        guard hypot(point.x - anchor.x, point.y - anchor.y) >= Self.travel else { return false }
+        engaged = true
+        return true
+    }
+}
+
 /// Pure key routing: only the switcher's keys are consumed, never ordinary typing.
 struct WindowSwitchKeyRouter: Sendable {
     static let defaultHotkey = Hotkey(keyCode: 48, modifiers: UInt32(cmdKey))

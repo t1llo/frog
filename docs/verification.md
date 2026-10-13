@@ -443,6 +443,31 @@ third app selected; 57 switcher tests pass. Not reproduced live.
   known route switches off macOS's own Command–Tab through a private window-server
   call and registers a Carbon hotkey instead. Left for the user to decide.
 
+## Quick toggling between two windows lands on a third — October 13
+
+Reported again after the October 11 change, with the hint that it follows a small
+movement of the mouse. Two causes were found by reading the code; neither was
+reproduced live (this shell has no Accessibility or event permissions).
+
+- **The pointer chose a row.** The list appears at once in the middle of the screen,
+  usually under the pointer, and any pointer movement over a row, one point included,
+  selected that row; releasing Command then switched to it. The pointer now selects
+  only after it has rested for 350 ms since the list appeared or a key moved the
+  selection, and has then travelled 16 points (`WindowSwitchPointer`). Movement during
+  the rest does not count, a pointer that stays put never selects, and a click on a
+  row works at any time. 3 tests cover the nudge, deliberate movement and a key press
+  taking the selection back.
+- **The front window was guessed.** When the next Command–Tab arrives before the
+  previous switch was recorded, the warm list led with the first window it knew of
+  the front app. If that app has several windows this could be a different one than
+  the window just chosen, which then counted as recently used and became the next
+  target. The switcher now remembers the window it was asked to bring forward until
+  a focus reading replaces it. One test failed first with the app's other window
+  selected; 2 tests cover it.
+- 24 tests in the two affected suites pass. Not changed: a held Tab repeats after the
+  system's key-repeat delay and steps further, as in the macOS switcher; a window that
+  misses one inventory still returns with a new identity and no rank.
+
 ## Distribution
 
 Developer ID signing/notarization requires the owner's Apple Developer credentials. Ad-hoc signing is suitable for local development, but is not notarization and does not establish that macOS will trust a downloaded release on another machine.

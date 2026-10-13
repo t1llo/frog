@@ -59,6 +59,37 @@ final class WindowSwitcherCacheTests: XCTestCase {
                        "The browser's turn in front stays in the order")
     }
 
+    func testQuickSwitchBackLeavesTheChosenWindowNotAnotherWindowOfItsApp() async throws {
+        let cache = WindowSwitcherCache()
+        let editor = window("Editor", pid: 10), inbox = window("Inbox", pid: 20), draft = window("Draft", pid: 20)
+        _ = await cache.update { .init(windows: [editor, inbox, draft], current: editor.id) }
+        // The draft was chosen, and the next Command-Tab retired its activation unrecorded.
+        cache.noteChosen(draft.id)
+        XCTAssertEqual(cache.readySnapshot(frontPID: 10)?.current, editor.id, "Its app has not come forward yet")
+        let back = try XCTUnwrap(cache.readySnapshot(frontPID: 20))
+        XCTAssertEqual(back.current, draft.id)
+        XCTAssertEqual(back.windows.map(\.id), [draft.id, editor.id, inbox.id])
+        let again = try XCTUnwrap(cache.readySnapshot(frontPID: 10))
+        var session = WindowSwitchSession<UUID>()
+        session.begin(windows: again.windows.map(\.id), current: again.current, backwards: false)
+        XCTAssertEqual(session.selected, draft.id, "Toggling returns to the draft, not to the app's other window")
+    }
+
+    func testRecordedFocusReplacesTheChosenWindow() async {
+        let cache = WindowSwitcherCache()
+        let editor = window("Editor", pid: 10), inbox = window("Inbox", pid: 20), draft = window("Draft", pid: 20)
+        _ = await cache.update { .init(windows: [editor, inbox, draft], current: editor.id) }
+        cache.noteChosen(draft.id)
+        cache.noteFocused(inbox.id)
+        XCTAssertEqual(cache.readySnapshot(frontPID: 20)?.current, inbox.id, "The user clicked another window afterwards")
+        cache.noteChosen(draft.id)
+        cache.forgetChosen(draft.id)
+        XCTAssertEqual(cache.readySnapshot(frontPID: 20)?.current, inbox.id, "macOS refused the activation")
+        cache.noteChosen(draft.id)
+        _ = await cache.update { .init(windows: [inbox, editor, draft], current: inbox.id) }
+        XCTAssertEqual(cache.readySnapshot(frontPID: 20)?.current, inbox.id, "A scan read the focused window itself")
+    }
+
     func testRefreshingHeldInventoryPreservesCyclingOrderAndSelection() {
         var session = WindowSwitchSession<Int>()
         session.begin(windows: [1, 2, 3], current: 1, backwards: false)
