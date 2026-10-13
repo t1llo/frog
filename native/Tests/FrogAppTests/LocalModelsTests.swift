@@ -206,6 +206,7 @@ final class LocalModelsTests: XCTestCase {
         XCTAssertFalse(models.installed.contains(descriptor.id))
         XCTAssertNil(models.progress[descriptor.id])
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("Models/\(descriptor.id)").path))
+        XCTAssertTrue(models.unfinished.isEmpty)
     }
 
     func testDownloadInterruptedByQuittingCanBeStartedAgainAfterRelaunch() async throws {
@@ -223,14 +224,69 @@ final class LocalModelsTests: XCTestCase {
         let folder = directory.appendingPathComponent("Models/\(descriptor.id)")
         XCTAssertTrue(FileManager.default.fileExists(atPath: folder.path))
 
-        let relaunched = LocalModels(directory: directory, runtime: FixtureInference(), downloader: Self.fixtureDownload)
+        let relaunched = LocalModels(directory: directory, runtime: FixtureInference(), downloader: { model, base, progress in
+            guard FileManager.default.fileExists(atPath: base.appendingPathComponent("fixture/weights").path) else { throw FrogError.message("The files fetched before the quit are gone") }
+            return try await Self.fixtureDownload(model, base, progress)
+        })
         XCTAssertFalse(relaunched.installed.contains(descriptor.id), "An unfinished folder is not an installation")
+        XCTAssertEqual(relaunched.unfinished, [descriptor.id])
         relaunched.download(descriptor); await relaunched.waitForDownload(descriptor.id)
         XCTAssertNil(relaunched.errors[descriptor.id])
         XCTAssertTrue(relaunched.installed.contains(descriptor.id), "Frog's own unfinished folder must not block the model for good")
+        XCTAssertTrue(relaunched.unfinished.isEmpty)
         XCTAssertTrue(LocalModels(directory: directory).installed.contains(descriptor.id))
 
         quit.shutdown(); await gate.resume(); await quit.waitForDownload(descriptor.id)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.path), "Quitting is not a Cancel: it keeps the files")
+    }
+
+    func testFailedDownloadKeepsItsFilesAndTheNextDownloadContinuesFromThem() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let attempts = Attempts()
+        let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: { model, base, progress in
+            let firstFile = base.appendingPathComponent("first-file")
+            if await attempts.next() == 1 {
+                try Data("fetched".utf8).write(to: firstFile)
+                throw FrogError.message("The connection dropped")
+            }
+            guard FileManager.default.fileExists(atPath: firstFile.path) else { throw FrogError.message("The first file was thrown away") }
+            return try await Self.fixtureDownload(model, base, progress)
+        })
+        let descriptor = LocalModelDescriptor.find("whisper-base")!
+        models.download(descriptor); await models.waitForDownload(descriptor.id)
+        XCTAssertEqual(models.errors[descriptor.id], "The connection dropped")
+        XCTAssertFalse(models.installed.contains(descriptor.id))
+        XCTAssertEqual(models.unfinished, [descriptor.id])
+        XCTAssertFalse(LocalModels(directory: directory).installed.contains(descriptor.id), "Kept files are not an installation")
+
+        models.download(descriptor); await models.waitForDownload(descriptor.id)
+        XCTAssertNil(models.errors[descriptor.id])
+        XCTAssertTrue(models.installed.contains(descriptor.id))
+        XCTAssertTrue(models.unfinished.isEmpty)
+    }
+
+    func testUnfinishedDownloadCanBeDiscardedButAFolderFrogDidNotStartCannot() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: { _, base, _ in
+            try Data("fetched".utf8).write(to: base.appendingPathComponent("first-file"))
+            throw FrogError.message("The connection dropped")
+        })
+        let descriptor = LocalModelDescriptor.find("whisper-base")!
+        let folder = directory.appendingPathComponent("Models/\(descriptor.id)")
+        models.download(descriptor); await models.waitForDownload(descriptor.id)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("first-file").path))
+
+        models.discardDownload(descriptor.id); await models.waitForDownload(descriptor.id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+        XCTAssertTrue(models.unfinished.isEmpty)
+        XCTAssertNil(models.errors[descriptor.id])
+
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("keep".utf8).write(to: folder.appendingPathComponent("user-file"))
+        models.discardDownload(descriptor.id); await models.waitForDownload(descriptor.id)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("user-file").path))
     }
 
     func testUnavailableModelFailsWithoutCallingInference() async throws {
@@ -280,6 +336,11 @@ private actor FixtureInference: LocalInferenceEngine {
         return text
     }
     func unload(keepingMetadata: Bool) { cancelledUnload = Task.isCancelled; loadedIDs = []; unloads += 1 }
+}
+
+private actor Attempts {
+    private var count = 0
+    func next() -> Int { count += 1; return count }
 }
 
 private actor DownloadGate {

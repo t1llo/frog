@@ -21,6 +21,8 @@ final class LocalModels: ObservableObject {
         #endif
     }
     @Published private(set) var installed = Set<String>()
+    /// Models whose download stopped part-way and left its files in place.
+    @Published private(set) var unfinished = Set<String>()
     @Published private(set) var catalog = LocalModelDescriptor.catalog
     var onInstall: ((LocalModelDescriptor) -> Void)?
     var onInventoryChanged: (() -> Void)?
@@ -33,6 +35,8 @@ final class LocalModels: ObservableObject {
     private let storagePreference: URL
     @Published private(set) var changingDirectory = false
     private var downloads: [String: Task<Void, Never>] = [:]
+    /// Downloads the person cancelled: only those lose their files.
+    private var discarding = Set<String>()
     private let runtime: any LocalInferenceEngine
     private let downloader: Downloader
     private var unloadTask: Task<Void, Never>?
@@ -44,6 +48,7 @@ final class LocalModels: ObservableObject {
         guard catalog != models else { return }
         catalog = models
         installed = Set(catalog.filter { modelURL($0.id) != nil }.map(\.id))
+        unfinished = unfinishedDownloads()
     }
     func descriptor(_ id: String) -> LocalModelDescriptor? { catalog.first { $0.id == id } }
 
@@ -56,6 +61,7 @@ final class LocalModels: ObservableObject {
             root = URL(fileURLWithPath: path, isDirectory: true)
         } else { root = defaultDirectory }
         for model in LocalModelDescriptor.catalog where modelURL(model.id) != nil { installed.insert(model.id) }
+        unfinished = unfinishedDownloads()
     }
     /// Storage location is device-local, intentionally excluded from configuration exports.
     func changeDirectory(to location: URL) async throws {
@@ -73,6 +79,7 @@ final class LocalModels: ObservableObject {
         try JSONEncoder().encode(location.path).write(to: storagePreference, options: [.atomic])
         root = location
         installed = Set(catalog.filter { modelURL($0.id) != nil }.map(\.id))
+        unfinished = unfinishedDownloads()
         errors = [:]
         onInventoryChanged?()
     }
@@ -85,9 +92,15 @@ final class LocalModels: ObservableObject {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
     /// Lies in a model folder from the start of its download until `installed.txt`
-    /// exists. A quit or a crash in between leaves both the folder and this file,
-    /// which tells Frog's own unfinished download from a folder it must not touch.
+    /// exists. A failure, a quit or a crash in between leaves both the folder and
+    /// this file, which tells Frog's own unfinished download from a folder it must
+    /// not touch.
     private static let downloadMarker = ".frog-download"
+    private func downloadMarker(_ id: String) -> URL { directory(id).appendingPathComponent(Self.downloadMarker) }
+    private func unfinishedDownloads() -> Set<String> {
+        Set(catalog.filter { !installed.contains($0.id) && FileManager.default.fileExists(atPath: downloadMarker($0.id).path) }.map(\.id))
+    }
+    /// Model folders can be gigabytes: remove them off the main thread.
     nonisolated private static func discard(_ folder: URL) async throws {
         do { try FileManager.default.removeItem(at: folder) }
         catch CocoaError.fileNoSuchFile { /* Already gone. */ }
@@ -95,21 +108,22 @@ final class LocalModels: ObservableObject {
     func download(_ model: LocalModelDescriptor) {
         guard Self.supported, !changingDirectory, downloads[model.id] == nil, !installed.contains(model.id) else { return }
         let base = directory(model.id)
-        let marker = base.appendingPathComponent(Self.downloadMarker)
-        let unfinished = FileManager.default.fileExists(atPath: marker.path)
-        guard unfinished || !FileManager.default.fileExists(atPath: base.path) else {
+        let marker = downloadMarker(model.id)
+        // An unfinished download of Frog's own continues in its folder.
+        let resuming = FileManager.default.fileExists(atPath: marker.path)
+        guard resuming || !FileManager.default.fileExists(atPath: base.path) else {
             errors[model.id] = "A folder named \(model.id) already exists without a completed Frog installation. Choose another download folder or move that folder aside."
             return
         }
         errors[model.id] = nil; progress[model.id] = 0
         downloads[model.id] = Task { [weak self] in
             guard let self else { return }
-            defer { self.downloads[model.id] = nil; self.progress[model.id] = nil }
+            defer { self.downloads[model.id] = nil; self.progress[model.id] = nil; self.discarding.remove(model.id) }
+            var marked = resuming
             do {
-                // Frog's own leftovers can be gigabytes: remove them off the main thread.
-                if unfinished { try await Self.discard(base) }
                 try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-                try Data().write(to: marker)
+                if !marked { try Data().write(to: marker); marked = true }
+                self.unfinished.insert(model.id)
                 let url = try await self.downloader(model, base) { [weak self] fraction in
                     Task { @MainActor [weak self] in
                         guard let self, self.downloads[model.id] != nil else { return }
@@ -121,17 +135,40 @@ final class LocalModels: ObservableObject {
                 let relative = String(url.path.dropFirst(base.path.count + 1))
                 try relative.write(to: base.appendingPathComponent("installed.txt"), atomically: true, encoding: .utf8)
                 try? FileManager.default.removeItem(at: marker)
+                self.unfinished.remove(model.id)
                 self.installed.insert(model.id)
                 self.onInstall?(model)
             } catch {
-                // No completed installation exists yet. Cancel/failure must not
-                // leave gigabytes that the UI has no installed row to delete.
-                try? FileManager.default.removeItem(at: base)
+                // A failure or a quit keeps what was fetched, so the next attempt
+                // continues from it; the row offers to discard it. Cancel removes it,
+                // and so does a start that never got to mark the folder as Frog's.
+                if self.discarding.contains(model.id) || !marked {
+                    try? await Self.discard(base)
+                    self.unfinished = self.unfinishedDownloads()
+                }
                 if !Task.isCancelled { self.errors[model.id] = error.localizedDescription }
             }
         }
     }
-    func cancelDownload(_ id: String) { downloads[id]?.cancel() }
+    /// Cancelling is the person's decision against this download: its files go too.
+    func cancelDownload(_ id: String) {
+        guard let task = downloads[id], progress[id] != nil else { return }
+        discarding.insert(id); task.cancel()
+    }
+    /// Removes what an unfinished download left behind, and only that: a folder
+    /// with Frog's marker and without an installation.
+    func discardDownload(_ id: String) {
+        let base = directory(id)
+        guard !changingDirectory, downloads[id] == nil, modelURL(id) == nil, FileManager.default.fileExists(atPath: downloadMarker(id).path) else { return }
+        downloads[id] = Task { [weak self] in
+            var failure: String?
+            do { try await Self.discard(base) } catch { failure = error.localizedDescription }
+            guard let self else { return }
+            self.downloads[id] = nil
+            self.unfinished = self.unfinishedDownloads()
+            self.errors[id] = failure
+        }
+    }
     func waitForDownload(_ id: String) async { await downloads[id]?.value }
     func waitForIdleUnload() async { await unloadTask?.value }
     func holdResidency() -> UUID {
@@ -181,7 +218,7 @@ final class LocalModels: ObservableObject {
         loaded = []; await runtime.unload(keepingMetadata: false)
         do { try FileManager.default.removeItem(at: directory(id)) }
         catch CocoaError.fileNoSuchFile { /* Already removed outside Frog. Repair the inventory below. */ }
-        installed.remove(id); errors[id] = nil
+        installed.remove(id); unfinished.remove(id); errors[id] = nil
         onInventoryChanged?()
     }
     func unload(keepingMetadata: Bool = false) async {
@@ -275,7 +312,9 @@ actor LocalInference: LocalInferenceEngine {
             progress(1)
             return url
         }
-        return try await HubApi(downloadBase: base).snapshot(from: model.repository, matching: ["*.json", "*.safetensors", "*.jinja", "*.txt", "*.model"]) { progress($0.fractionCompleted) }
+        // A kept folder must never pass for complete while the Mac is offline:
+        // offline mode would accept whichever files are already there.
+        return try await HubApi(downloadBase: base, useOfflineMode: false).snapshot(from: model.repository, matching: ["*.json", "*.safetensors", "*.jinja", "*.txt", "*.model"]) { progress($0.fractionCompleted) }
         #else
         throw FrogError.message("Built-in local models require Apple silicon.")
         #endif

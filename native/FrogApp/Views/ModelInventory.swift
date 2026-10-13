@@ -8,7 +8,7 @@ struct ModelInventory: View {
     var revealedModelID: String?
     @State private var information: LocalModelDescriptor?
     private var inventory: [LocalModelDescriptor] {
-        let visible = Set(model.localModels.progress.keys).union(model.localModels.errors.keys).union([revealedModelID].compactMap { $0 })
+        let visible = Set(model.localModels.progress.keys).union(model.localModels.errors.keys).union(model.localModels.unfinished).union([revealedModelID].compactMap { $0 })
         return model.configuration.modelInventory(installed: model.localModels.installed, including: visible)
             .filter { $0.kind == kind && (search.isEmpty || ($0.name + " " + $0.repository).localizedStandardContains(search)) }
     }
@@ -23,6 +23,7 @@ struct ModelInventory: View {
             SectionCaption(text: title)
             VStack(spacing: 0) {
                 ForEach(items) { item in
+                    let unfinished = !installed && model.localModels.progress[item.id] == nil && model.localModels.unfinished.contains(item.id)
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 10) {
                             Image(systemName: installed ? "checkmark.circle.fill" : "arrow.down.circle").foregroundStyle(installed ? FrogStyle.accent : FrogStyle.muted)
@@ -31,7 +32,7 @@ struct ModelInventory: View {
                                      Text(item.name).font(.system(size: 12, weight: .medium))
                                      if item.isRecommended { RecommendedModelBadge() }
                                  }
-                                Text([item.size, item.runtimeName, model.localModels.loaded.contains(item.id) ? "In memory" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                                Text([item.size, item.runtimeName, model.localModels.loaded.contains(item.id) ? "In memory" : "", unfinished ? "Partly downloaded" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
                                     .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                                 Text(L10n.text(item.recommendationSummary ?? item.languages))
                                     .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
@@ -49,8 +50,10 @@ struct ModelInventory: View {
                                 } label: { Image(systemName: "ellipsis").frame(width: 26).modifier(CompactActionSurface()) }
                                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Model actions")
                             } else {
-                                Button("Download") { model.localModels.download(item) }.controlSize(.small).disabled(!LocalModels.supported)
-                                if item.id.hasPrefix("hf-") {
+                                Button(L10n.text(unfinished ? "Resume" : "Download")) { model.localModels.download(item) }.controlSize(.small).disabled(!LocalModels.supported)
+                                if unfinished {
+                                    IconAction(title: "Discard the partly downloaded files", symbol: "trash", destructive: true) { model.localModels.discardDownload(item.id) }
+                                } else if item.id.hasPrefix("hf-") {
                                     IconAction(title: "Remove model source", symbol: "minus.circle") {
                                         do { try model.removeLocalModelSource(item) } catch { model.report(error) }
                                     }
