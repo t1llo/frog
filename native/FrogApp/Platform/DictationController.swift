@@ -845,9 +845,11 @@ struct DictationTarget {
            AXRead.string(element, kAXSubroleAttribute) == kAXSecureTextFieldSubrole {
             throw FrogError.message("The focused field is a password field. The transcript is copied.")
         }
+        // Not every layout has V where QWERTY has it.
+        let key = CommandKey.code(for: "v", fallback: 9)
         guard let source = CGEventSource(stateID: .combinedSessionState),
-              let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {
+              let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false) else {
             throw FrogError.message("Could not send the paste shortcut. The transcript is copied.")
         }
         down.flags = .maskCommand; up.flags = .maskCommand
