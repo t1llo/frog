@@ -180,10 +180,11 @@ final class StayAwakeTests: XCTestCase {
         XCTAssertFalse(try NativeStayAwakeSystem.parseSleepDisabled("SleepDisabled 0"))
         XCTAssertThrowsError(try NativeStayAwakeSystem.parseSleepDisabled("SleepDisabled 11"))
         XCTAssertThrowsError(try NativeStayAwakeSystem.parseSleepDisabled("permission denied"))
-        XCTAssertEqual(try NativeStayAwakeSystem.parseBattery("Now drawing from 'AC Power'\n -InternalBattery-0 9%; charging;"), PowerBattery(onBattery: false, percent: 9))
-        XCTAssertEqual(try NativeStayAwakeSystem.parseBattery("Now drawing from 'Battery Power'\n -InternalBattery-0 19%; discharging;"), PowerBattery(onBattery: true, percent: 19))
-        XCTAssertEqual(try NativeStayAwakeSystem.parseBattery("Now drawing from 'AC Power'"), PowerBattery(onBattery: false, percent: nil))
-        XCTAssertThrowsError(try NativeStayAwakeSystem.parseBattery("Now drawing from 'Battery Power'\n unknown"))
+        let battery: (Int) -> [String: Any] = { ["Type": "InternalBattery", "Current Capacity": $0, "Max Capacity": 100] }
+        XCTAssertEqual(try NativeStayAwakeSystem.battery(PowerSources(providing: "AC Power", descriptions: [battery(9)])), PowerBattery(onBattery: false, percent: 9))
+        XCTAssertEqual(try NativeStayAwakeSystem.battery(PowerSources(providing: "Battery Power", descriptions: [battery(19)])), PowerBattery(onBattery: true, percent: 19))
+        XCTAssertEqual(try NativeStayAwakeSystem.battery(PowerSources(providing: "AC Power", descriptions: [])), PowerBattery(onBattery: false, percent: nil))
+        XCTAssertThrowsError(try NativeStayAwakeSystem.battery(PowerSources(providing: "Battery Power", descriptions: [["Type": "InternalBattery"]])))
     }
 
     func testNativeReadOnlyQueriesUseTheAsyncRunner() async throws {

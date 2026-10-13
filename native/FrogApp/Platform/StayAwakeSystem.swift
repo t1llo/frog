@@ -56,11 +56,7 @@ struct NativeStayAwakeSystem: StayAwakeSystem {
         return try Self.parseSleepDisabled(result.output)
     }
 
-    func battery() async throws -> PowerBattery {
-        let result = try await run("/usr/bin/pmset", ["-g", "batt"])
-        guard result.status == 0 else { throw StayAwakeError.unreadable }
-        return try Self.parseBattery(result.output)
-    }
+    func battery() async throws -> PowerBattery { try Self.battery(PowerSources.read()) }
 
     func setSleepDisabled(_ disabled: Bool) async throws {
         let result = try await run("/usr/bin/sudo", ["-n", "/usr/bin/pmset", "-a", "disablesleep", disabled ? "1" : "0"])
@@ -83,14 +79,11 @@ struct NativeStayAwakeSystem: StayAwakeSystem {
         return false
     }
 
-    static func parseBattery(_ output: String) throws -> PowerBattery {
-        guard let source = output.split(separator: "\n").first,
-              source.contains("'Battery Power'") || source.contains("'AC Power'") || source.contains("'UPS Power'") else { throw StayAwakeError.unreadable }
-        let range = output.range(of: #"\b\d{1,3}(?=%)"#, options: .regularExpression)
-        let percent = range.flatMap { Int(output[$0]) }
-        if let percent, !(0...100).contains(percent) { throw StayAwakeError.unreadable }
-        if source.contains("'Battery Power'"), percent == nil { throw StayAwakeError.unreadable }
-        return PowerBattery(onBattery: source.contains("'Battery Power'"), percent: percent)
+    /// A Mac on battery whose charge cannot be read is unreadable, not above the limit.
+    static func battery(_ sources: PowerSources?) throws -> PowerBattery {
+        guard let sources, let source = sources.source else { throw StayAwakeError.unreadable }
+        if source == .battery, sources.batteryPercent == nil { throw StayAwakeError.unreadable }
+        return PowerBattery(onBattery: source == .battery, percent: sources.batteryPercent)
     }
 
     private func run(_ executable: String, _ arguments: [String]) async throws -> (status: Int32, output: String) {

@@ -1,7 +1,6 @@
 import Darwin
 import Foundation
 import IOKit
-import IOKit.ps
 
 /// Actor-isolated native reads run on the cooperative executor, never the UI
 /// thread. No process inventory, subprocesses, privileged helpers or disk scans.
@@ -118,27 +117,15 @@ actor NativeSystemMonitorSampler: SystemMonitorSampling {
         @unknown default: result.thermal = "Unavailable"
         }
         result.batteryFlow = readBatteryFlow()
-        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else { return result }
-        if let source = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String? {
-            switch source {
-            case kIOPSACPowerValue: result.source = "Power adapter"
-            case kIOPSBatteryPowerValue: result.source = "Battery"
-            case kIOPMUPSPowerKey: result.source = "UPS"
-            default: break
-            }
+        guard let sources = PowerSources.read() else { return result }
+        switch sources.source {
+        case .adapter: result.source = "Power adapter"
+        case .battery: result.source = "Battery"
+        case .ups: result.source = "UPS"
+        case nil: break
         }
-        if let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] {
-            for source in list {
-                guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
-                      description[kIOPSTypeKey] as? String == kIOPSInternalBatteryType,
-                      let current = description[kIOPSCurrentCapacityKey] as? Int,
-                      let maximum = description[kIOPSMaxCapacityKey] as? Int,
-                      current >= 0, maximum > 0, current <= maximum else { continue }
-                result.batteryPercent = Int((Double(current) / Double(maximum) * 100).rounded())
-                result.charging = description[kIOPSIsChargingKey] as? Bool ?? false
-                break
-            }
-        }
+        result.batteryPercent = sources.batteryPercent
+        result.charging = sources.charging
         return result
     }
 
