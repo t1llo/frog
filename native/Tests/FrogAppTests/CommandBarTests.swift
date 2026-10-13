@@ -320,6 +320,7 @@ import FrogCore
         let visible = try XCTUnwrap(panel.screen?.visibleFrame)
         let moved = NSPoint(x: visible.minX + 35, y: visible.minY + 45)
         panel.setFrameOrigin(moved)
+        bar.finishDragging()
         await gate.started()
         bar.hide(); await gate.release()
         await Task.yield()

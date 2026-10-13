@@ -20,6 +20,8 @@ import SwiftUI
     @Published var selection = 0 { didSet { if selection != oldValue { selectionWasMoved = true } } }
     private var selectionWasMoved = false
     @Published private(set) var showsPositionReset = false
+    /// Set by a drag that left the bar away from the middle of its display, until it is centred again.
+    private var userPlaced = false
     var onToolUse: ((ActivityToolKind) -> Void)?
     private weak var model: AppModel?
     private var records: [SearchRecord] = []
@@ -258,8 +260,11 @@ import SwiftUI
                 self?.hide()
             }
         }
-        // Retain the user's drag position; recover if its display was disconnected.
-        if !NSScreen.screens.contains(where: { $0.visibleFrame.contains(panel.frame) }) { center() }
+        // Retain the user's drag position; recover if its display was disconnected. A bar that was left where it
+        // opened follows the pointer to the display in use, as the window switcher does.
+        let inUse = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+        let origin = Self.openingOrigin(of: panel.frame, dragged: userPlaced, displays: NSScreen.screens.map(\.visibleFrame), inUse: inUse?.visibleFrame)
+        if origin != panel.frame.origin { panel.setFrameOrigin(origin); userPlaced = false }
         panel.makeKeyAndOrderFront(nil)
         searchFiles()
         refreshSettings()
@@ -541,16 +546,23 @@ import SwiftUI
         if let activation { NSWorkspace.shared.notificationCenter.removeObserver(activation) }; activation = nil
         records = []; recordsByID = [:]; fileRecords = []; actions = [:]; copyActions = [:]; results = []; calculationID = nil
     }
+    /// Where the bar opens: where it was dragged to while a display still shows all of it, otherwise in the middle
+    /// of the display in use.
+    static func openingOrigin(of frame: NSRect, dragged: Bool, displays: [NSRect], inUse: NSRect?) -> NSPoint {
+        if dragged, displays.contains(where: { $0.contains(frame) }) { return frame.origin }
+        guard let inUse else { return frame.origin }
+        return NSPoint(x: inUse.midX - frame.width / 2, y: inUse.midY - frame.height / 2)
+    }
     func finishDragging() {
         guard let panel, let screen = panel.screen else { return }
         let target = NSPoint(x: screen.visibleFrame.midX - panel.frame.width / 2, y: screen.visibleFrame.midY - panel.frame.height / 2)
         if abs(panel.frame.minX - target.x) < 18, abs(panel.frame.minY - target.y) < 18 { center() }
-        else { showsPositionReset = true }
+        else { showsPositionReset = true; userPlaced = true }
     }
     func center() {
         guard let panel, let screen = panel.screen ?? NSScreen.main else { return }
         panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - panel.frame.width / 2, y: screen.visibleFrame.midY - panel.frame.height / 2))
-        showsPositionReset = false
+        showsPositionReset = false; userPlaced = false
     }
     private func removeFiles() {
         for record in fileRecords { recordsByID[record.id] = nil; actions[record.id] = nil }

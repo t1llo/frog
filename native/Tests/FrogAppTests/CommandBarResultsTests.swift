@@ -3,7 +3,7 @@ import XCTest
 import FrogCore
 @testable import FrogApp
 
-/// The rows the command bar lists and the keys it takes, decided without presenting its panel.
+/// The rows the command bar lists, the keys it takes and where it opens, decided without presenting its panel.
 @MainActor final class CommandBarResultsTests: XCTestCase {
     func testAnInputMethodThatIsComposingKeepsEscapeArrowsAndReturn() {
         let keys: [UInt16] = [53, 125, 126, 36, 76]
@@ -16,6 +16,23 @@ import FrogCore
         for key in keys { XCTAssertTrue(CommandBar.handlesKey(key, firstResponder: field), "Key \(key) after composing") }
         XCTAssertTrue(CommandBar.handlesKey(36, firstResponder: nil))
         XCTAssertFalse(CommandBar.handlesKey(0, firstResponder: field))
+    }
+
+    func testTheBarOpensOnTheDisplayInUseAndKeepsAPlaceItWasDraggedTo() {
+        let laptop = NSRect(x: 0, y: 0, width: 1440, height: 875), external = NSRect(x: 1440, y: 0, width: 1920, height: 1055)
+        let size = NSSize(width: 600, height: 390)
+        func middle(of display: NSRect) -> NSPoint { NSPoint(x: display.midX - 300, y: display.midY - 195) }
+        let resting = NSRect(origin: middle(of: laptop), size: size)
+        // Left where it opened, the bar follows the pointer to the other display and back.
+        XCTAssertEqual(CommandBar.openingOrigin(of: resting, dragged: false, displays: [laptop, external], inUse: external), middle(of: external))
+        XCTAssertEqual(CommandBar.openingOrigin(of: resting, dragged: false, displays: [laptop, external], inUse: laptop), resting.origin)
+        // A place it was dragged to is kept, whichever display the pointer is on.
+        let placed = NSRect(origin: NSPoint(x: 40, y: 60), size: size)
+        XCTAssertEqual(CommandBar.openingOrigin(of: placed, dragged: true, displays: [laptop, external], inUse: external), placed.origin)
+        // Until the display it was dragged to is disconnected.
+        let lost = NSRect(origin: NSPoint(x: 2000, y: 300), size: size)
+        XCTAssertEqual(CommandBar.openingOrigin(of: lost, dragged: true, displays: [laptop], inUse: laptop), middle(of: laptop))
+        XCTAssertEqual(CommandBar.openingOrigin(of: lost, dragged: true, displays: [], inUse: nil), lost.origin)
     }
 
     func testFocusedFieldIsReadOnlyWhenClipboardRowsOrSnippetsCanPasteIntoIt() throws {

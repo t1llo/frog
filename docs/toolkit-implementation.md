@@ -81,9 +81,10 @@ ranks one level higher (a name containing the query ties with other titles that 
 with it) and leads its level, behind only recently chosen results; files come last.
 An application is listed under the name Finder shows and is also found under its bundle
 names and its file name, so "Code" still finds Visual Studio Code.
-File lookup remains asynchronous and debounced. Drag its top grip or footer
-to move it; the position survives reopening in the same session and recenters if its
-display is no longer available.
+File lookup remains asynchronous and debounced. The bar opens in the middle of the
+display the pointer is on. Drag its top grip or footer to move it; that position
+survives reopening in the same session, until the bar is centred again or its display
+is no longer available.
 
 A System Settings pane appears once, with the System Settings icon and that name beside
 it. The shortcut actions that open the same panes stay out of the results; the other
