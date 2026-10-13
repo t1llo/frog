@@ -51,6 +51,26 @@ enum WindowGeometry {
         case .minimize, .restore, .toggleFullScreen: return nil
         }
     }
+
+    /// Where an action asked a window to go and where its app put it. Targets such as a third
+    /// of a display are fractions of a point, and apps round sizes or keep to a minimum, a
+    /// maximum or a character grid, so the two differ.
+    struct Move: Equatable {
+        var target: CGRect
+        var applied: CGRect
+
+        /// The same place is asked for again while the window still sits where it was put,
+        /// as when a shortcut is pressed twice. That is the same move, not a new one.
+        func isRepeated(by target: CGRect, from current: CGRect) -> Bool {
+            WindowGeometry.close(target, self.target) && WindowGeometry.close(current, applied)
+        }
+    }
+
+    /// Within one point on every edge.
+    static func close(_ left: CGRect, _ right: CGRect) -> Bool {
+        abs(left.minX - right.minX) <= 1 && abs(left.minY - right.minY) <= 1
+            && abs(left.width - right.width) <= 1 && abs(left.height - right.height) <= 1
+    }
 }
 
 /// AX messaging is kept off the UI thread. Restore state is bounded and device-local.
@@ -58,6 +78,8 @@ actor WindowManager {
     private struct PreviousFrame {
         let window: AXUIElement
         let frame: CGRect
+        /// The action that left `frame` behind.
+        let move: WindowGeometry.Move
     }
     private var previous: [PreviousFrame] = []
 
@@ -88,6 +110,8 @@ actor WindowManager {
         }
         let saved = previous.firstIndex { CFEqual($0.window, window) }
         let target: CGRect
+        // What Restore returns to once this action has moved the window.
+        var before = current
         if action == .restore {
             guard let saved else { throw FrogError.message("There is no previous size for this window yet.") }
             let original = previous[saved].frame
@@ -96,6 +120,9 @@ actor WindowManager {
             else { target = WindowGeometry.target(.center, window: original, displays: displays) ?? current }
         } else {
             guard let proposed = WindowGeometry.target(action, window: current, displays: displays) else { return }
+            // The same shortcut again on a window that could not take the exact frame sets
+            // that frame once more. Restore still returns to the frame before the first press.
+            if let saved, previous[saved].move.isRepeated(by: proposed, from: current) { before = previous[saved].frame }
             target = proposed
         }
         guard target != current else { return }
@@ -116,7 +143,7 @@ actor WindowManager {
         if target.size != current.size { try set(window, kAXSizeAttribute, dimensions) }
         try set(window, kAXPositionAttribute, position)
         if let saved { previous.remove(at: saved) }
-        previous.append(PreviousFrame(window: window, frame: current))
+        previous.append(PreviousFrame(window: window, frame: before, move: .init(target: target, applied: frame(window) ?? target)))
         previous = Array(previous.suffix(50))
     }
 

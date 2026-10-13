@@ -87,6 +87,45 @@ final class WindowGeometryTests: XCTestCase {
         }
     }
 
+    func testShortcutPressedAgainOnAWindowThatMissedItsFrameIsNotANewMove() throws {
+        // A third of 2560 points is 853.33; the window reports whole points.
+        let display = CGRect(x: 0, y: 25, width: 2560, height: 1415)
+        let original = CGRect(x: 300, y: 200, width: 900, height: 600)
+        let target = try XCTUnwrap(WindowGeometry.target(.leftThird, window: original, displays: [display]))
+        let landed = CGRect(x: 0, y: 25, width: 853, height: 1415)
+        XCTAssertNotEqual(target, landed)
+        let move = WindowGeometry.Move(target: target, applied: landed)
+        let again = try XCTUnwrap(WindowGeometry.target(.leftThird, window: landed, displays: [display]))
+        XCTAssertTrue(move.isRepeated(by: again, from: landed), "Restore has to keep the frame from before the first press")
+
+        // A minimum width wider than the tile leaves the window further off than rounding does.
+        let wide = CGRect(x: 0, y: 25, width: 1100, height: 1415)
+        let limited = WindowGeometry.Move(target: target, applied: wide)
+        XCTAssertTrue(limited.isRepeated(by: try XCTUnwrap(WindowGeometry.target(.leftThird, window: wide, displays: [display])), from: wide))
+
+        // Another action, or the same one on a window the user has moved since, is a new move.
+        let right = try XCTUnwrap(WindowGeometry.target(.rightThird, window: landed, displays: [display]))
+        XCTAssertFalse(move.isRepeated(by: right, from: landed))
+        XCTAssertFalse(move.isRepeated(by: again, from: landed.offsetBy(dx: 40, dy: 0)))
+        XCTAssertFalse(move.isRepeated(by: again, from: CGRect(x: 0, y: 25, width: 700, height: 1415)))
+        XCTAssertFalse(limited.isRepeated(by: again, from: landed))
+    }
+
+    func testCenteringAgainAfterTheAppRoundedThePositionIsNotANewMove() throws {
+        let display = CGRect(x: 0, y: 25, width: 1512, height: 957)
+        let original = CGRect(x: 40, y: 60, width: 901, height: 601)
+        let target = try XCTUnwrap(WindowGeometry.target(.center, window: original, displays: [display]))
+        XCTAssertEqual(target.minX, 305.5)
+        let landed = CGRect(x: 305, y: 203, width: 901, height: 601)
+        let move = WindowGeometry.Move(target: target, applied: landed)
+        let again = try XCTUnwrap(WindowGeometry.target(.center, window: landed, displays: [display]))
+        XCTAssertNotEqual(again, landed)
+        XCTAssertTrue(move.isRepeated(by: again, from: landed))
+        // Centering a window that has been resized since moves it.
+        let resized = CGRect(x: 305, y: 203, width: 600, height: 400)
+        XCTAssertFalse(move.isRepeated(by: try XCTUnwrap(WindowGeometry.target(.center, window: resized, displays: [display])), from: resized))
+    }
+
     func testSystemActionRoutesRequireNoSyntheticHotkeysOrSystemExecution() throws {
         for action in SystemAction.allCases {
             let destination = SystemActionController.destination(for: action)
