@@ -100,6 +100,23 @@ import XCTest
         XCTAssertEqual(account.totals[.input], 110)
     }
 
+    func testReadingAndSummarisingTheLogsYieldToWhatThePersonIsDoing() async throws {
+        let logs = try Logs()
+        defer { logs.remove() }
+        // The store reads its clock inside the aggregation and inside a scan that found nothing
+        // new, which shows the priority each of the two was started with.
+        var priorities: [TaskPriority?] = []
+        let store = TokenStore(fixtureRoot: logs.root, clock: { priorities.append(Task.basePriority); return Date() })
+        store.start()
+        defer { store.stop() }
+        await settled(store)
+        XCTAssertEqual(priorities, [.utility], "The aggregation")
+        store.refresh(forceLocal: true)
+        await settled(store)
+        XCTAssertEqual(priorities.last, .utility, "The scan")
+        XCTAssertGreaterThan(priorities.count, 1)
+    }
+
     /// Waits for the scan that is under way, the aggregation it asked for, and a scan that was
     /// asked for meanwhile.
     private func settled(_ store: TokenStore) async {

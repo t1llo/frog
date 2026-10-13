@@ -267,7 +267,9 @@ final class TokenStore: ObservableObject {
         scanning = true
         nextScanAt = Date().addingTimeInterval(60)
         let generation = lifecycle
-        scanTask = Task {
+        // Started from the main actor, this would read every log at the priority of the person's
+        // own input. Nothing waits for it, so nothing raises it again.
+        scanTask = Task(priority: .utility) {
             async let a = claude.revisedScan()
             async let b = codex.revisedScan()
             async let c = opencode.revisedScan()
@@ -356,7 +358,8 @@ extension TokenStore {
         guard !aggregating else { return }
         aggregating = true
         let life = lifecycle
-        aggregationTask = Task {
+        // Waiting at the main actor's priority would raise the summarising it waits for to it.
+        aggregationTask = Task(priority: .utility) {
             // Coalesce scans and account responses arriving during an aggregation.
             while !Task.isCancelled, active, life == lifecycle {
                 let generation = aggregationGeneration
