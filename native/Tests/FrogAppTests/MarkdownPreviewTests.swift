@@ -26,10 +26,19 @@ final class MarkdownPreviewTests: XCTestCase {
         XCTAssertEqual(blocks.map(\.id), Array(0..<6), "The list draws each block once")
         XCTAssertEqual(plain(blocks[0].text), "Plan")
         XCTAssertEqual(plain(blocks[1].text), "For today")
-        XCTAssertEqual(plain(blocks[2].text), "Buy two things before noon.", "A line break inside a paragraph is a space")
+        XCTAssertEqual(plain(blocks[2].text), "Buy two things\nbefore noon.", "A line break inside a paragraph stays where it was typed")
         XCTAssertEqual(plain(blocks[3].text), "let total = 2\n  print(total)", "Code keeps its lines and indentation, without the fence")
         XCTAssertEqual(plain(blocks[5].text), "Done.")
         XCTAssertTrue(blocks.allSatisfy { $0.marker == nil && $0.listDepth == 0 && !$0.quoted })
+    }
+
+    func testLinesTypedWithoutMarkdownKeepTheirLineBreaks() throws {
+        let blocks = MarkdownPreview.blocks("Call Anna\nBuy stamps\nPick up parcel\n\n- milk\n  from the market\n\nBuy *fresh\nbread* today")
+        XCTAssertEqual(blocks.map { plain($0.text) }, ["Call Anna\nBuy stamps\nPick up parcel", "milk\nfrom the market", "Buy fresh\nbread today"])
+        XCTAssertEqual(blocks.map(\.kind), [.paragraph, .paragraph, .paragraph])
+        let last = try XCTUnwrap(blocks.last)
+        XCTAssertEqual(last.text.runs.filter { $0.inlinePresentationIntent?.contains(.emphasized) == true }.map { String(last.text[$0.range].characters) }.joined(), "fresh\nbread",
+                       "Emphasis goes on across the line break")
     }
 
     func testEmphasisCodeSpansAndLinksStayInsideTheirBlock() throws {

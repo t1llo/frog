@@ -28,9 +28,10 @@ enum MarkdownPreview {
     /// preview calls it off the main thread.
     static func blocks(_ markdown: String) -> [MarkdownBlock] {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .full, failurePolicy: .returnPartiallyParsedIfPossible)
-        guard let parsed = try? AttributedString(markdown: markdown, options: options) else {
+        guard let read = try? AttributedString(markdown: markdown, options: options) else {
             return markdown.isEmpty ? [] : [MarkdownBlock(id: 0, kind: .paragraph, text: AttributedString(markdown))]
         }
+        let parsed = keepingLineBreaks(read)
         var blocks: [MarkdownBlock] = []
         var markedItems = Set<Int>()
         var openTable: (table: Int, row: Int)?
@@ -74,6 +75,24 @@ enum MarkdownPreview {
             openTable = (table, row)
         }
         return blocks
+    }
+
+    /// Foundation reads a line break inside a paragraph as a space marked as a soft break. The
+    /// preview keeps it a line break, as the note was typed: a list, an address or a poem
+    /// written without Markdown keeps its lines.
+    private static func keepingLineBreaks(_ text: AttributedString) -> AttributedString {
+        var kept = AttributedString(), copied = text.startIndex
+        for (intent, range) in text.runs[\.inlinePresentationIntent] {
+            guard var intent, intent.contains(.softBreak) else { continue }
+            intent.remove(.softBreak); intent.insert(.lineBreak)
+            var lineBreak = AttributedString(text[range])
+            lineBreak.characters.replaceSubrange(lineBreak.startIndex..<lineBreak.endIndex, with: "\n")
+            lineBreak.inlinePresentationIntent = intent
+            kept += text[copied..<range.lowerBound]; kept += lineBreak
+            copied = range.upperBound
+        }
+        kept += text[copied...]
+        return kept
     }
 }
 
