@@ -208,9 +208,11 @@ and every refresh fails. Frog still never renews or consumes another tool's toke
   The Claude app writes it every few minutes while its menu-bar icon is on. Reading it
   needs no login and makes no request. Unknown versions and fields are skipped. The
   reader was written for Frog; no code was taken from other trackers. Frog looks at
-  the file on every refresh but reads it, and the cached Claude Code profile beside
-  it, again only once the file has been replaced or its size or modification time
-  has changed; a file over the size limit is not read at all.
+  the file on every refresh and reads it again only once it has been replaced or its
+  size or modification time has changed; a file over the size limit is not read at
+  all. The cached Claude Code profile (`.claude.json`), which names the plan, is
+  treated the same way on its own, and is read only when the reading names an
+  organization.
 - **Selection:** login source `Claude Desktop` uses only this file and never reads a
   login. `Automatic` shows the newer of the authenticated reading and the saved one.
   The popup footer and dashboard name the source ("Claude app" / "Anthropic account").
