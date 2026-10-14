@@ -43,7 +43,9 @@ supersedes the original unsupported result: a tool-free CLI contract was not fou
 but supported filesystem permissions can deny model-selected actions instead.
 Any detected tool attempt rejects the response, even if Codex later emits text.
 Other minor versions remain unsupported until their permission/event contracts
-are verified. Do not substitute `--sandbox read-only`: it allows private file reads
+are verified. Settings and a failed rule name the installed version beside the
+verified one (only the number from `--version`, never the rest of its output), and
+OpenCode outside 2.x is reported the same way. Do not substitute `--sandbox read-only`: it allows private file reads
 and overrides the named permission profile.
 
 ## Verified interfaces (2026-10-10)

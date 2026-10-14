@@ -270,6 +270,31 @@ final class LocalToolClientTests: XCTestCase {
         XCTAssertTrue(status.detail.contains("0.159.x"))
     }
 
+    func testUnverifiedVersionIsNamedNextToTheVerifiedOne() async throws {
+        let root = try directory()
+        _ = try executable("""
+        if [ "$1" = '--version' ]; then echo 'codex-cli 0.160.2'; exit; fi
+        echo '--strict-config --ignore-user-config --ignore-rules --ephemeral --json'
+        """, name: "codex", in: root)
+        _ = try executable("""
+        if [ "$1" = '--version' ]; then echo 'opencode v3.1.0 (/private/fixture/path)'; exit; fi
+        echo '--standalone --format --agent'
+        """, name: "opencode", in: root)
+        let client = LocalToolClient(discovery: .init(home: root, environment: [:], searchDirectories: [root]), temporaryRoot: root)
+        let codex = await client.status(for: .codex, checkAuthentication: false)
+        var ruleFailure = ""
+        do {
+            _ = try await client.complete(.init(kind: .codex, instructions: "Rewrite", text: "text"))
+        } catch { ruleFailure = error.localizedDescription }
+        let opencode = await client.status(for: .opencode, checkAuthentication: false)
+        XCTAssertFalse(codex.supportsTextTransforms)
+        XCTAssertTrue(codex.detail.contains("0.160.2") && codex.detail.contains("0.159.x"), codex.detail)
+        XCTAssertTrue(ruleFailure.contains("0.160.2"), "A rule that fails names the version too: \(ruleFailure)")
+        XCTAssertFalse(opencode.supportsTextTransforms)
+        XCTAssertTrue(opencode.detail.contains("3.1.0") && opencode.detail.contains("2.x"), opencode.detail)
+        XCTAssertFalse(opencode.detail.contains("/private"), "Only the version number of the output is shown")
+    }
+
     func testOutputLimitAndTimeoutAreBounded() async throws {
         let root = try directory()
         let noisy = try executable("while :; do /usr/bin/head -c 8192 /dev/zero; done", in: root)

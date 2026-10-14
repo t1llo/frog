@@ -6,7 +6,15 @@ import FrogCore
 actor LocalToolClient {
     private let discovery: LocalToolDiscovery
     private let temporaryRoot: URL
-    private var capabilities: [URL: (Date?, Bool)] = [:]
+    private var capabilities: [URL: Capability] = [:]
+
+    /// What the help and version probes found for one executable.
+    private struct Capability {
+        let modified: Date?
+        let supported: Bool
+        /// The version number of a CLI whose version has not been verified.
+        let unverifiedVersion: String?
+    }
 
     init(discovery: LocalToolDiscovery = .init(), temporaryRoot: URL = FileManager.default.temporaryDirectory) {
         self.discovery = discovery
@@ -30,7 +38,8 @@ actor LocalToolClient {
         do {
             let workspace = try LocalToolWorkspace(root: temporaryRoot)
             defer { workspace.remove() }
-            let supported = try await supports(kind, executable: executable, workspace: workspace)
+            let capability = try await probe(kind, executable: executable, workspace: workspace)
+            let supported = capability.supported
             var authentication: LocalToolAuthentication = .notChecked
             if checkAuthentication {
                 let arguments: [String]
@@ -48,7 +57,7 @@ actor LocalToolClient {
                 }
             }
             let detail: String
-            if !supported { detail = Self.unsupported(kind) }
+            if !supported { detail = Self.unsupported(kind, version: capability.unverifiedVersion) }
             else {
                 switch authentication {
                 case .signedIn: detail = "Existing CLI login found. Model access is checked when you run a rule."
@@ -70,7 +79,8 @@ actor LocalToolClient {
         guard let executable = discovery.executable(for: kind) else { throw FrogError.message(kind.loginInstructions) }
         let workspace = try LocalToolWorkspace(root: temporaryRoot)
         defer { workspace.remove() }
-        guard try await supports(kind, executable: executable, workspace: workspace) else { throw FrogError.message(Self.unsupported(kind)) }
+        let capability = try await probe(kind, executable: executable, workspace: workspace)
+        guard capability.supported else { throw FrogError.message(Self.unsupported(kind, version: capability.unverifiedVersion)) }
         let result = try await LocalToolProcess.run(executable: executable, arguments: ["models", "--standalone"],
             environment: environment(for: kind, workspace: workspace), directory: workspace.directory,
             timeout: 15, outputLimit: 512 * 1024)
@@ -83,8 +93,9 @@ actor LocalToolClient {
         guard let executable = discovery.executable(for: request.kind) else { throw FrogError.message(request.kind.loginInstructions) }
         let workspace = try LocalToolWorkspace(root: temporaryRoot)
         defer { workspace.remove() }
-        guard try await supports(request.kind, executable: executable, workspace: workspace) else {
-            throw FrogError.message(Self.unsupported(request.kind))
+        let capability = try await probe(request.kind, executable: executable, workspace: workspace)
+        guard capability.supported else {
+            throw FrogError.message(Self.unsupported(request.kind, version: capability.unverifiedVersion))
         }
         let invocation = try LocalToolInvocation.make(request, workspace: workspace)
         let result = try await LocalToolProcess.run(executable: executable, arguments: invocation.arguments,
@@ -96,9 +107,15 @@ actor LocalToolClient {
         return try LocalToolOutput.completion(result.stdout, kind: request.kind)
     }
 
-    private func supports(_ kind: LocalToolKind, executable: URL, workspace: LocalToolWorkspace) async throws -> Bool {
+    // Codex permission profiles are beta: verify another minor release before
+    // accepting changed tool registration or diagnostic contracts automatically.
+    private static let verifiedVersions: [LocalToolKind: (prefix: String, name: String)] = [
+        .codex: ("codex-cli 0.159.", "0.159.x"), .opencode: ("opencode v2.", "2.x")
+    ]
+
+    private func probe(_ kind: LocalToolKind, executable: URL, workspace: LocalToolWorkspace) async throws -> Capability {
         let modified = try? executable.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-        if let cached = capabilities[executable], cached.0 == modified { return cached.1 }
+        if let cached = capabilities[executable], cached.modified == modified { return cached }
         let args: [String]
         switch kind {
         case .claudeCode: args = ["--help"]
@@ -119,20 +136,29 @@ actor LocalToolClient {
             required = ["--standalone", "--format", "--agent"]
         }
         var supported = result.status == 0 && required.allSatisfy { help.contains($0) }
-        if kind != .claudeCode, supported {
+        var unverifiedVersion: String?
+        if let verified = Self.verifiedVersions[kind], supported {
             let version = try await LocalToolProcess.run(executable: executable, arguments: ["--version"],
                 environment: environment(for: kind, workspace: workspace), directory: workspace.directory, timeout: 8)
             let value = String(decoding: version.stdout, as: UTF8.self)
-            // Codex permission profiles are beta: verify another minor release before
-            // accepting changed tool registration or diagnostic contracts automatically.
-            let prefix = kind == .codex ? "codex-cli 0.159." : "opencode v2."
-            supported = version.status == 0 && value.hasPrefix(prefix)
+            supported = version.status == 0 && value.hasPrefix(verified.prefix)
+            if !supported, version.status == 0 { unverifiedVersion = Self.versionNumber(value) }
         }
-        capabilities[executable] = (modified, supported)
-        return supported
+        let capability = Capability(modified: modified, supported: supported, unverifiedVersion: unverifiedVersion)
+        capabilities[executable] = capability
+        return capability
     }
 
-    static func unsupported(_ kind: LocalToolKind) -> String {
+    /// Only the version number of the first output line: the rest can name paths.
+    static func versionNumber(_ output: String) -> String? {
+        let line = output.prefix { !$0.isNewline }
+        return line.range(of: #"\d{1,6}(\.\d{1,6}){1,3}"#, options: .regularExpression).map { String(line[$0]) }
+    }
+
+    static func unsupported(_ kind: LocalToolKind, version: String? = nil) -> String {
+        if let version, let verified = verifiedVersions[kind] {
+            return "This \(kind.title) version (\(version)) has not been verified for Frog's restricted text mode. Supported CLI: \(verified.name)."
+        }
         if kind == .codex {
             return "This Codex version has not been verified for Frog's restricted text mode. Supported CLI: 0.159.x."
         }
