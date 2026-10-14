@@ -374,6 +374,10 @@ final class WindowSwitcherController {
 
     private func handle(_ action: WindowSwitchKeyRouter.Action, sessionID: UInt64) {
         if action == .cancel { cancel(session: sessionID); return }
+        // A chord the tap has superseded with the next one before main got to it is dropped
+        // whole, begin and commit alike: its switch could not start before the next chord's
+        // list replaced it, and whoever presses again while Frog is slow expects one switch.
+        // Only main being busy for a whole chord makes this reachable.
         guard router.sessionID == sessionID else { return }
         display.selectionFromPointer = false
         pointer.rest(at: NSEvent.mouseLocation)
