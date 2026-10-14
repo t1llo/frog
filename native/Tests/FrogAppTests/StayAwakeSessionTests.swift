@@ -289,15 +289,25 @@ final class StayAwakeSessionTests: XCTestCase {
         XCTAssertEqual(power.error, StayAwakeError.lowBattery.localizedDescription, "Why switching on failed stays until the switch is used again")
 
         // A read that fails and then works must not take the reason of a later change with it.
-        await system.failReads(true)
-        await power.refresh()
-        await system.failReads(false)
-        await power.refresh()
-        XCTAssertNil(power.error)
+        // During a session a battery that cannot be read leaves the switch usable.
+        await system.setBattery(PowerBattery(onBattery: false, percent: 80))
         power.setEnabled(true); await power.waitForOperation()
-        XCTAssertEqual(power.error, StayAwakeError.lowBattery.localizedDescription)
+        XCTAssertTrue(power.ownsSession)
+        await system.failBattery(true)
         await power.refresh()
-        XCTAssertEqual(power.error, StayAwakeError.lowBattery.localizedDescription)
+        XCTAssertEqual(power.error, StayAwakeError.unreadable.localizedDescription)
+        XCTAssertTrue(power.canSwitch)
+        await system.failWrites(true)
+        power.setEnabled(false); await power.waitForOperation()
+        XCTAssertTrue(power.isEnabled)
+        XCTAssertEqual(power.error, StayAwakeError.command.localizedDescription)
+        await system.failBattery(false)
+        await system.failWrites(false)
+        await power.refresh()
+        XCTAssertTrue(power.isEnabled)
+        XCTAssertEqual(power.error, StayAwakeError.command.localizedDescription, "Why switching off failed stays while the session is still on")
+        let canQuit = await power.prepareToQuit()
+        XCTAssertTrue(canQuit)
     }
 
     private func leaveMarker(_ contents: String, in folder: URL) throws {
@@ -319,6 +329,7 @@ private actor SessionPowerFixture: StayAwakeSystem {
     private var held: ReadGate?
     private var readsFail = false
     private var batteryFails = false
+    private var writesFail = false
     private var currentBattery = PowerBattery(onBattery: false, percent: 80)
     private(set) var reads = 0
     private(set) var writes: [Bool] = []
@@ -329,6 +340,7 @@ private actor SessionPowerFixture: StayAwakeSystem {
     func holdNextRead(_ gate: ReadGate) { held = gate }
     func failReads(_ fail: Bool) { readsFail = fail }
     func failBattery(_ fail: Bool) { batteryFails = fail }
+    func failWrites(_ fail: Bool) { writesFail = fail }
     func setBattery(_ battery: PowerBattery) { currentBattery = battery }
     func noteGuide() { guides += 1 }
     func hasAccess() async throws -> Bool { true }
@@ -342,7 +354,10 @@ private actor SessionPowerFixture: StayAwakeSystem {
         if batteryFails { throw StayAwakeError.unreadable }
         return currentBattery
     }
-    func setSleepDisabled(_ value: Bool) async throws { writes.append(value); enabled = value }
+    func setSleepDisabled(_ value: Bool) async throws {
+        if writesFail { throw StayAwakeError.command }
+        writes.append(value); enabled = value
+    }
 }
 
 private actor ReadGate {
