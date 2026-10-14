@@ -325,9 +325,12 @@ actor WindowCatalog {
         return await activator.bringForward(target, isCurrent: isCurrent)
     }
 
-    nonisolated func raise(id: UUID, isCurrent: @escaping @Sendable () -> Bool = { true }) async -> Bool {
-        guard !Task.isCancelled, isCurrent(), let target = activationTargets.target(id) else { return false }
-        let raised = await activator.raise(target, isCurrent: isCurrent)
+    /// `requested`: the window's app was asked to come forward already; see `WindowActivationExecutor.raise`.
+    nonisolated func raise(id: UUID, isCurrent: @escaping @Sendable () -> Bool = { true }, requested: Bool = false) async -> Bool {
+        guard requested || (!Task.isCancelled && isCurrent()), let target = activationTargets.target(id) else { return false }
+        // Not part of the caller's task once requested: what cancels it no longer keeps the app away.
+        let raised = requested ? await Task { [activator] in await activator.raise(target, isCurrent: isCurrent, requested: true) }.value
+            : await activator.raise(target, isCurrent: isCurrent)
         if raised { activationTargets.noteRaised(id) }
         return raised
     }

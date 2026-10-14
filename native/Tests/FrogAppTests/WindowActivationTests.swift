@@ -21,6 +21,27 @@ final class WindowActivationTests: XCTestCase {
         XCTAssertEqual(raises, 1)
     }
 
+    func testInputAfterTheAppWasAskedForStillRaisesTheChosenWindowButNothingAfterIt() async {
+        var current = true
+        var events: [String] = []
+        // A keystroke arrives right after the app was asked to come forward: it comes all the same.
+        let result = await WindowActivation.perform(raise: { events.append("raise"); return true },
+            request: { events.append("request"); current = false; return true },
+            bringForward: { events.append("forward"); return true }, isFrontmost: { false },
+            isCurrent: { current }, raiseAfterRequest: { events.append("finish"); return true }, pause: {})
+        XCTAssertFalse(result)
+        XCTAssertEqual(events, ["request", "finish"], "The app must not arrive showing another window than the one chosen")
+
+        // No request, nothing on its way: input still stops a raise in the app already in front.
+        events = []; current = true
+        let same = await WindowActivation.perform(raise: { events.append("raise"); return true },
+            request: { events.append("request"); return true }, bringForward: { events.append("forward"); return true },
+            isFrontmost: { true }, prepare: { current = false; return true }, isCurrent: { current },
+            raiseAfterRequest: { events.append("finish"); return true }, pause: {})
+        XCTAssertFalse(same)
+        XCTAssertEqual(events, [])
+    }
+
     func testCancellationWhileWaitingDoesNotRaiseAgain() async {
         var raises = 0
         let result = await WindowActivation.perform(raise: { raises += 1; return true }, request: { true }, bringForward: { true }, isFrontmost: { false }, pause: { throw CancellationError() })

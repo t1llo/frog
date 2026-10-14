@@ -13,6 +13,10 @@ enum WindowActivation {
         expectsAnother: () -> Bool = { false },
         prepare: (() async -> Bool)? = nil,
         isCurrent: () -> Bool = { true },
+        /// The first raise once the app was asked to come forward, which no longer stops
+        /// for `isCurrent` or cancellation: input arriving after the request does not keep
+        /// the app away, so it must not keep the chosen window away. Later steps still stop.
+        raiseAfterRequest: (() async -> Bool)? = nil,
         pause: () async throws -> Void = { try await Task.sleep(for: .milliseconds(20)) }
     ) async -> Bool {
         guard !Task.isCancelled, isCurrent() else { return false }
@@ -22,10 +26,14 @@ enum WindowActivation {
         // Start the OS transition immediately, overlapping it with the selected
         // window's AX work. A same-app selection needs no activation request,
         // unless the app must follow another one that has yet to arrive.
-        let requested = isFrontmost() && !expectsAnother() ? true : request()
-        guard !Task.isCancelled, isCurrent() else { return false }
+        let asks = !isFrontmost() || expectsAnother()
+        let requested = asks ? request() : true
+        let committed = asks && requested ? raiseAfterRequest : nil
+        if committed == nil { guard !Task.isCancelled, isCurrent() else { return false } }
         let raisedInFront = isFrontmost()
-        guard await raise(), !Task.isCancelled, isCurrent() else { return false }
+        let raised: Bool
+        if let committed { raised = await committed() } else { raised = await raise() }
+        guard raised, !Task.isCancelled, isCurrent() else { return false }
         if raisedInFront { return isFrontmost() }
         if !isFrontmost() {
             // Activation is a request, not proof of foreground ownership. A
@@ -106,8 +114,12 @@ actor WindowActivationExecutor {
         return true
     }
 
-    func raise(_ target: WindowCatalog.Target, isCurrent: @escaping @Sendable () -> Bool) async -> Bool {
-        func eligible() -> Bool { !Task.isCancelled && isCurrent() }
+    /// `requested`: the window's app was asked to come forward already and arrives whatever
+    /// input follows. The window prepared for that request is then raised all the same, so the
+    /// app does not arrive showing another one; a window that was not prepared still stops.
+    func raise(_ target: WindowCatalog.Target, isCurrent: @escaping @Sendable () -> Bool, requested: Bool = false) async -> Bool {
+        let finishing = requested && prepared?.id == target.id
+        func eligible() -> Bool { finishing || (!Task.isCancelled && isCurrent()) }
         guard eligible() else { return false }
         // Command-bar callers also get remote-window preparation even if they do
         // not have a separate application activation phase.

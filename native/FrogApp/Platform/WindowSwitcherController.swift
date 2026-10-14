@@ -575,7 +575,13 @@ final class WindowSwitcherController {
                     }
                 })
                 return ready
-            }, isCurrent: isCurrent)
+            }, isCurrent: isCurrent, raiseAfterRequest: {
+                // The app comes forward whatever input follows its request; so must the window chosen in it.
+                let raised = await catalog.raise(id: selected.id, isCurrent: isCurrent, requested: true)
+                // Otherwise the app arrives showing another window than the one chosen.
+                if !raised { self?.cache.forgetChosen(selected.id) }
+                return raised
+            })
             guard activated else {
                 guard !Task.isCancelled, isCurrent() else { return }
                 self?.frontRequests.withdraw(selected.pid)

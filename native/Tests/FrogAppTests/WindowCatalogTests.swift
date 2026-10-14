@@ -217,6 +217,33 @@ final class WindowCatalogTests: XCTestCase {
         XCTAssertEqual(writes.events, ["validate"])
     }
 
+    func testInputAfterTheAppWasAskedForStillRaisesThePreparedWindow() async throws {
+        let fixture = CatalogFixture()
+        let writes = ActivationFixture()
+        let catalog = WindowCatalog(reader: fixture.reader, writer: writes.writer)
+        let first = await catalog.snapshot(applications: fixture.apps, frontPID: 10)
+        let (selected, other) = (try XCTUnwrap(first.windows.first), try XCTUnwrap(first.windows.last))
+        let prepared = await catalog.prepareActivation(id: selected.id, isCurrent: { writes.current })
+        XCTAssertTrue(prepared)
+        let entered = expectation(description: "Raise validation entered")
+        let release = DispatchSemaphore(value: 0)
+        writes.onValidate = { entered.fulfill(); release.wait() }
+        let activation = Task { await catalog.raise(id: selected.id, isCurrent: { writes.current }, requested: true) }
+        await fulfillment(of: [entered], timeout: 2)
+        // A keystroke retires the activation and the switcher cancels its task.
+        writes.invalidate(); activation.cancel()
+        release.signal()
+        let raised = await activation.value
+        XCTAssertTrue(raised, "The app comes forward whatever input follows its request; so must the window chosen in it")
+        XCTAssertEqual(writes.events, ["validate", "minimized", "raise", "main"])
+        writes.onValidate = nil
+
+        // Only the window prepared for the request: anything else still stops for input.
+        let unprepared = await catalog.raise(id: other.id, isCurrent: { writes.current }, requested: true)
+        XCTAssertFalse(unprepared)
+        XCTAssertEqual(writes.events, ["validate", "minimized", "raise", "main"])
+    }
+
     func testUnansweredOwnerRetentionIsCountBounded() async {
         let fixture = CatalogFixture()
         fixture.setWindows(.success((2000..<2300).map { AXUIElementCreateApplication(pid_t($0)) }), pid: 20)
