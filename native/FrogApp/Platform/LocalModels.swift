@@ -73,7 +73,13 @@ final class LocalModels: ObservableObject {
         guard !busy, residencyHolds.isEmpty, downloads.isEmpty, !changingDirectory else { throw FrogError.message("Wait for model operations to finish before changing the download folder.") }
         guard location.isFileURL else { throw FrogError.message("Choose a local model folder.") }
         let location = URL(fileURLWithPath: location.standardizedFileURL.path, isDirectory: true)
-        if location == root { return }
+        if location == root {
+            // Choosing the folder again finds the models of a disk connected since launch.
+            installed = Set(catalog.filter { modelURL($0.id) != nil }.map(\.id))
+            unfinished = unfinishedDownloads()
+            onInventoryChanged?()
+            return
+        }
         try FileManager.default.createDirectory(at: location, withIntermediateDirectories: true)
         guard FileManager.default.isWritableFile(atPath: location.path) else { throw FrogError.message("The selected model folder is not writable.") }
         changingDirectory = true; busy = true

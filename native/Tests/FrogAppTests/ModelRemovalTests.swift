@@ -89,6 +89,30 @@ final class ModelRemovalTests: XCTestCase {
         XCTAssertEqual(try store.load(), saved)
     }
 
+    func testChoosingTheSameModelFolderOnceItIsReachableBringsItsModelsBack() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let folder = directory.appendingPathComponent("Unmounted/Models")
+        try JSONEncoder().encode(folder.path).write(to: directory.appendingPathComponent("model-storage.json"))
+        var configuration = Configuration()
+        var audio = Rule.dictationPreset; audio.action?.audioModelID = "whisper-base"
+        configuration.rules = [audio]; configuration.explicitRuleModels = true
+        try ConfigurationStore(directory: directory).save(configuration)
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false)
+        defer { model.shutdown() }
+        XCTAssertTrue(model.localModels.installed.isEmpty)
+        // The disk is connected after Frog started.
+        let installed = folder.appendingPathComponent("whisper-base")
+        try FileManager.default.createDirectory(at: installed.appendingPathComponent("fixture"), withIntermediateDirectories: true)
+        try "fixture".write(to: installed.appendingPathComponent("installed.txt"), atomically: true, encoding: .utf8)
+
+        try await model.localModels.changeDirectory(to: folder)
+        XCTAssertEqual(model.localModels.root.path, folder.path)
+        XCTAssertEqual(model.localModels.installed, ["whisper-base"])
+        XCTAssertEqual(model.ruleModelLabel(model.configuration.rules[0]), "Whisper Base")
+    }
+
     func testAMissingModelIsReplacedOnlyByAnInstalledModelOfItsKind() {
         var configuration = Configuration()
         var audio = Rule.dictationPreset
