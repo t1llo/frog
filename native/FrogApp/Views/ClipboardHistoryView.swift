@@ -14,6 +14,12 @@ enum ClipboardHistoryLayout {
         return CGSize(width: width, height: headerHeight + footerHeight + inset * 2 + 2 + contentHeight)
     }
 
+    /// The free area of the display with keyboard focus (`main`), where the field it pastes into
+    /// is, else of the display under the pointer. Nil leaves the placement to `NSWindow.center()`.
+    static func visibleFrame(main: CGRect?, screens: [(frame: CGRect, visibleFrame: CGRect)], pointer: CGPoint) -> CGRect? {
+        main ?? screens.first { $0.frame.contains(pointer) }?.visibleFrame
+    }
+
     /// Where `NSWindow.center()` puts a window, but on the screen given: across the middle,
     /// three quarters of the way up the free height.
     static func origin(size: CGSize, in visibleFrame: CGRect) -> CGPoint {

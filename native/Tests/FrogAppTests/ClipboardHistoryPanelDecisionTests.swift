@@ -60,4 +60,18 @@ final class ClipboardHistoryPanelDecisionTests: XCTestCase {
         XCTAssertEqual(origin.x + size.width / 2, second.midX, "Centred across that display")
         XCTAssertGreaterThan(origin.y + size.height / 2, second.midY, "Somewhat above its middle")
     }
+
+    func testPanelOpensOnTheDisplayWithKeyboardFocusElseUnderThePointer() {
+        let primary = (frame: CGRect(x: 0, y: 0, width: 1512, height: 982), visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 949))
+        let second = (frame: CGRect(x: 1512, y: -300, width: 1920, height: 1080),
+                      visibleFrame: CGRect(x: 1512, y: -300, width: 1920, height: 1055))
+        let screens = [primary, second]
+        let onPrimary = CGPoint(x: 700, y: 400)
+        XCTAssertEqual(ClipboardHistoryLayout.visibleFrame(main: second.visibleFrame, screens: screens, pointer: onPrimary),
+                       second.visibleFrame, "The field being typed in decides, not the pointer or the primary display")
+        XCTAssertEqual(ClipboardHistoryLayout.visibleFrame(main: nil, screens: screens, pointer: CGPoint(x: 2000, y: 100)),
+                       second.visibleFrame, "Without a display with keyboard focus, the one under the pointer")
+        XCTAssertNil(ClipboardHistoryLayout.visibleFrame(main: nil, screens: screens, pointer: CGPoint(x: -50, y: 400)),
+                     "With neither, the panel is centred where AppKit chooses")
+    }
 }
