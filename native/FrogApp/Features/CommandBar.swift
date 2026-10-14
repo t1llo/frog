@@ -455,6 +455,7 @@ import SwiftUI
     }
     private func add(_ record: SearchRecord, copy: (() async throws -> Void)? = nil, action: @escaping () async throws -> Void) {
         if recordsByID.updateValue(record, forKey: record.id) == nil { records.append(record) }
+        else if let index = records.firstIndex(where: { $0.id == record.id }) { records[index] = record }
         actions[record.id] = action
         copyActions[record.id] = copy
     }
@@ -536,6 +537,8 @@ import SwiftUI
         guard let model, model.configuration.preferences.featureEnabled(.commandBar), results.indices.contains(index),
               let action = (copyOnly ? copyActions[results[index].id] : nil) ?? actions[results[index].id] else { return }
         let selected = results[index], selectedID = results[index].id
+        // A calculation answers only its own query and is never listed again as a suggestion.
+        let suggestible = recordsByID[selectedID] != nil
         hide()
         let token = generation
         delivery = Task { [weak self] in
@@ -545,9 +548,11 @@ import SwiftUI
                 guard token == self.generation, !Task.isCancelled else { return }
                 try await action()
                 try Task.checkCancellation()
-                self.recentSelections.removeAll { $0 == selectedID }
-                self.recentSelections.insert(selectedID, at: 0)
-                self.recentSelections = Array(self.recentSelections.prefix(40))
+                if suggestible {
+                    self.recentSelections.removeAll { $0 == selectedID }
+                    self.recentSelections.insert(selectedID, at: 0)
+                    self.recentSelections = Array(self.recentSelections.prefix(40))
+                }
                 if selectedID.hasPrefix("file:") {
                     self.selectedFiles.removeAll { $0.id == selectedID }
                     self.selectedFiles.insert(selected, at: 0)

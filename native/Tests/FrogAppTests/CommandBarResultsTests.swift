@@ -217,6 +217,67 @@ import FrogCore
         }
     }
 
+    func testARowAddedTwiceListsWhatItsActionActsOn() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var config = Configuration(); config.preferences.windowSwitcherEnabled = false
+        for feature in [FeatureID.commandBar, .scratchpad] { config.preferences.setFeature(feature, enabled: true) }
+        try ConfigurationStore(directory: root).save(config)
+        // Frog never saves one id twice, but a store edited elsewhere can list it twice.
+        let id = UUID()
+        let notes = ["Fixture first", "Fixture second"].map { UtilityDocument(id: id, kind: .note, title: $0) }
+        let toolkit = root.appendingPathComponent("Toolkit")
+        try FileManager.default.createDirectory(at: toolkit, withIntermediateDirectories: true)
+        try JSONEncoder().encode(notes).write(to: toolkit.appendingPathComponent("toolkit-documents.json"))
+        let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
+        defer { pasteboard.releaseGlobally() }
+        let model = AppModel(dataDirectory: root, registerShortcuts: false, readKey: { _ in nil },
+                             clipboardHistoryStore: ClipboardHistoryStore(pasteboard: pasteboard))
+        defer { model.shutdown() }
+        await model.documents.load()
+        XCTAssertEqual(model.documents.items.map(\.title), ["Fixture first", "Fixture second"])
+        let bar = CommandBar(model: model, pasteboard: pasteboard, captureTarget: { nil }, fileSearch: CommandFileStub(),
+                             loadSettings: { [] }, loadApplications: { [] })
+        defer { bar.stop() }
+        bar.prepareResults(model, frontPID: nil)
+        bar.query = "fixture"
+        // The action of the row is the one added last; so must be the row.
+        XCTAssertEqual(bar.results.filter { $0.id == "note:\(id)" }.map(\.title), ["Fixture second"])
+    }
+
+    func testACalculationDoesNotTakeTheSlotOfAChoiceThatCanBeSuggestedAgain() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var config = Configuration(); config.preferences.windowSwitcherEnabled = false
+        config.preferences.setFeature(.commandBar, enabled: true)
+        try ConfigurationStore(directory: root).save(config)
+        let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
+        defer { pasteboard.releaseGlobally() }
+        let model = AppModel(dataDirectory: root, registerShortcuts: false, readKey: { _ in nil },
+                             clipboardHistoryStore: ClipboardHistoryStore(pasteboard: pasteboard))
+        defer { model.shutdown() }
+        let bar = CommandBar(model: model, pasteboard: pasteboard, captureTarget: { nil }, waitForRelease: {},
+                             fileSearch: CommandFileStub(), loadSettings: { [] }, loadApplications: { [] })
+        defer { bar.stop() }
+        var chosen = 0
+        bar.onToolUse = { if $0 == .commandSelection { chosen += 1 } }
+        func choose(_ query: String, id: String? = nil) async throws {
+            bar.prepareResults(model, frontPID: nil)
+            bar.query = query
+            let before = chosen
+            bar.choose(try XCTUnwrap(id.map { id in bar.results.firstIndex { $0.id == id } } ?? 0, query))
+            for _ in 0..<200 where chosen == before { try await Task.sleep(for: .milliseconds(5)) }
+            XCTAssertEqual(chosen, before + 1, query)
+        }
+        try await choose("rocket", id: "emoji:🚀")
+        XCTAssertEqual(pasteboard.string(forType: .string), "🚀")
+        // An answer is never listed again before its sum is typed, so it is no suggestion.
+        for index in 0..<40 { try await choose("\(index)+1") }
+        XCTAssertEqual(pasteboard.string(forType: .string), "40")
+        bar.prepareResults(model, frontPID: nil)
+        XCTAssertEqual(bar.results.first?.id, "emoji:🚀")
+    }
+
     func testCopyWhileTheBarIsOpenListsTheEntryAndEarlierRowsStillPaste() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
