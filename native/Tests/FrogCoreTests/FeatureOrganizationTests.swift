@@ -109,6 +109,36 @@ final class FeatureOrganizationTests: XCTestCase {
         XCTAssertFalse(separate.featureEnabled(.applicationShortcuts))
     }
 
+    func testAConfigurationFrogStartedKeepsTheSwitcherAndShortcutsSeparateWhenConfigIsEdited() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let edits = ["feature.application-shortcuts = false", "feature.window-switcher = true", "feature.command-bar = true"]
+        func expectSeparate(_ preferences: Preferences, _ context: String) {
+            XCTAssertTrue(preferences.featureEnabled(.windowSwitcher), context)
+            XCTAssertFalse(preferences.featureEnabled(.applicationShortcuts), context)
+            XCTAssertTrue(preferences.featureEnabled(.commandBar), context)
+        }
+
+        // Saved as on the first launch, before anyone has opened Features.
+        let fresh = directory.appendingPathComponent("fresh")
+        let store = ConfigurationStore(directory: fresh)
+        try store.save(try store.load())
+        let text = try String(contentsOf: store.textFile, encoding: .utf8).components(separatedBy: "\n")
+            .filter { line in !edits.contains { line.hasPrefix($0.components(separatedBy: " = ")[0] + " ") } }
+        try Data((text.joined(separator: "\n") + edits.joined(separator: "\n") + "\n").utf8).write(to: store.textFile)
+        let reloaded = ConfigurationStore(directory: fresh)
+        let configuration = try reloaded.load()
+        expectSeparate(configuration.preferences, "edited after the first save")
+        try reloaded.save(configuration)
+        XCTAssertTrue(try String(contentsOf: store.textFile, encoding: .utf8).contains("\nfeature.window-switcher = true\n"))
+
+        // A config written by hand starts a first configuration as well.
+        let handWritten = ConfigurationStore(directory: directory.appendingPathComponent("hand-written"))
+        try FileManager.default.createDirectory(at: handWritten.directory, withIntermediateDirectories: true)
+        try Data((edits.joined(separator: "\n") + "\n").utf8).write(to: handWritten.textFile)
+        expectSeparate(try handWritten.load().preferences, "written by hand")
+    }
+
     func testImportRejectsInvalidSwitcherShortcut() {
         var configuration = Configuration()
         configuration.preferences.toolkit = ToolkitPreferences()

@@ -128,8 +128,9 @@ enum TextConfiguration {
         do { root = try object(companion) }
         catch { throw FrogError.message("config.json: expected a valid JSON object containing rules and connections. Repair it or import a complete JSON export. \(keptRemark)") }
         var preferences = root["preferences"] as? [String: Any] ?? [:]
-        // config.json tells whether these settings were written before `toolkit` existed. A feature
-        // key in config creates `toolkit` below, but must not change how the window switcher is read.
+        // Without `toolkit` in config.json these settings are read as written before it existed; a
+        // configuration Frog started has it from the beginning. A feature key in config creates
+        // `toolkit` below, but must not change how the window switcher is read.
         let predatesToolkit = !(preferences["toolkit"] is [String: Any])
         for field in fields { set(nil, path: field.path, in: &preferences) }
         var defaults = try object(JSONEncoder().encode(Preferences()))

@@ -137,7 +137,7 @@ public final class ConfigurationStore: @unchecked Sendable {
                     : "config.json is missing. Restore the companion file before reloading; the current rules and connections were kept.")
             }
             guard let string = String(data: text, encoding: .utf8) else { throw FrogError.message("config must be UTF-8 text. The original file was preserved.") }
-            do { configuration = try TextConfiguration.decode(string, companion: current.json ?? ConfigurationFile.encode(Configuration())) }
+            do { configuration = try TextConfiguration.decode(string, companion: current.json ?? ConfigurationFile.encode(Self.firstConfiguration)) }
             catch let FrogError.message(message) where loaded == nil && message.hasSuffix(TextConfiguration.keptRemark) {
                 // At launch nothing has loaded yet: there are no previous settings that could have been kept.
                 throw FrogError.message(message.dropLast(TextConfiguration.keptRemark.count) + "The files were left unchanged.")
@@ -161,11 +161,20 @@ public final class ConfigurationStore: @unchecked Sendable {
             return configuration
         } else {
             if current.json != nil { throw FrogError.message("config.json belongs to an older Frog prototype. Import a native configuration in Settings; the original will be backed up.") }
-            configuration = Configuration()
+            configuration = Self.firstConfiguration
         }
         try validate?(configuration)
         snapshot = current; loaded = configuration
         if current.json != nil { recordCompanion() }
+        return configuration
+    }
+
+    /// A configuration Frog starts has `toolkit` from the beginning, and so does the config.json it
+    /// saves: its window switcher and Shortcuts are separate features, never read as settings from
+    /// before the switcher became one.
+    private static var firstConfiguration: Configuration {
+        var configuration = Configuration()
+        configuration.preferences.toolkit = ToolkitPreferences()
         return configuration
     }
 
