@@ -24,12 +24,16 @@ public enum ConfigurationFile {
 
     /// `check` sees the decoded document before general validation, so a caller can name a more
     /// specific cause. Without `retainingUnknownFields` the result only proves that the document
-    /// is valid; saving it would drop the fields this version does not know.
-    static func decode(_ data: Data, retainingUnknownFields: Bool, checking check: (Configuration) throws -> Void = { _ in }) throws -> Configuration {
+    /// is valid; saving it would drop the fields this version does not know. `predatesToolkit` says
+    /// whether the preferences were written before `toolkit` existed, when the document alone cannot.
+    static func decode(_ data: Data, retainingUnknownFields: Bool, predatesToolkit: Bool? = nil, checking check: (Configuration) throws -> Void = { _ in }) throws -> Configuration {
         guard data.count <= maximumBytes else { throw FrogError.message("The configuration file is too large (maximum 4 MB).") }
         var configuration: Configuration
         do { configuration = try JSONDecoder().decode(Configuration.self, from: data) }
         catch { throw FrogError.message(unreadable(error)) }
+        if predatesToolkit ?? (configuration.preferences.toolkit == nil) {
+            configuration.preferences.separateWindowSwitcherFromShortcuts()
+        }
         try check(configuration)
         try validate(configuration)
         guard retainingUnknownFields else { return configuration }

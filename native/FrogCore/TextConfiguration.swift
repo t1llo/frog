@@ -128,6 +128,9 @@ enum TextConfiguration {
         do { root = try object(companion) }
         catch { throw FrogError.message("config.json: expected a valid JSON object containing rules and connections. Repair it or import a complete JSON export. \(keptRemark)") }
         var preferences = root["preferences"] as? [String: Any] ?? [:]
+        // config.json tells whether these settings were written before `toolkit` existed. A feature
+        // key in config creates `toolkit` below, but must not change how the window switcher is read.
+        let predatesToolkit = !(preferences["toolkit"] is [String: Any])
         for field in fields { set(nil, path: field.path, in: &preferences) }
         var defaults = try object(JSONEncoder().encode(Preferences()))
         defaults = merge(defaults, preferences)
@@ -159,7 +162,7 @@ enum TextConfiguration {
         // A model key outside the catalog is reported with its line, ahead of general validation.
         var modelIssue: FrogError?
         do {
-            return try ConfigurationFile.decode(data, retainingUnknownFields: retainingUnknownFields) { configuration in
+            return try ConfigurationFile.decode(data, retainingUnknownFields: retainingUnknownFields, predatesToolkit: predatesToolkit) { configuration in
                 for (index, line) in lines.enumerated() {
                     guard let key = line.key, ["audio-model", "cleanup-model", "text-model"].contains(key),
                           let field = fields.first(where: { $0.key == key }), let id = get(field.path, in: defaults) as? String else { continue }

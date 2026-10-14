@@ -114,9 +114,17 @@ extension Preferences {
         default: toolkitSettings.enabled[feature.rawValue] ?? false
         }
     }
+    /// Until the window switcher became a feature of its own, preferences had no `toolkit` and the
+    /// switcher ran only while Shortcuts was on. Preferences from then keep a switcher that was off in
+    /// effect off, and gain `toolkit`, so that the next save records that this was done.
+    mutating func separateWindowSwitcherFromShortcuts() {
+        guard windowSwitcherEnabled, !shortcutsEnabled else { return }
+        windowSwitcherEnabled = false
+        if toolkit == nil { toolkit = ToolkitPreferences() }
+    }
     public mutating func setFeature(_ feature: FeatureID, enabled: Bool) {
         if toolkit == nil {
-            windowSwitcherEnabled = windowSwitcherEnabled && shortcutsEnabled
+            separateWindowSwitcherFromShortcuts()
             toolkit = ToolkitPreferences()
         }
         switch feature {

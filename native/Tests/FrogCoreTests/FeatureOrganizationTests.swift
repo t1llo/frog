@@ -78,6 +78,37 @@ final class FeatureOrganizationTests: XCTestCase {
         XCTAssertTrue(restored.preferences.ruleFeatureEnabled(restored.rules[0]))
     }
 
+    func testATurnedOnToolInConfigDoesNotStartTheSwitcherOfAnEarlierConfiguration() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // Written before the switcher became a feature of its own: it ran only while Shortcuts was on,
+        // and config.json has no toolkit.
+        var earlier = Configuration()
+        earlier.preferences.applicationShortcutsEnabled = false
+        try ConfigurationStore(directory: directory).save(earlier)
+        let store = ConfigurationStore(directory: directory)
+        XCTAssertFalse(try store.load().preferences.featureEnabled(.windowSwitcher))
+        XCTAssertFalse(try ConfigurationFile.decode(ConfigurationFile.encode(earlier)).preferences.featureEnabled(.windowSwitcher))
+
+        // The example the file's own header offers turns on the command bar and nothing else.
+        let text = try String(contentsOf: store.textFile, encoding: .utf8)
+        XCTAssertTrue(text.contains("feature.window-switcher = true"), text)
+        try Data((text + "feature.command-bar = true\n").utf8).write(to: store.textFile)
+        let reloaded = ConfigurationStore(directory: directory)
+        let configuration = try reloaded.load()
+        XCTAssertTrue(configuration.preferences.featureEnabled(.commandBar))
+        XCTAssertFalse(configuration.preferences.featureEnabled(.windowSwitcher))
+
+        // The next save writes what is in effect; from then on the two are separate features.
+        try reloaded.save(configuration)
+        let saved = try String(contentsOf: store.textFile, encoding: .utf8)
+        XCTAssertTrue(saved.contains("feature.window-switcher = false"), saved)
+        try Data(saved.replacingOccurrences(of: "feature.window-switcher = false", with: "feature.window-switcher = true").utf8).write(to: store.textFile)
+        let separate = try ConfigurationStore(directory: directory).load().preferences
+        XCTAssertTrue(separate.featureEnabled(.windowSwitcher))
+        XCTAssertFalse(separate.featureEnabled(.applicationShortcuts))
+    }
+
     func testImportRejectsInvalidSwitcherShortcut() {
         var configuration = Configuration()
         configuration.preferences.toolkit = ToolkitPreferences()
