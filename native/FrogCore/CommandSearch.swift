@@ -11,7 +11,8 @@ public struct SearchRecord: Identifiable, Equatable, Sendable {
     fileprivate let searchText: String
     fileprivate let aliases: [String]
     fileprivate let queryStyle: QueryStyle
-    /// Applications: what a search is usually for, so a title match ranks one bucket higher.
+    /// Applications: what a search is usually for, so a title match ranks one bucket higher. Their subtitle names
+    /// the kind they all share and is not searched, or two of its letters would list every one of them.
     fileprivate let prominent: Bool
     public init(id: String, title: String, subtitle: String = "", keywords: String = "", symbol: String = "command", aliases: [String] = [], queryStyle: QueryStyle = .literal, prominent: Bool = false) {
         self.id = id; self.title = title; self.subtitle = subtitle; self.keywords = keywords; self.symbol = symbol
@@ -22,7 +23,7 @@ public struct SearchRecord: Identifiable, Equatable, Sendable {
         }.filter { !$0.isEmpty }
         self.queryStyle = queryStyle
         searchTitle = CommandSearch.normalized(title)
-        searchText = searchTitle + " " + CommandSearch.normalized(subtitle + " " + keywords) + (aliases.isEmpty ? "" : " " + self.aliases.joined(separator: " "))
+        searchText = searchTitle + " " + CommandSearch.normalized((prominent ? "" : subtitle + " ") + keywords) + (aliases.isEmpty ? "" : " " + self.aliases.joined(separator: " "))
     }
 }
 
@@ -46,13 +47,16 @@ public enum CommandSearch {
         let canMatchCommand = !subject.isEmpty || words.contains { ["settings", "preferences", "system", "macos"].contains($0) }
         let commandWords = subject.isEmpty && canMatchCommand ? ["settings"] : subject
         let commandQuery = commandWords.joined(separator: " ")
+        // "open safari" asks for Safari. Alone, such a word is looked for in the names.
+        let named = words.filter { !applicationContext.contains($0) }
+        let applicationWords = named.isEmpty ? words : named
         // Stable rank buckets avoid sorting the entire catalogue on every keystroke: five relevance levels
         // (the fifth holds exact application titles), each with its leading records ahead of the rest.
         var ranked = [[SearchRecord]](repeating: [], count: 10)
         func append(_ record: SearchRecord, leading: Bool = false) {
             let title = record.searchTitle
             if record.queryStyle == .command && !canMatchCommand { return }
-            let words = record.queryStyle == .command ? commandWords : words
+            let words = record.queryStyle == .command ? commandWords : record.prominent ? applicationWords : words
             let effectiveQuery = record.queryStyle == .command ? commandQuery : query
             guard words.allSatisfy({ record.searchText.contains($0) }) else { return }
             let match = title == query || title == effectiveQuery || record.aliases.contains(effectiveQuery) ? 3
@@ -66,6 +70,7 @@ public enum CommandSearch {
         for record in trailing where !preferredIDs.contains(record.id) { append(record) }
         return Array(ranked.reversed().joined().prefix(limit))
     }
+    private static let applicationContext: Set<String> = ["open", "launch", "app"]
     private static let commandContext: Set<String> = ["change", "set", "adjust", "configure", "open", "show", "find", "enable", "disable", "turn", "on", "off", "my", "the", "a", "an", "please", "how", "do", "i", "to", "me", "mac", "macos", "system", "settings", "preferences", "and", "can", "where", "is", "are", "all"]
     fileprivate static func commandSubject(_ query: String) -> [String] {
         query.split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { !commandContext.contains($0) }

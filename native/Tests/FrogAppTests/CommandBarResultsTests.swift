@@ -181,6 +181,42 @@ import FrogCore
         }
     }
 
+    func testTwoLettersOfAnApplicationIdentifierDoNotListEveryApplication() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var config = Configuration(); config.preferences.windowSwitcherEnabled = false
+        config.preferences.setFeature(.commandBar, enabled: true)
+        try ConfigurationStore(directory: root).save(config)
+        let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
+        defer { pasteboard.releaseGlobally() }
+        let model = AppModel(dataDirectory: root, registerShortcuts: false, readKey: { _ in nil },
+                             clipboardHistoryStore: ClipboardHistoryStore(pasteboard: pasteboard))
+        defer { model.shutdown() }
+        let apps = (0..<100).map { index in
+            var app = Rule(name: "Fixture Tool \(index)", instructions: "", enabled: false)
+            app.action = RuleAction(category: .application)
+            app.action?.applicationPath = "/Fixture/Fixture Tool \(index).app"
+            app.action?.applicationBundleID = "com.example.FixtureWidget\(index)"
+            return app
+        }
+        let bar = CommandBar(model: model, pasteboard: pasteboard, captureTarget: { nil }, fileSearch: CommandFileStub(),
+                             loadSettings: { [] }, loadApplications: { apps }, applicationNames: { _ in [] })
+        defer { bar.stop() }
+        bar.cacheApplications(apps)
+        bar.prepareResults(model, frontPID: nil)
+        // `com.`, `example.` and the words every application shared matched them all, ahead of Frog's own rows.
+        for query in ["co", "le", "en", "pp"] {
+            bar.query = query
+            XCTAssertFalse(bar.results.contains { $0.id.hasPrefix("app:") }, query)
+        }
+        bar.query = "co"
+        XCTAssertTrue(bar.results.contains { $0.id == "route:Settings" })
+        for query in ["open fixture tool 7", "launch fixture tool 7", "fixturewidget7"] {
+            bar.query = query
+            XCTAssertEqual(bar.results.first?.id, "app:/Fixture/Fixture Tool 7.app", query)
+        }
+    }
+
     func testCopyWhileTheBarIsOpenListsTheEntryAndEarlierRowsStillPaste() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

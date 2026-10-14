@@ -35,6 +35,22 @@ final class CommandSearchTests: XCTestCase {
         XCTAssertEqual(Set(CommandSearch.results([app, feature], query: "stay", preferred: [files[7]], trailing: files).map(\.id)).count, 80)
     }
 
+    func testTheKindEveryApplicationSharesDoesNotListThemAllButOpenAndLaunchStillFindOne() {
+        let apps = (0..<100).map { SearchRecord(id: "app:\($0)", title: "Fixture Tool \($0)", subtitle: "App", keywords: "FixtureWidget\($0)", prominent: true) }
+        let note = SearchRecord(id: "note", title: "Groceries", subtitle: "Notes", keywords: "happy hour supplies")
+        // A fragment of the word every application row shows must not put each one ahead of a real match.
+        for query in ["pp", "ap", "app"] {
+            XCTAssertFalse(CommandSearch.results(apps + [note], query: query).contains { $0.id.hasPrefix("app:") }, query)
+        }
+        XCTAssertEqual(CommandSearch.results(apps + [note], query: "pp").map(\.id), ["note"])
+        // Asking to open or launch an application still finds it by its name, and its bundle name still finds it.
+        for query in ["open fixture tool 7", "launch fixture tool 7", "fixture tool 7 app", "fixturewidget7"] {
+            XCTAssertEqual(CommandSearch.results(apps + [note], query: query).first?.id, "app:7", query)
+        }
+        // Other records still need every word.
+        XCTAssertTrue(CommandSearch.results([note], query: "open groceries").isEmpty)
+    }
+
     func testTextShapedLikeADateIsNotACalculation() {
         // A file named after a date is what such text looks for. An answer above it would take Return.
         for text in ["2025-01-15", "2025-1-5", "15/01/2025", "1/5/2025", "2025-01", "09-17", " 2025-01-15 "] {

@@ -80,7 +80,10 @@ catalogue. Applications are what a search is usually for: an app whose name matc
 ranks one level higher (a name containing the query ties with other titles that start
 with it) and leads its level, behind only recently chosen results; files come last.
 An application is listed under the name Finder shows and is also found under its bundle
-names and its file name, so "Code" still finds Visual Studio Code.
+names and its file name, so "Code" still finds Visual Studio Code, and under the last
+part of its bundle identifier. "Open" or "launch" before its name still finds it; the
+word App that every application row shows is not searched, so two of its letters do not
+list every application.
 File lookup remains asynchronous and debounced. Files whose names begin with the typed
 text are asked of Spotlight by themselves and listed ahead of names that only contain
 it; two letters find only the former. A lookup stops gathering once it has found about

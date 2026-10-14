@@ -116,14 +116,16 @@ import SwiftUI
         recentSelections = []; recentFiles = []; selectedFiles = []
         panel?.contentView = nil; panel = nil
     }
-    /// An application is found under the name Finder shows and under its bundle and file names.
+    /// An application is found under the name Finder shows, under its bundle and file names and under the last part
+    /// of its identifier. The rest of the identifier, `com.` and the like, would match every application.
     func cacheApplications(_ installed: [Rule]) {
         guard installed != cachedApplications else { return }
         cachedApplications = installed
         applicationRecords = [:]
         for rule in installed {
             guard let path = rule.action?.applicationPath else { continue }
-            applicationRecords[path] = SearchRecord(id: "app:\(path)", title: rule.name, subtitle: "App", keywords: "app open launch \(rule.action?.applicationBundleID ?? "")", symbol: "app", aliases: applicationNames(path), prominent: true)
+            let identifier = rule.action?.applicationBundleID?.split(separator: ".").last.map(String.init) ?? ""
+            applicationRecords[path] = SearchRecord(id: "app:\(path)", title: rule.name, subtitle: "App", keywords: identifier, symbol: "app", aliases: applicationNames(path), prominent: true)
         }
     }
     private func refreshSettings() {
