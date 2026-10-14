@@ -45,6 +45,8 @@ final class WindowSwitchInput: @unchecked Sendable {
     func shouldDeferBackgroundWork(at now: ContinuousClock.Instant = .now) -> Bool {
         lock.withLock { lastKeyDown.map { $0.duration(to: now) < .seconds(1) } ?? false }
     }
+    /// Another app took the keyboard, so the release of a key held now goes unseen.
+    func forgetHeldKeys() { lock.withLock { router.forgetHeldKeys() } }
     func stop() { lock.withLock { stopped = true; router.reset(); activation = nil; reenableTap = nil } }
 
     func receive(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -75,7 +77,8 @@ final class WindowSwitchInput: @unchecked Sendable {
                 // Ordinary typing never needs a keyboard-layout/IME lookup.
                 let text = type == .keyDown && router.acceptsSearch(flags: event.flags) ? Self.text(event) : ""
                 result = router.key(code: UInt16(event.getIntegerValueField(.keyboardEventKeycode)), down: type == .keyDown,
-                                    flags: event.flags, text: text)
+                                    flags: event.flags, text: text,
+                                    repeating: event.getIntegerValueField(.keyboardEventAutorepeat) != 0)
             } else { return (false, nil) }
             let cancelled = type == .keyDown && result.cancelsPendingActivation ? activation : nil
             if cancelled != nil { activation = nil }

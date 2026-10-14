@@ -118,9 +118,46 @@ final class WindowSwitchInputTests: XCTestCase {
         XCTAssertFalse(input.state.active)
     }
 
-    private func key(_ code: CGKeyCode, down: Bool = true, flags: CGEventFlags = []) throws -> CGEvent {
+    func testAKeyReleasedOutOfSightIsNotSwallowedOnItsNextPress() throws {
+        let input = WindowSwitchInput { _ in }
+        XCTAssertTrue(input.receive(type: .keyDown, event: try key(48, flags: .maskCommand)) == nil)
+        let session = try XCTUnwrap(input.state.sessionID)
+        XCTAssertTrue(input.receive(type: .keyDown, event: try key(36, flags: .maskCommand)) == nil)
+        XCTAssertTrue(input.finish(session: session, activating: UUID()))
+        XCTAssertTrue(input.receive(type: .keyDown, event: try key(36, repeating: true)) == nil,
+                      "A held Return must not repeat into the app being left")
+        // The chosen app took the keyboard before Return was let go, so the tap never saw it released.
+        XCTAssertTrue(input.receive(type: .keyDown, event: try key(36)) != nil, "Pressed again, Return is typing")
+    }
+
+    func testCommandTabOpensTheListAfterATabReleasedOutOfSight() throws {
+        let input = WindowSwitchInput { _ in }
+        _ = input.receive(type: .keyDown, event: try key(48, flags: .maskCommand))
+        let session = try XCTUnwrap(input.state.sessionID)
+        _ = input.receive(type: .flagsChanged, event: try key(55))
+        XCTAssertTrue(input.finish(session: session, activating: UUID()))
+        // Command was let go first; the app chosen took the keyboard before Tab was.
+        XCTAssertTrue(input.receive(type: .keyDown, event: try key(48, flags: .maskCommand)) == nil)
+        XCTAssertTrue(input.state.active)
+        XCTAssertNotEqual(input.state.sessionID, session)
+    }
+
+    func testKeysHeldWhenAnotherAppTakesTheKeyboardAreNoLongerSwallowed() throws {
+        let input = WindowSwitchInput { _ in }
+        _ = input.receive(type: .keyDown, event: try key(48, flags: .maskCommand))
+        let session = try XCTUnwrap(input.state.sessionID)
+        _ = input.receive(type: .keyDown, event: try key(53, flags: .maskCommand))
+        input.finish(session: session)
+        // Another app takes the keyboard while Escape and Tab are held: their releases will go unseen.
+        input.forgetHeldKeys()
+        XCTAssertTrue(input.receive(type: .keyDown, event: try key(53, repeating: true)) != nil)
+        XCTAssertTrue(input.receive(type: .keyUp, event: try key(48, down: false)) != nil)
+    }
+
+    private func key(_ code: CGKeyCode, down: Bool = true, flags: CGEventFlags = [], repeating: Bool = false) throws -> CGEvent {
         let event = try XCTUnwrap(CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down))
         event.flags = flags
+        if repeating { event.setIntegerValueField(.keyboardEventAutorepeat, value: 1) }
         return event
     }
 

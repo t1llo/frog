@@ -99,11 +99,15 @@ struct WindowSwitchKeyRouter: Sendable {
     private var nextSessionID: UInt64 = 0
     private var swallowed = Set<UInt16>()
 
-    mutating func key(code: UInt16, down: Bool, flags: CGEventFlags, text: String = "") -> Result {
+    mutating func key(code: UInt16, down: Bool, flags: CGEventFlags, text: String = "", repeating: Bool = false) -> Result {
         if !down { return Result(consume: swallowed.remove(code) != nil) }
         // A held Escape/Return/Tab must not start repeating into the source app
-        // after this session has already committed or cancelled.
-        if !active && swallowed.contains(code) { return Result(consume: true) }
+        // after this session has already committed or cancelled. A new press means
+        // its release went unseen, say to an app that took the keyboard meanwhile.
+        if !active && swallowed.contains(code) {
+            if repeating { return Result(consume: true) }
+            swallowed.remove(code)
+        }
         let matches = matchesBaseModifiers(flags)
         if UInt32(code) == hotkey.keyCode, matches {
             swallowed.insert(code)
@@ -155,5 +159,7 @@ struct WindowSwitchKeyRouter: Sendable {
         guard sessionID == id else { return }
         active = false; sessionID = nil
     }
+    /// Keys held now may be released out of sight; stop swallowing them.
+    mutating func forgetHeldKeys() { swallowed.removeAll() }
     mutating func reset() { active = false; sessionID = nil; swallowed.removeAll() }
 }

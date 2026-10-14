@@ -212,7 +212,7 @@ final class WindowSwitcherController {
             keyboardHolder = holder
             publishStatus()
             // The release of the modifiers would go unseen; never leave the overlay up.
-            if holder != nil { cancelAll() } else { keyboardNoticePanel.hide() }
+            if holder != nil { input?.forgetHeldKeys(); cancelAll() } else { keyboardNoticePanel.hide() }
         }
         if keyboardNotice.poll(holder, own: ProcessInfo.processInfo.processIdentifier, now: Date()), let holder {
             keyboardNoticePanel.show(SecureInput.summary(holder))

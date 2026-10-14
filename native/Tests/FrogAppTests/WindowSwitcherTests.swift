@@ -45,7 +45,7 @@ final class WindowSwitcherTests: XCTestCase {
         let escape = router.key(code: 53, down: true, command: true, shift: false, otherModifiers: false)
         XCTAssertTrue(escape.consume)
         XCTAssertEqual(escape.action, .cancel)
-        XCTAssertTrue(router.key(code: 53, down: true, command: true, shift: false, otherModifiers: false).consume)
+        XCTAssertTrue(router.key(code: 53, down: true, command: true, shift: false, otherModifiers: false, repeating: true).consume)
         XCTAssertNil(router.modifiers(command: false).action)
     }
 
@@ -69,7 +69,7 @@ final class WindowSwitcherTests: XCTestCase {
         XCTAssertTrue(router.key(code: 126, down: false, command: true, shift: false, otherModifiers: false).consume)
         XCTAssertEqual(router.key(code: 125, down: true, command: true, shift: false, otherModifiers: false).action, .step(backwards: false))
         XCTAssertEqual(router.key(code: 36, down: true, command: true, shift: false, otherModifiers: false).action, .commit)
-        XCTAssertTrue(router.key(code: 36, down: true, command: true, shift: false, otherModifiers: false).consume)
+        XCTAssertTrue(router.key(code: 36, down: true, command: true, shift: false, otherModifiers: false, repeating: true).consume)
         XCTAssertNil(router.modifiers(command: false).action)
     }
 
@@ -165,7 +165,7 @@ final class WindowSwitcherTests: XCTestCase {
         let start = router.key(code: 48, down: true, command: true, shift: false, otherModifiers: false)
         _ = router.key(code: 36, down: true, command: true, shift: false, otherModifiers: false)
         router.finish(session: try XCTUnwrap(start.sessionID))
-        let repeatedReturn = router.key(code: 36, down: true, command: true, shift: false, otherModifiers: false)
+        let repeatedReturn = router.key(code: 36, down: true, command: true, shift: false, otherModifiers: false, repeating: true)
         XCTAssertTrue(repeatedReturn.consume)
         XCTAssertFalse(repeatedReturn.cancelsPendingActivation)
         let typing = router.key(code: 0, down: true, command: false, shift: false, otherModifiers: false)
@@ -176,12 +176,13 @@ final class WindowSwitcherTests: XCTestCase {
 // Keep the original Command–Tab regression cases readable while routing them
 // through the same full modifier-mask entry point as configurable shortcuts.
 extension WindowSwitchKeyRouter {
-    mutating func key(code: UInt16, down: Bool, command: Bool, shift: Bool, otherModifiers: Bool, text: String = "") -> Result {
+    mutating func key(code: UInt16, down: Bool, command: Bool, shift: Bool, otherModifiers: Bool, text: String = "",
+                      repeating: Bool = false) -> Result {
         var flags: CGEventFlags = []
         if command { flags.insert(.maskCommand) }
         if shift { flags.insert(.maskShift) }
         if otherModifiers { flags.insert(.maskAlternate) }
-        return key(code: code, down: down, flags: flags, text: text)
+        return key(code: code, down: down, flags: flags, text: text, repeating: repeating)
     }
     mutating func modifiers(command: Bool) -> Result { modifiers(flags: command ? .maskCommand : []) }
 }
