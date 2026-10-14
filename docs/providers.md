@@ -2,7 +2,7 @@
 
 Frog separates **Internal models**, downloaded and run inside the app, from **External providers**, including cloud APIs and locally running Ollama or LM Studio servers.
 
-Each rule selects its own model. There are no global model defaults. The first compatible model can configure unconfigured built-in rules; new rules preselect the most recently added compatible model. Existing configured rules keep their selections.
+Each rule selects its own model. There are no global model defaults; the legacy model settings in [`config`](configuration.md) only give rules from an older configuration their first selection. The first compatible model can configure unconfigured built-in rules; new rules preselect the most recently added compatible model. Existing configured rules keep their selections.
 
 ## First launch
 

@@ -48,10 +48,10 @@ Keys are case-sensitive. Booleans are `true`/`false`; numbers use a decimal poin
 | `history-limit` | 1–200; default 200 |
 | `history-retention-days` | 1–30; default 30 |
 | `model-idle-seconds` | 0–3600; default 120; 0 unloads after inference |
-| `audio-model` | An audio ID in the built-in/custom model catalog; default `whisper-large-v3-turbo-626mb` |
-| `cleanup-model` | A local text model ID; default `qwen-0.6b` |
-| `text-model` | Optional default local text model ID |
-| `text-source` | `provider` or `frog`; follows the local text default when omitted |
+| `audio-model` | Legacy default: an audio ID in the built-in/custom model catalog; default `whisper-large-v3-turbo-626mb` |
+| `cleanup-model` | Legacy default: a local text model ID; default `qwen-0.6b` |
+| `text-model` | Legacy default: an optional local text model ID |
+| `text-source` | Legacy default: `provider` or `frog`; follows the local text default when omitted |
 | `transcription-language` | `auto`, `en`, `de`, `fr`, `es`, `it`, `pt`, `nl`, `pl`, `uk`, `ru`, `ja`, `zh`, `ko`, `ar`, `hi`, `tr` |
 | `recording-mode` | `toggle` or `hold`; default `toggle` |
 | `recording-output` | `copy` or `paste`; default `copy` |
@@ -59,29 +59,29 @@ Keys are case-sensitive. Booleans are `true`/`false`; numbers use a decimal poin
 | `recording-mute-audio` | Boolean; default `false`. An output that cannot be muted does not stop the recording; Frog says so once |
 | `microphone` | Optional persistent UID of the audio input, as Settings and the recording popup save it; omit for system default. A device number saved by an earlier version names no input and means system default until a microphone is chosen again |
 
-Recording values are defaults/legacy compatibility; each audio rule can explicitly select its own behavior. History is local and off by default. Lowering retention limits may prune existing history. Hiding history masks previews, not stored text. Login startup, permissions and model-storage paths remain machine-local.
+Recording values are defaults/legacy compatibility; each audio rule can explicitly select its own behavior. The four model settings date from before each rule chose its own model: they give rules from an older configuration their first selection and never change a rule's own choice. History is local and off by default. Lowering retention limits may prune existing history. Hiding history masks previews, not stored text. Login startup, permissions and model-storage paths remain machine-local.
 
 ### Features
 
 Each `feature.<name>` takes a boolean:
 
 - `writing`, `dictation`, `application-shortcuts`, `window-switcher`, `stay-awake`: enabled by default.
-- `clipboard`, `command-bar`, `usage`, `snippets`, `scratchpad`, `shelf`, `scripts`, `quick-actions`, `menu-bar`: disabled by default.
+- `clipboard`, `command-bar`, `usage`, `snippets`, `scratchpad`, `shelf`, `scripts`, `quick-actions`, `menu-bar`, `system-monitor`: disabled by default.
 
-Older installations retain their existing shortcut/window enablement semantics during migration. `hidden-sidebar-items` hides navigation entries without disabling the feature; use a JSON list of stable feature IDs, for example `["usage", "scripts", "commandBar"]`. Multiword feature **keys** are kebab-case; IDs in this list use `applicationShortcuts`, `windowSwitcher`, `stayAwake`, `commandBar`, `quickActions`, `menuBar`.
+Older installations retain their existing shortcut/window enablement semantics during migration. `hidden-sidebar-items` hides navigation entries without disabling the feature; use a JSON list of stable feature IDs, for example `["usage", "scripts", "commandBar"]`. Multiword feature **keys** are kebab-case; IDs in this list use `applicationShortcuts`, `windowSwitcher`, `stayAwake`, `commandBar`, `quickActions`, `menuBar`, `systemMonitor`.
 
 ### Global shortcuts
 
-`shortcut.rules`, `shortcut.cancel-recording`, `shortcut.clipboard` and `shortcut.command-bar` accept readable physical macOS key names:
+`shortcut.rules`, `shortcut.cancel-recording`, `shortcut.clipboard`, `shortcut.command-bar` and `shortcut.window-switcher` accept readable physical macOS key names:
 
 ```ini
 shortcut.rules = ctrl+alt+k
 shortcut.cancel-recording = ctrl+escape
 ```
 
-Modifiers: `ctrl`, `alt`, `shift`, `cmd`, each at most once. At least `ctrl`, `alt` or `cmd` is required. Keys include letters, digits, `space`, `tab`, `return`, `escape`, arrows, `f1`–`f12`, `home`, `end`, `page-up`, `page-down`, punctuation names (`comma`, `period`, `slash`, `semicolon`, `quote`, `minus`, `equal`, `grave`, `backslash`, `left-bracket`, `right-bracket`) and `keycode-<number>` for other macOS virtual keys. Names refer to physical US-layout positions, independent of the active keyboard layout. Frog's recorder shows layout-aware labels.
+Modifiers: `ctrl`, `alt`, `shift`, `cmd`, each at most once. At least `ctrl`, `alt` or `cmd` is required. Keys include letters, digits, `space`, `tab`, `return`, `escape`, `delete`, `forward-delete`, the arrows `left`, `right`, `up`, `down`, `f1`–`f12`, `home`, `end`, `page-up`, `page-down`, punctuation names (`comma`, `period`, `slash`, `semicolon`, `quote`, `minus`, `equal`, `grave`, `backslash`, `left-bracket`, `right-bracket`) and `keycode-<number>` for other macOS virtual keys. Names refer to physical US-layout positions, independent of the active keyboard layout. Frog's recorder shows layout-aware labels.
 
-Omit rules/cancel shortcuts for no binding. Clipboard defaults to `cmd+shift+v`; command bar defaults to `ctrl+alt+space`. Disable the corresponding feature to stop its default binding. Escape always cancels recording. Reserved system/clipboard combinations and conflicting enabled shortcuts are rejected. Individual rule shortcuts remain in JSON (virtual key code plus Carbon modifier bits: Command 256, Shift 512, Option 2048, Control 4096).
+Omit rules/cancel shortcuts for no binding. Clipboard defaults to `cmd+shift+v`; command bar defaults to `ctrl+alt+space`; the window switcher defaults to `cmd+tab`. Disable the corresponding feature to stop its default binding. Escape always cancels recording. Reserved system/clipboard combinations and conflicting enabled shortcuts are rejected. Individual rule shortcuts remain in JSON (virtual key code plus Carbon modifier bits: Command 256, Shift 512, Option 2048, Control 4096).
 
 ### Themes and semantic colors
 

@@ -32,9 +32,10 @@ The October 10 iteration gives Mr. Usage a second menu-bar percentage/bar item a
 popup. Collection follows feature enablement even with the dashboard closed;
 disable/quit removes the item and stops collection. Display choices round-trip in
 `preferences.toolkit.usage`, excluding credentials, readings and cooldowns.
-Appearance now has ten themes and independent bounded popup transparency sharing
-the app theme/accent. Command search reuses app/icon caches, recognizes Safari's
-linked bundle, and includes Settings, Models, History and Features routes.
+Appearance then had ten themes (eleven since the default `minimal`) and independent
+bounded popup transparency sharing the app theme/accent. Command search reuses
+app/icon caches, recognizes Safari's linked bundle, and includes Settings, Models,
+History and Features routes.
 
 Stay awake remains available in the feature hub and menu-bar popup. Its session
 is off by default, defaults to four hours, restores sleep on quit, and stops below

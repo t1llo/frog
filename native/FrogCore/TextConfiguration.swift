@@ -70,6 +70,9 @@ enum TextConfiguration {
         return fields
     }()
 
+    /// Every key the file accepts; docs/configuration.md names each of them.
+    static var keys: [String] { fields.map(\.key) }
+
     private static func kebab(_ text: String) -> String {
         text.reduce("") { $0 + ($1.isUppercase ? "-" + $1.lowercased() : String($1)) }
     }
