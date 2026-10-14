@@ -42,6 +42,16 @@ final class RuleConfigurationTests: XCTestCase {
         XCTAssertEqual(try ConfigurationFile.decode(ConfigurationFile.encode(config)), config)
     }
 
+    func testMigrationKeepsTheAppearanceSomeoneChoseOrLeftOut() {
+        for mode in [nil, .system, .light] as [AppearancePreferences.Mode?] {
+            var config = Configuration()
+            if let mode { var appearance = AppearancePreferences(); appearance.mode = mode; config.preferences.appearance = appearance }
+            let chosen = config.preferences.appearance
+            config.adoptExplicitRuleSettings(installed: [])
+            XCTAssertEqual(config.preferences.appearance, chosen, "\(String(describing: mode))")
+        }
+    }
+
     func testFirstModelConfiguresFactoryRulesButLaterAdditionsOnlyPreselectNewRules() {
         var config = Configuration(); config.adoptExplicitRuleSettings(installed: [])
         XCTAssertTrue(config.rules.allSatisfy { $0.providerID == nil && $0.action?.localTextModelID == nil })

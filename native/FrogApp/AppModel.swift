@@ -148,10 +148,11 @@ final class AppModel: ObservableObject {
         self.writeClipboard = writeClipboard ?? { text in NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
         configurationStore = ConfigurationStore(directory: dataDirectory)
         historyStore = HistoryStore(directory: dataDirectory)
+        let firstConfiguration = !configurationStore.hasExistingConfiguration
         if registerShortcuts {
             do {
                 setupPresented = try SetupStore(directory: historyStore.directory).needsSetup(
-                    existingConfiguration: configurationStore.hasExistingConfiguration)
+                    existingConfiguration: !firstConfiguration)
             } catch { report(error) }
         }
         do { configuration = try configurationStore.load() }
@@ -159,7 +160,15 @@ final class AppModel: ObservableObject {
         localModels.updateCatalog(configuration.modelCatalog)
         if configurationLoadError == nil {
             var candidate = configuration
-            if registerShortcuts { candidate.adoptExplicitRuleSettings(installed: localModels.installed) }
+            if registerShortcuts {
+                candidate.adoptExplicitRuleSettings(installed: localModels.installed)
+                // Frog's own first configuration starts dark; a mode written in a file, System included, stays.
+                if firstConfiguration, candidate.preferences.appearance?.mode == nil {
+                    var appearance = candidate.preferences.appearance ?? AppearancePreferences()
+                    appearance.mode = .dark
+                    candidate.preferences.appearance = appearance
+                }
+            }
             candidate.reconcileUnavailableModels(installed: localModels.installed)
             if candidate != configuration { do { try persist(candidate) } catch { report(error) } }
         }

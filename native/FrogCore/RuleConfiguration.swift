@@ -96,9 +96,6 @@ extension Configuration {
             }
         }
         explicitRuleModels = true
-        var appearance = preferences.appearance ?? AppearancePreferences()
-        if appearance.mode == nil || appearance.mode == .system { appearance.mode = .dark }
-        preferences.appearance = appearance
         // Historical addition order is unavailable for downloads; use stable catalog order once.
         recentModels = modelCatalog.filter { installed.contains($0.id) }.map {
             RuleModelSelection(modelID: $0.id, category: $0.kind == .audio ? .audio : .text)
