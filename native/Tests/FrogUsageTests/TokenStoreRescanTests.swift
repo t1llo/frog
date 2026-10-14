@@ -56,6 +56,7 @@ import XCTest
         try logs.addCodex(input: 3000)
         totals = await rescanned()
         XCTAssertEqual(totals, [3049, 3110])
+        XCTAssertEqual(Set(store.records.filter { $0.source == .codex }.map(\.model)), ["gpt-5.1"], "Codex's calls carry their session's model")
         try logs.addOpenCode(input: 4000)
         totals = await rescanned()
         XCTAssertEqual(totals, [3049, 7110])
@@ -168,7 +169,7 @@ import XCTest
                         "usage": ["input": input, "output": 0]]])
     }
     func addCodex(input: Int) throws {
-        if calls == 0 {
+        if !FileManager.default.fileExists(atPath: root.appendingPathComponent("codex/sessions/rollout-fixture.jsonl").path) {
             try append("codex/sessions/rollout-fixture.jsonl", ["type": "session_meta", "timestamp": stamp(),
                 "payload": ["id": "fixture", "model_provider": "openai"]])
             try append("codex/sessions/rollout-fixture.jsonl", ["type": "turn_context", "timestamp": stamp(), "payload": ["model": "gpt-5.1"]])
