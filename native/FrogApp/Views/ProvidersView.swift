@@ -104,8 +104,15 @@ struct ProviderEditor: View {
     @State private var discovering = false
     @State private var discoveryTask: Task<Void, Never>?
     @State private var discoveryMessage: String?
-    @State private var step = 0
+    @State private var step: Int
     @State private var customCategory: ProviderModel.Category = .text
+    /// Whether the Keychain holds a key for this provider. Each look is a Keychain query, and the editor
+    /// draws again for every keystroke and every change in Frog, so it is read when the editor opens.
+    @State private var hasSavedKey = false
+
+    init(provider: ProviderConfiguration, step: Int = 0) {
+        _provider = State(initialValue: provider); _step = State(initialValue: step)
+    }
 
     private var validation: String? {
         if provider.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Enter a provider name." }
@@ -125,7 +132,7 @@ struct ProviderEditor: View {
 
     private var credentialHint: String? {
         if [.openAI, .anthropic, .gemini].contains(provider.kind), apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           clearKey || !model.hasAPIKey(provider.id) {
+           clearKey || !hasSavedKey {
             return "This cloud service needs an API key before it can process text."
         }
         return nil
@@ -154,7 +161,7 @@ struct ProviderEditor: View {
                                 if provider.name == old.title || provider.name == "OpenAI" { provider.name = new.title }
                                 provider.endpoint = new.endpoint; provider.model = new.defaultModel
                                 provider.models = new.suggestedModels
-                                apiKey = ""; clearKey = model.hasAPIKey(provider.id)
+                                apiKey = ""; clearKey = hasSavedKey
                                 discovered = []; discoveryMessage = nil; customModelID = ""; customModelName = ""
                                 testResult = nil; issue = nil
                             }
@@ -196,7 +203,7 @@ struct ProviderEditor: View {
                     VStack(alignment: .leading, spacing: 10) {
                         SectionCaption(text: "Credentials")
                         VStack(alignment: .leading, spacing: 14) {
-                            LabeledField(title: model.hasAPIKey(provider.id) ? "Replacement API key" : "API key") {
+                            LabeledField(title: hasSavedKey ? "Replacement API key" : "API key") {
                                 SecureField("API key", text: $apiKey).disabled(clearKey)
                             }
                             if !provider.kind.isLocal && provider.kind != .compatible {
@@ -204,7 +211,7 @@ struct ProviderEditor: View {
                                     Label(provider.kind == .gemini ? "Get an API key in Google AI Studio" : "Get an API key for \(provider.kind.title)", systemImage: "arrow.up.right.square")
                                 }.foregroundStyle(FrogStyle.accent)
                             }
-                            if model.hasAPIKey(provider.id) {
+                            if hasSavedKey {
                                 SettingRow(title: "Remove saved key", description: "Leave the field blank to keep your existing key. A replacement is stored only when you save.") {
                                     Toggle("Remove saved API key on save", isOn: $clearKey).toggleStyle(.switch).labelsHidden().controlSize(.small)
                                         .onChange(of: clearKey) { _, remove in if remove { apiKey = "" } }
@@ -254,6 +261,8 @@ struct ProviderEditor: View {
         }
         .frame(width: 540, height: 560).background(FrogStyle.canvas).background(FrogWindowMaterial())
         .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
+        // Read before the first frame, so the Connection step does not change its labels once shown.
+        .onAppear { hasSavedKey = model.hasAPIKey(provider.id) }
         .onDisappear { testTask?.cancel(); discoveryTask?.cancel(); apiKey = "" }
         .onChange(of: provider) { _, _ in testResult = nil }
         .onChange(of: apiKey) { _, _ in testResult = nil }
@@ -376,6 +385,10 @@ struct ProviderEditor: View {
             let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
             try model.saveProvider(normalized(), apiKey: key.isEmpty ? nil : key, clearKey: clearKey)
             dismiss()
-        } catch { issue = error.localizedDescription }
+        } catch {
+            issue = error.localizedDescription
+            // A save that fails after changing the key puts the previous key back, or may not manage to.
+            hasSavedKey = model.hasAPIKey(provider.id)
+        }
     }
 }

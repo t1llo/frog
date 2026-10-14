@@ -599,7 +599,7 @@ final class AppModel: ObservableObject {
 
     func hasAPIKey(_ id: UUID) -> Bool {
         guard configuration.providers.first(where: { $0.id == id })?.kind.localTool == nil else { return false }
-        return ((try? keychain.read(providerID: id)) ?? "").isEmpty == false
+        return ((try? readKey(id)) ?? "").isEmpty == false
     }
 
     func useLocalTool(_ kind: LocalToolKind, model: String) throws {
