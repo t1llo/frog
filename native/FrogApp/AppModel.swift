@@ -568,10 +568,8 @@ final class AppModel: ObservableObject {
     }
 
     func addLocalModel(_ item: LocalModelDescriptor) throws {
-        guard !configuration.modelCatalog.contains(where: { $0.id == item.id }) else { return }
-        try item.validateCustom()
         var candidate = configuration
-        candidate.localModels = (candidate.localModels ?? []) + [item]
+        guard try candidate.addLocalModel(item) else { return }
         try persist(candidate)
     }
 

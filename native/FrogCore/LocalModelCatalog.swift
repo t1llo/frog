@@ -88,6 +88,24 @@ public struct LocalModelDescriptor: Codable, Identifiable, Equatable, Sendable {
 extension Configuration {
     public var modelCatalog: [LocalModelDescriptor] { LocalModelDescriptor.catalog + (localModels ?? []) }
     public func localModel(_ id: String) -> LocalModelDescriptor? { modelCatalog.first { $0.id == id } }
+    /// Saves a source found by checking a Hugging Face link. A saved source that was
+    /// added before Frog read download sizes takes the size that the new check found,
+    /// so that its download is checked against the free space too. False when
+    /// nothing changes.
+    @discardableResult
+    public mutating func addLocalModel(_ item: LocalModelDescriptor) throws -> Bool {
+        if let index = localModels?.firstIndex(where: { $0.id == item.id }), let saved = localModels?[index] {
+            guard saved.downloadBytes == nil, let bytes = item.downloadBytes else { return false }
+            let sized = LocalModelDescriptor(id: saved.id, name: saved.name, kind: saved.kind, repository: saved.repository, variant: saved.variant, size: saved.size, downloadBytes: bytes, backend: saved.backend, originalRepository: saved.originalRepository, license: saved.license)
+            try sized.validateCustom()
+            localModels?[index] = sized
+            return true
+        }
+        guard localModel(item.id) == nil else { return false }
+        try item.validateCustom()
+        localModels = (localModels ?? []) + [item]
+        return true
+    }
     /// Older built-ins remain manageable when installed, selected, or explicitly requested.
     public func modelInventory(installed: Set<String>, including: Set<String> = []) -> [LocalModelDescriptor] {
         let workflow = preferences.workflowSettings

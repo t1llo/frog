@@ -132,6 +132,28 @@ final class LocalModelCatalogTests: XCTestCase {
             XCTAssertThrowsError(try model.validateCustom(), "\(implausible)")
         }
     }
+    func testCheckingASavedSourceAgainGivesItTheDownloadSize() throws {
+        let id = HuggingFaceSource.modelID(repository: "owner/mlx-model", variant: nil, backend: .mlx)
+        let saved = #"{"id":"\#(id)","name":"mlx-model","kind":"text","repository":"owner/mlx-model","size":"See source for size","backend":"mlx"}"#
+        var configuration = Configuration()
+        configuration.localModels = [try JSONDecoder().decode(LocalModelDescriptor.self, from: Data(saved.utf8))]
+        let inspected = LocalModelDescriptor(id: id, name: "mlx-model", kind: .text, repository: "owner/mlx-model", size: "See source for size", downloadBytes: 1_234_567_890)
+
+        XCTAssertTrue(try configuration.addLocalModel(inspected))
+        XCTAssertEqual(configuration.localModels?.count, 1)
+        XCTAssertEqual(configuration.localModel(id)?.downloadBytes, 1_234_567_890)
+        XCTAssertEqual(configuration.localModel(id)?.downloadSize, "1.23 GB")
+        XCTAssertFalse(try configuration.addLocalModel(inspected), "A source with a size is not changed again")
+
+        let unsized = LocalModelDescriptor(id: id, name: "mlx-model", kind: .text, repository: "owner/mlx-model", size: "See source for size")
+        XCTAssertFalse(try configuration.addLocalModel(unsized))
+        XCTAssertEqual(configuration.localModel(id)?.downloadBytes, 1_234_567_890, "A check without sizes keeps the saved one")
+        XCTAssertFalse(try configuration.addLocalModel(try XCTUnwrap(LocalModelDescriptor.find("qwen-0.6b"))), "Built-in models are not saved as sources")
+
+        let other = LocalModelDescriptor(id: HuggingFaceSource.modelID(repository: "owner/other", variant: nil, backend: .mlx), name: "other", kind: .text, repository: "owner/other", size: "See source for size")
+        XCTAssertTrue(try configuration.addLocalModel(other))
+        XCTAssertEqual(configuration.localModels?.map(\.id), [id, other.id])
+    }
     func testInspectionSumsExactlyTheFilesTheDownloadFetches() throws {
         let text = try HuggingFaceSource("owner/mlx-model")
         let config = try data(["model_type": "qwen3", "quantization": ["bits": 4, "group_size": 64]])
