@@ -543,14 +543,17 @@ final class DownloadMeter: @unchecked Sendable {
     }
 
     private func report(_ bytes: Int64, fraction library: Double, at time: TimeInterval) -> DownloadProgress {
-        received = min(max(bytes, received), expected ?? .max)
+        // A source can hold more than the size recorded for it: what arrives beyond
+        // that still counts for the speed, and only the line stops at the size.
+        received = max(bytes, received)
         samples.append((time, received))
         while samples.count > 1, samples[1].time <= time - Self.window { samples.removeFirst() }
         let span = time - samples[0].time
         let speed = span >= Self.steady ? Double(received - samples[0].bytes) / span : nil
+        let shown = min(received, expected ?? .max)
         // A full bar says that the files are in: only the library may say that.
-        let fraction = library >= 1 ? 1 : expected.map { min(Double(received) / Double($0), 0.999) } ?? library
-        return DownloadProgress(fraction: fraction, bytesReceived: received, bytesExpected: expected, bytesPerSecond: speed)
+        let fraction = library >= 1 ? 1 : expected.map { min(Double(shown) / Double($0), 0.999) } ?? library
+        return DownloadProgress(fraction: fraction, bytesReceived: shown, bytesExpected: expected, bytesPerSecond: speed)
     }
 
     /// The length of the files in a folder, hidden partial files included: what was

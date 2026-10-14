@@ -82,6 +82,21 @@ final class DownloadMeterTests: XCTestCase {
         XCTAssertTrue(update.hasAllFiles)
     }
 
+    func testADownloadLargerThanItsSizeKeepsItsSpeed() throws {
+        let clock = Clock()
+        let meter = DownloadMeter(folder: folder, expected: 1_000, now: { clock.now })
+        var update = meter.written(fraction: 0.5)
+        // The weights on the source grew since their size was recorded.
+        for second in 1...2 * Int(DownloadMeter.window) {
+            try land("weights", bytes: 1_000 * second)
+            clock.advance(1); update = meter.written(fraction: 0.5)
+        }
+        XCTAssertEqual(update.bytesReceived, 1_000)
+        XCTAssertEqual(update.fraction, 0.999)
+        XCTAssertEqual(try XCTUnwrap(update.bytesPerSecond), 1_000, accuracy: 1, "Bytes still arrive: the download has not stalled")
+        XCTAssertFalse(update.summary?.contains("stalled") == true, update.summary ?? "no line")
+    }
+
     func testAnUnknownSizeKeepsTheLibrarysFraction() throws {
         let meter = DownloadMeter(folder: folder, expected: nil)
         let (progress, files) = snapshotProgress(files: 2)
