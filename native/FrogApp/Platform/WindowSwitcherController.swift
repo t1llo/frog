@@ -63,7 +63,6 @@ final class WindowSwitcherController {
     private var iconCache: [pid_t: NSImage] = [:]
     private var iconTask: Task<Void, Never>?
     private var presentation = WindowSwitchPresentation()
-    private var presentationTask: Task<Void, Never>?
     private let statusChanged: (String, Bool) -> Void
     var onError: ((String) -> Void)?
     private var shortcutRules: [Rule] = []
@@ -341,7 +340,7 @@ final class WindowSwitcherController {
     }
 
     isolated deinit {
-        discovery?.cancel(); focusMonitor?.cancel(); activation?.cancel(); presentationTask?.cancel()
+        discovery?.cancel(); focusMonitor?.cancel(); activation?.cancel()
         iconTask?.cancel(); frontReading?.cancel()
         cache.cancelRefresh()
         input?.stop()
@@ -417,11 +416,8 @@ final class WindowSwitcherController {
         // The next scan must rank the window being left the same way.
         if let current = cached?.current { catalog.noteFront(id: current) }
         let needsRefresh = cache.needsRefresh()
+        // Cached rows and the hosting view are kept warm; the list shows as soon as it has rows.
         presentation.begin(token, ready: cached != nil)
-        presentationTask?.cancel()
-        // The user asked for immediate presentation. Cached rows and the hosting
-        // view are kept warm; there is no artificial hold-to-show delay.
-        presentation.elapsed(token)
         if let cached {
             // Interrupt an in-flight background AX scan so activation isn't queued
             // behind discovery. The last complete inventory and its identities stay valid.
@@ -537,7 +533,6 @@ final class WindowSwitcherController {
     private func commit() {
         guard let token = generation, router.sessionID == token else { return }
         presentation.release(token)
-        presentationTask?.cancel(); presentationTask = nil
         if display.loading { commitOnLoad = true; panel?.orderOut(nil); return }
         guard let selected = display.windows.first(where: { $0.id == session.selected }) else { cancel(session: token); return }
         let activationToken = UUID()
@@ -597,7 +592,7 @@ final class WindowSwitcherController {
         guard generation == token else { return }
         generation = nil; discovery?.cancel(); discovery = nil
         cache.cancelRefresh()
-        presentation.cancel(token); presentationTask?.cancel(); presentationTask = nil
+        presentation.cancel(token)
         pendingSteps = []; commitOnLoad = false
         session.reset(); panel?.orderOut(nil)
         // Keep the rendered rows and icons warm while the panel is hidden.

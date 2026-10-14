@@ -310,31 +310,30 @@ final class WindowSwitcherCacheTests: XCTestCase {
         XCTAssertEqual(cache.snapshot?.windows.count, 2, "Cancelled refresh must not replace the warm inventory")
     }
 
-    func testQuickTapNeverShowsPanelIncludingLateDataOrTimer() {
+    func testQuickTapNeverShowsPanelIncludingLateData() {
         var presentation = WindowSwitchPresentation()
         presentation.begin(1, ready: false)
         presentation.release(1)
-        presentation.elapsed(1)
         presentation.loaded(1)
         XCTAssertFalse(presentation.shouldShow)
         presentation.begin(2, ready: true)
         presentation.release(2)
-        presentation.elapsed(2)
         XCTAssertFalse(presentation.shouldShow)
     }
 
-    func testHeldShortcutShowsOnlyPopulatedInventoryAndIgnoresOlderTimer() {
+    func testHeldShortcutShowsOnlyPopulatedInventoryAndIgnoresOlderInvocations() {
         var presentation = WindowSwitchPresentation()
         presentation.begin(1, ready: false)
-        presentation.elapsed(1)
         XCTAssertFalse(presentation.shouldShow)
         presentation.loaded(1)
         XCTAssertTrue(presentation.shouldShow)
         presentation.cancel(1)
-        presentation.begin(2, ready: true)
-        presentation.elapsed(1)
+        presentation.begin(2, ready: false)
+        presentation.loaded(1)
         XCTAssertFalse(presentation.shouldShow)
-        presentation.elapsed(2)
+        presentation.loaded(2)
+        presentation.release(1)
+        presentation.cancel(1)
         XCTAssertTrue(presentation.shouldShow)
     }
 

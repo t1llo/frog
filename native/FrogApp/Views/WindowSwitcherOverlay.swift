@@ -39,9 +39,7 @@ struct WindowSwitcherOverlay: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if model.loading {
-                Spacer(); ProgressView("Finding windows…").controlSize(.small); Spacer()
-            } else if model.windows.isEmpty {
+            if model.windows.isEmpty {
                 Spacer()
                 Text(L10n.text(model.query.isEmpty ? "No accessible windows" : "No matching windows")).font(.system(size: 14, weight: .medium))
                 Spacer()

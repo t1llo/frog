@@ -15,8 +15,6 @@ final class WindowSwitcherCache {
     /// Moves on with every list opened and every window chosen.
     private(set) var turn: UInt64 = 0
 
-    var isRefreshing: Bool { refresh != nil }
-
     func update(using load: @escaping @Sendable () async -> WindowCatalog.Snapshot) async -> WindowCatalog.Snapshot? {
         if let refresh {
             let token = revision
@@ -181,16 +179,14 @@ struct WindowSwitchFrontRequests {
 struct WindowSwitchPresentation {
     private(set) var sessionID: UInt64?
     private(set) var ready = false
-    private(set) var delayElapsed = false
     private(set) var released = false
 
-    var shouldShow: Bool { sessionID != nil && ready && delayElapsed && !released }
+    var shouldShow: Bool { sessionID != nil && ready && !released }
 
     mutating func begin(_ id: UInt64, ready: Bool) {
-        sessionID = id; self.ready = ready; delayElapsed = false; released = false
+        sessionID = id; self.ready = ready; released = false
     }
     mutating func loaded(_ id: UInt64) { if sessionID == id { ready = true } }
-    mutating func elapsed(_ id: UInt64) { if sessionID == id { delayElapsed = true } }
     mutating func release(_ id: UInt64) { if sessionID == id { released = true } }
     mutating func cancel(_ id: UInt64) { if sessionID == id { sessionID = nil } }
 }

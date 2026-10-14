@@ -39,10 +39,8 @@ enum WindowActivation {
             // Activation is a request, not proof of foreground ownership. A
             // switcher action is explicit user intent, so use the public AX
             // frontmost attribute if the other application still owns focus.
-            if !isFrontmost() {
-                let forwarded = await bringForward()
-                guard !Task.isCancelled, isCurrent(), requested || forwarded else { return false }
-            }
+            let forwarded = await bringForward()
+            guard !Task.isCancelled, isCurrent(), requested || forwarded else { return false }
             for _ in 0..<15 {
                 guard !Task.isCancelled, isCurrent() else { return false }
                 if isFrontmost() { break }
