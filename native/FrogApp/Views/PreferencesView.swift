@@ -70,16 +70,7 @@ struct PreferencesView: View {
                     }.disabled(model.localModels.busy || !model.localModels.progress.isEmpty || model.dictation.active)
                 }
                 SettingsSection(title: "Recording") {
-                    CompactRow(title: "Microphone") {
-                        CompactMenu(value: DictationController.devices.first { String($0.id) == prefs.microphoneID }?.name ?? "System default") {
-                            Button { update { $0.microphoneID = nil } } label: { Label("System default", systemImage: prefs.microphoneID == nil ? "checkmark" : "mic") }
-                                .accessibilityAddTraits(prefs.microphoneID == nil ? .isSelected : [])
-                            ForEach(DictationController.devices, id: \.id) { device in
-                                Button { update { $0.microphoneID = String(device.id) } } label: { Label(device.name, systemImage: prefs.microphoneID == String(device.id) ? "checkmark" : "mic") }
-                                    .accessibilityAddTraits(prefs.microphoneID == String(device.id) ? .isSelected : [])
-                            }
-                        }
-                    }
+                    MicrophoneRow(dictation: model.dictation, selection: prefs.microphoneID) { id in update { $0.microphoneID = id } }
                     Divider()
                     CompactRow(title: "Mute Mac audio while recording") { Toggle("Mute Mac audio while recording", isOn: Binding(get: { prefs.muteWhileRecording ?? false }, set: { value in update { $0.muteWhileRecording = value } })).labelsHidden() }
                     Divider()
@@ -212,6 +203,31 @@ struct PreferencesView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }; setModelFolder(url)
     }
     private func setModelFolder(_ url: URL) { guard !model.dictation.active else { return }; Task { do { try await model.localModels.changeDirectory(to: url) } catch { model.report(error) } } }
+}
+
+/// The Microphone row of the Recording section. Reading the microphones asks Core Audio about
+/// every device, and the page draws again for every change of the app, once a second while
+/// dictating. So they are read when the row appears and when a device is connected or removed.
+struct MicrophoneRow: View {
+    @ObservedObject var dictation: DictationController
+    let selection: String?
+    var deviceChanges: () -> AsyncStream<Void> = AudioDeviceChanges.stream
+    let choose: (String?) -> Void
+    var body: some View {
+        CompactRow(title: "Microphone") {
+            CompactMenu(value: dictation.microphones.first { String($0.id) == selection }?.name ?? "System default") {
+                Button { choose(nil) } label: { Label("System default", systemImage: selection == nil ? "checkmark" : "mic") }
+                    .accessibilityAddTraits(selection == nil ? .isSelected : [])
+                ForEach(dictation.microphones, id: \.id) { device in
+                    Button { choose(String(device.id)) } label: { Label(device.name, systemImage: selection == String(device.id) ? "checkmark" : "mic") }
+                        .accessibilityAddTraits(selection == String(device.id) ? .isSelected : [])
+                }
+            }
+        }
+        // Read before the first frame, so the row does not show the default first.
+        .onAppear { dictation.refreshMicrophones() }
+        .task { for await _ in deviceChanges() { dictation.refreshMicrophones() } }
+    }
 }
 
 /// What the Local models section says about the idle time and about the models in memory.
