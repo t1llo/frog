@@ -19,7 +19,9 @@ final class HotkeyDeliveryTests: XCTestCase {
             var fixture = rule; fixture.hotkey = Hotkey(keyCode: 105, modifiers: UInt32(controlKey | optionKey | shiftKey))
             XCTAssertTrue(manager.register(rules: [fixture], onPress: { _ in presses += 1 }) { _ in triggers += 1 }.isEmpty)
         }
-        let id = try registrationID(manager)
+        // Drive the installed Carbon callback with the opaque registration ID,
+        // rather than reimplementing or bypassing event dispatch in the test.
+        let id = try XCTUnwrap(manager.rulesByID.keys.first)
         try await send(id: id, pressed: false)
         XCTAssertEqual(triggers, 0, "Releasing a key without an accepted Frog press must not start writing")
         try await send(id: id, pressed: true)
@@ -28,13 +30,6 @@ final class HotkeyDeliveryTests: XCTestCase {
         try await send(id: id, pressed: false)
         try await send(id: id, pressed: false)
         XCTAssertEqual(triggers, 1, "Only the matched release may invoke the rule")
-    }
-
-    // Read the opaque registration ID to drive the installed Carbon callback,
-    // rather than reimplementing or bypassing event dispatch in the test.
-    private func registrationID(_ manager: HotkeyManager) throws -> UInt32 {
-        let mapping = Mirror(reflecting: manager).children.first { $0.label == "rulesByID" }?.value as? [UInt32: UUID]
-        return try XCTUnwrap(mapping?.keys.first)
     }
 
     private func send(id: UInt32, pressed: Bool) async throws {

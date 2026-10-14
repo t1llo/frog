@@ -9,7 +9,8 @@ final class HotkeyManager {
     private static var nextRegistrationID: UInt32 = 1
     private var handler: EventHandlerRef?
     private var registrations: [EventHotKeyRef] = []
-    private var rulesByID: [UInt32: UUID] = [:]
+    /// Readable so that a test can drive the installed Carbon callback with a real registration.
+    private(set) var rulesByID: [UInt32: UUID] = [:]
     private var onTrigger: ((UUID) -> Void)?
     private var onPress: ((UUID) -> Void)?
     private var pressed = Set<UUID>()
