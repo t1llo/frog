@@ -100,6 +100,26 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(try store.load(), changed)
     }
 
+    func testPreviousNativeConfigurationIsMigratedOnlyOnce() throws {
+        let legacy = directory.appendingPathComponent("legacy")
+        let current = directory.appendingPathComponent("current")
+        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        var original = Configuration(); original.rules[0].name = "My rule"
+        let bytes = try ConfigurationFile.encode(original)
+        let previous = legacy.appendingPathComponent("configuration.json")
+        try bytes.write(to: previous)
+        XCTAssertEqual(try ConfigurationStore(directory: current, legacyDirectory: legacy).load(), original)
+        // The previous file stays where it is, so a copy of it in the configuration directory adds nothing.
+        XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: current.path)), ["config", "config.json"])
+
+        // Removing both files to start again must not bring back the settings from before the migration.
+        for file in ["config", "config.json"] { try FileManager.default.removeItem(at: current.appendingPathComponent(file)) }
+        let next = ConfigurationStore(directory: current, legacyDirectory: legacy)
+        XCTAssertEqual(try next.load().rules.map(\.name), Configuration().rules.map(\.name))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: current.path), [])
+        XCTAssertEqual(try Data(contentsOf: previous), bytes)
+    }
+
     func testAConfigJSONThatWentMissingIsRefusedAtLaunchOnceItHasExistedOnThisMac() throws {
         let current = directory.appendingPathComponent("current")
         let data = directory.appendingPathComponent("data")

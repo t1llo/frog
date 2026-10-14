@@ -137,7 +137,7 @@ These fields select the display and login-source preference only. Accounts, toke
 
 ## Migration, sync and JSON interchange
 
-On first use without a text `config`, a valid legacy `config.json` is backed up verbatim as `config-legacy-backup-<UUID>.json`, then its settings are written into `config`. Complex data remains in `config.json`. The previous native `~/Library/Application Support/Frog/configuration.json` is also supported and is left intact. A recognized prototype destination is backed up before replacing it. Invalid or unsupported files are not silently overwritten; repair them or explicitly import a valid export.
+On first use without a text `config`, a valid legacy `config.json` is backed up verbatim as `config-legacy-backup-<UUID>.json`, then its settings are written into `config`. Complex data remains in `config.json`. The previous native `~/Library/Application Support/Frog/configuration.json` is also supported and is left intact; it is read only until `config.json` has existed on this Mac, and after that only through Import. A recognized prototype destination is backed up before replacing it. Invalid or unsupported files are not silently overwritten; repair them or explicitly import a valid export.
 
 Sync **both** `config` and `config.json`, for example:
 

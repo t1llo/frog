@@ -131,7 +131,7 @@ public final class ConfigurationStore: @unchecked Sendable {
         let current = try readSnapshot()
         let configuration: Configuration
         if let text = current.text {
-            if current.json == nil, snapshot?.json != nil || companionMarker.map({ FileManager.default.fileExists(atPath: $0.path) }) == true {
+            if current.json == nil, snapshot?.json != nil || companionNoted {
                 throw FrogError.message(loaded == nil
                     ? "config.json is missing beside config. Restore it, import a configuration in Settings, or remove config as well to start again. The files were left unchanged."
                     : "config.json is missing. Restore the companion file before reloading; the current rules and connections were kept.")
@@ -150,12 +150,13 @@ public final class ConfigurationStore: @unchecked Sendable {
             try backup(json, name: "config-legacy-backup", extension: "json")
             try apply(prepared, expected: current)
             return configuration
-        } else if let legacyFile, let previous = try readConfigurationFile(legacyFile) {
+        } else if let legacyFile, !companionNoted, let previous = try readConfigurationFile(legacyFile) {
+            // The previous file is left as it is, so it needs no copy; once config.json has existed
+            // on this Mac it is out of date and is only read again through Import.
             configuration = try ConfigurationFile.decode(previous)
             try validate?(configuration)
             let prepared = try prepare(configuration, preserving: nil)
             if let json = current.json { try backup(json, name: "config-prototype-backup", extension: "json") }
-            try backup(previous, name: "config-legacy-backup", extension: "json")
             try apply(prepared, expected: current)
             return configuration
         } else {
@@ -168,8 +169,11 @@ public final class ConfigurationStore: @unchecked Sendable {
         return configuration
     }
 
+    private var companionNoted: Bool {
+        companionMarker.map { FileManager.default.fileExists(atPath: $0.path) } == true
+    }
     /// Notes once that config.json exists beside config. A note that cannot be written only loses
-    /// the refusal above; it must not stop a load or a save.
+    /// what it protects against; it must not stop a load or a save.
     private func recordCompanion() {
         guard !companionRecorded, let companionMarker else { return }
         companionRecorded = FileManager.default.fileExists(atPath: companionMarker.path)
