@@ -108,6 +108,33 @@ final class WindowActivationTests: XCTestCase {
         XCTAssertFalse(gone)
         XCTAssertEqual(refused.events, ["raise"], "A window that is gone is not raised again")
     }
+    func testRaisingTheWindowAgainOnceItsAppIsInFrontDoesNotLookForItsDesktopAgain() async {
+        let trace = RaiseAnswers([.success])
+        var writer = WindowActivationExecutor.Writer()
+        writer.isTrusted = { true }
+        writer.reveal = { _, _, _ in trace.note("space"); return true }
+        writer.isWindow = { _ in trace.note("validate"); return true }
+        writer.isMinimized = { _ in false }
+        writer.raise = { _ in trace.next() }
+        writer.makeMain = { _ in trace.note("main") }
+        let moment = Moment()
+        let executor = WindowActivationExecutor(writer: writer, now: { moment.now })
+        let target = WindowCatalog.Target(id: UUID(), pid: 10, element: AXUIElementCreateApplication(1010), windowID: 202)
+        let prepared = await executor.prepare(target, isCurrent: { true })
+        let first = await executor.raise(target, isCurrent: { true })
+        let second = await executor.raise(target, isCurrent: { true })
+        XCTAssertTrue(prepared && first && second)
+        XCTAssertEqual(trace.events, ["space", "validate", "raise", "main", "validate", "raise", "main"],
+                       "The window raised a moment ago is on the Desktop in sight; only its handle is checked again")
+
+        // Any later raise looks for the Desktop again: the window may have moved since.
+        let later = await executor.raise(target, isCurrent: { true })
+        XCTAssertTrue(later)
+        XCTAssertEqual(trace.events.suffix(4), ["space", "validate", "raise", "main"])
+        moment.advance(seconds: 3)
+        _ = await executor.raise(target, isCurrent: { true })
+        XCTAssertEqual(trace.events.suffix(4), ["space", "validate", "raise", "main"], "Nor is a raise a while ago a reason to skip it")
+    }
     func testFinalRaiseWaitsForApplicationToBecomeFrontmost() async {
         var ticks = 0
         var finalRaiseTicks: [Int] = []
@@ -131,4 +158,12 @@ private final class RaiseAnswers: @unchecked Sendable {
             return answers.count > 1 ? answers.removeFirst() : answers[0]
         }
     }
+}
+
+/// A clock that moves only when told to.
+private final class Moment: @unchecked Sendable {
+    private let lock = NSLock()
+    private var instant = ContinuousClock.now
+    var now: ContinuousClock.Instant { lock.withLock { instant } }
+    func advance(seconds: Int) { lock.withLock { instant = instant.advanced(by: .seconds(seconds)) } }
 }

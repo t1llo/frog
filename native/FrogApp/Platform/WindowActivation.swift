@@ -97,11 +97,16 @@ actor WindowActivationExecutor {
         var resolve: @Sendable (CGWindowID, pid_t) -> AXUIElement? = { WindowSpaceBridge.resolve($0, pid: $1) }
     }
     private let writer: Writer
+    private let now: @Sendable () -> ContinuousClock.Instant
     private var prepared: WindowCatalog.Target?
-    init(writer: Writer) { self.writer = writer }
+    /// The window raised last, for a moment: raising it again once its app is in front finds it
+    /// on the Desktop in sight, so its Desktop is not looked for again. Any other step ends it.
+    private var raisedLast: (target: WindowCatalog.Target, until: ContinuousClock.Instant)?
+    init(writer: Writer, now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }) { self.writer = writer; self.now = now }
 
     func prepare(_ target: WindowCatalog.Target, isCurrent: @escaping @Sendable () -> Bool,
                  willChangeSpace: @escaping @Sendable () async -> Void = {}) async -> Bool {
+        raisedLast = nil
         guard !Task.isCancelled, isCurrent(), writer.isTrusted(),
               await writer.reveal(target, isCurrent, willChangeSpace), !Task.isCancelled, isCurrent() else { return false }
         var element = target.element
@@ -125,11 +130,13 @@ actor WindowActivationExecutor {
     func raise(_ target: WindowCatalog.Target, isCurrent: @escaping @Sendable () -> Bool, requested: Bool = false) async -> Bool {
         let finishing = requested && prepared?.id == target.id
         func eligible() -> Bool { finishing || (!Task.isCancelled && isCurrent()) }
+        let again = raisedLast.flatMap { $0.target.id == target.id && now() < $0.until ? $0.target : nil }
+        raisedLast = nil
         guard eligible() else { return false }
         // Command-bar callers also get remote-window preparation even if they do
         // not have a separate application activation phase.
-        if target.windowID != nil, prepared?.id != target.id, !(await prepare(target, isCurrent: isCurrent)) { return false }
-        var target = prepared?.id == target.id ? prepared! : target
+        if again == nil, target.windowID != nil, prepared?.id != target.id, !(await prepare(target, isCurrent: isCurrent)) { return false }
+        var target = again ?? (prepared?.id == target.id ? prepared! : target)
         if prepared?.id == target.id { prepared = nil }
         guard eligible(), writer.isTrusted() else { return false }
         if !writer.isWindow(target) {
@@ -157,7 +164,10 @@ actor WindowActivationExecutor {
         }
         guard raised == .success, eligible() else { return false }
         writer.makeMain(target)
-        return eligible()
+        guard eligible() else { return false }
+        // Once: a raise that skipped the lookup is no reason to skip the next one.
+        if again == nil { raisedLast = (target, now().advanced(by: .seconds(2))) }
+        return true
     }
 
     func bringForward(_ target: WindowCatalog.Target, isCurrent: @Sendable () -> Bool) -> Bool {
