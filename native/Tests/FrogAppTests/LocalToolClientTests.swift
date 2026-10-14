@@ -281,7 +281,17 @@ final class LocalToolClientTests: XCTestCase {
             .opencode: "--standalone --format --agent"
         ]
         let started = LocalToolKind.allCases.map { "[ -e '\(root.appendingPathComponent("started-\($0.executableName)").path)' ]" }
+        // OpenCode then also waits until the other two rows are shown. Rows handed
+        // over only once every probe has ended would make it give up too.
+        let shown = root.appendingPathComponent("shown")
         for kind in LocalToolKind.allCases {
+            let rows = kind != .opencode ? "" : """
+            i=0
+            until [ -e '\(shown.path)' ]; do
+              i=$((i + 1)); [ "$i" -le 60 ] || exit 1
+              /bin/sleep 0.05
+            done
+            """
             _ = try executable("""
             if [ "$1" = '--version' ]; then echo '\(versions[kind]!)'; exit; fi
             : > '\(root.appendingPathComponent("started-\(kind.executableName)").path)'
@@ -290,16 +300,21 @@ final class LocalToolClientTests: XCTestCase {
               i=$((i + 1)); [ "$i" -le 60 ] || exit 1
               /bin/sleep 0.05
             done
+            \(rows)
             echo '\(flags[kind]!)'
             """, name: kind.executableName, in: root)
         }
         let client = LocalToolClient(discovery: .init(home: root, environment: [:], searchDirectories: [root]), temporaryRoot: root)
         let updates = StatusUpdates()
-        let statuses = await client.statuses(checkAuthentication: false) { updates.kinds.append($0.kind) }
+        let statuses = await client.statuses(checkAuthentication: false) { status in
+            updates.kinds.append(status.kind)
+            if Set(updates.kinds).isSuperset(of: [.claudeCode, .codex]) { FileManager.default.createFile(atPath: shown.path, contents: nil) }
+        }
         XCTAssertEqual(statuses.map(\.kind), LocalToolKind.allCases)
-        XCTAssertEqual(statuses.filter(\.supportsTextTransforms).map(\.kind), LocalToolKind.allCases, statuses.map(\.detail).joined(separator: " / "))
-        XCTAssertEqual(updates.kinds.sorted { $0.rawValue < $1.rawValue }, LocalToolKind.allCases.sorted { $0.rawValue < $1.rawValue },
-                       "Each tool's row is shown as soon as its own probe ends")
+        XCTAssertEqual(statuses.filter(\.supportsTextTransforms).map(\.kind), LocalToolKind.allCases,
+                       "Each tool's row is shown as soon as its own probe ends: \(statuses.map(\.detail).joined(separator: " / "))")
+        XCTAssertEqual(updates.kinds.count, LocalToolKind.allCases.count)
+        XCTAssertEqual(updates.kinds.last, .opencode)
     }
 
     func testARefreshedStatusReplacesItsRowInPlace() {
