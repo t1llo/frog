@@ -9,13 +9,15 @@ enum ApplicationCatalog {
         var rules: [Rule] = []
         var alternativeNames: [String: [String]] = [:]
     }
+    /// `displayName` gives the name Finder shows for a path. Asked of the system, it registers a bundle the system
+    /// does not know yet with Launch Services.
     static func scan(roots: [URL] = [
         URL(fileURLWithPath: "/Applications", isDirectory: true),
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications", isDirectory: true),
         URL(fileURLWithPath: "/System/Applications", isDirectory: true),
         URL(fileURLWithPath: "/System/Cryptexes/App/System/Applications", isDirectory: true),
         URL(fileURLWithPath: "/System/Library/CoreServices/Applications", isDirectory: true)
-    ]) -> Discovery {
+    ], displayName: (String) -> String = { FileManager.default.displayName(atPath: $0) }) -> Discovery {
         let manager = FileManager.default
         var seen = Set<String>()
         var rules: [Rule] = []
@@ -36,7 +38,7 @@ enum ApplicationCatalog {
                 let path = url.resolvingSymlinksInPath().standardizedFileURL.path
                 guard seen.insert(path).inserted, let bundle = Bundle(url: url), let bundleID = bundle.bundleIdentifier else { continue }
                 // Finder appends the extension when it is set to show all of them.
-                let shown = manager.displayName(atPath: path)
+                let shown = displayName(path)
                 let name = shown.lowercased().hasSuffix(".app") ? String(shown.dropLast(4)) : shown
                 var listed: Set = [name]
                 let others = (["CFBundleDisplayName", "CFBundleName"].compactMap { bundle.object(forInfoDictionaryKey: $0) as? String }

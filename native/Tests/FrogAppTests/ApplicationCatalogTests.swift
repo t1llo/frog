@@ -101,7 +101,7 @@ final class ApplicationCatalogTests: XCTestCase {
             let info: [String: Any] = ["CFBundleIdentifier": "test.\(UUID().uuidString)", "CFBundleName": URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent, "CFBundlePackageType": "APPL"]
             try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: contents.appendingPathComponent("Info.plist"))
         }
-        let installed = ApplicationCatalog.scan(roots: [root, root]).rules
+        let installed = ApplicationCatalog.scan(roots: [root, root], displayName: finderName).rules
         XCTAssertEqual(installed.map(\.name), ["Editor", "Tool"])
         XCTAssertTrue(installed.allSatisfy { !$0.enabled && $0.hotkey == nil && $0.category == .application })
         var configuration = Configuration(); configuration.rules = installed
@@ -121,7 +121,7 @@ final class ApplicationCatalogTests: XCTestCase {
             let info: [String: Any] = ["CFBundleIdentifier": "test.\(UUID().uuidString)", "CFBundleName": URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent, "CFBundlePackageType": "APPL"]
             try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: contents.appendingPathComponent("Info.plist"))
         }
-        XCTAssertEqual(ApplicationCatalog.scan(roots: [root]).rules.map(\.name), ["Nested", "Top"])
+        XCTAssertEqual(ApplicationCatalog.scan(roots: [root], displayName: finderName).rules.map(\.name), ["Nested", "Top"])
     }
     func testApplicationsCarryTheNameFinderShowsAndKeepTheirBundleNamesForSearch() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -133,12 +133,16 @@ final class ApplicationCatalogTests: XCTestCase {
             info["CFBundleDisplayName"] = displayName
             try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: contents.appendingPathComponent("Info.plist"))
         }
-        let found = ApplicationCatalog.scan(roots: [root])
+        let found = ApplicationCatalog.scan(roots: [root], displayName: finderName)
         XCTAssertEqual(found.rules.map(\.name), ["FixtureVPN", "Plain", "Visual Studio Fixture"])
         let names = Dictionary(uniqueKeysWithValues: found.rules.map { ($0.name, found.alternativeNames[$0.action?.applicationPath ?? ""]) })
         XCTAssertEqual(names, ["FixtureVPN": ["Fixture VPN"], "Plain": nil, "Visual Studio Fixture": ["Code"]])
     }
 }
+
+/// The name Finder shows for a fixture when it shows every extension. Asking the system for it would register the
+/// fixture with Launch Services, where it outlives the test.
+private func finderName(_ path: String) -> String { URL(fileURLWithPath: path).lastPathComponent }
 
 /// A scan that waits to be let through, so that callers can arrive while it runs.
 private actor CatalogGate {
