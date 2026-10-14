@@ -377,6 +377,25 @@ final class LocalToolClientTests: XCTestCase {
         XCTAssertTrue(unrelated.isRunning)
     }
 
+    @MainActor func testWaitingToolsLeaveSwiftConcurrencyThreadsFree() async throws {
+        let root = try directory()
+        let tool = try executable("/bin/sleep 5", in: root)
+        let start = ContinuousClock.now
+        // More waiting calls than Swift's concurrency pool has threads.
+        let runs = (0..<ProcessInfo.processInfo.activeProcessorCount + 2).map { _ in
+            Task.detached {
+                try await LocalToolProcess.run(executable: tool, arguments: [], environment: [:], directory: root, timeout: 10)
+            }
+        }
+        defer { runs.forEach { $0.cancel() } }
+        // Waking from a sleep and running a detached task both need a free pool thread.
+        try await Task.sleep(for: .milliseconds(200))
+        await Task.detached(priority: .userInitiated) {}.value
+        XCTAssertLessThan(start.duration(to: .now), .seconds(2), "Other Swift work runs while coding tools wait")
+        runs.forEach { $0.cancel() }
+        for run in runs { _ = try? await run.value }
+    }
+
     func testErrorsNeverExposeRawStderrOrStdoutAndModelListIsValidated() {
         let result = LocalToolProcessResult(stdout: Data("private prompt".utf8), stderr: Data("401 Bearer secret /Users/private".utf8), status: 1)
         let error = LocalToolOutput.failure(result, kind: .claudeCode).localizedDescription

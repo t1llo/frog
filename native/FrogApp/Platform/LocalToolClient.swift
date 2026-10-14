@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import FrogCore
+import os
 
 /// Headless text-only adapter. CLI credentials stay with the CLI; Frog never reads them.
 actor LocalToolClient {
@@ -448,16 +449,26 @@ struct LocalToolProcessResult: Sendable {
 enum LocalToolProcess {
     static func run(executable: URL, arguments: [String], input: Data = Data(), environment: [String: String],
                     directory: URL, timeout: TimeInterval = 90, outputLimit: Int = 4 * 1024 * 1024) async throws -> LocalToolProcessResult {
-        let work = Task.detached(priority: .userInitiated) {
-            try execute(executable: executable, arguments: arguments, input: input, environment: environment,
-                        directory: directory, timeout: timeout, outputLimit: outputLimit)
-        }
-        return try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+        // The loop holds its thread until the tool ends. Swift's concurrency pool does not replace
+        // a waiting thread, so the wait runs on a dispatch thread and learns of cancellation by flag.
+        let cancelled = OSAllocatedUnfairLock(initialState: false)
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    continuation.resume(with: Result {
+                        try execute(executable: executable, arguments: arguments, input: input, environment: environment,
+                                    directory: directory, timeout: timeout, outputLimit: outputLimit,
+                                    isCancelled: { cancelled.withLock { $0 } })
+                    })
+                }
+            }
+        } onCancel: { cancelled.withLock { $0 = true } }
     }
 
     private static func execute(executable: URL, arguments: [String], input: Data, environment: [String: String],
-                                directory: URL, timeout: TimeInterval, outputLimit: Int) throws -> LocalToolProcessResult {
-        try Task.checkCancellation()
+                                directory: URL, timeout: TimeInterval, outputLimit: Int,
+                                isCancelled: () -> Bool) throws -> LocalToolProcessResult {
+        if isCancelled() { throw CancellationError() }
         guard timeout.isFinite, timeout > 0, timeout <= 300, outputLimit > 0,
               arguments.allSatisfy({ !$0.contains("\0") }), input.count <= 2_000_000 else { throw FrogError.message("Invalid coding-tool request limits.") }
         var descriptors: [Int32] = []
@@ -515,7 +526,7 @@ enum LocalToolProcess {
             }
         }
         while true {
-            try Task.checkCancellation()
+            if isCancelled() { throw CancellationError() }
             guard ContinuousClock.now < deadline else { throw FrogError.message("The coding tool exceeded its time limit. Choose a faster model or try again.") }
             try drain(stdout[0], into: &out, open: &outputOpen)
             try drain(stderr[0], into: &err, open: &errorOpen)
