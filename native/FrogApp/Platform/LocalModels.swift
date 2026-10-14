@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import CryptoKit
 import FrogCore
 import os
 import WhisperKit
@@ -18,6 +19,10 @@ final class LocalModels: ObservableObject {
     typealias Downloader = @Sendable (LocalModelDescriptor, URL, @escaping @Sendable (DownloadProgress) -> Void) async throws -> URL
     /// The bytes free on the disk that holds a folder, or nil when it cannot be told.
     typealias FreeSpaceReader = @Sendable (URL) -> Int64?
+    /// Checks a downloaded model's files: the model, its folder and the folder its
+    /// download returned. It runs off the main actor.
+    typealias FileChecker = @Sendable (LocalModelDescriptor, URL, URL) -> ModelFileCheck
+    enum FileCheckState: Equatable { case checking, finished(ModelFileCheck) }
     static var supported: Bool {
         #if arch(arm64)
         true
@@ -37,6 +42,8 @@ final class LocalModels: ObservableObject {
     @Published private(set) var errors: [String: String] = [:]
     /// What the folder of each downloaded model takes on disk, once measured.
     @Published private(set) var diskUse: [String: Int64] = [:]
+    /// What "Check files" found for a downloaded model, until it is repaired or deleted.
+    @Published private(set) var fileChecks: [String: FileCheckState] = [:]
     @Published private(set) var loaded = Set<String>()
     @Published private(set) var busy = false
     @Published private(set) var root: URL
@@ -49,6 +56,8 @@ final class LocalModels: ObservableObject {
     private let runtime: any LocalInferenceEngine
     private let downloader: Downloader
     private let freeSpace: FreeSpaceReader
+    private let fileChecker: FileChecker
+    private var checking: [String: Task<Void, Never>] = [:]
     private var measuring: Task<Void, Never>?
     private var unloadTask: Task<Void, Never>?
     private var memoryPressure: DispatchSourceMemoryPressure?
@@ -65,8 +74,9 @@ final class LocalModels: ObservableObject {
     }
     func descriptor(_ id: String) -> LocalModelDescriptor? { catalog.first { $0.id == id } }
 
-    init(directory: URL? = nil, runtime: any LocalInferenceEngine = LocalInference(), downloader: @escaping Downloader = LocalInference.download, freeSpace: @escaping FreeSpaceReader = LocalModels.availableCapacity) {
-        self.runtime = runtime; self.downloader = downloader; self.freeSpace = freeSpace
+    init(directory: URL? = nil, runtime: any LocalInferenceEngine = LocalInference(), downloader: @escaping Downloader = LocalInference.download, freeSpace: @escaping FreeSpaceReader = LocalModels.availableCapacity,
+         fileChecker: @escaping FileChecker = { ModelFiles.check($0, folder: $1, installed: $2, contents: true) }) {
+        self.runtime = runtime; self.downloader = downloader; self.freeSpace = freeSpace; self.fileChecker = fileChecker
         let support = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Frog")
         defaultDirectory = support.appendingPathComponent("Models", isDirectory: true)
         storagePreference = support.appendingPathComponent("model-storage.json")
@@ -101,7 +111,7 @@ final class LocalModels: ObservableObject {
         root = location
         installed = Set(catalog.filter { modelURL($0.id) != nil }.map(\.id))
         unfinished = unfinishedDownloads()
-        errors = [:]
+        errors = [:]; fileChecks = [:]
         measureDiskUse()
         onInventoryChanged?()
     }
@@ -197,7 +207,7 @@ final class LocalModels: ObservableObject {
         errors[model.id] = nil; progress[model.id] = DownloadProgress(fraction: 0)
         downloads[model.id] = Task { [weak self] in
             guard let self else { return }
-            defer { self.downloads[model.id] = nil; self.progress[model.id] = nil; self.progressShown[model.id] = nil; self.preparing.remove(model.id); self.discarding.remove(model.id) }
+            defer { self.downloadEnded(model.id) }
             var marked = resuming
             do {
                 try await self.ensureRoom(for: model, in: base)
@@ -205,16 +215,7 @@ final class LocalModels: ObservableObject {
                 try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
                 if !marked { try Data().write(to: marker); marked = true }
                 self.unfinished.insert(model.id)
-                let url = try await self.downloader(model, base) { [weak self] update in
-                    Task { @MainActor [weak self] in
-                        guard let self, self.downloads[model.id] != nil else { return }
-                        self.show(update, for: model.id)
-                    }
-                }
-                try Task.checkCancellation()
-                guard url.path.hasPrefix(base.path + "/") else { throw FrogError.message("Invalid model installation path.") }
-                let relative = String(url.path.dropFirst(base.path.count + 1))
-                try relative.write(to: base.appendingPathComponent("installed.txt"), atomically: true, encoding: .utf8)
+                try await self.fetch(model, into: base)
                 try? FileManager.default.removeItem(at: marker)
                 self.unfinished.remove(model.id)
                 self.installed.insert(model.id)
@@ -229,6 +230,74 @@ final class LocalModels: ObservableObject {
                     self.unfinished = self.unfinishedDownloads()
                 }
                 if !Task.isCancelled { self.errors[model.id] = error.localizedDescription }
+            }
+        }
+    }
+    /// Runs the downloader into a model's folder, with the row's progress, and records
+    /// the installation that it returns.
+    private func fetch(_ model: LocalModelDescriptor, into base: URL) async throws {
+        let url = try await downloader(model, base) { [weak self] update in
+            Task { @MainActor [weak self] in
+                guard let self, self.downloads[model.id] != nil else { return }
+                self.show(update, for: model.id)
+            }
+        }
+        try Task.checkCancellation()
+        guard url.path.hasPrefix(base.path + "/") else { throw FrogError.message("Invalid model installation path.") }
+        let relative = String(url.path.dropFirst(base.path.count + 1))
+        try relative.write(to: base.appendingPathComponent("installed.txt"), atomically: true, encoding: .utf8)
+    }
+    private func downloadEnded(_ id: String) {
+        downloads[id] = nil; progress[id] = nil; progressShown[id] = nil; preparing.remove(id); discarding.remove(id)
+    }
+    /// Checks a downloaded model's files off the main actor; `fileChecks` has the result.
+    func checkFiles(_ id: String) {
+        guard let model = descriptor(id), installed.contains(id), downloads[id] == nil, checking[id] == nil, let url = modelURL(id) else { return }
+        let base = directory(id), root = root, checker = fileChecker
+        fileChecks[id] = .checking
+        checking[id] = Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) { checker(model, base, url) }.value
+            guard let self else { return }
+            self.checking[id] = nil
+            // A deletion, a repair or another model folder makes the result stale.
+            guard self.root == root, self.installed.contains(id), self.fileChecks[id] == .checking else { return }
+            self.fileChecks[id] = .finished(result)
+        }
+    }
+    func waitForFileCheck(_ id: String) async { await checking[id]?.value }
+    /// Fetches again what a check found missing or damaged, into the same folder with
+    /// the normal download. The library skips a file whose recorded commit matches
+    /// without reading it, so damaged files are removed first; the rest is kept. The
+    /// model stays downloaded meanwhile, so its rules keep it, but it does not run.
+    func repair(_ id: String) async throws {
+        guard !busy, residencyHolds.isEmpty, downloads[id] == nil, checking[id] == nil, !changingDirectory else { throw FrogError.message("Wait for the model operation to finish before repairing it.") }
+        guard Self.supported, let model = descriptor(id), installed.contains(id), case .finished(let check) = fileChecks[id], !check.passed else { return }
+        if loaded.contains(id) {
+            busy = true
+            unloadTask?.cancel(); unloadTask = nil
+            loaded = []; await runtime.unload(keepingMetadata: false)
+            busy = false
+        }
+        guard downloads[id] == nil, installed.contains(id) else { return }
+        let base = directory(id)
+        errors[id] = nil; fileChecks[id] = nil; progress[id] = DownloadProgress(fraction: 0)
+        downloads[id] = Task { [weak self] in
+            guard let self else { return }
+            var repaired = false
+            defer {
+                self.downloadEnded(id)
+                if repaired { self.checkFiles(id) }
+            }
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    for path in check.damaged { try ModelFiles.remove(base.appendingPathComponent(path)) }
+                }.value
+                try await self.fetch(model, into: base)
+                repaired = true
+                self.measureDiskUse()
+            } catch {
+                // Cancelling keeps the files: the model is still downloaded.
+                if !Task.isCancelled { self.errors[id] = error.localizedDescription }
             }
         }
     }
@@ -294,9 +363,17 @@ final class LocalModels: ObservableObject {
         }
         try await exclusively(id, waiting: true) { url in
             guard let model = descriptor(id) else { throw FrogError.message("The model is no longer configured.") }
-            try await runtime.prepare(model: model, url: url, residency: { [weak self] ids in await self?.updateResidency(ids) })
+            do { try await runtime.prepare(model: model, url: url, residency: { [weak self] ids in await self?.updateResidency(ids) }) }
+            catch where !(error is CancellationError) && !Task.isCancelled { throw FrogError.message(Self.loadFailure(error, model: model)) }
         }
         try Task.checkCancellation()
+    }
+    /// A model that downloaded completely and does not load may have damaged files.
+    /// The library's own text stays in the message.
+    static func loadFailure(_ error: Error, model: LocalModelDescriptor) -> String {
+        var original = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let last = original.last, !".!?".contains(last) { original += "." }
+        return "Could not load \(model.name): \(original) Its files may be damaged: in Models, choose Check files in its menu."
     }
     private func waitUntilAvailable() async throws {
         guard busy else { try Task.checkCancellation(); return }
@@ -326,7 +403,7 @@ final class LocalModels: ObservableObject {
         loaded = []; await runtime.unload(keepingMetadata: false)
         do { try FileManager.default.removeItem(at: directory(id)) }
         catch CocoaError.fileNoSuchFile { /* Already removed outside Frog. Repair the inventory below. */ }
-        installed.remove(id); unfinished.remove(id); errors[id] = nil; diskUse[id] = nil
+        installed.remove(id); unfinished.remove(id); errors[id] = nil; diskUse[id] = nil; fileChecks[id] = nil
         onInventoryChanged?()
     }
     func unload(keepingMetadata: Bool = false) async {
@@ -355,6 +432,8 @@ final class LocalModels: ObservableObject {
         guard Self.supported else { throw FrogError.message("Built-in local models require Apple silicon.") }
         guard !busy else { throw FrogError.message("A local model is already processing.") }
         guard descriptor(id) != nil, let url = modelURL(id) else { throw FrogError.message("Download \(descriptor(id)?.name ?? id) in Models first.") }
+        // Only a repair downloads into the folder of a downloaded model.
+        guard downloads[id] == nil else { throw FrogError.message("\(descriptor(id)?.name ?? id) is being repaired. Try again once its download has finished.") }
         busy = true; unloadTask?.cancel(); return url
     }
     private func release() {
@@ -475,6 +554,110 @@ final class DownloadMeter: @unchecked Sendable {
     }
 }
 
+/// What checking a downloaded model's files found, as paths relative to its folder.
+struct ModelFileCheck: Equatable, Sendable {
+    var missing: [String] = []
+    var damaged: [String] = []
+    var passed: Bool { missing.isEmpty && damaged.isEmpty }
+    /// "2 files missing, 1 damaged: tokenizer.json, config.json, model.safetensors"
+    var summary: String {
+        guard !passed else { return "All files are present and match the download." }
+        var counts: [String] = []
+        if !missing.isEmpty { counts.append(missing.count == 1 ? "1 file missing" : "\(missing.count) files missing") }
+        if !damaged.isEmpty { counts.append(damaged.count == 1 ? (missing.isEmpty ? "1 file damaged" : "1 damaged") : (missing.isEmpty ? "\(damaged.count) files damaged" : "\(damaged.count) damaged")) }
+        let files = missing + damaged
+        return counts.joined(separator: ", ") + ": " + files.prefix(3).map(Self.name).joined(separator: ", ") + (files.count > 3 ? "…" : "")
+    }
+    /// A path as the repository on Hugging Face has it, without `models/<owner>/<name>/`.
+    private static func name(_ path: String) -> String {
+        let parts = path.split(separator: "/")
+        return parts.first == "models" && parts.count > 3 ? parts.dropFirst(3).joined(separator: "/") : path
+    }
+}
+
+/// Checks a downloaded model's files without the network. The Hugging Face clients
+/// of swift-transformers and WhisperKit record each file they fetch in
+/// `<repository>/.cache/huggingface/download/<file>.metadata`: commit, etag and time.
+/// The etag of a file stored by LFS, the weights among them, is the SHA-256 of its
+/// bytes. The libraries' own offline check stops at the first file that differs and
+/// does not notice a missing one, so the same records are read here.
+enum ModelFiles {
+    /// The files that a runtime cannot load without, relative to the folder its download returns.
+    static func required(_ model: LocalModelDescriptor) -> [String] {
+        switch model.backend {
+        case .mlx: ["config.json", "tokenizer.json", "tokenizer_config.json"]
+        case .parakeet: ["Preprocessor", "Encoder", "Decoder", "JointDecision"].map { "\($0).mlmodelc/coremldata.bin" } + ["parakeet_vocab.json"]
+        case .whisperKit: ["AudioEncoder", "TextDecoder", "MelSpectrogram"].map { "\($0).mlmodelc/coremldata.bin" }
+        }
+    }
+
+    /// Missing: a required file, or a file that the download recorded, is not there.
+    /// Damaged: a required file is empty, or, when `contents` is set, the bytes of an
+    /// LFS file no longer have the hash recorded for it. Reading every byte takes a
+    /// few seconds for a model of gigabytes; without `contents` the check is instant.
+    static func check(_ model: LocalModelDescriptor, folder: URL, installed: URL, contents: Bool) -> ModelFileCheck {
+        let base = folder.standardizedFileURL.path, installedPath = installed.standardizedFileURL.path
+        let prefix = installedPath.hasPrefix(base + "/") ? String(installedPath.dropFirst(base.count + 1)) + "/" : ""
+        var missing = Set<String>(), damaged = Set<String>()
+        func size(_ path: String) -> Int64? {
+            guard let values = try? folder.appendingPathComponent(path).resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]), values.isRegularFile == true else { return nil }
+            return Int64(values.fileSize ?? 0)
+        }
+        for name in required(model) {
+            switch size(prefix + name) { case nil: missing.insert(prefix + name); case 0: damaged.insert(prefix + name); default: break }
+        }
+        if model.backend == .mlx {
+            let weights = ((try? FileManager.default.contentsOfDirectory(atPath: installedPath)) ?? []).filter { $0.hasSuffix(".safetensors") }
+            if weights.isEmpty { missing.insert(prefix + "*.safetensors") }
+            for file in weights where size(prefix + file) == 0 { damaged.insert(prefix + file) }
+        }
+        let records = ".cache/huggingface/download/", suffix = ".metadata"
+        for case let path as String in FileManager.default.enumerator(atPath: base) ?? NSEnumerator() where path.hasSuffix(suffix) {
+            // "models/<owner>/<name>/.cache/huggingface/download/<file>.metadata" records "models/<owner>/<name>/<file>".
+            guard let range = path.range(of: records), range.lowerBound == path.startIndex || path[path.index(before: range.lowerBound)] == "/" else { continue }
+            let target = String(path[..<range.lowerBound]) + String(path[range.upperBound...].dropLast(suffix.count))
+            guard let record = try? String(contentsOf: folder.appendingPathComponent(path), encoding: .utf8) else { continue }
+            let lines = record.components(separatedBy: .newlines)
+            guard lines.count >= 3 else { continue }
+            guard let length = size(target) else { missing.insert(target); continue }
+            let etag = lines[1].trimmingCharacters(in: .whitespaces)
+            if contents, isSHA256(etag), length == 0 || sha256(folder.appendingPathComponent(target)) != etag { damaged.insert(target) }
+        }
+        return ModelFileCheck(missing: missing.sorted(), damaged: damaged.subtracting(missing).sorted())
+    }
+
+    /// The check at the end of a download, before it counts as installed. Empty files
+    /// are removed, so that resuming the download fetches them again.
+    static func requireComplete(_ model: LocalModelDescriptor, folder: URL, installed: URL) throws -> URL {
+        try Task.checkCancellation()
+        let check = check(model, folder: folder, installed: installed, contents: false)
+        guard !check.passed else { return installed }
+        for path in check.damaged { try remove(folder.appendingPathComponent(path)) }
+        throw FrogError.message("The download of \(model.name) lacks files that it needs (\(check.summary)). Resume the download to fetch them; if this happens again, the source on Hugging Face may not include them.")
+    }
+
+    static func remove(_ file: URL) throws {
+        do { try FileManager.default.removeItem(at: file) }
+        catch CocoaError.fileNoSuchFile { /* Already gone. */ }
+    }
+
+    private static func isSHA256(_ text: String) -> Bool {
+        text.count == 64 && text.allSatisfy { $0.isHexDigit && !$0.isUppercase }
+    }
+
+    private static func sha256(_ file: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while true {
+            let chunk = autoreleasepool { try? handle.read(upToCount: 4 << 20) }
+            guard let chunk, !chunk.isEmpty else { break }
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+}
+
 protocol LocalInferenceEngine: Actor {
     var loadedIDs: Set<String> { get }
     func prepare(model: LocalModelDescriptor, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws
@@ -540,7 +723,7 @@ actor LocalInference: LocalInferenceEngine {
     }
     private static func fetch(_ model: LocalModelDescriptor, base: URL, progress: @escaping @Sendable (DownloadProgress) -> Void) async throws -> URL {
         #if arch(arm64)
-        if model.backend == .parakeet { return try await ParakeetRuntime.download(model, base: base, progress: progress) }
+        if model.backend == .parakeet { return try ModelFiles.requireComplete(model, folder: base, installed: try await ParakeetRuntime.download(model, base: base, progress: progress)) }
         let meter = DownloadMeter(folder: base, expected: model.downloadBytes)
         if model.backend == .whisperKit {
             // WhisperKit appends each file to a partial file in the model folder, so
@@ -567,7 +750,9 @@ actor LocalInference: LocalInferenceEngine {
             await kit.unloadModels()
             return url
         }
-        return try await HubApi.modelFolder(base).snapshot(from: model.repository, matching: LocalModelDescriptor.mlxDownloadPatterns) { progress(meter.snapshot($0)) }
+        let folder = try await HubApi.modelFolder(base).snapshot(from: model.repository, matching: LocalModelDescriptor.mlxDownloadPatterns) { progress(meter.snapshot($0)) }
+        // WhisperKit loads its model above; the other runtimes find a missing file only at first use.
+        return try ModelFiles.requireComplete(model, folder: base, installed: folder)
         #else
         throw FrogError.message("Built-in local models require Apple silicon.")
         #endif

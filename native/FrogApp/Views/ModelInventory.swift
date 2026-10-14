@@ -62,6 +62,8 @@ struct ModelInventory: View {
                                 Button("Cancel") { model.localModels.cancelDownload(item.id) }.controlSize(.small)
                             } else if installed {
                                 Menu {
+                                    Button("Check files") { model.localModels.checkFiles(item.id) }
+                                        .disabled(model.localModels.fileChecks[item.id] == .checking)
                                     Button("Delete download…", role: .destructive) { deleting = item }
                                         .disabled(model.localModels.busy || model.dictation.active)
                                 } label: { Image(systemName: "ellipsis").frame(width: 26).modifier(CompactActionSurface()) }
@@ -78,11 +80,29 @@ struct ModelInventory: View {
                             }
                         }
                         ModelDownloadSummary(progress: model.localModels.progress[item.id], preparing: model.localModels.preparing.contains(item.id))
+                        if installed, model.localModels.progress[item.id] == nil, let check = model.localModels.fileChecks[item.id] { fileCheck(check, item: item) }
                         if let error = model.localModels.errors[item.id] { Text(error).font(.caption).foregroundStyle(FrogStyle.warning).textSelection(.enabled) }
                     }.padding(.vertical, 10).padding(.horizontal, 8)
                     if item.id != items.last?.id { Divider().opacity(0.5) }
                 }
                 if items.isEmpty { Text(L10n.text(installed ? "No downloaded models" : "No additional models")).font(.system(size: 11)).foregroundStyle(.secondary).padding(14).frame(maxWidth: .infinity, alignment: .leading) }
+            }
+        }
+    }
+    /// What "Check files" found: a missing or damaged file can be fetched again.
+    @ViewBuilder private func fileCheck(_ state: LocalModels.FileCheckState, item: LocalModelDescriptor) -> some View {
+        switch state {
+        case .checking:
+            HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Checking files…").font(.system(size: 11)).foregroundStyle(FrogStyle.muted) }
+        case .finished(let check) where check.passed:
+            Label(check.summary, systemImage: "checkmark.seal").font(.caption).foregroundStyle(FrogStyle.muted)
+        case .finished(let check):
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Label(check.summary, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(FrogStyle.warning).textSelection(.enabled)
+                Spacer()
+                Button("Repair") { Task { do { try await model.localModels.repair(item.id) } catch { model.report(error) } } }
+                    .controlSize(.small).disabled(model.localModels.busy || model.dictation.active)
+                    .help("Download the missing or damaged files again into the same folder")
             }
         }
     }
