@@ -182,6 +182,36 @@ final class UsageParsingTests: XCTestCase {
         XCTAssertEqual(limits.current(now: now.addingTimeInterval(3600)).limits.count, 0)
     }
 
+    func testLoggedCodexLimitsAreAsOldAsTheirMainPlanSnapshot() async throws {
+        let root = try fixtureDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let folder = root.appendingPathComponent("sessions")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
+        let main = now.addingTimeInterval(-3600), model = now.addingTimeInterval(-300)
+        func snapshot(at date: Date, _ limits: [String: Any]) throws -> Data {
+            try jsonLine(["timestamp": ISO8601DateFormatter().string(from: date), "type": "event_msg",
+                          "payload": ["type": "token_count", "rate_limits": limits]])
+        }
+        let window = ["used_percent": 40, "window_minutes": 300, "resets_at": now.addingTimeInterval(3600).timeIntervalSince1970]
+        var data = try snapshot(at: main, ["primary": window, "plan_type": "plus"])
+        // A model with its own allowance logs its own limit id, later than the main plan's.
+        data += try snapshot(at: model, ["limit_id": "codex_fixture_model", "limit_name": "Fixture model", "primary": window])
+        try data.write(to: folder.appendingPathComponent("rollout.jsonl"))
+        let scanned = await CodexScanner(root: root).scan()
+        let limits = try XCTUnwrap(scanned.limits)
+        XCTAssertEqual(limits.usage.limits.count, 2)
+        XCTAssertEqual(limits.asOf, main, "A newer live reading of the main plan must not lose to an older logged one")
+
+        let other = try fixtureDirectory()
+        defer { try? FileManager.default.removeItem(at: other) }
+        try FileManager.default.createDirectory(at: other.appendingPathComponent("sessions"), withIntermediateDirectories: true)
+        try snapshot(at: model, ["limit_id": "codex_fixture_model", "primary": window])
+            .write(to: other.appendingPathComponent("sessions/rollout.jsonl"))
+        let alone = await CodexScanner(root: other).scan()
+        XCTAssertEqual(alone.limits?.asOf, model, "Without a main plan snapshot the newest one dates the set")
+    }
+
     func testCodexCacheBoundsAndLegacyTotalsAreScopedToSession() async throws {
         let root = try fixtureDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

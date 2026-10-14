@@ -119,7 +119,9 @@ actor CodexScanner {
             usage.limits += codexWindows(snapshot.json, prefix: "codex_\(id)", label: name,
                                          logged: true, now: snapshot.date)
         }
-        let asOf = limits.values.map(\.date).max() ?? creditBalance?.asOf ?? .distantPast
+        // Dated by the main plan's snapshot, which the menu bar shows and a live reading replaces.
+        // Another limit id logged later says nothing about how old the main windows are.
+        let asOf = limits["codex"]?.date ?? creditBalance?.asOf ?? limits.values.map(\.date).max() ?? .distantPast
         let combined = CodexLimits(asOf: asOf, usage: usage, plan: main?.plan, live: false, credits: creditBalance)
         return (Array(records.values), combined.hasData ? combined : nil, found)
     }
