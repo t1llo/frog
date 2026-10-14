@@ -1068,12 +1068,20 @@ final class AppModel: ObservableObject {
             if pressed && configuration.preferences.shortcutsEnabled { performSystemAction(rule) }
         case .audio:
             let mode = rule.action?.recordingMode ?? configuration.preferences.workflowSettings.recordingMode
-            switch RecordingShortcut.action(mode: mode, pressed: pressed, target: id, active: dictation.ruleID) {
+            switch RecordingShortcut.action(mode: mode, pressed: pressed, target: id, active: dictation.ruleID, finishing: dictation.finishing) {
             case .start: startDictation(rule, shortcutHeld: true)
             case .stop: dictation.stop(models: localModels)
+            case .busy: showPressWhileFinishing()
             case nil: break
             }
         }
+    }
+
+    /// A recording starts only after the last one was delivered. Without its popup, the processing
+    /// indicator says why the press did nothing.
+    private func showPressWhileFinishing() {
+        guard !dictation.showPressWhileFinishing(), registerShortcuts, configuration.preferences.showProcessingIndicator else { return }
+        processingIndicator.note(dictation.phase == .correcting ? "Still cleaning up…" : "Still transcribing…")
     }
 
     private func launchApplication(_ rule: Rule) {

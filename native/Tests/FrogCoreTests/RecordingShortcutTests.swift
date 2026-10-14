@@ -16,4 +16,12 @@ final class RecordingShortcutTests: XCTestCase {
         XCTAssertEqual(RecordingShortcut.action(mode: .toggle, pressed: true, target: rule, active: rule), .stop)
         XCTAssertNil(RecordingShortcut.action(mode: .toggle, pressed: true, target: other, active: rule))
     }
+    func testAPressWhileTheLastRecordingIsFinishedIsReportedAndItsReleaseStillIgnored() {
+        let rule = UUID(), other = UUID()
+        for mode in [RecordingMode.hold, .toggle] {
+            XCTAssertEqual(RecordingShortcut.action(mode: mode, pressed: true, target: rule, active: rule, finishing: true), .busy)
+            XCTAssertEqual(RecordingShortcut.action(mode: mode, pressed: true, target: other, active: rule, finishing: true), .busy)
+            XCTAssertNil(RecordingShortcut.action(mode: mode, pressed: false, target: other, active: rule, finishing: true))
+        }
+    }
 }

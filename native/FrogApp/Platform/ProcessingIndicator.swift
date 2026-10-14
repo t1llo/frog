@@ -12,6 +12,15 @@ final class ProcessingIndicator {
         // Flash once at the start; progress updates must not keep bringing it back.
         if working && processing { return }
         processing = working
+        present(symbol: working ? nil : (failed ? "exclamationmark.circle" : "checkmark"), warning: failed,
+                text: working ? "Working…" : (failed ? "Check Frog for details" : (message.hasPrefix("Cancelled") ? "Cancelled" : "Done")))
+    }
+
+    /// A short note that ends nothing, such as a press Frog could not act on yet.
+    func note(_ text: String) { present(symbol: "hourglass", warning: false, text: text) }
+
+    /// `symbol` nil shows a spinner.
+    private func present(symbol: String?, warning: Bool, text: String) {
         dismissal?.cancel()
         if panel == nil {
             let created = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 200, height: 36),
@@ -29,10 +38,9 @@ final class ProcessingIndicator {
         guard let panel else { return }
         panel.alphaValue = 1
         panel.contentView = NSHostingView(rootView: HStack(spacing: 8) {
-            if working { ProgressView().controlSize(.small) }
-            else { Image(systemName: failed ? "exclamationmark.circle" : "checkmark").foregroundStyle(failed ? .orange : FrogStyle.accent) }
-            Text(working ? "Working…" : (failed ? "Check Frog for details" : (message.hasPrefix("Cancelled") ? "Cancelled" : "Done")))
-                .font(.system(size: 11, weight: .medium)).lineLimit(1)
+            if let symbol { Image(systemName: symbol).foregroundStyle(warning ? .orange : FrogStyle.accent) }
+            else { ProgressView().controlSize(.small) }
+            Text(text).font(.system(size: 11, weight: .medium)).lineLimit(1)
         }.frame(width: 200, height: 36).frogPanel(corner: 18))
         if !panel.isVisible, let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main {
             panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - 100, y: screen.visibleFrame.minY + 24))

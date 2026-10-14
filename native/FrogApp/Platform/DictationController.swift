@@ -22,6 +22,8 @@ final class DictationController: ObservableObject {
     let microphoneMeter = MicrophoneMeter()
     @Published private(set) var hint = ""
     @Published private(set) var preparationMessage = "Preparing…"
+    /// A shortcut press came while this recording was still being finished, and started nothing.
+    @Published private(set) var pressedWhileFinishing = false
     private(set) var ruleID: UUID?
     private var recorder: (any DictationRecording)?
     private let makeRecorder: () -> any DictationRecording
@@ -76,14 +78,16 @@ final class DictationController: ObservableObject {
     var localCleanupModel: ((Rule) throws -> String?)?
     var externalTranscription: (([Float], Rule) async throws -> String)?
     var active: Bool { phase != .idle }
+    /// Transcribing or cleaning up: a new recording cannot start before delivery.
+    var finishing: Bool { phase == .transcribing || phase == .correcting }
     /// The popup's one-line account of the session.
     var statusText: String {
         switch phase {
         case .preparing: preparationMessage
         // The capture session starts after the microphone opens; words spoken before it runs are lost.
         case .recording: microphoneDelivering ? "Listening…" : "Starting microphone…"
-        case .transcribing: "Transcribing…"
-        case .correcting: "Cleaning up transcript…"
+        case .transcribing: pressedWhileFinishing ? "Still transcribing…" : "Transcribing…"
+        case .correcting: pressedWhileFinishing ? "Still cleaning up transcript…" : "Cleaning up transcript…"
         case .failed: "Transcription failed"
         case .idle: "Dictation"
         }
@@ -136,7 +140,7 @@ final class DictationController: ObservableObject {
         microphoneMeter.reset()
         previewPrefix = ""; previewDraft = ""
         transcript = DictationTranscript(); transcriptPublished = false
-        phase = .preparing
+        phase = .preparing; pressedWhileFinishing = false
         preparationMessage = "Checking microphone access…"
         let shortcut = rule.hotkey.map(HotkeyManager.display) ?? "Stop button"
         // A hold recording that its key did not start ends when the key is pressed and released.
@@ -351,6 +355,14 @@ final class DictationController: ObservableObject {
         previewInference = inference; previewSnapshot = (audio.count, completes)
         defer { if self.token == token { previewInference = nil; previewSnapshot = nil } }
         try await inference.value
+    }
+
+    /// Says in the popup that a press started nothing because this recording is still being
+    /// finished. False when no popup shows it, so the caller can say it another way.
+    func showPressWhileFinishing() -> Bool {
+        guard finishing else { return false }
+        pressedWhileFinishing = true
+        return panel?.isVisible == true
     }
 
     func stop(models: LocalModels) {

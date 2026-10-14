@@ -287,6 +287,35 @@ final class DictationControllerTests: XCTestCase {
         XCTAssertEqual(cleanupCalls, 0)
         await models.unload()
     }
+    func testPressWhileTranscribingSaysSoUntilTheNextRecording() async throws {
+        let controller = DictationController(makeRecorder: { FixtureRecording() }, authorize: { true }, copy: { _ in },
+                                             monitorKeys: false, inputDevices: { [] }, paste: {}, presentsPopup: false)
+        let models = LocalModels(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        var release: CheckedContinuation<Void, Never>?
+        controller.externalTranscription = { _, _ in await withCheckedContinuation { release = $0 }; return "Words." }
+        var rule = Rule.dictationPreset
+        rule.action?.audioModelID = "fixture-speech"; rule.action?.audioProviderID = UUID()
+        rule.action?.showRecordingPopup = false
+        XCTAssertFalse(controller.showPressWhileFinishing(), "Nothing is being finished")
+        controller.start(rule: rule, preferences: WorkflowPreferences(), models: models)
+        await controller.waitForWork()
+        XCTAssertFalse(controller.finishing)
+        controller.stop(models: models)
+        while release == nil { await Task.yield() }
+        XCTAssertTrue(controller.finishing)
+        XCTAssertEqual(controller.statusText, "Transcribing…")
+        XCTAssertFalse(controller.showPressWhileFinishing(), "Without a popup the caller says it")
+        XCTAssertEqual(controller.statusText, "Still transcribing…")
+        release?.resume()
+        await controller.waitForWork()
+        XCTAssertEqual(controller.phase, .idle)
+        controller.start(rule: rule, preferences: WorkflowPreferences(), models: models)
+        await controller.waitForWork()
+        XCTAssertEqual(controller.phase, .recording)
+        XCTAssertFalse(controller.pressedWhileFinishing)
+        controller.cancel()
+    }
+
     func testCancelledTranscriptionCannotChangeANewerRecordingOrRunCleanup() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
