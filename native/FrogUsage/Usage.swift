@@ -294,21 +294,19 @@ private func isoFormatter(_ options: ISO8601DateFormatter.Options) -> ISO8601Dat
 
 // MARK: - Formatting
 
-/// "3:40pm", "Thu 9am", "Oct 4".
-func resetClock(_ date: Date?) -> String {
+/// "15:40" today, "Thu 09:00" within six days before or after, "4 Oct" further away, each
+/// written the way the person's locale and clock setting write it.
+func resetClock(_ date: Date?, now: Date = Date(), locale: Locale = .autoupdatingCurrent) -> String {
     guard let date else { return "" }
-    let f = DateFormatter()
-    f.locale = Locale(identifier: "en_US")
-    let time = Calendar.current.component(.minute, from: date) == 0 ? "ha" : "h:mma"
-    if Calendar.current.isDateInToday(date) { f.dateFormat = time }
-    else if date.timeIntervalSinceNow < 6 * 86_400 { f.dateFormat = "EEE \(time)" }
-    else { f.dateFormat = "MMM d" }
-    return f.string(from: date).replacingOccurrences(of: "AM", with: "am").replacingOccurrences(of: "PM", with: "pm")
+    if Calendar.current.isDate(date, inSameDayAs: now) { return clock(date, locale: locale) }
+    let style = Date.FormatStyle(locale: locale)
+    if abs(date.timeIntervalSince(now)) < 6 * 86_400 { return date.formatted(style.weekday(.abbreviated).hour().minute()) }
+    return date.formatted(style.month(.abbreviated).day())
 }
 
-func clock(_ d: Date) -> String {
-    let f = DateFormatter(); f.timeStyle = .short; f.dateStyle = .none
-    return f.string(from: d)
+/// The time of day as `resetClock` writes it, so one sentence never mixes two clock formats.
+func clock(_ d: Date, locale: Locale = .autoupdatingCurrent) -> String {
+    d.formatted(Date.FormatStyle(locale: locale).hour().minute())
 }
 
 func money(_ cents: Double) -> String { String(format: "$%.2f", cents / 100) }
