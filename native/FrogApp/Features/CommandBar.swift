@@ -531,7 +531,8 @@ import SwiftUI
         for file in files { addFile(file) }
         if let chosen, let kept, recordsByID[kept.id] == nil {
             addFile(kept)
-            fileRecords.insert(fileRecords.removeLast(), at: min(chosen, fileRecords.count - 1))
+            let record = fileRecords.removeLast()
+            fileRecords.insert(record, at: min(chosen, fileRecords.count))
         }
         if recent { recentFiles = Array(files.prefix(8)) }
         updateResults()

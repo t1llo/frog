@@ -155,6 +155,35 @@ import FrogCore
         XCTAssertEqual(bar.selection, row)
     }
 
+    func testAChosenFileFollowsAShorterReportAndOutlastsOneThatFindsNothing() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var config = Configuration(); config.preferences.windowSwitcherEnabled = false
+        config.preferences.setFeature(.commandBar, enabled: true)
+        try ConfigurationStore(directory: root).save(config)
+        let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
+        defer { pasteboard.releaseGlobally() }
+        let model = AppModel(dataDirectory: root, registerShortcuts: false, readKey: { _ in nil },
+                             clipboardHistoryStore: ClipboardHistoryStore(pasteboard: pasteboard))
+        defer { model.shutdown() }
+        let bar = CommandBar(model: model, pasteboard: pasteboard, captureTarget: { nil }, fileSearch: CommandFileStub(),
+                             loadSettings: { [] }, loadApplications: { [] })
+        defer { bar.stop() }
+        let files = (0..<4).map { SearchRecord(id: "file:/fixture/Quarterly fixture \($0).txt", title: "Quarterly fixture \($0).txt", subtitle: "Documents", symbol: "doc") }
+        bar.prepareResults(model, frontPID: nil)
+        bar.query = "quarterly fixture"
+        bar.listFiles(files, recent: false)
+        bar.selection = try XCTUnwrap(bar.results.firstIndex(of: files[3]))
+        // A report with fewer rows than the chosen file's place lists it after all of them.
+        bar.listFiles([files[0]], recent: false)
+        XCTAssertEqual(bar.results.map(\.id), [files[0], files[3]].map(\.id))
+        XCTAssertEqual(bar.results[bar.selection].id, files[3].id)
+        // The search that begins with the text can report nothing while the one that contains it still gathers.
+        bar.listFiles([], recent: false)
+        XCTAssertEqual(bar.results.map(\.id), [files[3].id])
+        XCTAssertEqual(bar.results[bar.selection].id, files[3].id)
+    }
+
     func testAnApplicationIsFoundUnderItsFinderNameAndItsBundleName() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
