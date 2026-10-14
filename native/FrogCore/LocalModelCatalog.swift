@@ -70,6 +70,9 @@ public struct LocalModelDescriptor: Codable, Identifiable, Equatable, Sendable {
     }
     public static func find(_ id: String) -> Self? { catalog.first { $0.id == id } }
     public static let defaultAudioModelID = "whisper-large-v3-turbo-626mb"
+    /// The text model that configurations from before per-rule model choices fall back to.
+    /// Changing it would change how those configurations migrate.
+    public static let legacyTextModelID = "qwen-0.6b"
     public static var defaultCatalog: [Self] {
         catalog.filter { $0.kind == .text || ["whisper-tiny", "whisper-small-216mb", "parakeet-v3", defaultAudioModelID].contains($0.id) }
     }

@@ -88,7 +88,7 @@ extension Configuration {
             if rules[index].providerID == nil, rules[index].category == .audio {
                 if installed.contains(workflow.cleanupModelID) { rules[index].action?.localTextModelID = workflow.cleanupModelID }
             } else if rules[index].providerID == nil, workflow.effectiveTextSource == .frog {
-                let id = workflow.defaultLocalTextModelID ?? "qwen-0.6b"
+                let id = workflow.defaultLocalTextModelID ?? LocalModelDescriptor.legacyTextModelID
                 if installed.contains(id) { rules[index].action?.localTextModelID = id }
             } else if let provider = providers.first(where: { $0.id == (rules[index].providerID ?? defaultProviderID) }) {
                 rules[index].providerID = provider.id

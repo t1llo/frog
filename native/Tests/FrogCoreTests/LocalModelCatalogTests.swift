@@ -12,6 +12,12 @@ final class LocalModelCatalogTests: XCTestCase {
         XCTAssertEqual(audio.filter(\.isRecommended).map(\.id), ["parakeet-v3", configuration.preferences.workflowSettings.audioModelID])
         XCTAssertEqual(configuration.modelInventory(installed: []).filter { $0.kind == .text }, LocalModelDescriptor.catalog.filter { $0.kind == .text })
     }
+    func testOlderConfigurationsFallBackToTheSameCatalogTextModel() {
+        // Configurations saved before per-rule model choices migrate with this exact model.
+        XCTAssertEqual(LocalModelDescriptor.legacyTextModelID, "qwen-0.6b")
+        XCTAssertEqual(LocalModelDescriptor.find(LocalModelDescriptor.legacyTextModelID)?.kind, .text)
+        XCTAssertEqual(WorkflowPreferences().cleanupModelID, LocalModelDescriptor.legacyTextModelID)
+    }
     func testOriginalSpeechSelectionsRoundTripAndRemainRecoverable() throws {
         for id in ["whisper-tiny", "whisper-base", "whisper-small", "whisper-medium", "whisper-large-v3", "whisper-large-v3-turbo", "parakeet-v3", "parakeet-v2"] {
             var configuration = Configuration()

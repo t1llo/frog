@@ -39,7 +39,7 @@ public struct WorkflowPreferences: Codable, Equatable, Sendable {
     public static let speechLanguages = ["auto", "en", "de", "fr", "es", "it", "pt", "nl", "pl", "uk", "ru", "ja", "zh", "ko", "ar", "hi", "tr"]
     public enum TextSource: String, Codable, CaseIterable, Sendable { case provider, frog }
     public var audioModelID = LocalModelDescriptor.defaultAudioModelID
-    public var cleanupModelID = "qwen-0.6b"
+    public var cleanupModelID = LocalModelDescriptor.legacyTextModelID
     public var defaultLocalTextModelID: String?
     public var recordingMode: RecordingMode = .toggle
     public var output: TranscriptOutput = .copy

@@ -40,6 +40,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Frog 1.0.0 to 1.0.2 posted notifications; remove any they left in Notification Center.
         DesktopNotifications.clearPreviousNotifications()
         NSApplication.shared.setActivationPolicy(.accessory)
         model.openSettings = { [weak self] in self?.showWindow() }

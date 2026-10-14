@@ -985,7 +985,7 @@ final class AppModel: ObservableObject {
     }
 
     func resolved(_ rule: Rule) throws -> ProviderConfiguration {
-        if let id = rule.action?.localTextModelID ?? (configuration.explicitRuleModels != true && rule.providerID == nil && configuration.preferences.workflowSettings.effectiveTextSource == .frog ? configuration.preferences.workflowSettings.defaultLocalTextModelID ?? "qwen-0.6b" : nil),
+        if let id = rule.action?.localTextModelID ?? (configuration.explicitRuleModels != true && rule.providerID == nil && configuration.preferences.workflowSettings.effectiveTextSource == .frog ? configuration.preferences.workflowSettings.defaultLocalTextModelID ?? LocalModelDescriptor.legacyTextModelID : nil),
            let model = configuration.localModel(id) {
             return ProviderConfiguration(id: Self.localProviderID, name: model.name, kind: .compatible, model: id)
         }
