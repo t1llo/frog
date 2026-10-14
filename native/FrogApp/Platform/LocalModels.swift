@@ -354,6 +354,9 @@ actor LocalInference: LocalInferenceEngine {
             return "A file of \(model.name) is missing from \(model.repository) on Hugging Face. The repository may have been renamed or removed."
         case Hub.HubClientError.httpStatusCode(429): return limited
         case Hub.HubClientError.downloadError(let text) where text.hasPrefix("Rate limited"): return limited
+        // Any other download error is a request that got no answer, the file list
+        // first of all: the client passes it on as the text of its URL error only.
+        case Hub.HubClientError.downloadError: return offline
         default: break
         }
         #endif

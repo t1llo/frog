@@ -369,6 +369,10 @@ final class LocalModelsTests: XCTestCase {
         #if arch(arm64)
         XCTAssertEqual(message(HubApi.EnvironmentError.offlineModeError("Repository not available locally")), offline)
         XCTAssertEqual(message(Hub.HubClientError.networkError(URLError(.timedOut))), offline)
+        // What a download started offline throws: the file list is requested first,
+        // and the hub client passes on only the text of the URL error behind it.
+        let noConnection = URLError(.notConnectedToInternet, userInfo: [NSLocalizedDescriptionKey: "The Internet connection appears to be offline."])
+        XCTAssertEqual(message(Hub.HubClientError.downloadError(noConnection.localizedDescription)), offline)
         let gated = message(Hub.HubClientError.authorizationRequired)
         XCTAssertTrue(gated.contains(model.repository) && !gated.contains("token"), gated)
         XCTAssertTrue(message(Hub.HubClientError.fileNotFound("\(model.repository)@main/model.safetensors")).contains(model.repository))
