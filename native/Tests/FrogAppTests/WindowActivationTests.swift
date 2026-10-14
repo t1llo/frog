@@ -36,7 +36,7 @@ final class WindowActivationTests: XCTestCase {
         events = []; current = true
         let same = await WindowActivation.perform(raise: { events.append("raise"); return true },
             request: { events.append("request"); return true }, bringForward: { events.append("forward"); return true },
-            isFrontmost: { true }, prepare: { current = false; return true }, isCurrent: { current },
+            isFrontmost: { true }, expectsAnother: { current = false; return false }, prepare: { true }, isCurrent: { current },
             raiseAfterRequest: { events.append("finish"); return true }, pause: {})
         XCTAssertFalse(same)
         XCTAssertEqual(events, [])
