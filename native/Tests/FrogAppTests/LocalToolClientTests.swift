@@ -396,6 +396,24 @@ final class LocalToolClientTests: XCTestCase {
         for run in runs { _ = try? await run.value }
     }
 
+    func testSilentToolRarelyWakesItsWaitingThread() async throws {
+        let root = try directory()
+        let tool = try executable("/bin/sleep 1", in: root)
+        func systemCalls() -> Int32 {
+            var info = task_events_info()
+            var count = mach_msg_type_number_t(MemoryLayout<task_events_info>.size / MemoryLayout<integer_t>.size)
+            _ = withUnsafeMutablePointer(to: &info) {
+                $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_EVENTS_INFO), $0, &count) }
+            }
+            return info.syscalls_unix
+        }
+        let before = systemCalls()
+        let result = try await LocalToolProcess.run(executable: tool, arguments: [], environment: [:], directory: root)
+        XCTAssertEqual(result.status, 0)
+        // A wait that woke every 5 ms made about 700 system calls in this second; growing the wait makes about 150.
+        XCTAssertLessThan(systemCalls() - before, 400)
+    }
+
     func testErrorsNeverExposeRawStderrOrStdoutAndModelListIsValidated() {
         let result = LocalToolProcessResult(stdout: Data("private prompt".utf8), stderr: Data("401 Bearer secret /Users/private".utf8), status: 1)
         let error = LocalToolOutput.failure(result, kind: .claudeCode).localizedDescription

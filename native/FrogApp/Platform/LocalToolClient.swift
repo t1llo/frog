@@ -525,9 +525,13 @@ enum LocalToolProcess {
                 data.append(contentsOf: buffer.prefix(count))
             }
         }
+        // Readiness wakes the loop for output and stdin room; the timeout serves exit, cancellation
+        // and the deadline. It stays short while the tool talks and grows to 100 ms while it is silent.
+        var idleWait: Int32 = 5
         while true {
             if isCancelled() { throw CancellationError() }
             guard ContinuousClock.now < deadline else { throw FrogError.message("The coding tool exceeded its time limit. Choose a faster model or try again.") }
+            let before = (out.count, err.count, offset, outputOpen, errorOpen, inputClosed)
             try drain(stdout[0], into: &out, open: &outputOpen)
             try drain(stderr[0], into: &err, open: &errorOpen)
             if !inputClosed {
@@ -549,12 +553,14 @@ enum LocalToolProcess {
                 return .init(stdout: out, stderr: err, status: status)
             }
             if result == -1, errno != EINTR { throw POSIXError(.ECHILD) }
+            let progressed = before != (out.count, err.count, offset, outputOpen, errorOpen, inputClosed)
+            idleWait = progressed ? 5 : min(idleWait * 2, 100)
             // Readiness avoids adding a polling interval for every stdin chunk.
             // Ignore EOF descriptors so a child that closes output cannot cause a busy loop.
             var waiting = [pollfd(fd: outputOpen ? stdout[0] : -1, events: Int16(POLLIN), revents: 0),
                            pollfd(fd: errorOpen ? stderr[0] : -1, events: Int16(POLLIN), revents: 0),
                            pollfd(fd: inputClosed ? -1 : stdin[1], events: Int16(POLLOUT), revents: 0)]
-            _ = poll(&waiting, nfds_t(waiting.count), 5)
+            _ = poll(&waiting, nfds_t(waiting.count), idleWait)
         }
     }
 }
