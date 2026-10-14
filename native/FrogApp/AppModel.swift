@@ -748,16 +748,14 @@ final class AppModel: ObservableObject {
         var candidate = configuration; candidate.preferences = preferences
         try validateForThisMac(candidate, change: .preferences)
         let historyChanged = preferences.historyEnabled != configuration.preferences.historyEnabled || preferences.historyLimit != configuration.preferences.historyLimit || preferences.historyRetentionDays != configuration.preferences.historyRetentionDays
-        let previousHotkeys = Self.hotkeyRules(for: configuration)
+        let previous = configuration
         try persist(candidate)
         if !preferences.historyEnabled { invalidateHistoryRecovery() }
         if !preferences.showProcessingIndicator { processingIndicator.hide() }
         configureWindowSwitcher()
         configureClipboardHistory()
         localModels.idleSeconds = preferences.workflowSettings.idleUnloadSeconds
-        // Registering again forgets a shortcut held down right now, so a held recording would miss its release.
-        // Only a change in the shortcuts registers them again, or a shortcut that could not be registered.
-        if Self.hotkeyRules(for: configuration) != previousHotkeys || !hotkeyErrors.isEmpty { registerHotkeys(); shortcutPanel.hide() }
+        if Self.registersShortcutsAgain(previous: previous, current: configuration, failed: !hotkeyErrors.isEmpty) { registerHotkeys(); shortcutPanel.hide() }
         // Only these settings decide what is kept; any other save need not read the history file.
         if historyChanged { refreshHistory() }
     }
@@ -968,6 +966,12 @@ final class AppModel: ObservableObject {
             rules.append(Rule(id: Self.commandBarID, name: "Command bar", hotkey: preferences.toolkitSettings.effectiveCommandBarHotkey))
         }
         return rules
+    }
+
+    /// Whether saving settings registers the global shortcuts again. Registering forgets a shortcut held down
+    /// right now, so only a change in what they register does it, or a shortcut that could not be registered.
+    static func registersShortcutsAgain(previous: Configuration, current: Configuration, failed: Bool) -> Bool {
+        hotkeyRules(for: current) != hotkeyRules(for: previous) || failed
     }
 
     private func registerHotkeys() {

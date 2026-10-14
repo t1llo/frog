@@ -61,4 +61,31 @@ final class HotkeyRulesTests: XCTestCase {
         changed.preferences.setFeature(.clipboard, enabled: !(configuration.preferences.workflowSettings.clipboardHistoryEnabled == true))
         XCTAssertNotEqual(AppModel.hotkeyRules(for: changed), registered)
     }
+
+    func testOnlyAChangedShortcutOrAnEarlierFailureRegistersTheShortcutsAgain() {
+        var configuration = Configuration()
+        var launcher = Rule(name: "Open Notes", hotkey: Hotkey(keyCode: 45, modifiers: 256 | 2048))
+        launcher.action = RuleAction(category: .application)
+        configuration.rules = [launcher]
+        // Once the Shortcuts feature has been switched, its setting is written for good.
+        configuration.preferences.setFeature(.applicationShortcuts, enabled: true)
+
+        var changed = configuration
+        var workflow = changed.preferences.workflowSettings
+        workflow.microphoneID = "fixture-microphone"
+        changed.preferences.workflows = workflow
+        XCTAssertFalse(AppModel.registersShortcutsAgain(previous: configuration, current: changed, failed: false), "Choosing a microphone")
+
+        changed = configuration
+        var menuBar = MenuBarPreferences(); menuBar.autoHide = false
+        changed.preferences.toolkit?.menuBar = menuBar
+        XCTAssertFalse(AppModel.registersShortcutsAgain(previous: configuration, current: changed, failed: false), "Menu bar layout")
+
+        changed = configuration
+        changed.preferences.toolkit?.commandBarHotkey = Hotkey(keyCode: 49, modifiers: 256 | 512)
+        changed.preferences.setFeature(.commandBar, enabled: true)
+        XCTAssertTrue(AppModel.registersShortcutsAgain(previous: configuration, current: changed, failed: false), "A new shortcut")
+
+        XCTAssertTrue(AppModel.registersShortcutsAgain(previous: configuration, current: configuration, failed: true), "A shortcut that could not be registered is tried again")
+    }
 }
