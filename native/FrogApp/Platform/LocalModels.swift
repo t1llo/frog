@@ -141,7 +141,9 @@ final class LocalModels: ObservableObject {
         measuring = Task { [weak self] in
             let sizes = await Task.detached(priority: .utility) { folders.mapValues(Self.allocatedSize) }.value
             guard let self, !Task.isCancelled else { return }
-            self.diskUse = sizes.filter { self.installed.contains($0.key) }
+            // Each change redraws every window, so an unchanged measurement is not published.
+            let measured = sizes.filter { self.installed.contains($0.key) }
+            if measured != self.diskUse { self.diskUse = measured }
         }
     }
     func waitForDiskUse() async { await measuring?.value }

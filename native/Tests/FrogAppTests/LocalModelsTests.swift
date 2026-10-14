@@ -630,6 +630,19 @@ final class LocalModelsTests: XCTestCase {
         XCTAssertEqual(models.totalDiskUse(of: models.installed), models.diskUse[speech.id])
     }
 
+    func testMeasuringUnchangedModelFoldersRedrawsNothing() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let models = LocalModels(directory: directory, runtime: FixtureInference())
+        await models.waitForDiskUse()
+        var updates = 0
+        let observation = models.$diskUse.dropFirst().sink { _ in updates += 1 }
+        // Choosing the same folder again measures it again.
+        try await models.changeDirectory(to: models.root)
+        await models.waitForDiskUse()
+        XCTAssertEqual(updates, 0, "The same sizes measured again are not published")
+        withExtendedLifetime(observation) {}
+    }
     func testDiskUseFollowsTheModelFolderAndTheCatalog() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
