@@ -1,8 +1,10 @@
 import Foundation
 import Darwin
 
-// Serializes read/modify/write transactions across store instances in this process.
-private let persistenceLock = NSRecursiveLock()
+// Serialize read/modify/write transactions across store instances in this process. The two
+// stores never touch each other's files, so saving history does not wait for the configuration.
+private let configurationLock = NSRecursiveLock()
+private let historyLock = NSRecursiveLock()
 
 enum PrivateFile {
     static var defaultDirectory: URL {
@@ -116,7 +118,7 @@ public final class ConfigurationStore: @unchecked Sendable {
     }
 
     public func load(validating validate: ((Configuration) throws -> Void)? = nil) throws -> Configuration {
-        persistenceLock.lock(); defer { persistenceLock.unlock() }
+        configurationLock.lock(); defer { configurationLock.unlock() }
         let current = try readSnapshot()
         let configuration: Configuration
         if let text = current.text {
@@ -160,7 +162,7 @@ public final class ConfigurationStore: @unchecked Sendable {
     }
 
     public func save(_ configuration: Configuration) throws {
-        persistenceLock.lock(); defer { persistenceLock.unlock() }
+        configurationLock.lock(); defer { configurationLock.unlock() }
         if snapshot == nil { _ = try load() }
         guard let snapshot else { return }
         // The files are compared with this snapshot once, right before the first write.
@@ -174,7 +176,7 @@ public final class ConfigurationStore: @unchecked Sendable {
     /// Explicit import can recover unreadable settings without discarding the previous file.
     @discardableResult
     public func replaceFromImport(_ configuration: Configuration) throws -> URL? {
-        persistenceLock.lock(); defer { persistenceLock.unlock() }
+        configurationLock.lock(); defer { configurationLock.unlock() }
         try ConfigurationFile.validate(configuration)
         let current = try readSnapshot()
         var backup: URL?
@@ -317,7 +319,7 @@ public final class HistoryStore: @unchecked Sendable {
     public init(directory: URL? = nil) { self.directory = directory ?? PrivateFile.defaultDirectory }
 
     public func load(preferences: Preferences) throws -> [HistoryEntry] {
-        persistenceLock.lock(); defer { persistenceLock.unlock() }
+        historyLock.lock(); defer { historyLock.unlock() }
         let entries = try read()
         let retained = bounded(entries, preferences: preferences)
         return entries == retained ? retained : try write(retained)
@@ -325,7 +327,7 @@ public final class HistoryStore: @unchecked Sendable {
 
     /// How many saved entries a change of the limits deletes. Reads the file and leaves it as it is.
     public func droppedCount(changing current: Preferences, to preferences: Preferences) throws -> Int {
-        persistenceLock.lock(); defer { persistenceLock.unlock() }
+        historyLock.lock(); defer { historyLock.unlock() }
         let entries = try read()
         return max(0, bounded(entries, preferences: current).count - bounded(entries, preferences: preferences).count)
     }
@@ -333,7 +335,7 @@ public final class HistoryStore: @unchecked Sendable {
     /// Returns what is kept afterwards, as `load` would, or nil when history is off and nothing was saved.
     @discardableResult
     public func append(_ entry: HistoryEntry, preferences: Preferences) throws -> [HistoryEntry]? {
-        persistenceLock.lock(); defer { persistenceLock.unlock() }
+        historyLock.lock(); defer { historyLock.unlock() }
         guard preferences.historyEnabled else { return nil }
         var entries = try read().filter { $0.id != entry.id }
         entries.append(entry)
@@ -343,7 +345,7 @@ public final class HistoryStore: @unchecked Sendable {
     /// A late transcription may update a retained entry, never recreate a deleted one.
     @discardableResult
     public func update(_ entry: HistoryEntry, preferences: Preferences) throws -> Bool {
-        persistenceLock.lock(); defer { persistenceLock.unlock() }
+        historyLock.lock(); defer { historyLock.unlock() }
         guard preferences.historyEnabled else { return false }
         var entries = bounded(try read(), preferences: preferences)
         guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return false }
@@ -354,7 +356,7 @@ public final class HistoryStore: @unchecked Sendable {
     /// Returns what is kept afterwards. With preferences the rest is pruned as `load` would.
     @discardableResult
     public func delete(id: UUID, preferences: Preferences? = nil) throws -> [HistoryEntry] {
-        persistenceLock.lock(); defer { persistenceLock.unlock() }
+        historyLock.lock(); defer { historyLock.unlock() }
         let entries = try read()
         var retained = entries.filter { $0.id != id }
         if let preferences { retained = bounded(retained, preferences: preferences) }
@@ -362,7 +364,7 @@ public final class HistoryStore: @unchecked Sendable {
     }
 
     public func clear() throws {
-        persistenceLock.lock(); defer { persistenceLock.unlock() }
+        historyLock.lock(); defer { historyLock.unlock() }
         // Explicit deletion also permits recovery from a corrupt history file.
         if unlink(file.path) != 0 && errno != ENOENT { throw FrogError.message("Unable to clear history.") }
     }

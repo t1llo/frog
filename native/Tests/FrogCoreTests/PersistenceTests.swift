@@ -335,6 +335,25 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(Set(try HistoryStore(directory: directory).load(preferences: Preferences()).map(\.id)), Set(entries.map(\.id)))
     }
 
+    func testSavingHistoryDoesNotWaitForTheConfiguration() throws {
+        let directory = directory!, entry = entry()
+        var preferences = Preferences(); preferences.historyEnabled = true
+        let appended = DispatchSemaphore(value: 0)
+        var waited = DispatchTimeoutResult.timedOut
+        // The configuration store is in the middle of a transaction while it validates what it read.
+        _ = try ConfigurationStore(directory: directory).load { _ in
+            DispatchQueue.global().async {
+                do { try HistoryStore(directory: directory).append(entry, preferences: preferences) }
+                catch { XCTFail("Append failed: \(error)") }
+                appended.signal()
+            }
+            waited = appended.wait(timeout: .now() + 5)
+        }
+        if waited == .timedOut { appended.wait() }
+        XCTAssertEqual(waited, .success)
+        XCTAssertEqual(try HistoryStore(directory: directory).load(preferences: preferences).map(\.id), [entry.id])
+    }
+
     func testHistoryTooLargeForItsFileDropsTheOldestInsteadOfRefusingTheNewest() throws {
         let store = HistoryStore(directory: directory)
         var preferences = Preferences(); preferences.historyEnabled = true
