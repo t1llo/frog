@@ -164,16 +164,22 @@ import FrogCore
         _ = NSApplication.shared
         let adapter = NativeOrganizerStatusItems()
         var changedAutoHide = false
-        adapter.updateMenu(OrganizerMenuState(expanded: false, arranging: false, autoHide: true)) { action in
+        var openedSettings = false
+        adapter.setMenuAction { action in
             if case .autoHide = action { changedAutoHide = true }
+            if case .settings = action { openedSettings = true }
         }
+        adapter.updateMenu(OrganizerMenuState(expanded: false, arranging: false, autoHide: true))
         XCTAssertEqual(adapter.contextMenu.items.filter { !$0.isSeparatorItem }.map(\.title),
                        ["Show hidden icons", "Show all & arrange…", "Automatically hide icons", "Menu bar settings…"])
         let autoHide = try XCTUnwrap(adapter.contextMenu.items.first { $0.title == "Automatically hide icons" })
         XCTAssertEqual(autoHide.state, .on)
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(autoHide.action), to: autoHide.target, from: autoHide))
         XCTAssertTrue(changedAutoHide)
-        adapter.updateMenu(OrganizerMenuState(expanded: true, arranging: true, autoHide: false)) { _ in }
+        let settings = try XCTUnwrap(adapter.contextMenu.items.first { $0.title == "Menu bar settings…" })
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(settings.action), to: settings.target, from: settings))
+        XCTAssertTrue(openedSettings, "The settings item reports through the same action as the others")
+        adapter.updateMenu(OrganizerMenuState(expanded: true, arranging: true, autoHide: false))
         XCTAssertEqual(adapter.contextMenu.items[0].title, "Hide menu bar icons")
         XCTAssertEqual(adapter.contextMenu.items[1].title, "Done arranging")
         XCTAssertEqual(adapter.contextMenu.items[3].state, .off)
@@ -188,7 +194,7 @@ import FrogCore
         let issue = try XCTUnwrap(fixture.organizer.issue)
         fixture.organizer.stop()
         let adapter = NativeOrganizerStatusItems()
-        adapter.updateMenu(OrganizerMenuState(expanded: true, arranging: false, autoHide: true, issue: issue)) { _ in }
+        adapter.updateMenu(OrganizerMenuState(expanded: true, arranging: false, autoHide: true, issue: issue))
         // A menu does not wrap, so each sentence gets its own line.
         let reason = Array(adapter.contextMenu.items.prefix { !$0.isSeparatorItem })
         XCTAssertEqual(reason.map(\.title), ["Command-drag Frog's divider to the LEFT of its arrow.",
@@ -202,7 +208,7 @@ import FrogCore
                        "Hide menu bar icons. Right-click for options; Option-click to arrange all icons.")
         XCTAssertEqual(NativeOrganizerStatusItems.arrowToolTip(expanded: false, issue: nil),
                        "Show hidden icons. Right-click for options; Option-click to arrange all icons.")
-        adapter.updateMenu(OrganizerMenuState(expanded: true, arranging: false, autoHide: true)) { _ in }
+        adapter.updateMenu(OrganizerMenuState(expanded: true, arranging: false, autoHide: true))
         XCTAssertEqual(adapter.contextMenu.items[0].title, "Hide menu bar icons", "The reason leaves with the problem")
     }
 
@@ -295,6 +301,23 @@ import FrogCore
         fixture.items.menuAction?(.autoHide)
         XCTAssertFalse(settings.autoHide)
         XCTAssertEqual(fixture.items.menuState?.autoHide, false)
+    }
+
+    func testOneMenuActionServesTheOrganizerForItsWholeLife() {
+        let fixture = OrganizerFixture()
+        var opened = 0
+        fixture.organizer.onShowSettings = { opened += 1 }
+        fixture.organizer.configure(enabled: true, settings: MenuBarPreferences())
+        for time in [1.0, 2, 3] { fixture.time = time; fixture.organizer.tick() }
+        fixture.organizer.configure(enabled: false, settings: MenuBarPreferences())
+        fixture.organizer.configure(enabled: true, settings: MenuBarPreferences())
+        fixture.time = 4; fixture.organizer.tick()
+        XCTAssertEqual(fixture.items.menuActionsSet, 1, "Neither a tick nor a restart hands over a new one")
+        fixture.items.menuAction?(.settings)
+        XCTAssertEqual(opened, 1)
+        fixture.items.menuAction?(.toggle)
+        XCTAssertFalse(fixture.organizer.isExpanded, "The arrow reports its click through it too")
+        fixture.organizer.stop()
     }
 
     func testArrowClosesArrangementInsteadOfSilentlyIgnoringClick() {
@@ -763,6 +786,25 @@ import FrogCore
         fixture.organizer.stop()
     }
 
+    func testHelpersLeaveAtTheirCompactWidthAlsoWhenTheOrganizerIsReleased() {
+        let fixture = OrganizerFixture()
+        var settings = MenuBarPreferences(); settings.startCollapsed = true
+        for released in [false, true] {
+            fixture.items.removedLengths = [:]
+            var organizer: MenuBarOrganizer? = MenuBarOrganizer(statusItems: fixture.items, hotkeys: fixture.keys,
+                applications: fixture.applications, automaticTicks: false, environment: { fixture.env }, now: { fixture.time })
+            organizer?.configure(enabled: true, settings: settings)
+            organizer?.tick()
+            XCTAssertEqual(organizer?.isExpanded, false)
+            XCTAssertEqual(fixture.items.lengths[.divider], 2880)
+            if released { organizer = nil } else { organizer?.stop() }
+            XCTAssertTrue(fixture.items.active.isEmpty)
+            // The saved placement of a helper taken out wide would be off by its inflated width.
+            XCTAssertEqual(fixture.items.removedLengths, [.toggle: 24, .divider: 18],
+                           released ? "Releasing the organizer" : "Switching it off")
+        }
+    }
+
     func testHoverRequiresDwellAndLengthIsBounded() {
         let fixture = OrganizerFixture()
         var settings = MenuBarPreferences(); settings.hoverToReveal = true; settings.startCollapsed = true
@@ -807,13 +849,15 @@ import FrogCore
     func settleLayout() { pendingOrigins.removeAll() }
     var menuState: OrganizerMenuState?
     var menuAction: ((OrganizerMenuAction) -> Void)?
-    func updateMenu(_ state: OrganizerMenuState, action: @escaping (OrganizerMenuAction) -> Void) {
-        menuState = state; menuAction = action
-    }
-    func install(_ item: OrganizerItem, action: @escaping () -> Void, settings: @escaping () -> Void) {
+    var menuActionsSet = 0
+    func setMenuAction(_ action: @escaping (OrganizerMenuAction) -> Void) { menuAction = action; menuActionsSet += 1 }
+    func updateMenu(_ state: OrganizerMenuState) { menuState = state }
+    func install(_ item: OrganizerItem) {
         created.append(item); active.insert(item)
     }
-    func remove(_ item: OrganizerItem) { active.remove(item); lengths[item] = nil }
+    /// The length each helper had when it was taken out of the bar.
+    var removedLengths: [OrganizerItem: CGFloat] = [:]
+    func remove(_ item: OrganizerItem) { removedLengths[item] = lengths[item]; active.remove(item); lengths[item] = nil }
     func setLength(_ length: CGFloat, for item: OrganizerItem) {
         if delaysLayout, lengths[item] != length, let old = frame(of: item) { pendingOrigins[item] = old.minX }
         lengths[item] = length

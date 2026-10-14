@@ -69,16 +69,14 @@ struct OrganizerEnvironment {
 
 /// The adapter observes and changes only Frog's helper items, never another app's items.
 @MainActor protocol OrganizerStatusItems: AnyObject {
-    func install(_ item: OrganizerItem, action: @escaping () -> Void, settings: @escaping () -> Void)
+    /// Handed over once. The arrow and the helpers' menu report through it what was chosen.
+    func setMenuAction(_ action: @escaping (OrganizerMenuAction) -> Void)
+    func install(_ item: OrganizerItem)
     func remove(_ item: OrganizerItem)
     func setLength(_ length: CGFloat, for item: OrganizerItem)
     func setExpanded(_ expanded: Bool)
     func frame(of item: OrganizerItem) -> CGRect?
-    func updateMenu(_ state: OrganizerMenuState, action: @escaping (OrganizerMenuAction) -> Void)
-}
-
-extension OrganizerStatusItems {
-    func updateMenu(_ state: OrganizerMenuState, action: @escaping (OrganizerMenuAction) -> Void) {}
+    func updateMenu(_ state: OrganizerMenuState)
 }
 
 enum OrganizerMenuAction { case toggle, arrange, autoHide, settings, tracking(Bool) }
@@ -136,6 +134,8 @@ struct OrganizerMenuState: Equatable {
     private var shortcutsSuspended = false
     private var registeredHotkey: Hotkey?
     private var appliedLengths: [OrganizerItem: CGFloat] = [:]
+    /// From the last layout, for a release that can no longer ask the environment.
+    private var statusItemPadding = OrganizerEnvironment.systemStatusItemPadding
     private var menuTracking = false
     private var awaitingCompetitorQuit = false
     // AppKit updates width synchronously, but WindowServer moves the spacer later.
@@ -155,6 +155,7 @@ struct OrganizerMenuState: Equatable {
         self.automaticTicks = automaticTicks
         self.environment = environment ?? { OrganizerEnvironment.live() }
         self.now = now
+        items.setMenuAction { [weak self] in self?.perform($0) }
     }
 
     func configure(enabled: Bool, settings: MenuBarPreferences) {
@@ -404,7 +405,7 @@ struct OrganizerMenuState: Equatable {
 
     private func install(_ item: OrganizerItem) {
         guard installed.insert(item).inserted else { return }
-        items.install(item, action: { [weak self] in self?.toggle() }, settings: { [weak self] in self?.onShowSettings?() })
+        items.install(item)
     }
 
     private func remove(_ item: OrganizerItem) {
@@ -414,6 +415,7 @@ struct OrganizerMenuState: Equatable {
     }
 
     private func applyLengths(_ env: OrganizerEnvironment, allowPermanentCollapse: Bool = true) {
+        statusItemPadding = env.statusItemPadding
         for item in installed {
             let revealed: Bool
             switch item {
@@ -434,17 +436,18 @@ struct OrganizerMenuState: Equatable {
 
     private func updateMenu() {
         items.updateMenu(OrganizerMenuState(expanded: isExpanded, arranging: isEditingArrangement, autoHide: settings.autoHide,
-                                            issue: issue)) { [weak self] action in
-            guard let self else { return }
-            switch action {
-            case .toggle: self.toggle()
-            case .arrange: self.setEditingArrangement(!self.isEditingArrangement)
-            case .autoHide:
-                var value = self.settings; value.autoHide.toggle()
-                self.onSettingsChange?(value)
-            case .settings: self.onShowSettings?()
-            case .tracking(let tracking): self.menuTracking = tracking; self.resetDeadline()
-            }
+                                            issue: issue))
+    }
+
+    private func perform(_ action: OrganizerMenuAction) {
+        switch action {
+        case .toggle: toggle()
+        case .arrange: setEditingArrangement(!isEditingArrangement)
+        case .autoHide:
+            var value = settings; value.autoHide.toggle()
+            onSettingsChange?(value)
+        case .settings: onShowSettings?()
+        case .tracking(let tracking): menuTracking = tracking; resetDeadline()
         }
     }
 
@@ -492,9 +495,7 @@ struct OrganizerMenuState: Equatable {
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
         screenObserver = nil
         hotkeys.unregister(); registeredHotkey = nil; hotkeyError = nil
-        // Restore compact widths before removal, keeping any saved placement uninflated.
-        let padding = environment().statusItemPadding
-        for item in installed { items.setLength(item.revealedLength(padding: padding), for: item) }
+        restoreCompactLengths(padding: environment().statusItemPadding)
         for item in OrganizerItem.allCases.reversed() { remove(item) }
         isInstalled = false; isExpanded = true; isEditingArrangement = false
         deadline = nil; hoverStarted = nil; pendingCollapse = false
@@ -508,7 +509,13 @@ struct OrganizerMenuState: Equatable {
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
         hotkeys.unregister()
         applications.stopWatching()
+        restoreCompactLengths(padding: statusItemPadding)
         for item in OrganizerItem.allCases.reversed() where installed.contains(item) { items.remove(item) }
+    }
+
+    /// Restore compact widths before removal, keeping any saved placement uninflated.
+    private func restoreCompactLengths(padding: CGFloat) {
+        for item in installed { items.setLength(item.revealedLength(padding: padding), for: item) }
     }
 }
 
@@ -535,15 +542,14 @@ struct OrganizerMenuState: Equatable {
 
 @MainActor final class NativeOrganizerStatusItems: NSObject, OrganizerStatusItems, NSMenuDelegate {
     private var items: [OrganizerItem: NSStatusItem] = [:]
-    private var toggle: (() -> Void)?
-    private var settings: (() -> Void)?
     private var expanded: Bool?
     private(set) var contextMenu = NSMenu()
     private var menuState: OrganizerMenuState?
     private var menuAction: ((OrganizerMenuAction) -> Void)?
 
-    func updateMenu(_ state: OrganizerMenuState, action: @escaping (OrganizerMenuAction) -> Void) {
-        menuAction = action
+    func setMenuAction(_ action: @escaping (OrganizerMenuAction) -> Void) { menuAction = action }
+
+    func updateMenu(_ state: OrganizerMenuState) {
         guard menuState != state else { return }
         menuState = state
         items[.toggle]?.button?.toolTip = Self.arrowToolTip(expanded: state.expanded, issue: state.issue)
@@ -575,11 +581,10 @@ struct OrganizerMenuState: Equatable {
     @objc private func toggleFromMenu() { menuAction?(.toggle) }
     @objc private func arrangeFromMenu() { menuAction?(.arrange) }
     @objc private func autoHideFromMenu() { menuAction?(.autoHide) }
-    @objc private func settingsFromMenu() { settings?() }
+    @objc private func settingsFromMenu() { menuAction?(.settings) }
 
-    func install(_ role: OrganizerItem, action: @escaping () -> Void, settings: @escaping () -> Void) {
+    func install(_ role: OrganizerItem) {
         guard items[role] == nil else { return }
-        toggle = action; self.settings = settings
         let length = role.revealedLength(padding: OrganizerEnvironment.systemStatusItemPadding)
         let item = NSStatusBar.system.statusItem(withLength: length)
         item.autosaveName = role.autosaveName
@@ -609,7 +614,7 @@ struct OrganizerMenuState: Equatable {
         // Installation explicitly restores isVisible without changing saved order.
         NSStatusBar.system.removeStatusItem(item)
         if role == .toggle { expanded = nil }
-        if items.isEmpty { toggle = nil; settings = nil; menuAction = nil; menuState = nil; contextMenu = NSMenu() }
+        if items.isEmpty { menuState = nil; contextMenu = NSMenu() }
     }
     func setLength(_ length: CGFloat, for role: OrganizerItem) { items[role]?.length = length }
     func frame(of role: OrganizerItem) -> CGRect? { items[role]?.button?.window?.frame }
@@ -645,7 +650,7 @@ struct OrganizerMenuState: Equatable {
     @objc private func clickedArrow() {
         if NSApp.currentEvent?.type == .rightMouseUp { showMenu(from: .toggle) }
         else if NSApp.currentEvent?.modifierFlags.contains(.option) == true { menuAction?(.arrange) }
-        else { toggle?() }
+        else { menuAction?(.toggle) }
     }
     @objc private func clickedDivider(_ sender: NSStatusBarButton) {
         let role = items.first { $0.value.button === sender }?.key ?? .divider
