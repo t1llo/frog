@@ -44,6 +44,8 @@ final class AppModel: ObservableObject {
     private var loginStatusTask: Task<Void, Never>?
     private var loginStatusUpdatedAt: ContinuousClock.Instant?
     private var systemStatusTask: Task<Void, Never>?
+    /// The wait between two refreshes of the system status: one second, or a tick a test fires.
+    private let systemStatusTick: () async throws -> Void
     private let hotkeys = HotkeyManager()
     private lazy var windowSwitcher: WindowSwitcherController = {
         let controller = WindowSwitcherController { [weak self] message, ready in
@@ -117,7 +119,8 @@ final class AppModel: ObservableObject {
          toolkit injectedToolkit: Toolkit? = nil,
          clipboardHistoryStore: ClipboardHistoryStore? = nil,
          localToolClient: LocalToolClient? = nil,
-         errorDisplayDuration: Duration = .seconds(6)) {
+         errorDisplayDuration: Duration = .seconds(6),
+         systemStatusTick: (() async throws -> Void)? = nil) {
         let dataDirectory = dataDirectory ?? ProcessInfo.processInfo.environment["FROG_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         self.registerShortcuts = registerShortcuts
         self.toolkit = injectedToolkit ?? Toolkit(showsUsageStatusItem: registerShortcuts, showsMenuBarOrganizer: registerShortcuts)
@@ -128,6 +131,7 @@ final class AppModel: ObservableObject {
         self.power = powerController ?? StayAwakeController(directory: dataDirectory)
         self.clipboardHistoryStore = clipboardHistoryStore ?? ClipboardHistoryStore()
         self.errorDisplayDuration = errorDisplayDuration
+        self.systemStatusTick = systemStatusTick ?? { try await Task.sleep(for: .seconds(1)) }
         localModels = modelService ?? LocalModels(directory: dataDirectory)
         self.readAccessibility = readAccessibility ?? { SelectionService.isTrusted }
         self.readLoginStatus = readLoginStatus ?? { LoginService.readStatus() }
@@ -458,11 +462,11 @@ final class AppModel: ObservableObject {
 
     func startSystemStatusMonitoring() {
         guard systemStatusTask == nil else { return }
-        systemStatusTask = Task { [weak self] in
+        systemStatusTask = Task { [weak self, systemStatusTick] in
             while !Task.isCancelled {
                 guard self != nil else { return }
                 self?.refreshSystemStatus()
-                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                do { try await systemStatusTick() } catch { return }
             }
         }
     }

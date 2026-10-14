@@ -54,31 +54,36 @@ final class SystemStatusTests: XCTestCase {
 
     func testMonitoringHasOneOwnerAndStopsAtShutdown() async throws {
         var permissionReads = 0
-        let model = try model(readAccessibility: { permissionReads += 1; return true })
+        let ticks = SystemStatusTicks()
+        let model = try model(readAccessibility: { permissionReads += 1; return true }, systemStatusTick: { await ticks.next() })
         let initial = permissionReads
         model.startSystemStatusMonitoring()
         model.startSystemStatusMonitoring()
-        defer { model.shutdown() }
-        try await wait { permissionReads > initial }
+        defer { model.shutdown(); ticks.fire() }
+        try await wait { ticks.waiting > 0 }
         XCTAssertEqual(permissionReads, initial + 1)
-        try await Task.sleep(for: .milliseconds(1100))
-        XCTAssertEqual(permissionReads, initial + 2, "Two consumers must not create two polling loops")
+        XCTAssertEqual(ticks.waiting, 1, "Two consumers must not create two polling loops")
+        ticks.fire()
+        try await wait { ticks.waiting > 0 }
+        XCTAssertEqual(permissionReads, initial + 2, "Each tick refreshes the status once")
         model.shutdown()
         let stopped = permissionReads
-        try await Task.sleep(for: .milliseconds(1100))
-        XCTAssertEqual(permissionReads, stopped)
+        // The stopped loop wakes first; if it went on, it would refresh before the new loop does.
+        ticks.fire()
         model.startSystemStatusMonitoring()
-        try await wait { permissionReads > stopped }
-        XCTAssertEqual(permissionReads, stopped + 1)
+        try await wait { ticks.waiting > 0 }
+        XCTAssertEqual(permissionReads, stopped + 1, "A loop stopped at shutdown must not refresh again")
+        XCTAssertEqual(ticks.waiting, 1)
     }
 
     private func model(readAccessibility: @escaping () -> Bool = { true },
-                       readLoginStatus: @escaping @Sendable () -> LoginService.Snapshot = { .init(enabled: false, text: "Fixture") }) throws -> AppModel {
+                       readLoginStatus: @escaping @Sendable () -> LoginService.Snapshot = { .init(enabled: false, text: "Fixture") },
+                       systemStatusTick: (() async throws -> Void)? = nil) throws -> AppModel {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         return AppModel(dataDirectory: directory, registerShortcuts: false,
-                        readAccessibility: readAccessibility, readLoginStatus: readLoginStatus)
+                        readAccessibility: readAccessibility, readLoginStatus: readLoginStatus, systemStatusTick: systemStatusTick)
     }
 
     private func wait(_ condition: () -> Bool) async throws {
@@ -87,6 +92,20 @@ final class SystemStatusTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTFail("Timed out waiting for status refresh")
+    }
+}
+
+/// Stands in for the second between two refreshes of the system status: a refresh loop waits
+/// here until the test fires the next tick.
+@MainActor final class SystemStatusTicks {
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    /// The refresh loops that wait for the next tick.
+    var waiting: Int { waiters.count }
+    func next() async { await withCheckedContinuation { waiters.append($0) } }
+    func fire() {
+        let woken = waiters
+        waiters.removeAll()
+        woken.forEach { $0.resume() }
     }
 }
 

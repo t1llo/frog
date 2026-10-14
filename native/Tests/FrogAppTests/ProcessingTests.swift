@@ -367,18 +367,25 @@ final class ProcessingTests: XCTestCase {
 
     func testPermissionStatusUpdatesWithoutReactivatingWindowAndHandlesRevocation() async throws {
         var granted = false
-        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, readAccessibility: { granted })
+        let ticks = SystemStatusTicks()
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, readAccessibility: { granted }, systemStatusTick: { await ticks.next() })
         XCTAssertFalse(model.accessibilityGranted)
         model.startSystemStatusMonitoring()
-        defer { model.shutdown() }
-        await Task.yield()
+        defer { model.shutdown(); ticks.fire() }
+        for _ in 0..<30 {
+            if ticks.waiting > 0 { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertFalse(model.accessibilityGranted)
         granted = true
+        ticks.fire()
         for _ in 0..<30 {
             if model.accessibilityGranted { break }
             try await Task.sleep(for: .milliseconds(50))
         }
         XCTAssertTrue(model.accessibilityGranted)
         granted = false
+        ticks.fire()
         for _ in 0..<30 {
             if !model.accessibilityGranted { break }
             try await Task.sleep(for: .milliseconds(50))
