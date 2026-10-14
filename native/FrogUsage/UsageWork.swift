@@ -66,6 +66,9 @@ func usageProcess(_ executable: URL, arguments: [String], environment: [String: 
     _ = fcntl(descriptor, F_SETFL, O_NONBLOCK)
     var data = Data(), buffer = [UInt8](repeating: 0, count: 4096)
     let deadline = ContinuousClock.now.advanced(by: .milliseconds(Int64(timeout * 1000)))
+    // What the tool printed just before it exited can arrive after the read that found nothing,
+    // so once it is gone the pipe is read until it is empty, within the same limits.
+    var exited = false
     while true {
         if Task.isCancelled || ContinuousClock.now >= deadline || data.count > 1_048_576 {
             if p.isRunning { kill(p.processIdentifier, SIGKILL) }
@@ -74,7 +77,8 @@ func usageProcess(_ executable: URL, arguments: [String], environment: [String: 
         }
         let count = read(descriptor, &buffer, buffer.count)
         if count > 0 { data.append(contentsOf: buffer.prefix(count)) }
-        else if !p.isRunning { break }
+        else if exited { break }
+        else if !p.isRunning { exited = true }
         else { usleep(10_000) }
     }
     p.waitUntilExit()
