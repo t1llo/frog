@@ -22,6 +22,9 @@ final class AppModel: ObservableObject {
     private var errorDismissal: Task<Void, Never>?
     private let errorDisplayDuration: Duration
     @Published private(set) var manualResult = ""
+    /// How the last rule run ended. The processing indicator and the Try sheet read this, not
+    /// `errorMessage`, which any unrelated failure may have set meanwhile.
+    private(set) var ruleOutcome: RuleOutcome?
     @Published private(set) var isTestingProvider = false
     @Published private(set) var startAtLogin = false
     @Published private(set) var accessibilityGranted = false
@@ -1143,24 +1146,28 @@ final class AppModel: ObservableObject {
 
     private func begin(ruleID: UUID, manualText: String?, providerID: UUID? = nil, modelID: String? = nil) {
         guard !isProcessing, !dictation.active else { status = "A rule is already running. Wait or cancel it from the menu."; return }
-        guard var rule = configuration.rules.first(where: { $0.id == ruleID }), rule.enabled else { report(FrogError.message("Select an enabled rule.")); return }
+        ruleOutcome = nil
+        guard var rule = configuration.rules.first(where: { $0.id == ruleID }), rule.enabled else {
+            let error = FrogError.message("Select an enabled rule.")
+            report(error); ruleOutcome = .failed(error.localizedDescription); return
+        }
         if manualText != nil { manualResult = "" }
         if let providerID { rule.providerID = providerID; rule.model = modelID ?? "" }
         else if let modelID { rule.model = modelID }
         let provider: ProviderConfiguration
         do { provider = try resolved(rule) }
-        catch { finishFailure(error, background: manualText == nil); return }
+        catch { finish(outcome(of: error), background: manualText == nil); return }
         isProcessing = true
-        errorMessage = nil
         status = "\(rule.name)…"
-        if manualText == nil { showIndicator("Reading selection…", working: true) }
+        if manualText == nil { showIndicatorWorking() }
         let recordingEpoch = historyEpoch
         let recordingWasEnabled = configuration.preferences.historyEnabled
         processingTask = Task { [weak self] in
             guard let self else { return }
+            var ended = RuleOutcome.done
             defer {
+                self.finish(ended, background: manualText == nil)
                 self.isProcessing = false; self.processingTask = nil
-                if manualText == nil { self.showIndicator(self.errorMessage ?? self.status, working: false) }
             }
             do {
                 let selection: (any CapturedTextSelection)?
@@ -1170,17 +1177,14 @@ final class AppModel: ObservableObject {
                 guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("Select or enter some text first.") }
                 let key = provider.id == Self.localProviderID || provider.kind.localTool != nil ? nil : try self.readKey(provider.id)
                 try Task.checkCancellation()
-                if manualText == nil { self.showIndicator("\(rule.name)…", working: true) }
                 let result: String
                 if provider.id == Self.localProviderID {
                     if !self.localModels.loaded.contains(provider.model) {
                         self.status = "Loading \(self.configuration.localModel(provider.model)?.name ?? provider.model)…"
-                        if manualText == nil { self.showIndicator(self.status, working: true) }
                         try await self.localModels.prepare(provider.model)
                         try Task.checkCancellation()
                     }
                     self.status = "\(rule.name)…"
-                    if manualText == nil { self.showIndicator(self.status, working: true) }
                     result = try await self.localModels.complete(text, instructions: rule.instructions.replacingOccurrences(of: "{{language}}", with: rule.targetLanguage), modelID: provider.model)
                 }
                 else { result = try await self.complete(text, rule, provider, key) }
@@ -1194,7 +1198,7 @@ final class AppModel: ObservableObject {
                         try Task.checkCancellation()
                         delivered = false
                         self.status = "Result ready on clipboard; replacement skipped."
-                        self.report(error)
+                        self.report(error); ended = .failed(error.localizedDescription)
                     }
                     self.clipboardHistoryStore.recordCopiedText(result)
                 } else {
@@ -1208,26 +1212,41 @@ final class AppModel: ObservableObject {
                 if recordingWasEnabled && self.configuration.preferences.historyEnabled && self.historyEpoch == recordingEpoch {
                     do {
                         if let retained = try self.historyStore.append(HistoryEntry(originalText: text, processedText: result, ruleName: rule.name, providerName: provider.name, model: provider.model, targetLanguage: rule.targetLanguage), preferences: self.configuration.preferences) { self.adoptHistory(retained) }
-                    } catch { self.report(FrogError.message("Text processed, but history could not be saved: \(error.localizedDescription)")) }
+                    } catch {
+                        let failure = FrogError.message("Text processed, but history could not be saved: \(error.localizedDescription)")
+                        self.report(failure); ended = .failed(failure.localizedDescription)
+                    }
                 }
-            } catch { self.finishFailure(error, background: manualText == nil) }
+            } catch { ended = self.outcome(of: error) }
         }
     }
 
-    private func finishFailure(_ error: Error, background: Bool) {
+    private func outcome(of error: Error) -> RuleOutcome {
         if error is CancellationError || (error as? URLError)?.code == .cancelled {
             status = "Cancelled — original text unchanged."
-            return
+            return .cancelled
         }
         status = "Could not complete the rule."
         report(error)
-        if background {
-            showIndicator(error.localizedDescription, working: false)
-        }
+        return .failed(error.localizedDescription)
     }
 
-    private func showIndicator(_ message: String, working: Bool) {
-        guard registerShortcuts, configuration.preferences.featureEnabled(.writing), configuration.preferences.showProcessingIndicator else { return }
-        processingIndicator.show(message, working: working, failed: errorMessage != nil)
+    /// `background`: a shortcut ran the rule, so the processing indicator shows how it ended.
+    private func finish(_ outcome: RuleOutcome, background: Bool) {
+        ruleOutcome = outcome
+        if background, showsProcessingIndicator { processingIndicator.show(outcome) }
     }
+
+    private func showIndicatorWorking() {
+        if showsProcessingIndicator { processingIndicator.showWorking() }
+    }
+
+    private var showsProcessingIndicator: Bool {
+        registerShortcuts && configuration.preferences.featureEnabled(.writing) && configuration.preferences.showProcessingIndicator
+    }
+}
+
+enum RuleOutcome: Equatable {
+    case done, cancelled, failed(String)
+    var failure: String? { if case .failed(let message) = self { message } else { nil } }
 }

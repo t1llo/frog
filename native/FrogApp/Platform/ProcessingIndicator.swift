@@ -8,12 +8,25 @@ final class ProcessingIndicator {
     private var dismissal: Task<Void, Never>?
     private var processing = false
 
-    func show(_ message: String, working: Bool, failed: Bool = false) {
+    func showWorking() {
         // Flash once at the start; progress updates must not keep bringing it back.
-        if working && processing { return }
-        processing = working
-        present(symbol: working ? nil : (failed ? "exclamationmark.circle" : "checkmark"), warning: failed,
-                text: working ? "Working…" : (failed ? "Check Frog for details" : (message.hasPrefix("Cancelled") ? "Cancelled" : "Done")))
+        if processing { return }
+        processing = true
+        present(symbol: nil, warning: false, text: "Working…")
+    }
+
+    func show(_ outcome: RuleOutcome) {
+        processing = false
+        let (symbol, text) = Self.appearance(of: outcome)
+        present(symbol: symbol, warning: outcome.failure != nil, text: text)
+    }
+
+    static func appearance(of outcome: RuleOutcome) -> (symbol: String, text: String) {
+        switch outcome {
+        case .done: ("checkmark", "Done")
+        case .cancelled: ("checkmark", "Cancelled")
+        case .failed: ("exclamationmark.circle", "Check Frog for details")
+        }
     }
 
     /// A short note that ends nothing, such as a press Frog could not act on yet.

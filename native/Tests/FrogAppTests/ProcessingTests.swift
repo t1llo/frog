@@ -180,6 +180,38 @@ final class ProcessingTests: XCTestCase {
         XCTAssertTrue(model.history.isEmpty)
     }
 
+    func testAnUnrelatedErrorNeitherEndsARuleNorIsClearedByOne() async throws {
+        var continuation: CheckedContinuation<String, Error>?
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, complete: { _, _, _, _ in
+            try await withCheckedThrowingContinuation { continuation = $0 }
+        }, readKey: { _ in nil }, writeClipboard: { _ in })
+        try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
+        let rule = model.configuration.rules[0]
+        model.report(FrogError.message("An app shortcut failed"))
+        model.processManual(text: "teh text", ruleID: rule.id)
+        XCTAssertEqual(model.errorMessage, "An app shortcut failed", "Starting a rule leaves another error on screen")
+        for _ in 0..<100 { if continuation != nil { break }; await Task.yield() }
+        model.report(FrogError.message("Clipboard history failed"))
+        continuation?.resume(returning: "the text")
+        try await waitUntilFinished(model)
+        XCTAssertEqual(model.manualResult, "the text")
+        XCTAssertEqual(model.ruleOutcome, .done)
+        XCTAssertNil(model.ruleOutcome?.failure, "The Try sheet shows no error for a rule that succeeded")
+
+        model.processManual(text: "teh text", ruleID: rule.id)
+        continuation = nil
+        for _ in 0..<100 { if continuation != nil { break }; await Task.yield() }
+        continuation?.resume(throwing: FrogError.message("The service is busy"))
+        try await waitUntilFinished(model)
+        XCTAssertEqual(model.ruleOutcome, .failed("The service is busy"))
+    }
+
+    func testIndicatorNamesTheOutcomeItIsGiven() {
+        XCTAssertEqual(ProcessingIndicator.appearance(of: .done).text, "Done")
+        XCTAssertEqual(ProcessingIndicator.appearance(of: .cancelled).text, "Cancelled")
+        XCTAssertEqual(ProcessingIndicator.appearance(of: .failed("Anything")).text, "Check Frog for details")
+    }
+
     func testCancellationAndOverlappingRequestsDoNotPublishLateResult() async throws {
         var continuation: CheckedContinuation<String, Error>?
         var requests = 0
@@ -200,6 +232,7 @@ final class ProcessingTests: XCTestCase {
         XCTAssertEqual(writes, 0)
         XCTAssertTrue(model.manualResult.isEmpty)
         XCTAssertTrue(model.status.contains("Cancelled"))
+        XCTAssertEqual(model.ruleOutcome, .cancelled)
         XCTAssertEqual(model.statistics.snapshot.allTime.ruleRuns, 0)
     }
 

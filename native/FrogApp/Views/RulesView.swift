@@ -172,7 +172,7 @@ private struct RuleTryView: View {
                     issue = nil; result = ""
                     model.processManual(text: input, ruleID: rule.id)
                     running = model.isProcessing
-                    if !running { issue = model.errorMessage }
+                    if !running { issue = model.ruleOutcome?.failure }
                 }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.return, modifiers: .command)
                     .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isProcessing || model.dictation.active)
             }
@@ -180,7 +180,7 @@ private struct RuleTryView: View {
             .buttonStyle(FrogButtonStyle()).tint(FrogStyle.accent)
             .onChange(of: model.isProcessing) { _, processing in
                 guard running, !processing else { return }
-                running = false; result = model.manualResult; issue = model.errorMessage
+                running = false; result = model.manualResult; issue = model.ruleOutcome?.failure
             }
             .onDisappear { if running { model.cancelProcessing() } }
     }
