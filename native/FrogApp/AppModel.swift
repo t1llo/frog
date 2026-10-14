@@ -944,7 +944,7 @@ final class AppModel: ObservableObject {
         guard configuration.preferences.featureEnabled(.writing) else { return }
         begin(ruleID: ruleID, manualText: text, providerID: providerID, modelID: modelID)
     }
-    func cancelProcessing() { dictation.interrupt(); processingTask?.cancel(); status = "Cancelling…" }
+    func cancelProcessing() { processingTask?.cancel(); status = "Cancelling…" }
 
     func showShortcuts() {
         var rules = configuration.rules.filter { ruleFeatureEnabled($0) }
@@ -978,12 +978,12 @@ final class AppModel: ObservableObject {
         try savePreferences(prefs)
     }
 
-    func startDictation(_ rule: Rule) {
+    func startDictation(_ rule: Rule, shortcutHeld: Bool = false) {
         guard configuration.preferences.featureEnabled(.dictation) else { return }
         guard !isProcessing else { report(FrogError.message("Wait for the current request to finish.")); return }
         guard !dictation.active else { return }
         dictationHistoryEpoch = configuration.preferences.historyEnabled ? historyEpoch : nil
-        dictation.start(rule: rule, preferences: configuration.preferences.workflowSettings, models: localModels)
+        dictation.start(rule: rule, preferences: configuration.preferences.workflowSettings, models: localModels, shortcutHeld: shortcutHeld)
     }
 
     func ensureDictationRule() throws {
@@ -1010,7 +1010,7 @@ final class AppModel: ObservableObject {
         case .audio:
             let mode = rule.action?.recordingMode ?? configuration.preferences.workflowSettings.recordingMode
             switch RecordingShortcut.action(mode: mode, pressed: pressed, target: id, active: dictation.ruleID) {
-            case .start: startDictation(rule)
+            case .start: startDictation(rule, shortcutHeld: true)
             case .stop: dictation.stop(models: localModels)
             case nil: break
             }

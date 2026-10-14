@@ -117,7 +117,9 @@ final class DictationController: ObservableObject {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
     }
 
-    func start(rule: Rule, preferences: WorkflowPreferences, models: LocalModels) {
+    /// `shortcutHeld` is true when the rule's own shortcut started the recording and is still down.
+    /// Only then does releasing it end a hold-to-record session.
+    func start(rule: Rule, preferences: WorkflowPreferences, models: LocalModels, shortcutHeld: Bool = false) {
         guard !active else { return }
         guard let modelID = rule.action?.audioModelID else { onError?(FrogError.message("Choose a speech model in this audio rule. Add one in Models first.")); return }
         let external = rule.action?.audioProviderID != nil
@@ -137,7 +139,9 @@ final class DictationController: ObservableObject {
         phase = .preparing
         preparationMessage = "Checking microphone access…"
         let shortcut = rule.hotkey.map(HotkeyManager.display) ?? "Stop button"
-        let recordingHint = rule.hotkey == nil ? "Stop to finish · Esc to cancel" : (rule.action?.recordingMode ?? preferences.recordingMode) == .hold ? "Release \(shortcut) to stop · Esc to cancel" : "\(shortcut) to stop · Esc to cancel"
+        // A hold recording that its key did not start ends when the key is pressed and released.
+        let holding = shortcutHeld && (rule.action?.recordingMode ?? preferences.recordingMode) == .hold
+        let recordingHint = rule.hotkey == nil ? "Stop to finish · Esc to cancel" : holding ? "Release \(shortcut) to stop · Esc to cancel" : "\(shortcut) to stop · Esc to cancel"
         hint = "Esc to cancel"
         if self.preferences.showDictationPopup { showPanel() }
         installEscape()
@@ -148,7 +152,6 @@ final class DictationController: ObservableObject {
             guard granted else {
                 self.fail(FrogError.message("Allow Microphone in Settings to record dictation."), token: token); return
             }
-            guard self.token == token, !Task.isCancelled else { return }
             do {
                 if !external {
                     self.preparationMessage = "Loading speech model…"
