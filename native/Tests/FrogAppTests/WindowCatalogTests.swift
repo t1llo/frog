@@ -162,6 +162,18 @@ final class WindowCatalogTests: XCTestCase {
         XCTAssertEqual(candidates.first?.title, "Parked")
     }
 
+    func testOnlyAWindowOnAKnownDesktopOutOfSightIsTravelledTo() {
+        let topology = [WindowSpaceBridge.Display(name: "Main", current: 1, spaces: [1, 2]),
+                        WindowSpaceBridge.Display(name: "Side", current: 5, spaces: [5, 6])]
+        let travel = WindowSpaceBridge.destination(of: [6], in: topology)
+        XCTAssertEqual(travel?.display, "Side")
+        XCTAssertEqual(travel?.space, 6)
+        XCTAssertNil(WindowSpaceBridge.destination(of: [2, 5], in: topology), "A window on a Desktop in sight needs no travel")
+        // A Space no display lists, a full-screen tile say: Accessibility and the app's activation
+        // still bring it forward, so the selection must not fail for want of a Desktop to select.
+        XCTAssertNil(WindowSpaceBridge.destination(of: [9], in: topology))
+    }
+
     func testSelectionFinishesWhileUnrelatedDiscoveryIsStillBlocked() async throws {
         let fixture = CatalogFixture()
         let writes = ActivationFixture()

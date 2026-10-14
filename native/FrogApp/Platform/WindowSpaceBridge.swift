@@ -12,7 +12,7 @@ enum WindowSpaceBridge {
         let title: String?
     }
 
-    private struct Display {
+    struct Display {
         let name: String
         let current: UInt64
         let spaces: Set<UInt64>
@@ -110,6 +110,16 @@ enum WindowSpaceBridge {
         }
     }
 
+    /// The Desktop to select so that a window with this membership is in sight: none when it is
+    /// in sight already, nor when no display lists its Space, a full-screen tile say, which the
+    /// ordinary Accessibility and activation path brings forward instead.
+    static func destination(of membership: Set<UInt64>, in topology: [Display]) -> (display: String, space: UInt64)? {
+        guard membership.isDisjoint(with: Set(topology.map(\.current))),
+              let display = topology.first(where: { !$0.spaces.isDisjoint(with: membership) }),
+              let space = membership.intersection(display.spaces).sorted().first else { return nil }
+        return (display.name, space)
+    }
+
     static func isOnVisibleSpace(_ id: CGWindowID) -> Bool? {
         guard let membership = spaces(id), let topology = displays() else { return nil }
         return !membership.isDisjoint(with: Set(topology.map(\.current)))
@@ -121,14 +131,12 @@ enum WindowSpaceBridge {
         // Absence of the optional private API keeps the ordinary AX path usable.
         // Minimized AX windows may temporarily have no desktop membership; the
         // ordinary unminimize path remains authoritative for those windows.
-        guard let membership = spaces(id), !membership.isEmpty, let topology = displays() else { return true }
-        if !membership.isDisjoint(with: Set(topology.map(\.current))) { return true }
-        guard let destination = topology.first(where: { !$0.spaces.isDisjoint(with: membership) }),
-              let space = membership.intersection(destination.spaces).sorted().first,
-              let selectSpace, !Task.isCancelled, isCurrent() else { return false }
+        guard let membership = spaces(id), !membership.isEmpty, let topology = displays(),
+              let destination = destination(of: membership, in: topology), let selectSpace else { return true }
+        guard !Task.isCancelled, isCurrent() else { return false }
         await willChangeSpace()
         guard !Task.isCancelled, isCurrent() else { return false }
-        selectSpace(connection, destination.name as CFString, space)
+        selectSpace(connection, destination.display as CFString, destination.space)
         // Usually visible immediately; wait only for an actual OS transition.
         // No further focus-changing request is issued by this wait.
         let deadline = ContinuousClock.now.advanced(by: .seconds(1))
