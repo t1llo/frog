@@ -737,10 +737,9 @@ final class AppModel: ObservableObject {
         guard preferences.featureEnabled(.stayAwake) || (!power.ownsSession && !power.isBusy) else {
             throw FrogError.message("Restore sleep before disabling Stay awake.")
         }
-        let previousWorkflow = configuration.preferences.workflowSettings
         let workflow = preferences.workflowSettings
         let historyChanged = preferences.historyEnabled != configuration.preferences.historyEnabled || preferences.historyLimit != configuration.preferences.historyLimit || preferences.historyRetentionDays != configuration.preferences.historyRetentionDays
-        let shortcutChanged = workflow.shortcutPanelHotkey != previousWorkflow.shortcutPanelHotkey || workflow.cancelRecordingHotkey != previousWorkflow.cancelRecordingHotkey || workflow.clipboardHistoryHotkey != previousWorkflow.clipboardHistoryHotkey || workflow.clipboardHistoryEnabled != previousWorkflow.clipboardHistoryEnabled || preferences.toolkit != configuration.preferences.toolkit
+        let previousHotkeys = Self.hotkeyRules(for: configuration)
         if let issue = HotkeyManager.validationError(preferences.toolkitSettings.effectiveCommandBarHotkey) { throw FrogError.message(issue) }
         if let issue = HotkeyManager.validationError(preferences.toolkitSettings.effectiveWindowSwitcherHotkey, purpose: .windowSwitcher) { throw FrogError.message(issue) }
         if let key = preferences.toolkitSettings.menuBar?.hotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
@@ -757,7 +756,9 @@ final class AppModel: ObservableObject {
         configureWindowSwitcher()
         configureClipboardHistory()
         localModels.idleSeconds = preferences.workflowSettings.idleUnloadSeconds
-        if shortcutChanged || preferences.applicationShortcutsEnabled != nil { registerHotkeys(); shortcutPanel.hide() }
+        // Registering again forgets a shortcut held down right now, so a held recording would miss its release.
+        // Only a change in the shortcuts registers them again, or a shortcut that could not be registered.
+        if Self.hotkeyRules(for: configuration) != previousHotkeys || !hotkeyErrors.isEmpty { registerHotkeys(); shortcutPanel.hide() }
         // Only these settings decide what is kept; any other save need not read the history file.
         if historyChanged { refreshHistory() }
     }
@@ -962,20 +963,26 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func registerHotkeys() {
-        guard registerShortcuts, !isRecordingShortcut else { return }
-        var rules = configuration.rules.filter { ruleFeatureEnabled($0) }
-        if let key = configuration.preferences.workflowSettings.shortcutPanelHotkey {
+    /// The global shortcuts a configuration registers: its enabled rules and Frog's own.
+    static func hotkeyRules(for configuration: Configuration) -> [Rule] {
+        let preferences = configuration.preferences
+        var rules = configuration.rules.filter { preferences.ruleFeatureEnabled($0) }
+        if let key = preferences.workflowSettings.shortcutPanelHotkey {
             rules.append(Rule(id: Self.shortcutPanelID, name: "Show shortcuts", hotkey: key))
         }
-        if configuration.preferences.featureEnabled(.dictation), let key = configuration.preferences.workflowSettings.cancelRecordingHotkey { rules.append(Rule(id: Self.cancelRecordingID, name: "Cancel recording", hotkey: key)) }
-        if configuration.preferences.workflowSettings.clipboardHistoryEnabled == true {
-            rules.append(Rule(id: Self.clipboardHistoryID, name: "Clipboard history", hotkey: configuration.preferences.workflowSettings.effectiveClipboardHistoryHotkey))
+        if preferences.featureEnabled(.dictation), let key = preferences.workflowSettings.cancelRecordingHotkey { rules.append(Rule(id: Self.cancelRecordingID, name: "Cancel recording", hotkey: key)) }
+        if preferences.workflowSettings.clipboardHistoryEnabled == true {
+            rules.append(Rule(id: Self.clipboardHistoryID, name: "Clipboard history", hotkey: preferences.workflowSettings.effectiveClipboardHistoryHotkey))
         }
-        if configuration.preferences.featureEnabled(.commandBar) {
-            rules.append(Rule(id: Self.commandBarID, name: "Command bar", hotkey: configuration.preferences.toolkitSettings.effectiveCommandBarHotkey))
+        if preferences.featureEnabled(.commandBar) {
+            rules.append(Rule(id: Self.commandBarID, name: "Command bar", hotkey: preferences.toolkitSettings.effectiveCommandBarHotkey))
         }
-        hotkeyErrors = hotkeys.register(rules: rules, purposes: [Self.clipboardHistoryID: .clipboardHistory], onPress: { [weak self] id in self?.handleShortcut(id, pressed: true) }) { [weak self] id in self?.handleShortcut(id, pressed: false) }
+        return rules
+    }
+
+    private func registerHotkeys() {
+        guard registerShortcuts, !isRecordingShortcut else { return }
+        hotkeyErrors = hotkeys.register(rules: Self.hotkeyRules(for: configuration), purposes: [Self.clipboardHistoryID: .clipboardHistory], onPress: { [weak self] id in self?.handleShortcut(id, pressed: true) }) { [weak self] id in self?.handleShortcut(id, pressed: false) }
     }
 
     func resolved(_ rule: Rule) throws -> ProviderConfiguration {
