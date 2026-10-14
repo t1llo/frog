@@ -44,6 +44,9 @@ final class DictationController: ObservableObject {
     private var work: Task<Void, Never>?
     private var preview: Task<Void, Never>?
     private var previewInference: Task<Void, Error>?
+    /// What the preview in flight reads. Its text serves Stop only when it completes a window or
+    /// when nothing was recorded after it.
+    private var previewSnapshot: (sampleCount: Int, completesWindow: Bool)?
     private var finalTranscription: Task<String, Error>?
     private var historyRecovery: [UUID: (work: Task<Void, Never>, recognition: Task<String, Error>)] = [:]
     private var ticker: Task<Void, Never>?
@@ -320,8 +323,8 @@ final class DictationController: ObservableObject {
             guard let self, self.token == token, self.phase == .recording || self.phase == .transcribing else { return }
             self.updatePreview(text, completingWindow: completes)
         }
-        previewInference = inference
-        defer { if self.token == token { previewInference = nil } }
+        previewInference = inference; previewSnapshot = (audio.count, completes)
+        defer { if self.token == token { previewInference = nil; previewSnapshot = nil } }
         try await inference.value
     }
 
@@ -420,6 +423,10 @@ final class DictationController: ObservableObject {
         let recorder = self.recorder; self.recorder = nil
         let capturedSamples = samples, transcript = self.transcript
         let pending = previewInference, external = externalTranscription
+        // Audio recorded after a partial preview's snapshot means its text will not be used:
+        // stop it, so the final pass does not wait for a result it would throw away.
+        if let snapshot = previewSnapshot, !snapshot.completesWindow,
+           capturedSamples.count - transcript.offset > snapshot.sampleCount { pending?.cancel() }
         ticker?.cancel(); ticker = nil
         preview?.cancel(); preview = nil
         let recognition = Task { [weak self] in
@@ -441,7 +448,7 @@ final class DictationController: ObservableObject {
         let recognition = finishTranscription(token: token, rule: rule, models: models)
         let hold = residencyHold; residencyHold = nil
         // Transfer capture/recognition ownership before resetting the active recording.
-        finalTranscription = nil; previewInference = nil; samples = AudioSamples()
+        finalTranscription = nil; previewInference = nil; previewSnapshot = nil; samples = AudioSamples()
         cancel()
         recoveringHistoryIDs.insert(token)
         let recovery = Task { [weak self] in
@@ -480,7 +487,7 @@ final class DictationController: ObservableObject {
     }
     func cancel() {
         token = nil; work?.cancel(); finalTranscription?.cancel(); preview?.cancel(); previewInference?.cancel(); ticker?.cancel()
-        work = nil; finalTranscription = nil; preview = nil; previewInference = nil; ticker = nil
+        work = nil; finalTranscription = nil; preview = nil; previewInference = nil; previewSnapshot = nil; ticker = nil
         recorder?.stop(); recorder = nil; samples.clear()
         // A recording kept for a retry ends with its session; interrupted history holds its own.
         transcript = DictationTranscript(); failure = ""

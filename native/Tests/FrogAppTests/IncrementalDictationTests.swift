@@ -183,6 +183,55 @@ final class IncrementalDictationTests: XCTestCase {
         await fixture.models.unload()
     }
 
+    func testStopDoesNotWaitForAPreviewThatAudioRecordedSinceHasOutdated() async throws {
+        let fixture = await makeFixture(seconds: 5)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        var copied = ""
+        let delivered = expectation(description: "Transcript copied")
+        let controller = DictationController(makeRecorder: { fixture.recorder }, authorize: { true }, copy: { copied = $0; delivered.fulfill() }, monitorKeys: false,
+                                             previewInterval: .seconds(3600), inputDevices: { [] }, presentsPopup: false)
+        controller.start(rule: rule, preferences: WorkflowPreferences(), models: fixture.models)
+        await controller.waitForWork()
+        let started = expectation(description: "Preview inference started")
+        await fixture.engine.pauseNext(started, endingOnCancel: true)
+        let preview = Task { try await controller.refreshPreview() }
+        await fulfillment(of: [started], timeout: 2)
+        fixture.recorder.append(from: 5, seconds: 1)
+        controller.stop(models: fixture.models)
+        // The preview read five seconds of six, so its text cannot be used; Stop must not wait for it.
+        await fulfillment(of: [delivered], timeout: 2)
+        await fixture.engine.resume()
+        await controller.waitForWork()
+        do { try await preview.value; XCTFail("The outdated preview must be stopped") }
+        catch is CancellationError { }
+        let calls = await fixture.engine.calls
+        XCTAssertEqual(calls.map(\.count), [5, 6].map { $0 * 16000 })
+        XCTAssertEqual(copied, "Seconds 0–5.")
+        await fixture.models.unload()
+    }
+
+    func testStopUsesAPreviewInFlightWhenNothingWasRecordedAfterIt() async throws {
+        let fixture = await makeFixture(seconds: 5)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        var copied = ""
+        let controller = DictationController(makeRecorder: { fixture.recorder }, authorize: { true }, copy: { copied = $0 }, monitorKeys: false,
+                                             previewInterval: .seconds(3600), inputDevices: { [] }, presentsPopup: false)
+        controller.start(rule: rule, preferences: WorkflowPreferences(), models: fixture.models)
+        await controller.waitForWork()
+        let started = expectation(description: "Preview inference started")
+        await fixture.engine.pauseNext(started, endingOnCancel: true)
+        let preview = Task { try await controller.refreshPreview() }
+        await fulfillment(of: [started], timeout: 2)
+        controller.stop(models: fixture.models)
+        await fixture.engine.resume()
+        try await preview.value
+        await controller.waitForWork()
+        let calls = await fixture.engine.calls
+        XCTAssertEqual(calls.map(\.count), [5 * 16000])
+        XCTAssertEqual(copied, "Seconds 0–4.")
+        await fixture.models.unload()
+    }
+
     func testCancelledPreviewCannotPopulateANewerRecording() async throws {
         let fixture = await makeFixture(seconds: 35)
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
@@ -396,7 +445,9 @@ private actor CountingSpeech: LocalInferenceEngine {
     private var shouldFail = false
     private var minimumCount = 0
     private var withoutSpaces = false
-    func pauseNext(_ started: XCTestExpectation) { pause = started }
+    private var pauseEndsOnCancel = false
+    /// A pause that ends on cancellation behaves like the real engines, which stop between steps.
+    func pauseNext(_ started: XCTestExpectation, endingOnCancel: Bool = false) { pause = started; pauseEndsOnCancel = endingOnCancel }
     func resume() { continuation?.resume(); continuation = nil }
     func failNext() { shouldFail = true }
     func refuseUnderASecond() { minimumCount = 16000 }
@@ -406,7 +457,13 @@ private actor CountingSpeech: LocalInferenceEngine {
         calls.append(Call(count: samples.count, firstSecond: Int(samples.first ?? 0)))
         if let pause {
             self.pause = nil
-            await withCheckedContinuation { continuation = $0; pause.fulfill() }
+            if pauseEndsOnCancel {
+                await withTaskCancellationHandler {
+                    await withCheckedContinuation { continuation = $0; pause.fulfill() }
+                } onCancel: { Task { await self.resume() } }
+            } else {
+                await withCheckedContinuation { continuation = $0; pause.fulfill() }
+            }
         }
         try Task.checkCancellation()
         if shouldFail { shouldFail = false; throw PreviewFailure() }

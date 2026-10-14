@@ -36,12 +36,18 @@ actor ParakeetRuntime {
         try Task.checkCancellation()
         try await engine.initialize(models: models)
         try Task.checkCancellation()
-        manager = engine
+        manager = engine; decoderNeedsReset = false
     }
+    /// FluidAudio resets its decoder only after a transcription that succeeds. A stopped preview
+    /// would otherwise hand the end of its utterance to the next transcription.
+    private var decoderNeedsReset = false
     func transcribe(_ samples: [Float]) async throws -> String {
         guard let manager else { throw FrogError.message("The Parakeet model is not loaded.") }
-        let result = try await manager.transcribe(samples)
-        return result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if decoderNeedsReset { try await manager.resetDecoderState(); decoderNeedsReset = false }
+        do {
+            let result = try await manager.transcribe(samples)
+            return result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch { decoderNeedsReset = true; throw error }
     }
     func unload() async { await manager?.cleanup(); manager = nil }
 }
