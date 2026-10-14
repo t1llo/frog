@@ -21,7 +21,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "FrogUsage", path: "native/FrogUsage"),
-        .target(name: "FrogCore", path: "native/FrogCore", swiftSettings: [.enableUpcomingFeature("StrictConcurrency")]),
+        .target(name: "FrogCore", path: "native/FrogCore", swiftSettings: [.swiftLanguageMode(.v6)]),
         .executableTarget(name: "FrogApp", dependencies: ["FrogCore", "FrogUsage", .product(name: "Sparkle", package: "Sparkle"), .product(name: "WhisperKit", package: "WhisperKit"), .product(name: "FluidAudio", package: "FluidAudio"), .product(name: "MLXLLM", package: "mlx-swift-lm"), .product(name: "MLXLMCommon", package: "mlx-swift-lm"), .product(name: "Hub", package: "swift-transformers")], path: "native/FrogApp", resources: [.process("Resources")], linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
         .testTarget(name: "FrogCoreTests", dependencies: ["FrogCore"], path: "native/Tests/FrogCoreTests"),
         .testTarget(name: "FrogAppTests", dependencies: ["FrogApp", "FrogCore", "FrogUsage"], path: "native/Tests/FrogAppTests"),
