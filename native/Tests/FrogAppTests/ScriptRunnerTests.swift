@@ -76,6 +76,32 @@ final class ScriptRunnerTests: XCTestCase {
         XCTAssertEqual(runner.status, "Exit 0")
     }
 
+    @MainActor func testAStoppedScriptHoldsUpQuitOnlyUntilItsProcessIsGone() async throws {
+        let runner = ScriptRunner()
+        runner.run(UtilityDocument(kind: .script, title: "Slow", text: "/bin/sleep 30"))
+        XCTAssertTrue(runner.needsQuitCleanup)
+        runner.stop()
+        // The process group is killed by the stopped task, so a quit right after Stop still waits for it.
+        XCTAssertTrue(runner.needsQuitCleanup)
+        for _ in 0..<300 where runner.needsQuitCleanup { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(runner.needsQuitCleanup)
+        XCTAssertEqual(runner.status, "Stopped")
+    }
+
+    @MainActor func testAScriptReplacedByAnotherLeavesTheNewOneToCleanUpAtQuit() async throws {
+        let runner = ScriptRunner()
+        runner.run(UtilityDocument(kind: .script, title: "First", text: "/bin/sleep 30"))
+        let second = UtilityDocument(kind: .script, title: "Second", text: "print -r -- second fixture; /bin/sleep 30")
+        runner.run(second)
+        // The first script ends once the second starts printing; its end must not release the second one's task.
+        for _ in 0..<300 where runner.output.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(runner.output, "second fixture\n")
+        XCTAssertEqual(runner.running, second.id)
+        XCTAssertTrue(runner.needsQuitCleanup)
+        await runner.stopAndWait()
+        XCTAssertFalse(runner.needsQuitCleanup)
+    }
+
     func testScriptsSearchTheHomebrewDirectoriesAheadOfTheInheritedPath() async throws {
         XCTAssertEqual(ScriptProcess.searchPath(inherited: "/usr/bin:/bin:/usr/sbin:/sbin"), "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
         XCTAssertEqual(ScriptProcess.searchPath(inherited: "/fixture/bin:/usr/local/bin:/usr/bin:/opt/homebrew/bin:/fixture/bin"), "/opt/homebrew/bin:/usr/local/bin:/fixture/bin:/usr/bin")

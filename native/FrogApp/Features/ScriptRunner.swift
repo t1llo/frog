@@ -132,7 +132,8 @@ enum ScriptProcess {
     private var task: Task<Void, Never>?
     var needsQuitCleanup: Bool { task != nil }
     private var generation = UUID()
-    /// The run whose output is shown. Stop keeps showing what the stopped script printed; only a new run replaces it.
+    /// The run whose output is shown and whose task `task` holds. Stop keeps showing what the stopped script printed;
+    /// only a new run replaces it.
     private var shown = UUID()
     func run(_ script: UtilityDocument) {
         guard script.kind == .script else { return }
@@ -146,6 +147,8 @@ enum ScriptProcess {
             output = text
         }
         task = Task { [weak self] in
+            // A stopped task ends with an old generation; it still releases the handle once its process is gone.
+            defer { if let self, shown == runID { task = nil } }
             await previous?.value
             do {
                 try Task.checkCancellation()
@@ -154,13 +157,13 @@ enum ScriptProcess {
                 guard let self, generation == token, !Task.isCancelled else { return }
                 output = result.output
                 status = "Exit \(result.status)" + (result.truncated ? " · Output limited to 256 KB" : "")
-                running = nil; task = nil
+                running = nil
                 if result.status == 0 { onSuccessfulRun?() }
             } catch {
                 printed.finish()
                 guard let self, generation == token else { return }
                 status = error is CancellationError ? "Stopped" : error.localizedDescription
-                running = nil; task = nil
+                running = nil
             }
         }
     }
