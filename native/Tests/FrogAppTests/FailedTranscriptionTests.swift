@@ -124,6 +124,27 @@ final class FailedTranscriptionTests: XCTestCase {
         XCTAssertEqual(uploads, 0)
     }
 
+    func testLocalRecordingTooShortForTheEngineStillEndsTheSession() async throws {
+        let fixture = await makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        // Like Parakeet, refuse audio shorter than a second: the same samples fail on every retry.
+        await fixture.engine.refuseUnderASecond()
+        var issues: [String] = []
+        let controller = makeController(recording: { ShortRecording(count: 8000) }, copy: { _ in XCTFail("Nothing was transcribed") })
+        controller.onError = { issues.append($0.localizedDescription) }
+        controller.start(rule: localRule, preferences: WorkflowPreferences(), models: fixture.models)
+        await controller.waitForWork()
+        controller.stop(models: fixture.models)
+        await controller.waitForWork()
+        XCTAssertEqual(controller.phase, .idle)
+        XCTAssertEqual(issues, [TooShortFailure().localizedDescription])
+        controller.retryTranscription()
+        await controller.waitForWork()
+        let calls = await fixture.engine.calls
+        XCTAssertEqual(calls.map(\.count), [8000], "A recording that ended its session is not kept")
+        await fixture.models.unload()
+    }
+
     func testDiscardingAFailedTranscriptionDropsTheRecordingWithoutHistory() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -235,7 +256,9 @@ private final class SpokenRecording: DictationRecording {
 
 @MainActor
 private final class ShortRecording: DictationRecording {
-    func start(deviceUID: String?, samples: @escaping @Sendable ([Float]) -> Void) throws { samples(Array(repeating: 0.1, count: 1600)) }
+    private let count: Int
+    init(count: Int = 1600) { self.count = count }
+    func start(deviceUID: String?, samples: @escaping @Sendable ([Float]) -> Void) throws { samples(Array(repeating: 0.1, count: count)) }
     func stop() {}
 }
 
@@ -247,12 +270,15 @@ private actor FailingSpeech: LocalInferenceEngine {
     var calls: [Call] = []
     var loadedIDs: Set<String> = []
     private var shouldFail = false
+    private var minimumCount = 0
     func failNext() { shouldFail = true }
+    func refuseUnderASecond() { minimumCount = 16000 }
     func prepare(model: LocalModelDescriptor, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws { loadedIDs.insert(model.id); await residency(loadedIDs) }
     func transcribe(_ samples: [Float], model: LocalModelDescriptor, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
         loadedIDs.insert(model.id); await residency(loadedIDs)
         calls.append(Call(count: samples.count, firstSecond: Int(samples.first ?? 0)))
         if shouldFail { shouldFail = false; throw FixtureFailure() }
+        if samples.count < minimumCount { throw TooShortFailure() }
         return "Seconds \(Int(samples.first ?? 0))–\(Int(samples.last ?? 0))."
     }
     func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String { text }
@@ -261,4 +287,8 @@ private actor FailingSpeech: LocalInferenceEngine {
 
 private struct FixtureFailure: LocalizedError {
     var errorDescription: String? { "Fixture speech model failed." }
+}
+
+private struct TooShortFailure: LocalizedError {
+    var errorDescription: String? { "Fixture speech model needs at least a second of audio." }
 }

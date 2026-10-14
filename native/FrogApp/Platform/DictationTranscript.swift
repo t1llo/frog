@@ -88,7 +88,8 @@ final class DictationTranscript {
                     do { ending = try await models.transcribe(remaining, modelID: modelID, language: rule.action?.transcriptionLanguage) }
                     catch {
                         // Finished windows stay recognised; only this ending needs another pass.
-                        if !Task.isCancelled, !(error is CancellationError) { self.audio = audio }
+                        // An ending under a second fails the same way every time, as Parakeet refuses it.
+                        if !Task.isCancelled, !(error is CancellationError), remaining.count >= 16000 { self.audio = audio }
                         throw error
                     }
                 }
