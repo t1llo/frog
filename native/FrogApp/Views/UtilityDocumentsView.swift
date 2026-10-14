@@ -228,6 +228,19 @@ enum ShelfDrop {
     }
 }
 
+extension AppearancePreferences.Mode {
+    /// "Switch appearance" turns what is on screen to the other one. While the mode follows the
+    /// system, that is the appearance macOS shows now, so a dark Mac turns light.
+    static func switched(from mode: Self?, systemIsDark: Bool) -> Self {
+        let showsDark = switch mode ?? .system {
+        case .system: systemIsDark
+        case .light: false
+        case .dark: true
+        }
+        return showsDark ? .light : .dark
+    }
+}
+
 struct QuickActionsView: View {
     @EnvironmentObject private var model: AppModel
     @State private var input = ""
@@ -239,7 +252,8 @@ struct QuickActionsView: View {
                 Button("Switch appearance", systemImage: "circle.lefthalf.filled") {
                     var prefs = model.configuration.preferences
                     var appearance = prefs.appearance ?? AppearancePreferences()
-                    appearance.mode = appearance.mode == .dark ? .light : .dark; prefs.appearance = appearance
+                    let systemIsDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                    appearance.mode = .switched(from: appearance.mode, systemIsDark: systemIsDark); prefs.appearance = appearance
                     do { try model.savePreferences(prefs) } catch { model.report(error) }
                 }
                 Button("Lock screen", systemImage: "lock") {
