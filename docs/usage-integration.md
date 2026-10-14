@@ -133,7 +133,9 @@ Implemented:
 - **Source/range accuracy:** account mode permits only daily 7d/30d periods, using
   UTC chart dates. Missing account activity is labeled as a local-log fallback.
   Local logs can span accounts and do not pretend to match the selected quota login.
-  Existing saved provider/source/metric choices are retained.
+  Existing saved provider/source/metric choices are retained. Periods are whole
+  hours or days ending with the current one, so "Last 7 days" is today and the
+  previous six; each option in the period menu says so on hover.
 - **Profiles:** the dashboard can select a Claude Code configuration folder, like
   standalone. This local-only path selects its quota login and lifetime cache and
   adds its project transcripts. Standard discovery also includes `.config/claude`;

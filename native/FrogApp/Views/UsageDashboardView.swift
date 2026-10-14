@@ -278,6 +278,7 @@ private struct UsageActivityView: View {
                 CompactMenu(value: compact ? settings.range : rangeTitle(settings.range), width: compact ? 70 : 150) {
                     ForEach(usage.ranges, id: \.self) { range in
                         Button(rangeTitle(range)) { var next = usage.preferences; next.range = range; usage.updatePreferences(next) }
+                            .help(rangeSpan(range))
                     }
                 }.accessibilityLabel("Activity period")
             }
@@ -369,6 +370,15 @@ private struct UsageActivityView: View {
     }
     private func rangeTitle(_ range: String) -> String {
         switch range { case "24h": "Last 24 hours"; case "30d": "Last 30 days"; default: "Last 7 days" }
+    }
+    /// The bars are whole hours or days and the newest is still under way, so a period starts
+    /// at the beginning of its first bar rather than exactly 24 hours or 7 days ago.
+    private func rangeSpan(_ range: String) -> String {
+        switch range {
+        case "24h": "The current hour and the previous 23"
+        case "30d": "Today and the previous 29 days"
+        default: "Today and the previous 6 days"
+        }
     }
 }
 
