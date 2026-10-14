@@ -38,6 +38,44 @@ final class ScriptRunnerTests: XCTestCase {
         XCTAssertLessThan(start.duration(to: .now), .seconds(3))
     }
 
+    func testAScriptThatRunsOutOfTimeKeepsWhatItPrinted() async throws {
+        let printed = ScriptPrintedFixture()
+        do {
+            _ = try await ScriptProcess.run("print -r -- progress fixture; /bin/sleep 30", timeout: 0.5) { printed.text = $0 }
+            XCTFail("Expected timeout")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("time limit")) }
+        XCTAssertEqual(printed.text, "progress fixture\n")
+    }
+
+    func testOutputShownWhileTheScriptRunsEndsBeforeACharacterStillArriving() {
+        let frog = Data("a🐸".utf8)
+        XCTAssertEqual(ScriptProcess.wholeCharacterCount(frog), 5)
+        for cut in 2..<5 { XCTAssertEqual(ScriptProcess.wholeCharacterCount(frog.prefix(cut)), 1) }
+        XCTAssertEqual(ScriptProcess.wholeCharacterCount(Data("é".utf8).prefix(1)), 0)
+        XCTAssertEqual(ScriptProcess.wholeCharacterCount(Data("ab".utf8)), 2)
+        XCTAssertEqual(ScriptProcess.wholeCharacterCount(Data()), 0)
+    }
+
+    @MainActor func testOutputAppearsWhileTheScriptRunsAndStaysWhenItIsStopped() async throws {
+        let runner = ScriptRunner()
+        runner.run(UtilityDocument(kind: .script, title: "Slow", text: "print -r -- printed fixture; /bin/sleep 30"))
+        for _ in 0..<300 where runner.output.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNotNil(runner.running)
+        XCTAssertEqual(runner.output, "printed fixture\n")
+        runner.stop()
+        await runner.stopAndWait()
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(runner.output, "printed fixture\n")
+        XCTAssertEqual(runner.status, "Stopped")
+        // A new run starts empty and shows only its own output.
+        runner.run(UtilityDocument(kind: .script, title: "Quick", text: "print -r -- second fixture"))
+        XCTAssertEqual(runner.output, "")
+        for _ in 0..<300 where runner.running != nil { try await Task.sleep(for: .milliseconds(10)) }
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(runner.output, "second fixture\n")
+        XCTAssertEqual(runner.status, "Exit 0")
+    }
+
     func testScriptsSearchTheHomebrewDirectoriesAheadOfTheInheritedPath() async throws {
         XCTAssertEqual(ScriptProcess.searchPath(inherited: "/usr/bin:/bin:/usr/sbin:/sbin"), "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
         XCTAssertEqual(ScriptProcess.searchPath(inherited: "/fixture/bin:/usr/local/bin:/usr/bin:/opt/homebrew/bin:/fixture/bin"), "/opt/homebrew/bin:/usr/local/bin:/fixture/bin:/usr/bin")
@@ -61,5 +99,14 @@ final class ScriptRunnerTests: XCTestCase {
         let link = await ShelfDrop.document(from: NSItemProvider(object: URL(string: "https://example.org/path")! as NSURL))
         XCTAssertEqual(link?.text, "https://example.org/path")
         XCTAssertEqual(link?.files, [])
+    }
+}
+
+private final class ScriptPrintedFixture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = ""
+    var text: String {
+        get { lock.lock(); defer { lock.unlock() }; return value }
+        set { lock.lock(); value = newValue; lock.unlock() }
     }
 }

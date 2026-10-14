@@ -20,7 +20,7 @@ calculations, saved scripts and quick actions.
 - [x] Optional Mr. Usage: plan limits, resets, token charts, model costs and credits
 - [x] Local Markdown notes, snippet variables and private document persistence
 - [x] Shelf file/text/link drop, drag, copy and sharing
-- [x] Saved scripts with bounded output and cancellation
+- [x] Saved scripts with bounded output and cancellation; output appears while a script runs and stays after Stop or the time limit
 - [x] Searchable rule, window-layout and quick actions
 - [x] Native feature-disable, interaction and packaging verification
 

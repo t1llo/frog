@@ -12,12 +12,28 @@ struct ScriptResult: Sendable {
 /// A script owns a process group: cancellation, timeout and normal completion
 /// all clean up descendants. Pipes are drained concurrently with process exit.
 enum ScriptProcess {
-    static func run(_ script: String, timeout: TimeInterval = 60, outputLimit: Int = 256 * 1024) async throws -> ScriptResult {
+    /// `onOutput` receives everything printed so far while the script runs, and once more as it ends, including
+    /// when it is stopped or runs out of time, so what it printed until then is not lost.
+    static func run(_ script: String, timeout: TimeInterval = 60, outputLimit: Int = 256 * 1024, onOutput: (@Sendable (String) -> Void)? = nil) async throws -> ScriptResult {
         guard script.utf8.count <= 100_000, !script.contains("\0") else {
             throw FrogError.message("Scripts must contain at most 100,000 bytes and no null characters.")
         }
-        let work = Task.detached(priority: .utility) { try execute(script, timeout: timeout, outputLimit: max(0, outputLimit)) }
+        let work = Task.detached(priority: .utility) { try execute(script, timeout: timeout, outputLimit: max(0, outputLimit), onOutput: onOutput) }
         return try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+    }
+
+    /// The length of `bytes` without a character whose last bytes have not arrived yet.
+    static func wholeCharacterCount(_ bytes: Data) -> Int {
+        var start = bytes.endIndex
+        while start > bytes.startIndex, bytes.endIndex - start < 4 {
+            start -= 1
+            let byte = bytes[start]
+            guard byte & 0xC0 == 0x80 else {
+                let length = byte < 0x80 ? 1 : byte >= 0xF0 ? 4 : byte >= 0xE0 ? 3 : byte >= 0xC0 ? 2 : 1
+                return bytes.endIndex - start < length ? start - bytes.startIndex : bytes.count
+            }
+        }
+        return bytes.count
     }
 
     /// Frog started from the Dock or at login inherits the system directories only, and the script's shell runs
@@ -28,7 +44,7 @@ enum ScriptProcess {
         return directories.filter { seen.insert($0).inserted }.joined(separator: ":")
     }
 
-    private static func execute(_ script: String, timeout: TimeInterval, outputLimit: Int) throws -> ScriptResult {
+    private static func execute(_ script: String, timeout: TimeInterval, outputLimit: Int, onOutput: (@Sendable (String) -> Void)?) throws -> ScriptResult {
         try Task.checkCancellation()
         var descriptors: [Int32] = [0, 0]
         guard pipe(&descriptors) == 0 else { throw POSIXError(.EIO) }
@@ -78,13 +94,28 @@ enum ScriptProcess {
                 if count > remaining { truncated = true }
             }
         }
+        var reported = 0, lastReport = ContinuousClock.now - .seconds(1)
+        func report(now: Bool) {
+            guard let onOutput else { return }
+            let shown = wholeCharacterCount(output)
+            guard shown != reported, now || lastReport.duration(to: .now) >= .milliseconds(100) else { return }
+            reported = shown; lastReport = .now
+            onOutput(String(decoding: output.prefix(shown), as: UTF8.self))
+        }
+        // Declared after the process cleanup, so it runs first: on timeout and cancellation the last drain is reported
+        // before the process group is killed.
+        defer { report(now: true) }
         while true {
-            try Task.checkCancellation()
-            guard ContinuousClock.now < deadline else { throw FrogError.message("The script exceeded its \(Int(timeout))-second time limit.") }
             drain()
+            if Task.isCancelled || ContinuousClock.now >= deadline {
+                // What arrived up to now is reported on the way out.
+                try Task.checkCancellation()
+                throw FrogError.message("The script exceeded its \(Int(timeout))-second time limit.")
+            }
             let result = waitpid(pid, &status, WNOHANG)
             if result == pid { reaped = true; drain(); break }
             if result == -1, errno != EINTR { throw POSIXError(.ECHILD) }
+            report(now: false)
             usleep(10_000)
         }
         let exitCode = (status & 0x7f) == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
@@ -101,23 +132,32 @@ enum ScriptProcess {
     private var task: Task<Void, Never>?
     var needsQuitCleanup: Bool { task != nil }
     private var generation = UUID()
+    /// The run whose output is shown. Stop keeps showing what the stopped script printed; only a new run replaces it.
+    private var shown = UUID()
     func run(_ script: UtilityDocument) {
         guard script.kind == .script else { return }
         let previous = task
         stop()
-        let token = generation
+        let token = generation, runID = UUID()
+        shown = runID
         running = script.id; resultID = script.id; output = ""; status = "Running…"
+        let printed = ScriptOutputRelay { [weak self] text in
+            guard let self, shown == runID else { return }
+            output = text
+        }
         task = Task { [weak self] in
             await previous?.value
             do {
                 try Task.checkCancellation()
-                let result = try await ScriptProcess.run(script.text)
+                let result = try await ScriptProcess.run(script.text, onOutput: { printed.send($0) })
+                printed.finish()
                 guard let self, generation == token, !Task.isCancelled else { return }
                 output = result.output
                 status = "Exit \(result.status)" + (result.truncated ? " · Output limited to 256 KB" : "")
                 running = nil; task = nil
                 if result.status == 0 { onSuccessfulRun?() }
             } catch {
+                printed.finish()
                 guard let self, generation == token else { return }
                 status = error is CancellationError ? "Stopped" : error.localizedDescription
                 running = nil; task = nil
@@ -130,4 +170,34 @@ enum ScriptProcess {
     }
     func stopAndWait() async { stop(); await task?.value; task = nil }
     isolated deinit { task?.cancel() }
+}
+
+/// Brings a running script's output to the main actor. Only the latest text is kept, so a slower main actor skips
+/// texts instead of showing them out of order.
+final class ScriptOutputRelay: @unchecked Sendable {
+    private let lock = NSLock()
+    private var latest: String?
+    private var finished = false
+    private let show: @MainActor (String) -> Void
+    init(show: @escaping @MainActor (String) -> Void) { self.show = show }
+
+    func send(_ text: String) {
+        lock.lock()
+        let scheduled = latest != nil || finished
+        if !finished { latest = text }
+        lock.unlock()
+        guard !scheduled else { return }
+        Task { @MainActor in self.deliver() }
+    }
+
+    /// Shows the text still on its way. Texts arriving later are ignored, so they cannot replace the final result.
+    @MainActor func finish() {
+        deliver()
+        lock.lock(); finished = true; latest = nil; lock.unlock()
+    }
+
+    @MainActor private func deliver() {
+        lock.lock(); let text = latest; latest = nil; let done = finished; lock.unlock()
+        if let text, !done { show(text) }
+    }
 }
