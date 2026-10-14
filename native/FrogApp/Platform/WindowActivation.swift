@@ -125,8 +125,9 @@ actor WindowActivationExecutor {
     /// `requested`: the window's app was asked to come forward already and arrives whatever
     /// input follows. The window prepared for that request is then raised all the same, so the
     /// app does not arrive showing another one; a window that was not prepared still stops.
+    /// Only the raise sent with the request goes through: trying again later stops for input.
     func raise(_ target: WindowCatalog.Target, isCurrent: @escaping @Sendable () -> Bool, requested: Bool = false) async -> Bool {
-        let finishing = requested && prepared?.id == target.id
+        var finishing = requested && prepared?.id == target.id
         func eligible() -> Bool { finishing || (!Task.isCancelled && isCurrent()) }
         let again = raisedLast.flatMap { $0.target.id == target.id && now() < $0.until ? $0.target : nil }
         raisedLast = nil
@@ -152,12 +153,15 @@ actor WindowActivationExecutor {
             guard writer.unminimize(target), eligible() else { return false }
         }
         var raised = writer.raise(target)
+        // A raise retried after the user moved on would cover the window chosen since.
+        if raised != .success { finishing = false }
         // Restoring animates, and its owner may not answer until the window is back. Any
         // other owner that has not answered yet, busy unhiding say, gets the same wait;
         // a window that refuses or is gone is not raised again.
         let deadline = ContinuousClock.now.advanced(by: .seconds(1))
         while raised != .success, minimized || raised == .cannotComplete, eligible(), ContinuousClock.now < deadline {
             do { try await Task.sleep(for: .milliseconds(40)) } catch { return false }
+            guard eligible() else { return false }
             raised = writer.raise(target)
         }
         guard raised == .success, eligible() else { return false }

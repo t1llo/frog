@@ -108,6 +108,33 @@ final class WindowActivationTests: XCTestCase {
         XCTAssertFalse(gone)
         XCTAssertEqual(refused.events, ["raise"], "A window that is gone is not raised again")
     }
+    func testRaiseSentWithTheRequestIsNotTriedAgainOnceTheUserHasMovedOn() async {
+        let answers = RaiseAnswers([.success])
+        var writer = WindowActivationExecutor.Writer()
+        writer.isTrusted = { true }
+        writer.reveal = { _, _, _ in true }
+        writer.isWindow = { _ in true }
+        writer.isMinimized = { _ in false }
+        writer.raise = { _ in answers.next() }
+        writer.makeMain = { _ in answers.note("main") }
+        let target = WindowCatalog.Target(id: UUID(), pid: 10, element: AXUIElementCreateApplication(1010), windowID: 202)
+        // Another window was chosen or clicked right after the app was asked for.
+        let executor = WindowActivationExecutor(writer: writer)
+        _ = await executor.prepare(target, isCurrent: { true })
+        let sent = await executor.raise(target, isCurrent: { false }, requested: true)
+        XCTAssertTrue(sent, "The raise sent with the request still goes through")
+        XCTAssertEqual(answers.events, ["raise", "main"])
+
+        // Unanswered, it may still land; asking again a moment later would cover the window chosen since.
+        let late = RaiseAnswers([.cannotComplete, .success])
+        writer.raise = { _ in late.next() }
+        writer.makeMain = { _ in late.note("main") }
+        let busy = WindowActivationExecutor(writer: writer)
+        _ = await busy.prepare(target, isCurrent: { true })
+        let retried = await busy.raise(target, isCurrent: { false }, requested: true)
+        XCTAssertFalse(retried)
+        XCTAssertEqual(late.events, ["raise"])
+    }
     func testRaisingTheWindowAgainOnceItsAppIsInFrontDoesNotLookForItsDesktopAgain() async {
         let trace = RaiseAnswers([.success])
         var writer = WindowActivationExecutor.Writer()
