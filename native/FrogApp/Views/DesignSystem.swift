@@ -285,6 +285,7 @@ struct PageScroll<Content: View>: View {
             VStack(alignment: .leading, spacing: 14) { content }
                 .padding(20).frame(maxWidth: 1080)
                 .frame(maxWidth: .infinity, alignment: .top)
+                .minimalScrollbars()
         }
     }
 }

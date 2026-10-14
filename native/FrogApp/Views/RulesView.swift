@@ -126,8 +126,8 @@ struct RulesView: View {
                                 } else if !search.isEmpty { Button("Clear search") { search = "" }.buttonStyle(.plain) }
                             }.foregroundStyle(FrogStyle.muted).frame(maxWidth: .infinity).padding(24)
                         }
-                    }
-                }.minimalScrollbars()
+                    }.minimalScrollbars()
+                }
             }.frogTableSurface()
         }.padding(20).sheet(item: $editing) { rule in
             RuleEditor(rule: rule, onSave: { search = "" }).environmentObject(model)
