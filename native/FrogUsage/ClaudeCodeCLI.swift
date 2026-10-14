@@ -41,12 +41,12 @@ enum ClaudeCodeCLI {
         return result
     }
 
-    /// Blocking; call it off the main thread.
-    static func renewLogin(directory: URL) -> ClaudeLoginRenewal {
+    /// Blocking; call it off the main thread. Claude Code is stopped at `deadline` seconds.
+    static func renewLogin(directory: URL, deadline: TimeInterval) -> ClaudeLoginRenewal {
         guard claudeCodeLoginLapsed(directory: directory), let executable = executable() else { return .unavailable }
         let result = usageProcess(executable, arguments: renewalArguments,
                                   environment: environment(ProcessInfo.processInfo.environment, directory: directory),
-                                  directory: FileManager.default.temporaryDirectory, timeout: 90)
+                                  directory: FileManager.default.temporaryDirectory, timeout: deadline)
         // A request answered some other way, such as with an API key, renewed nothing.
         return result?.status == 0 && !claudeCodeLoginLapsed(directory: directory) ? .renewed : .failed
     }

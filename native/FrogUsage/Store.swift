@@ -15,6 +15,9 @@ final class Store: ObservableObject {
     @Published private(set) var authPlan: String?
     /// The newest reading the Claude app saved on this Mac, if any.
     @Published private(set) var desktop: ClaudeDesktopReading?
+    /// The user asked to sign in, and Frog is first finding out whether Claude Code's login
+    /// can still be used or renewed.
+    @Published private(set) var checkingLogin = false
     var configDirectory: URL { ClaudePaths.directory(defaults: defaults) }
 
     private let defaults: UserDefaults
@@ -27,11 +30,18 @@ final class Store: ObservableObject {
     private let readAuth: @Sendable (ClaudeLoginSource, URL) -> ClaudeAuth?
     private let fetchLimits: @Sendable (String) async throws -> Usage
     private let readDesktop: @Sendable (URL) -> ClaudeDesktopReading?
-    private let renewLogin: @Sendable (URL) -> ClaudeLoginRenewal
+    private let renewLogin: @Sendable (URL, TimeInterval) -> ClaudeLoginRenewal
     private let currentDate: @Sendable () -> Date
     private(set) var timer: Timer?
     private var request: Task<Void, Never>?
     private var desktopRead: Task<Void, Never>?
+    /// Claude Code's run that renews its login. A poll and a sign-in share it, so Claude Code
+    /// is never started twice at once.
+    private var renewal: Task<ClaudeLoginRenewal, Never>?
+    /// A poll renews in the background; someone waiting to sign in has Terminal's sign-in to
+    /// fall back on and is not kept waiting as long.
+    static let renewalDeadline: TimeInterval = 90
+    static let signInRenewalDeadline: TimeInterval = 30
     /// The last check found no login at all, as opposed to a request that failed.
     private var missingLogin = false
     /// The user was sent to sign in: look for the new login often, and leave Claude Code alone.
@@ -43,7 +53,7 @@ final class Store: ObservableObject {
          readAuth: @escaping @Sendable (ClaudeLoginSource, URL) -> ClaudeAuth? = { readClaudeAuth(source: $0, directory: $1) },
          fetchLimits: @escaping @Sendable (String) async throws -> Usage = { try await fetchUsage(token: $0) },
          readDesktop: @escaping @Sendable (URL) -> ClaudeDesktopReading? = { _ in nil },
-         renewLogin: @escaping @Sendable (URL) -> ClaudeLoginRenewal = { _ in .unavailable },
+         renewLogin: @escaping @Sendable (URL, TimeInterval) -> ClaudeLoginRenewal = { _, _ in .unavailable },
          currentDate: @escaping @Sendable () -> Date = { Date() }) {
         self.defaults = defaults
         self.readAuth = readAuth
@@ -74,6 +84,7 @@ final class Store: ObservableObject {
         timer?.invalidate(); timer = nil
         request?.cancel(); request = nil
         desktopRead?.cancel(); desktopRead = nil
+        renewal?.cancel(); renewal = nil
         inFlight = false; cachedToken = nil; awaitingLoginUntil = nil
     }
 
@@ -115,6 +126,7 @@ final class Store: ObservableObject {
         loginGeneration += 1
         request?.cancel(); request = nil; inFlight = false
         desktopRead?.cancel(); desktopRead = nil
+        renewal?.cancel(); renewal = nil
         cachedToken = nil
         polling.clearReading()
         usage = nil; lastGoodAt = nil; lastError = nil; authLabel = nil; authPlan = nil; missingLogin = false
@@ -123,26 +135,43 @@ final class Store: ObservableObject {
     }
 
     /// The user asked to sign in to Claude Code. Reports whether that is really needed: a login
-    /// that is current, or that Claude Code can still renew, is simply used.
+    /// that is current, or that Claude Code can still renew, is simply used. Asking again while
+    /// this is being checked does nothing.
     func beginSignIn() async -> Bool {
-        guard active else { return false }
+        guard active, !checkingLogin else { return false }
+        checkingLogin = true
+        defer { checkingLogin = false }
         // Set before the first suspension, so a check already under way starts no second renewal.
         awaitingLoginUntil = currentDate().addingTimeInterval(600)
-        let generation = loginGeneration, directory = configDirectory, reader = readAuth, renew = renewLogin
-        let found = try? await usageWork { () -> (usable: Bool, renewal: ClaudeLoginRenewal?) in
-            if reader(.claudeCode, directory) != nil { return (true, nil) }
-            let renewal = renew(directory)
-            return (renewal == .renewed && reader(.claudeCode, directory) != nil, renewal)
+        let generation = loginGeneration, directory = configDirectory, reader = readAuth
+        guard var usable = try? await usageWork({ reader(.claudeCode, directory) != nil }),
+              active, generation == loginGeneration else { return false }
+        if !usable, await renew(directory, deadline: Self.signInRenewalDeadline) == .renewed {
+            guard let found = try? await usageWork({ reader(.claudeCode, directory) != nil }) else { return false }
+            usable = found
         }
-        guard active, generation == loginGeneration, let found else { return false }
-        if let renewal = found.renewal { polling.renewalEnded(renewal, at: currentDate()) }
-        if found.usable { awaitingLoginUntil = nil }
+        guard active, generation == loginGeneration else { return false }
+        if usable { awaitingLoginUntil = nil }
         // The last check found no login and sent nothing, so looking again now costs no request.
         if missingLogin { polling.retry(at: currentDate()) }
         // Automatic stays with the tool it resolved; let it find Claude Code's login instead.
         if loginSource == .automatic, let pinned = polling.authSource, pinned != .claudeCode { clearSelectedLogin() }
         else { polling.save(to: defaults); tick() }
-        return !found.usable
+        return !usable
+    }
+
+    /// Joins the renewal under way, or starts one. Only the run that started it records the
+    /// result in the renewal gate, so one run is counted once.
+    private func renew(_ directory: URL, deadline: TimeInterval) async -> ClaudeLoginRenewal {
+        if let renewal { return await renewal.value }
+        let generation = loginGeneration, run = renewLogin
+        let task = Task { (try? await usageWork { run(directory, deadline) }) ?? .failed }
+        renewal = task
+        let result = await task.value
+        guard generation == loginGeneration else { return result }
+        renewal = nil
+        polling.renewalEnded(result, at: currentDate())
+        return result
     }
 
     /// Limits cannot be read until the user signs in to Claude Code: its login is missing or can
@@ -205,7 +234,7 @@ final class Store: ObservableObject {
         polling.save(to: defaults)
         let generation = loginGeneration
         let source = loginSource == .automatic ? polling.authSource ?? .automatic : loginSource
-        let directory = configDirectory, reader = readAuth, renew = renewLogin
+        let directory = configDirectory, reader = readAuth
         request = Task {
             defer { if generation == loginGeneration { polling.save(to: defaults); inFlight = false } }
             do {
@@ -217,9 +246,8 @@ final class Store: ObservableObject {
                 if auth == nil, source == .automatic || source == .claudeCode, !awaitingLogin,
                    polling.beginRenewal(at: currentDate()) {
                     polling.save(to: defaults)
-                    let renewal = try await usageWork { renew(directory) }
+                    let renewal = await renew(directory, deadline: Self.renewalDeadline)
                     guard active, !Task.isCancelled, generation == loginGeneration else { return }
-                    polling.renewalEnded(renewal, at: currentDate())
                     // Unlike a Keychain item caught mid-rewrite, this login is known to be over.
                     if renewal != .unavailable { cachedToken = nil }
                     if renewal == .renewed {
@@ -286,6 +314,7 @@ final class Store: ObservableObject {
     private let signInHint = "The Claude app saves its limits only while its menu-bar icon is on and was opened recently. Sign in to Claude Code and Frog checks them itself."
 
     var status: String {
+        if checkingLogin { return "Checking Claude Code’s login…" }
         if let shown = reading(), shown.source == .desktop {
             let fresh = currentDate().timeIntervalSince(shown.at) <= ClaudeDesktopUsage.freshness
             return "Saved by the Claude app at \(dayClockForStatus(shown.at))."

@@ -171,7 +171,7 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
         let live = fixtureRoot == nil, desktopFiles = ClaudeDesktopFiles()
         claude = Store(defaults: defaults, startPolling: false,
                        readDesktop: { live ? readClaudeDesktop(directory: $0, files: desktopFiles) : nil },
-                       renewLogin: { live ? ClaudeCodeCLI.renewLogin(directory: $0) : .unavailable })
+                       renewLogin: { live ? ClaudeCodeCLI.renewLogin(directory: $0, deadline: $1) : .unavailable })
         tokens = TokenStore(fixtureRoot: fixtureRoot, claudeDirectory: ClaudePaths.directory(defaults: defaults))
         var saved = defaults.data(forKey: "dashboardPreferences").flatMap { try? JSONDecoder().decode(UsageDashboardPreferences.self, from: $0) } ?? UsageDashboardPreferences()
         saved.loginSource = claude.loginSource.rawValue
@@ -214,6 +214,8 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
     }
     /// Claude limits cannot be read until the user signs in to Claude Code.
     public var needsClaudeSignIn: Bool { fixtureRoot == nil && active && claude.needsClaudeCodeLogin }
+    /// A sign-in was asked for and Claude Code's login is being checked first; asking again does nothing.
+    public var checkingClaudeSignIn: Bool { claude.checkingLogin }
     /// The shell command for Claude Code's own sign-in; nil when Claude Code is not installed.
     public var claudeSignInCommand: String? {
         ClaudeCodeCLI.executable().map { ClaudeCodeCLI.signInCommand(executable: $0, directory: claude.configDirectory) }

@@ -70,8 +70,9 @@ struct UsageStatusPopover: View {
                     showsCompactTokens: usage.windows(provider: provider).count <= 1)
             }.padding(.horizontal, 9).padding(.top, 4).padding(.bottom, 12)
             if provider == "Claude", usage.needsClaudeSignIn {
-                MenuActionRow(title: "Sign in to Claude Code…", symbol: "person.crop.circle.badge.checkmark", action: signIn)
-                    .help(usage.status(provider: provider))
+                MenuActionRow(title: usage.checkingClaudeSignIn ? "Checking Claude Code’s login…" : "Sign in to Claude Code…",
+                              symbol: "person.crop.circle.badge.checkmark", action: signIn)
+                    .disabled(usage.checkingClaudeSignIn).help(usage.status(provider: provider))
             }
             UpdateReadyRow(install: installUpdate)
             MenuActionRow(title: "Open dashboard", symbol: "arrow.up.forward.app", action: openDashboard)
@@ -166,7 +167,8 @@ private struct UsageLimitsView: View {
                      .help(usage.status(provider: provider)).textSelection(.enabled)
                 }
                 if !compact, provider == "Claude", usage.needsClaudeSignIn {
-                    Button("Sign in to Claude Code…") { ClaudeSignIn.start(usage) }.buttonStyle(FrogButtonStyle())
+                    Button(usage.checkingClaudeSignIn ? "Checking Claude Code’s login…" : "Sign in to Claude Code…") { ClaudeSignIn.start(usage) }
+                        .buttonStyle(FrogButtonStyle()).disabled(usage.checkingClaudeSignIn)
                 }
                 if !compact, let credits = usage.credits(provider: provider) {
                     Label(credits, systemImage: "creditcard").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)

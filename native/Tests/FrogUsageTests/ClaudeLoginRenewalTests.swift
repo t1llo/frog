@@ -8,7 +8,7 @@ import XCTest
     private final class World: @unchecked Sendable {
         private let lock = NSLock()
         private var _now: Date, _login = false, _renewal = ClaudeLoginRenewal.failed
-        private var _renewals = 0, _reads = 0, _requests = 0
+        private var _renewals = 0, _reads = 0, _requests = 0, _held = false, _deadlines: [TimeInterval] = []
         init(now: Date) { _now = now }
         private func locked<Value>(_ body: () -> Value) -> Value { lock.lock(); defer { lock.unlock() }; return body() }
         var now: Date { get { locked { _now } } set { locked { _now = newValue } } }
@@ -17,8 +17,15 @@ import XCTest
         var renewals: Int { locked { _renewals } }
         var reads: Int { locked { _reads } }
         var requests: Int { locked { _requests } }
+        /// Keeps a renewal running until it is let go.
+        var held: Bool { get { locked { _held } } set { locked { _held = newValue } } }
+        var deadlines: [TimeInterval] { locked { _deadlines } }
         func read() -> Bool { locked { _reads += 1; return _login } }
-        func renew() -> ClaudeLoginRenewal { locked { _renewals += 1; if _renewal == .renewed { _login = true }; return _renewal } }
+        func renew(deadline: TimeInterval) -> ClaudeLoginRenewal {
+            locked { _renewals += 1; _deadlines.append(deadline) }
+            while held { usleep(1000) }
+            return locked { if _renewal == .renewed { _login = true }; return _renewal }
+        }
         func request() { locked { _requests += 1 } }
     }
 
@@ -30,7 +37,7 @@ import XCTest
             world.read() ? ClaudeAuth(token: "fixture", source: source == .automatic ? .claudeCode : source,
                                       identity: "claudeCode|dir|account|org", label: "Fixture", hasAccountMetadata: true) : nil
         }, fetchLimits: { _ in world.request(); return limits }, readDesktop: { _ in desktop },
-        renewLogin: { _ in world.renew() }, currentDate: { world.now })
+        renewLogin: { _, deadline in world.renew(deadline: deadline) }, currentDate: { world.now })
         return (store, defaults, suite)
     }
 
@@ -110,6 +117,35 @@ import XCTest
         XCTAssertEqual(world.renewals, 2)
         XCTAssertEqual(store.displayUsage()?.limits.map(\.pct), [12])
         XCTAssertFalse(store.needsClaudeCodeLogin)
+    }
+
+    func testSignInDuringARenewalWaitsForItAndSaysSoInsteadOfStartingAnother() async throws {
+        let world = World(now: base); world.held = true
+        let (store, defaults, suite) = store(world)
+        defer { world.held = false; store.stop(); defaults.removePersistentDomain(forName: suite) }
+        store.start()
+        for _ in 0..<400 where world.renewals == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        async let first = store.beginSignIn()
+        for _ in 0..<400 where !store.checkingLogin { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertTrue(store.checkingLogin)
+        XCTAssertTrue(store.status.hasPrefix("Checking Claude Code’s login"), store.status)
+        let second = await store.beginSignIn()
+        XCTAssertFalse(second, "A second request while the first is checking opens nothing")
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(world.renewals, 1, "The sign-in waits for the renewal already under way")
+        world.held = false
+        let needed = await first
+        try await settled(store)
+        XCTAssertTrue(needed)
+        XCTAssertFalse(store.checkingLogin)
+        XCTAssertEqual(world.renewals, 1)
+        XCTAssertTrue(store.status.hasPrefix("Claude Code is not signed in on this Mac"), store.status)
+        // A renewal the user is waiting for gives up sooner; Terminal's sign-in is there instead.
+        let again = await store.beginSignIn()
+        XCTAssertTrue(again)
+        XCTAssertEqual(world.renewals, 2)
+        XCTAssertEqual(world.deadlines.count, 2)
+        XCTAssertLessThan(world.deadlines[1], world.deadlines[0])
     }
 
     func testSignInIsSkippedWhenClaudeCodeStillHasAUsableLogin() async throws {

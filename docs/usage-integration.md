@@ -279,7 +279,11 @@ a Claude Code login that had expired.
   locale, temporary folder, proxy and certificate variables with `PATH` set to the
   system directories; `CLAUDE_CONFIG_DIR` is passed only for a non-default profile.
   Working directory is the temporary folder. No tools, no MCP servers, no saved
-  session, 90-second limit; only the exit status is used.
+  session; only the exit status is used. A poll's run is stopped after 90 seconds, a
+  run for a sign-in after 30, because Terminal's sign-in follows if it fails. Only one
+  run exists at a time: a sign-in that starts while a poll's run is under way waits
+  for that run instead of starting a second one, and the run is counted once in the
+  gate.
 - **Gate** (`ClaudePollingState.nextRenewalAt`/`renewalInterval`, saved with the other
   gates; state from earlier versions still loads): at most one attempt per 30 minutes;
   a failed attempt waits one hour, then two, up to eight; "nothing to renew" or "no
@@ -288,7 +292,9 @@ a Claude Code login that had expired.
 - **Sign in:** when no current reading can be had without a login
   (`Store.needsClaudeCodeLogin`), the popup shows a "Sign in to Claude Code…" row and
   the dashboard a button. The action first checks whether a login is usable or can be
-  renewed, and then opens nothing. Otherwise it switches a `Claude Desktop` source to
+  renewed, and then opens nothing. While it checks, the row and the button read
+  "Checking Claude Code’s login…" and are disabled, the status line says the same,
+  and a second request is ignored. Otherwise it switches a `Claude Desktop` source to
   Automatic and opens Terminal with `claude auth login` through a `.terminal` launcher
   in a 0700 temporary folder (`ClaudeSignIn`); without Claude Code or Terminal it opens
   claude.com/claude-code. For ten minutes afterwards each 15-second tick looks for the
