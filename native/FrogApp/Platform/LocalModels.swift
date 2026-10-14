@@ -177,17 +177,30 @@ final class LocalModels: ObservableObject {
     }
     /// Room a download leaves on the disk besides the model, for macOS and the other apps.
     static let spareBytes: Int64 = 100_000_000
-    /// Refuses a download that would not fit on the disk of the model folder. A
-    /// resumed download needs room only for what its folder lacks; a model whose
-    /// size is unknown is not checked.
+    /// The size of each running download that was checked for room, and what its
+    /// folder held when it started.
+    private var admitted: [String: (bytes: Int64, fetched: Int64)] = [:]
+    /// What the running downloads other than `id` have still to fetch. What they
+    /// fetched is already off the free space.
+    private func pendingBytes(besides id: String) -> Int64 {
+        admitted.filter { $0.key != id }.reduce(0) { total, download in
+            let received = max(download.value.fetched, progress[download.key]?.bytesReceived ?? 0)
+            return total + max(download.value.bytes - received, 0)
+        }
+    }
+    /// Refuses a download that would not fit on the disk of the model folder,
+    /// beside what the downloads under way have still to fetch. A resumed download
+    /// needs room only for what its folder lacks; a model whose size is unknown is
+    /// not checked.
     private func ensureRoom(for model: LocalModelDescriptor, in folder: URL) async throws {
         guard let bytes = model.downloadBytes else { return }
         let freeSpace = freeSpace, root = root
         let (free, fetched) = await Task.detached(priority: .userInitiated) { (freeSpace(root), Self.allocatedSize(folder)) }.value
-        guard let free else { return }
-        let needed = max(bytes - fetched, 0) + Self.spareBytes
-        guard free < needed else { return }
-        throw FrogError.message("\(model.name) needs about \(LocalModelDescriptor.byteCount(needed)) of free space, but the disk of the model folder has \(LocalModelDescriptor.byteCount(max(free, 0))) free. Free up space or choose another model folder in Settings, then try again.")
+        let needed = max(bytes - fetched, 0) + Self.spareBytes, pending = pendingBytes(besides: model.id)
+        guard let free, free < needed + pending else { admitted[model.id] = (bytes, fetched); return }
+        let disk = "\(model.name) needs about \(LocalModelDescriptor.byteCount(needed)) of free space, but the disk of the model folder has \(LocalModelDescriptor.byteCount(max(free, 0))) free"
+        if pending > 0 { throw FrogError.message("\(disk) and the downloads under way still need \(LocalModelDescriptor.byteCount(pending)) of it. Wait for them to finish, free up space or choose another model folder in Settings, then try again.") }
+        throw FrogError.message("\(disk). Free up space or choose another model folder in Settings, then try again.")
     }
     /// Model folders can be gigabytes: remove them off the main thread.
     nonisolated private static func discard(_ folder: URL) async throws {
@@ -248,7 +261,7 @@ final class LocalModels: ObservableObject {
         try relative.write(to: base.appendingPathComponent("installed.txt"), atomically: true, encoding: .utf8)
     }
     private func downloadEnded(_ id: String) {
-        downloads[id] = nil; progress[id] = nil; progressShown[id] = nil; preparing.remove(id); discarding.remove(id)
+        downloads[id] = nil; progress[id] = nil; progressShown[id] = nil; admitted[id] = nil; preparing.remove(id); discarding.remove(id)
     }
     /// Checks a downloaded model's files off the main actor; `fileChecks` has the result.
     func checkFiles(_ id: String) {

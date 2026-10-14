@@ -556,6 +556,41 @@ final class LocalModelsTests: XCTestCase {
         XCTAssertTrue(models.installed.contains(custom.id))
     }
 
+    func testDownloadThatFitsOnlyWithoutTheRunningDownloadsIsRefused() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let free = FreeSpace(LocalModels.spareBytes + 4_000_000)
+        let gate = DownloadGate()
+        let running = LocalModelDescriptor(id: HuggingFaceSource.modelID(repository: "fixture/running", variant: nil, backend: .mlx), name: "Running fixture", kind: .text, repository: "fixture/running", size: "See source for size", downloadBytes: 3_000_000)
+        let next = LocalModelDescriptor(id: HuggingFaceSource.modelID(repository: "fixture/next", variant: nil, backend: .mlx), name: "Next fixture", kind: .text, repository: "fixture/next", size: "See source for size", downloadBytes: 1_500_000)
+        let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: { model, base, progress in
+            if model.id == running.id {
+                await gate.wait()
+                progress(DownloadProgress(fraction: 0.83, bytesReceived: 2_500_000, bytesExpected: 3_000_000))
+                await gate.wait()
+            }
+            return try await Self.fixtureDownload(model, base, progress)
+        }, freeSpace: { _ in free.bytes })
+        models.updateCatalog(LocalModelDescriptor.catalog + [running, next])
+
+        // Each fits on its own; together they do not.
+        models.download(running); await gate.waitUntilStarted()
+        models.download(next); await models.waitForDownload(next.id)
+        XCTAssertEqual(models.errors[next.id], "Next fixture needs about 101.5 MB of free space, but the disk of the model folder has 104 MB free and the downloads under way still need 3 MB of it. Wait for them to finish, free up space or choose another model folder in Settings, then try again.")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("Models/\(next.id)").path))
+
+        // What the running download has fetched is already off the free space.
+        await gate.resume(); await gate.waitUntilStarted()
+        for _ in 0..<1000 where models.progress[running.id]?.bytesReceived != 2_500_000 { await Task.yield() }
+        free.bytes = LocalModels.spareBytes + 2_000_000
+        models.download(next); await models.waitForDownload(next.id)
+        XCTAssertNil(models.errors[next.id])
+        XCTAssertTrue(models.installed.contains(next.id))
+
+        await gate.resume(); await models.waitForDownload(running.id)
+        XCTAssertTrue(models.installed.contains(running.id))
+    }
+
     func testFreeSpaceIsReadFromTheDiskOfAModelFolderThatDoesNotExistYet() throws {
         let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("Models", isDirectory: true)
         XCTAssertFalse(FileManager.default.fileExists(atPath: missing.path))
