@@ -304,6 +304,36 @@ final class WindowCatalogTests: XCTestCase {
         XCTAssertEqual(departed.completeness, .complete)
     }
 
+    func testWindowOneScanMissesComesBackWithItsIdentityAndItsPlaceInTheOrder() async throws {
+        let fixture = CatalogFixture()
+        fixture.numberWindows()
+        let catalog = WindowCatalog(reader: fixture.reader, now: { fixture.now })
+        let first = await catalog.snapshot(applications: fixture.apps, frontPID: 20)
+        let original = try XCTUnwrap(first.windows.first { $0.pid == 20 })
+        XCTAssertEqual(first.windows.first, original)
+        // A Desktop changed while the scan ran: the window was on neither side of it.
+        fixture.setWindows(.success([]), pid: 20)
+        let missed = await catalog.snapshot(applications: fixture.apps, frontPID: nil)
+        XCTAssertEqual(missed.windows.map(\.pid), [10], "The scan lists what it found")
+        fixture.setWindows(.success([fixture.b]), pid: 20)
+        let returned = await catalog.snapshot(applications: fixture.apps, frontPID: nil)
+        XCTAssertEqual(returned.windows.first, original, "The window used last must still be the one returned to")
+        XCTAssertEqual(returned.windows.map(\.pid), [20, 10])
+
+        // Once its owner quits, or a while after, a window number is not held for it any longer.
+        _ = await catalog.snapshot(applications: [fixture.apps[0]], frontPID: nil)
+        let relaunched = await catalog.snapshot(applications: fixture.apps, frontPID: nil)
+        XCTAssertNotEqual(relaunched.windows.first { $0.pid == 20 }?.id, original.id)
+        let kept = try XCTUnwrap(relaunched.windows.first { $0.pid == 20 })
+        fixture.setWindows(.success([]), pid: 20)
+        _ = await catalog.snapshot(applications: fixture.apps, frontPID: nil)
+        fixture.advance(seconds: 301)
+        _ = await catalog.snapshot(applications: fixture.apps, frontPID: nil)
+        fixture.setWindows(.success([fixture.b]), pid: 20)
+        let late = await catalog.snapshot(applications: fixture.apps, frontPID: nil)
+        XCTAssertNotEqual(late.windows.first { $0.pid == 20 }?.id, kept.id)
+    }
+
     func testUnansweredOwnerRetainsIdentityMetadataAndRecencyUntilARealEmptyAnswer() async throws {
         let fixture = CatalogFixture()
         let catalog = WindowCatalog(reader: fixture.reader)
@@ -365,12 +395,15 @@ private final class CatalogFixture: @unchecked Sendable {
     func setWindows(_ result: WindowCatalog.Reading<[AXUIElement]>, pid: pid_t) { lock.withLock { lists[pid] = result } }
     private var focus: [pid_t: AXUIElement] = [:]
     func setFocused(_ element: AXUIElement, pid: pid_t) { lock.withLock { focus[pid] = element } }
+    private var numbered = false
+    /// Gives `a` and `b` the native window numbers 101 and 202, as real windows have.
+    func numberWindows() { lock.withLock { numbered = true } }
     var reader: WindowCatalog.Reader {
         WindowCatalog.Reader(isTrusted: { true }, windows: { [self] pid in
             onRead?(pid)
             return lock.withLock { lists[pid] ?? .success([]) }
         }, focusedWindow: { [self] pid in lock.withLock { focus[pid] } ?? (pid == 10 ? a : b) }, metadata: { [self] _ in lock.withLock { reads += 1; return metadata } },
-           windowID: { _ in nil }, offSpaceWindows: { _, _ in [] })
+           windowID: { [self] element in lock.withLock { numbered } ? (CFEqual(element, a) ? 101 : 202) : nil }, offSpaceWindows: { _, _ in [] })
     }
 }
 

@@ -155,6 +155,14 @@ actor WindowCatalog {
         let readAt: ContinuousClock.Instant
     }
     private var lastKnown: [UUID: KnownWindow] = [:]
+    /// Windows a successful scan did not list while their owner still runs, by window number.
+    /// One scan can miss a window, one overlapping a change of Desktop say; when it returns it
+    /// keeps its identity, and its turn, which stays in `recent` meanwhile.
+    private struct Retired: Hashable {
+        let pid: pid_t
+        let windowID: CGWindowID
+    }
+    private var retired: [Retired: (id: UUID, since: ContinuousClock.Instant)] = [:]
 
     init(reader: Reader = Reader(), writer: WindowActivationExecutor.Writer = .init(),
          now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }) {
@@ -172,7 +180,7 @@ actor WindowCatalog {
             targets[index] = Target(id: old.id, pid: pid, element: element ?? old.element, windowID: windowID ?? old.windowID)
             return old.id
         }
-        let id = UUID()
+        let id = windowID.flatMap { retired.removeValue(forKey: Retired(pid: pid, windowID: $0))?.id } ?? UUID()
         targets.append(Target(id: id, pid: pid, element: element, windowID: windowID))
         return id
     }
@@ -231,6 +239,7 @@ actor WindowCatalog {
         mergeRaisedRecency()
         let previousTargets = targets
         let previousRecent = recent
+        let previousRetired = retired
         let timestamp = now()
         var known: [UUID: KnownWindow] = [:]
         var completeness = Snapshot.Completeness.complete
@@ -296,12 +305,23 @@ actor WindowCatalog {
             }
         }
         guard !Task.isCancelled else {
-            targets = previousTargets
+            targets = previousTargets; retired = previousRetired
             return Snapshot(windows: [], current: nil, completeness: .cancelled)
         }
         let live = Set(windows.map(\.id))
+        let running = Set(applications.map(\.pid))
+        for target in targets where !live.contains(target.id) && running.contains(target.pid) {
+            guard let windowID = target.windowID else { continue }
+            retired[Retired(pid: target.pid, windowID: windowID)] = (target.id, timestamp)
+        }
+        // Not once the owner quits, nor after a while: by then the window is closed.
+        retired = retired.filter { running.contains($0.key.pid) && $0.value.since.duration(to: timestamp) < .seconds(300) }
+        if retired.count > 256 {
+            for key in retired.sorted(by: { $0.value.since < $1.value.since }).prefix(retired.count - 256).map(\.key) { retired[key] = nil }
+        }
+        let waiting = Set(retired.values.map(\.id))
         targets.removeAll { !live.contains($0.id) }
-        recent.removeAll { !live.contains($0) }
+        recent.removeAll { !live.contains($0) && !waiting.contains($0) }
         if let current { recent.removeAll { $0 == current }; recent.insert(current, at: 0) }
         let ranks = Dictionary(uniqueKeysWithValues: recent.enumerated().map { ($0.element, $0.offset) })
         windows = windows.enumerated().sorted {
@@ -310,7 +330,7 @@ actor WindowCatalog {
             return lhs == rhs ? $0.offset < $1.offset : lhs < rhs
         }.map(\.element)
         guard !Task.isCancelled else {
-            targets = previousTargets; recent = previousRecent
+            targets = previousTargets; recent = previousRecent; retired = previousRetired
             return Snapshot(windows: [], current: nil, completeness: .cancelled)
         }
         snapshotIDs = live
