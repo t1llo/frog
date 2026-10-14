@@ -35,7 +35,8 @@ private struct HistoryContent: View {
         let all = allEntries
         let displayedEntries = HistoryFeed.narrowed(all, filter: model.historyFilter, search: search, revealed: visibility.revealed)
         let lastEntryID = displayedEntries.last?.id
-        let emptyState = HistoryEmptyState.describing(all: all, shown: displayedEntries, filter: model.historyFilter, search: search)
+        let emptyState = HistoryEmptyState.describing(all: all, shown: displayedEntries, filter: model.historyFilter, search: search,
+                                                      clipboardEnabled: model.configuration.preferences.featureEnabled(.clipboard))
         VStack(alignment: .leading, spacing: 14) {
             if let viewing = all.first(where: { $0.id == self.viewing }) {
                 HStack {
@@ -99,6 +100,9 @@ private struct HistoryContent: View {
 
             if emptyState == .noMatches {
                 FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another filter or clear your search.")
+                Spacer(minLength: 0)
+            } else if emptyState == .clipboardOff {
+                FrogEmptyState(symbol: "clipboard", title: "Clipboard is off", message: "Enable Clipboard in Features to keep the text you copy here, in memory only.")
                 Spacer(minLength: 0)
             } else if let emptyState {
                 let copied = emptyState == .noCopiedText
@@ -262,13 +266,15 @@ struct WindowClosing: NSViewRepresentable {
 
 /// What the page says in place of an empty list.
 enum HistoryEmptyState: Equatable {
-    case noHistory, noCopiedText, noMatches
+    case noHistory, noCopiedText, clipboardOff, noMatches
 
     /// "No matches" is for a filter or search that leaves nothing of an existing feed. The
     /// Clipboard filter without copied items has nothing to match, also when saved history
-    /// exists. The feed trims the search, so spaces alone are no search.
-    static func describing(all: [HistoryItem], shown: [HistoryItem], filter: HistoryFilter?, search: String) -> Self? {
+    /// exists, and while Clipboard is off nothing copied can appear. The feed trims the
+    /// search, so spaces alone are no search.
+    static func describing(all: [HistoryItem], shown: [HistoryItem], filter: HistoryFilter?, search: String, clipboardEnabled: Bool) -> Self? {
         guard shown.isEmpty else { return nil }
+        if filter == .clipboard, !clipboardEnabled { return .clipboardOff }
         if all.isEmpty { return filter == .clipboard ? .noCopiedText : .noHistory }
         let searching = !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return filter == .clipboard && !searching ? .noCopiedText : .noMatches
