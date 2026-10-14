@@ -176,9 +176,15 @@ enum TextConfiguration {
             }
         } catch {
             if let modelIssue { throw modelIssue }
+            let inJSON = FrogError.message("config.json: \(error.localizedDescription) \(keptRemark)")
             let assignments = lines.enumerated().compactMap { index, line in
                 line.key.map { "\($0) (line \(index + 1))" }
             }.joined(separator: ", ")
+            // config.json is to blame when it is refused for the same reason without any assignment.
+            guard !assignments.isEmpty else { throw inJSON }
+            do { _ = try decode("", companion: companion, retainingUnknownFields: false) }
+            catch where error.localizedDescription == inJSON.localizedDescription { throw inJSON }
+            catch {}
             throw FrogError.message("config: \(error.localizedDescription) Check assignments: \(assignments). \(keptRemark)")
         }
     }

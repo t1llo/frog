@@ -234,6 +234,23 @@ final class ConfigurationFileTests: XCTestCase {
         }
     }
 
+    func testAProblemInConfigJSONIsReportedThereAndOnlyAssignmentProblemsListTheAssignments() throws {
+        let configuration = configured()
+        let text = try TextConfiguration.render(configuration), json = try TextConfiguration.companion(configuration)
+        // A connection was removed from config.json while a rule still uses it.
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
+        root["providers"] = []; root.removeValue(forKey: "defaultProviderID")
+        XCTAssertThrowsError(try TextConfiguration.decode(text, companion: JSONSerialization.data(withJSONObject: root))) {
+            XCTAssertEqual($0.localizedDescription, "config.json: A rule refers to a provider that is missing from this configuration. \(TextConfiguration.keptRemark)")
+        }
+        // Two assignments that are valid one by one but conflict with each other are still listed.
+        let conflicting = text + "shortcut.rules = ctrl+alt+j\nshortcut.cancel-recording = ctrl+alt+j\n"
+        XCTAssertThrowsError(try TextConfiguration.decode(conflicting, companion: json)) {
+            XCTAssertTrue($0.localizedDescription.hasPrefix("config: The cancel shortcut conflicts with another global shortcut. Check assignments: "), $0.localizedDescription)
+            XCTAssertTrue($0.localizedDescription.contains("shortcut.cancel-recording (line "), $0.localizedDescription)
+        }
+    }
+
     func testCheckingAPairSkipsUnknownFieldBookkeepingButNoValidation() throws {
         let configuration = configured()
         let json = try TextConfiguration.companion(configuration), text = try TextConfiguration.render(configuration)
