@@ -391,7 +391,7 @@ final class DictationController: ObservableObject {
     private func deliver(token: UUID, rule: Rule, models: LocalModels) {
         let recognition = finishTranscription(token: token, rule: rule, models: models)
         let recordingSeconds = self.recordingSeconds
-        phase = .transcribing; hint = "Esc to cancel"
+        phase = .transcribing; pressedWhileFinishing = false; hint = "Esc to cancel"
         work = Task { [weak self] in
             guard let self else { return }
             do {

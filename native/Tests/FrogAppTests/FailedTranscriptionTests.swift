@@ -52,6 +52,36 @@ final class FailedTranscriptionTests: XCTestCase {
         XCTAssertEqual(uploads.count, 3, "A delivered recording is gone")
     }
 
+    func testARetryDoesNotSayStillTranscribingForAPressDuringTheFailedPass() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let models = LocalModels(directory: directory)
+        let controller = makeController(recording: { SpokenRecording(seconds: 2) }, copy: { _ in })
+        var release: CheckedContinuation<Void, Never>?, uploads = 0
+        controller.externalTranscription = { _, _ in
+            uploads += 1
+            await withCheckedContinuation { release = $0 }
+            if uploads == 1 { throw URLError(.notConnectedToInternet) }
+            return "Recovered speech."
+        }
+        controller.start(rule: externalRule, preferences: WorkflowPreferences(), models: models)
+        await controller.waitForWork()
+        controller.stop(models: models)
+        while release == nil { await Task.yield() }
+        _ = controller.showPressWhileFinishing()
+        XCTAssertEqual(controller.statusText, "Still transcribing…")
+        release?.resume(); release = nil
+        await controller.waitForWork()
+        XCTAssertEqual(controller.phase, .failed)
+
+        controller.retryTranscription()
+        while release == nil { await Task.yield() }
+        XCTAssertEqual(controller.statusText, "Transcribing…", "No shortcut was pressed during the retry")
+        release?.resume()
+        await controller.waitForWork()
+        XCTAssertEqual(controller.phase, .idle)
+    }
+
     func testFailedLocalEndingKeepsFinishedWindowsAndRetryTranscribesOnlyTheEnding() async throws {
         let fixture = await makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
