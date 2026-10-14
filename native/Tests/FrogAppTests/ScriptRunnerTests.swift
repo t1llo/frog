@@ -77,23 +77,36 @@ final class ScriptRunnerTests: XCTestCase {
     }
 
     @MainActor func testAStoppedScriptHoldsUpQuitOnlyUntilItsProcessIsGone() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("pid")
         let runner = ScriptRunner()
-        runner.run(UtilityDocument(kind: .script, title: "Slow", text: "/bin/sleep 30"))
-        XCTAssertTrue(runner.needsQuitCleanup)
+        runner.run(UtilityDocument(kind: .script, title: "Slow", text: "echo $$ > '\(file.path)'; print -r -- started fixture; /bin/sleep 30"))
+        for _ in 0..<300 where runner.output.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(runner.output, "started fixture\n")
+        let pid = try XCTUnwrap(Int32(String(contentsOf: file, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
         runner.stop()
-        // The process group is killed by the stopped task, so a quit right after Stop still waits for it.
+        // Stop only cancels. The stopped task kills the process group and waits for it, so a quit right after Stop
+        // still waits too.
         XCTAssertTrue(runner.needsQuitCleanup)
         for _ in 0..<300 where runner.needsQuitCleanup { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(runner.needsQuitCleanup)
+        let signalled = kill(pid, 0), error = errno
+        XCTAssertEqual(signalled, -1, "The stopped script's shell must be gone")
+        XCTAssertEqual(error, ESRCH)
         XCTAssertEqual(runner.status, "Stopped")
     }
 
     @MainActor func testAScriptReplacedByAnotherLeavesTheNewOneToCleanUpAtQuit() async throws {
         let runner = ScriptRunner()
-        runner.run(UtilityDocument(kind: .script, title: "First", text: "/bin/sleep 30"))
+        runner.run(UtilityDocument(kind: .script, title: "First", text: "print -r -- first fixture; /bin/sleep 30"))
+        for _ in 0..<300 where runner.output.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(runner.output, "first fixture\n")
         let second = UtilityDocument(kind: .script, title: "Second", text: "print -r -- second fixture; /bin/sleep 30")
         runner.run(second)
-        // The first script ends once the second starts printing; its end must not release the second one's task.
+        // The first script is stopped while it runs and ends before the second starts; its end must not release the
+        // second one's task.
         for _ in 0..<300 where runner.output.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(runner.output, "second fixture\n")
         XCTAssertEqual(runner.running, second.id)
