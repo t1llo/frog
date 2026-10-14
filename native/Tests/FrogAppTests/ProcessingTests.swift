@@ -106,7 +106,7 @@ final class ProcessingTests: XCTestCase {
     }
 
     func testDeletingLastProviderResetsRuleOverridesAndKeepsRules() async throws {
-        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false)
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, credentials: MemoryCredentialStore())
         let provider = ProviderConfiguration(kind: .ollama)
         try model.saveProvider(provider, apiKey: nil, clearKey: false)
         let rule = Rule(name: "Keep me", providerID: provider.id, model: provider.model)
@@ -337,7 +337,7 @@ final class ProcessingTests: XCTestCase {
     }
 
     func testDeletingDefaultProviderResetsLegacyInheritedOverride() async throws {
-        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false)
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, credentials: MemoryCredentialStore())
         let first = ProviderConfiguration(kind: .ollama, model: "old-model")
         let second = ProviderConfiguration(kind: .ollama, model: "new-model")
         try model.saveProvider(first, apiKey: nil, clearKey: false)

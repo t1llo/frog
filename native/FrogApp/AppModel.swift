@@ -34,7 +34,7 @@ final class AppModel: ObservableObject {
     var openSettings: (() -> Void)?
     private let configurationStore: ConfigurationStore
     private let historyStore: HistoryStore
-    private let keychain = KeychainStore()
+    private let credentials: any CredentialStore
     private let complete: (String, Rule, ProviderConfiguration, String?) async throws -> String
     private let readKey: (UUID) throws -> String?
     private let writeClipboard: (String) -> Void
@@ -110,6 +110,7 @@ final class AppModel: ObservableObject {
 
     init(dataDirectory: URL? = nil, registerShortcuts: Bool = true,
          complete: ((String, Rule, ProviderConfiguration, String?) async throws -> String)? = nil,
+         credentials: (any CredentialStore)? = nil,
          readKey: ((UUID) throws -> String?)? = nil,
          writeClipboard: ((String) -> Void)? = nil,
          readAccessibility: (() -> Bool)? = nil,
@@ -144,7 +145,9 @@ final class AppModel: ObservableObject {
             }
             return try await LLMClient().complete(text: text, rule: rule, provider: provider, apiKey: key)
         }
-        self.readKey = readKey ?? { try KeychainStore().read(providerID: $0) }
+        let credentials = credentials ?? KeychainStore()
+        self.credentials = credentials
+        self.readKey = readKey ?? { try credentials.read(providerID: $0) }
         self.writeClipboard = writeClipboard ?? { text in NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
         configurationStore = ConfigurationStore(directory: dataDirectory)
         historyStore = HistoryStore(directory: dataDirectory)
@@ -630,15 +633,15 @@ final class AppModel: ObservableObject {
         }
         try ConfigurationFile.validate(candidate)
         let keyChanged = clearKey || !(apiKey ?? "").isEmpty
-        let oldKey = keyChanged ? try keychain.read(providerID: provider.id) : nil
-        if clearKey { try keychain.delete(providerID: provider.id) }
-        else if let apiKey, !apiKey.isEmpty { try keychain.save(apiKey, providerID: provider.id) }
+        let oldKey = keyChanged ? try credentials.read(providerID: provider.id) : nil
+        if clearKey { try credentials.delete(providerID: provider.id) }
+        else if let apiKey, !apiKey.isEmpty { try credentials.save(apiKey, providerID: provider.id) }
         do { try persist(candidate) }
         catch {
             if keyChanged {
                 do {
-                    if let oldKey { try keychain.save(oldKey, providerID: provider.id) }
-                    else { try keychain.delete(providerID: provider.id) }
+                    if let oldKey { try credentials.save(oldKey, providerID: provider.id) }
+                    else { try credentials.delete(providerID: provider.id) }
                 } catch { report(FrogError.message("Settings could not be saved and the previous key could not be restored. Re-enter the key before retrying.")) }
             }
             throw error
@@ -663,7 +666,7 @@ final class AppModel: ObservableObject {
         // Persist first: a Keychain deletion failure is explicit and can be retried by re-adding the provider ID.
         let previous = configuration
         try persist(candidate)
-        do { if previous.providers.first(where: { $0.id == id })?.kind.localTool == nil { try keychain.delete(providerID: id) } }
+        do { if previous.providers.first(where: { $0.id == id })?.kind.localTool == nil { try credentials.delete(providerID: id) } }
         catch {
             try? persist(previous)
             throw error
@@ -682,7 +685,7 @@ final class AppModel: ObservableObject {
         try ConfigurationFile.validate(provider: provider)
         isTestingProvider = true
         defer { isTestingProvider = false }
-        let key = provider.kind.localTool != nil ? nil : (apiKey?.isEmpty == false) ? apiKey : try keychain.read(providerID: provider.id)
+        let key = provider.kind.localTool != nil ? nil : (apiKey?.isEmpty == false) ? apiKey : try credentials.read(providerID: provider.id)
         if let textModel = provider.models.first(where: { $0.category == .text }) {
             var test = provider; test.model = textModel.id
             _ = try await complete("Reply with OK.", Rule(name: "Connection test", instructions: "Reply briefly to the user."), test, key)
@@ -696,7 +699,7 @@ final class AppModel: ObservableObject {
         if let kind = provider.kind.localTool {
             return try await localTools.models(for: kind).map { ProviderModel(id: $0.id.isEmpty ? LocalToolKind.defaultModelID : $0.id, name: $0.name) }
         }
-        let key = (apiKey?.isEmpty == false) ? apiKey : try keychain.read(providerID: provider.id)
+        let key = (apiKey?.isEmpty == false) ? apiKey : try credentials.read(providerID: provider.id)
         return try await LLMClient().localModels(provider: provider, apiKey: key)
     }
 

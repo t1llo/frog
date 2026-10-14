@@ -1,7 +1,14 @@
 import Foundation
 import Security
 
-public final class KeychainStore: Sendable {
+/// Where provider API keys are kept: the login Keychain in the app, memory in tests.
+public protocol CredentialStore: Sendable {
+    func read(providerID: UUID) throws -> String?
+    func save(_ key: String, providerID: UUID) throws
+    func delete(providerID: UUID) throws
+}
+
+public final class KeychainStore: CredentialStore, Sendable {
     private let service = "com.frog.provider-credentials"
     public init() {}
 
