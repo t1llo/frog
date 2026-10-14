@@ -21,7 +21,7 @@ enum LoginService {
         return Snapshot(enabled: status == .enabled || status == .requiresApproval, text: text, needsAttention: status == .requiresApproval)
     }
     static func openLoginItems() { SMAppService.openSystemSettingsLoginItems() }
-    @MainActor
+    /// Talks to ServiceManagement like `readStatus`, so it may take hundreds of milliseconds.
     static func setEnabled(_ enabled: Bool) throws {
         if enabled {
             if SMAppService.mainApp.status != .enabled { try SMAppService.mainApp.register() }

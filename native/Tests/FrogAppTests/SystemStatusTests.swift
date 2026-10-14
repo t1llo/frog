@@ -1,4 +1,5 @@
 import XCTest
+import FrogCore
 @testable import FrogApp
 
 @MainActor
@@ -52,6 +53,39 @@ final class SystemStatusTests: XCTestCase {
         XCTAssertFalse(model.loginNeedsAttention, "The warning must not outlive the approval")
     }
 
+    func testChangingStartAtLoginDoesNotWaitForServiceManagement() async throws {
+        let item = LoginItemFixture(blocked: true)
+        let model = try model(readLoginStatus: { item.snapshot() }, writeLoginItem: { try item.write($0) })
+        defer { item.release(); model.shutdown() }
+        try await wait { model.loginStatus == "Off" }
+        let started = ContinuousClock.now
+        model.setStartAtLogin(true)
+        XCTAssertLessThan(started.duration(to: .now), .milliseconds(500), "The toggle must not wait for the login item to register")
+        XCTAssertTrue(model.startAtLogin, "The toggle shows the choice while macOS registers it")
+        // A status read while the change is pending would still say Off and snap the toggle back.
+        model.refreshSystemStatus(forceLoginStatus: true)
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertTrue(model.startAtLogin)
+        XCTAssertEqual(model.loginStatus, "Off")
+        item.release()
+        try await wait { model.loginStatus == "On" }
+        XCTAssertTrue(model.startAtLogin)
+        XCTAssertEqual(item.writes, [true])
+        XCTAssertFalse(item.wroteOnMainThread, "ServiceManagement is called off the main thread")
+        XCTAssertTrue(model.recentErrors.isEmpty)
+    }
+
+    func testFailedStartAtLoginChangeIsReportedAndTheToggleShowsWhatMacOSSays() async throws {
+        let item = LoginItemFixture(failure: FrogError.message("Login item could not be registered."))
+        let model = try model(readLoginStatus: { item.snapshot() }, writeLoginItem: { try item.write($0) })
+        defer { model.shutdown() }
+        try await wait { model.loginStatus == "Off" }
+        model.setStartAtLogin(true)
+        try await wait { model.recentErrors.first?.message == "Login item could not be registered." }
+        try await wait { !model.startAtLogin }
+        XCTAssertEqual(model.loginStatus, "Off")
+    }
+
     func testMonitoringHasOneOwnerAndStopsAtShutdown() async throws {
         var permissionReads = 0
         let ticks = SystemStatusTicks()
@@ -78,12 +112,14 @@ final class SystemStatusTests: XCTestCase {
 
     private func model(readAccessibility: @escaping () -> Bool = { true },
                        readLoginStatus: @escaping @Sendable () -> LoginService.Snapshot = { .init(enabled: false, text: "Fixture") },
+                       writeLoginItem: (@Sendable (Bool) throws -> Void)? = nil,
                        systemStatusTick: (() async throws -> Void)? = nil) throws -> AppModel {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         return AppModel(dataDirectory: directory, registerShortcuts: false,
-                        readAccessibility: readAccessibility, readLoginStatus: readLoginStatus, systemStatusTick: systemStatusTick)
+                        readAccessibility: readAccessibility, readLoginStatus: readLoginStatus,
+                        writeLoginItem: writeLoginItem, systemStatusTick: systemStatusTick)
     }
 
     private func wait(_ condition: () -> Bool) async throws {
@@ -106,6 +142,30 @@ final class SystemStatusTests: XCTestCase {
         let woken = waiters
         waiters.removeAll()
         woken.forEach { $0.resume() }
+    }
+}
+
+/// Stands in for the login item: a write may wait until the test releases it, or fail.
+private final class LoginItemFixture: @unchecked Sendable {
+    private let lock = NSLock()
+    private let gate = DispatchSemaphore(value: 0)
+    private let blocked: Bool
+    private let failure: Error?
+    private var registered = false
+    private var written: [Bool] = []
+    private var onMainThread = false
+    init(blocked: Bool = false, failure: Error? = nil) { self.blocked = blocked; self.failure = failure }
+    var writes: [Bool] { lock.withLock { written } }
+    var wroteOnMainThread: Bool { lock.withLock { onMainThread } }
+    func release() { gate.signal() }
+    func snapshot() -> LoginService.Snapshot {
+        lock.withLock { registered } ? .init(enabled: true, text: "On") : .init(enabled: false, text: "Off")
+    }
+    func write(_ enabled: Bool) throws {
+        lock.withLock { written.append(enabled); if Thread.isMainThread { onMainThread = true } }
+        if blocked { _ = gate.wait(timeout: .now() + 1) }
+        if let failure { throw failure }
+        lock.withLock { registered = enabled }
     }
 }
 

@@ -41,7 +41,11 @@ final class AppModel: ObservableObject {
     private let registerShortcuts: Bool
     private let readAccessibility: () -> Bool
     private let readLoginStatus: @Sendable () -> LoginService.Snapshot
+    private let writeLoginItem: @Sendable (Bool) throws -> Void
     private var loginStatusTask: Task<Void, Never>?
+    /// Changes of the login item, done one after another off the main actor.
+    private var loginWriteTask: Task<Void, Never>?
+    private var loginWrites = 0
     private var loginStatusUpdatedAt: ContinuousClock.Instant?
     private var systemStatusTask: Task<Void, Never>?
     /// The wait between two refreshes of the system status: one second, or a tick a test fires.
@@ -115,6 +119,7 @@ final class AppModel: ObservableObject {
          writeClipboard: ((String) -> Void)? = nil,
          readAccessibility: (() -> Bool)? = nil,
          readLoginStatus: (@Sendable () -> LoginService.Snapshot)? = nil,
+         writeLoginItem: (@Sendable (Bool) throws -> Void)? = nil,
          captureSelection: (() async throws -> any CapturedTextSelection)? = nil,
          dictationController: DictationController? = nil,
          modelService: LocalModels? = nil,
@@ -138,6 +143,7 @@ final class AppModel: ObservableObject {
         localModels = modelService ?? LocalModels(directory: dataDirectory)
         self.readAccessibility = readAccessibility ?? { SelectionService.isTrusted }
         self.readLoginStatus = readLoginStatus ?? { LoginService.readStatus() }
+        self.writeLoginItem = writeLoginItem ?? { try LoginService.setEnabled($0) }
         self.captureSelection = captureSelection ?? { try await SelectionService().capture() }
         self.complete = complete ?? { text, rule, provider, key in
             if let kind = provider.kind.localTool {
@@ -382,6 +388,7 @@ final class AppModel: ObservableObject {
         toolkit.stop()
         systemStatusTask?.cancel(); systemStatusTask = nil
         loginStatusTask?.cancel(); loginStatusTask = nil
+        loginWriteTask?.cancel(); loginWriteTask = nil
         loginStatusUpdatedAt = nil
         invalidateHistoryRecovery()
         dictation.cancel(); localModels.shutdown(); shortcutPanel.hide()
@@ -460,6 +467,8 @@ final class AppModel: ObservableObject {
     }
 
     private func refreshLoginStatus(force: Bool) {
+        // A read begun before a pending change lands would snap the toggle back; the change reads afterwards.
+        guard loginWriteTask == nil else { return }
         if force {
             loginStatusTask?.cancel(); loginStatusTask = nil
         } else {
@@ -490,11 +499,26 @@ final class AppModel: ObservableObject {
         }
     }
 
-    isolated deinit { systemStatusTask?.cancel(); loginStatusTask?.cancel() }
+    isolated deinit { systemStatusTask?.cancel(); loginStatusTask?.cancel(); loginWriteTask?.cancel() }
 
     func setStartAtLogin(_ enabled: Bool) {
-        do { try LoginService.setEnabled(enabled); refreshSystemStatus(forceLoginStatus: true) }
-        catch { refreshSystemStatus(forceLoginStatus: true); report(error) }
+        // Registering performs the same slow ServiceManagement IPC as reading the status. The toggle
+        // shows the choice at once, and the status is read again once macOS has the change.
+        if startAtLogin != enabled { startAtLogin = enabled }
+        loginStatusTask?.cancel(); loginStatusTask = nil
+        loginWrites += 1
+        let write = loginWrites
+        let previous = loginWriteTask
+        loginWriteTask = Task { [weak self, writeLoginItem] in
+            await previous?.value
+            let result = await Task.detached(priority: .userInitiated) { Result { try writeLoginItem(enabled) } }.value
+            guard !Task.isCancelled, let self else { return }
+            if write == self.loginWrites {
+                self.loginWriteTask = nil
+                self.refreshSystemStatus(forceLoginStatus: true)
+            }
+            if case .failure(let error) = result { self.report(error) }
+        }
     }
 
     func report(_ error: Error) {
