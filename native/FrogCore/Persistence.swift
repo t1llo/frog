@@ -89,14 +89,18 @@ public struct SetupStore {
     public func complete(_ value: Bool = true) throws { try PrivateFile.write(JSONEncoder().encode(value), to: file) }
 }
 
-/// Unchecked because the snapshot it compares the files with changes; it changes and is read only
-/// while `configurationLock` is held.
+/// Unchecked because the snapshot it compares the files with changes, as does whether it has noted
+/// config.json; both change and are read only while `configurationLock` is held.
 public final class ConfigurationStore: @unchecked Sendable {
     public let directory: URL
     /// Complex rules, connections and custom model definitions.
     public var file: URL { directory.appendingPathComponent("config.json") }
     public var textFile: URL { directory.appendingPathComponent("config") }
     private let legacyFile: URL?
+    /// Device-local note that config.json has existed beside config on this Mac. Without it a lone
+    /// config is a first configuration; with it, config.json went missing.
+    private let companionMarker: URL?
+    private var companionRecorded = false
     private struct Snapshot: Equatable {
         let textTarget: URL
         let jsonTarget: URL
@@ -114,9 +118,12 @@ public final class ConfigurationStore: @unchecked Sendable {
         FileManager.default.fileExists(atPath: textFile.path) || FileManager.default.fileExists(atPath: file.path) || legacyFile.map { FileManager.default.fileExists(atPath: $0.path) } == true
     }
     public init(directory: URL? = nil, legacyDirectory: URL? = nil) {
-        self.directory = directory ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/frog", isDirectory: true)
+        let configurationDirectory = directory ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/frog", isDirectory: true)
+        self.directory = configurationDirectory
         let legacy = legacyDirectory ?? (directory == nil ? PrivateFile.defaultDirectory : directory)
         legacyFile = legacy?.appendingPathComponent("configuration.json")
+        // It stays out of the configuration directory, which may be synced to another Mac.
+        companionMarker = legacy.flatMap { $0.standardizedFileURL == configurationDirectory.standardizedFileURL ? nil : $0.appendingPathComponent("config-companion") }
     }
 
     public func load(validating validate: ((Configuration) throws -> Void)? = nil) throws -> Configuration {
@@ -124,8 +131,10 @@ public final class ConfigurationStore: @unchecked Sendable {
         let current = try readSnapshot()
         let configuration: Configuration
         if let text = current.text {
-            if current.json == nil, snapshot?.json != nil {
-                throw FrogError.message("config.json is missing. Restore the companion file before reloading; the current rules and connections were kept.")
+            if current.json == nil, snapshot?.json != nil || companionMarker.map({ FileManager.default.fileExists(atPath: $0.path) }) == true {
+                throw FrogError.message(loaded == nil
+                    ? "config.json is missing beside config. Restore it, import a configuration in Settings, or remove config as well to start again. The files were left unchanged."
+                    : "config.json is missing. Restore the companion file before reloading; the current rules and connections were kept.")
             }
             guard let string = String(data: text, encoding: .utf8) else { throw FrogError.message("config must be UTF-8 text. The original file was preserved.") }
             do { configuration = try TextConfiguration.decode(string, companion: current.json ?? ConfigurationFile.encode(Configuration())) }
@@ -155,7 +164,16 @@ public final class ConfigurationStore: @unchecked Sendable {
         }
         try validate?(configuration)
         snapshot = current; loaded = configuration
+        if current.json != nil { recordCompanion() }
         return configuration
+    }
+
+    /// Notes once that config.json exists beside config. A note that cannot be written only loses
+    /// the refusal above; it must not stop a load or a save.
+    private func recordCompanion() {
+        guard !companionRecorded, let companionMarker else { return }
+        companionRecorded = FileManager.default.fileExists(atPath: companionMarker.path)
+            || (try? PrivateFile.write(Data(), to: companionMarker)) != nil
     }
 
     private func isPrototypeConfiguration(_ data: Data) -> Bool {
@@ -292,6 +310,7 @@ public final class ConfigurationStore: @unchecked Sendable {
                 throw error
             }
             snapshot = committed; loaded = configuration
+            recordCompanion()
             return
         }
         let wroteJSON = json != expected.json
@@ -310,6 +329,7 @@ public final class ConfigurationStore: @unchecked Sendable {
             throw error
         }
         snapshot = committed; loaded = configuration
+        recordCompanion()
     }
 }
 

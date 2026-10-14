@@ -100,6 +100,36 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(try store.load(), changed)
     }
 
+    func testAConfigJSONThatWentMissingIsRefusedAtLaunchOnceItHasExistedOnThisMac() throws {
+        let current = directory.appendingPathComponent("current")
+        let data = directory.appendingPathComponent("data")
+        try FileManager.default.createDirectory(at: current, withIntermediateDirectories: true)
+        // A config written by hand is a first configuration; its first save adds config.json.
+        let first = ConfigurationStore(directory: current, legacyDirectory: data)
+        try Data("history-limit = 42\n".utf8).write(to: first.textFile)
+        var configuration = try first.load()
+        XCTAssertEqual(configuration.preferences.historyLimit, 42)
+        configuration.rules[0].name = "My rule"
+        try first.save(configuration)
+
+        // Deleted while Frog was not running: the next launch must not start over with the preset rules.
+        try FileManager.default.removeItem(at: first.file)
+        let text = try Data(contentsOf: first.textFile)
+        let next = ConfigurationStore(directory: current, legacyDirectory: data)
+        for _ in 0..<2 {
+            XCTAssertThrowsError(try next.load()) {
+                XCTAssertTrue($0.localizedDescription.hasPrefix("config.json is missing"), $0.localizedDescription)
+                XCTAssertTrue($0.localizedDescription.hasSuffix(" The files were left unchanged."), $0.localizedDescription)
+            }
+        }
+        XCTAssertThrowsError(try next.save(configuration))
+        XCTAssertEqual(try Data(contentsOf: next.textFile), text)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: next.file.path))
+        // Importing a configuration is a way back.
+        try next.replaceFromImport(configuration)
+        XCTAssertEqual(try ConfigurationStore(directory: current, legacyDirectory: data).load(), configuration)
+    }
+
     func testPrototypeIsBackedUpButUnknownConfigIsNeverOverwrittenDuringMigration() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let original = Configuration()
