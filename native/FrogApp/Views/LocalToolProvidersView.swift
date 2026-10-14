@@ -75,6 +75,7 @@ struct LocalToolProvidersView: View {
     private func refresh() async {
         refreshing = true
         defer { refreshing = false }
-        statuses = await client.statuses()
+        // Each row appears, or is replaced, as soon as its own tool has answered.
+        statuses = await client.statuses { status in statuses = statuses.replacing(status) }
     }
 }

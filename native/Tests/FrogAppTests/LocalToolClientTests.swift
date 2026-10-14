@@ -270,6 +270,49 @@ final class LocalToolClientTests: XCTestCase {
         XCTAssertTrue(status.detail.contains("0.159.x"))
     }
 
+    @MainActor func testToolsAreProbedTogetherAndEachRowArrivesInOrder() async throws {
+        let root = try directory()
+        // Each help probe waits for the other two to start, and gives up after three
+        // seconds. Probed one after another, every tool but the last would give up.
+        let versions: [LocalToolKind: String] = [.claudeCode: "", .codex: "codex-cli 0.159.0", .opencode: "opencode v2.0.0"]
+        let flags: [LocalToolKind: String] = [
+            .claudeCode: "--safe-mode --tools --strict-mcp-config --permission-prompts --setting-sources --no-session-persistence",
+            .codex: "--strict-config --ignore-user-config --ignore-rules --ephemeral --json",
+            .opencode: "--standalone --format --agent"
+        ]
+        let started = LocalToolKind.allCases.map { "[ -e '\(root.appendingPathComponent("started-\($0.executableName)").path)' ]" }
+        for kind in LocalToolKind.allCases {
+            _ = try executable("""
+            if [ "$1" = '--version' ]; then echo '\(versions[kind]!)'; exit; fi
+            : > '\(root.appendingPathComponent("started-\(kind.executableName)").path)'
+            i=0
+            until \(started.joined(separator: " && ")); do
+              i=$((i + 1)); [ "$i" -le 60 ] || exit 1
+              /bin/sleep 0.05
+            done
+            echo '\(flags[kind]!)'
+            """, name: kind.executableName, in: root)
+        }
+        let client = LocalToolClient(discovery: .init(home: root, environment: [:], searchDirectories: [root]), temporaryRoot: root)
+        let updates = StatusUpdates()
+        let statuses = await client.statuses(checkAuthentication: false) { updates.kinds.append($0.kind) }
+        XCTAssertEqual(statuses.map(\.kind), LocalToolKind.allCases)
+        XCTAssertEqual(statuses.filter(\.supportsTextTransforms).map(\.kind), LocalToolKind.allCases, statuses.map(\.detail).joined(separator: " / "))
+        XCTAssertEqual(updates.kinds.sorted { $0.rawValue < $1.rawValue }, LocalToolKind.allCases.sorted { $0.rawValue < $1.rawValue },
+                       "Each tool's row is shown as soon as its own probe ends")
+    }
+
+    func testARefreshedStatusReplacesItsRowInPlace() {
+        func status(_ kind: LocalToolKind, _ detail: String) -> LocalToolStatus {
+            .init(kind: kind, installed: true, authentication: .notChecked, supportsTextTransforms: true, detail: detail)
+        }
+        var rows = [status(.claudeCode, "old"), status(.codex, "old"), status(.opencode, "old")]
+        rows = rows.replacing(status(.codex, "new"))
+        XCTAssertEqual(rows.map(\.kind), LocalToolKind.allCases)
+        XCTAssertEqual(rows.map(\.detail), ["old", "new", "old"])
+        XCTAssertEqual([status(.opencode, "x")].replacing(status(.claudeCode, "y")).map(\.kind), [.claudeCode, .opencode])
+    }
+
     func testUnverifiedVersionIsNamedNextToTheVerifiedOne() async throws {
         let root = try directory()
         _ = try executable("""
@@ -356,4 +399,8 @@ final class LocalToolClientTests: XCTestCase {
         samples.sort()
         print("LocalTool fixture spawn+parse: median \(samples[6]) ms; max \(samples.last!) ms (12 runs; no model/network)")
     }
+}
+
+@MainActor private final class StatusUpdates {
+    var kinds: [LocalToolKind] = []
 }

@@ -21,13 +21,23 @@ actor LocalToolClient {
         self.temporaryRoot = temporaryRoot
     }
 
-    func statuses(checkAuthentication: Bool = true) async -> [LocalToolStatus] {
-        var values: [LocalToolStatus] = []
-        for kind in LocalToolKind.allCases {
-            if Task.isCancelled { break }
-            values.append(await status(for: kind, checkAuthentication: checkAuthentication))
+    /// Probes the tools together, so the slowest tool sets the wait rather than their sum.
+    /// `update` receives each status as soon as its own probes end.
+    func statuses(checkAuthentication: Bool = true,
+                  update: @MainActor @Sendable (LocalToolStatus) -> Void = { _ in }) async -> [LocalToolStatus] {
+        await withTaskGroup(of: LocalToolStatus.self) { group in
+            for kind in LocalToolKind.allCases {
+                // Process runs are detached from the actor, and each status has its own workspace.
+                group.addTask { await self.status(for: kind, checkAuthentication: checkAuthentication) }
+            }
+            var values: [LocalToolStatus] = []
+            for await status in group {
+                if Task.isCancelled { break }
+                values = values.replacing(status)
+                await update(status)
+            }
+            return values
         }
-        return values
     }
 
     func status(for kind: LocalToolKind, checkAuthentication: Bool = true) async -> LocalToolStatus {
@@ -206,6 +216,14 @@ actor LocalToolClient {
             env["OPENCODE_DISABLE_FILEWATCHER"] = "1"
         }
         return env
+    }
+}
+
+extension [LocalToolStatus] {
+    /// Puts `status` in place of the same tool's earlier row, keeping the tools in order.
+    func replacing(_ status: LocalToolStatus) -> [LocalToolStatus] {
+        let rows = filter { $0.kind != status.kind } + [status]
+        return LocalToolKind.allCases.compactMap { kind in rows.first { $0.kind == kind } }
     }
 }
 
