@@ -221,7 +221,7 @@ private struct UsageLimitView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(window.title).font(.system(size: 12, weight: .medium))
                 Spacer()
-                Text(window.percentage.isFinite ? String(format: "%.0f%%", window.percentage) : "—")
+                Text(window.usedText)
                     .font(.system(size: compact ? 14 : 17, weight: .semibold)).monospacedDigit()
             }
             GeometryReader { geometry in
@@ -234,7 +234,7 @@ private struct UsageLimitView: View {
                 }
             }.frame(height: 5).accessibilityHidden(true).help("The tick marks elapsed time in this plan window.")
             HStack {
-                Text(window.percentage.isFinite ? String(format: "%.0f%% left", (1 - fraction) * 100) : "No reading since it renewed")
+                Text(window.leftText ?? "No reading since it renewed")
                 if compact, (window.duration ?? 0) >= 604800, let pace = window.pace(at: now) {
                     Text("· \(pace)").foregroundStyle(paceColor(pace))
                 }

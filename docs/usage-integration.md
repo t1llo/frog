@@ -28,7 +28,9 @@ no transcripts; OAuth renewal remains with the originating tools.
 Fixture roots and defaults suites isolate tests from real tool logs and accounts.
 
 The compact dashboard and popup share plan meters, remaining percentages,
-reset countdowns and an elapsed-window tick. Plan readings identify their account
+reset countdowns and an elapsed-window tick. Percentages are whole numbers rounded
+down in the menu bar, the popup and the dashboard alike, so 100% appears only once a
+limit is reached, and used and left add up to 100. Plan readings identify their account
 or local-log source and age. Token history uses a quieter bar chart and relative
 model totals; account-wide token splits and API cost remain labeled estimates.
 [Vorssaint source research](research/vorssaint-usage-reference.md) informed this

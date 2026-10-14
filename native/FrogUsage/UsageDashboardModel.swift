@@ -21,6 +21,13 @@ public struct UsageWindow: Identifiable {
         let used = max(0, percentage / 100)
         return used >= 1 ? "Limit reached" : used > elapsed + 0.1 ? "Ahead of pace" : used < elapsed - 0.1 ? "Under pace" : "On pace"
     }
+
+    /// "37%", rounded down so that 100% shows only once the limit is reached. The menu bar and
+    /// the dashboard both show this; "—" for a window without a reading.
+    public var usedText: String { usedPercent.map { String(format: "%.0f%%", $0) } ?? "—" }
+    /// "63% left", what the shown share leaves, so the two always add up to 100.
+    public var leftText: String? { usedPercent.map { String(format: "%.0f%% left", max(0, 100 - $0)) } }
+    private var usedPercent: Double? { percentage.isFinite ? max(0, percentage).rounded(.down) : nil }
 }
 
 /// Portable display choices only. Credentials, readings and request gates stay local.

@@ -16,4 +16,19 @@ final class UsagePaceTests: XCTestCase {
         XCTAssertNil(window(50, remaining: -1).pace(at: now))
         XCTAssertNil(window(50, remaining: 700000).pace(at: now))
     }
+
+    func testPercentagesAreWholeNumbersRoundedDownWhereverTheyAreShown() {
+        func window(_ used: Double) -> UsageWindow {
+            UsageWindow(id: "five_hour", title: "Session", percentage: used, resetsAt: nil, duration: 5 * 3600)
+        }
+        XCTAssertEqual(window(99.6).usedText, "99%", "100% only once the limit is reached")
+        XCTAssertEqual(window(99.6).leftText, "1% left", "Used and left add up to 100")
+        XCTAssertEqual(window(100).usedText, "100%")
+        XCTAssertEqual(window(100).leftText, "0% left")
+        XCTAssertEqual(window(0.4).usedText, "0%")
+        XCTAssertEqual(window(0.4).leftText, "100% left")
+        XCTAssertEqual(window(130).leftText, "0% left")
+        XCTAssertEqual(window(.nan).usedText, "—")
+        XCTAssertNil(window(.nan).leftText)
+    }
 }

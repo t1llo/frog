@@ -276,13 +276,20 @@ func parse(_ json: [String: Any]) -> Usage {
     return usage
 }
 
+/// An ISO 8601 time with or without fractional seconds. The formatters are shared by every log
+/// reader and never changed once made, so any thread may use them.
 func isoDate(_ any: Any?) -> Date? {
     guard let s = any as? String else { return nil }
+    return isoFractionalSeconds.date(from: s) ?? isoWholeSeconds.date(from: s)
+}
+
+private let isoFractionalSeconds = isoFormatter([.withInternetDateTime, .withFractionalSeconds])
+private let isoWholeSeconds = isoFormatter([.withInternetDateTime])
+
+private func isoFormatter(_ options: ISO8601DateFormatter.Options) -> ISO8601DateFormatter {
     let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let d = f.date(from: s) { return d }
-    f.formatOptions = [.withInternetDateTime]
-    return f.date(from: s)
+    f.formatOptions = options
+    return f
 }
 
 // MARK: - Formatting

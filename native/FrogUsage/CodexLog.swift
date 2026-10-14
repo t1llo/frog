@@ -74,11 +74,6 @@ actor CodexScanner {
     private var creditBalance: CodexCredits?
     /// Counts the passes that may have changed what `scan()` returns; see `TokenScanner`.
     private var revision = 0
-    private let iso: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
 
     static var home: URL {
         if let h = ProcessInfo.processInfo.environment["CODEX_HOME"], !h.isEmpty { return URL(fileURLWithPath: h) }
@@ -143,7 +138,7 @@ actor CodexScanner {
     private func add(_ line: Data, _ st: inout FileState) {
         guard let d = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
               let type = d["type"] as? String, let p = d["payload"] as? [String: Any],
-              let ts = d["timestamp"] as? String, let date = iso.date(from: ts) ?? isoDate(ts) else { return }
+              let ts = d["timestamp"] as? String, let date = isoDate(ts) else { return }
         switch type {
         case "session_meta":
             guard st.thread == nil else { return }

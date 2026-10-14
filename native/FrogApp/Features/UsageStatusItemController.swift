@@ -186,7 +186,7 @@ enum UsageStatusReadout {
             let windows = Array(windows.prefix(2))
             self.provider = provider
             labels = windows.isEmpty ? [estimate?.range].compactMap { $0 } : windows.map { UsageStatusReadout.shortWindow($0) }
-            values = windows.isEmpty ? [estimate?.value].compactMap { $0 } : windows.map { UsageStatusReadout.percentage($0.percentage) }
+            values = windows.isEmpty ? [estimate?.value].compactMap { $0 } : windows.map(\.usedText)
             fractions = windows.map { $0.percentage.isFinite ? min(1, max(0, $0.percentage / 100)) : 0 }
             self.dimmed = dimmed
         }
@@ -231,7 +231,7 @@ enum UsageStatusReadout {
     static func description(provider: String, windows: [UsageWindow], estimate: Estimate? = nil) -> String {
         (["Mr. Usage · \(provider)"] + windows.map {
             !$0.percentage.isFinite ? "\($0.title): no reading since it renewed"
-                : "\($0.title): \(percentage($0.percentage)) used" + ($0.resetsAt.map { " · resets \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "")
+                : "\($0.title): \($0.usedText) used" + ($0.resetsAt.map { " · resets \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "")
         } + (windows.isEmpty ? [estimate.map { "API estimate, last \($0.range): \($0.value)" }].compactMap { $0 } : [])).joined(separator: "\n")
     }
     private static func shortWindow(_ window: UsageWindow) -> String {
@@ -241,7 +241,6 @@ enum UsageStatusReadout {
         let value = seconds / divisor
         return (value == value.rounded() ? String(format: "%.0f", value) : String(format: "%.1f", value)) + unit
     }
-    private static func percentage(_ value: Double) -> String { value.isFinite ? String(format: "%.0f%%", value.rounded(.towardZero)) : "—" }
     private static func width(_ text: String, font: NSFont) -> CGFloat { (text as NSString).size(withAttributes: [.font: font]).width }
     private static func draw(_ text: String, at point: NSPoint, font: NSFont, opacity: Double = 1) {
         (text as NSString).draw(at: point, withAttributes: [.font: font, .foregroundColor: NSColor.black.withAlphaComponent(opacity)])

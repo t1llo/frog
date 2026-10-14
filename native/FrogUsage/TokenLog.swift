@@ -54,11 +54,6 @@ actor TokenScanner {
         self.root = root
         self.roots = roots
     }
-    private let iso: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
 
     func scan() -> [TokenRecord] {
         let cutoff = Date().addingTimeInterval(-Self.horizon)
@@ -102,7 +97,7 @@ actor TokenScanner {
               d["type"] as? String == "assistant",
               let m = d["message"] as? [String: Any],
               let u = m["usage"] as? [String: Any],
-              let ts = d["timestamp"] as? String, let date = iso.date(from: ts) ?? isoDate(ts),
+              let ts = d["timestamp"] as? String, let date = isoDate(ts),
               let model = m["model"] as? String, model != "<synthetic>"
         else { return }
         // Content blocks have different transcript UUIDs, even when requestId is absent.
