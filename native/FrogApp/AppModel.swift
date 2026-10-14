@@ -16,6 +16,7 @@ final class AppModel: ObservableObject {
     @Published var historyFilter: HistoryFilter?
     @Published private(set) var hotkeyErrors: [UUID: String] = [:]
     @Published private(set) var isProcessing = false
+    /// What the running rule is doing, shown while a rule is tried in Rules.
     @Published private(set) var status = "Ready"
     @Published private(set) var errorMessage: String?
     @Published private(set) var recentErrors: [AppIssue] = []
@@ -242,10 +243,6 @@ final class AppModel: ObservableObject {
             let provider = try self.resolved(rule)
             return provider.id == Self.localProviderID ? provider.model : nil
         }
-        dictation.onFinish = { [weak self] rule, _, _, delivery in
-            guard let self else { return }
-            self.status = "\(rule.name) · \(delivery)"
-        }
         dictation.onSuccessfulDelivery = { [weak self] seconds, text in
             self?.statistics.recordDictation(recordingSeconds: seconds, text: text, rule: .dictation)
         }
@@ -343,7 +340,6 @@ final class AppModel: ObservableObject {
         registerHotkeys(); shortcutPanel.hide()
         configureWindowSwitcher(); configureClipboardHistory(); refreshHistory()
         dismissError()
-        status = "Configuration reloaded."
     }
     func finishSetup() {
         do { try SetupStore(directory: historyStore.directory).complete(); setupPresented = false }
@@ -369,7 +365,6 @@ final class AppModel: ObservableObject {
         configureWindowSwitcher()
         configureClipboardHistory()
         if configuration.preferences.featureEnabled(.commandBar) { commandBar.warm() }
-        if configuration.providers.isEmpty && localModels.installed.isEmpty { status = "Add a model in Models to get started." }
     }
 
     func shutdown() {
@@ -635,7 +630,6 @@ final class AppModel: ObservableObject {
         if !provider.models.contains(where: { $0.id == id }) { provider.models.append(ProviderModel(id: id)) }
         provider.model = id
         try saveProvider(provider, apiKey: nil, clearKey: false)
-        status = "\(kind.title) is available in rule model menus."
     }
 
     func saveProvider(_ provider: ProviderConfiguration, apiKey: String?, clearKey: Bool) throws {
@@ -668,7 +662,6 @@ final class AppModel: ObservableObject {
             }
             throw error
         }
-        status = "Provider saved"
     }
 
     func deleteProvider(id: UUID) throws {
@@ -852,7 +845,6 @@ final class AppModel: ObservableObject {
         guard configurationLoadError == nil else { throw FrogError.message("Repair the saved settings before exporting them.") }
         drainUsagePreferences()
         try ConfigurationFile.write(configuration, to: url)
-        status = "Configuration exported. API keys and history were not included."
     }
 
     func importConfiguration(_ imported: Configuration) throws {
@@ -889,7 +881,6 @@ final class AppModel: ObservableObject {
         clipboardHistoryStore.configure(enabled: false)
         configureClipboardHistory()
         refreshHistory()
-        status = "Configuration imported. Check provider credentials and shortcut status."
     }
 
     /// Clicking a second recorder starts it before the first notices that it lost the keyboard,
@@ -1145,7 +1136,14 @@ final class AppModel: ObservableObject {
     }
 
     private func begin(ruleID: UUID, manualText: String?, providerID: UUID? = nil, modelID: String? = nil) {
-        guard !isProcessing, !dictation.active else { status = "A rule is already running. Wait or cancel it from the menu."; return }
+        guard !isProcessing, !dictation.active else {
+            // A shortcut press is answered by the indicator or popup of what is running.
+            if manualText != nil {
+                let error = FrogError.message("A rule is already running. Wait or cancel it from the menu.")
+                report(error); ruleOutcome = .failed(error.localizedDescription)
+            }
+            return
+        }
         ruleOutcome = nil
         guard var rule = configuration.rules.first(where: { $0.id == ruleID }), rule.enabled else {
             let error = FrogError.message("Select an enabled rule.")
@@ -1192,12 +1190,11 @@ final class AppModel: ObservableObject {
                 guard !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("The model returned no text. Nothing was replaced.") }
                 var delivered = true
                 if let selection {
-                    do { try await selection.replace(with: result); self.status = "\(rule.name) complete — result pasted and copied." }
+                    do { try await selection.replace(with: result) }
                     catch is CancellationError { throw CancellationError() }
                     catch {
                         try Task.checkCancellation()
                         delivered = false
-                        self.status = "Result ready on clipboard; replacement skipped."
                         self.report(error); ended = .failed(error.localizedDescription)
                     }
                     self.clipboardHistoryStore.recordCopiedText(result)
@@ -1205,7 +1202,6 @@ final class AppModel: ObservableObject {
                     self.manualResult = result
                     self.writeClipboard(result)
                     self.clipboardHistoryStore.recordCopiedText(result)
-                    self.status = "\(rule.name) complete — result copied."
                 }
                 try Task.checkCancellation()
                 if delivered { self.statistics.recordRuleExecution(kind: provider.id == Self.localProviderID || provider.kind.isLocal ? .local : provider.kind.localTool != nil ? .cli : .remote) }
@@ -1222,11 +1218,7 @@ final class AppModel: ObservableObject {
     }
 
     private func outcome(of error: Error) -> RuleOutcome {
-        if error is CancellationError || (error as? URLError)?.code == .cancelled {
-            status = "Cancelled — original text unchanged."
-            return .cancelled
-        }
-        status = "Could not complete the rule."
+        if error is CancellationError || (error as? URLError)?.code == .cancelled { return .cancelled }
         report(error)
         return .failed(error.localizedDescription)
     }

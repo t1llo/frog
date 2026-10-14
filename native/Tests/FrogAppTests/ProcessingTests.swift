@@ -231,9 +231,29 @@ final class ProcessingTests: XCTestCase {
         XCTAssertEqual(requests, 1)
         XCTAssertEqual(writes, 0)
         XCTAssertTrue(model.manualResult.isEmpty)
-        XCTAssertTrue(model.status.contains("Cancelled"))
         XCTAssertEqual(model.ruleOutcome, .cancelled)
         XCTAssertEqual(model.statistics.snapshot.allTime.ruleRuns, 0)
+    }
+
+    func testTryingARuleWhileAnotherRunsSaysWhyNothingStarted() async throws {
+        var continuation: CheckedContinuation<String, Error>?
+        var requests = 0
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, complete: { _, _, _, _ in
+            requests += 1
+            return try await withCheckedThrowingContinuation { continuation = $0 }
+        }, readKey: { _ in nil }, writeClipboard: { _ in })
+        try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
+        let rule = model.configuration.rules[0]
+        model.processManual(text: "first", ruleID: rule.id)
+        model.processManual(text: "second", ruleID: rule.id)
+        XCTAssertEqual(model.errorMessage, "A rule is already running. Wait or cancel it from the menu.")
+        XCTAssertEqual(model.ruleOutcome?.failure, model.errorMessage)
+        for _ in 0..<100 { if continuation != nil { break }; await Task.yield() }
+        continuation?.resume(returning: "done")
+        try await waitUntilFinished(model)
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(model.manualResult, "done")
+        XCTAssertEqual(model.ruleOutcome, .done)
     }
 
     func testUnknownExplicitProviderDoesNotFallBackToDefault() async throws {
