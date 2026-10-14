@@ -46,7 +46,8 @@ struct HotkeyRecorder: View {
     }
 }
 
-private struct KeyCapture: NSViewRepresentable {
+/// Not private, so that a test can end a recording without showing a window.
+struct KeyCapture: NSViewRepresentable {
     @Binding var recording: Bool
     @Binding var hotkey: Hotkey?
     @Binding var hint: String?
@@ -75,9 +76,23 @@ private struct KeyCapture: NSViewRepresentable {
         var onKey: ((NSEvent) -> Void)?
         var onBlur: (() -> Void)?
         override var acceptsFirstResponder: Bool { true }
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            super.viewWillMove(toWindow: newWindow)
+            NotificationCenter.default.removeObserver(self, name: NSWindow.didResignKeyNotification, object: nil)
+        }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            if let window { window.makeFirstResponder(self) }
+            guard let window else { return }
+            window.makeFirstResponder(self)
+            // Switching apps, closing or minimizing the window keeps this view first responder
+            // of a window that gets no keys, while every Frog shortcut stays off for the recording.
+            NotificationCenter.default.addObserver(self, selector: #selector(windowResignedKey), name: NSWindow.didResignKeyNotification, object: window)
+        }
+        @objc private func windowResignedKey(_ notification: Notification) {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.window?.isKeyWindow != true else { return }
+                self.onBlur?()
+            }
         }
         override func keyDown(with event: NSEvent) { onKey?(event) }
         override func performKeyEquivalent(with event: NSEvent) -> Bool {

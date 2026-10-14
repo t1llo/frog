@@ -39,6 +39,29 @@ final class ShortcutRecordingTests: XCTestCase {
         XCTAssertFalse(model.isRecordingShortcut, "Starting the same recorder twice must not need two ends")
     }
 
+    func testARecordingEndsWhenItsWindowStopsTakingKeys() async {
+        _ = NSApplication.shared
+        // Neither window is shown; the notification stands for switching apps, closing or minimizing.
+        func window() -> NSWindow {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 40), styleMask: [.titled], backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            return window
+        }
+        let settings = window(), other = window()
+        let capture = KeyCapture.CaptureView()
+        settings.contentView = capture
+        // As when SwiftUI takes the recorder away.
+        defer { capture.onBlur = nil; settings.contentView = nil }
+        XCTAssertTrue(settings.firstResponder === capture)
+        var ends = 0
+        let ended = expectation(description: "The recording ends")
+        capture.onBlur = { ends += 1; ended.fulfill() }
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: other)
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: settings)
+        await fulfillment(of: [ended], timeout: 1)
+        XCTAssertEqual(ends, 1, "Another window losing the keyboard must not end this recording")
+    }
+
     func testARefusalWrapsUnderTheRecorderInsteadOfWideningItsRow() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
