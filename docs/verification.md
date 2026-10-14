@@ -285,6 +285,20 @@ Every test above replaces the model downloader and the inference engines with fi
 FROG_RUN_MODEL_TESTS=1 swift test --filter RealModelTests
 ```
 
+A few more environment variables change what a test does. Unset, they cost nothing and change nothing. Point the snapshot ones at a temporary location, never into the repository.
+
+| Variable | Test | What it does |
+| --- | --- | --- |
+| `FROG_TEST_CLIPBOARD_SNAPSHOT` | `ClipboardHistoryTests.testNativePanelShowsFiveEntries` | Writes the clipboard history panel to this PNG path. |
+| `FROG_TEST_COMPACT_CLIPBOARD_SNAPSHOT` | `ClipboardHistoryTests.testCompactPanelRendersMixedSensitiveAndFormattedEntriesInLightAndDarkThemes` | Writes `<prefix>-light.png` and `<prefix>-dark.png`. |
+| `FROG_TEST_HISTORY_SNAPSHOT` | `HistoryFeedTests.testNativeHistoryMasksRevealsAndRemasksClipboardOnlyFeedWithoutPersistingIt` | Writes `<prefix>-masked.png`, `-revealed.png` and `-remasked.png`. |
+| `FROG_TEST_DICTATION_SNAPSHOTS` | The popup tests in `RecordingReadinessTests` | Writes one PNG per dictation popup state into this folder. |
+| `FROG_TEST_GRAPH_SNAPSHOT` | `GraphStyleTests.testUsageChartLaysOutAtBothSizes` | Writes `<prefix>-compact.png` and `<prefix>-wide.png`. |
+| `FROG_TEST_SYSTEM_SNAPSHOT` | `SystemMonitorViewTests.testSystemTabAndBatteryHeightTransitionsResizeNativeMenuWithoutBottomStrip` | Writes `<prefix>-battery.png`, `-battery-draw.png`, `-desktop.png` and `-unavailable.png`. |
+| `FROG_APPEARANCE_EVIDENCE` | `ScrollAppearanceTests.testPopupUsesActiveNativeBackdropAndIndependentSurfaceOpacity` | Writes window and popup previews for each appearance mode and transparency into this folder. |
+| `FROG_SCROLL_TEXT_LENGTH`, `FROG_SCROLL_ENTRY_COUNT` | `HistoryScrollPerformanceTests.testLongTranscriptScrollingStaysWithinFrameBudget` | Sets how often the sample sentence repeats in each history entry (5000) and how many entries there are (50). |
+| `FROG_RUN_SPACE_FIXTURE=1` | The three `testNative…` tests in `WindowSpacesTests` | Runs the Spaces fixtures, which switch between two existing desktops through private window-server calls. They are skipped otherwise. |
+
 ## Desktop acceptance checklist
 
 Use an installed signed app and a disposable document. Record macOS version, architecture, source application/version, provider/model, and result for each case.

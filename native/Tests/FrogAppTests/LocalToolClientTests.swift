@@ -421,21 +421,6 @@ final class LocalToolClientTests: XCTestCase {
         XCTAssertTrue(error.contains("login"))
         XCTAssertEqual(LocalToolOutput.models(Data("openai/model\nlog message\nopenai/model\n--bad/model\n".utf8)).map(\.id), ["openai/model"])
     }
-
-    func testFixtureProcessOverheadBenchmark() async throws {
-        let root = try directory()
-        let tool = try executable("echo '{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"ok\"}'", in: root)
-        var samples: [Double] = []
-        for _ in 0..<12 {
-            let start = ContinuousClock.now
-            let result = try await LocalToolProcess.run(executable: tool, arguments: [], environment: [:], directory: root)
-            XCTAssertEqual(try LocalToolOutput.completion(result.stdout, kind: .claudeCode), "ok")
-            let elapsed = start.duration(to: .now).components
-            samples.append(Double(elapsed.seconds) * 1000 + Double(elapsed.attoseconds) / 1e15)
-        }
-        samples.sort()
-        print("LocalTool fixture spawn+parse: median \(samples[6]) ms; max \(samples.last!) ms (12 runs; no model/network)")
-    }
 }
 
 @MainActor private final class StatusUpdates {
