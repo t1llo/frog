@@ -241,6 +241,15 @@ extension AppearancePreferences.Mode {
     }
 }
 
+enum QuickTextTools {
+    /// Base64 that was pasted is often wrapped or ends in a line break. Spaces and line breaks
+    /// are dropped; any other character outside the alphabet still makes the input invalid,
+    /// rather than being skipped into different bytes.
+    static func base64Decoded(_ input: String) -> String? {
+        Data(base64Encoded: String(input.filter { !$0.isWhitespace })).flatMap { String(data: $0, encoding: .utf8) }
+    }
+}
+
 struct QuickActionsView: View {
     @EnvironmentObject private var model: AppModel
     @State private var input = ""
@@ -266,7 +275,7 @@ struct QuickActionsView: View {
                 HStack {
                     Button("Clean URL") { result = LinkCleaning.clean(input) ?? "Enter an HTTP or HTTPS URL." }
                     Button("Base64 encode") { result = Data(input.utf8).base64EncodedString() }
-                    Button("Base64 decode") { result = Data(base64Encoded: input).flatMap { String(data: $0, encoding: .utf8) } ?? "Not valid UTF-8 Base64." }
+                    Button("Base64 decode") { result = QuickTextTools.base64Decoded(input) ?? "Not valid UTF-8 Base64." }
                     Button("Generate UUID") { result = UUID().uuidString }
                 }.controlSize(.small)
                 if !result.isEmpty {
