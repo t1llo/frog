@@ -89,6 +89,8 @@ public struct SetupStore {
     public func complete(_ value: Bool = true) throws { try PrivateFile.write(JSONEncoder().encode(value), to: file) }
 }
 
+/// Unchecked because the snapshot it compares the files with changes; it changes and is read only
+/// while `configurationLock` is held.
 public final class ConfigurationStore: @unchecked Sendable {
     public let directory: URL
     /// Complex rules, connections and custom model definitions.
@@ -311,7 +313,7 @@ public final class ConfigurationStore: @unchecked Sendable {
     }
 }
 
-public final class HistoryStore: @unchecked Sendable {
+public final class HistoryStore: Sendable {
     public let directory: URL
     private var file: URL { directory.appendingPathComponent("history.json") }
     /// Every change reads and writes the whole file, so it stays well below what `read` accepts.

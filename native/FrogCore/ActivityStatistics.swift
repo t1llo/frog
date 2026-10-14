@@ -128,7 +128,7 @@ private let activityStatisticsLock = NSLock()
 
 /// Small, independent device-local file. All read/modify/write transactions are serialized.
 /// Corrupt/unsupported data is preserved until the user explicitly resets statistics.
-public final class ActivityStatisticsPersistence: @unchecked Sendable {
+public final class ActivityStatisticsPersistence: Sendable {
     public let directory: URL
     public var file: URL { directory.appendingPathComponent("statistics.json") }
     private let maximumBytes = 1_024 * 1_024

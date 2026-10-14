@@ -198,7 +198,7 @@ public struct LLMClient: Sendable {
     }
 }
 
-private final class NoRedirects: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+private final class NoRedirects: NSObject, URLSessionDataDelegate, Sendable {
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, willCacheResponse proposedResponse: CachedURLResponse,
                     completionHandler: @escaping (CachedURLResponse?) -> Void) {
         completionHandler(nil)
