@@ -39,7 +39,8 @@ before it returns and saves it as one small transaction on a private serial queu
 off the main thread. `reload()`, `setRecordingEnabled(_:)` and `reset()` first wait
 for events still being saved, so none of them can drop or resurrect a count. The
 parent calls `waitForWrites()` when Frog quits (`AppModel.shutdown()`). An event that
-could not be saved is reported in `issue` and leaves the counts again.
+could not be saved is reported in `issue` and leaves the counts again; the next event
+that is saved takes that report back.
 
 ```swift
 // AppModel stored property:

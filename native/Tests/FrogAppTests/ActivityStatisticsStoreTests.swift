@@ -102,6 +102,40 @@ import FrogCore
         XCTAssertEqual(store.snapshot.allTime.ruleRuns(.local), 1, "The counts must not include an event that was not saved")
     }
 
+    func testEventSavedAfterAFailedSaveClearsItsNoticeButNotALaterFailure() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("frog-statistics-service-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let writes = DispatchQueue(label: "frog.tests.activity-statistics")
+        let store = ActivityStatisticsStore(directory: directory, writes: writes)
+        store.recordRuleExecution(kind: .local)
+        store.waitForWrites()
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+        store.recordRuleExecution(kind: .local)
+        store.waitForWrites()
+        await noticesDelivered()
+        XCTAssertNotNil(store.issue)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        store.recordRuleExecution(kind: .local)
+        store.waitForWrites()
+        await noticesDelivered()
+        XCTAssertNil(store.issue, "Saving works again, so the page must stop saying it failed")
+        XCTAssertEqual(store.snapshot.allTime.ruleRuns(.local), 2)
+        // The event is saved before pausing fails, but its notice reaches the store after.
+        store.recordRuleExecution(kind: .local)
+        writes.async { try? FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path) }
+        store.setRecordingEnabled(false)
+        XCTAssertNotNil(store.issue)
+        await noticesDelivered()
+        XCTAssertNotNil(store.issue, "An earlier successful save must not hide why pausing failed")
+        XCTAssertTrue(store.snapshot.recordingEnabled)
+    }
+
+    /// Notices of saves that already finished were sent to the main queue before this.
+    private func noticesDelivered() async {
+        await withCheckedContinuation { continuation in DispatchQueue.main.async { continuation.resume() } }
+    }
+
     func testEventsThatCompleteTogetherAreSavedTogetherOrNotAtAll() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("frog-statistics-service-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }

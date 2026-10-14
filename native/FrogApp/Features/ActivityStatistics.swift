@@ -6,8 +6,10 @@ import FrogCore
 /// hook returns, and only saving it leaves the main thread. A statistics failure never fails a tool action.
 @MainActor final class ActivityStatisticsStore: ObservableObject {
     @Published private(set) var snapshot = ActivityStatisticsSnapshot()
-    @Published private(set) var issue: String?
+    @Published private(set) var issue: String? { didSet { issueIsFailedSave = false } }
     @Published private(set) var loaded = false
+    /// Whether `issue` says that an event could not be saved, which the next saved event takes back.
+    private var issueIsFailedSave = false
     private let persistence: ActivityStatisticsPersistence
     /// Serial, so events reach the file in the order they completed. Reading and replacing
     /// the file go through it too and therefore never overtake an event still being saved.
@@ -64,8 +66,10 @@ import FrogCore
         snapshot = counted
         writes.async { [persistence, weak self] in
             // The file is read and merged again, so another running Frog loses nothing.
-            do { try persistence.record(events, at: date, timeZone: timeZone) }
-            catch {
+            do {
+                try persistence.record(events, at: date, timeZone: timeZone)
+                DispatchQueue.main.async { self?.saved() }
+            } catch {
                 let message = error.localizedDescription
                 DispatchQueue.main.async { self?.saveFailed(message) }
             }
@@ -75,6 +79,10 @@ import FrogCore
     /// Shows what the file holds again, so an event that was not saved is not counted.
     private func saveFailed(_ message: String) {
         reload()
-        if loaded { issue = message }
+        if loaded { issue = message; issueIsFailedSave = true }
     }
+
+    /// Notices arrive in the order the events were saved, so a later failed save still wins.
+    /// A reload, pause or reset that failed after this save keeps its own message.
+    private func saved() { if issueIsFailedSave { issue = nil } }
 }
