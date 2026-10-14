@@ -12,6 +12,9 @@ import FrogUsage
     private var observation: AnyCancellable?
     private var timer: Timer?
     private var updateTask: Task<Void, Never>?
+    /// What the item shows, so that a check finding the readout unchanged draws nothing.
+    private var shownFace: UsageStatusReadout.Face?
+    private var shownDescription: String?
     /// Borderless like Frog's own menu-bar popup: the same panel surface, no popover arrow.
     private(set) var popup: NSPanel?
     private var localClick: Any?
@@ -41,6 +44,7 @@ import FrogUsage
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.updateReadout() }
         }
+        timer?.tolerance = 3
         updateReadout()
     }
 
@@ -59,11 +63,15 @@ import FrogUsage
         let windows = usage.windows(provider: provider)
         // Without a plan reading the item still says something: the period's API estimate.
         let estimate = windows.isEmpty ? UsageStatusReadout.estimate(usage, provider: provider) : nil
-        button.image = UsageStatusReadout.image(provider: provider, windows: windows, estimate: estimate,
-                                                dimmed: usage.planWarning(provider: provider) != nil)
+        // Most checks find the readout as it was; only what changed is drawn or set again.
+        let face = UsageStatusReadout.Face(provider: provider, windows: windows, estimate: estimate,
+                                           dimmed: usage.planWarning(provider: provider) != nil)
+        if face != shownFace { button.image = UsageStatusReadout.image(face); shownFace = face }
         let description = ([UsageStatusReadout.description(provider: provider, windows: windows, estimate: estimate),
                             usage.planName(provider: provider).map { "\($0) plan" },
                             usage.status(provider: provider)]).compactMap { $0 }.joined(separator: "\n")
+        guard description != shownDescription else { return }
+        shownDescription = description
         button.toolTip = description
         button.setAccessibilityLabel(description)
     }
@@ -164,29 +172,50 @@ enum UsageStatusReadout {
         return Estimate(range: chart.range, value: usage.axisLabel(cost.rounded(), metric: "API cost"))
     }
 
+    /// Everything the image shows. Two equal faces draw the same image.
+    struct Face: Equatable {
+        let provider: String
+        let labels: [String]
+        let values: [String]
+        /// How full each plan window's track is, 0 to 1; none for the estimate. A window without
+        /// a reading has a NaN percentage, which never equals itself, so it is kept as 0 here.
+        let fractions: [Double]
+        let dimmed: Bool
+
+        init(provider: String, windows: [UsageWindow], estimate: Estimate? = nil, dimmed: Bool = false) {
+            let windows = Array(windows.prefix(2))
+            self.provider = provider
+            labels = windows.isEmpty ? [estimate?.range].compactMap { $0 } : windows.map { UsageStatusReadout.shortWindow($0) }
+            values = windows.isEmpty ? [estimate?.value].compactMap { $0 } : windows.map { UsageStatusReadout.percentage($0.percentage) }
+            fractions = windows.map { $0.percentage.isFinite ? min(1, max(0, $0.percentage / 100)) : 0 }
+            self.dimmed = dimmed
+        }
+    }
+
     static func image(provider: String, windows: [UsageWindow], estimate: Estimate? = nil, dimmed: Bool = false) -> NSImage {
+        image(Face(provider: provider, windows: windows, estimate: estimate, dimmed: dimmed))
+    }
+
+    static func image(_ face: Face) -> NSImage {
         let labelFont = NSFont.systemFont(ofSize: 9, weight: .semibold)
         let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
-        let windows = Array(windows.prefix(2))
-        let labels = windows.isEmpty ? [estimate?.range].compactMap { $0 } : windows.map { shortWindow($0) }
-        let values = windows.isEmpty ? [estimate?.value].compactMap { $0 } : windows.map { percentage($0.percentage) }
+        let (labels, values, fractions) = (face.labels, face.values, face.fractions)
         let widths = zip(labels, values).map { width($0, font: labelFont) + 4 + width($1, font: valueFont) }
-        let total = ceil(widths.isEmpty ? width(provider, font: valueFont) : widths.reduce(0, +) + CGFloat(max(0, widths.count - 1)) * 10)
+        let total = ceil(widths.isEmpty ? width(face.provider, font: valueFont) : widths.reduce(0, +) + CGFloat(max(0, widths.count - 1)) * 10)
         // A reading that could not be refreshed stays readable but recedes.
-        let strength = dimmed ? 0.55 : 1
+        let strength = face.dimmed ? 0.55 : 1
         let image = NSImage(size: NSSize(width: total, height: 22), flipped: false) { _ in
-            if widths.isEmpty { draw(provider, at: NSPoint(x: 0, y: 4), font: valueFont) }
+            if widths.isEmpty { draw(face.provider, at: NSPoint(x: 0, y: 4), font: valueFont) }
             else {
                 var x: CGFloat = 0
                 for index in widths.indices {
-                    draw(labels[index], at: NSPoint(x: x, y: windows.isEmpty ? 6 : 7), font: labelFont, opacity: 0.7 * strength)
-                    draw(values[index], at: NSPoint(x: x + width(labels[index], font: labelFont) + 4, y: windows.isEmpty ? 4 : 5), font: valueFont, opacity: strength)
-                    guard windows.indices.contains(index) else { continue }
+                    draw(labels[index], at: NSPoint(x: x, y: fractions.isEmpty ? 6 : 7), font: labelFont, opacity: 0.7 * strength)
+                    draw(values[index], at: NSPoint(x: x + width(labels[index], font: labelFont) + 4, y: fractions.isEmpty ? 4 : 5), font: valueFont, opacity: strength)
+                    guard fractions.indices.contains(index) else { continue }
                     let track = NSRect(x: x, y: 2, width: widths[index], height: 2)
                     NSColor.black.withAlphaComponent(0.18).setFill()
                     NSBezierPath(roundedRect: track, xRadius: 1, yRadius: 1).fill()
-                    let value = windows[index].percentage
-                    let fraction = value.isFinite ? min(1, max(0, value / 100)) : 0
+                    let fraction = fractions[index]
                     if fraction > 0 {
                         NSColor.black.withAlphaComponent(0.85 * strength).setFill()
                         NSBezierPath(roundedRect: NSRect(x: x, y: 2, width: max(2, widths[index] * fraction), height: 2), xRadius: 1, yRadius: 1).fill()
