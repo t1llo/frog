@@ -133,7 +133,8 @@ Implemented:
   windows in the popup. The status tooltip includes every window, reset times and source
   status, while its narrow glyph keeps the first two meters.
 - **Source/range accuracy:** account mode permits only daily 7d/30d periods, using
-  UTC chart dates. Missing account activity is labeled as a local-log fallback.
+  UTC chart dates. Missing account activity is labeled as a local-log fallback,
+  charted by this Mac's own days and still offering 7d/30d only.
   Local logs can span accounts and do not pretend to match the selected quota login.
   Existing saved provider/source/metric choices are retained. Periods are whole
   hours or days ending with the current one, so "Last 7 days" is today and the

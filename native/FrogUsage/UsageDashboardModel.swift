@@ -316,8 +316,9 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
     }
     public func chart(provider: String, range: String, metric: String) -> UsageChart {
         let metric = TokenMetric(rawValue: metric) ?? .cost
-        let account = provider == "OpenAI"
-        let range = account && range == "24h" ? TokenRange.week : TokenRange(rawValue: range) ?? .week
+        // The account counts by UTC day. Until it answers, only this Mac's logs are shown, by its own days.
+        let account = provider == "OpenAI" && tokens.activity != nil
+        let range = provider == "OpenAI" && range == "24h" ? TokenRange.week : TokenRange(rawValue: range) ?? .week
         let summary = tokens.summary(Provider(rawValue: provider) ?? .claude, account: account,
             range: range, metric: metric)
         return UsageChart(points: summary.buckets.map { UsageChartPoint(date: $0.start, value: $0.value) },

@@ -97,6 +97,38 @@ import XCTest
         XCTAssertEqual(model.preferences.range, "7d", "Daily account totals must not appear as hourly measurements")
     }
 
+    func testOpenAIChartWithoutAccountActivityKeepsThisMacsDays() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let codex = root.appendingPathComponent("codex/sessions")
+        try FileManager.default.createDirectory(at: codex, withIntermediateDirectories: true)
+        let suite = "frog-usage-parity-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
+        defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
+        // Just after this Mac's midnight, which east of Greenwich is still yesterday in UTC.
+        let today = Calendar.current.startOfDay(for: Date())
+        let at = min(today.addingTimeInterval(60), Date())
+        let events: [[String: Any]] = [
+            ["type": "session_meta", "payload": ["id": "codex-fixture", "model_provider": "openai"]],
+            ["type": "turn_context", "payload": ["model": "gpt-5.1"]],
+            ["type": "token_usage_record", "payload": ["session_id": "codex-fixture", "response_id": "reply", "usage": ["input_tokens": 10, "output_tokens": 5]]]
+        ]
+        var log = Data()
+        for var event in events {
+            event["timestamp"] = ISO8601DateFormatter().string(from: at)
+            log += try JSONSerialization.data(withJSONObject: event); log.append(10)
+        }
+        try log.write(to: codex.appendingPathComponent("fixture.jsonl"))
+        let model = UsageDashboardModel(defaults: defaults, fixtureRoot: root)
+        model.setActive(true)
+        defer { model.setActive(false) }
+        for _ in 0..<200 where !model.loaded { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertFalse(model.hasAccountActivity)
+        let chart = model.chart(provider: "OpenAI", range: "7d", metric: "Input")
+        XCTAssertFalse(chart.account, "Only the account's own totals come in UTC days")
+        XCTAssertEqual(chart.points.last?.date, today)
+        XCTAssertEqual(chart.points.last?.value, 10, "Today's local activity is on today's bar")
+        XCTAssertEqual(chart.totalTokens, 15)
+    }
+
     func testDashboardExposesClaudeLifetimeSeparatelyFromDeduplicatedPeriod() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let directory = root.appendingPathComponent("claude")
