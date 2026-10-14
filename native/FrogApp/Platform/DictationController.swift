@@ -286,14 +286,14 @@ final class DictationController: ObservableObject {
     }
 
     /// Every pass transcribes all the audio that no finished window holds yet, so passes get rarer
-    /// as that audio grows: half an interval more for every ten seconds. The pass that finds the
-    /// window full keeps its text and shortens Stop, so the longer wait never runs past that point.
+    /// as that audio grows: half an interval more for every ten seconds. The pass that completes
+    /// the window keeps its text and shortens Stop, so the longer wait never runs past that point.
     nonisolated static func previewDelay(interval: Duration, uncommittedSamples: Int) -> Duration {
-        let window = 30 * 16000, uncommitted = max(0, uncommittedSamples)
-        guard uncommitted < window else { return interval }
+        let full = DictationTranscript.samplesCompletingWindow, uncommitted = max(0, uncommittedSamples)
+        guard uncommitted < full else { return interval }
         let widened = interval * (2 + uncommitted / (10 * 16000)) / 2
         // A quarter second later the capture buffer that completes the window has arrived too.
-        let untilFull = Duration.milliseconds((window - uncommitted) / 16 + 250)
+        let untilFull = Duration.milliseconds((full - uncommitted) / 16 + 250)
         return min(widened, max(interval, untilFull))
     }
 
@@ -301,17 +301,24 @@ final class DictationController: ObservableObject {
         guard let token, let rule = activeRule, let models, let modelID = rule.action?.audioModelID,
               rule.action?.audioProviderID == nil, phase == .recording, !models.busy, previewInference == nil else { return }
         let transcript = self.transcript
-        let audio = samples.snapshot(from: transcript.offset, limit: 30 * 16000)
-        guard audio.count >= (includePartial ? 16000 : 30 * 16000), transcript.partial?.sampleCount != audio.count else { return }
+        let completes = DictationTranscript.completesWindow(uncommittedSamples: samples.count - transcript.offset)
+        if completes, let partial = transcript.partial, partial.sampleCount == DictationTranscript.window {
+            // A partial pass already read this whole window before the audio after it arrived.
+            transcript.acceptPreview(partial.text, sampleCount: partial.sampleCount, completesWindow: true)
+            updatePreview(partial.text, completingWindow: true)
+            return
+        }
+        let audio = samples.snapshot(from: transcript.offset, limit: DictationTranscript.window)
+        guard completes || (includePartial && audio.count >= 16000 && transcript.partial?.sampleCount != audio.count) else { return }
         // Keep inference separate from the preview timer: Stop interrupts the timer
         // but lets useful in-flight recognition finish, including interrupted history.
         let inference = Task { [weak self] in
             let text = try await models.transcribe(audio, modelID: modelID, language: rule.action?.transcriptionLanguage)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             try Task.checkCancellation()
-            transcript.acceptPreview(text, sampleCount: audio.count)
+            transcript.acceptPreview(text, sampleCount: audio.count, completesWindow: completes)
             guard let self, self.token == token, self.phase == .recording || self.phase == .transcribing else { return }
-            self.updatePreview(text, completingWindow: audio.count == 30 * 16000)
+            self.updatePreview(text, completingWindow: completes)
         }
         previewInference = inference
         defer { if self.token == token { previewInference = nil } }
@@ -463,7 +470,7 @@ final class DictationController: ObservableObject {
     func updatePreview(_ text: String, completingWindow: Bool = false) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty { previewDraft = text }
-        liveText = [previewPrefix, previewDraft].filter { !$0.isEmpty }.joined(separator: " ")
+        liveText = DictationTranscript.join([previewPrefix, previewDraft])
         if completingWindow { previewPrefix = liveText; previewDraft = "" }
     }
     func setPopupVisible(_ visible: Bool) {

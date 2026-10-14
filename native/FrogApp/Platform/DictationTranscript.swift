@@ -11,15 +11,43 @@ final class DictationTranscript {
     private var audio: [Float]?
     var canRetry: Bool { audio != nil }
     /// What recognition has produced so far. After a failed final pass it lacks the ending.
-    var recognized: String {
-        (completed + [partial?.text ?? ""]).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }.joined(separator: " ")
+    var recognized: String { Self.join(completed + [partial?.text ?? ""]) }
+
+    /// Recognition reads the recording in windows of 30 seconds.
+    nonisolated static let window = 30 * 16000
+    /// A window is final only once a second more has been recorded: neither engine reads a
+    /// shorter ending, so a cut with less behind it would lose the last words of a dictation.
+    nonisolated static let samplesCompletingWindow = window + 16000
+    nonisolated static func completesWindow(uncommittedSamples: Int) -> Bool {
+        uncommittedSamples >= samplesCompletingWindow
     }
 
-    func acceptPreview(_ text: String, sampleCount: Int) {
-        if sampleCount == 30 * 16000 {
+    func acceptPreview(_ text: String, sampleCount: Int, completesWindow: Bool) {
+        if completesWindow, sampleCount == Self.window {
             completed.append(text); offset += sampleCount; partial = nil
         } else { partial = (sampleCount, text) }
+    }
+
+    /// Joins recognised pieces with a space, except where both sides are in a script written
+    /// without spaces, such as Chinese, Japanese or Thai.
+    nonisolated static func join(_ pieces: [String]) -> String {
+        var text = ""
+        for piece in pieces.map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) }) where !piece.isEmpty {
+            if let last = text.unicodeScalars.last, let first = piece.unicodeScalars.first,
+               !(writtenWithoutSpaces(last) && writtenWithoutSpaces(first)) { text += " " }
+            text += piece
+        }
+        return text
+    }
+
+    private nonisolated static func writtenWithoutSpaces(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x0E00...0x0EFF, 0x1000...0x109F, 0x1780...0x17FF: true // Thai, Lao, Myanmar, Khmer
+        case 0x3000...0x312F, 0x31F0...0x31FF: true // CJK punctuation, kana, Bopomofo
+        case 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF, 0x20000...0x3FFFF: true // Han
+        case 0xFF00...0xFF9F: true // Full-width punctuation and half-width kana
+        default: false
+        }
     }
 
     func finish(recorder: (any DictationRecording)?, samples: AudioSamples,
@@ -64,8 +92,7 @@ final class DictationTranscript {
                         throw error
                     }
                 }
-                raw = (completed + [ending]).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty }.joined(separator: " ")
+                raw = Self.join(completed + [ending])
             }
             try Task.checkCancellation()
             guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("No speech detected.") }

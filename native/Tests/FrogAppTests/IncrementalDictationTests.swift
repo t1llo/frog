@@ -234,8 +234,10 @@ final class IncrementalDictationTests: XCTestCase {
         XCTAssertEqual(delay(20), .seconds(4))
         XCTAssertEqual(delay(26), .seconds(4))
         // The pass that completes a window keeps its text, so it is not put off past the full window.
-        XCTAssertEqual(delay(27), .milliseconds(3250))
-        XCTAssertEqual(delay(29), .seconds(2))
+        // A window is complete once a second of audio follows it.
+        XCTAssertEqual(delay(27), .seconds(4))
+        XCTAssertEqual(delay(28), .milliseconds(3250))
+        XCTAssertEqual(delay(29), .milliseconds(2250))
         XCTAssertEqual(delay(30), .seconds(2))
         XCTAssertEqual(delay(95), .seconds(2))
         // A test's hour-long interval must never be cut short by an almost full window.
@@ -265,6 +267,76 @@ final class IncrementalDictationTests: XCTestCase {
         // With over 20 seconds to read again, each pass waits two intervals.
         XCTAssertLessThanOrEqual(passes, Int(elapsed / (interval * 2)))
         await fixture.models.unload()
+    }
+
+    func testEndingUnderASecondAfterAFullWindowIsTranscribedWithThatWindow() async throws {
+        let fixture = await makeFixture(seconds: 30)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        // Like both speech engines, refuse audio shorter than a second.
+        await fixture.engine.refuseUnderASecond()
+        var copied = ""
+        let controller = DictationController(makeRecorder: { fixture.recorder }, authorize: { true }, copy: { copied = $0 }, monitorKeys: false,
+                                             previewInterval: .seconds(3600), inputDevices: { [] }, presentsPopup: false)
+        controller.start(rule: rule, preferences: WorkflowPreferences(), models: fixture.models)
+        await controller.waitForWork()
+        fixture.recorder.append(samples: 8000, value: 30)
+        try await controller.refreshPreview()
+        controller.stop(models: fixture.models)
+        await controller.waitForWork()
+        let calls = await fixture.engine.calls
+        XCTAssertEqual(calls.map(\.count), [30 * 16000, 30 * 16000 + 8000])
+        XCTAssertEqual(copied, "Seconds 0–30.")
+        XCTAssertEqual(controller.phase, .idle)
+        await fixture.models.unload()
+    }
+
+    func testWindowReadBeforeTheAudioAfterItArrivedIsNotReadAgain() async throws {
+        let fixture = await makeFixture(seconds: 30)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        var copied = ""
+        let controller = DictationController(makeRecorder: { fixture.recorder }, authorize: { true }, copy: { copied = $0 }, monitorKeys: false,
+                                             previewInterval: .seconds(3600), inputDevices: { [] }, presentsPopup: false)
+        controller.start(rule: rule, preferences: WorkflowPreferences(), models: fixture.models)
+        await controller.waitForWork()
+        fixture.recorder.append(samples: 8000, value: 30)
+        try await controller.refreshPreview()
+        fixture.recorder.append(samples: 16000, value: 31)
+        try await controller.refreshPreview()
+        XCTAssertEqual(controller.liveText, "Seconds 0–29.")
+        controller.stop(models: fixture.models)
+        await controller.waitForWork()
+        let calls = await fixture.engine.calls
+        XCTAssertEqual(calls.map(\.count), [30 * 16000, 24000])
+        XCTAssertEqual(calls.map(\.firstSecond), [0, 30])
+        XCTAssertEqual(copied, "Seconds 0–29. Seconds 30–31.")
+        await fixture.models.unload()
+    }
+
+    func testWindowsInAScriptWrittenWithoutSpacesAreJoinedWithoutOne() async throws {
+        let fixture = await makeFixture(seconds: 35)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        await fixture.engine.answerWithoutSpaces()
+        var copied = ""
+        let controller = DictationController(makeRecorder: { fixture.recorder }, authorize: { true }, copy: { copied = $0 }, monitorKeys: false,
+                                             previewInterval: .seconds(3600), inputDevices: { [] }, presentsPopup: false)
+        controller.start(rule: rule, preferences: WorkflowPreferences(), models: fixture.models)
+        await controller.waitForWork()
+        try await controller.refreshPreview()
+        try await controller.refreshPreview()
+        XCTAssertEqual(controller.liveText, "第0秒到第29秒。第30秒到第34秒。")
+        controller.stop(models: fixture.models)
+        await controller.waitForWork()
+        XCTAssertEqual(copied, "第0秒到第29秒。第30秒到第34秒。")
+        await fixture.models.unload()
+    }
+
+    func testOnlyPiecesInScriptsWrittenWithSpacesAreJoinedWithOne() {
+        XCTAssertEqual(DictationTranscript.join(["今日は", " いい天気です。"]), "今日はいい天気です。")
+        XCTAssertEqual(DictationTranscript.join(["สวัสดี", "ครับ"]), "สวัสดีครับ")
+        XCTAssertEqual(DictationTranscript.join(["Hello.", "", "World"]), "Hello. World")
+        // Korean separates its words with spaces.
+        XCTAssertEqual(DictationTranscript.join(["안녕하세요.", "반갑습니다."]), "안녕하세요. 반갑습니다.")
+        XCTAssertEqual(DictationTranscript.join(["Frog", "日本"]), "Frog 日本")
     }
 
     private var rule: Rule {
@@ -307,7 +379,7 @@ private final class BufferedRecording: DictationRecording {
     func append(from start: Int, seconds: Int) {
         receive?((start..<(start + seconds)).flatMap { Array(repeating: Float($0), count: 16000) })
     }
-    func append(samples count: Int) { receive?(Array(repeating: 0, count: count)) }
+    func append(samples count: Int, value: Float = 0) { receive?(Array(repeating: value, count: count)) }
     func stop() { receive = nil }
 }
 
@@ -322,9 +394,13 @@ private actor CountingSpeech: LocalInferenceEngine {
     private var pause: XCTestExpectation?
     private var continuation: CheckedContinuation<Void, Never>?
     private var shouldFail = false
+    private var minimumCount = 0
+    private var withoutSpaces = false
     func pauseNext(_ started: XCTestExpectation) { pause = started }
     func resume() { continuation?.resume(); continuation = nil }
     func failNext() { shouldFail = true }
+    func refuseUnderASecond() { minimumCount = 16000 }
+    func answerWithoutSpaces() { withoutSpaces = true }
     func transcribe(_ samples: [Float], model: LocalModelDescriptor, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
         loadedIDs.insert(model.id); await residency(loadedIDs)
         calls.append(Call(count: samples.count, firstSecond: Int(samples.first ?? 0)))
@@ -334,7 +410,9 @@ private actor CountingSpeech: LocalInferenceEngine {
         }
         try Task.checkCancellation()
         if shouldFail { shouldFail = false; throw PreviewFailure() }
-        return "Seconds \(Int(samples.first ?? 0))–\(Int(samples.last ?? 0))."
+        if samples.count < minimumCount { throw PreviewFailure() }
+        let first = Int(samples.first ?? 0), last = Int(samples.last ?? 0)
+        return withoutSpaces ? "第\(first)秒到第\(last)秒。" : "Seconds \(first)–\(last)."
     }
     func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String { "Cleaned: \(text)" }
     func unload(keepingMetadata: Bool) { loadedIDs = [] }
