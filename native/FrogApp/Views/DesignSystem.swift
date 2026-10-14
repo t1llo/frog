@@ -92,11 +92,6 @@ enum FrogStyle {
     }
     static var accentSoft: Color { accent.opacity(0.15) }
     static var selection: Color { accent.opacity(0.13) }
-    static var onAccent: Color {
-        let settings = FrogAppearance.shared.settings
-        return adaptive(light: settings.lightPalette?["on-accent"].flatMap { UInt32($0, radix: 16) } ?? presetPalette(dark: false).surface,
-                        dark: settings.darkPalette?["on-accent"].flatMap { UInt32($0, radix: 16) } ?? (settings.effectiveTheme == .frog ? 0x18261C : presetPalette(dark: true).canvas))
-    }
     static var ink: Color { themed(\.ink) }
     static var muted: Color { themed(\.muted) }
 

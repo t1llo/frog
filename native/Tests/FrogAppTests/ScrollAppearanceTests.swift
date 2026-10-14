@@ -61,18 +61,15 @@ final class ScrollAppearanceTests: XCTestCase {
         XCTAssertEqual(try hex(FrogStyle.ink, .darkAqua), "778899")
         XCTAssertEqual(try hex(FrogStyle.accent, .aqua), "445566")
         XCTAssertEqual(try hex(FrogStyle.accent, .darkAqua), "8899AA")
-        XCTAssertEqual(try hex(FrogStyle.onAccent, .darkAqua), "001122")
         settings.lightPalette = nil; settings.darkPalette = nil; FrogAppearance.shared.apply(settings)
         XCTAssertEqual(try hex(FrogStyle.opaqueCanvas, .darkAqua), "2E3440")
         XCTAssertEqual(try hex(FrogStyle.accent, .aqua), "466A83")
-        // Minimal is monochrome: its accent is a gray, and content on it flips with the mode.
+        // Minimal is monochrome: its accent is a gray.
         settings.theme = .minimal; FrogAppearance.shared.apply(settings)
         XCTAssertEqual(try hex(FrogStyle.opaqueCanvas, .aqua), "FFFFFF")
         XCTAssertEqual(try hex(FrogStyle.opaqueCanvas, .darkAqua), "0F1011")
         XCTAssertEqual(try hex(FrogStyle.accent, .aqua), "3C4149")
         XCTAssertEqual(try hex(FrogStyle.accent, .darkAqua), "D0D6E0")
-        XCTAssertEqual(try hex(FrogStyle.onAccent, .aqua), "FFFFFF")
-        XCTAssertEqual(try hex(FrogStyle.onAccent, .darkAqua), "0F1011")
         // It is also what a fresh install shows, before any theme is chosen.
         FrogAppearance.shared.apply(AppearancePreferences())
         XCTAssertEqual(try hex(FrogStyle.opaqueCanvas, .darkAqua), "0F1011")

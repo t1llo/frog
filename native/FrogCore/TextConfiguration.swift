@@ -216,7 +216,7 @@ enum TextConfiguration {
     # shortcut.command-bar = ctrl+alt+space
     # palette.dark.background = #1A1B26
     # palette.dark.text = #C0CAF5
-    # Palette names: background, sidebar, surface, inset, border, text, muted, accent, on-accent,
+    # Palette names: background, sidebar, surface, inset, border, text, muted, accent,
     # good, warning, critical.
     # Use palette.light.<name> and palette.dark.<name>; omitted colors inherit the theme.
     # Full reference: https://github.com/t1llo/frog/blob/main/docs/configuration.md

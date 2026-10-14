@@ -99,7 +99,7 @@ Every preset supplies a coordinated light and dark palette. Override any of thes
 | `text` | Primary text |
 | `muted` | Secondary text and symbols |
 | `accent` | Highlights, selection, active controls |
-| `on-accent` | Content drawn on accent fills |
+| `on-accent` | Nothing at present; still accepted so older files keep loading |
 | `good` | Comfortable status: usage under pace |
 | `warning` | Status worth watching: usage ahead of pace, high load, notices |
 | `critical` | Status at the limit: a nearly used plan window, very high load, a nearly full disk |
