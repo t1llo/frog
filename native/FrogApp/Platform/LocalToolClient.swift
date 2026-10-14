@@ -172,8 +172,8 @@ actor LocalToolClient {
         if let version, let verified = verifiedVersions[kind] {
             return "This \(kind.title) version (\(version)) has not been verified for Frog's restricted text mode. Supported CLI: \(verified.name)."
         }
-        if kind == .codex {
-            return "This Codex version has not been verified for Frog's restricted text mode. Supported CLI: 0.159.x."
+        if kind == .codex, let verified = verifiedVersions[kind] {
+            return "This Codex version has not been verified for Frog's restricted text mode. Supported CLI: \(verified.name)."
         }
         return "Update \(kind.title) to a supported CLI with isolated, non-interactive text mode. \(kind.loginInstructions)"
     }
