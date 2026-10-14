@@ -216,6 +216,25 @@ final class PersistenceTests: XCTestCase {
         XCTAssertEqual(try store.load(), configuration)
     }
 
+    func testImportThatCannotBeWrittenLeavesNoBackupAndKeepsTheEarlierOnes() throws {
+        let store = ConfigurationStore(directory: directory)
+        var configuration = try store.load()
+        try store.save(configuration)
+        configuration.preferences.historyLimit = 42
+        try store.replaceFromImport(configuration)
+        let before = Set(try FileManager.default.contentsOfDirectory(atPath: directory.path))
+        let files = try [store.textFile, store.file].map { try Data(contentsOf: $0) }
+
+        // A shortcut without Control, Option or Command decodes, but the text file has no spelling for it.
+        var unwritable = configuration
+        var workflow = WorkflowPreferences(); workflow.shortcutPanelHotkey = Hotkey(keyCode: 40, modifiers: 512)
+        unwritable.preferences.workflows = workflow
+        // Retrying the same import must neither add copies of the unchanged files nor push out older ones.
+        for _ in 0...ConfigurationStore.retainedBackups { XCTAssertThrowsError(try store.replaceFromImport(unwritable)) }
+        XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: directory.path)), before)
+        XCTAssertEqual(try [store.textFile, store.file].map { try Data(contentsOf: $0) }, files)
+    }
+
     func testSaveReadsTheFilesOnceBeforeItsFirstWriteAndStillRefusesAnOutsideEdit() throws {
         let store = ConfigurationStore(directory: directory)
         var configuration = try store.load()

@@ -203,16 +203,18 @@ public final class ConfigurationStore: @unchecked Sendable {
         configurationLock.lock(); defer { configurationLock.unlock() }
         try ConfigurationFile.validate(configuration)
         let current = try readSnapshot()
+        // Preserve comments on a valid text document; corrupt text is preserved in the backup.
+        let text = current.text.flatMap { String(data: $0, encoding: .utf8) }
+        let rendered = text.flatMap { try? TextConfiguration.render(configuration, preserving: $0) }
+        // An import that cannot be written must not leave a backup, nor push out an older one.
+        let prepared = try prepare(configuration, preserving: rendered)
         var backup: URL?
         if let previous = current.json { backup = try self.backup(previous, name: "configuration-backup", extension: "json") }
         if let previous = current.text {
             let url = try self.backup(previous, name: "configuration-backup", extension: "conf")
             if backup == nil { backup = url }
         }
-        // Preserve comments on a valid text document; corrupt text is preserved in the backup.
-        let text = current.text.flatMap { String(data: $0, encoding: .utf8) }
-        let rendered = text.flatMap { try? TextConfiguration.render(configuration, preserving: $0) }
-        try commit(configuration, preserving: rendered, expected: current)
+        try apply(prepared, expected: current)
         return backup
     }
 
