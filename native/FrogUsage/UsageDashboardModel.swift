@@ -207,6 +207,7 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
         visibleTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
+        visibleTimer?.tolerance = 1
     }
     public func selectLoginSource(_ value: String) {
         var next = preferences; next.loginSource = value; updatePreferences(next)

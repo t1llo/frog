@@ -257,13 +257,19 @@ var usageUTCCalendar: Calendar {
 }
 
 /// Account dates and leaderboard days have the same UTC boundary, independent of this Mac.
-private func calendarDay(_ any: Any?) -> Date? {
-    guard let s = any as? String else { return nil }
+/// Fixed and never changed after this, so the scanners can share it.
+private let calendarDayFormatter: DateFormatter = {
     let f = DateFormatter()
     f.calendar = usageUTCCalendar
-    f.timeZone = usageUTCCalendar.timeZone
+    f.timeZone = f.calendar.timeZone
     f.locale = Locale(identifier: "en_US_POSIX")
     f.dateFormat = "yyyy-MM-dd"
+    return f
+}()
+
+private func calendarDay(_ any: Any?) -> Date? {
+    guard let s = any as? String else { return nil }
+    let f = calendarDayFormatter
     guard let date = f.date(from: s), f.string(from: date) == s else { return nil }
     return date
 }

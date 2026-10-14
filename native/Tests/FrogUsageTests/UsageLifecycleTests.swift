@@ -95,6 +95,31 @@ import XCTest
         model.setAvailable(false)
         XCTAssertFalse(model.isVisiblePolling, "Nothing refreshes while Mr. Usage is off")
     }
+    func testRepeatingRefreshesLetTheSystemGroupTheirWakeUps() throws {
+        let suite = "frog-usage-tolerance-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        func check(_ timer: Timer?, _ name: String, file: StaticString = #filePath, line: UInt = #line) {
+            guard let timer else { return XCTFail("\(name) is not running", file: file, line: line) }
+            // NSTimer.h recommends at least ten percent; much more would slow the refresh visibly.
+            XCTAssertGreaterThanOrEqual(timer.tolerance, timer.timeInterval / 10, name, file: file, line: line)
+            XCTAssertLessThanOrEqual(timer.tolerance, timer.timeInterval / 5, name, file: file, line: line)
+        }
+        let store = Store(defaults: defaults, readAuth: { _, _ in nil })
+        store.start()
+        defer { store.stop() }
+        check(store.timer, "Claude limits")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let tokens = TokenStore(fixtureRoot: root)
+        tokens.start()
+        defer { tokens.stop() }
+        check(tokens.timer, "Local token logs")
+        let model = UsageDashboardModel(defaults: defaults, fixtureRoot: root)
+        model.setAvailable(true)
+        defer { model.setAvailable(false) }
+        model.setPresented(true, for: .popup)
+        check(model.visibleTimer, "Visible refresh")
+    }
 }
 
 private final class AuthReads: @unchecked Sendable {

@@ -208,7 +208,7 @@ final class TokenStore: ObservableObject {
     private let pi: PiScanner
     private var active = false
     private var lifecycle = 0
-    private var timer: Timer?
+    private(set) var timer: Timer?
     /// The scan and the aggregation can be read so that a test waits for them instead of sleeping.
     private(set) var scanTask: Task<Void, Never>?
     private var liveTask: Task<Void, Never>?
@@ -247,6 +247,7 @@ final class TokenStore: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
+        timer?.tolerance = 10
     }
 
     func stop() {

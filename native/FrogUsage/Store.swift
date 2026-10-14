@@ -29,7 +29,7 @@ final class Store: ObservableObject {
     private let readDesktop: @Sendable (URL) -> ClaudeDesktopReading?
     private let renewLogin: @Sendable (URL) -> ClaudeLoginRenewal
     private let currentDate: @Sendable () -> Date
-    private var timer: Timer?
+    private(set) var timer: Timer?
     private var request: Task<Void, Never>?
     private var desktopRead: Task<Void, Never>?
     /// The last check found no login at all, as opposed to a request that failed.
@@ -66,6 +66,7 @@ final class Store: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
+        timer?.tolerance = 3
     }
 
     func stop() {
