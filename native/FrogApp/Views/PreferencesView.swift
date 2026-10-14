@@ -8,6 +8,8 @@ struct PreferencesView: View {
     @EnvironmentObject private var model: AppModel
     @State private var pendingConfiguration: Configuration?
     @State private var confirmingImport = false
+    /// A model folder chosen while models are downloaded in the current one, until it is confirmed.
+    @State private var pendingModelFolder: URL?
     @State private var legalDocument: LegalDocument?
     private var prefs: WorkflowPreferences { model.configuration.preferences.workflowSettings }
     /// Seconds a local model stays loaded after its last use, besides unloading at once.
@@ -182,6 +184,10 @@ struct PreferencesView: View {
                 Button("Replace configuration") { if let pendingConfiguration { do { try model.importConfiguration(pendingConfiguration) } catch { model.report(error) } }; pendingConfiguration = nil }
                 Button("Cancel", role: .cancel) { pendingConfiguration = nil }
             } message: { Text("The current settings are backed up. Provider keys may need to be re-entered.") }
+            .confirmationDialog(modelFolderChange?.title ?? "Use another model folder?", isPresented: Binding(get: { pendingModelFolder != nil }, set: { if !$0 { pendingModelFolder = nil } }), titleVisibility: .visible) {
+                Button("Use new folder") { if let url = pendingModelFolder { pendingModelFolder = nil; applyModelFolder(url) } }
+                Button("Cancel", role: .cancel) { pendingModelFolder = nil }
+            } message: { Text(modelFolderChange?.message ?? "") }
         }
     }
     private func permission(_ title: String, allowed: Bool, action: @escaping () -> Void) -> some View {
@@ -210,7 +216,19 @@ struct PreferencesView: View {
         panel.allowsMultipleSelection = false; panel.directoryURL = model.localModels.root; panel.title = "Model download folder"
         guard panel.runModal() == .OK, let url = panel.url else { return }; setModelFolder(url)
     }
-    private func setModelFolder(_ url: URL) { guard !model.dictation.active else { return }; Task { do { try await model.localModels.changeDirectory(to: url) } catch { model.report(error) } } }
+    private var modelFolderChange: LocalModelSettings.FolderChange? {
+        pendingModelFolder.flatMap { folderChange(to: $0) }
+    }
+    private func folderChange(to url: URL) -> LocalModelSettings.FolderChange? {
+        let models = model.localModels
+        return LocalModelSettings.folderChange(from: models.root, to: url, installed: models.installed.count, bytes: models.totalDiskUse(of: models.installed))
+    }
+    /// Asks first when the downloaded models would stay behind in the current folder.
+    private func setModelFolder(_ url: URL) {
+        guard !model.dictation.active else { return }
+        if folderChange(to: url) != nil { pendingModelFolder = url } else { applyModelFolder(url) }
+    }
+    private func applyModelFolder(_ url: URL) { guard !model.dictation.active else { return }; Task { do { try await model.localModels.changeDirectory(to: url) } catch { model.report(error) } } }
 }
 
 /// The Microphone row of the Recording section. Reading the microphones asks Core Audio about
@@ -256,6 +274,17 @@ enum LocalModelSettings {
     /// What the downloaded models take on the disk of the model folder.
     static func diskUse(_ bytes: Int64?) -> String? {
         bytes.map { "Models use " + LocalModelDescriptor.byteCount($0) }
+    }
+    struct FolderChange: Equatable { let title: String; let message: String }
+    /// What Frog asks before it uses another model folder while models are downloaded
+    /// in this one. It does not move them, so they stay where they are and take their space.
+    static func folderChange(from root: URL, to location: URL, installed: Int, bytes: Int64?) -> FolderChange? {
+        guard installed > 0, root.standardizedFileURL.path != location.standardizedFileURL.path else { return nil }
+        let one = installed == 1, folder = "“\(root.lastPathComponent)”"
+        let use = bytes.map { " and keep\(one ? "s" : "") using " + LocalModelDescriptor.byteCount($0) } ?? ""
+        let models = one ? "The model downloaded in \(folder) stays there" : "The \(installed) models downloaded in \(folder) stay there"
+        return FolderChange(title: "Use another model folder?",
+                            message: "\(models)\(use); Frog does not move \(one ? "it" : "them"). Frog will list only the models in the new folder. Choose this folder again to use \(one ? "it" : "them").")
     }
 }
 

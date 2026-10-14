@@ -29,6 +29,19 @@ final class LocalModelSettingsTests: XCTestCase {
         XCTAssertEqual(LocalModelSettings.diskUse(629_482_970), "Models use 629.5 MB")
     }
 
+    /// Frog does not move downloads to another folder, so it says what stays behind first.
+    func testChangingTheModelFolderSaysWhatStaysInTheOldOne() throws {
+        let old = URL(fileURLWithPath: "/Volumes/Models/Frog", isDirectory: true)
+        let new = URL(fileURLWithPath: "/Users/someone/Models", isDirectory: true)
+        let prompt = try XCTUnwrap(LocalModelSettings.folderChange(from: old, to: new, installed: 2, bytes: 3_200_000_000))
+        XCTAssertEqual(prompt.title, "Use another model folder?")
+        XCTAssertEqual(prompt.message, "The 2 models downloaded in “Frog” stay there and keep using 3.2 GB; Frog does not move them. Frog will list only the models in the new folder. Choose this folder again to use them.")
+        let one = try XCTUnwrap(LocalModelSettings.folderChange(from: old, to: new, installed: 1, bytes: nil))
+        XCTAssertEqual(one.message, "The model downloaded in “Frog” stays there; Frog does not move it. Frog will list only the models in the new folder. Choose this folder again to use it.", "A size not measured yet is left out")
+        XCTAssertNil(LocalModelSettings.folderChange(from: old, to: new, installed: 0, bytes: nil), "Nothing is left behind, so nothing to ask")
+        XCTAssertNil(LocalModelSettings.folderChange(from: old, to: URL(fileURLWithPath: "/Volumes/Models/Frog/"), installed: 2, bytes: 3_200_000_000), "Choosing the same folder again only looks for its models")
+    }
+
     func testAModelThatLeftTheCatalogIsStillNamed() {
         XCTAssertEqual(LocalModelSettings.inMemory(["hf-gone", "whisper-tiny"], catalog: LocalModelDescriptor.catalog), "Whisper Tiny, hf-gone")
     }
