@@ -437,7 +437,9 @@ final class IncrementalDictationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
         let textModel = try XCTUnwrap(LocalModelDescriptor.find("qwen-0.6b"))
         fixture.models.download(textModel); await fixture.models.waitForDownload(textModel.id)
-        let model = AppModel(dataDirectory: fixture.directory, registerShortcuts: false, modelService: fixture.models)
+        var copied: [String] = []
+        let model = AppModel(dataDirectory: fixture.directory, registerShortcuts: false, credentials: MemoryCredentialStore(),
+                             writeClipboard: { copied.append($0) }, modelService: fixture.models)
         defer { model.shutdown() }
         var dictation = rule
         dictation.instructions = "Clean up and translate into {{language}}."; dictation.targetLanguage = " German "
@@ -451,6 +453,7 @@ final class IncrementalDictationTests: XCTestCase {
         model.processManual(text: "hallo", ruleID: translate.id)
         for _ in 0..<400 where model.isProcessing { try await Task.sleep(for: .milliseconds(5)) }
         XCTAssertEqual(model.manualResult, "Cleaned: hallo")
+        XCTAssertEqual(copied, ["Cleaned: hallo"])
         let sent = await fixture.engine.instructions
         XCTAssertEqual(sent, ["Clean up and translate into German.", "Translate into German."])
         var unnamed = dictation; unnamed.targetLanguage = ""
