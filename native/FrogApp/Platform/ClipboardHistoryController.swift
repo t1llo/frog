@@ -138,7 +138,7 @@ final class ClipboardHistoryController {
                 guard event.window === self.panel else { self.cancel(); return event }
                 let entries = self.state.visibleEntries(in: self.history.entries)
                 let editingSearch = self.panel?.firstResponder is NSTextView
-                if event.keyCode == 8, event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command {
+                if Self.isCopyShortcut(event) {
                     if let text = self.panel?.firstResponder as? NSTextView, text.selectedRange().length > 0 { return event }
                     if entries.indices.contains(self.state.selectedIndex) {
                         self.copy(entries[self.state.selectedIndex])
@@ -181,6 +181,15 @@ final class ClipboardHistoryController {
             }
         panel.center(); panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(nil)
+    }
+
+    /// Command-C as the keyboard layout types it while Command is held, which on Dvorak is not
+    /// the key at the QWERTY position and on a Cyrillic layout still is. An event that carries
+    /// no characters falls back to that position.
+    static func isCopyShortcut(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command else { return false }
+        guard let characters = event.characters, !characters.isEmpty else { return event.keyCode == 8 }
+        return characters.lowercased() == "c"
     }
 
     private func resizePanel(entryCount: Int) {
