@@ -100,7 +100,9 @@ final class AppModel: ObservableObject {
     private let captureSelection: () async throws -> any CapturedTextSelection
     private let processingIndicator = ProcessingIndicator()
     private var processingTask: Task<Void, Never>?
+    // One handle per kind: launching an app must not cancel a system action that waits for its keys.
     private var applicationTask: Task<Void, Never>?
+    private var systemActionTask: Task<Void, Never>?
     private let windowManager = WindowManager()
     private var windowActionTask: Task<Void, Never>?
     private var historyEpoch = UUID()
@@ -302,7 +304,7 @@ final class AppModel: ObservableObject {
             switch feature {
             case .writing: self.processingTask?.cancel(); self.processingIndicator.hide()
             case .dictation: self.dictation.cancel(); self.invalidateHistoryRecovery()
-            case .applicationShortcuts: self.applicationTask?.cancel(); self.windowActionTask?.cancel(); self.shortcutPanel.hide()
+            case .applicationShortcuts: self.applicationTask?.cancel(); self.systemActionTask?.cancel(); self.windowActionTask?.cancel(); self.shortcutPanel.hide()
             case .scripts: self.scripts.stop()
             case .commandBar: self.commandBar.stop()
             default: break
@@ -386,6 +388,7 @@ final class AppModel: ObservableObject {
         processingIndicator.hide()
         processingTask?.cancel()
         applicationTask?.cancel()
+        systemActionTask?.cancel()
         windowActionTask?.cancel()
         hotkeys.unregister()
     }
@@ -1099,8 +1102,8 @@ final class AppModel: ObservableObject {
 
     private func performSystemAction(_ rule: Rule) {
         guard let action = rule.action?.systemAction, let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return }
-        applicationTask?.cancel()
-        applicationTask = Task {
+        systemActionTask?.cancel()
+        systemActionTask = Task {
             do {
                 try await ClipboardSelection.waitForShortcutRelease()
                 try Task.checkCancellation()
