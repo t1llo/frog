@@ -192,6 +192,40 @@ final class ConfigurationFileTests: XCTestCase {
         XCTAssertEqual(try store.load().preferences.historyLimit, 200)
     }
 
+    func testARemovedAssignmentStaysRemovedWhileItHoldsItsDefault() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ConfigurationStore(directory: directory)
+        var configuration = configured()
+        configuration.preferences.workflows = WorkflowPreferences()
+        configuration.preferences.appearance = AppearancePreferences()
+        var toolkit = ToolkitPreferences(); toolkit.usage = UsageDisplayPreferences(); toolkit.menuBar = MenuBarPreferences()
+        configuration.preferences.toolkit = toolkit
+        try store.save(configuration)
+        // The first file lists every value, defaults included.
+        let written = try String(contentsOf: store.textFile, encoding: .utf8)
+        let removed = ["history-limit = 50", "writing-indicator = true", "recording-popup = true", "transparency = 0",
+                       "usage.range = 7d", "menubar.auto-hide = true", "hidden-sidebar-items = []"]
+        for line in removed { XCTAssertTrue(written.contains("\n" + line + "\n"), line) }
+        let edited = written.components(separatedBy: "\n").filter { !removed.contains($0) }.joined(separator: "\n")
+        try Data(edited.utf8).write(to: store.textFile)
+        var loaded = try store.load()
+        XCTAssertEqual(loaded.preferences.historyLimit, 200)
+
+        // Saving another change leaves out what was removed.
+        loaded.preferences.historyEnabled = true
+        try store.save(loaded)
+        let saved = try String(contentsOf: store.textFile, encoding: .utf8)
+        XCTAssertEqual(saved, edited.replacingOccurrences(of: "history-enabled = false", with: "history-enabled = true"))
+        XCTAssertEqual(try ConfigurationStore(directory: directory).load(), loaded)
+
+        // A value other than the default is written again.
+        loaded.preferences.historyLimit = 60
+        try store.save(loaded)
+        XCTAssertTrue(try String(contentsOf: store.textFile, encoding: .utf8).hasSuffix("\nhistory-limit = 60\n"))
+        XCTAssertEqual(try ConfigurationStore(directory: directory).load(), loaded)
+    }
+
     func testAFieldThatCannotBeReadIsNamedByItsPlaceInTheDocument() throws {
         let data = try ConfigurationFile.encode(configured())
         func refusal(_ edit: (inout [String: Any]) throws -> Void) throws -> String {

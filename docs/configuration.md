@@ -36,7 +36,7 @@ palette.dark.accent = #7AA2F7
 palette.light.accent = #34548A
 ```
 
-Keys are case-sensitive. Booleans are `true`/`false`; numbers use a decimal point. A `#` starts a comment, except the initial `#` of a color value. Strings containing `#` or quotes must be JSON double-quoted (`"a # value"`). Duplicate keys, unknown keys and invalid values are errors with line numbers. Remove an assignment to use its default. Blank lines and comments are preserved. Both files have a 4 MB limit.
+Keys are case-sensitive. Booleans are `true`/`false`; numbers use a decimal point. A `#` starts a comment, except the initial `#` of a color value. Strings containing `#` or quotes must be JSON double-quoted (`"a # value"`). Duplicate keys, unknown keys and invalid values are errors with line numbers. Remove an assignment to use its default. The file Frog first writes lists every value; later saves from the app add a removed assignment back only once its value differs from the default. Blank lines and comments are preserved. Both files have a 4 MB limit.
 
 ### General and model settings
 

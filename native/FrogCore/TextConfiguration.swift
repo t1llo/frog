@@ -147,17 +147,7 @@ enum TextConfiguration {
             }
             catch { throw issue(index, "\(key): \(error.localizedDescription)") }
         }
-        // Codable structs with required fields still support sparse text overrides.
-        for (key, data) in [("workflows", try JSONEncoder().encode(WorkflowPreferences())),
-                            ("appearance", try JSONEncoder().encode(AppearancePreferences())),
-                            ("toolkit", try JSONEncoder().encode(ToolkitPreferences()))] {
-            if let nested = defaults[key] as? [String: Any] { defaults[key] = merge(try object(data), nested) }
-        }
-        if var toolkit = defaults["toolkit"] as? [String: Any], let usage = toolkit["usage"] as? [String: Any] {
-            toolkit["usage"] = merge(try object(JSONEncoder().encode(UsageDisplayPreferences())), usage)
-            defaults["toolkit"] = toolkit
-        }
-        root["preferences"] = defaults
+        root["preferences"] = try fillingNestedDefaults(defaults)
         let data = try JSONSerialization.data(withJSONObject: root)
         // A model key outside the catalog is reported with its line, ahead of general validation.
         var modelIssue: FrogError?
@@ -189,6 +179,26 @@ enum TextConfiguration {
         }
     }
 
+    /// Codable structs with required fields still support sparse text overrides: the settings they
+    /// group are filled with their defaults, as a missing assignment reads. `creating` also fills
+    /// groups that are absent, which gives the default of every assignment.
+    private static func fillingNestedDefaults(_ preferences: [String: Any], creating: Bool = false) throws -> [String: Any] {
+        var preferences = preferences
+        for (key, data) in [("workflows", try JSONEncoder().encode(WorkflowPreferences())),
+                            ("appearance", try JSONEncoder().encode(AppearancePreferences())),
+                            ("toolkit", try JSONEncoder().encode(ToolkitPreferences()))] {
+            if let nested = preferences[key] as? [String: Any] ?? (creating ? [:] : nil) { preferences[key] = merge(try object(data), nested) }
+        }
+        if var toolkit = preferences["toolkit"] as? [String: Any] {
+            for (key, data) in [("usage", try JSONEncoder().encode(UsageDisplayPreferences())),
+                                ("menuBar", try JSONEncoder().encode(MenuBarPreferences()))] {
+                if let nested = toolkit[key] as? [String: Any] ?? (creating ? [:] : nil) { toolkit[key] = merge(try object(data), nested) }
+            }
+            preferences["toolkit"] = toolkit
+        }
+        return preferences
+    }
+
     static func companion(_ configuration: Configuration) throws -> Data {
         var root = try object(ConfigurationFile.encode(configuration))
         var preferences = root["preferences"] as? [String: Any] ?? [:]
@@ -217,7 +227,15 @@ enum TextConfiguration {
         }
         var result = lines.map(\.raw).joined(separator: "\n")
         if !result.hasSuffix("\n") { result += "\n" }
-        for field in fields { if let value = values[field.key] { result += "\(field.key) = \(value)\n" } }
+        // A new file lists every value. In an existing one, an assignment someone removed stays
+        // removed while the value is the default that its absence reads as.
+        let defaults = text == nil ? nil : try fillingNestedDefaults(object(JSONEncoder().encode(Preferences())), creating: true)
+        for field in fields {
+            guard let value = values[field.key] else { continue }
+            if let defaults, let standard = get(field.path, in: defaults), let current = get(field.path, in: prefs),
+               NSDictionary(dictionary: ["v": current]).isEqual(to: ["v": standard]) { continue }
+            result += "\(field.key) = \(value)\n"
+        }
         return result
     }
 
