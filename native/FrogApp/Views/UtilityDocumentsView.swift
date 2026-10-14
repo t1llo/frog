@@ -38,7 +38,7 @@ struct UtilityDocumentsView: View {
             PageHeader(title: title, subtitle: subtitle) {
                 if kind == .shelf { Button("Paste", systemImage: "clipboard") { pasteToShelf() }.disabled(!documents.loaded) }
                 Button("New", systemImage: "plus") {
-                    selected = documents.add(UtilityDocument(kind: kind, title: kind == .note ? "Untitled note" : kind == .snippet ? "New snippet" : kind == .script ? "New script" : "Shelf item"))
+                    selected = documents.add(UtilityDocument(kind: kind, title: kind.newItemTitle))
                 }.disabled(!documents.loaded)
             }
             ListToolbar(placeholder: "Search \(title.lowercased())", search: $search) {
@@ -174,10 +174,21 @@ struct UtilityDocumentsView: View {
     }
 }
 
+extension UtilityDocument.Kind {
+    /// The title of an item that New creates.
+    var newItemTitle: String {
+        switch self { case .note: "Untitled note"; case .snippet: "New snippet"; case .shelf: "Shelf item"; case .script: "New script" }
+    }
+}
+
 extension UtilityDocument {
     /// A deleted item cannot be brought back, so Frog asks before it deletes one that holds
-    /// something. An item that was only just created is removed without a question.
-    var deletionAsksFirst: Bool { !files.isEmpty || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// something, a title of its own included. An item that was only just created is removed
+    /// without a question.
+    var deletionAsksFirst: Bool {
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !files.isEmpty || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !(title.isEmpty || title == kind.newItemTitle)
+    }
 }
 
 struct ScriptOutputView: View {
