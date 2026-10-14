@@ -21,4 +21,30 @@ final class ClipboardHistoryPanelDecisionTests: XCTestCase {
         XCTAssertFalse(ClipboardHistoryController.isCopyShortcut(try key(8, "c", flags: [.command, .shift])))
         XCTAssertFalse(ClipboardHistoryController.isCopyShortcut(try key(8, "c", flags: [])))
     }
+
+    func testOnlyAScrollThatMovesSomethingCountsAsNewInput() throws {
+        // Built, never posted: a trackpad scroll in its phases.
+        func scroll(_ delta: Int32, phase: Int64 = 0, momentum: Int64 = 0) throws -> NSEvent {
+            let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: delta, wheel2: 0, wheel3: 0))
+            event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+            event.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
+            event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: momentum)
+            return try XCTUnwrap(NSEvent(cgEvent: event))
+        }
+        let began = try scroll(-12, phase: Int64(CGScrollPhase.began.rawValue))
+        XCTAssertNotEqual(began.scrollingDeltaY, 0)
+        XCTAssertTrue(ClipboardHistoryController.isNewInput(began), "Scrolling with the fingers is input")
+        XCTAssertTrue(ClipboardHistoryController.isNewInput(try scroll(-3)), "A mouse wheel is input")
+
+        let coasting = try scroll(-8, momentum: Int64(CGMomentumScrollPhase.continuous.rawValue))
+        XCTAssertFalse(coasting.momentumPhase.isEmpty)
+        XCTAssertFalse(ClipboardHistoryController.isNewInput(coasting), "A flick that is still coasting began before")
+        let resting = try scroll(0, phase: Int64(CGScrollPhase.mayBegin.rawValue))
+        XCTAssertEqual(resting.scrollingDeltaY, 0)
+        XCTAssertFalse(ClipboardHistoryController.isNewInput(resting), "Fingers resting on the trackpad move nothing")
+
+        let keyDown = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, characters: "a", charactersIgnoringModifiers: "a", isARepeat: false, keyCode: 0))
+        XCTAssertTrue(ClipboardHistoryController.isNewInput(keyDown))
+    }
 }

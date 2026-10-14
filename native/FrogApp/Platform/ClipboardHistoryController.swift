@@ -167,7 +167,7 @@ final class ClipboardHistoryController {
         let openedAt = ProcessInfo.processInfo.systemUptime
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]) { [weak self] event in
             // A global callback for the invoking shortcut can arrive after show.
-            guard event.timestamp > openedAt else { return }
+            guard event.timestamp > openedAt, Self.isNewInput(event) else { return }
             MainActor.assumeIsolated { self?.cancel() }
         }
         workspaceObserver = activationNotifications.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
@@ -192,6 +192,14 @@ final class ClipboardHistoryController {
         return characters.lowercased() == "c"
     }
 
+    /// A trackpad flick keeps coasting after the fingers left, and fingers resting on the
+    /// trackpad send scrolls that move nothing. Neither is input made after the panel opened
+    /// or an item was chosen, so neither closes the panel or stops a paste.
+    nonisolated static func isNewInput(_ event: NSEvent) -> Bool {
+        guard event.type == .scrollWheel else { return true }
+        return event.momentumPhase.isEmpty && (event.scrollingDeltaX != 0 || event.scrollingDeltaY != 0)
+    }
+
     private func resizePanel(entryCount: Int) {
         guard let panel else { return }
         state.selectedIndex = max(0, min(state.selectedIndex, entryCount - 1))
@@ -211,10 +219,12 @@ final class ClipboardHistoryController {
         self.target = target
         // No range is exposed by some IDEs. Input after choosing is therefore
         // an essential invalidation signal, including during focus restoration.
-        deliveryInputMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]) { [weak self] _ in
+        deliveryInputMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]) { [weak self] event in
+            guard Self.isNewInput(event) else { return }
             MainActor.assumeIsolated { self?.cancel() }
         }
         deliveryLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]) { [weak self] event in
+            guard Self.isNewInput(event) else { return event }
             MainActor.assumeIsolated { self?.cancel() }
             return event
         }
