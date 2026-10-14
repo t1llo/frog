@@ -97,6 +97,14 @@ final class StayAwakeController: ObservableObject {
         }
     }
 
+    /// For checks nobody asked for: opening the popup and returning to Frog. Each check runs
+    /// `sudo`, and access that is ready is checked again before switching on and on the
+    /// Stay awake page, so only access still to be set up is looked at here.
+    func refreshAccessUnlessReady() async {
+        guard accessState != .ready else { return }
+        await refreshAccess()
+    }
+
     func refreshAccess(force: Bool = false) async {
         guard featureEnabled || ownsSession else { return }
         if force { accessRevision += 1; accessCheck?.cancel(); accessCheck = nil }

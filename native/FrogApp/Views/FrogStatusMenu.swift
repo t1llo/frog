@@ -50,7 +50,7 @@ struct FrogStatusMenu: View {
             .font(.system(size: 12)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()
             .background(MenuWindowSizing())
-            .task { model.refreshSystemStatus(); await power.refresh(); await power.refreshAccess() }
+            .task { model.refreshSystemStatus(); await power.refresh(); await power.refreshAccessUnlessReady() }
             .onAppear { NotificationCenter.default.post(name: .frogMenuPopupWillOpen, object: Self.popupName) }
             .onReceive(NotificationCenter.default.publisher(for: .frogMenuPopupWillOpen)) { note in
                 if note.object as? String != Self.popupName { dismiss() }

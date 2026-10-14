@@ -50,7 +50,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
         UpdateService.shared.start()
         observer = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak model] _ in
             // The person may come back from approving Frog under Login Items.
-            Task { @MainActor in model?.refreshSystemStatus(forceLoginStatus: true); await model?.power.refresh(); await model?.power.refreshAccess() }
+            Task { @MainActor in model?.refreshSystemStatus(forceLoginStatus: true); await model?.power.refresh(); await model?.power.refreshAccessUnlessReady() }
         }
         // Login, session restoration and updater relaunches do not reliably carry
         // the login-item Apple event. All initial launches are menu-bar-only.

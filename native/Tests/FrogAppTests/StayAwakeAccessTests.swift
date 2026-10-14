@@ -36,6 +36,26 @@ final class StayAwakeAccessTests: XCTestCase {
         XCTAssertFalse(power.isEnabled)
     }
 
+    func testPopupAndActivationCheckOnlyAccessThatIsNotReady() async throws {
+        let system = AccessPowerFixture()
+        let power = StayAwakeController(system: system, directory: try folder())
+        await power.refreshAccessUnlessReady()
+        XCTAssertEqual(power.accessState, .needsSetup)
+        await system.allowAccess(true)
+        await power.refreshAccessUnlessReady()
+        XCTAssertEqual(power.accessState, .ready)
+        await power.refreshAccessUnlessReady()
+        await power.refreshAccessUnlessReady()
+        var checks = await system.checks
+        XCTAssertEqual(checks, 2, "Ready access spawns no sudo check when the popup opens or Frog becomes active")
+        // The Stay awake page still checks on its own and sees a removed rule.
+        await system.allowAccess(false)
+        await power.refreshAccess()
+        XCTAssertEqual(power.accessState, .needsSetup)
+        checks = await system.checks
+        XCTAssertEqual(checks, 3)
+    }
+
     func testSuccessfulGuideIsVerifiedAndNeverEnablesStayAwake() async throws {
         let system = AccessPowerFixture()
         let completed = try session(.success)
@@ -410,6 +430,7 @@ private actor AccessPowerFixture: StayAwakeSystem {
     private var nextCheck: AccessCheckGate?
     private(set) var writes: [Bool] = []
     private(set) var guides = 0
+    private(set) var checks = 0
     init(allowed: Bool = false) { self.allowed = allowed }
     func allowAccess(_ allowed: Bool) { self.allowed = allowed }
     func denyWrites() { writesDenied = true }
@@ -418,6 +439,7 @@ private actor AccessPowerFixture: StayAwakeSystem {
     /// Counts the guides that were opened and returns the index of this one.
     func noteGuide() -> Int { guides += 1; return guides - 1 }
     func hasAccess() async throws -> Bool {
+        checks += 1
         if checksFail { throw StayAwakeError.unreadable }
         let value = allowed
         if let gate = nextCheck { nextCheck = nil; await gate.wait() }
