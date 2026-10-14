@@ -259,4 +259,30 @@ final class ModelRemovalTests: XCTestCase {
         XCTAssertEqual(model.configuration, before)
         model.localModels.releaseResidency(hold)
     }
+
+    func testDeletingAModelNoRuleUsesLeavesTheConfigurationFileAlone() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for id in ["whisper-base", "whisper-tiny"] {
+            let folder = directory.appendingPathComponent("Models/\(id)")
+            try FileManager.default.createDirectory(at: folder.appendingPathComponent("fixture"), withIntermediateDirectories: true)
+            try "fixture".write(to: folder.appendingPathComponent("installed.txt"), atomically: true, encoding: .utf8)
+        }
+        var config = Configuration()
+        var audio = Rule.dictationPreset; audio.action?.audioModelID = "whisper-base"
+        config.rules = [audio]; config.explicitRuleModels = true
+        let store = ConfigurationStore(directory: directory)
+        try store.save(config)
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false)
+        defer { model.shutdown() }
+        let before = model.configuration
+        // An edit in progress elsewhere: a save would refuse it, but this deletion has nothing to save.
+        let edited = try String(contentsOf: store.textFile, encoding: .utf8) + "\n# edited elsewhere\n"
+        try edited.write(to: store.textFile, atomically: true, encoding: .utf8)
+        try await model.deleteLocalModel(try XCTUnwrap(LocalModelDescriptor.find("whisper-tiny")))
+        XCTAssertEqual(model.localModels.installed, ["whisper-base"])
+        XCTAssertEqual(model.configuration, before)
+        XCTAssertEqual(try String(contentsOf: store.textFile, encoding: .utf8), edited)
+        XCTAssertNil(model.errorMessage)
+    }
 }

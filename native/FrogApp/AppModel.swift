@@ -617,7 +617,8 @@ final class AppModel: ObservableObject {
         try await localModels.remove(item.id)
         var candidate = configuration
         candidate.modelsRemoved([RuleModelSelection(modelID: item.id, category: item.kind == .audio ? .audio : .text)], installed: localModels.installed)
-        try persist(candidate)
+        // The inventory change may already have saved the same repair; a model no rule names needs no save.
+        if candidate != configuration { try persist(candidate) }
     }
 
     func deleteRule(id: UUID) throws {
