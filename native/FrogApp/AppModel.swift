@@ -890,29 +890,50 @@ final class AppModel: ObservableObject {
         configureWindowSwitcher()
     }
 
-    private func configureWindowSwitcher() {
-        guard started, registerShortcuts else { return }
-        let switcherHotkey = configuration.preferences.toolkitSettings.effectiveWindowSwitcherHotkey
+    /// What configuring the window switcher comes to. The status refresh asks once a second.
+    enum WindowSwitcherStep: Equatable {
+        /// Configure it from the preferences.
+        case configure
+        /// Stop it and say why: another shortcut takes its chord.
+        case stop(String)
+        /// Nothing: it is stopped for that conflict, and Settings says so already.
+        case none
+    }
+
+    static func windowSwitcherStep(_ configuration: Configuration, status: String, ready: Bool) -> WindowSwitcherStep {
+        let preferences = configuration.preferences
+        let switcherHotkey = preferences.toolkitSettings.effectiveWindowSwitcherHotkey
         func conflicts(_ hotkey: Hotkey) -> Bool {
             hotkey.keyCode == switcherHotkey.keyCode &&
                 (hotkey.modifiers == switcherHotkey.modifiers || hotkey.modifiers == (switcherHotkey.modifiers | 512))
         }
         // Preserve existing shortcuts, including the reverse-cycling combination.
         let conflict = configuration.rules.contains { rule in
-            guard rule.enabled, ruleFeatureEnabled(rule), let hotkey = rule.hotkey else { return false }
+            guard rule.enabled, preferences.ruleFeatureEnabled(rule), let hotkey = rule.hotkey else { return false }
             return conflicts(hotkey)
         }
-        let workflow = configuration.preferences.workflowSettings
-        let referenceConflict = [workflow.shortcutPanelHotkey, configuration.preferences.featureEnabled(.dictation) ? workflow.cancelRecordingHotkey : nil, workflow.clipboardHistoryEnabled == true ? workflow.effectiveClipboardHistoryHotkey : nil, configuration.preferences.featureEnabled(.commandBar) ? configuration.preferences.toolkitSettings.effectiveCommandBarHotkey : nil, configuration.preferences.featureEnabled(.menuBar) ? configuration.preferences.toolkitSettings.menuBar?.hotkey : nil].compactMap { $0 }.contains(where: conflicts)
-        if configuration.preferences.windowSwitcherEnabled && (conflict || referenceConflict) {
+        let workflow = preferences.workflowSettings
+        let referenceConflict = [workflow.shortcutPanelHotkey, preferences.featureEnabled(.dictation) ? workflow.cancelRecordingHotkey : nil, workflow.clipboardHistoryEnabled == true ? workflow.effectiveClipboardHistoryHotkey : nil, preferences.featureEnabled(.commandBar) ? preferences.toolkitSettings.effectiveCommandBarHotkey : nil, preferences.featureEnabled(.menuBar) ? preferences.toolkitSettings.menuBar?.hotkey : nil].compactMap { $0 }.contains(where: conflicts)
+        guard preferences.windowSwitcherEnabled && (conflict || referenceConflict) else { return .configure }
+        let message = "A configured shortcut conflicts with \(HotkeyManager.display(switcherHotkey)) — change it to enable window switching"
+        // Stopping again would publish "Off" and then the conflict, redrawing Settings each second.
+        // Once stopped, only switching it on again changes the status, and that stops it here once more.
+        return status == message && !ready ? .none : .stop(message)
+    }
+
+    private func configureWindowSwitcher() {
+        guard started, registerShortcuts else { return }
+        switch Self.windowSwitcherStep(configuration, status: windowSwitcherStatus, ready: windowSwitcherReady) {
+        case .none: return
+        case .stop(let message):
             windowSwitcher.stop()
-            let message = "A configured shortcut conflicts with \(HotkeyManager.display(switcherHotkey)) — change it to enable window switching"
             if windowSwitcherStatus != message { windowSwitcherStatus = message }
             if windowSwitcherReady { windowSwitcherReady = false }
-            return
+        case .configure:
+            windowSwitcher.configure(enabled: configuration.preferences.featureEnabled(.windowSwitcher), suspended: isRecordingShortcut,
+                                     hotkey: configuration.preferences.toolkitSettings.effectiveWindowSwitcherHotkey)
+            windowSwitcher.updateShortcuts(configuration.rules.filter { ruleFeatureEnabled($0) && hotkeyErrors[$0.id] == nil })
         }
-        windowSwitcher.configure(enabled: configuration.preferences.featureEnabled(.windowSwitcher), suspended: isRecordingShortcut, hotkey: switcherHotkey)
-        windowSwitcher.updateShortcuts(configuration.rules.filter { ruleFeatureEnabled($0) && hotkeyErrors[$0.id] == nil })
     }
 
     private func registerHotkeys() {
