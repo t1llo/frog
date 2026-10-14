@@ -296,20 +296,17 @@ final class LocalModels: ObservableObject {
         errors[id] = nil; fileChecks[id] = nil; progress[id] = DownloadProgress(fraction: 0)
         downloads[id] = Task { [weak self] in
             guard let self else { return }
-            var repaired = false
-            defer {
-                self.downloadEnded(id)
-                if repaired { self.checkFiles(id) }
-            }
+            // Whether it worked, failed or was cancelled, the row says again what
+            // the model lacks, with Repair when something is still missing.
+            defer { self.downloadEnded(id); self.measureDiskUse(); self.checkFiles(id) }
             do {
                 try await Task.detached(priority: .userInitiated) {
                     for path in check.damaged { try ModelFiles.remove(base.appendingPathComponent(path)) }
                 }.value
                 try await self.fetch(model, into: base)
-                repaired = true
-                self.measureDiskUse()
             } catch {
-                // Cancelling keeps the files: the model is still downloaded.
+                // Cancelling keeps what is there and the model stays downloaded, but
+                // the damaged files that were removed stay missing.
                 if !Task.isCancelled { self.errors[id] = error.localizedDescription }
             }
         }

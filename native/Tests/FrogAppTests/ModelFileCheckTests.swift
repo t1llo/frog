@@ -143,7 +143,36 @@ final class ModelFileCheckTests: XCTestCase {
         await models.waitForDownload(model.id)
         XCTAssertEqual(models.errors[model.id], "The connection dropped")
         XCTAssertTrue(models.installed.contains(model.id))
-        XCTAssertNil(models.fileChecks[model.id])
+        // The damaged weights were removed before the download: the row says that
+        // they are missing and offers Repair again.
+        await models.waitForFileCheck(model.id)
+        guard case .finished(let check) = models.fileChecks[model.id] else { return XCTFail("The files are checked again after a failed repair") }
+        XCTAssertTrue(check.missing.contains("models/\(model.repository)/model.safetensors"), check.summary)
+    }
+
+    func testCancelledRepairSaysWhichFilesAreStillMissing() async throws {
+        let model = try XCTUnwrap(LocalModelDescriptor.find("qwen-0.6b"))
+        let attempts = DownloadAttempts()
+        let gate = RepairGate()
+        let models = LocalModels(directory: directory, runtime: ModelFileFixtureInference(), downloader: { model, base, _ in
+            if await attempts.next() == 2 { await gate.wait() }
+            try Task.checkCancellation()
+            return try Self.textModel(model, in: base)
+        }, freeSpace: { _ in nil })
+        models.download(model); await models.waitForDownload(model.id)
+        try Data(repeating: 9, count: 4096).write(to: models.root.appendingPathComponent("\(model.id)/models/\(model.repository)/model.safetensors"))
+        models.checkFiles(model.id); await models.waitForFileCheck(model.id)
+
+        try await models.repair(model.id)
+        await gate.waitUntilStarted()
+        models.cancelDownload(model.id)
+        await gate.resume()
+        await models.waitForDownload(model.id)
+        XCTAssertNil(models.errors[model.id])
+        XCTAssertTrue(models.installed.contains(model.id), "Cancelling a repair keeps the model and the files it has")
+        await models.waitForFileCheck(model.id)
+        guard case .finished(let check) = models.fileChecks[model.id] else { return XCTFail("The row must still say what the model lacks") }
+        XCTAssertTrue(check.missing.contains("models/\(model.repository)/model.safetensors"), check.summary)
     }
 
     func testLoadFailureSaysTheFilesMayBeDamagedAndKeepsTheOriginalText() async throws {
