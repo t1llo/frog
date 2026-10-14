@@ -27,7 +27,7 @@ Click **ⓘ** on any model to see its exact download repository, variant, runtim
 
 ## Add a Hugging Face link
 
-1. Open **Models → Inside Frog → Add model…**.
+1. Open **Models → Local models → Add model…**.
 2. Paste `owner/model` or `https://huggingface.co/owner/model`.
 3. Click **Check source**. Frog reads repository metadata, including the size of each file, and text-model configuration only. The model's download size is the sum of the files it will fetch; a source whose metadata lacks sizes shows none.
 4. Select the detected model or WhisperKit variant to add it to the catalog. A source added with an earlier version of Frog has no download size; checking it again and choosing **Show model** saves the size with it.

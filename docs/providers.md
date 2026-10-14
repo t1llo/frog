@@ -6,7 +6,7 @@ Each rule selects its own model. There are no global model defaults. The first c
 
 ## First launch
 
-Choose an offline experience or external providers in the setup assistant. The recommended local pair is **Whisper Large v3 Turbo** for multilingual transcription and **Qwen3 1.7B (4-bit)** for writing, about 1.6 GB of downloads. Each is also marked Recommended in the internal model catalog. Downloads begin only when requested and can be cancelled.
+Choose an offline experience or external providers in the setup assistant. The recommended local pair is **Whisper Large v3 Turbo** for multilingual transcription and **Qwen3 1.7B (4-bit)** for writing, about 1.6 GB of downloads. Each is also marked Recommended under **Models → Local models**. Downloads begin only when requested and can be cancelled.
 
 Alternatively, configure an external provider or import a configuration file to skip setup. Imported files do not include API keys, downloaded weights or macOS permissions. Every step is skippable. Your choice does not limit future model/provider use; everything remains available in Models and Settings. Reopen the assistant under **Settings → General → Setup assistant**.
 
