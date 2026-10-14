@@ -89,7 +89,9 @@ Independent fixes, checked using generated fixtures against the actual Frog read
 `name`, `value`, and `id`; values use the selected metric and period and sum to the
 chart total. OpenCode is a source within Claude/OpenAI, not a new quota provider.
 Account-wide mode reports reconciled source totals: server-covered UTC days replace
-their local sources, with local records filling unreported days. A zero source value
+their local sources, with local records filling unreported days. A day after the
+report's `stats_as_of` date that the account lists without tokens is not yet
+aggregated, so it counts as unreported. A zero source value
 can coexist with `unpricedModels`; it must not be presented as a confirmed free bill.
 The parent UI may render these entries with the existing `format(_:metric:)` helper.
 No exported preference fields changed.

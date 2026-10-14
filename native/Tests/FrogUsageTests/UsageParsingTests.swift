@@ -270,6 +270,20 @@ final class UsageParsingTests: XCTestCase {
         XCTAssertEqual(result.map(\.input).sorted(), [5, 40])
     }
 
+    func testAnEmptyAccountDayAfterTheReportsOwnDateIsNotYetReported() throws {
+        let activity = try XCTUnwrap(parseAccountActivity(["stats": ["lifetime_tokens": 40.0, "daily_usage_buckets": [
+            ["start_date": "2026-09-30", "tokens": 40], ["start_date": "2026-10-01", "tokens": 0],
+            ["start_date": "2026-10-02", "tokens": 0]]], "metadata": ["stats_as_of": "2026-10-01"]], breakdown: nil))
+        func local(_ time: String, _ input: Int) -> TokenRecord {
+            TokenRecord(date: isoDate(time)!, model: "gpt-5.1", provider: .openai, source: .codex, input: input, output: 0, cacheWrite: 0, cacheRead: 0, cost: 0)
+        }
+        let result = reconciledOpenAIRecords(local: [local("2026-09-30T12:00:00Z", 10), local("2026-10-01T12:00:00Z", 20),
+                                                     local("2026-10-02T12:00:00Z", 5)],
+                                             account: estimatedRecords(activity, mix: .codex), asOf: activity.asOf)
+        XCTAssertEqual(result.filter { $0.source == .codex }.map(\.input), [5],
+                       "A zero up to the report's date is reported; one after it has not been aggregated yet")
+    }
+
     @MainActor func testLastGoodLimitsAndGlobalCooldownSurviveAccountChangeAndRestart() throws {
         let suite = "frog-usage-gate-\(UUID().uuidString)", now = Date()
         let defaults = UserDefaults(suiteName: suite)!

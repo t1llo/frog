@@ -324,10 +324,15 @@ private func apportionedTokens(_ total: Int, weights: [Double]) -> [Int] {
 }
 
 /// Account totals already include Codex and OpenCode using that subscription. Replace whole
-/// reported UTC days, not individual models; local logs fill only days not yet reported.
-func reconciledOpenAIRecords(local: [TokenRecord], account: [TokenRecord]) -> [TokenRecord] {
+/// reported UTC days, not individual models; local logs fill only days not yet reported. A day
+/// after `asOf`, the day the server last aggregated, is reported only once it holds tokens.
+func reconciledOpenAIRecords(local: [TokenRecord], account: [TokenRecord], asOf: Date? = nil) -> [TokenRecord] {
     let calendar = usageUTCCalendar
-    let reported = Set(account.map { calendar.startOfDay(for: $0.date) })
+    let reported = Set(account.compactMap { record -> Date? in
+        let day = calendar.startOfDay(for: record.date)
+        let empty = record.input + record.output + record.cacheWrite + record.cacheRead == 0
+        return empty && asOf.map({ day > $0 }) == true ? nil : day
+    })
     return account + local.filter {
         $0.provider == .openai && $0.source != .chatgpt && !reported.contains(calendar.startOfDay(for: $0.date))
     }

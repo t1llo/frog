@@ -367,7 +367,7 @@ extension TokenStore {
                 let result = try? await usageWork {
                     let local = TokenMix(records.filter { $0.provider == .openai })
                     let estimated = activity.map { estimatedRecords($0, mix: local ?? .codex) } ?? []
-                    let account = reconciledOpenAIRecords(local: records, account: estimated)
+                    let account = reconciledOpenAIRecords(local: records, account: estimated, asOf: activity?.asOf)
                     var summaries: [SummaryKey: TokenSummary] = [:]
                     for provider in Provider.allCases {
                         for useAccount in [false, true] where !useAccount || provider == .openai {
