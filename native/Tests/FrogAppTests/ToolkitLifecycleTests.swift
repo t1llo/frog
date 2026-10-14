@@ -19,13 +19,17 @@ import FrogUsage
         let statusItem = try XCTUnwrap(toolkit.usageStatusItem)
         XCTAssertTrue(statusItem.isInstalled)
         let host = NSHostingView(rootView: UsageDashboardView(usage: usage))
-        let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 200, height: 160), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        let window = DashboardVisibilityFixtureWindow(contentRect: NSRect(x: 100, y: 100, width: 200, height: 160), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false; window.contentView = host
         defer { window.close() }
         window.orderFrontRegardless()
         XCTAssertTrue(usage.active)
+        host.layoutSubtreeIfNeeded()
+        NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
+        for _ in 0..<400 where !usage.isVisiblePolling { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertTrue(usage.isVisiblePolling, "The dashboard on screen asks for the ten-second refresh")
         window.close()
-        try await Task.sleep(for: .milliseconds(30))
+        for _ in 0..<400 where usage.isVisiblePolling { try await Task.sleep(for: .milliseconds(5)) }
         XCTAssertTrue(usage.active, "The status item keeps collecting when the dashboard closes")
         XCTAssertFalse(usage.isVisiblePolling, "A closed window no longer asks for the ten-second refresh")
         XCTAssertTrue(statusItem.isInstalled)
@@ -102,6 +106,12 @@ import FrogUsage
         XCTAssertEqual(saved.map(\.text), ["latest"])
         XCTAssertFalse(model.needsFlush)
     }
+}
+
+/// A test runner's window can count as covered even after ordering front. Only that input is
+/// fixed; the test posts the occlusion change WindowServer would, and closing stays real.
+@MainActor private final class DashboardVisibilityFixtureWindow: NSWindow {
+    override var occlusionState: NSWindow.OcclusionState { .visible }
 }
 
 private actor ToolkitReplyGate {
