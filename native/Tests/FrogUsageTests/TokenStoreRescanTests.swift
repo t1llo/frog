@@ -115,6 +115,12 @@ import XCTest
         await settled(store)
         XCTAssertEqual(priorities.last, .utility, "The scan")
         XCTAssertGreaterThan(priorities.count, 1)
+        // The aggregation above was started by the scan, whose priority it would inherit anyway.
+        // Started again with records already scanned, it begins straight from the main actor.
+        store.stop(); priorities = []
+        store.start()
+        await settled(store)
+        XCTAssertEqual(priorities.first, .utility, "An aggregation started from the main actor")
     }
 
     /// Waits for the scan that is under way, the aggregation it asked for, and a scan that was
