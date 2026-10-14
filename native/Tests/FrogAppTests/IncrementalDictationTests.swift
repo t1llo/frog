@@ -333,10 +333,54 @@ final class IncrementalDictationTests: XCTestCase {
         controller.stop(models: fixture.models)
         await controller.waitForWork()
         let calls = await fixture.engine.calls
-        XCTAssertEqual(calls.map(\.count), [30 * 16000, 30 * 16000 + 8000])
-        XCTAssertEqual(copied, "Seconds 0–30.")
+        XCTAssertEqual(calls.map(\.count), [30 * 16000, 28 * 16000 + 8000, 2 * 16000])
+        XCTAssertEqual(copied, "Seconds 0–28. Seconds 28–30.")
         XCTAssertEqual(controller.phase, .idle)
         await fixture.models.unload()
+    }
+
+    func testWhisperKeepsTheLastWordsOfAnEndingJustOverAWindow() async throws {
+        let fixture = await makeFixture(seconds: 30)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        await fixture.engine.readLikeWhisper()
+        var copied = ""
+        let controller = DictationController(makeRecorder: { fixture.recorder }, authorize: { true }, copy: { copied = $0 }, monitorKeys: false,
+                                             previewInterval: .seconds(3600), inputDevices: { [] }, presentsPopup: false)
+        controller.start(rule: rule, preferences: WorkflowPreferences(), models: fixture.models)
+        await controller.waitForWork()
+        fixture.recorder.append(samples: 8000, value: 30)
+        try await controller.refreshPreview()
+        controller.stop(models: fixture.models)
+        await controller.waitForWork()
+        let calls = await fixture.engine.calls
+        XCTAssertEqual(calls.map(\.count), [30 * 16000, 28 * 16000 + 8000, 2 * 16000])
+        XCTAssertEqual(copied, "Seconds 0–28. Seconds 28–30.")
+        await fixture.models.unload()
+    }
+
+    func testWhisperKeepsTheLastSecondOfALongEndingThatNoPreviewHasRead() async throws {
+        let fixture = await makeFixture(seconds: 61)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        await fixture.engine.readLikeWhisper()
+        var copied = ""
+        let controller = DictationController(makeRecorder: { fixture.recorder }, authorize: { true }, copy: { copied = $0 }, monitorKeys: false,
+                                             previewInterval: .seconds(3600), inputDevices: { [] }, presentsPopup: false)
+        controller.start(rule: rule, preferences: WorkflowPreferences(), models: fixture.models)
+        await controller.waitForWork()
+        controller.stop(models: fixture.models)
+        await controller.waitForWork()
+        XCTAssertEqual(copied, "Seconds 0–29. Seconds 30–58. Seconds 59–60.")
+        await fixture.models.unload()
+    }
+
+    func testEndingIsCutOnlyWhereItsLastPieceWouldBeASecondOrLess() {
+        let passes = { DictationTranscript.passes(endingSamples: $0) }
+        XCTAssertEqual(passes(5 * 16000), [0..<(5 * 16000)])
+        XCTAssertEqual(passes(30 * 16000), [0..<(30 * 16000)])
+        XCTAssertEqual(passes(35 * 16000), [0..<(35 * 16000)])
+        XCTAssertEqual(passes(30 * 16000 + 8000), [0..<(28 * 16000 + 8000), (28 * 16000 + 8000)..<(30 * 16000 + 8000)])
+        XCTAssertEqual(passes(61 * 16000), [0..<(59 * 16000), (59 * 16000)..<(61 * 16000)])
+        XCTAssertEqual(passes(31 * 16000 + 1), [0..<(31 * 16000 + 1)])
     }
 
     func testWindowReadBeforeTheAudioAfterItArrivedIsNotReadAgain() async throws {
@@ -445,6 +489,7 @@ private actor CountingSpeech: LocalInferenceEngine {
     private var shouldFail = false
     private var minimumCount = 0
     private var withoutSpaces = false
+    private var whisperWindows = false
     private var pauseEndsOnCancel = false
     /// A pause that ends on cancellation behaves like the real engines, which stop between steps.
     func pauseNext(_ started: XCTestExpectation, endingOnCancel: Bool = false) { pause = started; pauseEndsOnCancel = endingOnCancel }
@@ -452,6 +497,9 @@ private actor CountingSpeech: LocalInferenceEngine {
     func failNext() { shouldFail = true }
     func refuseUnderASecond() { minimumCount = 16000 }
     func answerWithoutSpaces() { withoutSpaces = true }
+    /// Like WhisperKit without timestamps: one call reads 30 seconds at a time and stops
+    /// before a last piece of a second or less.
+    func readLikeWhisper() { whisperWindows = true }
     func transcribe(_ samples: [Float], model: LocalModelDescriptor, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
         loadedIDs.insert(model.id); await residency(loadedIDs)
         calls.append(Call(count: samples.count, firstSecond: Int(samples.first ?? 0)))
@@ -468,6 +516,15 @@ private actor CountingSpeech: LocalInferenceEngine {
         try Task.checkCancellation()
         if shouldFail { shouldFail = false; throw PreviewFailure() }
         if samples.count < minimumCount { throw PreviewFailure() }
+        if whisperWindows {
+            var windows: [String] = [], seek = 0
+            while seek < samples.count - 16000 {
+                let window = samples[seek..<min(samples.count, seek + 30 * 16000)]
+                windows.append("Seconds \(Int(window.first!))–\(Int(window.last!)).")
+                seek += window.count
+            }
+            return windows.joined(separator: " ")
+        }
         let first = Int(samples.first ?? 0), last = Int(samples.last ?? 0)
         return withoutSpaces ? "第\(first)秒到第\(last)秒。" : "Seconds \(first)–\(last)."
     }

@@ -21,6 +21,14 @@ final class DictationTranscript {
     nonisolated static func completesWindow(uncommittedSamples: Int) -> Bool {
         uncommittedSamples >= samplesCompletingWindow
     }
+    /// Whisper reads one pass 30 seconds at a time and skips a last piece of a second or less, so
+    /// an ending with such a piece is read in two passes that leave two seconds for the last.
+    nonisolated static func passes(endingSamples count: Int) -> [Range<Int>] {
+        let last = count % window
+        guard count > window, last > 0, last <= 16000 else { return [0..<count] }
+        let cut = count - 2 * 16000
+        return [0..<cut, cut..<count]
+    }
 
     func acceptPreview(_ text: String, sampleCount: Int, completesWindow: Bool) {
         if completesWindow, sampleCount == Self.window {
@@ -83,10 +91,15 @@ final class DictationTranscript {
                 if remaining.isEmpty { ending = "" }
                 else if let partial, partial.sampleCount == remaining.count { ending = partial.text }
                 else {
-                    try await models.waitUntilAvailable()
-                    try Task.checkCancellation()
-                    do { ending = try await models.transcribe(remaining, modelID: modelID, language: rule.action?.transcriptionLanguage) }
-                    catch {
+                    do {
+                        var pieces: [String] = []
+                        for pass in Self.passes(endingSamples: remaining.count) {
+                            try await models.waitUntilAvailable()
+                            try Task.checkCancellation()
+                            pieces.append(try await models.transcribe(Array(remaining[pass]), modelID: modelID, language: rule.action?.transcriptionLanguage))
+                        }
+                        ending = Self.join(pieces)
+                    } catch {
                         // Finished windows stay recognised; only this ending needs another pass.
                         // An ending under a second fails the same way every time, as Parakeet refuses it.
                         if !Task.isCancelled, !(error is CancellationError), remaining.count >= 16000 { self.audio = audio }
