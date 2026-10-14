@@ -465,6 +465,138 @@ final class LocalModelsTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("user-file").path))
     }
 
+    func testDownloadThatDoesNotFitOnTheDiskIsRefusedBeforeAnyFileIsFetched() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let free = FreeSpace(312_000_000)
+        let attempts = Attempts()
+        let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: { model, base, progress in
+            _ = await attempts.next()
+            return try await Self.fixtureDownload(model, base, progress)
+        }, freeSpace: { _ in free.bytes })
+        let descriptor = try XCTUnwrap(LocalModelDescriptor.find("whisper-large-v3-turbo-626mb"))
+        models.download(descriptor); await models.waitForDownload(descriptor.id)
+        XCTAssertEqual(models.errors[descriptor.id], "Whisper Large v3 Turbo needs about 729.5 MB of free space, but the disk of the model folder has 312 MB free. Free up space or choose another model folder in Settings, then try again.")
+        let started = await attempts.next()
+        XCTAssertEqual(started, 1, "Nothing may be fetched for a model that cannot fit")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("Models/\(descriptor.id)").path))
+        XCTAssertFalse(models.installed.contains(descriptor.id))
+        XCTAssertTrue(models.unfinished.isEmpty)
+        XCTAssertNil(models.progress[descriptor.id])
+
+        free.bytes = 10_000_000_000
+        models.download(descriptor); await models.waitForDownload(descriptor.id)
+        XCTAssertNil(models.errors[descriptor.id])
+        XCTAssertTrue(models.installed.contains(descriptor.id))
+
+        // A source whose metadata gave no sizes downloads as before.
+        free.bytes = 0
+        let repository = "fixture/whisperkit"
+        let variant = "openai_whisper-tiny.en"
+        let unsized = LocalModelDescriptor(id: HuggingFaceSource.modelID(repository: repository, variant: variant, backend: .whisperKit), name: "English fixture", kind: .audio, repository: repository, variant: variant, size: "See source for size")
+        models.updateCatalog(LocalModelDescriptor.catalog + [unsized])
+        models.download(unsized); await models.waitForDownload(unsized.id)
+        XCTAssertNil(models.errors[unsized.id])
+        XCTAssertTrue(models.installed.contains(unsized.id))
+    }
+
+    func testResumedDownloadNeedsRoomOnlyForTheBytesItsFolderLacks() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let free = FreeSpace(LocalModels.spareBytes + 1_500_000)
+        let attempts = Attempts()
+        let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: { model, base, progress in
+            if await attempts.next() == 1 {
+                try Data(repeating: 7, count: 2_000_000).write(to: base.appendingPathComponent("first-file"))
+                throw FrogError.message("The connection dropped")
+            }
+            return try await Self.fixtureDownload(model, base, progress)
+        }, freeSpace: { _ in free.bytes })
+        let repository = "fixture/mlx"
+        let custom = LocalModelDescriptor(id: HuggingFaceSource.modelID(repository: repository, variant: nil, backend: .mlx), name: "Fixture text", kind: .text, repository: repository, size: "See source for size", downloadBytes: 3_000_000)
+        models.updateCatalog(LocalModelDescriptor.catalog + [custom])
+
+        models.download(custom); await models.waitForDownload(custom.id)
+        XCTAssertEqual(models.errors[custom.id], "Fixture text needs about 103 MB of free space, but the disk of the model folder has 101.5 MB free. Free up space or choose another model folder in Settings, then try again.")
+
+        free.bytes = 10_000_000_000
+        models.download(custom); await models.waitForDownload(custom.id)
+        XCTAssertEqual(models.errors[custom.id], "The connection dropped")
+        XCTAssertEqual(models.unfinished, [custom.id])
+
+        // Two of the three megabytes are in the folder already.
+        free.bytes = LocalModels.spareBytes + 1_500_000
+        models.download(custom); await models.waitForDownload(custom.id)
+        XCTAssertNil(models.errors[custom.id])
+        XCTAssertTrue(models.installed.contains(custom.id))
+    }
+
+    func testFreeSpaceIsReadFromTheDiskOfAModelFolderThatDoesNotExistYet() throws {
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("Models", isDirectory: true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: missing.path))
+        let free = try XCTUnwrap(LocalModels.availableCapacity(missing))
+        XCTAssertGreaterThan(free, 0)
+    }
+
+    func testDiskUseIsMeasuredForDownloadedModelsAndForgottenWhenOneIsDeleted() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: Self.sizedDownload, freeSpace: { _ in 10_000_000_000 })
+        let text = try XCTUnwrap(LocalModelDescriptor.find("qwen-0.6b"))
+        let speech = try XCTUnwrap(LocalModelDescriptor.find("whisper-tiny"))
+        await models.waitForDiskUse()
+        XCTAssertTrue(models.diskUse.isEmpty)
+        XCTAssertNil(models.totalDiskUse(of: models.installed), "No downloads, no total")
+        XCTAssertEqual(models.size(of: text), text.downloadSize, "A model that is not downloaded shows what its download fetches")
+
+        for model in [text, speech] { models.download(model); await models.waitForDownload(model.id) }
+        await models.waitForDiskUse()
+        let folder = directory.appendingPathComponent("Models/\(text.id)")
+        let measured = try XCTUnwrap(models.diskUse[text.id])
+        XCTAssertGreaterThanOrEqual(measured, 100_000)
+        XCTAssertEqual(measured, LocalModels.allocatedSize(folder))
+        XCTAssertEqual(models.size(of: text), LocalModelDescriptor.byteCount(measured), "A downloaded model shows what its folder takes")
+        XCTAssertNotEqual(models.size(of: text), text.downloadSize)
+        let both = try XCTUnwrap(models.totalDiskUse(of: models.installed))
+        XCTAssertEqual(both, measured + (models.diskUse[speech.id] ?? 0))
+        XCTAssertEqual(models.totalDiskUse(of: [text.id, "hf-not-downloaded"]), measured)
+
+        let restarted = LocalModels(directory: directory, runtime: FixtureInference())
+        await restarted.waitForDiskUse()
+        XCTAssertEqual(restarted.diskUse, models.diskUse, "Measured at start")
+
+        try await models.remove(text.id)
+        XCTAssertNil(models.diskUse[text.id])
+        XCTAssertEqual(models.totalDiskUse(of: models.installed), models.diskUse[speech.id])
+    }
+
+    func testDiskUseFollowsTheModelFolderAndTheCatalog() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: Self.sizedDownload, freeSpace: { _ in 10_000_000_000 })
+        let repository = "fixture/mlx"
+        let custom = LocalModelDescriptor(id: HuggingFaceSource.modelID(repository: repository, variant: nil, backend: .mlx), name: "Fixture text", kind: .text, repository: repository, size: "See source for size")
+        models.updateCatalog(LocalModelDescriptor.catalog + [custom])
+        models.download(custom); await models.waitForDownload(custom.id)
+        await models.waitForDiskUse()
+        XCTAssertNotNil(models.diskUse[custom.id])
+
+        let restarted = LocalModels(directory: directory, runtime: FixtureInference())
+        await restarted.waitForDiskUse()
+        XCTAssertNil(restarted.diskUse[custom.id], "A source added by link is known once the catalogue arrives")
+        restarted.updateCatalog(models.catalog)
+        await restarted.waitForDiskUse()
+        XCTAssertEqual(restarted.diskUse[custom.id], models.diskUse[custom.id])
+
+        let original = models.root
+        try await models.changeDirectory(to: directory.appendingPathComponent("elsewhere"))
+        await models.waitForDiskUse()
+        XCTAssertTrue(models.diskUse.isEmpty, "The new folder holds no models")
+        try await models.changeDirectory(to: original)
+        await models.waitForDiskUse()
+        XCTAssertEqual(models.diskUse, restarted.diskUse)
+    }
+
     func testUnavailableModelFailsWithoutCallingInference() async throws {
         let engine = FixtureInference()
         let models = LocalModels(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString), runtime: engine)
@@ -480,6 +612,23 @@ final class LocalModelsTests: XCTestCase {
         try Data("fixture".utf8).write(to: folder.appendingPathComponent("weights"))
         progress(1)
         return folder
+    }
+    /// Weights big enough that what the folder takes on disk is not one block.
+    nonisolated private static func sizedDownload(_ model: LocalModelDescriptor, _ base: URL, _ progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+        let folder = try await fixtureDownload(model, base, progress)
+        try Data(repeating: 7, count: 100_000).write(to: folder.appendingPathComponent("weights"))
+        return folder
+    }
+}
+
+/// The free space a test sets for the disk of the model folder.
+private final class FreeSpace: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Int64?
+    init(_ bytes: Int64?) { value = bytes }
+    var bytes: Int64? {
+        get { lock.withLock { value } }
+        set { lock.withLock { value = newValue } }
     }
 }
 

@@ -46,7 +46,7 @@ Discovery sends a model-list request, not your writing or recordings. Frog does 
 
 ## Internal models
 
-Built-in inference requires Apple silicon. Download speech or text models from the catalog, or [add a compatible Hugging Face source](local-model-sources.md). Models load on demand and unload after the idle delay in Settings, or sooner when macOS reports that memory is running short and no dictation or request is using them. A longer delay, up to 60 minutes, spares the next dictation the wait for its model and keeps the memory in use meanwhile.
+Built-in inference requires Apple silicon. Download speech or text models from the catalog, or [add a compatible Hugging Face source](local-model-sources.md). Before a download starts, Frog checks that the disk of the model folder has room for it and about 100 MB to spare; a resumed download needs room only for what it has not fetched yet. A downloaded model shows the space its folder takes, the Downloaded list adds them up, and Settings shows the total next to the model folder. Models load on demand and unload after the idle delay in Settings, or sooner when macOS reports that memory is running short and no dictation or request is using them. A longer delay, up to 60 minutes, spares the next dictation the wait for its model and keeps the memory in use meanwhile.
 
 Audio rules own speech language, Toggle/Hold recording, Copy/Copy and paste output, recording-popup visibility and optional transcript cleanup. Cleanup uses a separately selected text model and adds processing time. The built-in Dictate shortcut is **Option–Space**; shortcuts remain editable.
 

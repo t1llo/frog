@@ -23,6 +23,12 @@ final class LocalModelSettingsTests: XCTestCase {
         XCTAssertEqual(LocalModelSettings.inMemory(["qwen-1.7b", "parakeet-v3"], catalog: catalog), "NVIDIA Parakeet TDT v3, Qwen3 1.7B · 4-bit")
     }
 
+    func testTheModelFolderSaysHowMuchTheDownloadedModelsUse() {
+        XCTAssertNil(LocalModelSettings.diskUse(nil), "Nothing downloaded or measured yet, so nothing to say")
+        XCTAssertEqual(LocalModelSettings.diskUse(3_200_000_000), "Models use 3.2 GB")
+        XCTAssertEqual(LocalModelSettings.diskUse(629_482_970), "Models use 629.5 MB")
+    }
+
     func testAModelThatLeftTheCatalogIsStillNamed() {
         XCTAssertEqual(LocalModelSettings.inMemory(["hf-gone", "whisper-tiny"], catalog: LocalModelDescriptor.catalog), "Whisper Tiny, hf-gone")
     }

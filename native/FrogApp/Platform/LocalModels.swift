@@ -15,6 +15,8 @@ final class LocalModels: ObservableObject {
     /// The fraction counts the files being fetched. A downloader that reports 1 and
     /// keeps working is preparing the model, which has no fraction (`preparing`).
     typealias Downloader = @Sendable (LocalModelDescriptor, URL, @escaping @Sendable (Double) -> Void) async throws -> URL
+    /// The bytes free on the disk that holds a folder, or nil when it cannot be told.
+    typealias FreeSpaceReader = @Sendable (URL) -> Int64?
     static var supported: Bool {
         #if arch(arm64)
         true
@@ -32,6 +34,8 @@ final class LocalModels: ObservableObject {
     /// Downloads whose files are in and whose model is being made ready for use.
     @Published private(set) var preparing = Set<String>()
     @Published private(set) var errors: [String: String] = [:]
+    /// What the folder of each downloaded model takes on disk, once measured.
+    @Published private(set) var diskUse: [String: Int64] = [:]
     @Published private(set) var loaded = Set<String>()
     @Published private(set) var busy = false
     @Published private(set) var root: URL
@@ -43,6 +47,8 @@ final class LocalModels: ObservableObject {
     private var discarding = Set<String>()
     private let runtime: any LocalInferenceEngine
     private let downloader: Downloader
+    private let freeSpace: FreeSpaceReader
+    private var measuring: Task<Void, Never>?
     private var unloadTask: Task<Void, Never>?
     private var memoryPressure: DispatchSourceMemoryPressure?
     private var residencyHolds = Set<UUID>()
@@ -54,11 +60,12 @@ final class LocalModels: ObservableObject {
         catalog = models
         installed = Set(catalog.filter { modelURL($0.id) != nil }.map(\.id))
         unfinished = unfinishedDownloads()
+        measureDiskUse()
     }
     func descriptor(_ id: String) -> LocalModelDescriptor? { catalog.first { $0.id == id } }
 
-    init(directory: URL? = nil, runtime: any LocalInferenceEngine = LocalInference(), downloader: @escaping Downloader = LocalInference.download) {
-        self.runtime = runtime; self.downloader = downloader
+    init(directory: URL? = nil, runtime: any LocalInferenceEngine = LocalInference(), downloader: @escaping Downloader = LocalInference.download, freeSpace: @escaping FreeSpaceReader = LocalModels.availableCapacity) {
+        self.runtime = runtime; self.downloader = downloader; self.freeSpace = freeSpace
         let support = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Frog")
         defaultDirectory = support.appendingPathComponent("Models", isDirectory: true)
         storagePreference = support.appendingPathComponent("model-storage.json")
@@ -67,6 +74,7 @@ final class LocalModels: ObservableObject {
         } else { root = defaultDirectory }
         for model in LocalModelDescriptor.catalog where modelURL(model.id) != nil { installed.insert(model.id) }
         unfinished = unfinishedDownloads()
+        measureDiskUse()
     }
     /// Storage location is device-local, intentionally excluded from configuration exports.
     func changeDirectory(to location: URL) async throws {
@@ -77,6 +85,7 @@ final class LocalModels: ObservableObject {
             // Choosing the folder again finds the models of a disk connected since launch.
             installed = Set(catalog.filter { modelURL($0.id) != nil }.map(\.id))
             unfinished = unfinishedDownloads()
+            measureDiskUse()
             onInventoryChanged?()
             return
         }
@@ -92,6 +101,7 @@ final class LocalModels: ObservableObject {
         installed = Set(catalog.filter { modelURL($0.id) != nil }.map(\.id))
         unfinished = unfinishedDownloads()
         errors = [:]
+        measureDiskUse()
         onInventoryChanged?()
     }
     private func directory(_ id: String) -> URL { root.appendingPathComponent(id, isDirectory: true) }
@@ -110,6 +120,63 @@ final class LocalModels: ObservableObject {
     private func downloadMarker(_ id: String) -> URL { directory(id).appendingPathComponent(Self.downloadMarker) }
     private func unfinishedDownloads() -> Set<String> {
         Set(catalog.filter { !installed.contains($0.id) && FileManager.default.fileExists(atPath: downloadMarker($0.id).path) }.map(\.id))
+    }
+    /// Measures the folders of the downloaded models off the main actor. What they
+    /// take changes only with a download, a deletion, the folder or the catalogue,
+    /// so they are measured then and not each time a view asks.
+    private func measureDiskUse() {
+        let folders = Dictionary(uniqueKeysWithValues: installed.map { ($0, directory($0)) })
+        measuring?.cancel()
+        measuring = Task { [weak self] in
+            let sizes = await Task.detached(priority: .utility) { folders.mapValues(Self.allocatedSize) }.value
+            guard let self, !Task.isCancelled else { return }
+            self.diskUse = sizes.filter { self.installed.contains($0.key) }
+        }
+    }
+    func waitForDiskUse() async { await measuring?.value }
+    /// What the measured models among `ids` take together; nil when none is measured.
+    func totalDiskUse(of ids: some Sequence<String>) -> Int64? {
+        let sizes = Set(ids).compactMap { diskUse[$0] }
+        return sizes.isEmpty ? nil : sizes.reduce(0, +)
+    }
+    /// The size a model's row shows: what its folder takes once it is downloaded,
+    /// otherwise what its download fetches.
+    func size(of model: LocalModelDescriptor) -> String {
+        diskUse[model.id].map(LocalModelDescriptor.byteCount) ?? model.downloadSize
+    }
+    /// What the files in a folder take on disk; nothing for a folder that does not exist.
+    nonisolated static func allocatedSize(_ folder: URL) -> Int64 {
+        let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey, .fileAllocatedSizeKey]
+        guard let files = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: keys) else { return 0 }
+        var total: Int64 = 0
+        for case let file as URL in files {
+            guard let values = try? file.resourceValues(forKeys: Set(keys)) else { continue }
+            total += Int64(values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? 0)
+        }
+        return total
+    }
+    /// The space macOS would free for a download the person asked for, read from the
+    /// nearest folder that exists, since the model folder may not exist yet.
+    nonisolated static func availableCapacity(_ folder: URL) -> Int64? {
+        var folder = folder.standardizedFileURL
+        while !FileManager.default.fileExists(atPath: folder.path), folder.pathComponents.count > 1 { folder.deleteLastPathComponent() }
+        guard let values = try? folder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey]) else { return nil }
+        if let important = values.volumeAvailableCapacityForImportantUsage, important > 0 { return important }
+        return values.volumeAvailableCapacity.map(Int64.init)
+    }
+    /// Room a download leaves on the disk besides the model, for macOS and the other apps.
+    static let spareBytes: Int64 = 100_000_000
+    /// Refuses a download that would not fit on the disk of the model folder. A
+    /// resumed download needs room only for what its folder lacks; a model whose
+    /// size is unknown is not checked.
+    private func ensureRoom(for model: LocalModelDescriptor, in folder: URL) async throws {
+        guard let bytes = model.downloadBytes else { return }
+        let freeSpace = freeSpace, root = root
+        let (free, fetched) = await Task.detached(priority: .userInitiated) { (freeSpace(root), Self.allocatedSize(folder)) }.value
+        guard let free else { return }
+        let needed = max(bytes - fetched, 0) + Self.spareBytes
+        guard free < needed else { return }
+        throw FrogError.message("\(model.name) needs about \(LocalModelDescriptor.byteCount(needed)) of free space, but the disk of the model folder has \(LocalModelDescriptor.byteCount(max(free, 0))) free. Free up space or choose another model folder in Settings, then try again.")
     }
     /// Model folders can be gigabytes: remove them off the main thread.
     nonisolated private static func discard(_ folder: URL) async throws {
@@ -132,6 +199,8 @@ final class LocalModels: ObservableObject {
             defer { self.downloads[model.id] = nil; self.progress[model.id] = nil; self.preparing.remove(model.id); self.discarding.remove(model.id) }
             var marked = resuming
             do {
+                try await self.ensureRoom(for: model, in: base)
+                try Task.checkCancellation()
                 try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
                 if !marked { try Data().write(to: marker); marked = true }
                 self.unfinished.insert(model.id)
@@ -149,6 +218,7 @@ final class LocalModels: ObservableObject {
                 try? FileManager.default.removeItem(at: marker)
                 self.unfinished.remove(model.id)
                 self.installed.insert(model.id)
+                self.measureDiskUse()
                 self.onInstall?(model)
             } catch {
                 // A failure or a quit keeps what was fetched, so the next attempt
@@ -240,7 +310,7 @@ final class LocalModels: ObservableObject {
         loaded = []; await runtime.unload(keepingMetadata: false)
         do { try FileManager.default.removeItem(at: directory(id)) }
         catch CocoaError.fileNoSuchFile { /* Already removed outside Frog. Repair the inventory below. */ }
-        installed.remove(id); unfinished.remove(id); errors[id] = nil
+        installed.remove(id); unfinished.remove(id); errors[id] = nil; diskUse[id] = nil
         onInventoryChanged?()
     }
     func unload(keepingMetadata: Bool = false) async {

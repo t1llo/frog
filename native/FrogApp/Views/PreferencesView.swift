@@ -62,7 +62,13 @@ struct PreferencesView: View {
                     }
                 }
                 SettingsSection(title: "Model storage") {
-                    Text(model.localModels.root.path).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(model.localModels.root.path).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
+                        Spacer(minLength: 8)
+                        if let use = LocalModelSettings.diskUse(model.localModels.totalDiskUse(of: model.localModels.installed)) {
+                            Text(use).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize()
+                        }
+                    }
                     Text("Existing downloads stay in their current folder.").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                     HStack {
                         Button("Choose folder…") { chooseModelFolder() }
@@ -246,6 +252,10 @@ enum LocalModelSettings {
         guard !loaded.isEmpty else { return nil }
         let known = catalog.filter { loaded.contains($0.id) }
         return (known.map(\.name) + loaded.subtracting(known.map(\.id)).sorted()).joined(separator: ", ")
+    }
+    /// What the downloaded models take on the disk of the model folder.
+    static func diskUse(_ bytes: Int64?) -> String? {
+        bytes.map { "Models use " + LocalModelDescriptor.byteCount($0) }
     }
 }
 

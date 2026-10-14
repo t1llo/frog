@@ -31,7 +31,13 @@ struct ModelInventory: View {
     }
     private func group(_ title: String, items: [LocalModelDescriptor], installed: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionCaption(text: title)
+            HStack(spacing: 6) {
+                SectionCaption(text: title)
+                // What the downloads listed here take on disk together.
+                if installed, let total = model.localModels.totalDiskUse(of: items.map(\.id)) {
+                    Text(LocalModelDescriptor.byteCount(total)).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                }
+            }
             VStack(spacing: 0) {
                 ForEach(items) { item in
                     let unfinished = !installed && model.localModels.progress[item.id] == nil && model.localModels.unfinished.contains(item.id)
@@ -43,7 +49,7 @@ struct ModelInventory: View {
                                      Text(item.name).font(.system(size: 12, weight: .medium))
                                      if item.isRecommended { RecommendedModelBadge() }
                                  }
-                                Text([item.downloadSize, item.runtimeName, model.localModels.loaded.contains(item.id) ? "In memory" : "", unfinished ? "Partly downloaded" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                                Text([installed ? model.localModels.size(of: item) : item.downloadSize, item.runtimeName, model.localModels.loaded.contains(item.id) ? "In memory" : "", unfinished ? "Partly downloaded" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
                                     .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                                 Text(L10n.text(item.recommendationSummary ?? item.languages))
                                     .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
