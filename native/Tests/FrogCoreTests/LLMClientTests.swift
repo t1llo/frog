@@ -240,6 +240,35 @@ final class LLMClientTests: XCTestCase {
         catch { XCTAssertTrue(error is FrogError) }
     }
 
+    func testASpeechConnectionIsCheckedByAskingForItsModelsWithTheKeyAndNoContent() async throws {
+        for kind in [ProviderKind.openAI, .compatible, .gemini] {
+            fixture { request in
+                XCTAssertEqual(request.url?.path, kind == .gemini ? "/v1beta/models" : "/v1/models")
+                XCTAssertNil(request.url?.query, "The key stays out of the URL")
+                XCTAssertEqual(request.httpMethod, "GET")
+                XCTAssertNil(request.httpBody)
+                XCTAssertNil(request.httpBodyStream)
+                XCTAssertEqual(request.value(forHTTPHeaderField: "x-goog-api-key"), kind == .gemini ? "fixture-key" : nil)
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), kind == .gemini ? nil : "Bearer fixture-key")
+                return (200, Data(#"{"data":[]}"#.utf8))
+            }
+            try await client.checkConnection(provider: provider(kind), apiKey: "fixture-key")
+        }
+        fixture { _ in (401, Data("private-secret".utf8)) }
+        do { try await client.checkConnection(provider: provider(.openAI), apiKey: "fixture-key"); XCTFail("Expected rejection") }
+        catch {
+            XCTAssertTrue(error.localizedDescription.contains("rejected authentication"), error.localizedDescription)
+            XCTAssertFalse(error.localizedDescription.contains("private-secret"))
+        }
+        fixture { _ in XCTFail("A connection without its key must not reach the network"); return (200, Data()) }
+        for kind in [ProviderKind.openAI, .gemini] {
+            do { try await client.checkConnection(provider: provider(kind), apiKey: nil); XCTFail("Expected a missing key") }
+            catch { XCTAssertTrue(error.localizedDescription.contains("API key"), error.localizedDescription) }
+        }
+        do { try await client.checkConnection(provider: provider(.anthropic), apiKey: "fixture-key"); XCTFail("Not a speech service") }
+        catch { XCTAssertTrue(error is FrogError) }
+    }
+
     private var client: LLMClient { LLMClient(session: session) }
     private func provider(_ kind: ProviderKind) -> ProviderConfiguration {
         let path = kind == .gemini ? "/v1beta" : ([.openAI, .compatible, .lmStudio].contains(kind) ? "/v1" : "")

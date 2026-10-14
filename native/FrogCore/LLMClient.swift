@@ -197,6 +197,36 @@ public struct LLMClient: Sendable {
         return Set(names).filter { !$0.isEmpty && $0.utf8.count <= 256 && !$0.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) }
             .sorted().prefix(200).map { ProviderModel(id: $0) }
     }
+
+    /// Checks the endpoint and key of a speech service by asking for its model list. A connection
+    /// with only speech models has no text model to try, and the request carries no text or audio.
+    public func checkConnection(provider: ProviderConfiguration, apiKey: String?) async throws {
+        guard provider.kind.supportsTranscription else { throw FrogError.message("This service does not support speech-to-text.") }
+        try ConfigurationFile.validateEndpoint(provider)
+        let key: String?
+        if let apiKey, !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            key = try KeychainStore.validatedKey(apiKey)
+        } else { key = nil }
+        if [.openAI, .gemini].contains(provider.kind), key == nil {
+            throw FrogError.message("Add an API key for this provider in Providers.")
+        }
+        let base = URL(string: provider.endpoint.trimmingCharacters(in: .whitespacesAndNewlines))!
+        var request = URLRequest(url: base.appendingPathComponent("models"), cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+        request.httpShouldHandleCookies = false
+        if let key {
+            if provider.kind == .gemini { request.setValue(key, forHTTPHeaderField: "x-goog-api-key") }
+            else { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
+        }
+        let response: URLResponse
+        do { (_, response) = try await session.data(for: request, delegate: NoRedirects()) }
+        catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
+            throw FrogError.message("Could not connect to the provider. Check its endpoint and your network connection.")
+        }
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse else { throw FrogError.message("The provider returned an invalid HTTP response.") }
+        guard (200...299).contains(http.statusCode) else { throw statusError(http.statusCode) }
+    }
 }
 
 private final class NoRedirects: NSObject, URLSessionDataDelegate, Sendable {

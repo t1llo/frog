@@ -125,6 +125,22 @@ final class ProviderCredentialTests: XCTestCase {
         XCTAssertEqual(keys, ["sk-saved", "sk-saved", "sk-typed"])
     }
 
+    /// A connection with only speech models has no text model to ask. Its test checks the key
+    /// with the service instead, and a missing key is named before any request.
+    func testTestingASpeechOnlyConnectionAsksForItsKeyInsteadOfNamingLocalServers() async throws {
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, complete: { _, _, _, _ in
+            XCTFail("A speech-only connection has no text model to complete with"); return ""
+        }, credentials: MemoryCredentialStore(), writeClipboard: { _ in })
+        for kind in [ProviderKind.openAI, .gemini] {
+            let provider = ProviderConfiguration(kind: kind, model: "speech-model", models: [ProviderModel(id: "speech-model", category: .audio)])
+            do { _ = try await model.testProvider(provider, apiKey: nil); XCTFail("A connection without a key cannot be tested") }
+            catch {
+                XCTAssertFalse(error.localizedDescription.contains("Ollama"), error.localizedDescription)
+                XCTAssertTrue(error.localizedDescription.contains("API key"), error.localizedDescription)
+            }
+        }
+    }
+
     /// An edit in the configuration file that Frog has not reloaded makes its next save fail.
     private func editBehind(_ model: AppModel) throws {
         let file = model.configurationFileURL

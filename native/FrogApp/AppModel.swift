@@ -720,7 +720,8 @@ final class AppModel: ObservableObject {
             _ = try await complete("Reply with OK.", Rule(name: "Connection test", instructions: "Reply briefly to the user."), test, key)
             return "Connected using \(textModel.name)."
         }
-        _ = try await discoverModels(provider, apiKey: key)
+        // Only speech models: the service is asked for its model list, which checks the endpoint and key.
+        try await LLMClient().checkConnection(provider: provider, apiKey: key)
         return "Connected. Transcription is checked when you record."
     }
 
