@@ -287,21 +287,6 @@ func isoDate(_ any: Any?) -> Date? {
 
 // MARK: - Formatting
 
-/// "2h 14m", "3d 4h", "12m".
-func remaining(to date: Date?, now: Date = Date()) -> String {
-    guard let date else { return "" }
-    let mins = max(0, Int(date.timeIntervalSince(now) / 60))
-    let d = mins / 1440, h = (mins % 1440) / 60, m = mins % 60
-    if d > 0 { return "\(d)d \(h)h" }
-    if h > 0 { return "\(h)h \(m)m" }
-    return "\(m)m"
-}
-
-/// "in 2h 14m", "in 3d 4h", "in 12m".
-func countdown(to date: Date?, now: Date = Date()) -> String {
-    date == nil ? "" : "in " + remaining(to: date, now: now)
-}
-
 /// "3:40pm", "Thu 9am", "Oct 4".
 func resetClock(_ date: Date?) -> String {
     guard let date else { return "" }
@@ -312,13 +297,6 @@ func resetClock(_ date: Date?) -> String {
     else if date.timeIntervalSinceNow < 6 * 86_400 { f.dateFormat = "EEE \(time)" }
     else { f.dateFormat = "MMM d" }
     return f.string(from: date).replacingOccurrences(of: "AM", with: "am").replacingOccurrences(of: "PM", with: "pm")
-}
-
-func firstOfNextMonth() -> String {
-    var c = Calendar.current.dateComponents([.year, .month], from: Date())
-    c.month! += 1; c.day = 1
-    let f = DateFormatter(); f.locale = Locale(identifier: "en_US"); f.dateFormat = "MMM d"
-    return f.string(from: Calendar.current.date(from: c)!)
 }
 
 func clock(_ d: Date) -> String {

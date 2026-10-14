@@ -1,5 +1,6 @@
 // Token counts from the local logs of each coding tool: Claude Code's transcripts
-// (~/.claude/projects/**/*.jsonl) here, Codex in CodexLog.swift, OpenCode in OpenCodeLog.swift.
+// (~/.claude/projects/**/*.jsonl) here, Codex in CodexLog.swift, OpenCode in OpenCodeLog.swift,
+// Pi in PiLog.swift.
 // The usage endpoints only report percentages, but every model call in those logs carries the
 // API's token counts, so summing them gives input and output tokens for this Mac.
 import Foundation
@@ -170,16 +171,13 @@ final class TokenStore: ObservableObject {
     @Published private(set) var activity: AccountActivity? { didSet { rebuildAccount() } }
     /// Claude Code's local, lifetime stats cache, never added to the recent log records.
     @Published private(set) var claudeActivity: ClaudeActivity?
-    /// Account estimates plus local usage on UTC days the account has not reported yet.
-    private(set) var accountRecords: [TokenRecord] = []
-    /// Whether the estimated split of `accountRecords` comes from this Mac's OpenAI logs.
+    /// Whether the account's tokens are split into kinds the way this Mac's OpenAI logs split them.
     private(set) var mixFromLogs = false
     /// Summaries are asked for on every redraw (hover, provider switch), and a 30-day one over
     /// thousands of records takes a frame's worth of time, so each is computed once per data change.
     @Published private var summaries: [SummaryKey: TokenSummary] = [:]
     private var aggregationGeneration = 0
     private var aggregating = false
-    private(set) var providerSources: [Provider: Set<Source>] = [:]
     private struct SummaryKey: Hashable {
         let provider: Provider, account: Bool, range: TokenRange, metric: TokenMetric
     }
@@ -187,8 +185,6 @@ final class TokenStore: ObservableObject {
     private var liveSchedule = LiveFetchSchedule()
     private var fetchingLive = false
     @Published private(set) var checkingLive = false
-    /// Tools that have logs on this Mac, even if nothing falls inside the chart range.
-    @Published private(set) var sources: Set<Source> = []
     @Published private(set) var loaded = false
     @Published private(set) var activityWarning: String?
     private var scanned = false
@@ -293,12 +289,6 @@ final class TokenStore: ObservableObject {
             }
             if activityWarning != oc.warning { activityWarning = oc.warning }
             if claudeActivity != lifetime { claudeActivity = lifetime }
-            var s = Set<Source>()
-            if !cl.isEmpty { s.insert(.claudeCode) }
-            if cx.found { s.insert(.codex) }
-            if oc.found { s.insert(.opencode) }
-            if !piRecords.isEmpty { s.insert(.pi) }
-            if sources != s { sources = s }
             scanned = true
             scanning = false
             if pendingScan { pendingScan = false; refresh(forceLocal: true) }
@@ -383,18 +373,15 @@ extension TokenStore {
                             }
                         }
                     }
-                    let sources = Dictionary(grouping: records, by: \.provider).mapValues { Set($0.map(\.source)) }
-                    return (account, summaries, sources, local != nil)
+                    return (summaries: summaries, mixFromLogs: local != nil)
                 }
                 guard let result, active, life == lifecycle, !Task.isCancelled else { return }
                 guard generation == aggregationGeneration else { continue }
-                accountRecords = result.0
-                providerSources = result.2
-                mixFromLogs = result.3
+                mixFromLogs = result.mixFromLogs
                 aggregating = false
                 summarizedBuckets = bucketStarts(now)
                 if loaded != scanned { loaded = scanned }
-                summaries = result.1
+                summaries = result.summaries
                 break
             }
         }
