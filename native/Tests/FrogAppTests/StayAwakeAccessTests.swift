@@ -170,6 +170,21 @@ final class StayAwakeAccessTests: XCTestCase {
         XCTAssertTrue(canQuit)
     }
 
+    func testClosingAResetGuideSaysThatSleepWasAlreadyRestored() async throws {
+        let system = AccessPowerFixture(allowed: true)
+        // Closing the Terminal window or pressing Control-C ends the guide as failed.
+        let closed = try session(.failed)
+        let power = StayAwakeController(system: system, directory: try folder(), openGuide: { _ in closed })
+        await power.refresh()
+        power.setEnabled(true); await power.waitForOperation()
+        XCTAssertTrue(power.isEnabled)
+        power.configureAccess(.reset); await power.waitForAccessGuide()
+        XCTAssertFalse(power.isEnabled)
+        XCTAssertFalse(power.ownsSession)
+        XCTAssertEqual(power.accessNotice, "Sleep restored. Setup did not finish. Review the Terminal window and try again.",
+            "Backing out of the guide does not bring the session back, so Frog says that it ended")
+    }
+
     func testAGuideThatIsKilledBeforeItReportsEndsTheWait() async throws {
         let session = try StayAwakeSetup.prepare(.setup, directory: try folder())
         // Nobody answers its first question, so the real guide waits there, before any sudo.

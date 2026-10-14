@@ -161,10 +161,11 @@ final class StayAwakeController: ObservableObject {
                 case .cancelled: accessNotice = endedSession ? "Sleep restored. Access guide cancelled." : "Access guide cancelled."
                 // A guide that ends early may have saved the rule already. A reset that fails
                 // has removed nothing, so there access that is still ready is the failure.
+                // Closing the window or Control-C also ends a reset guide this way.
                 case .failed:
                     accessNotice = mode == .setup && accessState == .ready
                         ? "Setup did not finish, but both power commands are allowed. You can use Stay awake from the menu bar."
-                        : "Setup did not finish. Review the Terminal window and try again."
+                        : (endedSession ? "Sleep restored. " : "") + "Setup did not finish. Review the Terminal window and try again."
                 case nil: accessNotice = (endedSession ? "Sleep restored. " : "") + "Stopped waiting for the guide. Close its Terminal window if it is still open."
                 }
             } catch is CancellationError { }
