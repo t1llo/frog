@@ -2,6 +2,13 @@ import XCTest
 @testable import FrogCore
 
 final class RuleConfigurationTests: XCTestCase {
+    func testInstructionsNameTheTrimmedTargetLanguageOrAskForOne() throws {
+        XCTAssertEqual(try Rule(instructions: "Translate into {{language}}.", targetLanguage: " German\n").expandedInstructions(), "Translate into German.")
+        XCTAssertEqual(try Rule(instructions: "Proofread.", targetLanguage: "").expandedInstructions(), "Proofread.")
+        XCTAssertThrowsError(try Rule(instructions: "Translate into {{language}}.", targetLanguage: "  ").expandedInstructions())
+        XCTAssertThrowsError(try Rule(instructions: "Translate into {{language}}.", targetLanguage: String(repeating: "a", count: 257)).expandedInstructions())
+    }
+
     func testReconciliationPreservesAvailableAndIntentionallyEmptySelections() {
         var config = Configuration()
         var audio = Rule.dictationPreset

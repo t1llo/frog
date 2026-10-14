@@ -83,12 +83,7 @@ public struct LocalToolRequest: Sendable {
     }
 
     public init(kind: LocalToolKind, text: String, rule: Rule, providerModel: String = "") throws {
-        var instructions = rule.instructions
-        if instructions.contains("{{language}}") {
-            let language = rule.targetLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !language.isEmpty, language.utf8.count <= 256 else { throw FrogError.message("Choose a target language for this rule.") }
-            instructions = instructions.replacingOccurrences(of: "{{language}}", with: language)
-        }
+        let instructions = try rule.expandedInstructions()
         let override = rule.model.trimmingCharacters(in: .whitespacesAndNewlines)
         let selected = override.isEmpty ? providerModel : override
         try self.init(kind: kind, model: selected == LocalToolKind.defaultModelID ? "" : selected, instructions: instructions, text: text)

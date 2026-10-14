@@ -164,6 +164,16 @@ public struct Rule: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+public extension Rule {
+    /// The instructions with `{{language}}` replaced by the trimmed target language, which a rule using it must name.
+    func expandedInstructions() throws -> String {
+        guard instructions.contains("{{language}}") else { return instructions }
+        let language = targetLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !language.isEmpty, language.utf8.count <= 256 else { throw FrogError.message("Choose a target language for this rule.") }
+        return instructions.replacingOccurrences(of: "{{language}}", with: language)
+    }
+}
+
 public struct Preferences: Codable, Equatable, Sendable {
     public var historyEnabled = false
     public var hideHistoryText = false

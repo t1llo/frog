@@ -36,15 +36,10 @@ public struct LLMClient: Sendable {
         guard !model.isEmpty, model.utf8.count <= 256, !model.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
             throw FrogError.message("Choose a valid model in the provider or rule settings.")
         }
-        var instructions = rule.instructions
-        guard !instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, instructions.utf8.count <= 100_000 else {
+        guard !rule.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, rule.instructions.utf8.count <= 100_000 else {
             throw FrogError.message("Enter rule instructions of at most 100,000 bytes.")
         }
-        if instructions.contains("{{language}}") {
-            let language = rule.targetLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !language.isEmpty, language.utf8.count <= 256 else { throw FrogError.message("Choose a target language for this rule.") }
-            instructions = instructions.replacingOccurrences(of: "{{language}}", with: language)
-        }
+        let instructions = try rule.expandedInstructions()
         guard let base = URLComponents(string: provider.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)),
               let scheme = base.scheme?.lowercased(), ["http", "https"].contains(scheme),
               let host = base.host, !host.isEmpty, base.user == nil, base.password == nil,

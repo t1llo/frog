@@ -432,6 +432,33 @@ final class IncrementalDictationTests: XCTestCase {
         XCTAssertEqual(DictationTranscript.join(["Frog", "日本"]), "Frog 日本")
     }
 
+    func testALocalModelIsToldTheTargetLanguageInsteadOfItsPlaceholder() async throws {
+        let fixture = await makeFixture(seconds: 1)
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let textModel = try XCTUnwrap(LocalModelDescriptor.find("qwen-0.6b"))
+        fixture.models.download(textModel); await fixture.models.waitForDownload(textModel.id)
+        let model = AppModel(dataDirectory: fixture.directory, registerShortcuts: false, modelService: fixture.models)
+        defer { model.shutdown() }
+        var dictation = rule
+        dictation.instructions = "Clean up and translate into {{language}}."; dictation.targetLanguage = " German "
+        dictation.action?.cleanup = true; dictation.action?.localTextModelID = textModel.id
+        let cleanup = try XCTUnwrap(model.dictation.cleanup)
+        let cleaned = try await cleanup("hallo", dictation)
+        XCTAssertEqual(cleaned, "Cleaned: hallo")
+        var translate = Rule(name: "Translate", instructions: "Translate into {{language}}.", targetLanguage: " German ")
+        translate.action = RuleAction(category: .text); translate.action?.localTextModelID = textModel.id
+        try model.saveRule(translate)
+        model.processManual(text: "hallo", ruleID: translate.id)
+        for _ in 0..<400 where model.isProcessing { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(model.manualResult, "Cleaned: hallo")
+        let sent = await fixture.engine.instructions
+        XCTAssertEqual(sent, ["Clean up and translate into German.", "Translate into German."])
+        var unnamed = dictation; unnamed.targetLanguage = ""
+        do { _ = try await cleanup("hallo", unnamed); XCTFail("A rule naming no language must not reach the model") } catch {}
+        let after = await fixture.engine.instructions
+        XCTAssertEqual(after.count, 2)
+    }
+
     private var rule: Rule {
         var rule = Rule.dictationPreset
         rule.action?.audioModelID = "whisper-base"; rule.action?.showRecordingPopup = false
@@ -528,7 +555,8 @@ private actor CountingSpeech: LocalInferenceEngine {
         let first = Int(samples.first ?? 0), last = Int(samples.last ?? 0)
         return withoutSpaces ? "第\(first)秒到第\(last)秒。" : "Seconds \(first)–\(last)."
     }
-    func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String { "Cleaned: \(text)" }
+    var instructions: [String] = []
+    func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String { self.instructions.append(instructions); return "Cleaned: \(text)" }
     func unload(keepingMetadata: Bool) { loadedIDs = [] }
 }
 

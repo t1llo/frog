@@ -235,7 +235,7 @@ final class AppModel: ObservableObject {
             if provider.id != Self.localProviderID {
                 return try await self.complete(text, rule, provider, provider.kind.localTool == nil ? self.readKey(provider.id) : nil)
             }
-            return try await self.localModels.complete(text, instructions: rule.instructions, modelID: provider.model)
+            return try await self.localModels.complete(text, instructions: rule.expandedInstructions(), modelID: provider.model)
         }
         dictation.localCleanupModel = { [weak self] rule in
             guard let self else { throw CancellationError() }
@@ -1185,7 +1185,7 @@ final class AppModel: ObservableObject {
                         try Task.checkCancellation()
                     }
                     self.status = "\(rule.name)…"
-                    result = try await self.localModels.complete(text, instructions: rule.instructions.replacingOccurrences(of: "{{language}}", with: rule.targetLanguage), modelID: provider.model)
+                    result = try await self.localModels.complete(text, instructions: rule.expandedInstructions(), modelID: provider.model)
                 }
                 else { result = try await self.complete(text, rule, provider, key) }
                 try Task.checkCancellation()
