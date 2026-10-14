@@ -146,6 +146,8 @@ final class ClipboardHistoryController {
                     }
                     return nil
                 }
+                // An input method composing in the search needs Escape, the arrows, Space and Return for its candidates.
+                if Self.isComposing(self.panel?.firstResponder) { return event }
                 switch event.keyCode {
                 case 53: self.hide(); return nil
                 case 125: self.state.selectedIndex = max(0, min(entries.count - 1, self.state.selectedIndex + 1)); return nil
@@ -277,6 +279,9 @@ final class ClipboardHistoryController {
     func cancel() { hide(); operation = UUID(); delivery?.cancel(); delivery = nil }
     func stop() { configure(enabled: false) }
     func waitForDelivery() async { await delivery?.value }
+    static func isComposing(_ responder: NSResponder?) -> Bool {
+        (responder as? NSTextInputClient)?.hasMarkedText() == true
+    }
     isolated deinit {
         panel?.orderOut(nil); panel?.contentView = nil
         delivery?.cancel()
