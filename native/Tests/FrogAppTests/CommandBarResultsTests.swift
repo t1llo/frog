@@ -278,6 +278,43 @@ import FrogCore
         XCTAssertEqual(bar.results.first?.id, "emoji:🚀")
     }
 
+    func testTheFirstListedApplicationsHaveTheirIconsBeforeTheirRowsAppear() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var config = Configuration(); config.preferences.windowSwitcherEnabled = false
+        config.preferences.setFeature(.commandBar, enabled: true)
+        try ConfigurationStore(directory: root).save(config)
+        let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
+        defer { pasteboard.releaseGlobally() }
+        let model = AppModel(dataDirectory: root, registerShortcuts: false, readKey: { _ in nil },
+                             clipboardHistoryStore: ClipboardHistoryStore(pasteboard: pasteboard))
+        defer { model.shutdown() }
+        let apps = (0..<12).map { index in
+            var app = Rule(name: "Fixture App \(index)", instructions: "", enabled: false)
+            app.action = RuleAction(category: .application); app.action?.applicationPath = "/Fixture/App \(index).app"
+            return app
+        }
+        let reads = CommandIconReads()
+        let bar = CommandBar(model: model, pasteboard: pasteboard, captureTarget: { nil }, loadIcon: { reads.load($0) },
+                             fileSearch: CommandFileStub(), loadSettings: { [] }, loadApplications: { apps }, applicationNames: { _ in [] })
+        defer { bar.stop() }
+        func row(_ index: Int) -> SearchRecord { SearchRecord(id: "app:/Fixture/App \(index).app", title: "Fixture App \(index)") }
+        bar.cacheApplications(apps)
+        // A row reads the cache as it is first drawn, without reading an icon itself.
+        XCTAssertNil(bar.cachedIcon(for: row(0)))
+        XCTAssertEqual(reads.count, 0)
+        // The applications listed before anything is typed are read ahead, the others when their rows appear.
+        await bar.preloadIcons()
+        XCTAssertEqual(reads.count, 8)
+        for index in 0..<8 { XCTAssertNotNil(bar.cachedIcon(for: row(index)), "App \(index)") }
+        XCTAssertNil(bar.cachedIcon(for: row(8)))
+        let loaded = await bar.icon(for: row(9))
+        XCTAssertNotNil(loaded)
+        XCTAssertTrue(bar.cachedIcon(for: row(9)) === loaded)
+        XCTAssertEqual(reads.count, 9)
+        XCTAssertNil(bar.cachedIcon(for: SearchRecord(id: "features", title: "Manage features")))
+    }
+
     func testCopyWhileTheBarIsOpenListsTheEntryAndEarlierRowsStillPaste() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -345,6 +382,15 @@ import FrogCore
 @MainActor private final class CommandPasteFixture: ClipboardHistoryPasteTarget {
     var pastes = 0
     func paste() throws { pastes += 1 }
+}
+private final class CommandIconReads: @unchecked Sendable {
+    private let lock = NSLock()
+    private var reads = 0
+    var count: Int { lock.lock(); defer { lock.unlock() }; return reads }
+    func load(_ path: String) -> NSImage {
+        lock.lock(); reads += 1; lock.unlock()
+        return NSImage(size: NSSize(width: 24, height: 24))
+    }
 }
 @MainActor private final class CommandFileStub: CommandFileSearching {
     func start(text: String, scopes: [Any], receive: @escaping @MainActor ([SearchRecord]) -> Void) {}

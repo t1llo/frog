@@ -104,8 +104,14 @@ import SwiftUI
             let installed = await self.loadApplications()
             guard !Task.isCancelled else { return }
             self.cacheApplications(installed)
+            await self.preloadIcons()
+            guard !Task.isCancelled else { return }
             self.warming = nil
         }
+    }
+    /// The rows listed before anything is typed then show their icons from the first frame of the first open.
+    func preloadIcons() async {
+        for record in suggestedApplications where !Task.isCancelled { _ = await icon(for: record) }
     }
     func stop() {
         hide(); warming?.cancel(); warming = nil
@@ -128,6 +134,10 @@ import SwiftUI
             applicationRecords[path] = SearchRecord(id: "app:\(path)", title: rule.name, subtitle: "App", keywords: identifier, symbol: "app", aliases: applicationNames(path), prominent: true)
         }
     }
+    /// The applications listed before anything is typed.
+    private var suggestedApplications: [SearchRecord] {
+        cachedApplications.prefix(8).compactMap { $0.action?.applicationPath.flatMap { applicationRecords[$0] } }
+    }
     private func refreshSettings() {
         guard !settingsLoaded, settingsIndexing == nil else { return }
         settingsIndexing = Task { [weak self] in
@@ -148,13 +158,18 @@ import SwiftUI
         let open = openSetting
         for setting in cachedSettings { add(setting.record) { try open(setting) } }
     }
+    private func iconPath(for result: SearchRecord) -> String? {
+        if result.id.hasPrefix("app:") { return String(result.id.dropFirst(4)) }
+        if let windowPath = windowIconPaths[result.id] { return windowPath }
+        if result.id.hasPrefix("mac-setting:") { return "/System/Applications/System Settings.app" }
+        return nil
+    }
+    /// What a row draws first. It only looks in the cache, so it never waits for a read.
+    func cachedIcon(for result: SearchRecord) -> NSImage? {
+        iconPath(for: result).flatMap { icons.object(forKey: $0 as NSString) }
+    }
     func icon(for result: SearchRecord) async -> NSImage? {
-        guard !Task.isCancelled else { return nil }
-        let path: String
-        if result.id.hasPrefix("app:") { path = String(result.id.dropFirst(4)) }
-        else if let windowPath = windowIconPaths[result.id] { path = windowPath }
-        else if result.id.hasPrefix("mac-setting:") { path = "/System/Applications/System Settings.app" }
-        else { return nil }
+        guard !Task.isCancelled, let path = iconPath(for: result) else { return nil }
         if let cached = icons.object(forKey: path as NSString) { return cached }
         let readerID = UUID(), token = generation
         if iconLoads[path] == nil {
@@ -468,7 +483,7 @@ import SwiftUI
             let files = fileRecords.prefix(4)
             let commands = records.lazy.filter { $0.id.hasPrefix("feature:") || $0.id.hasPrefix("rule:") }.prefix(4)
             preferred += files + commands
-            preferred += cachedApplications.prefix(8).compactMap { $0.action?.applicationPath.flatMap { applicationRecords[$0] } }
+            preferred += suggestedApplications
         }
         // Late Spotlight results must not bury an equally good app or Frog command.
         var next = CommandSearch.results(records, query: query, preferred: preferred, trailing: typed ? fileRecords : [])
@@ -791,6 +806,11 @@ private struct CommandResultIcon: View {
     let bar: CommandBar
     let result: SearchRecord
     @State private var icon: NSImage?
+    init(bar: CommandBar, result: SearchRecord) {
+        self.bar = bar; self.result = result
+        // A cached icon is drawn at once instead of after a frame with the placeholder.
+        _icon = State(initialValue: bar.cachedIcon(for: result))
+    }
     var body: some View {
         Group {
             if let icon { Image(nsImage: icon).resizable() }
