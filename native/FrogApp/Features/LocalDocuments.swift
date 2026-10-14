@@ -34,7 +34,8 @@ import FrogCore
     func remove(_ id: UUID) { guard loaded else { return }; items.removeAll { $0.id == id }; persist() }
     func flush() async -> Bool {
         if unsaved, saving == nil { persist() }
-        await saving?.value
+        // An edit made while waiting replaces the save with its own. A save that fails ends the wait.
+        while let saving { await saving.value }
         return !unsaved
     }
     private func persist() {
