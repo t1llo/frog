@@ -196,9 +196,8 @@ final class ClipboardHistoryStore: ObservableObject {
         guard enabled else { return }
         let sensitive = entry.isSensitive || entries.contains { $0.text == entry.text && $0.formatting == entry.formatting && $0.isSensitive }
         let retained = sensitive == entry.isSensitive ? entry : ClipboardHistoryEntry(text: entry.text, formatting: entry.formatting, isSensitive: sensitive, timestamp: entry.timestamp)
-        entries.removeAll { $0.text == entry.text && $0.formatting == entry.formatting }
-        entries.insert(retained, at: 0)
-        if entries.count > Self.capacity { entries.removeLast(entries.count - Self.capacity) }
+        // One change of the list per copy: an open panel searches all of it again on each one.
+        entries = Array(([retained] + entries.filter { $0.text != entry.text || $0.formatting != entry.formatting }).prefix(Self.capacity))
     }
 
     /// Explicitly include Frog results even if a subsequent compatibility Copy

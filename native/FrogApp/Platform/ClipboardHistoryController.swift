@@ -136,7 +136,8 @@ final class ClipboardHistoryController {
                     return event
                 }
                 guard event.window === self.panel else { self.cancel(); return event }
-                let entries = self.state.visibleEntries(in: self.history.entries)
+                // Searched only for the keys that act on the list, not for each letter typed into the search.
+                lazy var entries = self.state.visibleEntries(in: self.history.entries)
                 let editingSearch = self.panel?.firstResponder is NSTextView
                 if Self.isCopyShortcut(event) {
                     if let text = self.panel?.firstResponder as? NSTextView, text.selectedRange().length > 0 { return event }
