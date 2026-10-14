@@ -9,9 +9,12 @@ public struct SpeechClient: Sendable {
         guard provider.kind.supportsTranscription else { throw FrogError.message("This service does not support speech-to-text.") }
         guard !samples.isEmpty, samples.count <= 600 * 16000 else { throw FrogError.message("Record up to ten minutes of audio.") }
         let wave = Self.wave(samples)
-        let key = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        var key = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if [.openAI, .gemini].contains(provider.kind), key.isEmpty { throw FrogError.message("Add an API key for \(provider.name).") }
-        let base = URL(string: provider.endpoint)!
+        if !key.isEmpty { key = try KeychainStore.validatedKey(key) }
+        guard let base = URL(string: provider.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw FrogError.message("Enter an HTTP(S) API base URL without credentials, query parameters or fragments.")
+        }
         var request: URLRequest
         if provider.kind == .gemini {
             var allowed = CharacterSet.urlPathAllowed; allowed.remove(charactersIn: "/?#%")
@@ -36,18 +39,33 @@ public struct SpeechClient: Sendable {
             body.append(wave); body.append(Data("\r\n--\(boundary)--\r\n".utf8)); request.httpBody = body
         }
         request.httpMethod = "POST"; request.timeoutInterval = 120
-        let (data, response) = try await session.data(for: request)
+        request.cachePolicy = .reloadIgnoringLocalCacheData; request.httpShouldHandleCookies = false
+        let data: Data
+        let response: URLResponse
+        do { (data, response) = try await session.data(for: request, delegate: NoSpeechRedirects()) }
+        catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
+            // URLSession errors can include the full URL. The code stays, so a request that never
+            // arrived can still be sent again.
+            let code = (error as? URLError)?.code ?? .unknown
+            throw URLError(code, userInfo: [NSLocalizedDescriptionKey: code == .timedOut
+                ? "The speech request timed out. Try again later."
+                : "Could not reach the speech service. Check its endpoint and your network connection."])
+        }
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw StatusFailure(status: (response as? HTTPURLResponse)?.statusCode ?? 0)
         }
-        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard data.count <= 8 * 1_024 * 1_024 else { throw FrogError.message("The speech service's response was too large.") }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw FrogError.message("The speech service returned a response Frog cannot read. Check the endpoint and model.")
+        }
         let text: String?
         if provider.kind == .gemini {
-            let candidate = (object?["candidates"] as? [[String: Any]])?.first
+            let candidate = (object["candidates"] as? [[String: Any]])?.first
             let content = candidate?["content"] as? [String: Any]
             text = (content?["parts"] as? [[String: Any]])?.compactMap { $0["text"] as? String }.joined()
-        } else { text = object?["text"] as? String }
+        } else { text = object["text"] as? String }
         guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("The speech model returned no transcript.") }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -55,7 +73,11 @@ public struct SpeechClient: Sendable {
     public struct StatusFailure: LocalizedError, Equatable, Sendable {
         public let status: Int
         public init(status: Int) { self.status = status }
-        public var errorDescription: String? { "Speech request failed (HTTP \(status)). Check the model, endpoint and API key." }
+        public var errorDescription: String? {
+            (300...399).contains(status)
+                ? "The speech service redirected the request. Update its base URL to the final endpoint."
+                : "Speech request failed (HTTP \(status)). Check the model, endpoint and API key."
+        }
     }
     /// Whether sending the same recording again can succeed: the request never arrived, or the
     /// service was busy. A wrong key, model or endpoint needs a change in Frog first.
@@ -73,5 +95,18 @@ public struct SpeechClient: Sendable {
         u16(1); u16(1); u32(16000); u32(32000); u16(2); u16(16); text("data"); u32(UInt32(samples.count * 2))
         for sample in samples { u16(UInt16(bitPattern: Int16((max(-1, min(1, sample.isFinite ? sample : 0)) * 32767).rounded()))) }
         return data
+    }
+}
+
+private final class NoSpeechRedirects: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, willCacheResponse proposedResponse: CachedURLResponse,
+                    completionHandler: @escaping (CachedURLResponse?) -> Void) {
+        completionHandler(nil)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        // A redirect would send the recording and the key on to an address the user did not configure.
+        completionHandler(nil)
     }
 }

@@ -6,7 +6,7 @@ Frog contains no analytics, telemetry, advertising, or crash-reporting SDK. It h
 
 When you run a rule, the selected text and rule instructions are sent to the provider endpoint you configured. Testing a connection sends a short test message. **Find installed models** sends a model-list request to your configured Ollama or LM Studio endpoint without writing text. Cloud providers have their own data policies. For local processing, use Ollama, LM Studio or a compatible service on your Mac.
 
-Frog doesn’t send model-inference requests or download weights at startup. An enabled Mr. Usage feature does start provider usage polling at launch. Explicit model downloads use the built-in Hugging Face repositories through their native SDKs; the downloads follow the model host's file/CDN redirects and cache weights locally. Text-provider requests refuse redirects and disable response caching. Frog doesn’t log selected text or API keys. Provider response bodies aren’t included in error messages.
+Frog doesn’t send model-inference requests or download weights at startup. An enabled Mr. Usage feature does start provider usage polling at launch. Explicit model downloads use the built-in Hugging Face repositories through their native SDKs; the downloads follow the model host's file/CDN redirects and cache weights locally. Text-provider and speech-provider requests refuse redirects, send no cookies and disable response caching. Frog doesn’t log selected text or API keys. Provider response bodies aren’t included in error messages.
 
 ## Transcription and built-in models
 
