@@ -21,7 +21,7 @@ final class UsageParsingTests: XCTestCase {
         try handle.seekToEnd(); try handle.write(contentsOf: Data([10])); try handle.close()
         let complete = await scanner.scan(), repeated = await scanner.scan()
         XCTAssertEqual(complete.count, 2); XCTAssertEqual(repeated.count, 2)
-        let summary = summarize(complete, provider: .claude, range: .week, metric: .input, now: now.addingTimeInterval(1))
+        let summary = summarizeMetrics(complete, provider: .claude, range: .week, now: now.addingTimeInterval(1))[.input] ?? TokenSummary()
         XCTAssertEqual(summary.totalTokens, 231)
         XCTAssertEqual(summary.buckets.reduce(0) { $0 + $1.value }, 6)
     }
@@ -250,11 +250,11 @@ final class UsageParsingTests: XCTestCase {
         }
         let local = [record(yesterday, .openai, .codex, 10), record(yesterday, .openai, .opencode, 20),
                      record(now, .openai, .opencode, 5), record(now, .claude, .opencode, 99)]
-        let measured = summarize(local, provider: .openai, range: .week, metric: .input, now: now)
+        let measured = summarizeMetrics(local, provider: .openai, range: .week, now: now)[.input] ?? TokenSummary()
         XCTAssertEqual(measured.bySource.map(\.name), ["OpenCode", "Codex"])
         XCTAssertEqual(measured.bySource.map(\.value), [25, 10])
         let reconciled = reconciledOpenAIRecords(local: local, account: [record(yesterday, .openai, .chatgpt, 40)])
-        let account = summarize(reconciled, provider: .openai, range: .week, metric: .input, now: now, calendar: usageUTCCalendar)
+        let account = summarizeMetrics(reconciled, provider: .openai, range: .week, now: now, calendar: usageUTCCalendar)[.input] ?? TokenSummary()
         XCTAssertEqual(account.bySource.map(\.name), ["ChatGPT account", "OpenCode"])
         XCTAssertEqual(account.bySource.map(\.value), [40, 5])
         XCTAssertEqual(account.bySource.reduce(0) { $0 + $1.value }, account.totals[.input])

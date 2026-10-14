@@ -450,11 +450,6 @@ struct TokenSummary {
     var totalTokens: Double { TokenMetric.tokenKinds.reduce(0) { $0 + (totals[$1] ?? 0) } }
 }
 
-func summarize(_ records: [TokenRecord], provider: Provider, range: TokenRange, metric: TokenMetric,
-               now: Date = Date(), calendar cal: Calendar = .current) -> TokenSummary {
-    summarizeMetrics(records, provider: provider, range: range, now: now, calendar: cal)[metric] ?? TokenSummary()
-}
-
 /// Share filtering, model names and bucket lookup across all five chart metrics.
 func summarizeMetrics(_ records: [TokenRecord], provider: Provider, range: TokenRange,
                       now: Date = Date(), calendar cal: Calendar = .current) -> [TokenMetric: TokenSummary] {
