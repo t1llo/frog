@@ -13,7 +13,7 @@ final class LocalModelsTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let engine = FixtureInference()
-        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload)
+        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload, freeSpace: LocalModels.unlimitedFreeSpace)
         let descriptor = try XCTUnwrap(LocalModelDescriptor.find("parakeet-v3"))
         models.download(descriptor); await models.waitForDownload(descriptor.id)
         models.idleSeconds = 60
@@ -42,7 +42,7 @@ final class LocalModelsTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let gate = DownloadGate()
         let engine = FixtureInference(preparationGate: gate)
-        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload)
+        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload, freeSpace: LocalModels.unlimitedFreeSpace)
         let descriptor = try XCTUnwrap(LocalModelDescriptor.find("parakeet-v3"))
         models.download(descriptor); await models.waitForDownload(descriptor.id)
         let first = Task { try await models.prepare(descriptor.id) }
@@ -61,7 +61,7 @@ final class LocalModelsTests: XCTestCase {
     func testLegacySpeechDownloadsSurviveRestartAndKeepTheirOriginalRuntimeSources() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: Self.fixtureDownload)
+        let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: Self.fixtureDownload, freeSpace: LocalModels.unlimitedFreeSpace)
         let ids = ["whisper-small", "whisper-large-v3-turbo", "parakeet-v2"]
         for id in ids {
             models.download(try XCTUnwrap(LocalModelDescriptor.find(id))); await models.waitForDownload(id)
@@ -81,7 +81,7 @@ final class LocalModelsTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let engine = FixtureInference()
-        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload)
+        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload, freeSpace: LocalModels.unlimitedFreeSpace)
         let repository = "fixture/whisperkit"
         let variant = "openai_whisper-tiny.en"
         let custom = LocalModelDescriptor(id: HuggingFaceSource.modelID(repository: repository, variant: variant, backend: .whisperKit), name: "English fixture", kind: .audio, repository: repository, variant: variant, size: "Fixture")
@@ -104,7 +104,7 @@ final class LocalModelsTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let engine = FixtureInference()
-        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload)
+        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload, freeSpace: LocalModels.unlimitedFreeSpace)
         let descriptor = LocalModelDescriptor.find("qwen-0.6b")!
         models.download(descriptor); await models.waitForDownload(descriptor.id)
         _ = try await models.complete("hello", instructions: "Correct", modelID: descriptor.id)
@@ -119,7 +119,7 @@ final class LocalModelsTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let gate = DownloadGate()
-        let models = LocalModels(directory: directory, runtime: FixtureInference(gate: gate, fail: true), downloader: Self.fixtureDownload)
+        let models = LocalModels(directory: directory, runtime: FixtureInference(gate: gate, fail: true), downloader: Self.fixtureDownload, freeSpace: LocalModels.unlimitedFreeSpace)
         let descriptor = LocalModelDescriptor.find("qwen-0.6b")!
         models.download(descriptor); await models.waitForDownload(descriptor.id)
         let request = Task { try await models.complete("hello", instructions: "Correct", modelID: descriptor.id) }
@@ -137,7 +137,7 @@ final class LocalModelsTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let gate = DownloadGate()
         let engine = FixtureInference(gate: gate)
-        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload)
+        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload, freeSpace: LocalModels.unlimitedFreeSpace)
         let text = LocalModelDescriptor.find("qwen-0.6b")!
         let speech = try XCTUnwrap(LocalModelDescriptor.find("parakeet-v3"))
         for model in [text, speech] { models.download(model); await models.waitForDownload(model.id) }
@@ -168,7 +168,7 @@ final class LocalModelsTests: XCTestCase {
     func testChangingStoragePreservesOldDownloadsAndPersistsNewLocation() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: Self.fixtureDownload)
+        let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: Self.fixtureDownload, freeSpace: LocalModels.unlimitedFreeSpace)
         let descriptor = LocalModelDescriptor.find("qwen-0.6b")!
         models.download(descriptor); await models.waitForDownload(descriptor.id)
         let original = models.root
@@ -190,7 +190,7 @@ final class LocalModelsTests: XCTestCase {
             let folder = try await Self.fixtureDownload(model, base, progress)
             await gate.wait()
             return folder
-        })
+        }, freeSpace: LocalModels.unlimitedFreeSpace)
         let descriptor = LocalModelDescriptor.find("whisper-base")!
         models.download(descriptor); await gate.waitUntilStarted()
         let original = models.root
@@ -208,7 +208,7 @@ final class LocalModelsTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let engine = FixtureInference()
-        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload)
+        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload, freeSpace: LocalModels.unlimitedFreeSpace)
         let descriptor = LocalModelDescriptor.find("qwen-0.6b")!
         models.download(descriptor); await models.waitForDownload(descriptor.id)
         XCTAssertTrue(models.installed.contains(descriptor.id))
@@ -230,7 +230,7 @@ final class LocalModelsTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let engine = FixtureInference()
-        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload)
+        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload, freeSpace: LocalModels.unlimitedFreeSpace)
         let descriptor = LocalModelDescriptor.find("qwen-0.6b")!
         models.download(descriptor); await models.waitForDownload(descriptor.id)
         _ = try await models.complete("hello", instructions: "Correct", modelID: descriptor.id)
@@ -260,7 +260,7 @@ final class LocalModelsTests: XCTestCase {
             let folder = try await Self.fixtureDownload(model, base, progress)
             await gate.wait()
             return folder
-        })
+        }, freeSpace: LocalModels.unlimitedFreeSpace)
         let descriptor = LocalModelDescriptor.find("whisper-base")!
         models.download(descriptor); await gate.waitUntilStarted()
         for _ in 0..<1000 where models.progress[descriptor.id]?.fraction != 0.5 { await Task.yield() }
@@ -284,7 +284,7 @@ final class LocalModelsTests: XCTestCase {
             let folder = try await Self.fixtureDownload(model, base, progress)
             await gate.wait()
             return folder
-        })
+        }, freeSpace: LocalModels.unlimitedFreeSpace)
         let descriptor = LocalModelDescriptor.find("whisper-base")!
         models.download(descriptor)
         await gate.waitUntilStarted()
@@ -310,7 +310,7 @@ final class LocalModelsTests: XCTestCase {
             // Lets the ticks reach the store before the files are in.
             await MainActor.run {}
             return try await Self.fixtureDownload(model, base, progress)
-        })
+        }, freeSpace: LocalModels.unlimitedFreeSpace)
         var shown: [Double] = []
         let watching = models.$progress.dropFirst().sink { shown.append($0["whisper-base"]?.fraction ?? -1) }
         defer { watching.cancel() }
@@ -331,7 +331,7 @@ final class LocalModelsTests: XCTestCase {
             let folder = try await Self.fixtureDownload(model, base, progress)
             await gate.wait()
             return folder
-        })
+        }, freeSpace: LocalModels.unlimitedFreeSpace)
         let descriptor = LocalModelDescriptor.find("whisper-base")!
         quit.download(descriptor); await gate.waitUntilStarted()
         let folder = directory.appendingPathComponent("Models/\(descriptor.id)")
@@ -340,7 +340,7 @@ final class LocalModelsTests: XCTestCase {
         let relaunched = LocalModels(directory: directory, runtime: FixtureInference(), downloader: { model, base, progress in
             guard FileManager.default.fileExists(atPath: base.appendingPathComponent("fixture/weights").path) else { throw FrogError.message("The files fetched before the quit are gone") }
             return try await Self.fixtureDownload(model, base, progress)
-        })
+        }, freeSpace: LocalModels.unlimitedFreeSpace)
         XCTAssertFalse(relaunched.installed.contains(descriptor.id), "An unfinished folder is not an installation")
         XCTAssertEqual(relaunched.unfinished, [descriptor.id])
         relaunched.download(descriptor); await relaunched.waitForDownload(descriptor.id)
@@ -365,7 +365,7 @@ final class LocalModelsTests: XCTestCase {
             }
             guard FileManager.default.fileExists(atPath: firstFile.path) else { throw FrogError.message("The first file was thrown away") }
             return try await Self.fixtureDownload(model, base, progress)
-        })
+        }, freeSpace: LocalModels.unlimitedFreeSpace)
         let descriptor = LocalModelDescriptor.find("whisper-base")!
         models.download(descriptor); await models.waitForDownload(descriptor.id)
         XCTAssertEqual(models.errors[descriptor.id], "The connection dropped")
@@ -473,7 +473,7 @@ final class LocalModelsTests: XCTestCase {
         let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: { _, base, _ in
             try Data("fetched".utf8).write(to: base.appendingPathComponent("first-file"))
             throw FrogError.message("The connection dropped")
-        })
+        }, freeSpace: LocalModels.unlimitedFreeSpace)
         let descriptor = LocalModelDescriptor.find("whisper-base")!
         let folder = directory.appendingPathComponent("Models/\(descriptor.id)")
         models.download(descriptor); await models.waitForDownload(descriptor.id)
@@ -644,6 +644,12 @@ final class LocalModelsTests: XCTestCase {
         try Data(repeating: 7, count: 100_000).write(to: folder.appendingPathComponent("weights"))
         return folder
     }
+}
+
+extension LocalModels {
+    /// Fixture downloads fit on any disk, so a test does not depend on the free
+    /// space of the Mac that runs it.
+    nonisolated static let unlimitedFreeSpace: FreeSpaceReader = { _ in .max }
 }
 
 /// The free space a test sets for the disk of the model folder.

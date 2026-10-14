@@ -446,7 +446,7 @@ final class IncrementalDictationTests: XCTestCase {
             let url = base.appendingPathComponent("fixture")
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
             return url
-        })
+        }, freeSpace: LocalModels.unlimitedFreeSpace)
         let descriptor = LocalModelDescriptor.find("whisper-base")!
         models.download(descriptor); await models.waitForDownload(descriptor.id)
         return Fixture(directory: directory, models: models, engine: engine, recorder: BufferedRecording(seconds: seconds))

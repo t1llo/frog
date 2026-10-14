@@ -237,7 +237,7 @@ final class FailedTranscriptionTests: XCTestCase {
             let url = base.appendingPathComponent("fixture")
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
             return url
-        })
+        }, freeSpace: LocalModels.unlimitedFreeSpace)
         let descriptor = LocalModelDescriptor.find("whisper-base")!
         models.download(descriptor); await models.waitForDownload(descriptor.id)
         return (directory, models, engine)

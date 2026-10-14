@@ -43,7 +43,7 @@ final class RecordingReadinessTests: XCTestCase {
             let folder = base.appendingPathComponent("fixture")
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             return folder
-        })
+        }, freeSpace: LocalModels.unlimitedFreeSpace)
         models.download(try XCTUnwrap(LocalModelDescriptor.find("whisper-base")))
         await models.waitForDownload("whisper-base")
         let recorder = ReadinessRecorder(checkpoint: ready)
@@ -175,7 +175,7 @@ final class RecordingReadinessTests: XCTestCase {
             let folder = base.appendingPathComponent("fixture")
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             return folder
-        })
+        }, freeSpace: LocalModels.unlimitedFreeSpace)
         let ids = cleanup ? ["whisper-base", "qwen-0.6b"] : ["whisper-base"]
         for id in ["whisper-base", "qwen-0.6b"] {
             models.download(try XCTUnwrap(LocalModelDescriptor.find(id)))
