@@ -18,8 +18,11 @@ extension ClipboardHistoryPasteTarget {
 
 @MainActor
 enum ClipboardHistoryDelivery {
+    /// `write` puts the item on the pasteboard; by default it is written directly. An item from
+    /// clipboard history is written through its store, which then does not read it back as a copy.
     static func paste(_ entry: ClipboardHistoryEntry, plainText: Bool, pasteboard: NSPasteboard,
                       target: (any ClipboardHistoryPasteTarget)?, isCurrent: () -> Bool,
+                      write: (() -> Bool)? = nil,
                       waitForRelease: () async throws -> Void = { try await ClipboardSelection.waitForShortcutRelease() }) async throws {
         try await waitForRelease()
         try Task.checkCancellation()
@@ -30,7 +33,7 @@ enum ClipboardHistoryDelivery {
         catch { preparationError = error }
         try Task.checkCancellation()
         guard isCurrent() else { throw CancellationError() }
-        guard entry.write(to: pasteboard, plainText: plainText) else { throw FrogError.message("Could not copy the clipboard item.") }
+        guard write?() ?? entry.write(to: pasteboard, plainText: plainText) else { throw FrogError.message("Could not copy the clipboard item.") }
         if let preparationError { throw preparationError }
         guard let target else {
             throw FrogError.message(copyOnlyMessage(trusted: SelectionService.isTrusted,
@@ -195,10 +198,8 @@ final class ClipboardHistoryController {
 
     private func choose(_ entry: ClipboardHistoryEntry, plainText: Bool) {
         let target = target
-        let retention = history.retentionGeneration
         hide(keepingActivationObserver: true)
         self.target = target
-        let token = UUID(); operation = token; delivery?.cancel()
         // No range is exposed by some IDEs. Input after choosing is therefore
         // an essential invalidation signal, including during focus restoration.
         deliveryInputMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]) { [weak self] _ in
@@ -208,6 +209,14 @@ final class ClipboardHistoryController {
             MainActor.assumeIsolated { self?.cancel() }
             return event
         }
+        deliver(entry, plainText: plainText, to: target)
+    }
+
+    /// Pastes a chosen item into the field captured when the panel opened. The store writes it,
+    /// so the item keeps its row and is not read back as a new copy.
+    func deliver(_ entry: ClipboardHistoryEntry, plainText: Bool, to target: (any ClipboardHistoryPasteTarget)?) {
+        let retention = history.retentionGeneration
+        let token = UUID(); operation = token; delivery?.cancel()
         delivery = Task { [weak self] in
             do {
                 guard let self else { return }
@@ -216,6 +225,7 @@ final class ClipboardHistoryController {
                         self?.operation == token && self?.history.enabled == true && self?.history.retentionGeneration == retention &&
                         self?.history.entries.contains(where: { $0.id == entry.id }) == true
                     },
+                    write: { [weak self] in self?.history.copy(entry, plainText: plainText) == true },
                     waitForRelease: self.waitForRelease)
                 self.onSuccessfulPaste?()
             } catch is CancellationError { }

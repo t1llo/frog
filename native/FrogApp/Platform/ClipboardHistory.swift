@@ -115,12 +115,15 @@ final class ClipboardHistoryStore: ObservableObject {
     let pasteboard: NSPasteboard
     private let reader: ClipboardHistoryReader
     private var changeCount: Int
+    /// Read generation: every write of Frog's own makes a read already under way stale.
     private var epoch = UUID()
     private var polling: Task<Void, Never>?
     private var pendingCount: Int?
     private var pendingAttempts = 0
     private let pollPause: @Sendable () async throws -> Void
-    var retentionGeneration: UUID { epoch }
+    /// Changes only when entries are forgotten, so that a paste waiting for an item stops,
+    /// while a result Frog copies in the meantime leaves it alone.
+    private(set) var retentionGeneration = UUID()
 
     init(pasteboard: NSPasteboard = .general, gate: ClipboardHistoryCaptureGate = .shared,
          pollPause: @escaping @Sendable () async throws -> Void = {
@@ -134,7 +137,7 @@ final class ClipboardHistoryStore: ObservableObject {
 
     func configure(enabled: Bool, automaticallyPoll: Bool = true) {
         guard enabled != self.enabled else { return }
-        self.enabled = enabled; epoch = UUID()
+        self.enabled = enabled; epoch = UUID(); retentionGeneration = UUID()
         pendingCount = nil; pendingAttempts = 0
         polling?.cancel(); polling = nil
         entries = []
@@ -207,23 +210,25 @@ final class ClipboardHistoryStore: ObservableObject {
         changeCount = pasteboard.changeCount
     }
 
+    /// Writing through the store keeps the item's row, also as plain text, and the next
+    /// look at the clipboard does not take Frog's own write for a new copy.
     @discardableResult
-    func copy(_ entry: ClipboardHistoryEntry) -> Bool {
+    func copy(_ entry: ClipboardHistoryEntry, plainText: Bool = false) -> Bool {
         guard enabled, entries.contains(where: { $0.id == entry.id }) else { return false }
-        guard entry.write(to: pasteboard, plainText: false) else { return false }
+        guard entry.write(to: pasteboard, plainText: plainText) else { return false }
         epoch = UUID(); pendingCount = nil; pendingAttempts = 0
         record(entry); changeCount = pasteboard.changeCount
         return true
     }
 
     func delete(id: UUID) {
-        epoch = UUID(); entries.removeAll { $0.id == id }
+        epoch = UUID(); retentionGeneration = UUID(); entries.removeAll { $0.id == id }
         pendingCount = nil; pendingAttempts = 0
         changeCount = pasteboard.changeCount
     }
 
     func clear() {
-        epoch = UUID(); entries = []
+        epoch = UUID(); retentionGeneration = UUID(); entries = []
         pendingCount = nil; pendingAttempts = 0
         changeCount = pasteboard.changeCount
     }

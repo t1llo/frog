@@ -532,6 +532,8 @@ final class ClipboardHistoryTests: XCTestCase {
             XCTAssertEqual(pasteboard.string(forType: .string), "Formatted fixture")
             XCTAssertEqual(pasteboard.data(forType: .html) == nil, plain)
         }
+        await history.poll()
+        XCTAssertEqual(history.entries.count, 1, "A pasted item keeps its one row, also when pasted as plain text")
     }
 
     func testAppActivationInvalidatesPasteWhileModifiersAreHeld() async throws {
