@@ -14,8 +14,39 @@ final class DictationControllerTests: XCTestCase {
         let observation = model.objectWillChange.sink { updates += 1 }
         for _ in 0..<10 { controller.refreshRecordingFeedback(elapsed: 0) }
         XCTAssertEqual(updates, 0)
+        // The timer and the preview text are drawn by the popup, which observes the controller itself.
         controller.refreshRecordingFeedback(elapsed: 1)
-        XCTAssertEqual(updates, 1)
+        controller.updatePreview("Words so far")
+        XCTAssertEqual(updates, 0)
+        withExtendedLifetime(observation) {}
+    }
+    func testRecordingStateAndHistoryRecoveryStillRedrawTheWholeApp() async {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let controller = DictationController(makeRecorder: { FixtureRecording() }, authorize: { true }, copy: { _ in },
+                                             monitorKeys: false, inputDevices: { [] }, presentsPopup: false)
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, dictationController: controller)
+        controller.externalTranscription = { _, _ in "Recovered words." }
+        // Recover without History, so only the controller's own state reaches the model.
+        controller.onInterruption = { _ in true }
+        controller.onHistoryRecovered = { _, _ in }
+        var rule = Rule.dictationPreset
+        rule.action?.audioModelID = "fixture-speech"; rule.action?.audioProviderID = UUID()
+        rule.action?.showRecordingPopup = false
+        var updates = 0
+        let observation = model.objectWillChange.sink { updates += 1 }
+        model.startDictation(rule)
+        await controller.waitForWork()
+        XCTAssertEqual(controller.phase, .recording)
+        // Settings, Rules and Models turn editing off while Frog dictates: preparing and recording.
+        XCTAssertEqual(updates, 2)
+        controller.interrupt()
+        XCTAssertEqual(controller.phase, .idle)
+        XCTAssertEqual(controller.recoveringHistoryIDs.count, 1)
+        XCTAssertEqual(updates, 4, "Ending the recording and History marking its entry as recovering")
+        await controller.waitForHistoryRecovery()
+        XCTAssertTrue(controller.recoveringHistoryIDs.isEmpty)
+        XCTAssertEqual(updates, 5, "History no longer marks the entry as recovering")
         withExtendedLifetime(observation) {}
     }
     func testMicrophoneMeterReflectsSamplesAndReturnsToSilence() {

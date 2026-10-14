@@ -198,7 +198,11 @@ final class AppModel: ObservableObject {
         localModels.idleSeconds = configuration.preferences.workflowSettings.idleUnloadSeconds
         if registerShortcuts { localModels.unloadUnderMemoryPressure() }
         localModels.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
-        dictation.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
+        // Pages read only whether Frog dictates and which History entries it recovers. The timer, the
+        // preview text and the microphones are drawn by views that observe the controller, so a tick
+        // of the recording does not redraw every page.
+        dictation.$phase.removeDuplicates().dropFirst().sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
+        dictation.$recoveringHistoryIDs.removeDuplicates().dropFirst().sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         dictation.onError = { [weak self] in self?.report($0) }
         dictation.onCopy = { [weak self] in self?.clipboardHistoryStore.recordCopiedText($0) }
         dictation.onMicrophoneChange = { [weak self] id in
