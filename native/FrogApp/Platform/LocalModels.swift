@@ -323,6 +323,10 @@ actor LocalInference: LocalInferenceEngine {
     #if arch(arm64)
     private var textModel: ModelContainer?
     private var parakeet: ParakeetRuntime?
+    /// MLX keeps freed buffers for reuse, by default up to its whole memory limit:
+    /// a cache that grows through a long generation and holds on to the weights of
+    /// a replaced model. MLX suggests 20 MB of cache for running a language model.
+    static let textBufferCache = 20 * 1024 * 1024
     #endif
     private var textID: String?
     var loadedIDs: Set<String> { Set([speechID, textID].compactMap { $0 }) }
@@ -440,6 +444,9 @@ actor LocalInference: LocalInferenceEngine {
         try Task.checkCancellation()
         if textID != id {
             textModel = nil; textID = nil
+            // The replaced model's weights go back to macOS before the next one loads.
+            MLX.Memory.cacheLimit = Self.textBufferCache
+            MLX.Memory.clearCache()
             await residency(loadedIDs)
             try Task.checkCancellation()
             textModel = try await LLMModelFactory.shared.loadContainer(configuration: ModelConfiguration(directory: url))

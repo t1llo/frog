@@ -2,6 +2,7 @@ import XCTest
 import FrogCore
 #if arch(arm64)
 import Hub
+import MLX
 import MLXLMCommon
 #endif
 @testable import FrogApp
@@ -416,6 +417,24 @@ final class LocalModelsTests: XCTestCase {
         for unfinished in [GenerateStopReason.cancelled, nil] {
             XCTAssertThrowsError(try LocalInference.textResult("Half a sent", stop: unfinished)) { XCTAssertTrue($0 is CancellationError, "\($0)") }
         }
+    }
+
+    func testLoadingAnotherTextModelHandsBackFreedBuffersAndBoundsTheBufferCache() async throws {
+        // A buffer that MLX keeps for reuse after its array is gone, as it keeps
+        // the weights of a text model that is being replaced.
+        do { let buffer = MLXArray.zeros([1024, 1024]); eval(buffer) }
+        // The GPU hands the buffer back once its command has completed.
+        for _ in 0..<200 where MLX.Memory.cacheMemory == 0 { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertGreaterThan(MLX.Memory.cacheMemory, 0)
+        let engine = LocalInference()
+        let model = try XCTUnwrap(LocalModelDescriptor.find("qwen-0.6b"))
+        // A test has no weights to load: stop at the moment the old model is gone.
+        let attempt = Task {
+            try await engine.prepare(model: model, url: FileManager.default.temporaryDirectory, residency: { _ in withUnsafeCurrentTask { $0?.cancel() } })
+        }
+        _ = await attempt.result
+        XCTAssertEqual(MLX.Memory.cacheMemory, 0, "Buffers freed before a model loads go back to macOS")
+        XCTAssertLessThanOrEqual(MLX.Memory.cacheLimit, 64 * 1024 * 1024, "The cache must not grow to MLX's memory limit during generation")
     }
     #endif
 
