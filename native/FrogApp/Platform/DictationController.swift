@@ -41,6 +41,7 @@ final class DictationController: ObservableObject {
     private let outputMute: any OutputMuting
     private let cancelKey: (any DictationCancelKey)?
     private var muteFailureReported = false
+    private var inputLossReported = false
     private var work: Task<Void, Never>?
     private var preview: Task<Void, Never>?
     private var previewInference: Task<Void, Error>?
@@ -128,7 +129,7 @@ final class DictationController: ObservableObject {
         self.preferences.transcriptionLanguage = rule.action?.transcriptionLanguage
         samples = AudioSamples(); liveText = ""; elapsed = 0
         recordingStarted = nil; recordingSeconds = 0
-        noMicrophoneInput = false; lastInputElapsed = 0; lastInputRevision = 0
+        noMicrophoneInput = false; lastInputElapsed = 0; lastInputRevision = 0; inputLossReported = false
         selectedMicrophoneID = preferences.microphoneID; refreshMicrophones()
         microphoneMeter.reset()
         previewPrefix = ""; previewDraft = ""
@@ -223,6 +224,27 @@ final class DictationController: ObservableObject {
         }
         let missing = phase == .recording && elapsed - lastInputElapsed >= 2
         if noMicrophoneInput != missing { noMicrophoneInput = missing }
+        // A running capture delivers buffers even in silence. An input that delivered and then
+        // stopped was unplugged, stopped by macOS or replaced as the default input.
+        if missing, microphoneDelivering { replaceLostInput() }
+    }
+
+    /// Goes on with macOS's default input without saving it as the choice, so the saved microphone
+    /// is used again once it is back. The warning stays until the new input delivers.
+    private func replaceLostInput() {
+        recorder?.stop(); recorder = nil
+        do {
+            try beginRecording(microphoneID: nil)
+            selectedMicrophoneID = nil; refreshMicrophones()
+            // The popup shows the warning and the input; without it, say once what happened.
+            if panel?.isVisible != true, !inputLossReported {
+                inputLossReported = true
+                onError?(FrogError.message("The microphone stopped delivering sound. Recording continues with the system default input."))
+            }
+        } catch {
+            requestStop()
+            onError?(FrogError.message("No microphone could be opened, so recording stopped. What was recorded is being transcribed."))
+        }
     }
 
     func refreshMicrophones() {

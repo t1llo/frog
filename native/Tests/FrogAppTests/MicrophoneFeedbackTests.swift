@@ -187,6 +187,80 @@ final class MicrophoneFeedbackTests: XCTestCase {
         XCTAssertTrue(fixture.controller.noMicrophoneInput)
     }
 
+    func testInputThatStopsDeliveringIsReplacedByTheSystemDefaultWithoutSavingIt() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanUp() }
+        var issues: [String] = [], saved = false
+        var audio: [Float] = []
+        fixture.controller.externalTranscription = { samples, _ in audio = samples; return "Transcript" }
+        fixture.start(microphoneID: deskMicrophone)
+        await fixture.controller.waitForWork()
+        fixture.controller.onError = { issues.append($0.localizedDescription) }
+        fixture.controller.onMicrophoneChange = { _ in saved = true }
+        fixture.recorders[0].emit(0.1)
+        fixture.controller.refreshRecordingFeedback(elapsed: 1)
+        // The microphone was unplugged: its capture delivers nothing more.
+        fixture.devices = []
+        fixture.controller.refreshRecordingFeedback(elapsed: 2)
+        XCTAssertEqual(fixture.recorders.count, 1, "An input counts as lost only after two seconds without sound")
+        fixture.controller.refreshRecordingFeedback(elapsed: 3)
+        XCTAssertEqual(fixture.recorders.count, 2)
+        XCTAssertTrue(fixture.recorders[0].stopped)
+        let replacement = try XCTUnwrap(fixture.recorders.dropFirst().first, "A lost input must be replaced")
+        XCTAssertNil(replacement.device, "The macOS default input takes over")
+        XCTAssertNil(fixture.controller.selectedMicrophoneID, "The popup must show the input that is recording")
+        XCTAssertTrue(fixture.controller.noMicrophoneInput, "The warning stays until the new input delivers")
+        XCTAssertEqual(fixture.controller.statusText, "Starting microphone…")
+        XCTAssertEqual(issues.count, 1, "With the popup hidden, the person must learn of the change")
+        XCTAssertFalse(saved, "A fallback is not the person's choice")
+        fixture.controller.refreshRecordingFeedback(elapsed: 5)
+        XCTAssertEqual(fixture.recorders.count, 2, "The new input is given time to deliver its first sound")
+        replacement.emit(0.2)
+        fixture.controller.refreshRecordingFeedback(elapsed: 5)
+        XCTAssertFalse(fixture.controller.noMicrophoneInput)
+        fixture.controller.stop(models: fixture.models)
+        await fixture.controller.waitForWork()
+        XCTAssertTrue(audio == Array(repeating: Float(0.1), count: 3200) + Array(repeating: Float(0.2), count: 3200), "Audio from both inputs must reach transcription")
+        XCTAssertEqual(issues.count, 1)
+        XCTAssertFalse(saved)
+    }
+
+    func testInputThatHasNotDeliveredYetIsNotReplaced() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanUp() }
+        var issues: [String] = []
+        fixture.start(microphoneID: deskMicrophone)
+        await fixture.controller.waitForWork()
+        fixture.controller.onError = { issues.append($0.localizedDescription) }
+        // A Bluetooth input can take longer than two seconds to start.
+        fixture.controller.refreshRecordingFeedback(elapsed: 3)
+        XCTAssertTrue(fixture.controller.noMicrophoneInput)
+        XCTAssertEqual(fixture.recorders.count, 1)
+        XCTAssertEqual(fixture.controller.selectedMicrophoneID, deskMicrophone)
+        XCTAssertTrue(issues.isEmpty)
+    }
+
+    func testLostInputWithNoOtherToOpenTranscribesWhatWasRecorded() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanUp() }
+        var issues: [String] = []
+        var audio: [Float] = []
+        fixture.controller.externalTranscription = { samples, _ in audio = samples; return "Transcript" }
+        fixture.start()
+        await fixture.controller.waitForWork()
+        fixture.controller.onError = { issues.append($0.localizedDescription) }
+        fixture.recorders[0].emit(0.1)
+        fixture.controller.refreshRecordingFeedback(elapsed: 0)
+        fixture.rejectDevice = { _ in true }
+        fixture.controller.refreshRecordingFeedback(elapsed: 2)
+        await fixture.controller.waitForWork()
+        XCTAssertTrue(audio == Array(repeating: Float(0.1), count: 3200), "What was said before the input was lost must reach transcription")
+        XCTAssertEqual(fixture.copied, ["Transcript"])
+        XCTAssertEqual(issues.count, 1, "The person must learn why the recording ended")
+        XCTAssertEqual(fixture.controller.phase, .idle)
+        XCTAssertTrue(fixture.recorders.allSatisfy(\.stopped))
+    }
+
     func testQuietAndSilentBuffersDoNotClaimTheMicrophoneIsMissing() async throws {
         let fixture = Fixture()
         defer { fixture.cleanUp() }
