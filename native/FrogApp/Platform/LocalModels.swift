@@ -513,6 +513,8 @@ final class DownloadMeter: @unchecked Sendable {
     private var landed: Int64 = 0, flowing: Int64 = 0
     private var filesDone: Int64 = -1
     private var lastFlow: TimeInterval = 0
+    /// The fraction the library reported last.
+    private var library = 0.0
 
     init(folder: URL, expected: Int64?, now: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.folder = folder; self.expected = expected.flatMap { $0 > 0 ? $0 : nil }; self.now = now
@@ -538,8 +540,31 @@ final class DownloadMeter: @unchecked Sendable {
                 // carried bytes; a heartbeat while nothing arrives carries no speed.
                 flowing += Int64(max(speed, 0) * (time - lastFlow)); lastFlow = time
             }
-            return report(landed + flowing, fraction: progress.fractionCompleted, at: time)
+            library = progress.fractionCompleted
+            return report(landed + flowing, fraction: library, at: time)
         }
+    }
+
+    /// The snapshot reports nothing from the end of one file to the first byte of
+    /// the next, so a connection that drops there would leave the line on its last
+    /// speed. This reports from what the folder holds and what was seen last.
+    func idle() -> DownloadProgress {
+        lock.withLock { report(max(Self.fileBytes(folder), received), fraction: library, at: now()) }
+    }
+
+    /// Runs a snapshot download and reports `idle` twice a second until it ends.
+    func reporting<T: Sendable>(to progress: @escaping @Sendable (DownloadProgress) -> Void, _ work: () async throws -> T) async throws -> T {
+        let ticking = Task.detached { [self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(500))
+                if !Task.isCancelled { progress(idle()) }
+            }
+        }
+        do {
+            let result = try await work()
+            ticking.cancel(); await ticking.value
+            return result
+        } catch { ticking.cancel(); await ticking.value; throw error }
     }
 
     private func report(_ bytes: Int64, fraction library: Double, at time: TimeInterval) -> DownloadProgress {
@@ -766,7 +791,9 @@ actor LocalInference: LocalInferenceEngine {
             await kit.unloadModels()
             return url
         }
-        let folder = try await HubApi.modelFolder(base).snapshot(from: model.repository, matching: LocalModelDescriptor.mlxDownloadPatterns) { progress(meter.snapshot($0)) }
+        let folder = try await meter.reporting(to: progress) {
+            try await HubApi.modelFolder(base).snapshot(from: model.repository, matching: LocalModelDescriptor.mlxDownloadPatterns) { progress(meter.snapshot($0)) }
+        }
         // WhisperKit loads its model above; the other runtimes find a missing file only at first use.
         return try ModelFiles.requireComplete(model, folder: base, installed: folder)
         #else

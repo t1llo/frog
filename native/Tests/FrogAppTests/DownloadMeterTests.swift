@@ -1,5 +1,6 @@
 import XCTest
 import FrogCore
+import os
 @testable import FrogApp
 
 final class DownloadMeterTests: XCTestCase {
@@ -66,6 +67,44 @@ final class DownloadMeterTests: XCTestCase {
         for _ in 0...Int(DownloadMeter.window) { clock.advance(1); update = meter.snapshot(progress) }
         XCTAssertEqual(update.bytesPerSecond, 0)
         XCTAssertEqual(update.summary, "500 kB of 10 MB · stalled")
+    }
+
+    func testALibraryThatFallsSilentBetweenFilesStillSaysThatTheDownloadHasStalled() throws {
+        let clock = Clock()
+        let meter = DownloadMeter(folder: folder, expected: 10_000_000, now: { clock.now })
+        let (progress, files) = snapshotProgress(files: 2)
+        progress.setUserInfoObject(100_000.0, forKey: .throughputKey)
+        var update = meter.snapshot(progress)
+        for second in 1...Int(DownloadMeter.window) {
+            files[0].completedUnitCount = Int64(second)
+            clock.advance(1); update = meter.snapshot(progress)
+        }
+        XCTAssertEqual(try XCTUnwrap(update.bytesPerSecond), 100_000, accuracy: 1)
+
+        // The library reports nothing until the next file's first byte.
+        for _ in 0...2 * Int(DownloadMeter.window) { clock.advance(0.5); update = meter.idle() }
+        XCTAssertEqual(update.bytesPerSecond, 0)
+        XCTAssertEqual(update.summary, "500 kB of 10 MB · stalled")
+    }
+
+    func testAResumedDownloadShowsTheBytesInItsFolderBeforeTheLibraryReports() throws {
+        try land("model.safetensors", bytes: 4_000)
+        let meter = DownloadMeter(folder: folder, expected: 10_000)
+        let update = meter.idle()
+        XCTAssertEqual(update.bytesReceived, 4_000)
+        XCTAssertEqual(update.fraction, 0.4, accuracy: 0.0001)
+    }
+
+    func testTheMeterReportsWhileTheLibraryIsSilent() async throws {
+        let meter = DownloadMeter(folder: folder, expected: 10_000)
+        let reports = OSAllocatedUnfairLock(initialState: 0)
+        let result = try await meter.reporting(to: { _ in reports.withLock { $0 += 1 } }) {
+            // A library waiting for a server answers nothing at all.
+            for _ in 0..<200 where reports.withLock({ $0 }) == 0 { try await Task.sleep(for: .milliseconds(50)) }
+            return "done"
+        }
+        XCTAssertEqual(result, "done")
+        XCTAssertGreaterThan(reports.withLock { $0 }, 0)
     }
 
     func testOnlyTheLibraryCanSayThatTheFilesAreIn() throws {

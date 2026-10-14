@@ -14,7 +14,9 @@ actor ParakeetRuntime {
     static func download(_ model: LocalModelDescriptor, base: URL, progress: @escaping @Sendable (DownloadProgress) -> Void) async throws -> URL {
         let patterns = ["Preprocessor.mlmodelc/*", "Encoder.mlmodelc/*", "Decoder.mlmodelc/*", "JointDecision.mlmodelc/*", "parakeet_vocab.json"]
         let meter = DownloadMeter(folder: base, expected: model.downloadBytes)
-        return try await HubApi.modelFolder(base).snapshot(from: model.repository, matching: patterns) { progress(meter.snapshot($0)) }
+        return try await meter.reporting(to: progress) {
+            try await HubApi.modelFolder(base).snapshot(from: model.repository, matching: patterns) { progress(meter.snapshot($0)) }
+        }
     }
     func load(from directory: URL, version: AsrModelVersion) async throws {
         func component(_ name: String, cpuOnly: Bool = false) async throws -> MLModel {
