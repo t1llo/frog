@@ -87,13 +87,15 @@ public struct SpeechClient: Sendable {
         return false
     }
     static func wave(_ samples: [Float]) -> Data {
-        var data = Data()
+        var data = Data(capacity: 44 + samples.count * 2)
         func text(_ value: String) { data.append(Data(value.utf8)) }
         func u32(_ value: UInt32) { var value = value.littleEndian; withUnsafeBytes(of: &value) { data.append(contentsOf: $0) } }
         func u16(_ value: UInt16) { var value = value.littleEndian; withUnsafeBytes(of: &value) { data.append(contentsOf: $0) } }
         text("RIFF"); u32(UInt32(samples.count * 2 + 36)); text("WAVEfmt "); u32(16)
         u16(1); u16(1); u32(16000); u32(32000); u16(2); u16(16); text("data"); u32(UInt32(samples.count * 2))
-        for sample in samples { u16(UInt16(bitPattern: Int16((max(-1, min(1, sample.isFinite ? sample : 0)) * 32767).rounded()))) }
+        // Ten minutes are 9.6 million samples: convert them in one pass and append them at once.
+        let pcm = samples.map { Int16((max(-1, min(1, $0.isFinite ? $0 : 0)) * 32767).rounded()).littleEndian }
+        pcm.withUnsafeBytes { data.append(contentsOf: $0) }
         return data
     }
 }

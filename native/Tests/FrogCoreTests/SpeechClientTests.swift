@@ -185,6 +185,17 @@ final class SpeechClientTests: XCTestCase {
         XCTAssertEqual(text, "Spoken words.")
     }
 
+    func testRecordingIsSentAsSixteenBitMonoWaveWithSilenceForUnreadableSamples() {
+        let wave = SpeechClient.wave([0, 0.25, -0.25, 1, -1, 2, -2, .nan, .infinity, -.infinity, 0.5])
+        XCTAssertEqual([UInt8](wave.prefix(44)), [0x52, 0x49, 0x46, 0x46, 58, 0, 0, 0, 0x57, 0x41, 0x56, 0x45,
+                                                  0x66, 0x6D, 0x74, 0x20, 16, 0, 0, 0, 1, 0, 1, 0,
+                                                  0x80, 0x3E, 0, 0, 0x00, 0x7D, 0, 0, 2, 0, 16, 0,
+                                                  0x64, 0x61, 0x74, 0x61, 22, 0, 0, 0])
+        let bytes = [UInt8](wave.dropFirst(44))
+        let samples = stride(from: 0, to: bytes.count, by: 2).map { Int16(bitPattern: UInt16(bytes[$0]) | UInt16(bytes[$0 + 1]) << 8) }
+        XCTAssertEqual(samples, [0, 8192, -8192, 32767, -32767, 32767, -32767, 0, 0, 0, 16384])
+    }
+
     private func transcribe(apiKey: String? = "secret-test", endpoint: String? = nil) async throws -> String {
         let provider = ProviderConfiguration(name: "Fixture", kind: .openAI, endpoint: endpoint ?? "https://\(host!)/v1", model: "fixture-speech")
         return try await SpeechClient(session: session).transcribe(samples: Array(repeating: 0.1, count: 1600), provider: provider,
