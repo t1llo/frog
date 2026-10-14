@@ -130,6 +130,8 @@ struct OrganizerMenuState: Equatable {
     // A hide that waits for a tick that can judge the bar: at start when the icons are to
     // start hidden, and when the arrow or the shortcut asked while the bar gave no frames.
     private var pendingCollapse = false
+    // Only the hide at start yields to an open settings page; one that was asked for does not.
+    private var pendingCollapseAsked = false
     private var settingsVisible = false
     private var shortcutsSuspended = false
     private var registeredHotkey: Hotkey?
@@ -172,7 +174,7 @@ struct OrganizerMenuState: Equatable {
             // New status items are inserted on the left, so create the recovery arrow first.
             install(.toggle); install(.divider)
             isInstalled = true
-            pendingCollapse = settings.startCollapsed
+            pendingCollapse = settings.startCollapsed; pendingCollapseAsked = false
             if automaticTicks {
                 screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                                         object: nil, queue: .main) { [weak self] _ in
@@ -236,7 +238,7 @@ struct OrganizerMenuState: Equatable {
         guard isExpanded else { return }
         // Nothing was hidden. An arrangement problem is explained on the page that tells how
         // to repair it; a bar that gives no frames for a moment is asked again by the timer.
-        if issue != nil { onShowSettings?() } else if !geometryAvailable { pendingCollapse = true }
+        if issue != nil { onShowSettings?() } else if !geometryAvailable { pendingCollapse = true; pendingCollapseAsked = true }
     }
 
     func reveal() {
@@ -319,7 +321,7 @@ struct OrganizerMenuState: Equatable {
         // the second divider at its new width would still be at its old place for collapse().
         if pendingCollapse && !env.pointerInMenuBar && !env.mouseDown {
             pendingCollapse = false
-            if !settingsVisible && !isEditingArrangement { collapse() }
+            if (pendingCollapseAsked || !settingsVisible) && !isEditingArrangement { collapse() }
         }
         applyLengths(env)
         if !isExpanded && settings.hoverToReveal && env.pointerInMenuBar && !env.mouseDown {

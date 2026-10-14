@@ -279,6 +279,20 @@ import FrogCore
         fixture.items.framesAvailable = true
         fixture.organizer.tick()
         XCTAssertTrue(fixture.organizer.isExpanded, "Asking for everything afterwards takes the request back")
+
+        // An open settings page holds back only the hide at start, not one that was asked for.
+        fixture.organizer.setEditingArrangement(false)
+        fixture.organizer.setSettingsVisible(true)
+        fixture.items.framesAvailable = false
+        fixture.keys.action?()
+        fixture.items.framesAvailable = true
+        fixture.organizer.tick()
+        XCTAssertFalse(fixture.organizer.isExpanded, "The shortcut hides while the settings page is open")
+        fixture.organizer.stop()
+        settings.startCollapsed = true
+        fixture.organizer.configure(enabled: true, settings: settings)
+        fixture.organizer.tick()
+        XCTAssertTrue(fixture.organizer.isExpanded, "Switching the organizer on from its settings page does not hide at once")
         fixture.organizer.stop()
     }
 
