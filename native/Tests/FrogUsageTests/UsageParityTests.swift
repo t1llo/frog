@@ -213,4 +213,88 @@ import XCTest
         XCTAssertTrue(scan.records.isEmpty)
         XCTAssertFalse(scan.found)
     }
+
+    func testOpenCodeIsReadAfterItQuitsAndRemovesItsWALFiles() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("opencode.db")
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(url.path, &db), SQLITE_OK)
+        func sql(_ value: String) { XCTAssertEqual(sqlite3_exec(db, value, nil, nil, nil), SQLITE_OK) }
+        sql("PRAGMA journal_mode=WAL;")
+        sql("CREATE TABLE message (time_created INTEGER, data TEXT);")
+        let time = Int64(Date().timeIntervalSince1970 * 1000)
+        sql("INSERT INTO message VALUES (\(time), '{\"role\":\"assistant\",\"providerID\":\"openai\",\"modelID\":\"gpt-5.1\",\"tokens\":{\"input\":10}}');")
+        // Closing checkpoints the WAL. OpenCode then removes both files; this SQLite keeps them.
+        sqlite3_close(db)
+        for suffix in ["-wal", "-shm"] { try? FileManager.default.removeItem(atPath: url.path + suffix) }
+        let scan = await OpenCodeReader(root: root).scan()
+        XCTAssertEqual(scan.records.first?.input, 10, "Without its WAL index only a normal connection can read the database")
+        XCTAssertNil(scan.warning)
+    }
+
+    func testOpenCodeDatabaseWithoutUsageTablesIsFoundWithoutAWarning() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(root.appendingPathComponent("opencode.db").path, &db), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        func sql(_ value: String) { XCTAssertEqual(sqlite3_exec(db, value, nil, nil, nil), SQLITE_OK) }
+        sql("PRAGMA journal_mode=WAL;")
+        sql("CREATE TABLE project (id TEXT);")
+        let reader = OpenCodeReader(root: root)
+        var scan = await reader.scan()
+        XCTAssertTrue(scan.found)
+        XCTAssertTrue(scan.records.isEmpty)
+        XCTAssertNil(scan.warning, "A database that never held usage has nothing that failed to refresh")
+        sql("INSERT INTO project VALUES ('next');")
+        scan = await reader.scan()
+        XCTAssertNil(scan.warning, "Nor after it changes")
+        sql("CREATE TABLE message (time_created INTEGER, data TEXT);")
+        let time = Int64(Date().timeIntervalSince1970 * 1000)
+        sql("INSERT INTO message VALUES (\(time), '{\"role\":\"assistant\",\"providerID\":\"openai\",\"modelID\":\"gpt-5.1\",\"tokens\":{\"input\":7}}');")
+        scan = await reader.scan()
+        XCTAssertEqual(scan.records.first?.input, 7, "Usage tables created later are read")
+    }
+
+    func testCancelledOpenCodeScanReportsNoFailure() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(root.appendingPathComponent("opencode.db").path, &db), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        func sql(_ value: String) { XCTAssertEqual(sqlite3_exec(db, value, nil, nil, nil), SQLITE_OK) }
+        sql("PRAGMA journal_mode=WAL;")
+        sql("CREATE TABLE message (time_created INTEGER, data TEXT);")
+        let time = Int64(Date().timeIntervalSince1970 * 1000)
+        sql("INSERT INTO message VALUES (\(time), '{\"role\":\"assistant\",\"providerID\":\"openai\",\"modelID\":\"gpt-5.1\",\"tokens\":{\"input\":10}}');")
+        let reader = OpenCodeReader(root: root)
+        let first = await reader.revisedScan()
+        XCTAssertEqual(first.result.records.first?.input, 10)
+        sql("UPDATE message SET data=json_set(data, '$.tokens.input', 20);")
+        let cancelled = await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await reader.revisedScan()
+        }.value
+        XCTAssertNil(cancelled.result.warning, "A scan whose result is no longer wanted did not fail")
+        XCTAssertEqual(cancelled.revision, first.revision)
+        let next = await reader.revisedScan()
+        XCTAssertEqual(next.result.records.first?.input, 20)
+        XCTAssertNil(next.result.warning)
+    }
+
+    func testOpenCodeOpensANormalConnectionOnlyWhenReadOnlyCannotReachTheWALIndex() {
+        XCTAssertTrue(OpenCodeReader.Outcome.failed(SQLITE_CANTOPEN).needsReadWrite)
+        XCTAssertTrue(OpenCodeReader.Outcome.failed(SQLITE_READONLY).needsReadWrite)
+        XCTAssertTrue(OpenCodeReader.Outcome.failed(SQLITE_READONLY | 1 << 8).needsReadWrite, "SQLITE_READONLY_RECOVERY")
+        XCTAssertTrue(OpenCodeReader.Outcome.failed(SQLITE_READONLY | 5 << 8).needsReadWrite, "SQLITE_READONLY_CANTINIT")
+        let others: [OpenCodeReader.Outcome] = [.rows([]), .noUsageTables, .cancelled,
+                                                .failed(SQLITE_BUSY), .failed(SQLITE_CORRUPT), .failed(SQLITE_ERROR)]
+        for outcome in others {
+            XCTAssertFalse(outcome.needsReadWrite, "\(outcome)")
+        }
+    }
 }

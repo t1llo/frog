@@ -146,7 +146,10 @@ Implemented:
 - **OpenCode reliability:** unchanged database/WAL metadata reuse parsed counters.
   Changes reread the bounded horizon, preserving mutable-row/revert/fork semantics.
   Temporary query failures retain the last readable counters with a visible warning;
-  successful recovery clears it. Removed databases remove their counters.
+  successful recovery clears it. Removed databases remove their counters. A database
+  that never held usage tables is found and empty, without a warning. Reads use a
+  read-only connection; only when it cannot reach the WAL index OpenCode removes on
+  quitting is a normal connection tried. A cancelled scan opens nothing further.
 - **Presentation:** superseded by "Popup and readout" below. Popup content is created
   when opened; enabled background collection does not need a hosted popup view.
 - **Interaction follow-up:** weekly bars include On pace / Ahead of pace / Under pace

@@ -51,13 +51,24 @@ actor OpenCodeReader {
             let rows: [(key: String, record: TokenRecord)]
             if let previous, previous.stamps == before, before.first.flatMap({ $0 }) != nil {
                 rows = previous.rows
-            } else if let fresh = query(url, since: since) {
-                rows = fresh
-                // A concurrent writer must trigger another read rather than blessing stale data.
-                if before == stamps(url) { snapshots[url.path] = Snapshot(stamps: before, rows: fresh) }
             } else {
-                unreadable = true
-                rows = previous?.rows ?? []
+                switch query(url, since: since) {
+                case .rows(let fresh):
+                    rows = fresh
+                    // A concurrent writer must trigger another read rather than blessing stale data.
+                    if before == stamps(url) { snapshots[url.path] = Snapshot(stamps: before, rows: fresh) }
+                case .noUsageTables where previous?.rows.isEmpty ?? true:
+                    // Nothing was counted from it, so there is nothing to keep or to warn about.
+                    // Tables that vanish after usage was read are a schema change in progress.
+                    rows = []
+                    if before == stamps(url) { snapshots[url.path] = Snapshot(stamps: before, rows: []) }
+                case .cancelled:
+                    // Nobody takes this pass; the next one compares against the last full pass.
+                    return (out, !dbs.isEmpty, nil)
+                case .noUsageTables, .failed:
+                    unreadable = true
+                    rows = previous?.rows ?? []
+                }
             }
             for r in rows where r.record.date.timeIntervalSince1970 * 1000 >= Double(since) && seen.insert(r.key).inserted {
                 out.append(r.record)
@@ -82,29 +93,54 @@ actor OpenCodeReader {
         }
     }
 
-    /// Opened through SQLite itself, so writes still sitting in the -wal file are seen. A
-    /// read-only connection cannot recreate the -wal and -shm files OpenCode removes when it
-    /// quits, so if it cannot read, retry as a normal connection. Either way it only runs SELECTs.
-    private func query(_ url: URL, since: Int64) -> [(key: String, record: TokenRecord)]? {
-        query(url, since: since, flags: SQLITE_OPEN_READONLY)
-            ?? query(url, since: since, flags: SQLITE_OPEN_READWRITE)
+    /// What one connection made of a database.
+    enum Outcome {
+        case rows([(key: String, record: TokenRecord)])
+        /// The schema was read and holds neither usage table.
+        case noUsageTables
+        /// The SQLite result code of the call that failed.
+        case failed(Int32)
+        case cancelled
+
+        /// A read-only connection cannot recreate the -wal and -shm files OpenCode removes when
+        /// it quits, and then fails with SQLITE_CANTOPEN or SQLITE_READONLY. A normal connection
+        /// can read such a database; any other failure it would only repeat.
+        var needsReadWrite: Bool {
+            guard case .failed(let code) = self else { return false }
+            return code & 0xff == SQLITE_CANTOPEN || code & 0xff == SQLITE_READONLY
+        }
     }
 
-    private func query(_ url: URL, since: Int64, flags: Int32) -> [(key: String, record: TokenRecord)]? {
+    /// Opened through SQLite itself, so writes still sitting in the -wal file are seen. Only a
+    /// read-only connection that cannot reach the WAL index is retried as a normal connection.
+    /// Either way it only runs SELECTs.
+    private func query(_ url: URL, since: Int64) -> Outcome {
+        let outcome = query(url, since: since, flags: SQLITE_OPEN_READONLY)
+        guard outcome.needsReadWrite else { return outcome }
+        guard !Task.isCancelled else { return .cancelled }
+        return query(url, since: since, flags: SQLITE_OPEN_READWRITE)
+    }
+
+    private func query(_ url: URL, since: Int64, flags: Int32) -> Outcome {
         var db: OpaquePointer?
-        guard sqlite3_open_v2(url.path, &db, flags, nil) == SQLITE_OK else { sqlite3_close(db); return nil }
+        let opened = sqlite3_open_v2(url.path, &db, flags, nil)
+        guard opened == SQLITE_OK else { sqlite3_close(db); return .failed(opened) }
         defer { sqlite3_close(db) }
         sqlite3_busy_timeout(db, 2000)
         // V2 uses session_message and model.{providerID,id}; migrated databases can
         // retain V1 message rows too. Project only counters, never message contents.
         var schema: OpaquePointer?
-        guard sqlite3_prepare_v2(db, "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('message','session_message')", -1, &schema, nil) == SQLITE_OK else { return nil }
+        let preparedSchema = sqlite3_prepare_v2(db, "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('message','session_message')", -1, &schema, nil)
+        guard preparedSchema == SQLITE_OK else { return .failed(preparedSchema) }
         var tables = Set<String>()
-        while sqlite3_step(schema) == SQLITE_ROW {
+        var listed = sqlite3_step(schema)
+        while listed == SQLITE_ROW {
             if let name = sqlite3_column_text(schema, 0) { tables.insert(String(cString: name)) }
+            listed = sqlite3_step(schema)
         }
         sqlite3_finalize(schema)
-        guard !tables.isEmpty else { return nil }
+        guard listed == SQLITE_DONE else { return .failed(listed) }
+        guard !tables.isEmpty else { return .noUsageTables }
         let sql = ["message", "session_message"].filter { tables.contains($0) }.map { table in
             let modern = table == "session_message"
             let provider = modern ? "$.model.providerID" : "$.providerID"
@@ -122,13 +158,14 @@ actor OpenCodeReader {
             """
         }.joined(separator: " UNION ALL ")
         var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        let prepared = sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
+        guard prepared == SQLITE_OK else { return .failed(prepared) }
         defer { sqlite3_finalize(stmt) }
         sqlite3_bind_int64(stmt, 1, since)
         var rows: [(String, TokenRecord)] = []
         var result = sqlite3_step(stmt)
         while result == SQLITE_ROW {
-            if Task.isCancelled { return nil }
+            if Task.isCancelled { return .cancelled }
             defer { result = sqlite3_step(stmt) }
             let text = { (i: Int32) in sqlite3_column_text(stmt, i).map { String(cString: $0) } ?? "" }
             let int = { (i: Int32) in Int(sqlite3_column_int64(stmt, i)) }
@@ -153,7 +190,7 @@ actor OpenCodeReader {
             rows.append((key, TokenRecord(date: date, model: model, provider: provider, source: .opencode,
                                           input: input, output: output, cacheWrite: write, cacheRead: read, cost: cost)))
         }
-        return result == SQLITE_DONE ? rows : nil
+        return result == SQLITE_DONE ? .rows(rows) : .failed(result)
     }
 
     /// "openai/gpt-5.2-medium" -> "gpt-5.2". Some auth plugins put the reasoning effort in the id.
