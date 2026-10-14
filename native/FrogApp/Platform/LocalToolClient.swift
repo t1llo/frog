@@ -148,12 +148,14 @@ actor LocalToolClient {
         }
         var supported = result.status == 0 && required.allSatisfy { help.contains($0) }
         var unverifiedVersion: String?
-        if let verified = Self.verifiedVersions[kind], supported {
+        // Also read when the help lacks a flag: an update that changed them is named by its version.
+        if let verified = Self.verifiedVersions[kind] {
             let version = try await LocalToolProcess.run(executable: executable, arguments: ["--version"],
                 environment: environment(for: kind, workspace: workspace), directory: workspace.directory, timeout: 8)
             let value = String(decoding: version.stdout, as: UTF8.self)
-            supported = version.status == 0 && value.hasPrefix(verified.prefix)
-            if !supported, version.status == 0 { unverifiedVersion = Self.versionNumber(value) }
+            let isVerified = version.status == 0 && value.hasPrefix(verified.prefix)
+            supported = supported && isVerified
+            if !isVerified, version.status == 0 { unverifiedVersion = Self.versionNumber(value) }
         }
         let capability = Capability(modified: modified, supported: supported, unverifiedVersion: unverifiedVersion)
         capabilities[executable] = capability

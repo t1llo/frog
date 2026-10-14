@@ -338,6 +338,27 @@ final class LocalToolClientTests: XCTestCase {
         XCTAssertFalse(opencode.detail.contains("/private"), "Only the version number of the output is shown")
     }
 
+    func testUnverifiedVersionWhoseHelpLacksFrogsFlagsIsNamedToo() async throws {
+        let root = try directory()
+        // An update that dropped one of the flags Frog relies on.
+        _ = try executable("""
+        if [ "$1" = '--version' ]; then echo 'codex-cli 0.161.0'; exit; fi
+        echo '--strict-config --ignore-user-config --ephemeral --json'
+        """, name: "codex", in: root)
+        // OpenCode 1.x has no --standalone.
+        _ = try executable("""
+        if [ "$1" = '--version' ]; then echo '1.4.2'; exit; fi
+        echo '--format --agent'
+        """, name: "opencode", in: root)
+        let client = LocalToolClient(discovery: .init(home: root, environment: [:], searchDirectories: [root]), temporaryRoot: root)
+        let codex = await client.status(for: .codex, checkAuthentication: false)
+        let opencode = await client.status(for: .opencode, checkAuthentication: false)
+        XCTAssertFalse(codex.supportsTextTransforms)
+        XCTAssertTrue(codex.detail.contains("0.161.0") && codex.detail.contains("0.159.x"), codex.detail)
+        XCTAssertFalse(opencode.supportsTextTransforms)
+        XCTAssertTrue(opencode.detail.contains("1.4.2") && opencode.detail.contains("2.x"), opencode.detail)
+    }
+
     func testOutputLimitAndTimeoutAreBounded() async throws {
         let root = try directory()
         let noisy = try executable("while :; do /usr/bin/head -c 8192 /dev/zero; done", in: root)
