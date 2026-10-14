@@ -179,7 +179,13 @@ final class ClipboardHistoryController {
                     self.cancel()
                 }
             }
-        panel.center(); panel.makeKeyAndOrderFront(nil)
+        // On the display with keyboard focus, where the field it pastes into is, else under the pointer.
+        if let screen = NSScreen.main ?? NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) {
+            panel.setFrameOrigin(ClipboardHistoryLayout.origin(size: panel.frame.size, in: screen.visibleFrame))
+        } else {
+            panel.center()
+        }
+        panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(nil)
     }
 

@@ -13,6 +13,13 @@ enum ClipboardHistoryLayout {
         let contentHeight = entryCount == 0 ? emptyHeight : CGFloat(min(visibleRows, entryCount)) * rowHeight
         return CGSize(width: width, height: headerHeight + footerHeight + inset * 2 + 2 + contentHeight)
     }
+
+    /// Where `NSWindow.center()` puts a window, but on the screen given: across the middle,
+    /// three quarters of the way up the free height.
+    static func origin(size: CGSize, in visibleFrame: CGRect) -> CGPoint {
+        CGPoint(x: (visibleFrame.minX + (visibleFrame.width - size.width) / 2).rounded(.down),
+                y: (visibleFrame.minY + (visibleFrame.height - size.height) * 3 / 4).rounded(.down))
+    }
 }
 
 struct ClipboardHistoryView: View {

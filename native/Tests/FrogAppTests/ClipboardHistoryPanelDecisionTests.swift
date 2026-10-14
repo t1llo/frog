@@ -47,4 +47,17 @@ final class ClipboardHistoryPanelDecisionTests: XCTestCase {
             windowNumber: 0, context: nil, characters: "a", charactersIgnoringModifiers: "a", isARepeat: false, keyCode: 0))
         XCTAssertTrue(ClipboardHistoryController.isNewInput(keyDown))
     }
+
+    func testPanelOpensOnTheScreenItIsGiven() {
+        let size = CGSize(width: 480, height: 200)
+        // Where the panel opened so far on a built-in display: where NSWindow.center() puts it.
+        let builtIn = CGRect(x: 0, y: 0, width: 1512, height: 949)
+        XCTAssertEqual(ClipboardHistoryLayout.origin(size: size, in: builtIn), CGPoint(x: 516, y: 561))
+        // A second display to the right of it and lower down.
+        let second = CGRect(x: 1512, y: -300, width: 1920, height: 1055)
+        let origin = ClipboardHistoryLayout.origin(size: size, in: second)
+        XCTAssertTrue(second.contains(CGRect(origin: origin, size: size)), "The panel lies on the second display")
+        XCTAssertEqual(origin.x + size.width / 2, second.midX, "Centred across that display")
+        XCTAssertGreaterThan(origin.y + size.height / 2, second.midY, "Somewhat above its middle")
+    }
 }
