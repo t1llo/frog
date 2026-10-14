@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import FrogCore
+import os
 import WhisperKit
 #if arch(arm64)
 import MLXLLM
@@ -12,9 +13,9 @@ import Hub
 /// Download ownership, installed paths and model residency stay behind one service.
 @MainActor
 final class LocalModels: ObservableObject {
-    /// The fraction counts the files being fetched. A downloader that reports 1 and
-    /// keeps working is preparing the model, which has no fraction (`preparing`).
-    typealias Downloader = @Sendable (LocalModelDescriptor, URL, @escaping @Sendable (Double) -> Void) async throws -> URL
+    /// A downloader that reports a fraction of 1 and keeps working is preparing the
+    /// model, which has no fraction (`preparing`).
+    typealias Downloader = @Sendable (LocalModelDescriptor, URL, @escaping @Sendable (DownloadProgress) -> Void) async throws -> URL
     /// The bytes free on the disk that holds a folder, or nil when it cannot be told.
     typealias FreeSpaceReader = @Sendable (URL) -> Int64?
     static var supported: Bool {
@@ -30,7 +31,7 @@ final class LocalModels: ObservableObject {
     @Published private(set) var catalog = LocalModelDescriptor.catalog
     var onInstall: ((LocalModelDescriptor) -> Void)?
     var onInventoryChanged: (() -> Void)?
-    @Published private(set) var progress: [String: Double] = [:]
+    @Published private(set) var progress: [String: DownloadProgress] = [:]
     /// Downloads whose files are in and whose model is being made ready for use.
     @Published private(set) var preparing = Set<String>()
     @Published private(set) var errors: [String: String] = [:]
@@ -193,7 +194,7 @@ final class LocalModels: ObservableObject {
             errors[model.id] = "A folder named \(model.id) already exists without a completed Frog installation. Choose another download folder or move that folder aside."
             return
         }
-        errors[model.id] = nil; progress[model.id] = 0
+        errors[model.id] = nil; progress[model.id] = DownloadProgress(fraction: 0)
         downloads[model.id] = Task { [weak self] in
             guard let self else { return }
             defer { self.downloads[model.id] = nil; self.progress[model.id] = nil; self.preparing.remove(model.id); self.discarding.remove(model.id) }
@@ -204,11 +205,11 @@ final class LocalModels: ObservableObject {
                 try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
                 if !marked { try Data().write(to: marker); marked = true }
                 self.unfinished.insert(model.id)
-                let url = try await self.downloader(model, base) { [weak self] fraction in
+                let url = try await self.downloader(model, base) { [weak self] update in
                     Task { @MainActor [weak self] in
                         guard let self, self.downloads[model.id] != nil else { return }
-                        self.progress[model.id] = fraction
-                        if fraction >= 1 { self.preparing.insert(model.id) }
+                        self.progress[model.id] = update
+                        if update.hasAllFiles { self.preparing.insert(model.id) }
                     }
                 }
                 try Task.checkCancellation()
@@ -382,6 +383,83 @@ final class LocalModels: ObservableObject {
     }
 }
 
+/// Measures a model download for its row: the bytes fetched so far, a fraction
+/// that follows them, and a speed averaged over the last few seconds.
+///
+/// The libraries count files: each file of a download is one equal step of their
+/// progress, whether it is a small configuration or the weights. The order of the
+/// files is not known in advance, so their sizes cannot be lined up with those
+/// steps. The bytes are read from the model folder instead, where every file lands.
+final class DownloadMeter: @unchecked Sendable {
+    /// The speed is averaged over this many seconds…
+    static let window: TimeInterval = 5
+    /// …and reported once the average covers this many, so a first burst does not
+    /// promise a time left.
+    static let steady: TimeInterval = 3
+    private let folder: URL
+    private let expected: Int64?
+    private let now: @Sendable () -> TimeInterval
+    private let lock = NSLock()
+    private var samples: [(time: TimeInterval, bytes: Int64)] = []
+    private var received: Int64 = 0
+    /// What the folder held when the last file landed, and the estimated bytes of the file in flight.
+    private var landed: Int64 = 0, flowing: Int64 = 0
+    private var filesDone: Int64 = -1
+    private var lastFlow: TimeInterval = 0
+
+    init(folder: URL, expected: Int64?, now: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
+        self.folder = folder; self.expected = expected.flatMap { $0 > 0 ? $0 : nil }; self.now = now
+    }
+
+    /// For a library that writes each file into the folder as it arrives (WhisperKit).
+    func written(fraction: Double) -> DownloadProgress {
+        lock.withLock { report(Self.fileBytes(folder), fraction: fraction, at: now()) }
+    }
+
+    /// For swift-transformers' snapshot, whose progress counts files and which keeps
+    /// the file in flight in a temporary file until it is complete. The bytes of
+    /// that file follow from the speed the library reports with each step, and the
+    /// folder is read again whenever a file lands, which corrects the estimate.
+    func snapshot(_ progress: Progress) -> DownloadProgress {
+        lock.withLock {
+            let time = now()
+            if progress.completedUnitCount != filesDone {
+                filesDone = progress.completedUnitCount
+                landed = Self.fileBytes(folder); flowing = 0; lastFlow = time
+            } else if let speed = progress.userInfo[.throughputKey] as? Double {
+                // The library's speed covers the time since its previous step that
+                // carried bytes; a heartbeat while nothing arrives carries no speed.
+                flowing += Int64(max(speed, 0) * (time - lastFlow)); lastFlow = time
+            }
+            return report(landed + flowing, fraction: progress.fractionCompleted, at: time)
+        }
+    }
+
+    private func report(_ bytes: Int64, fraction library: Double, at time: TimeInterval) -> DownloadProgress {
+        received = min(max(bytes, received), expected ?? .max)
+        samples.append((time, received))
+        while samples.count > 1, samples[1].time <= time - Self.window { samples.removeFirst() }
+        let span = time - samples[0].time
+        let speed = span >= Self.steady ? Double(received - samples[0].bytes) / span : nil
+        // A full bar says that the files are in: only the library may say that.
+        let fraction = library >= 1 ? 1 : expected.map { min(Double(received) / Double($0), 0.999) } ?? library
+        return DownloadProgress(fraction: fraction, bytesReceived: received, bytesExpected: expected, bytesPerSecond: speed)
+    }
+
+    /// The length of the files in a folder, hidden partial files included: what was
+    /// fetched, not what the disk allots to it.
+    static func fileBytes(_ folder: URL) -> Int64 {
+        let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey]
+        guard let files = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: keys) else { return 0 }
+        var total: Int64 = 0
+        for case let file as URL in files {
+            guard let values = try? file.resourceValues(forKeys: Set(keys)), values.isRegularFile == true else { continue }
+            total += Int64(values.fileSize ?? 0)
+        }
+        return total
+    }
+}
+
 protocol LocalInferenceEngine: Actor {
     var loadedIDs: Set<String> { get }
     func prepare(model: LocalModelDescriptor, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws
@@ -407,7 +485,7 @@ actor LocalInference: LocalInferenceEngine {
     private var textID: String?
     var loadedIDs: Set<String> { Set([speechID, textID].compactMap { $0 }) }
 
-    static func download(_ model: LocalModelDescriptor, base: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+    static func download(_ model: LocalModelDescriptor, base: URL, progress: @escaping @Sendable (DownloadProgress) -> Void) async throws -> URL {
         do { return try await fetch(model, base: base, progress: progress) }
         catch is CancellationError { throw CancellationError() }
         catch { throw Task.isCancelled ? error : FrogError.message(downloadFailure(error, model: model)) }
@@ -445,21 +523,36 @@ actor LocalInference: LocalInferenceEngine {
         }
         return "Could not download \(model.name). \(error.localizedDescription)"
     }
-    private static func fetch(_ model: LocalModelDescriptor, base: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+    private static func fetch(_ model: LocalModelDescriptor, base: URL, progress: @escaping @Sendable (DownloadProgress) -> Void) async throws -> URL {
         #if arch(arm64)
         if model.backend == .parakeet { return try await ParakeetRuntime.download(model, base: base, progress: progress) }
+        let meter = DownloadMeter(folder: base, expected: model.downloadBytes)
         if model.backend == .whisperKit {
-            let url = try await WhisperKit.download(variant: model.variant!, downloadBase: base, from: model.repository) { progress($0.fractionCompleted) }
+            // WhisperKit appends each file to a partial file in the model folder, so
+            // the folder holds every byte so far. It is read twice a second, which
+            // also shows a download that has stopped receiving anything.
+            let fraction = OSAllocatedUnfairLock(initialState: 0.0)
+            let reading = Task.detached {
+                while !Task.isCancelled {
+                    progress(meter.written(fraction: min(fraction.withLock { $0 }, 0.999)))
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+            }
+            let url: URL
+            do {
+                url = try await WhisperKit.download(variant: model.variant!, downloadBase: base, from: model.repository) { update in fraction.withLock { $0 = update.fractionCompleted } }
+                reading.cancel(); await reading.value
+            } catch { reading.cancel(); await reading.value; throw error }
             try Task.checkCancellation()
             // Download/tokenize during explicit installation, not the first recording.
             // Loading the model once takes a while and reports nothing: say so
             // instead of leaving a bar that stands still.
-            progress(1)
+            progress(.filesAreIn)
             let kit = try await WhisperKit(WhisperKitConfig(modelFolder: url.path, tokenizerFolder: base, computeOptions: whisperCompute, verbose: false, logLevel: .none, prewarm: false, load: true, download: false))
             await kit.unloadModels()
             return url
         }
-        return try await HubApi.modelFolder(base).snapshot(from: model.repository, matching: LocalModelDescriptor.mlxDownloadPatterns) { progress($0.fractionCompleted) }
+        return try await HubApi.modelFolder(base).snapshot(from: model.repository, matching: LocalModelDescriptor.mlxDownloadPatterns) { progress(meter.snapshot($0)) }
         #else
         throw FrogError.message("Built-in local models require Apple silicon.")
         #endif

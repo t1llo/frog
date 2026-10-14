@@ -98,3 +98,48 @@ extension Configuration {
         return modelCatalog.filter { visible.contains($0.id) }
     }
 }
+
+/// Where a model download stands: the fraction its bar shows, and the line under
+/// the bar about bytes, speed and the time left.
+public struct DownloadProgress: Equatable, Sendable {
+    /// From 0 to 1, by bytes when their total is known. 1 says that the files are in
+    /// and the model is being made ready, which has no fraction.
+    public var fraction: Double
+    public var bytesReceived: Int64?
+    public var bytesExpected: Int64?
+    /// Averaged over the last few seconds; nil until that average is steady.
+    public var bytesPerSecond: Double?
+    public init(fraction: Double, bytesReceived: Int64? = nil, bytesExpected: Int64? = nil, bytesPerSecond: Double? = nil) {
+        self.fraction = fraction; self.bytesReceived = bytesReceived; self.bytesExpected = bytesExpected; self.bytesPerSecond = bytesPerSecond
+    }
+    public static let filesAreIn = DownloadProgress(fraction: 1)
+    public var hasAllFiles: Bool { fraction >= 1 }
+
+    /// "412 MB of 1 GB · 8.1 MB/s · about 1 min left". What is not known is left
+    /// out; a download that reports only a fraction has no line.
+    public var summary: String? {
+        var parts: [String] = []
+        if let received = bytesReceived {
+            parts.append(bytesExpected.map { "\(Self.bytes(received)) of \(Self.bytes($0))" } ?? Self.bytes(received))
+        }
+        if let rate = bytesPerSecond {
+            // A speed of zero promises no time left: nothing has arrived for a while.
+            if rate < 1 { parts.append("stalled") } else {
+                parts.append("\(Self.bytes(Int64(rate)))/s")
+                if let received = bytesReceived, let expected = bytesExpected, expected > received {
+                    parts.append(Self.timeLeft(Double(expected - received) / rate))
+                }
+            }
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+    static func timeLeft(_ seconds: Double) -> String {
+        if seconds < 60 { return "less than a minute left" }
+        let minutes = Int((seconds / 60).rounded())
+        return minutes < 90 ? "about \(minutes) min left" : "about \(Int((seconds / 3600).rounded())) h left"
+    }
+    /// Like `LocalModelDescriptor.byteCount`, with "0 bytes" for a download that has none yet.
+    private static func bytes(_ count: Int64) -> String {
+        count.formatted(.byteCount(style: .file, spellsOutZero: false).locale(Locale(identifier: "en")))
+    }
+}

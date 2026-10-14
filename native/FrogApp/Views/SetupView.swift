@@ -102,11 +102,12 @@ struct SetupView: View {
                             if model.localModels.installed.contains(item.id) {
                                 Label("Downloaded", systemImage: "checkmark.circle.fill").foregroundStyle(FrogStyle.accent)
                             } else if let progress = model.localModels.progress[item.id] {
-                                HStack { ModelDownloadProgress(fraction: progress, preparing: model.localModels.preparing.contains(item.id), width: 90); Button("Cancel") { model.localModels.cancelDownload(item.id) } }
+                                HStack { ModelDownloadProgress(fraction: progress.fraction, preparing: model.localModels.preparing.contains(item.id), width: 90); Button("Cancel") { model.localModels.cancelDownload(item.id) } }
                             } else {
                                 Button("Download") { model.localModels.download(item) }.disabled(!LocalModels.supported)
                             }
                         }
+                        ModelDownloadSummary(progress: model.localModels.progress[item.id], preparing: model.localModels.preparing.contains(item.id))
                         if let error = model.localModels.errors[item.id] { Text(error).font(.caption).foregroundStyle(FrogStyle.warning) }
                     }
                 }

@@ -58,7 +58,7 @@ struct ModelInventory: View {
                             Spacer()
                             IconAction(title: "Model information", symbol: "info.circle") { information = item }
                             if let progress = model.localModels.progress[item.id] {
-                                ModelDownloadProgress(fraction: progress, preparing: model.localModels.preparing.contains(item.id), width: 70)
+                                ModelDownloadProgress(fraction: progress.fraction, preparing: model.localModels.preparing.contains(item.id), width: 70)
                                 Button("Cancel") { model.localModels.cancelDownload(item.id) }.controlSize(.small)
                             } else if installed {
                                 Menu {
@@ -77,6 +77,7 @@ struct ModelInventory: View {
                                 }
                             }
                         }
+                        ModelDownloadSummary(progress: model.localModels.progress[item.id], preparing: model.localModels.preparing.contains(item.id))
                         if let error = model.localModels.errors[item.id] { Text(error).font(.caption).foregroundStyle(FrogStyle.warning).textSelection(.enabled) }
                     }.padding(.vertical, 10).padding(.horizontal, 8)
                     if item.id != items.last?.id { Divider().opacity(0.5) }
@@ -124,6 +125,19 @@ struct ModelDownloadProgress: View {
             HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Preparing…").font(.system(size: 11)).foregroundStyle(FrogStyle.muted) }
         } else {
             ProgressView(value: fraction).frame(width: width)
+        }
+    }
+}
+
+/// The line under a download's bar while the files arrive: the bytes so far, the
+/// speed and the time left, so that a slow download can be told from a stalled one.
+struct ModelDownloadSummary: View {
+    let progress: DownloadProgress?
+    let preparing: Bool
+    var body: some View {
+        if !preparing, let summary = progress?.summary {
+            Text(summary).font(.system(size: 10)).monospacedDigit().foregroundStyle(FrogStyle.muted)
+                .lineLimit(1).frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 }

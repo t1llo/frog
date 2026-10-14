@@ -255,7 +255,7 @@ final class LocalModelsTests: XCTestCase {
         // Like a Whisper installation: the files arrive, then the model is loaded
         // once, which takes a while and has no fraction to report.
         let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: { model, base, progress in
-            progress(0.5)
+            progress(DownloadProgress(fraction: 0.5))
             await gate.wait()
             let folder = try await Self.fixtureDownload(model, base, progress)
             await gate.wait()
@@ -263,12 +263,12 @@ final class LocalModelsTests: XCTestCase {
         })
         let descriptor = LocalModelDescriptor.find("whisper-base")!
         models.download(descriptor); await gate.waitUntilStarted()
-        for _ in 0..<1000 where models.progress[descriptor.id] != 0.5 { await Task.yield() }
-        XCTAssertEqual(models.progress[descriptor.id], 0.5)
+        for _ in 0..<1000 where models.progress[descriptor.id]?.fraction != 0.5 { await Task.yield() }
+        XCTAssertEqual(models.progress[descriptor.id]?.fraction, 0.5)
         XCTAssertTrue(models.preparing.isEmpty, "Files are still arriving")
 
         await gate.resume(); await gate.waitUntilStarted()
-        for _ in 0..<1000 where models.progress[descriptor.id] != 1 { await Task.yield() }
+        for _ in 0..<1000 where models.progress[descriptor.id]?.fraction != 1 { await Task.yield() }
         XCTAssertEqual(models.preparing, [descriptor.id], "A full bar that keeps standing still says nothing about what Frog is doing")
 
         await gate.resume(); await models.waitForDownload(descriptor.id)
@@ -606,15 +606,15 @@ final class LocalModelsTests: XCTestCase {
         XCTAssertEqual(calls, 0)
     }
 
-    nonisolated private static func fixtureDownload(_ model: LocalModelDescriptor, _ base: URL, _ progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+    nonisolated private static func fixtureDownload(_ model: LocalModelDescriptor, _ base: URL, _ progress: @escaping @Sendable (DownloadProgress) -> Void) async throws -> URL {
         let folder = base.appendingPathComponent("fixture")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try Data("fixture".utf8).write(to: folder.appendingPathComponent("weights"))
-        progress(1)
+        progress(.filesAreIn)
         return folder
     }
     /// Weights big enough that what the folder takes on disk is not one block.
-    nonisolated private static func sizedDownload(_ model: LocalModelDescriptor, _ base: URL, _ progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+    nonisolated private static func sizedDownload(_ model: LocalModelDescriptor, _ base: URL, _ progress: @escaping @Sendable (DownloadProgress) -> Void) async throws -> URL {
         let folder = try await fixtureDownload(model, base, progress)
         try Data(repeating: 7, count: 100_000).write(to: folder.appendingPathComponent("weights"))
         return folder

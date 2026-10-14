@@ -9,9 +9,12 @@ import Hub
 /// bypassing FluidAudio's convenience loaders and their auto-download recovery.
 actor ParakeetRuntime {
     private var manager: AsrManager?
-    static func download(_ model: LocalModelDescriptor, base: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+    /// The files come through the same Hugging Face client as MLX models, not
+    /// FluidAudio's downloader, so the progress has bytes, speed and time left too.
+    static func download(_ model: LocalModelDescriptor, base: URL, progress: @escaping @Sendable (DownloadProgress) -> Void) async throws -> URL {
         let patterns = ["Preprocessor.mlmodelc/*", "Encoder.mlmodelc/*", "Decoder.mlmodelc/*", "JointDecision.mlmodelc/*", "parakeet_vocab.json"]
-        return try await HubApi.modelFolder(base).snapshot(from: model.repository, matching: patterns) { progress($0.fractionCompleted) }
+        let meter = DownloadMeter(folder: base, expected: model.downloadBytes)
+        return try await HubApi.modelFolder(base).snapshot(from: model.repository, matching: patterns) { progress(meter.snapshot($0)) }
     }
     func load(from directory: URL, version: AsrModelVersion) async throws {
         func component(_ name: String, cpuOnly: Bool = false) async throws -> MLModel {
