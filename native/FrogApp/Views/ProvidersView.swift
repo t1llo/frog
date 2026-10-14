@@ -69,7 +69,7 @@ struct ProvidersView: View {
                     if providers.isEmpty { Text(search.isEmpty ? "Connect a cloud provider, Ollama or LM Studio." : "No providers match this search.").font(.caption).foregroundStyle(.secondary).padding(14) }
                 }
             }
-            }.frame(maxWidth: .infinity, alignment: .leading)
+            }.frame(maxWidth: .infinity, alignment: .leading).minimalScrollbars()
             }
         }.padding(20).frame(maxWidth: 1080).frame(maxWidth: .infinity, alignment: .top)
         .buttonStyle(FrogButtonStyle())
@@ -248,7 +248,7 @@ struct ProviderEditor: View {
                     }
                     }
                     if let validation { InlineIssue(message: validation) }
-                }.padding(.horizontal, 20).padding(.bottom, 12)
+                }.padding(.horizontal, 20).padding(.bottom, 12).minimalScrollbars()
             }
             HStack {
                 Button("Cancel") { testTask?.cancel(); discoveryTask?.cancel(); dismiss() }.keyboardShortcut(.cancelAction)

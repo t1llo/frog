@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import FrogCore
 @testable import FrogApp
 
 /// The thin, overlay scrollers of Frog are set by a probe that has to sit inside the scroll view.
@@ -20,6 +21,19 @@ final class PageScrollbarTests: XCTestCase {
         let (host, window) = place(RulesView().environmentObject(model))
         defer { window.close() }
         try assertThinScrollers(in: host)
+    }
+
+    func testTheModelsPageAndTheProviderEditorGetThinScrollers() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil })
+        defer { model.shutdown() }
+        let (page, pageWindow) = place(ProvidersView().environmentObject(model))
+        defer { pageWindow.close() }
+        try assertThinScrollers(in: page)
+        let (editor, editorWindow) = place(ProviderEditor(provider: ProviderConfiguration(kind: .openAI)).environmentObject(model))
+        defer { editorWindow.close() }
+        try assertThinScrollers(in: editor)
     }
 
     private func assertThinScrollers(in host: NSView, file: StaticString = #filePath, line: UInt = #line) throws {
