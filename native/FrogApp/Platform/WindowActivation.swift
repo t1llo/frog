@@ -61,13 +61,20 @@ enum WindowActivation {
 actor WindowActivationExecutor {
     struct Writer: Sendable {
         var isTrusted: @Sendable () -> Bool = { AXIsProcessTrusted() }
-        var isWindow: @Sendable (WindowCatalog.Target) -> Bool = { target in
+        /// nil: its owner did not answer in time, busy coming forward say, which says nothing about the window.
+        var isWindow: @Sendable (WindowCatalog.Target) -> Bool? = { target in
             guard let element = target.element else { return false }
             AXUIElementSetMessagingTimeout(element, 0.1)
             var pid: pid_t = 0
-            return AXUIElementGetPid(element, &pid) == .success && pid == target.pid
+            guard AXUIElementGetPid(element, &pid) == .success, pid == target.pid else { return false }
+            var role: CFTypeRef?
+            switch AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role) {
+            case .success: break
+            case .cannotComplete: return nil
+            default: return false
+            }
+            return role as? String == kAXWindowRole
                 && (target.windowID.map { WindowSpaceBridge.windowID(element) == $0 } ?? true)
-                && AXRead.string(element, kAXRoleAttribute) == kAXWindowRole
         }
         var isMinimized: @Sendable (WindowCatalog.Target) -> Bool = { $0.element.map { AXRead.boolean($0, kAXMinimizedAttribute) == true } ?? false }
         var unminimize: @Sendable (WindowCatalog.Target) -> Bool = {
@@ -138,13 +145,23 @@ actor WindowActivationExecutor {
         var target = again ?? (prepared?.id == target.id ? prepared! : target)
         if prepared?.id == target.id { prepared = nil }
         guard eligible(), writer.isTrusted() else { return false }
-        if !writer.isWindow(target) {
+        // An owner busy coming forward may not answer at first, about its window or its raise.
+        // It gets one second for both; a wait stops for input, as a retried raise does below.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+        var valid = writer.isWindow(target)
+        if valid == nil { finishing = false }
+        while valid == nil, eligible(), ContinuousClock.now < deadline {
+            do { try await Task.sleep(for: .milliseconds(40)) } catch { return false }
+            guard eligible() else { return false }
+            valid = writer.isWindow(target)
+        }
+        if valid != true {
             // Some owners replace their AX element when its Space becomes
             // visible. Re-resolve the exact native ID rather than raising a
             // stale reference or falling back to an arbitrary app window.
             guard eligible(), let id = target.windowID, let element = writer.resolve(id, target.pid), eligible() else { return false }
             target = WindowCatalog.Target(id: target.id, pid: target.pid, element: element, windowID: id)
-            guard writer.isWindow(target), eligible() else { return false }
+            guard writer.isWindow(target) == true, eligible() else { return false }
         }
         guard eligible() else { return false }
         let minimized = writer.isMinimized(target)
@@ -158,7 +175,6 @@ actor WindowActivationExecutor {
         // Restoring animates, and its owner may not answer until the window is back. Any
         // other owner that has not answered yet, busy unhiding say, gets the same wait;
         // a window that refuses or is gone is not raised again.
-        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
         while raised != .success, minimized || raised == .cannotComplete, eligible(), ContinuousClock.now < deadline {
             do { try await Task.sleep(for: .milliseconds(40)) } catch { return false }
             guard eligible() else { return false }

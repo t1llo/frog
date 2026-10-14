@@ -108,6 +108,34 @@ final class WindowActivationTests: XCTestCase {
         XCTAssertFalse(gone)
         XCTAssertEqual(refused.events, ["raise"], "A window that is gone is not raised again")
     }
+    func testWindowWhoseBusyAppHasNotSaidYetThatItIsOneIsAskedAgain() async {
+        let trace = RaiseAnswers([.success])
+        let checks = Script<Bool?>([nil, nil, true])
+        var writer = WindowActivationExecutor.Writer()
+        writer.isTrusted = { true }
+        writer.reveal = { _, _, _ in true }
+        writer.isWindow = { _ in trace.note("validate"); return checks.next() }
+        writer.resolve = { _, _ in trace.note("resolve"); return nil }
+        writer.isMinimized = { _ in false }
+        writer.raise = { _ in trace.next() }
+        writer.makeMain = { _ in trace.note("main") }
+        let target = WindowCatalog.Target(id: UUID(), pid: 10, element: AXUIElementCreateApplication(1010), windowID: 202)
+        let raised = await WindowActivationExecutor(writer: writer).raise(target, isCurrent: { true })
+        XCTAssertTrue(raised, "An app busy coming forward answers late; its window still comes forward")
+        XCTAssertEqual(trace.events, ["validate", "validate", "validate", "raise", "main"])
+
+        // Waiting for that answer stops for input, also once the app was asked for.
+        let unanswered = RaiseAnswers([.success])
+        writer.isWindow = { _ in unanswered.note("validate"); return nil }
+        writer.resolve = { _, _ in unanswered.note("resolve"); return nil }
+        writer.raise = { _ in unanswered.next() }
+        writer.makeMain = { _ in unanswered.note("main") }
+        let executor = WindowActivationExecutor(writer: writer)
+        _ = await executor.prepare(target, isCurrent: { true })
+        let moved = await executor.raise(target, isCurrent: { false }, requested: true)
+        XCTAssertFalse(moved)
+        XCTAssertEqual(unanswered.events, ["validate"])
+    }
     func testRaiseSentWithTheRequestIsNotTriedAgainOnceTheUserHasMovedOn() async {
         let answers = RaiseAnswers([.success])
         var writer = WindowActivationExecutor.Writer()
@@ -185,6 +213,14 @@ private final class RaiseAnswers: @unchecked Sendable {
             return answers.count > 1 ? answers.removeFirst() : answers[0]
         }
     }
+}
+
+/// Gives the next scripted answer, then the last one.
+private final class Script<Answer>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var answers: [Answer]
+    init(_ answers: [Answer]) { self.answers = answers }
+    func next() -> Answer { lock.withLock { answers.count > 1 ? answers.removeFirst() : answers[0] } }
 }
 
 /// A clock that moves only when told to.
