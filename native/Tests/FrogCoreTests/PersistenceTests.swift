@@ -115,6 +115,7 @@ final class PersistenceTests: XCTestCase {
         // Removing both files to start again must not bring back the settings from before the migration.
         for file in ["config", "config.json"] { try FileManager.default.removeItem(at: current.appendingPathComponent(file)) }
         let next = ConfigurationStore(directory: current, legacyDirectory: legacy)
+        XCTAssertFalse(next.hasExistingConfiguration)
         XCTAssertEqual(try next.load().rules.map(\.name), Configuration().rules.map(\.name))
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: current.path), [])
         XCTAssertEqual(try Data(contentsOf: previous), bytes)

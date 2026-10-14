@@ -114,8 +114,10 @@ public final class ConfigurationStore: @unchecked Sendable {
     /// Times both files were read from disk. A save needs it once before its first write, and
     /// again only after writing config.json, before config follows.
     private(set) var snapshotReads = 0
+    /// The previous file counts only while a load would still migrate it.
     public var hasExistingConfiguration: Bool {
-        FileManager.default.fileExists(atPath: textFile.path) || FileManager.default.fileExists(atPath: file.path) || legacyFile.map { FileManager.default.fileExists(atPath: $0.path) } == true
+        FileManager.default.fileExists(atPath: textFile.path) || FileManager.default.fileExists(atPath: file.path)
+            || (!companionNoted && legacyFile.map { FileManager.default.fileExists(atPath: $0.path) } == true)
     }
     public init(directory: URL? = nil, legacyDirectory: URL? = nil) {
         let configurationDirectory = directory ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/frog", isDirectory: true)
