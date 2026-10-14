@@ -755,7 +755,7 @@ final class AppModel: ObservableObject {
         configureWindowSwitcher()
         configureClipboardHistory()
         localModels.idleSeconds = preferences.workflowSettings.idleUnloadSeconds
-        if Self.registersShortcutsAgain(previous: previous, current: configuration, failed: !hotkeyErrors.isEmpty) { registerHotkeys(); shortcutPanel.hide() }
+        if Self.registersShortcutsAgain(previous: previous, current: configuration, failed: !hotkeyErrors.isEmpty, holding: hotkeys.isHolding) { registerHotkeys(); shortcutPanel.hide() }
         // Only these settings decide what is kept; any other save need not read the history file.
         if historyChanged { refreshHistory() }
     }
@@ -969,9 +969,10 @@ final class AppModel: ObservableObject {
     }
 
     /// Whether saving settings registers the global shortcuts again. Registering forgets a shortcut held down
-    /// right now, so only a change in what they register does it, or a shortcut that could not be registered.
-    static func registersShortcutsAgain(previous: Configuration, current: Configuration, failed: Bool) -> Bool {
-        hotkeyRules(for: current) != hotkeyRules(for: previous) || failed
+    /// right now, so only a change in what they register does it, or a shortcut that could not be registered,
+    /// which is tried again only while no shortcut is held.
+    static func registersShortcutsAgain(previous: Configuration, current: Configuration, failed: Bool, holding: Bool) -> Bool {
+        hotkeyRules(for: current) != hotkeyRules(for: previous) || (failed && !holding)
     }
 
     private func registerHotkeys() {

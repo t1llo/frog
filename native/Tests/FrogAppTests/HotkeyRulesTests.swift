@@ -74,18 +74,33 @@ final class HotkeyRulesTests: XCTestCase {
         var workflow = changed.preferences.workflowSettings
         workflow.microphoneID = "fixture-microphone"
         changed.preferences.workflows = workflow
-        XCTAssertFalse(AppModel.registersShortcutsAgain(previous: configuration, current: changed, failed: false), "Choosing a microphone")
+        XCTAssertFalse(AppModel.registersShortcutsAgain(previous: configuration, current: changed, failed: false, holding: false), "Choosing a microphone")
 
         changed = configuration
         var menuBar = MenuBarPreferences(); menuBar.autoHide = false
         changed.preferences.toolkit?.menuBar = menuBar
-        XCTAssertFalse(AppModel.registersShortcutsAgain(previous: configuration, current: changed, failed: false), "Menu bar layout")
+        XCTAssertFalse(AppModel.registersShortcutsAgain(previous: configuration, current: changed, failed: false, holding: false), "Menu bar layout")
 
         changed = configuration
         changed.preferences.toolkit?.commandBarHotkey = Hotkey(keyCode: 49, modifiers: 256 | 512)
         changed.preferences.setFeature(.commandBar, enabled: true)
-        XCTAssertTrue(AppModel.registersShortcutsAgain(previous: configuration, current: changed, failed: false), "A new shortcut")
+        XCTAssertTrue(AppModel.registersShortcutsAgain(previous: configuration, current: changed, failed: false, holding: false), "A new shortcut")
 
-        XCTAssertTrue(AppModel.registersShortcutsAgain(previous: configuration, current: configuration, failed: true), "A shortcut that could not be registered is tried again")
+        XCTAssertTrue(AppModel.registersShortcutsAgain(previous: configuration, current: configuration, failed: true, holding: false), "A shortcut that could not be registered is tried again")
+    }
+
+    func testAShortcutThatCouldNotBeRegisteredIsNotTriedAgainWhileAnotherIsHeld() {
+        var configuration = Configuration()
+        configuration.rules = [Rule(name: "Dictate", hotkey: Hotkey(keyCode: 2, modifiers: 256 | 2048))]
+        var changed = configuration
+        var workflow = changed.preferences.workflowSettings
+        workflow.microphoneID = "fixture-microphone"
+        changed.preferences.workflows = workflow
+        // Choosing a microphone during a hold-mode recording would otherwise lose the release that ends it.
+        XCTAssertFalse(AppModel.registersShortcutsAgain(previous: configuration, current: changed, failed: true, holding: true))
+        XCTAssertTrue(AppModel.registersShortcutsAgain(previous: configuration, current: changed, failed: true, holding: false))
+
+        changed.preferences.workflows?.shortcutPanelHotkey = Hotkey(keyCode: 1, modifiers: 256 | 2048)
+        XCTAssertTrue(AppModel.registersShortcutsAgain(previous: configuration, current: changed, failed: true, holding: true), "A changed shortcut is registered even during a hold")
     }
 }

@@ -14,6 +14,8 @@ final class HotkeyManager {
     private var onTrigger: ((UUID) -> Void)?
     private var onPress: ((UUID) -> Void)?
     private var pressed = Set<UUID>()
+    /// Whether a registered shortcut is down; registering again now would lose its release.
+    var isHolding: Bool { !pressed.isEmpty }
     private var generation: UInt64 = 0
 
     func register(rules: [Rule], purposes: [UUID: ShortcutPurpose] = [:], onPress: ((UUID) -> Void)? = nil, onTrigger: @escaping (UUID) -> Void) -> [UUID: String] {
