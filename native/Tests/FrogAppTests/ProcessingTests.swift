@@ -252,6 +252,28 @@ final class ProcessingTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: file), bytes)
     }
 
+    func testImportRefusesEveryReservedGlobalShortcutAsSettingsDoes() async throws {
+        let directory = try directory()
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil }, writeClipboard: { _ in })
+        try model.savePreferences(model.configuration.preferences)
+        let original = model.configuration
+        // Command-V belongs to the focused app.
+        let paste = Hotkey(keyCode: 9, modifiers: 256)
+        let refusal = try XCTUnwrap(HotkeyManager.validationError(paste))
+        let edits: [(String, (inout Preferences) -> Void)] = [
+            ("shortcut panel", { var workflow = $0.workflowSettings; workflow.shortcutPanelHotkey = paste; $0.workflows = workflow }),
+            ("cancel recording", { var workflow = $0.workflowSettings; workflow.cancelRecordingHotkey = paste; $0.workflows = workflow }),
+            ("menu bar", { var toolkit = $0.toolkitSettings; var menuBar = toolkit.menuBar ?? MenuBarPreferences(); menuBar.hotkey = paste; toolkit.menuBar = menuBar; $0.toolkit = toolkit }),
+        ]
+        for (name, edit) in edits {
+            var preferences = original.preferences; edit(&preferences)
+            XCTAssertThrowsError(try model.savePreferences(preferences), name) { XCTAssertEqual($0.localizedDescription, refusal, name) }
+            var imported = original; imported.preferences = preferences
+            XCTAssertThrowsError(try model.importConfiguration(imported), name) { XCTAssertEqual($0.localizedDescription, refusal, name) }
+            XCTAssertEqual(model.configuration, original, name)
+        }
+    }
+
     func testTextReloadAppliesPreferencesAndRejectsInvalidOrStaleEditsWithoutCredentials() throws {
         let directory = try directory()
         var keyReads = 0

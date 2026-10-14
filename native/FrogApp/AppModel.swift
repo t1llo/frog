@@ -328,20 +328,7 @@ final class AppModel: ObservableObject {
             throw FrogError.message("Finish or cancel the current request before reloading configuration.")
         }
         drainUsagePreferences()
-        let candidate = try configurationStore.load { candidate in
-            guard candidate.preferences.featureEnabled(.stayAwake) || (!self.power.ownsSession && !self.power.isBusy) else {
-                throw FrogError.message("Restore sleep before reloading a configuration that disables Stay awake.")
-            }
-            for rule in candidate.rules {
-                if let key = rule.hotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
-            }
-            let workflow = candidate.preferences.workflowSettings
-            for key in [workflow.shortcutPanelHotkey, workflow.cancelRecordingHotkey, candidate.preferences.toolkitSettings.effectiveCommandBarHotkey].compactMap({ $0 }) {
-                if let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
-            }
-            if let issue = HotkeyManager.validationError(workflow.effectiveClipboardHistoryHotkey, purpose: .clipboardHistory) { throw FrogError.message(issue) }
-            if let issue = HotkeyManager.validationError(candidate.preferences.toolkitSettings.effectiveWindowSwitcherHotkey, purpose: .windowSwitcher) { throw FrogError.message(issue) }
-        }
+        let candidate = try configurationStore.load { try self.validateForThisMac($0, change: .reload) }
         applyConfiguration(candidate)
         usagePreferenceWriter.didSave(candidate)
         configurationLoadError = nil
@@ -733,23 +720,36 @@ final class AppModel: ObservableObject {
         return try await LLMClient().localModels(provider: provider, apiKey: key)
     }
 
-    func savePreferences(_ preferences: Preferences) throws {
-        guard preferences.featureEnabled(.stayAwake) || (!power.ownsSession && !power.isBusy) else {
-            throw FrogError.message("Restore sleep before disabling Stay awake.")
+    private enum ConfigurationChange { case reload, preferences, `import` }
+    /// What FrogCore cannot judge: a global shortcut that macOS or the focused app keeps for itself,
+    /// and a configuration that turns Stay awake off while it keeps this Mac awake.
+    private func validateForThisMac(_ candidate: Configuration, change: ConfigurationChange) throws {
+        guard candidate.preferences.featureEnabled(.stayAwake) || (!power.ownsSession && !power.isBusy) else {
+            switch change {
+            case .reload: throw FrogError.message("Restore sleep before reloading a configuration that disables Stay awake.")
+            case .preferences: throw FrogError.message("Restore sleep before disabling Stay awake.")
+            case .import: throw FrogError.message("Turn off the active Stay awake session before importing a configuration that disables it.")
+            }
         }
-        let workflow = preferences.workflowSettings
+        // Saving preferences keeps the rules; a rule shortcut that cannot be registered shows on its rule.
+        if change != .preferences {
+            for rule in candidate.rules {
+                if let key = rule.hotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
+            }
+        }
+        let workflow = candidate.preferences.workflowSettings, toolkit = candidate.preferences.toolkitSettings
+        for key in [workflow.shortcutPanelHotkey, workflow.cancelRecordingHotkey, toolkit.effectiveCommandBarHotkey, toolkit.menuBar?.hotkey].compactMap({ $0 }) {
+            if let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
+        }
+        if let issue = HotkeyManager.validationError(workflow.effectiveClipboardHistoryHotkey, purpose: .clipboardHistory) { throw FrogError.message(issue) }
+        if let issue = HotkeyManager.validationError(toolkit.effectiveWindowSwitcherHotkey, purpose: .windowSwitcher) { throw FrogError.message(issue) }
+    }
+
+    func savePreferences(_ preferences: Preferences) throws {
+        var candidate = configuration; candidate.preferences = preferences
+        try validateForThisMac(candidate, change: .preferences)
         let historyChanged = preferences.historyEnabled != configuration.preferences.historyEnabled || preferences.historyLimit != configuration.preferences.historyLimit || preferences.historyRetentionDays != configuration.preferences.historyRetentionDays
         let previousHotkeys = Self.hotkeyRules(for: configuration)
-        if let issue = HotkeyManager.validationError(preferences.toolkitSettings.effectiveCommandBarHotkey) { throw FrogError.message(issue) }
-        if let issue = HotkeyManager.validationError(preferences.toolkitSettings.effectiveWindowSwitcherHotkey, purpose: .windowSwitcher) { throw FrogError.message(issue) }
-        if let key = preferences.toolkitSettings.menuBar?.hotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
-        if let key = preferences.workflowSettings.shortcutPanelHotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
-        if let key = preferences.workflowSettings.cancelRecordingHotkey, let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
-        if let issue = HotkeyManager.validationError(workflow.effectiveClipboardHistoryHotkey, purpose: .clipboardHistory) { throw FrogError.message(issue) }
-        guard (1...200).contains(preferences.historyLimit), (1...30).contains(preferences.historyRetentionDays) else {
-            throw FrogError.message("History must keep 1–200 entries for 1–30 days.")
-        }
-        var candidate = configuration; candidate.preferences = preferences
         try persist(candidate)
         if !preferences.historyEnabled { invalidateHistoryRecovery() }
         if !preferences.showProcessingIndicator { processingIndicator.hide() }
@@ -851,16 +851,9 @@ final class AppModel: ObservableObject {
 
     func importConfiguration(_ imported: Configuration) throws {
         guard !isProcessing, !isTestingProvider, !dictation.active else { throw FrogError.message("Finish or cancel the current request before importing a configuration.") }
+        // As when saving: the Mac's check first, so a shortcut is refused in the words Settings uses.
+        try validateForThisMac(imported, change: .import)
         try ConfigurationFile.validate(imported)
-        for rule in imported.rules {
-            if let hotkey = rule.hotkey, let issue = HotkeyManager.validationError(hotkey) { throw FrogError.message(issue) }
-        }
-        if let issue = HotkeyManager.validationError(imported.preferences.workflowSettings.effectiveClipboardHistoryHotkey, purpose: .clipboardHistory) { throw FrogError.message(issue) }
-        if let issue = HotkeyManager.validationError(imported.preferences.toolkitSettings.effectiveCommandBarHotkey) { throw FrogError.message(issue) }
-        if let issue = HotkeyManager.validationError(imported.preferences.toolkitSettings.effectiveWindowSwitcherHotkey, purpose: .windowSwitcher) { throw FrogError.message(issue) }
-        guard imported.preferences.featureEnabled(.stayAwake) || (!power.ownsSession && !power.isBusy) else {
-            throw FrogError.message("Turn off the active Stay awake session before importing a configuration that disables it.")
-        }
         var candidate = imported
         var remapped: [UUID: UUID] = [:]
         for index in candidate.providers.indices {
