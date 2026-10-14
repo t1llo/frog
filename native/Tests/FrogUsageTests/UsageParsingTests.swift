@@ -330,6 +330,11 @@ final class UsageParsingTests: XCTestCase {
         XCTAssertEqual(state.interval, 60)
         XCTAssertTrue(state.begin(at: start.addingTimeInterval(9 * hour)))
         XCTAssertEqual(state.nextFetchAt, start.addingTimeInterval(9 * hour + 60), "Every minute again")
+        // Hours in which nothing was asked, without a login for example, are quiet hours too.
+        var unasked = ClaudePollingState()
+        for _ in 0..<5 { unasked.failed(limited, at: start) }
+        unasked.succeeded(Usage(), at: start.addingTimeInterval(3 * hour))
+        XCTAssertEqual(unasked.interval, 75, "A step for each of the three quiet hours")
 
         let suite = "frog-usage-pace-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -337,17 +342,19 @@ final class UsageParsingTests: XCTestCase {
         for _ in 0..<5 { slowed.failed(FetchError.http(429, retryAfter: 7200, message: nil), at: start) }
         slowed.save(to: defaults)
         XCTAssertEqual(ClaudePollingState.load(from: defaults, now: start.addingTimeInterval(60)).interval, 600)
+        var paused = ClaudePollingState.load(from: defaults, now: start.addingTimeInterval(2.5 * hour))
+        XCTAssertEqual(paused.interval, 150, "A start after a pause takes a step for every hour of it")
+        paused.succeeded(Usage(), at: start.addingTimeInterval(3 * hour))
+        XCTAssertEqual(paused.interval, 75, "The half hour already gone counts towards the next step")
         let later = ClaudePollingState.load(from: defaults, now: start.addingTimeInterval(8 * hour))
-        XCTAssertEqual(later.interval, 300, "A start long after the throttling takes the same one step")
+        XCTAssertEqual(later.interval, 60, "A start long after the throttling is back at every minute")
         XCTAssertEqual(later.nextFetchAt, start.addingTimeInterval(7200), "The server's own wait is never shortened")
         // An earlier version saved the slower pace without saying when it was learned.
         var earlier = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(slowed)) as? [String: Any])
         earlier["slowedAt"] = nil
         defaults.set(try JSONSerialization.data(withJSONObject: earlier), forKey: ClaudePollingState.defaultsKey)
-        var restored = ClaudePollingState.load(from: defaults, now: start.addingTimeInterval(60))
-        XCTAssertEqual(restored.interval, 300)
-        restored.succeeded(Usage(), at: start.addingTimeInterval(120))
-        XCTAssertEqual(restored.interval, 300, "And from then on an hour at a time")
+        let restored = ClaudePollingState.load(from: defaults, now: start.addingTimeInterval(60))
+        XCTAssertEqual(restored.interval, 60, "A pace kept for good counts as learned long ago")
     }
 
     func testAnOutageDelaysThePollWithoutTeachingItASlowerPace() {

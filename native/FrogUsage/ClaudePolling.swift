@@ -77,16 +77,20 @@ struct ClaudePollingState: Codable {
 
     /// The slower pace learned from throttling is kept while the throttling is recent, so one
     /// good answer does not send the poll straight back into it, and halves for every quiet
-    /// hour after that. State from a version that kept it for good says nothing about when it
-    /// was learned and counts as long ago.
+    /// hour after that, also hours in which nothing was asked or Frog was not running. State
+    /// from a version that kept it for good says nothing about when it was learned and counts
+    /// as long ago.
     private mutating func ease(at now: Date) {
         guard interval > 60 else { slowedAt = nil; return }
         let quiet = now.timeIntervalSince(slowedAt ?? .distantPast)
         // A time ahead of the clock means the clock was set back: the hour starts over.
         if quiet < 0 { slowedAt = now; return }
-        guard quiet >= Self.quietPeriod else { return }
-        interval = max(60, interval / 2)
-        slowedAt = interval > 60 ? now : nil
+        let hours = (quiet / Self.quietPeriod).rounded(.down)
+        guard hours >= 1 else { return }
+        // Four steps bring even ten minutes back to one.
+        interval = max(60, interval / pow(2, min(hours, 4)))
+        // The part of an hour since the last whole one counts towards the next step.
+        slowedAt = interval > 60 ? slowedAt?.addingTimeInterval(hours * Self.quietPeriod) : nil
     }
 
     mutating func failed(_ error: Error, at now: Date) {
