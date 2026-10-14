@@ -82,6 +82,53 @@ import XCTest
         XCTAssertEqual(readClaudeDesktop(home: home, directory: claude)?.limits.map(\.pct), [10])
     }
 
+    /// Rewrites `url` in place, so the file stays the same one and only what the test changes differs.
+    private func rewrite(_ url: URL, with data: Data, modified: Date) throws {
+        if !FileManager.default.fileExists(atPath: url.path) { FileManager.default.createFile(atPath: url.path, contents: nil) }
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: 0)
+        try handle.write(contentsOf: data)
+        try handle.close()
+        try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: url.path)
+    }
+
+    func testFilesAreReadAgainOnlyOnceTheyChanged() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("frog-desktop-usage-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let file = ClaudeDesktopUsage.historyURL(home: home), claude = home.appendingPathComponent(".claude")
+        let profile = claude.appendingPathComponent(".claude.json"), files = ClaudeDesktopFiles()
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: claude, withIntermediateDirectories: true)
+        let saved = Date(timeIntervalSince1970: base), later = saved.addingTimeInterval(60)
+        func account(_ type: String) -> Data { Data(#"{"oauthAccount":{"organizationUuid":"org-a","organizationType":"\#(type)"}}"#.utf8) }
+        func read() -> ClaudeDesktopReading? { readClaudeDesktop(home: home, directory: claude, files: files) }
+
+        try rewrite(file, with: history([(0, "org-a", ["fh": 10])]), modified: saved)
+        try rewrite(profile, with: account("claude_max"), modified: saved)
+        XCTAssertEqual(read()?.limits.map(\.pct), [10])
+        XCTAssertEqual(read()?.plan, "Max")
+
+        // Same size and modification time: the reading already made from it is kept.
+        try rewrite(file, with: history([(0, "org-a", ["fh": 20])]), modified: saved)
+        try rewrite(profile, with: account("claude_pro"), modified: saved)
+        XCTAssertEqual(read()?.limits.map(\.pct), [10])
+        XCTAssertEqual(read()?.plan, "Max")
+
+        // A new modification time, or a new size, is a changed file.
+        try rewrite(file, with: history([(0, "org-a", ["fh": 20])]), modified: later)
+        XCTAssertEqual(read()?.limits.map(\.pct), [20])
+        try rewrite(file, with: history([(0, "org-a", ["fh": 5])]), modified: later)
+        XCTAssertEqual(read()?.limits.map(\.pct), [5])
+        try rewrite(profile, with: account("claude_pro"), modified: later)
+        XCTAssertEqual(read()?.plan, "Pro")
+
+        // A file the Claude app could not have written is not read at all.
+        try rewrite(file, with: Data(count: 5 << 20), modified: saved)
+        XCTAssertNil(read())
+        try FileManager.default.removeItem(at: file)
+        XCTAssertNil(read())
+    }
+
     private func store(account: Usage?, accountAge: TimeInterval = 0, identity: String = "claudeCode|dir|account|org-a",
                        desktop: ClaudeDesktopReading?, now: Date, reads: Counter = Counter()) -> (Store, UserDefaults, String) {
         let suite = "frog-usage-test-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!

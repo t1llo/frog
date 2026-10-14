@@ -172,10 +172,18 @@ func claudeCodeLoginLapsed(_ logins: [[String: Any]], now: Date) -> Bool {
 
 /// The account profile Claude Code caches beside its settings: names, plan tier and ids, no tokens.
 func claudeProfile(directory: URL) -> [String: Any] {
-    let config = directory.standardizedFileURL == ClaudePaths.defaultDirectory.standardizedFileURL
+    claudeProfile(at: claudeProfileURL(directory: directory))
+}
+
+func claudeProfile(at url: URL) -> [String: Any] {
+    credentialJSON(url)?["oauthAccount"] as? [String: Any] ?? [:]
+}
+
+/// The default folder keeps its profile in the home folder, any other one inside itself.
+func claudeProfileURL(directory: URL) -> URL {
+    directory.standardizedFileURL == ClaudePaths.defaultDirectory.standardizedFileURL
         ? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json")
         : directory.appendingPathComponent(".claude.json")
-    return credentialJSON(config)?["oauthAccount"] as? [String: Any] ?? [:]
 }
 
 /// Profile metadata only; never infer a subscription from token volume or quota percentages.

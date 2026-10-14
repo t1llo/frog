@@ -31,7 +31,7 @@ struct ClaudeDesktopReading: Equatable {
 enum ClaudeDesktopUsage {
     /// The app saves a reading every 5 to 15 minutes; an older one has missed a check.
     static let freshness: TimeInterval = 30 * 60
-    private static let maximumSize = 4 << 20
+    static let maximumSize = 4 << 20
     private static let week: TimeInterval = 7 * 86_400
     /// File key, the matching account-endpoint id, label and window length.
     private static let windows: [(key: String, id: String, label: String, length: TimeInterval)] = [
@@ -112,13 +112,56 @@ enum ClaudeDesktopUsage {
 }
 
 /// Blocking, read-only. The plan name is profile metadata Claude Code caches; it is only attached
-/// when that profile is the organization the Claude app's reading belongs to.
-func readClaudeDesktop(home: URL = FileManager.default.homeDirectoryForCurrentUser, directory: URL) -> ClaudeDesktopReading? {
-    guard !Task.isCancelled, let data = try? Data(contentsOf: ClaudeDesktopUsage.historyURL(home: home)),
-          var reading = ClaudeDesktopUsage.reading(from: data) else { return nil }
-    let account = claudeProfile(directory: directory)
-    if let organization = account["organizationUuid"] as? String, organization == reading.organization {
-        reading.plan = claudePlanName(account)
-    }
+/// when that profile is the organization the Claude app's reading belongs to. Through the same
+/// `files`, a file that has not changed since the last read is not read or decoded again.
+func readClaudeDesktop(home: URL = FileManager.default.homeDirectoryForCurrentUser, directory: URL,
+                       files: ClaudeDesktopFiles = ClaudeDesktopFiles()) -> ClaudeDesktopReading? {
+    let history = ClaudeDesktopUsage.historyURL(home: home)
+    guard !Task.isCancelled, var reading = files.history.value(at: history, { size in
+        guard size <= ClaudeDesktopUsage.maximumSize, let data = try? Data(contentsOf: history) else { return nil }
+        return ClaudeDesktopUsage.reading(from: data)
+    }) ?? nil else { return nil }
+    guard let organization = reading.organization else { return reading }
+    let profile = claudeProfileURL(directory: directory)
+    let account = files.profile.value(at: profile) { _ in claudeProfile(at: profile) } ?? [:]
+    if account["organizationUuid"] as? String == organization { reading.plan = claudePlanName(account) }
     return reading
+}
+
+/// The Claude app rewrites its history every few minutes, and Frog looks at it every 10 to 15
+/// seconds. Keeping what was made of each file between those looks spares reading and decoding
+/// both files again while neither has changed.
+final class ClaudeDesktopFiles: Sendable {
+    let history = UnchangedFile<ClaudeDesktopReading?>()
+    let profile = UnchangedFile<[String: Any]>()
+}
+
+/// What was last made of one file, made again only once the file is replaced or written to.
+final class UnchangedFile<Value>: @unchecked Sendable {
+    /// Writing to a file or replacing it changes at least one of these.
+    private struct Stamp: Equatable {
+        let device: Int32, inode: UInt64, size: Int64, seconds: Int, nanoseconds: Int
+
+        /// Follows a symbolic link, as reading the file does. Nil unless a regular file is there.
+        init?(_ url: URL) {
+            var info = stat()
+            guard stat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
+            device = info.st_dev; inode = info.st_ino; size = info.st_size
+            seconds = info.st_mtimespec.tv_sec; nanoseconds = info.st_mtimespec.tv_nsec
+        }
+    }
+
+    private let lock = NSLock()
+    private var last: (url: URL, stamp: Stamp, value: Value)?
+
+    /// Nil when there is no file. `make` is handed the file's size, so it can refuse one too
+    /// large without reading it, and runs only for a file that is new or has changed.
+    func value(at url: URL, _ make: (_ size: Int64) -> Value) -> Value? {
+        guard let stamp = Stamp(url) else { lock.withLock { last = nil }; return nil }
+        if let last = lock.withLock({ last }), last.url == url, last.stamp == stamp { return last.value }
+        let value = make(stamp.size)
+        // What was read while the file was being written, or after a cancellation, is not kept.
+        if !Task.isCancelled, Stamp(url) == stamp { lock.withLock { last = (url, stamp, value) } }
+        return value
+    }
 }

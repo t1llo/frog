@@ -168,9 +168,9 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
         self.defaults = defaults
         self.fixtureRoot = fixtureRoot
         // Fixture models never read this Mac's real Claude app history.
-        let live = fixtureRoot == nil
+        let live = fixtureRoot == nil, desktopFiles = ClaudeDesktopFiles()
         claude = Store(defaults: defaults, startPolling: false,
-                       readDesktop: { live ? readClaudeDesktop(directory: $0) : nil },
+                       readDesktop: { live ? readClaudeDesktop(directory: $0, files: desktopFiles) : nil },
                        renewLogin: { live ? ClaudeCodeCLI.renewLogin(directory: $0) : .unavailable })
         tokens = TokenStore(fixtureRoot: fixtureRoot, claudeDirectory: ClaudePaths.directory(defaults: defaults))
         var saved = defaults.data(forKey: "dashboardPreferences").flatMap { try? JSONDecoder().decode(UsageDashboardPreferences.self, from: $0) } ?? UsageDashboardPreferences()

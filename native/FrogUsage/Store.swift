@@ -79,7 +79,7 @@ final class Store: ObservableObject {
 
     /// Fetch if the schedule says so. The timer, panel opens and the Refresh button all go
     /// through here, so none of them can exceed the current cadence. The Claude app's saved
-    /// reading is a small local file and is reread every time.
+    /// reading is a small local file, looked at every time and read again once it has changed.
     func tick() {
         guard active else { return }
         refreshDesktop()
