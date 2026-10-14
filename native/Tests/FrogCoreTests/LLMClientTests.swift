@@ -119,8 +119,9 @@ final class LLMClientTests: XCTestCase {
 
     func testServersThatLoadModelsOnDemandGetLongerBeforeTheRequestTimesOut() async throws {
         // No byte arrives before a non-streaming answer is complete: the idle timeout has to cover
-        // loading the model and generating the whole text.
-        for (kind, seconds) in [(ProviderKind.ollama, 600.0), (.lmStudio, 600), (.compatible, 600), (.anthropic, 300), (.gemini, 300)] {
+        // loading the model and generating the whole text. Claude may write up to 16,000 tokens,
+        // thinking included, which takes longer than other cloud answers.
+        for (kind, seconds) in [(ProviderKind.ollama, 600.0), (.lmStudio, 600), (.compatible, 600), (.anthropic, 600), (.gemini, 300)] {
             fixture { request in
                 XCTAssertEqual(request.timeoutInterval, seconds, "\(kind)")
                 let json: String

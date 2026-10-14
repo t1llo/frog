@@ -107,10 +107,11 @@ public struct LLMClient: Sendable {
 
     /// The timeout counts silence, and a non-streaming answer is silent until it is complete: it has
     /// to cover the whole generation and, on a server that loads models on demand, the load before it.
+    /// Claude's 16,000 tokens are sized for the ten minutes Anthropic's own clients wait.
     /// The request stays cancellable throughout.
     private static func timeout(for kind: ProviderKind) -> TimeInterval {
         switch kind {
-        case .ollama, .lmStudio, .compatible: return 600
+        case .ollama, .lmStudio, .compatible, .anthropic: return 600
         default: return 300
         }
     }
