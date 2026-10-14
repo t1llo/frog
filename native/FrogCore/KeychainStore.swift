@@ -27,7 +27,6 @@ public final class KeychainStore: Sendable {
         if status == errSecItemNotFound {
             var item = query
             item[kSecValueData as String] = Data(key.utf8)
-            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             status = SecItemAdd(item as CFDictionary, nil)
             // A concurrent save may have created it between update and add.
             if status == errSecDuplicateItem { status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary) }
@@ -57,9 +56,31 @@ public final class KeychainStore: Sendable {
     }
 
     private func check(_ status: OSStatus) throws {
-        guard status == errSecSuccess else {
-            // No raw Keychain item or credential appears in diagnostics.
-            throw FrogError.message("Keychain access failed (\(status)). Unlock your login keychain and try again.")
+        guard status == errSecSuccess else { throw Self.failure(status) }
+    }
+
+    /// Why a Keychain call failed, as far as the person using Frog can act on it.
+    enum Failure: Equatable {
+        case locked, cancelled, denied, unavailable, other(OSStatus)
+        init(_ status: OSStatus) {
+            switch status {
+            case errSecInteractionNotAllowed: self = .locked
+            case errSecUserCanceled: self = .cancelled
+            case errSecAuthFailed: self = .denied
+            case errSecNoSuchKeychain, errSecNoDefaultKeychain, errSecNotAvailable: self = .unavailable
+            default: self = .other(status)
+            }
+        }
+    }
+
+    /// No raw Keychain item or credential appears in diagnostics.
+    static func failure(_ status: OSStatus) -> FrogError {
+        switch Failure(status) {
+        case .locked: .message("Your login keychain is locked. Unlock it and try again.")
+        case .cancelled: .message("Keychain access was cancelled. Try again and allow Frog when macOS asks.")
+        case .denied: .message("macOS did not allow Frog to use the Keychain. Try again, and allow Frog when macOS asks.")
+        case .unavailable: .message("No login keychain is available. Check it in Keychain Access, then try again.")
+        case .other(let status): .message("Keychain access failed (\(status)). Try again; if it keeps failing, check your login keychain in Keychain Access.")
         }
     }
 }
