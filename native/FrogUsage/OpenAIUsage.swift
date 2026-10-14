@@ -203,7 +203,8 @@ struct AccountActivity {
     let chats: Int?
     /// The reasoning effort used most, with its share of turns (0-100).
     let effort: (name: String, share: Double)?
-    /// Tokens per UTC calendar day. An explicit zero still marks a reported day.
+    /// Tokens per UTC calendar day. An explicit zero marks a reported day up to `asOf`; a zero
+    /// after it is not yet aggregated.
     let daily: [Date: Double]
     /// Each day's usage per model id. The server sends it relative to the busiest day, so only
     /// the shares mean anything.
