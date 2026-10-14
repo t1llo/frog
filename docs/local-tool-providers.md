@@ -208,9 +208,10 @@ This version-sensitive behavior is why support is gated to 0.159.x.
 
 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --filter LocalTool`
 passed: **2 core + 12 app tests, 0 failures**, 2026-10-10. This also built the
-SwiftUI subsection and process adapter. The final fixture benchmark reported
-**11.13 ms median / 255.69 ms maximum** across 12 launches. The first-launch
-outlier is included; these are synthetic subprocess numbers, not model latency.
+SwiftUI subsection and process adapter. A fixture benchmark, since removed from
+the tests, then reported **11.13 ms median / 255.69 ms maximum** across 12
+launches. The first-launch outlier is included; these are synthetic subprocess
+numbers, not model latency.
 `git diff --check` and new-file whitespace checks passed. Existing unrelated
 Swift concurrency/CoreData diagnostics appeared in the test harness.
 
@@ -236,9 +237,8 @@ reasoning/tool rejection, authentication-state distinction, workspace deletion,
 output limits, deadlines, cancellation including child processes, and unrelated
 process survival. Tests use synthetic executable scripts and isolated paths only.
 
-The benchmark measures 12 fixture subprocess launches plus completion parsing;
-it does **not** measure CLI startup or an authenticated network request. Real
-latency includes tool startup, auth refresh, server queueing and model inference;
+No test measures CLI startup or an authenticated network request. Real latency
+includes tool startup, auth refresh, server queueing and model inference;
 background operation is not an instant-response guarantee. Capability help is
 cached against executable modification time, and no login/model-list subprocess
 is inserted before every text request.
