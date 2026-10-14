@@ -54,7 +54,7 @@ public struct LocalModelDescriptor: Codable, Identifiable, Equatable, Sendable {
         whisper("whisper-small", "Whisper Small", "openai_whisper-small", 489_252_581, "openai/whisper-small"),
         whisper("whisper-medium", "Whisper Medium", "openai_whisper-medium", 1_532_419_373, "openai/whisper-medium"),
         whisper("whisper-large-v3", "Whisper Large v3", "openai_whisper-large-v3", 3_093_084_631, "openai/whisper-large-v3"),
-        whisper("whisper-large-v3-turbo", "Whisper Large v3 Turbo", "openai_whisper-large-v3-v20240930_turbo_632MB", 648_433_645, "openai/whisper-large-v3-turbo"),
+        whisper("whisper-large-v3-turbo", "Whisper Large v3 Turbo · earlier build", "openai_whisper-large-v3-v20240930_turbo_632MB", 648_433_645, "openai/whisper-large-v3-turbo"),
         .init(id: "parakeet-v2", name: "NVIDIA Parakeet TDT v2 · English", kind: .audio, repository: "FluidInference/parakeet-tdt-0.6b-v2-coreml", variant: "v2", downloadBytes: 464_413_247, backend: .parakeet, originalRepository: "nvidia/parakeet-tdt-0.6b-v2", license: "CC-BY-4.0"),
         .init(id: "qwen-0.6b", name: "Qwen3 0.6B · 4-bit", kind: .text, repository: "mlx-community/Qwen3-0.6B-4bit", downloadBytes: 351_383_618, originalRepository: "Qwen/Qwen3-0.6B", license: "Apache-2.0"),
         .init(id: "qwen-1.7b", name: "Qwen3 1.7B · 4-bit", kind: .text, repository: "mlx-community/Qwen3-1.7B-4bit", downloadBytes: 984_013_244, originalRepository: "Qwen/Qwen3-1.7B", license: "Apache-2.0"),

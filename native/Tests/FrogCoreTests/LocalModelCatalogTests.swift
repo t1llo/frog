@@ -28,6 +28,12 @@ final class LocalModelCatalogTests: XCTestCase {
         XCTAssertEqual(LocalModelDescriptor.find("whisper-small")?.variant, "openai_whisper-small")
         XCTAssertEqual(LocalModelDescriptor.find("whisper-large-v3-turbo")?.variant, "openai_whisper-large-v3-v20240930_turbo_632MB")
     }
+    func testEveryCatalogModelHasANameOfItsOwn() {
+        let names = LocalModelDescriptor.catalog.map(\.name)
+        XCTAssertEqual(Set(names).count, names.count, "Two rows with one name cannot be told apart in a list or a rule")
+        XCTAssertEqual(LocalModelDescriptor.find("whisper-large-v3-turbo-626mb")?.name, "Whisper Large v3 Turbo")
+        XCTAssertEqual(LocalModelDescriptor.find("whisper-large-v3-turbo")?.name, "Whisper Large v3 Turbo · earlier build", "The earlier conversion keeps its ID for saved rules")
+    }
     func testInventoryRetainsInstalledRuleSelectedAndExplicitlyRevealedLegacyModels() {
         var configuration = Configuration()
         XCTAssertFalse(configuration.modelInventory(installed: []).contains { $0.id == "whisper-medium" })

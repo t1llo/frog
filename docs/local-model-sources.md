@@ -13,7 +13,7 @@ The default audio catalog offers four choices:
 
 Whisper runs through WhisperKit / Core ML; Parakeet uses FluidAudio / Core ML. These conversions work with Frog's macOS 14+ runtimes. Sizes are the bytes that Frog's download fetches: the variant folder plus the upstream tokenizer for Whisper, the four Core ML components and the vocabulary for Parakeet, and the configuration, tokenizer and SafeTensors files for MLX text models. Compiled caches are not included. Compact conversions trade weight precision for smaller downloads; performance depends on your Mac and language.
 
-Previously installed or selected models remain available with their original IDs and weights, including Base, uncompressed Small, Medium, full Large v3, the earlier Turbo conversion, and English-only Parakeet v2. You can also reveal these models through **Add model…** using their Hugging Face source. Saved selections are preserved.
+Previously installed or selected models remain available with their original IDs and weights, including Base, uncompressed Small, Medium, full Large v3, the earlier Turbo conversion (listed as **Whisper Large v3 Turbo · earlier build**), and English-only Parakeet v2. You can also reveal these models through **Add model…** using their Hugging Face source. Saved selections are preserved.
 
 | Text | Download repositories |
 | --- | --- |
