@@ -22,6 +22,13 @@ struct WindowSwitchSession<ID: Hashable> {
         } else { selected = backwards ? windows.last : windows.first }
     }
 
+    /// Narrows the list to `windows`, the rows matching the search text, and selects the first.
+    /// With the text deleted the list is the one opened, which selects the window after
+    /// `current`, the one in front, as it did on opening.
+    mutating func search(_ windows: [ID], query: String, current: ID?) {
+        begin(windows: windows, current: query.isEmpty ? current : nil, backwards: false)
+    }
+
     mutating func select(_ id: ID) { if windows.contains(id) { selected = id } }
     mutating func reconcile(windows available: [ID]) {
         let live = Set(available)

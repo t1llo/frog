@@ -153,6 +153,17 @@ final class WindowSwitcherTests: XCTestCase {
                                       now: stepped.advanced(by: .milliseconds(600))))
     }
 
+    func testDeletingTheSearchTextSelectsTheWindowAfterTheOneInFrontAgain() {
+        var session = WindowSwitchSession<Int>()
+        session.begin(windows: [10, 11, 12], current: 10, backwards: false)
+        session.search([12, 10], query: "x", current: 10)
+        XCTAssertEqual(session.selected, 12, "The best match is selected")
+        session.search([10, 11, 12], query: "", current: 10)
+        XCTAssertEqual(session.selected, 11, "Released now, the list must not choose the window already in front")
+        session.search([11, 12], query: "", current: 99)
+        XCTAssertEqual(session.selected, 11)
+    }
+
     func testLargeWindowListsAreNotTruncatedByCyclingState() {
         var session = WindowSwitchSession<Int>()
         session.begin(windows: Array(0..<300), current: 0, backwards: true)
