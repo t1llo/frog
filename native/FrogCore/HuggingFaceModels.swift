@@ -41,7 +41,8 @@ public struct HuggingFaceModels: Sendable {
 
     public func inspect(_ input: String) async throws -> [LocalModelDescriptor] {
         let source = try HuggingFaceSource(input)
-        let metadata = try await fetch(URL(string: "https://huggingface.co/api/models/\(source.repository)")!)
+        // `blobs=true` adds each file's size, which the download size is summed from.
+        let metadata = try await fetch(URL(string: "https://huggingface.co/api/models/\(source.repository)?blobs=true")!)
         let object = try JSONSerialization.jsonObject(with: metadata) as? [String: Any] ?? [:]
         let files = Set((object["siblings"] as? [[String: Any]] ?? []).compactMap { $0["rfilename"] as? String })
         let textConfig: Data?
@@ -57,7 +58,19 @@ public struct HuggingFaceModels: Sendable {
               object["gated"] == nil || object["gated"] as? Bool == false else {
             throw FrogError.message("This model requires Hugging Face access approval or authentication. Add a public, ungated conversion instead.")
         }
-        let files = Set((object["siblings"] as? [[String: Any]] ?? []).compactMap { $0["rfilename"] as? String })
+        let siblings = object["siblings"] as? [[String: Any]] ?? []
+        let files = Set(siblings.compactMap { $0["rfilename"] as? String })
+        /// The bytes of the files that the download fetches, when the metadata gives every one a size.
+        func bytes(fetching fetched: (String) -> Bool) -> Int64? {
+            var total: Int64 = 0
+            for sibling in siblings {
+                guard let file = sibling["rfilename"] as? String, fetched(file) else { continue }
+                guard let size = sibling["size"] as? Int64, 0...LocalModelDescriptor.maximumDownloadBytes ~= size else { return nil }
+                total += size
+                guard total <= LocalModelDescriptor.maximumDownloadBytes else { return nil }
+            }
+            return total > 0 ? total : nil
+        }
         let card = object["cardData"] as? [String: Any] ?? [:]
         let license = card["license"] as? String
         // Known Parakeet sources use the bundled, version-specific native adapter.
@@ -78,7 +91,8 @@ public struct HuggingFaceModels: Sendable {
         if !variants.isEmpty {
             return variants.map { variant in
                 LocalModelDescriptor.findMatching(repository: source.repository, variant: variant, backend: .whisperKit) ??
-                .init(id: HuggingFaceSource.modelID(repository: source.repository, variant: variant, backend: .whisperKit), name: variant, kind: .audio, repository: source.repository, variant: variant, size: "See source for size", license: license)
+                .init(id: HuggingFaceSource.modelID(repository: source.repository, variant: variant, backend: .whisperKit), name: variant, kind: .audio, repository: source.repository, variant: variant, size: "See source for size",
+                      downloadBytes: bytes { $0.hasPrefix(variant + "/") }, license: license)
             }
         }
         if let data = textConfig, source.variant == nil,
@@ -87,7 +101,8 @@ public struct HuggingFaceModels: Sendable {
            (config["quantization"] != nil || object["library_name"] as? String == "mlx" || (object["tags"] as? [String] ?? []).contains("mlx")),
            files.contains("tokenizer.json"), files.contains("tokenizer_config.json"), files.contains(where: { $0.hasSuffix(".safetensors") }) {
             return [LocalModelDescriptor.findMatching(repository: source.repository, variant: nil, backend: .mlx) ??
-                .init(id: HuggingFaceSource.modelID(repository: source.repository, variant: nil, backend: .mlx), name: source.repository.components(separatedBy: "/").last!, kind: .text, repository: source.repository, size: "See source for size", license: license)]
+                .init(id: HuggingFaceSource.modelID(repository: source.repository, variant: nil, backend: .mlx), name: source.repository.components(separatedBy: "/").last!, kind: .text, repository: source.repository, size: "See source for size",
+                      downloadBytes: bytes { file in LocalModelDescriptor.mlxDownloadPatterns.contains { fnmatch($0, file, 0) == 0 } }, license: license)]
         }
         throw FrogError.message("No supported model files found. Use an MLX text conversion, a WhisperKit Core ML variant folder, or one of the supported Parakeet sources. Raw PyTorch, GGUF and arbitrary NeMo weights cannot run in Frog.")
     }
@@ -103,6 +118,8 @@ public struct HuggingFaceModels: Sendable {
 }
 
 extension LocalModelDescriptor {
+    /// Larger than any model Frog can run; a bigger figure is a mistake.
+    public static let maximumDownloadBytes: Int64 = 500_000_000_000
     public static func findMatching(repository: String, variant: String?, backend: Backend) -> Self? {
         catalog.first { $0.repository == repository && $0.variant == variant && $0.backend == backend }
     }
@@ -111,7 +128,7 @@ extension LocalModelDescriptor {
         guard source.variant == nil, source.repository == repository,
               id == HuggingFaceSource.modelID(repository: repository, variant: variant, backend: backend),
               !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.count <= 256,
-              size.count <= 100, (license?.count ?? 0) <= 256,
+              size.count <= 100, (license?.count ?? 0) <= 256, downloadBytes.map({ 1...Self.maximumDownloadBytes ~= $0 }) ?? true,
               (backend == .mlx && kind == .text && variant == nil) ||
                 (backend == .whisperKit && kind == .audio && variant.map(HuggingFaceSource.validComponent) == true) else {
             throw FrogError.message("Invalid custom model source, ID, or runtime. Add the Hugging Face link again.")

@@ -98,7 +98,7 @@ struct SetupView: View {
                     .font(.caption).foregroundStyle(FrogStyle.muted)
                 ForEach(LocalModelDescriptor.recommendedPair) { item in
                     VStack(alignment: .leading, spacing: 6) {
-                        CompactRow(title: item.name, detail: item.kind == .audio ? "Speech-to-text · \(item.size)" : "Text · \(item.size)") {
+                        CompactRow(title: item.name, detail: item.kind == .audio ? "Speech-to-text · \(item.downloadSize)" : "Text · \(item.downloadSize)") {
                             if model.localModels.installed.contains(item.id) {
                                 Label("Downloaded", systemImage: "checkmark.circle.fill").foregroundStyle(FrogStyle.accent)
                             } else if let progress = model.localModels.progress[item.id] {
@@ -116,7 +116,7 @@ struct SetupView: View {
                     }
                 }.disabled(!LocalModels.supported || LocalModelDescriptor.recommendedPair.allSatisfy { model.localModels.installed.contains($0.id) || model.localModels.progress[$0.id] != nil })
                 // The size is the catalog's, like the sizes in the rows above.
-                Text("For faster dictation in 25 European languages, choose Parakeet v3\(LocalModelDescriptor.find("parakeet-v3").map { " (\($0.size))" } ?? "") under other internal models below.")
+                Text("For faster dictation in 25 European languages, choose Parakeet v3\(LocalModelDescriptor.find("parakeet-v3").map { " (\($0.downloadSize))" } ?? "") under other internal models below.")
                     .font(.caption).foregroundStyle(FrogStyle.muted)
                 if !LocalModels.supported { Text("Internal inference requires Apple silicon. Use an external provider on this Mac, or skip for now.").font(.caption).foregroundStyle(FrogStyle.warning) }
                 Text("Downloads continue if you move to the next step. You can cancel them in Models.").font(.caption).foregroundStyle(FrogStyle.muted)

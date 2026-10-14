@@ -4,14 +4,14 @@
 
 The default audio catalog offers four choices:
 
-| Speech | Approximate download | Role | Download source |
+| Speech | Download | Role | Download source |
 | --- | --- | --- | --- |
-| Whisper Tiny | 77 MB | Smallest footprint; multilingual | `argmaxinc/whisperkit-coreml` / `openai_whisper-tiny` |
-| Whisper Small · Compact | 217 MB | Compact multilingual option | `argmaxinc/whisperkit-coreml` / `openai_whisper-small_216MB` |
-| NVIDIA Parakeet TDT v3 | 483 MB | Fast dictation in 25 European languages | `FluidInference/parakeet-tdt-0.6b-v3-coreml` |
-| Whisper Large v3 Turbo — recommended | 627 MB | General-purpose multilingual transcription | `argmaxinc/whisperkit-coreml` / `openai_whisper-large-v3-v20240930_626MB` |
+| Whisper Tiny | 79.4 MB | Smallest footprint; multilingual | `argmaxinc/whisperkit-coreml` / `openai_whisper-tiny` |
+| Whisper Small · Compact | 220.1 MB | Compact multilingual option | `argmaxinc/whisperkit-coreml` / `openai_whisper-small_216MB` |
+| NVIDIA Parakeet TDT v3 | 483.1 MB | Fast dictation in 25 European languages | `FluidInference/parakeet-tdt-0.6b-v3-coreml` |
+| Whisper Large v3 Turbo — recommended | 629.5 MB | General-purpose multilingual transcription | `argmaxinc/whisperkit-coreml` / `openai_whisper-large-v3-v20240930_626MB` |
 
-Whisper runs through WhisperKit / Core ML; Parakeet uses FluidAudio / Core ML. These conversions work with Frog's macOS 14+ runtimes. Sizes describe model-file payloads, excluding tokenizers and caches. Compact conversions trade weight precision for smaller downloads; performance depends on your Mac and language.
+Whisper runs through WhisperKit / Core ML; Parakeet uses FluidAudio / Core ML. These conversions work with Frog's macOS 14+ runtimes. Sizes are the bytes that Frog's download fetches: the variant folder plus the upstream tokenizer for Whisper, the four Core ML components and the vocabulary for Parakeet, and the configuration, tokenizer and SafeTensors files for MLX text models. Compiled caches are not included. Compact conversions trade weight precision for smaller downloads; performance depends on your Mac and language.
 
 Previously installed or selected models remain available with their original IDs and weights, including Base, uncompressed Small, Medium, full Large v3, the earlier Turbo conversion, and English-only Parakeet v2. You can also reveal these models through **Add model…** using their Hugging Face source. Saved selections are preserved.
 
@@ -21,7 +21,7 @@ Previously installed or selected models remain available with their original IDs
 | Llama 3.2 1B and 3B Instruct | `mlx-community/Llama-3.2-1B-Instruct-4bit`, `mlx-community/Llama-3.2-3B-Instruct-4bit` |
 | Gemma 3 1B | `mlx-community/gemma-3-1b-it-4bit` |
 
-All built-in local inference requires Apple silicon. Sizes in the UI are approximate download sizes, not RAM guarantees. Model licensing differs by family; the info panel shows the available license and model-card link rather than treating every model as identically licensed. Local inference has no per-request API charge. No model weights are bundled with Frog.
+All built-in local inference requires Apple silicon. Sizes in the UI are download sizes, not RAM guarantees. Model licensing differs by family; the info panel shows the available license and model-card link rather than treating every model as identically licensed. Local inference has no per-request API charge. No model weights are bundled with Frog.
 
 Click **ⓘ** on any model to see its exact download repository, variant, runtime, language behavior, license, original model link when known, and a link to the download files. WhisperKit additionally installs a matching tokenizer from the upstream Hugging Face model during the explicit download action.
 
@@ -29,7 +29,7 @@ Click **ⓘ** on any model to see its exact download repository, variant, runtim
 
 1. Open **Models → Inside Frog → Add model…**.
 2. Paste `owner/model` or `https://huggingface.co/owner/model`.
-3. Click **Check source**. Frog reads repository metadata and text-model configuration only.
+3. Click **Check source**. Frog reads repository metadata, including the size of each file, and text-model configuration only. The model's download size is the sum of the files it will fetch; a source whose metadata lacks sizes shows none.
 4. Select the detected model or WhisperKit variant to add it to the catalog.
 5. Click **Download** in the catalog to install the weights.
 
@@ -49,7 +49,7 @@ Custom descriptors are included in portable JSON under `localModels`; downloaded
 
 ## Primary sources
 
-- [Argmax WhisperKit Core ML model files](https://huggingface.co/argmaxinc/whisperkit-coreml/tree/main): audio variants and download sizes checked September 29, 2026 through the Hugging Face model API.
+- [Argmax WhisperKit Core ML model files](https://huggingface.co/argmaxinc/whisperkit-coreml/tree/main): audio variants checked September 29, 2026 and download sizes of every catalog model on October 14, 2026, through the Hugging Face model API (`?blobs=true`).
 - [Argmax v1.1.0 recommended models](https://github.com/argmaxinc/argmax-oss-swift/blob/v1.1.0/README.md): the `_626MB` Large v3 Turbo conversion is recommended across iOS and macOS.
 - [OpenAI Whisper models](https://github.com/openai/whisper#available-models-and-languages) and [NVIDIA Parakeet v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3): model architecture and language coverage.
 - [FluidAudio v0.12.4 manifest](https://github.com/FluidInference/FluidAudio/blob/v0.12.4/Package.swift): Swift/macOS compatibility and dependencies.

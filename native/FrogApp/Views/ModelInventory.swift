@@ -43,7 +43,7 @@ struct ModelInventory: View {
                                      Text(item.name).font(.system(size: 12, weight: .medium))
                                      if item.isRecommended { RecommendedModelBadge() }
                                  }
-                                Text([item.size, item.runtimeName, model.localModels.loaded.contains(item.id) ? "In memory" : "", unfinished ? "Partly downloaded" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                                Text([item.downloadSize, item.runtimeName, model.localModels.loaded.contains(item.id) ? "In memory" : "", unfinished ? "Partly downloaded" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
                                     .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                                 Text(L10n.text(item.recommendationSummary ?? item.languages))
                                     .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
@@ -96,8 +96,9 @@ struct ModelDeletionPrompt: Equatable {
         repaired.modelsRemoved([RuleModelSelection(modelID: item.id, category: speech ? .audio : .text)], installed: installed.subtracting([item.id]))
         let users = configuration.rules.indices.filter { choice(configuration.rules[$0]) == item.id }
         title = "Delete \(item.name)?"
-        // A source added by link states no size.
-        var text = "Its \(item.size.contains(where: \.isNumber) ? item.size + " " : "")download will be removed from this Mac."
+        // A source added by link may state no size.
+        let size = item.downloadSize
+        var text = "Its \(size.contains(where: \.isNumber) ? size + " " : "")download will be removed from this Mac."
         if let first = users.first {
             let rules = users.count == 1 ? "The rule that uses it" : "The \(users.count) rules that use it"
             if let next = choice(repaired.rules[first]) { text += " \(rules) will switch to \(configuration.localModel(next)?.name ?? next)." }

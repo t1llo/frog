@@ -33,7 +33,7 @@ struct RuleModelPicker: View {
     private func source(_ item: RuleModelSelection) -> String {
         if let id = item.providerID { return model.configuration.providers.first { $0.id == id }?.name ?? "External provider" }
         guard let descriptor = model.configuration.localModel(item.modelID) else { return "Downloaded in Frog" }
-        return descriptor.size + " · " + descriptor.runtimeName
+        return descriptor.downloadSize + " · " + descriptor.runtimeName
     }
     var body: some View {
         Button {

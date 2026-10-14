@@ -371,7 +371,7 @@ actor LocalInference: LocalInferenceEngine {
         if let network = cause as? URLError, unreachable.contains(network.code) { return offline }
         let code = cause as NSError
         if (code.domain == NSCocoaErrorDomain && code.code == NSFileWriteOutOfSpaceError) || (code.domain == NSPOSIXErrorDomain && code.code == Int(ENOSPC)) {
-            return "Not enough free disk space for \(model.name) (\(model.size)). Free up space and try again; the files already downloaded are kept."
+            return "Not enough free disk space for \(model.name)\(model.downloadBytes.map { " (\(LocalModelDescriptor.byteCount($0)))" } ?? ""). Free up space and try again; the files already downloaded are kept."
         }
         return "Could not download \(model.name). \(error.localizedDescription)"
     }
@@ -389,7 +389,7 @@ actor LocalInference: LocalInferenceEngine {
             await kit.unloadModels()
             return url
         }
-        return try await HubApi.modelFolder(base).snapshot(from: model.repository, matching: ["*.json", "*.safetensors", "*.jinja", "*.txt", "*.model"]) { progress($0.fractionCompleted) }
+        return try await HubApi.modelFolder(base).snapshot(from: model.repository, matching: LocalModelDescriptor.mlxDownloadPatterns) { progress($0.fractionCompleted) }
         #else
         throw FrogError.message("Built-in local models require Apple silicon.")
         #endif

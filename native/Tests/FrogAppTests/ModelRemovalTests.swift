@@ -157,16 +157,16 @@ final class ModelRemovalTests: XCTestCase {
 
         var prompt = ModelDeletionPrompt(speech, configuration: configuration, installed: ["whisper-base", "whisper-tiny", "qwen-0.6b"])
         XCTAssertEqual(prompt.title, "Delete Whisper Base?")
-        XCTAssertEqual(prompt.message, "Its ≈150 MB download will be removed from this Mac. The 2 rules that use it will switch to Whisper Tiny.")
+        XCTAssertEqual(prompt.message, "Its 149.5 MB download will be removed from this Mac. The 2 rules that use it will switch to Whisper Tiny.")
         prompt = ModelDeletionPrompt(speech, configuration: configuration, installed: ["whisper-base", "qwen-0.6b"])
-        XCTAssertEqual(prompt.message, "Its ≈150 MB download will be removed from this Mac. The 2 rules that use it will be left without a speech model.")
+        XCTAssertEqual(prompt.message, "Its 149.5 MB download will be removed from this Mac. The 2 rules that use it will be left without a speech model.")
 
         let text = try XCTUnwrap(LocalModelDescriptor.find("qwen-0.6b"))
         prompt = ModelDeletionPrompt(text, configuration: configuration, installed: ["whisper-base", "qwen-0.6b", "qwen-1.7b"])
         XCTAssertEqual(prompt.title, "Delete Qwen3 0.6B · 4-bit?")
-        XCTAssertEqual(prompt.message, "Its ≈400 MB download will be removed from this Mac. The rule that uses it will switch to Qwen3 1.7B · 4-bit.")
+        XCTAssertEqual(prompt.message, "Its 351.4 MB download will be removed from this Mac. The rule that uses it will switch to Qwen3 1.7B · 4-bit.")
         prompt = ModelDeletionPrompt(text, configuration: configuration, installed: ["qwen-0.6b"])
-        XCTAssertEqual(prompt.message, "Its ≈400 MB download will be removed from this Mac. The rule that uses it will be left without a text model.")
+        XCTAssertEqual(prompt.message, "Its 351.4 MB download will be removed from this Mac. The rule that uses it will be left without a text model.")
 
         // A source added by link states no size.
         let custom = LocalModelDescriptor(id: "hf-custom", name: "Custom", kind: .text, repository: "someone/custom", size: "See source for size")

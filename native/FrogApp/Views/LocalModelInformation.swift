@@ -20,7 +20,7 @@ struct LocalModelInformation: View {
                     Link(original + " ↗", destination: url)
                 }
             }
-            Text("Download size: \(item.size). Runtime memory use can be higher.").font(.caption).foregroundStyle(FrogStyle.muted)
+            Text("Download size: \(item.downloadSize). Runtime memory use can be higher.").font(.caption).foregroundStyle(FrogStyle.muted)
             Text("License: \(item.license ?? "See model card")").font(.caption)
             if item.backend == .whisperKit {
                 Text("WhisperKit also installs the matching tokenizer from the upstream Hugging Face model.").font(.caption).foregroundStyle(FrogStyle.muted)

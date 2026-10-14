@@ -279,7 +279,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project nat
 
 Run frame-budget tests in release mode, matching the packaged app and CI. The workflow also builds the Xcode project in Debug to verify that configuration compiles.
 
-Every test above replaces the model downloader and the inference engines with fixtures. One opt-in test runs the real ones on Apple silicon: it downloads the smallest Whisper and text models (about 480 MB) from Hugging Face into a temporary folder, loads them with WhisperKit and MLX, transcribes a short tone, completes a short text and unloads. Run it after changing the version of WhisperKit, mlx-swift-lm or swift-transformers; it is skipped otherwise:
+Every test above replaces the model downloader and the inference engines with fixtures. One opt-in test runs the real ones on Apple silicon: it downloads the smallest Whisper and text models (about 430 MB) from Hugging Face into a temporary folder, loads them with WhisperKit and MLX, transcribes a short tone, completes a short text and unloads. Run it after changing the version of WhisperKit, mlx-swift-lm or swift-transformers; it is skipped otherwise:
 
 ```sh
 FROG_RUN_MODEL_TESTS=1 swift test --filter RealModelTests
