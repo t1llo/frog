@@ -12,8 +12,10 @@ import FrogCore
         documents.add(UtilityDocument(kind: .note, title: "Before quit"))
         let flushing = Task { await documents.flush() }
         // The quit is waiting for the save of the first edit when the second arrives, as a shelf drop still adding
-        // its items would.
-        try await Task.sleep(for: .milliseconds(50))
+        // its items would. Everything here runs on the main actor: yielding lets the save reach its delay and the quit
+        // its wait for that save.
+        await Task.yield()
+        await Task.yield()
         XCTAssertTrue(documents.needsFlush)
         documents.add(UtilityDocument(kind: .note, title: "During quit"))
         let saved = await flushing.value
