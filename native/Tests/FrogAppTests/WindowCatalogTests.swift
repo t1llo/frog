@@ -337,7 +337,7 @@ private final class ActivationFixture: @unchecked Sendable {
         .init(isTrusted: { true }, isWindow: { [self] _ in record("validate"); onValidate?(); return true },
               isMinimized: { [self] _ in record("minimized"); return false },
               unminimize: { [self] _ in record("unminimize"); return true },
-              raise: { [self] _ in record("raise"); return true },
+              raise: { [self] _ in record("raise"); return .success },
               makeMain: { [self] _ in record("main") },
               bringForward: { [self] _ in record("forward"); return true })
     }

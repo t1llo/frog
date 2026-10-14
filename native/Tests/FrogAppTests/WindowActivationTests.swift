@@ -73,11 +73,62 @@ final class WindowActivationTests: XCTestCase {
         XCTAssertEqual(requests, 1, "Without a request the app on its way would end up in front")
         XCTAssertEqual(raises, 1)
     }
+    func testWindowRaisedBeforeItsAppArrivedIsNotReportedFailedWhenRaisingItAgainFails() async {
+        var ticks = 0
+        var raises = 0
+        // The app arrives with the window raised in it; the raise that only settles it there goes unanswered.
+        let result = await WindowActivation.perform(raise: { raises += 1; return raises == 1 }, request: { true },
+            bringForward: { false }, isFrontmost: { ticks >= 1 }, pause: { ticks += 1 })
+        XCTAssertTrue(result, "The switch went through; it must not be reported as failed")
+        XCTAssertEqual(raises, 2)
+
+        // An app that was asked for but never arrives is still a failure.
+        let absent = await WindowActivation.perform(raise: { true }, request: { true }, bringForward: { false },
+            isFrontmost: { false }, pause: {})
+        XCTAssertFalse(absent)
+    }
+    func testRaiseThatItsBusyAppHasNotAnsweredYetIsTriedAgainButARefusalIsNot() async {
+        let answers = RaiseAnswers([.cannotComplete, .cannotComplete, .success])
+        var writer = WindowActivationExecutor.Writer()
+        writer.isTrusted = { true }
+        writer.reveal = { _, _, _ in true }
+        writer.isWindow = { _ in true }
+        writer.isMinimized = { _ in false }
+        writer.raise = { _ in answers.next() }
+        writer.makeMain = { _ in answers.note("main") }
+        let target = WindowCatalog.Target(id: UUID(), pid: 10, element: AXUIElementCreateApplication(1010), windowID: 202)
+        let raised = await WindowActivationExecutor(writer: writer).raise(target, isCurrent: { true })
+        XCTAssertTrue(raised, "An app busy unhiding answers late; its window still comes forward")
+        XCTAssertEqual(answers.events, ["raise", "raise", "raise", "main"])
+
+        let refused = RaiseAnswers([.invalidUIElement, .success])
+        writer.raise = { _ in refused.next() }
+        writer.makeMain = { _ in refused.note("main") }
+        let gone = await WindowActivationExecutor(writer: writer).raise(target, isCurrent: { true })
+        XCTAssertFalse(gone)
+        XCTAssertEqual(refused.events, ["raise"], "A window that is gone is not raised again")
+    }
     func testFinalRaiseWaitsForApplicationToBecomeFrontmost() async {
         var ticks = 0
         var finalRaiseTicks: [Int] = []
         let result = await WindowActivation.perform(raise: { finalRaiseTicks.append(ticks); return true }, request: { true }, bringForward: { true }, isFrontmost: { ticks >= 2 }, pause: { ticks += 1 })
         XCTAssertTrue(result)
         XCTAssertEqual(finalRaiseTicks, [0, 2])
+    }
+}
+
+/// Answers a raise with the next scripted AX result, then with the last one.
+private final class RaiseAnswers: @unchecked Sendable {
+    private let lock = NSLock()
+    private var answers: [AXError]
+    private var recorded: [String] = []
+    init(_ answers: [AXError]) { self.answers = answers }
+    var events: [String] { lock.withLock { recorded } }
+    func note(_ event: String) { lock.withLock { recorded.append(event) } }
+    func next() -> AXError {
+        lock.withLock {
+            recorded.append("raise")
+            return answers.count > 1 ? answers.removeFirst() : answers[0]
+        }
     }
 }

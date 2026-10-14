@@ -49,7 +49,11 @@ enum WindowActivation {
                 do { try await pause() } catch { return false }
             }
         }
-        guard !Task.isCancelled, isCurrent(), isFrontmost(), await raise(), !Task.isCancelled, isCurrent() else { return false }
+        guard !Task.isCancelled, isCurrent(), isFrontmost() else { return false }
+        // The window was raised already. Raising it again keeps the app's own arrival from
+        // covering it; an app slow to answer that does not undo a switch that went through.
+        _ = await raise()
+        guard !Task.isCancelled, isCurrent() else { return false }
         return isFrontmost()
     }
 }
@@ -72,9 +76,10 @@ actor WindowActivationExecutor {
             guard let element = $0.element else { return false }
             return AXUIElementSetAttributeValue(element, kAXMinimizedAttribute as CFString, kCFBooleanFalse) == .success
         }
-        var raise: @Sendable (WindowCatalog.Target) -> Bool = {
-            guard let element = $0.element else { return false }
-            return AXUIElementPerformAction(element, kAXRaiseAction as CFString) == .success
+        /// `.cannotComplete` is a raise its owner did not answer in time, which may still arrive.
+        var raise: @Sendable (WindowCatalog.Target) -> AXError = {
+            guard let element = $0.element else { return .invalidUIElement }
+            return AXUIElementPerformAction(element, kAXRaiseAction as CFString)
         }
         var makeMain: @Sendable (WindowCatalog.Target) -> Void = {
             guard let element = $0.element else { return }
@@ -142,15 +147,15 @@ actor WindowActivationExecutor {
             guard writer.unminimize(target), eligible() else { return false }
         }
         var raised = writer.raise(target)
-        if minimized {
-            // Restoring animates, and its owner may not answer until the window is back.
-            let deadline = ContinuousClock.now.advanced(by: .seconds(1))
-            while !raised, eligible(), ContinuousClock.now < deadline {
-                do { try await Task.sleep(for: .milliseconds(40)) } catch { return false }
-                raised = writer.raise(target)
-            }
+        // Restoring animates, and its owner may not answer until the window is back. Any
+        // other owner that has not answered yet, busy unhiding say, gets the same wait;
+        // a window that refuses or is gone is not raised again.
+        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+        while raised != .success, minimized || raised == .cannotComplete, eligible(), ContinuousClock.now < deadline {
+            do { try await Task.sleep(for: .milliseconds(40)) } catch { return false }
+            raised = writer.raise(target)
         }
-        guard raised, eligible() else { return false }
+        guard raised == .success, eligible() else { return false }
         writer.makeMain(target)
         return eligible()
     }

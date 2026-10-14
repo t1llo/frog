@@ -13,7 +13,7 @@ final class WindowSpacesTests: XCTestCase {
         writer.reveal = { _, _, _ in trace.append("space"); return true }
         writer.isWindow = { _ in trace.events.contains("space") }
         writer.isMinimized = { _ in false }
-        writer.raise = { _ in trace.append("raise"); return true }
+        writer.raise = { _ in trace.append("raise"); return .success }
         writer.makeMain = { _ in }
         let executor = WindowActivationExecutor(writer: writer)
         let result = await executor.raise(.init(id: UUID(), pid: 10, element: element, windowID: 202), isCurrent: { true })
@@ -34,7 +34,7 @@ final class WindowSpacesTests: XCTestCase {
         }
         writer.raise = { target in
             XCTAssertTrue(target.element.map { CFEqual($0, fresh) } ?? false)
-            return true
+            return .success
         }
         writer.makeMain = { _ in }
         let executor = WindowActivationExecutor(writer: writer)
@@ -48,7 +48,7 @@ final class WindowSpacesTests: XCTestCase {
         writer.isTrusted = { true }
         writer.reveal = { _, _, _ in await gate.wait(); return true }
         writer.resolve = { _, _ in XCTFail("Cancelled Space handoff must not resolve a late AX window"); return nil }
-        writer.raise = { _ in XCTFail("Cancelled Space handoff must not steal focus"); return true }
+        writer.raise = { _ in XCTFail("Cancelled Space handoff must not steal focus"); return .success }
         let executor = WindowActivationExecutor(writer: writer)
         let task = Task { await executor.prepare(.init(id: UUID(), pid: 10, element: nil, windowID: 202), isCurrent: { true }) }
         await gate.started()
@@ -104,7 +104,7 @@ final class WindowSpacesTests: XCTestCase {
         writer.isMinimized = { _ in false }
         // Only the AX boundary is substituted: the real native NSWindow receives
         // the final focus operation, on the real destination Space.
-        writer.raise = { _ in DispatchQueue.main.sync { remote.makeKeyAndOrderFront(nil); return true } }
+        writer.raise = { _ in DispatchQueue.main.sync { remote.makeKeyAndOrderFront(nil); return AXError.success } }
         writer.makeMain = { _ in }
         let catalog = WindowCatalog(reader: reader, writer: writer)
         let snapshot = await catalog.snapshot(applications: [.init(pid: pid, name: "Synthetic fixture", hidden: false)], frontPID: nil)
@@ -185,7 +185,7 @@ final class WindowSpacesTests: XCTestCase {
         writer.isWindow = { _ in true }
         writer.isMinimized = { _ in !trace.events.contains("unminimize") }
         writer.unminimize = { _ in trace.append("unminimize"); return true }
-        writer.raise = { _ in trace.append("raise"); return trace.events.filter { $0 == "raise" }.count >= 3 }
+        writer.raise = { _ in trace.append("raise"); return trace.events.filter { $0 == "raise" }.count >= 3 ? .success : .failure }
         writer.makeMain = { _ in trace.append("main") }
         let target = WindowCatalog.Target(id: UUID(), pid: 10, element: AXUIElementCreateApplication(1010), windowID: 202)
         let restored = await WindowActivationExecutor(writer: writer).raise(target, isCurrent: { true })
@@ -194,10 +194,10 @@ final class WindowSpacesTests: XCTestCase {
 
         let visible = SpaceActivationTrace()
         writer.isMinimized = { _ in false }
-        writer.raise = { _ in visible.append("raise"); return false }
+        writer.raise = { _ in visible.append("raise"); return .failure }
         let refused = await WindowActivationExecutor(writer: writer).raise(target, isCurrent: { true })
         XCTAssertFalse(refused)
-        XCTAssertEqual(visible.events, ["raise"], "Only a window that is being restored waits for its owner")
+        XCTAssertEqual(visible.events, ["raise"], "A window that refuses is raised again only while it is being restored")
     }
 
     func testNativeDirectSpaceSelectionCapability() async throws {
