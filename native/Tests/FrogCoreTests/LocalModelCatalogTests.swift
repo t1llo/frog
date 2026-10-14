@@ -91,26 +91,6 @@ final class LocalModelCatalogTests: XCTestCase {
         XCTAssertThrowsError(try HuggingFaceModels.descriptors(source: source, metadata: data(["siblings": files]), textConfig: config))
         XCTAssertThrowsError(try HuggingFaceModels.descriptors(source: source, metadata: data(["siblings": files, "library_name": "mlx", "gated": "manual"]), textConfig: config))
     }
-    func testFirstInstalledAudioBecomesDefaultButSecondDoesNotReplaceIt() {
-        var config = Configuration()
-        let first = LocalModelDescriptor.find("parakeet-v3")!
-        let second = LocalModelDescriptor.find("whisper-base")!
-        config.selectSoleInstalledModel(first, installed: [first.id])
-        XCTAssertEqual(config.preferences.workflowSettings.audioModelID, first.id)
-        config.selectSoleInstalledModel(second, installed: [first.id, second.id])
-        XCTAssertEqual(config.preferences.workflowSettings.audioModelID, first.id)
-    }
-    func testFirstLocalTextModelKeepsAnExistingProviderChoice() {
-        var config = Configuration()
-        let provider = ProviderConfiguration(); config.providers = [provider]; config.defaultProviderID = provider.id
-        let model = LocalModelDescriptor.find("llama-1b")!
-        config.selectSoleInstalledModel(model, installed: [model.id])
-        XCTAssertEqual(config.preferences.workflowSettings.defaultLocalTextModelID, model.id)
-        XCTAssertEqual(config.preferences.workflowSettings.effectiveTextSource, .provider)
-        var localOnly = Configuration()
-        localOnly.selectSoleInstalledModel(model, installed: [model.id])
-        XCTAssertEqual(localOnly.preferences.workflowSettings.effectiveTextSource, .frog)
-    }
     func testSpeechLanguageCapabilitiesMatchEachRuntime() {
         XCTAssertTrue(LocalModelDescriptor.find("whisper-small")!.supportsLanguageSelection)
         XCTAssertFalse(LocalModelDescriptor.find("parakeet-v3")!.supportsLanguageSelection)

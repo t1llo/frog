@@ -80,16 +80,4 @@ extension Configuration {
             .union(selected).union([workflow.audioModelID])
         return modelCatalog.filter { visible.contains($0.id) }
     }
-    public mutating func selectSoleInstalledModel(_ model: LocalModelDescriptor, installed: Set<String>) {
-        guard installed.contains(model.id), modelCatalog.filter({ $0.kind == model.kind && installed.contains($0.id) }).count == 1 else { return }
-        var workflow = preferences.workflowSettings
-        if model.kind == .audio { workflow.audioModelID = model.id }
-        else {
-            let useLocal = workflow.effectiveTextSource == .frog || defaultProviderID == nil
-            workflow.defaultLocalTextModelID = model.id
-            workflow.cleanupModelID = model.id
-            workflow.textSource = useLocal ? .frog : .provider
-        }
-        preferences.workflows = workflow
-    }
 }

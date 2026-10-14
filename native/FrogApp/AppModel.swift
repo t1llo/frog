@@ -558,14 +558,6 @@ final class AppModel: ObservableObject {
         configureWindowSwitcher()
     }
 
-    private func reconcileLocalModelDefaults() {
-        var candidate = configuration
-        for item in candidate.modelCatalog where localModels.installed.contains(item.id) {
-            candidate.selectSoleInstalledModel(item, installed: localModels.installed)
-        }
-        if candidate != configuration { do { try persist(candidate) } catch { report(error) } }
-    }
-
     func addLocalModel(_ item: LocalModelDescriptor) throws {
         guard !configuration.modelCatalog.contains(where: { $0.id == item.id }) else { return }
         try item.validateCustom()
