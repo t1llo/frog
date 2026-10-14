@@ -297,6 +297,31 @@ final class LocalModelsTests: XCTestCase {
         XCTAssertTrue(models.unfinished.isEmpty)
     }
 
+    func testDownloadPublishesItsProgressOnlyWhenItsRowWouldChange() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // Every tick of a download republishes all that observes the models, the
+        // whole app among it; a library reports one about ten times a second.
+        let steps = 5_000
+        let models = LocalModels(directory: directory, runtime: FixtureInference(), downloader: { model, base, progress in
+            for step in 1..<steps {
+                progress(DownloadProgress(fraction: Double(step) / Double(steps), bytesReceived: Int64(step) * 1_000, bytesExpected: Int64(steps) * 1_000))
+            }
+            // Lets the ticks reach the store before the files are in.
+            await MainActor.run {}
+            return try await Self.fixtureDownload(model, base, progress)
+        })
+        var shown: [Double] = []
+        let watching = models.$progress.dropFirst().sink { shown.append($0["whisper-base"]?.fraction ?? -1) }
+        defer { watching.cancel() }
+        let descriptor = LocalModelDescriptor.find("whisper-base")!
+        models.download(descriptor); await models.waitForDownload(descriptor.id)
+        XCTAssertTrue(models.installed.contains(descriptor.id))
+        XCTAssertLessThan(shown.count, 120, "Only a new whole percent, the files being in, or a new line a few times a second is worth a publish")
+        XCTAssertTrue(Set(shown.map { Int($0 * 100) }).isSuperset(of: 1...99), "Every whole percent still reaches the bar")
+        XCTAssertTrue(shown.contains(1), "The files being in still reaches the row")
+    }
+
     func testDownloadInterruptedByQuittingCanBeStartedAgainAfterRelaunch() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

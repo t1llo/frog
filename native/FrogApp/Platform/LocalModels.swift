@@ -197,7 +197,7 @@ final class LocalModels: ObservableObject {
         errors[model.id] = nil; progress[model.id] = DownloadProgress(fraction: 0)
         downloads[model.id] = Task { [weak self] in
             guard let self else { return }
-            defer { self.downloads[model.id] = nil; self.progress[model.id] = nil; self.preparing.remove(model.id); self.discarding.remove(model.id) }
+            defer { self.downloads[model.id] = nil; self.progress[model.id] = nil; self.progressShown[model.id] = nil; self.preparing.remove(model.id); self.discarding.remove(model.id) }
             var marked = resuming
             do {
                 try await self.ensureRoom(for: model, in: base)
@@ -208,8 +208,7 @@ final class LocalModels: ObservableObject {
                 let url = try await self.downloader(model, base) { [weak self] update in
                     Task { @MainActor [weak self] in
                         guard let self, self.downloads[model.id] != nil else { return }
-                        self.progress[model.id] = update
-                        if update.hasAllFiles { self.preparing.insert(model.id) }
+                        self.show(update, for: model.id)
                     }
                 }
                 try Task.checkCancellation()
@@ -232,6 +231,22 @@ final class LocalModels: ObservableObject {
                 if !Task.isCancelled { self.errors[model.id] = error.localizedDescription }
             }
         }
+    }
+    /// The line under a download's bar changes with every byte; it is published again
+    /// at most this often.
+    static let progressLineInterval: TimeInterval = 0.5
+    /// When each download's progress was last published, as system uptime.
+    private var progressShown: [String: TimeInterval] = [:]
+    /// Every publish redraws all that observes the models, and a download reports
+    /// about ten times a second: a new value goes out only when its row would show
+    /// another whole percent, the files being in, or a new line that is due.
+    private func show(_ update: DownloadProgress, for id: String) {
+        if update.hasAllFiles, !preparing.contains(id) { preparing.insert(id) }
+        let now = ProcessInfo.processInfo.systemUptime
+        if let shown = progress[id], Int(shown.fraction * 100) == Int(update.fraction * 100) {
+            guard shown.summary != update.summary, now - (progressShown[id] ?? 0) >= Self.progressLineInterval else { return }
+        }
+        progress[id] = update; progressShown[id] = now
     }
     /// Cancelling is the person's decision against this download: its files go too.
     func cancelDownload(_ id: String) {
