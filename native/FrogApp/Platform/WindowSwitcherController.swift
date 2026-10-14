@@ -112,6 +112,8 @@ final class WindowSwitcherController {
     private var unfilteredWindows: [SwitcherWindow] = []
     /// The window in front as the open list has it, which the selection starts after.
     private var frontWindow: UUID?
+    /// Whether the open list started before `frontWindow` rather than after it.
+    private var openedBackwards = false
     private var pointer = WindowSwitchPointer()
     private var sessionOnConsole = false
     private var screenLocked = false
@@ -414,7 +416,7 @@ final class WindowSwitcherController {
         pendingSteps = []; commitOnLoad = false
         selectionMoved = false; released = nil
         session.reset()
-        display.query = ""; unfilteredWindows = []; frontWindow = nil
+        display.query = ""; unfilteredWindows = []; frontWindow = nil; openedBackwards = false
         // macOS still reports the app being left while the one just chosen is on its way.
         let reported = NSWorkspace.shared.frontmostApplication
         let front = frontRequests.front(reported?.processIdentifier)
@@ -495,7 +497,7 @@ final class WindowSwitcherController {
     }
 
     private func apply(_ snapshot: WindowCatalog.Snapshot, backwards: Bool, token: UInt64) {
-        unfilteredWindows = snapshot.windows; frontWindow = snapshot.current
+        unfilteredWindows = snapshot.windows; frontWindow = snapshot.current; openedBackwards = backwards
         session.begin(windows: snapshot.windows.map(\.id), current: snapshot.current, backwards: backwards)
         for reverse in pendingSteps { session.step(backwards: reverse) }
         pendingSteps = []
@@ -513,7 +515,7 @@ final class WindowSwitcherController {
         guard !display.loading else { return }
         let windows = WindowSearch.filter(unfilteredWindows, query: display.query)
         display.windows = windows
-        session.search(windows.map(\.id), query: display.query, current: frontWindow)
+        session.search(windows.map(\.id), query: display.query, current: frontWindow, backwards: openedBackwards)
         display.selected = session.selected
         if let panel, panel.isVisible {
             let size = WindowSwitcherLayout.size(windowCount: windows.count)
