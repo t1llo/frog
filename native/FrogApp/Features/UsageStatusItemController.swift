@@ -59,21 +59,41 @@ import FrogUsage
 
     private func updateReadout() {
         guard let button = item?.button else { return }
-        let provider = usage.preferences.provider
-        let windows = usage.windows(provider: provider)
-        // Without a plan reading the item still says something: the period's API estimate.
-        let estimate = windows.isEmpty ? UsageStatusReadout.estimate(usage, provider: provider) : nil
+        let (face, description) = readout()
         // Most checks find the readout as it was; only what changed is drawn or set again.
-        let face = UsageStatusReadout.Face(provider: provider, windows: windows, estimate: estimate,
-                                           dimmed: usage.planWarning(provider: provider) != nil)
         if face != shownFace { button.image = UsageStatusReadout.image(face); shownFace = face }
-        let description = ([UsageStatusReadout.description(provider: provider, windows: windows, estimate: estimate),
-                            usage.planName(provider: provider).map { "\($0) plan" },
-                            usage.status(provider: provider)]).compactMap { $0 }.joined(separator: "\n")
         guard description != shownDescription else { return }
         shownDescription = description
         button.toolTip = description
         button.setAccessibilityLabel(description)
+    }
+
+    /// Each Claude account side by side or combined, when Frog shows several; otherwise the one
+    /// account or provider as always.
+    private func readout() -> (UsageStatusReadout.Face, String) {
+        let provider = usage.preferences.provider
+        let accounts = provider == "Claude" && usage.claudeAccountsEnabled ? usage.accounts() : []
+        if accounts.count >= 2 {
+            let preferences = usage.preferences
+            guard preferences.claudeAccountsView == "combined" else {
+                return (UsageStatusReadout.Face(accounts: accounts, window: preferences.claudeAccountsMenuBar),
+                        UsageStatusReadout.description(accounts: accounts))
+            }
+            let combined = usage.combinedWindows()
+            let counted = combined.prefix(2)
+            return (UsageStatusReadout.Face(provider: provider, windows: counted.map(\.window),
+                                            dimmed: counted.contains { !$0.missing.isEmpty }),
+                    UsageStatusReadout.description(accounts: accounts, combined: combined))
+        }
+        let windows = usage.windows(provider: provider)
+        // Without a plan reading the item still says something: the period's API estimate.
+        let estimate = windows.isEmpty ? UsageStatusReadout.estimate(usage, provider: provider) : nil
+        let face = UsageStatusReadout.Face(provider: provider, windows: windows, estimate: estimate,
+                                           dimmed: usage.planWarning(provider: provider) != nil)
+        let description = ([UsageStatusReadout.description(provider: provider, windows: windows, estimate: estimate),
+                            usage.planName(provider: provider).map { "\($0) plan" },
+                            usage.status(provider: provider)]).compactMap { $0 }.joined(separator: "\n")
+        return (face, description)
     }
 
     @objc private func togglePopup() {
@@ -181,15 +201,43 @@ enum UsageStatusReadout {
         /// a reading has a NaN percentage, which never equals itself, so it is kept as 0 here.
         let fractions: [Double]
         let dimmed: Bool
+        /// One per entry while each Claude account is shown: a stale account recedes on its own.
+        let dimmedEntries: [Bool]
 
         init(provider: String, windows: [UsageWindow], estimate: Estimate? = nil, dimmed: Bool = false) {
             let windows = Array(windows.prefix(2))
             self.provider = provider
             labels = windows.isEmpty ? [estimate?.range].compactMap { $0 } : windows.map { UsageStatusReadout.shortWindow($0) }
             values = windows.isEmpty ? [estimate?.value].compactMap { $0 } : windows.map(\.usedText)
-            fractions = windows.map { $0.percentage.isFinite ? min(1, max(0, $0.percentage / 100)) : 0 }
+            fractions = windows.map(UsageStatusReadout.fraction)
             self.dimmed = dimmed
+            dimmedEntries = []
         }
+
+        /// `A 37%  B 81%`: one entry per included account, for its session or its week
+        /// (`window` is "session" or "week"). At most three; the description lists every one.
+        init(accounts: [UsageAccountSummary], window: String) {
+            let accounts = Array(accounts.filter(\.included).prefix(UsageStatusReadout.maximumAccounts))
+            let id = UsageStatusReadout.windowID(window)
+            let windows = accounts.map { $0.windows.first { $0.id == id } }
+            provider = "Claude"
+            labels = accounts.map(\.shortLabel)
+            values = windows.map { $0?.usedText ?? "—" }
+            fractions = windows.map { $0.map(UsageStatusReadout.fraction) ?? 0 }
+            dimmed = false
+            dimmedEntries = accounts.map(\.stale)
+        }
+    }
+
+    static let maximumAccounts = 3
+
+    /// The account window the menu bar shows: "session" or "week".
+    static func windowID(_ choice: String) -> String { choice == "week" ? "seven_day" : "five_hour" }
+
+    /// How full a window's track is, 0 to 1. A window without a reading has a NaN percentage,
+    /// which never equals itself, so it is kept as 0.
+    private static func fraction(_ window: UsageWindow) -> Double {
+        window.percentage.isFinite ? min(1, max(0, window.percentage / 100)) : 0
     }
 
     static func image(provider: String, windows: [UsageWindow], estimate: Estimate? = nil, dimmed: Bool = false) -> NSImage {
@@ -209,6 +257,7 @@ enum UsageStatusReadout {
             else {
                 var x: CGFloat = 0
                 for index in widths.indices {
+                    let strength = face.dimmedEntries.indices.contains(index) && face.dimmedEntries[index] ? strength * 0.55 : strength
                     draw(labels[index], at: NSPoint(x: x, y: fractions.isEmpty ? 6 : 7), font: labelFont, opacity: 0.7 * strength)
                     draw(values[index], at: NSPoint(x: x + width(labels[index], font: labelFont) + 4, y: fractions.isEmpty ? 4 : 5), font: valueFont, opacity: strength)
                     guard fractions.indices.contains(index) else { continue }
@@ -233,6 +282,39 @@ enum UsageStatusReadout {
             !$0.percentage.isFinite ? "\($0.title): no reading since it renewed"
                 : "\($0.title): \($0.usedText) used" + ($0.resetsAt.map { " · resets \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "")
         } + (windows.isEmpty ? [estimate.map { "API estimate, last \($0.range): \($0.value)" }].compactMap { $0 } : [])).joined(separator: "\n")
+    }
+    /// One line per account and window, such as "B · Session 81% used · resets 17:10 · Claude app,
+    /// 2h ago". Combined values come first, under "A + B combined" and how they are weighted.
+    /// Never an e-mail address: the summaries carry none.
+    static func description(accounts: [UsageAccountSummary], combined: [UsageCombinedWindow]? = nil,
+                            now: Date = Date()) -> String {
+        let accounts = accounts.filter(\.included)
+        var lines: [String]
+        if let combined {
+            lines = [accounts.map(\.label).joined(separator: " + ") + " combined"]
+            lines += combined.map { entry in
+                let window = entry.window
+                guard window.percentage.isFinite else { return "\(window.title): no current reading" }
+                return "\(window.title): \(window.usedText) used" + (entry.breakdown.isEmpty ? "" : " · \(entry.breakdown)")
+                    + (entry.missing.isEmpty ? "" : " · \(entry.missing.joined(separator: ", ")): no current reading")
+            }
+            if let basis = combined.first?.basisDescription { lines.append(basis) }
+        } else {
+            lines = ["Mr. Usage · Claude"]
+        }
+        for account in accounts {
+            let origin = [account.readingSource, account.age.map { UsageStatusPopover.age(of: $0, at: now) }]
+                .compactMap { $0 }.joined(separator: ", ")
+            let suffix = origin.isEmpty ? "" : " · \(origin)"
+            guard !account.windows.isEmpty else { lines.append("\(account.label) · no current reading"); continue }
+            for window in account.windows {
+                let reading = window.percentage.isFinite
+                    ? "\(window.title) \(window.usedText) used" + (window.resetText(now: now).map { " · resets \($0)" } ?? "")
+                    : "\(window.title): no reading since it renewed"
+                lines.append("\(account.label) · \(reading)\(suffix)")
+            }
+        }
+        return lines.joined(separator: "\n")
     }
     private static func shortWindow(_ window: UsageWindow) -> String {
         guard let seconds = window.duration, seconds.isFinite, seconds > 0 else { return String(window.title.prefix(1)) }

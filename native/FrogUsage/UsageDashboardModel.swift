@@ -28,6 +28,8 @@ public struct UsageWindow: Identifiable {
     /// "63% left", what the shown share leaves, so the two always add up to 100.
     public var leftText: String? { usedPercent.map { String(format: "%.0f%% left", max(0, 100 - $0)) } }
     private var usedPercent: Double? { percentage.isFinite ? max(0, percentage).rounded(.down) : nil }
+    /// "15:40" today, "Thu 09:00" within the week, else "12 Oct"; nil without a renewal time.
+    public func resetText(now: Date = Date()) -> String? { resetsAt.map { resetClock($0, now: now) } }
 }
 
 /// Portable display choices only. Credentials, readings and request gates stay local.
@@ -181,6 +183,8 @@ public struct UsageAccountSummary: Identifiable {
     public let sources: [String]
     /// When the reading on display was made.
     public let age: Date?
+    /// Where that reading came from: "Claude app" or "Anthropic account".
+    public let readingSource: String?
     /// No reading, or one older than 30 minutes.
     public let stale: Bool
     public let status: String?
@@ -496,6 +500,7 @@ extension UsageDashboardModel {
             return UsageAccountSummary(
                 id: account.id, label: label, shortLabel: ClaudeAccountLabels.shortLabel(label), windows: windows,
                 plan: store?.plan, sources: sources(of: account), age: reading?.at,
+                readingSource: reading.map { $0.source == .desktop ? "Claude app" : "Anthropic account" },
                 stale: reading.map { now.timeIntervalSince($0.at) > ClaudeDesktopUsage.freshness } ?? true,
                 status: store?.status, included: model.isIncluded(account),
                 needsLiveSetup: model.needsLiveSetup(account, now: now), mergedNote: account.mergedDescription)
@@ -551,6 +556,9 @@ extension UsageDashboardModel {
     /// The Terminal command that signs Claude Code in to a new profile for an account known only
     /// from the Claude app; nil when Claude Code is not installed or the account has a login.
     public func liveSetupCommand(for id: String) -> String? { claudeAccountsModel.liveSetupCommand(for: id) }
+
+    /// The Claude Code login an account's readings use, with its e-mail address: only for hover help.
+    public func accountLogin(for id: String) -> String? { claudeAccountsModel.stores[id]?.authLabel }
 
     /// "Claude app · Claude-Account-B", "Claude Code · ~/.claude"; the home folder written as `~`.
     private func sources(of account: ClaudeAccount) -> [String] {

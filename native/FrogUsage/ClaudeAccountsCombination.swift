@@ -35,7 +35,8 @@ public enum ClaudeAccountsCombination {
         public let renewals: String
         /// "Treats A and B as plans of the same size", or "Weighted by plan size".
         public let basisDescription: String
-        /// The combined row: its used and left texts round as every other row does.
+        /// The combined row: its used and left texts round as every other row does. It keeps the
+        /// window's length, for the menu bar's "5h" and "7d", but has no renewal time.
         public let window: UsageWindow
     }
 
@@ -77,10 +78,10 @@ public enum ClaudeAccountsCombination {
         let labels = counted.isEmpty ? included.map(\.label) : counted.map(\.account.label)
         let basisDescription = basis == .planSize ? "Weighted by plan size"
             : "Treats \(labels.joined(separator: " and ")) as plans of the same size"
-        let title = counted.first?.window.title
-            ?? included.lazy.compactMap { $0.windows.first { $0.id == id }?.title }.first ?? id
+        let shown = counted.first?.window ?? included.lazy.compactMap { $0.windows.first { $0.id == id } }.first
+        let title = shown?.title ?? id
         return Combined(percentage: percentage, basis: basis, missing: missing, breakdown: breakdown, renewals: renewals,
                         basisDescription: basisDescription,
-                        window: UsageWindow(id: id, title: title, percentage: percentage, resetsAt: nil, duration: nil))
+                        window: UsageWindow(id: id, title: title, percentage: percentage, resetsAt: nil, duration: shown?.duration))
     }
 }
