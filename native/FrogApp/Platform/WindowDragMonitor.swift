@@ -84,7 +84,8 @@ final class MouseReleaseWatcher {
 /// looks up the window under the mouse-down point once, then reads its frame again, one read
 /// at a time and at most 10 times, until the window is seen moving with the pointer. A drag
 /// that never moves a window (a text selection, a slider, a resize) is dropped. After that,
-/// drag events only test the pointer against the zones.
+/// drag events only test the pointer against the zones. While the zone overlay is on, holding
+/// Shift during the drag shows Frog's zones instead of the edges.
 @MainActor
 final class WindowDragTracker {
     static let dragThreshold: CGFloat = 4
@@ -101,6 +102,12 @@ final class WindowDragTracker {
     private let lastMove: (WindowKey) async -> (CGRect, CGSize)?
     private let shouldIgnore: (WindowHandle) -> Bool
     private let restoreOnDrag: () -> Bool
+    private let dragToSnap: () -> Bool
+    /// The overlay's zones while the overlay is on; nil while it is off.
+    private let zoneGrid: () -> ZoneGrid?
+    /// Whether Shift and Option are held now.
+    private let modifiers: () -> (shift: Bool, option: Bool)
+    private let showZones: (SnapZoneLayout?) -> Void
     private let now: () -> TimeInterval
 
     /// The release and Escape are wanted or no longer wanted; the monitor installs or removes them.
@@ -123,6 +130,10 @@ final class WindowDragTracker {
     private var probeTask: Task<Void, Never>?
     private var readTask: Task<Void, Never>?
     private var writeTask: Task<Void, Never>?
+    /// The modifiers last given to the session, and the zones it shows.
+    private var held = (shift: false, option: false)
+    private var dragGrid: ZoneGrid?
+    private var zoneLayout: SnapZoneLayout?
 
     init(probe: @escaping (CGPoint) async -> (WindowHandle, CGRect)?,
          frame: @escaping (WindowHandle) async -> CGRect?,
@@ -135,10 +146,15 @@ final class WindowDragTracker {
          lastMove: @escaping (WindowKey) async -> (CGRect, CGSize)?,
          shouldIgnore: @escaping (WindowHandle) -> Bool,
          restoreOnDrag: @escaping () -> Bool = { true },
+         dragToSnap: @escaping () -> Bool = { true },
+         zoneGrid: @escaping () -> ZoneGrid? = { nil },
+         modifiers: @escaping () -> (shift: Bool, option: Bool) = { (false, false) },
+         showZones: @escaping (SnapZoneLayout?) -> Void = { _ in },
          now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.probe = probe; self.frame = frame; self.apply = apply; self.setFrame = setFrame
         self.preview = preview; self.displays = displays; self.options = options; self.macOS = macOS
-        self.lastMove = lastMove; self.shouldIgnore = shouldIgnore; self.restoreOnDrag = restoreOnDrag; self.now = now
+        self.lastMove = lastMove; self.shouldIgnore = shouldIgnore; self.restoreOnDrag = restoreOnDrag
+        self.dragToSnap = dragToSnap; self.zoneGrid = zoneGrid; self.modifiers = modifiers; self.showZones = showZones; self.now = now
     }
 
     /// A drag is under way: its release decides what happens.
@@ -189,6 +205,19 @@ final class WindowDragTracker {
         reset()
     }
 
+    /// Shift or Option went down or up. While the overlay is on and a window is being dragged,
+    /// Shift shows its zones; macOS's tiling settings are read again each time they show.
+    func modifiersChanged(shift: Bool, option: Bool) {
+        guard [.reading, .confirmed].contains(phase), var session, let grid = dragGrid,
+              shift != held.shift || (shift && option != held.option) else { return }
+        held = (shift, option)
+        let effects = session.shiftChanged(shift, pointer: latest.point, time: latest.time, displays: dragDisplays, grid: grid,
+                                           options: dragOptions, macOS: shift ? macOS() : MacWindowManagerSettings(), optionDown: option)
+        self.session = session
+        handle(effects)
+        scheduleDwell()
+    }
+
     /// Escape during a window drag: no snap at the release. The drag itself goes on.
     func escape() {
         guard phase == .confirmed, var session else { return }
@@ -208,8 +237,11 @@ final class WindowDragTracker {
         session = nil
         reads = 0
         readInFlight = false
+        held = (false, false)
+        dragGrid = nil
         cancelDwell()
         if previewShown { previewShown = false; preview(nil) }
+        if zoneLayout != nil { zoneLayout = nil; showZones(nil) }
         if wanted { onChange?() }
     }
 
@@ -239,9 +271,14 @@ final class WindowDragTracker {
             self.window = window
             self.dragDisplays = self.displays()
             self.dragOptions = self.options()
+            self.dragGrid = self.zoneGrid()
             self.session = SnapDragSession(window: frame, pointer: pointer, time: time, lastMove: move?.0, sizeBeforeMove: move?.1,
-                                           restoreOnDrag: move != nil, edgesPaused: self.macOS().edgeTiling, travel: travel)
+                                           restoreOnDrag: move != nil, edgesPaused: !self.dragToSnap() || self.macOS().edgeTiling,
+                                           travel: travel)
             self.phase = .reading
+            // Shift held from before the drag shows the zones once the window follows.
+            let held = self.modifiers()
+            self.modifiersChanged(shift: held.shift, option: held.option)
         }
     }
 
@@ -293,6 +330,18 @@ final class WindowDragTracker {
                     await previous?.value
                     await setFrame(frame, window)
                 }
+            case .showOverlay(let displayID):
+                guard let grid = dragGrid, let display = dragDisplays.first(where: { $0.id == displayID }) else { continue }
+                zoneLayout = SnapZoneLayout(display: display, grid: grid, options: dragOptions)
+                showZones(zoneLayout)
+            case .highlight(let action):
+                guard var layout = zoneLayout else { continue }
+                layout.highlight = action
+                zoneLayout = layout
+                showZones(layout)
+            case .hideOverlay:
+                zoneLayout = nil
+                showZones(nil)
             }
         }
     }
@@ -324,6 +373,7 @@ final class WindowDragTracker {
         phase = .abandoned
         cancelDwell()
         if previewShown { previewShown = false; preview(nil) }
+        if zoneLayout != nil { zoneLayout = nil; showZones(nil) }
         #if DEBUG
         Logger(subsystem: "frog", category: "windows").debug("drag abandoned")
         #endif
@@ -331,20 +381,23 @@ final class WindowDragTracker {
     }
 }
 
-/// Watches the mouse system-wide while drag to snap is on, and feeds a `WindowDragTracker`. The
-/// press and drag monitors cost a distance test per event; the release monitor exists only
-/// during a drag, and the Escape monitor only while a window is being dragged.
+/// Watches the mouse system-wide while drag to snap or the zone overlay is on, and feeds a
+/// `WindowDragTracker`. The press and drag monitors cost a distance test per event; the release
+/// monitor exists only during a drag, and the Escape monitor only while a window is being
+/// dragged. With `watchesModifiers`, for the overlay, it also notices Shift and Option.
 @MainActor
 final class WindowDragMonitor {
     let tracker: WindowDragTracker
+    let watchesModifiers: Bool
     private let releaseWatcher: MouseReleaseWatcher
     private var mouseMonitor: Any?
     private var escapeMonitor: Any?
     /// The top edge of the primary display in Cocoa coordinates, read at each press.
     private var primaryTop: CGFloat = 0
 
-    init(tracker: WindowDragTracker, releaseWatcher: MouseReleaseWatcher = MouseReleaseWatcher()) {
+    init(tracker: WindowDragTracker, watchesModifiers: Bool = false, releaseWatcher: MouseReleaseWatcher = MouseReleaseWatcher()) {
         self.tracker = tracker
+        self.watchesModifiers = watchesModifiers
         self.releaseWatcher = releaseWatcher
     }
 
@@ -353,7 +406,8 @@ final class WindowDragMonitor {
     func start() {
         guard mouseMonitor == nil else { return }
         tracker.onChange = { [weak self] in self?.sync() }
-        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged]) { [weak self] event in
+        let mask: NSEvent.EventTypeMask = watchesModifiers ? [.leftMouseDown, .leftMouseDragged, .flagsChanged] : [.leftMouseDown, .leftMouseDragged]
+        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
             MainActor.assumeIsolated { self?.handle(event) }
         }
     }
@@ -380,11 +434,25 @@ final class WindowDragMonitor {
             tracker.mouseDown(at: Self.accessibilityPoint(NSEvent.mouseLocation, primaryTop: primaryTop), time: event.timestamp)
         case .leftMouseDragged:
             tracker.dragged(to: Self.accessibilityPoint(NSEvent.mouseLocation, primaryTop: primaryTop), time: event.timestamp)
+            if watchesModifiers { modifiersChanged(event.modifierFlags) }
             // The release monitor gave up after its timeout during a long drag: watch again.
             if tracker.wantsRelease, !releaseWatcher.watching { sync() }
+        case .flagsChanged:
+            modifiersChanged(event.modifierFlags)
         default:
             break
         }
+    }
+
+    /// Only Shift and Option are looked at.
+    private func modifiersChanged(_ flags: NSEvent.ModifierFlags) {
+        tracker.modifiersChanged(shift: flags.contains(.shift), option: flags.contains(.option))
+    }
+
+    /// Whether Shift and Option are held now, wherever the keyboard focus is.
+    static func liveModifiers() -> (shift: Bool, option: Bool) {
+        let flags = NSEvent.modifierFlags
+        return (flags.contains(.shift), flags.contains(.option))
     }
 
     private func sync() {

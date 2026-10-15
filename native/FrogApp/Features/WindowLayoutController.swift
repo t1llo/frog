@@ -20,12 +20,14 @@ final class WindowLayoutController: ObservableObject {
     private var cheatSheet: WindowCheatSheetPanel?
     private var picker: LayoutPickerPanel?
     private var preview: WindowPreviewPanel?
+    private var zoneOverlay: SnapZoneOverlay?
     private let tracker = WindowTargetTracker()
     /// The app whose window the open picker arranges.
     private var pickerTarget: pid_t?
     private var previewTask: Task<Void, Never>?
     private var moveTask: Task<Void, Never>?
-    /// Watches window drags while drag to snap is on; nil otherwise, so no event monitor exists.
+    /// Watches window drags while drag to snap or the zone overlay is on; nil otherwise, so no
+    /// event monitor exists.
     private var dragMonitor: WindowDragMonitor?
 
     init(manager: WindowManager, access: WindowAccess = AXWindowAccess(),
@@ -51,8 +53,14 @@ final class WindowLayoutController: ObservableObject {
     /// Windows dragged to a screen edge or corner snap: the controller runs and drag to snap is on.
     var dragToSnapActive: Bool { running && WindowSwitches(configuration.preferences).dragToSnap }
 
+    /// Holding Shift during a window drag shows zones: the controller runs and the overlay is on.
+    var zoneOverlayActive: Bool { running && WindowSwitches(configuration.preferences).zoneOverlay }
+
     /// Mouse events are watched for window drags.
     var watchingDrags: Bool { dragMonitor?.running == true }
+
+    /// Shift and Option are watched during window drags, for the zone overlay.
+    var watchingModifiers: Bool { dragMonitor?.watchesModifiers == true }
 
     func configure(_ configuration: Configuration, active: Bool) {
         let previous = WindowSwitches(self.configuration.preferences).shortcutRules
@@ -62,7 +70,7 @@ final class WindowLayoutController: ObservableObject {
         // Registering the shortcuts again forgets one that is held, so its release never comes.
         if WindowSwitches(configuration.preferences).shortcutRules != previous { cheatSheet?.hide() }
         if pickerAvailable { tracker.start() } else { hidePicker(); tracker.stop() }
-        if dragToSnapActive { startDragMonitor() } else { stopDragMonitor() }
+        if dragToSnapActive || zoneOverlayActive { startDragMonitor(modifiers: zoneOverlayActive) } else { stopDragMonitor() }
     }
 
     func handle(_ command: WindowCommand, pressed: Bool) {
@@ -110,8 +118,9 @@ final class WindowLayoutController: ObservableObject {
 
     // MARK: Drag to snap
 
-    private func startDragMonitor() {
-        guard dragMonitor == nil else { return }
+    private func startDragMonitor(modifiers: Bool) {
+        if let dragMonitor, dragMonitor.watchesModifiers == modifiers { return }
+        stopDragMonitor()
         let manager = manager, access = access
         let own = ProcessInfo.processInfo.processIdentifier
         let tracker = WindowDragTracker(
@@ -125,8 +134,12 @@ final class WindowLayoutController: ObservableObject {
             macOS: { [weak self] in self?.readMacOS() ?? MacWindowManagerSettings() },
             lastMove: { key in await manager.lastMove(of: key).map { ($0.move.applied, $0.frame.size) } },
             shouldIgnore: { $0.key.pid == own },
-            restoreOnDrag: { [weak self] in self.map { WindowSwitches($0.configuration.preferences).restoreOnDrag } ?? false })
-        let monitor = WindowDragMonitor(tracker: tracker)
+            restoreOnDrag: { [weak self] in self.map { WindowSwitches($0.configuration.preferences).restoreOnDrag } ?? false },
+            dragToSnap: { [weak self] in self?.dragToSnapActive ?? false },
+            zoneGrid: { [weak self] in self.flatMap { $0.zoneOverlayActive ? WindowSwitches($0.configuration.preferences).zoneGrid : nil } },
+            modifiers: { WindowDragMonitor.liveModifiers() },
+            showZones: { [weak self] layout in self?.showZones(layout) })
+        let monitor = WindowDragMonitor(tracker: tracker, watchesModifiers: modifiers)
         monitor.start()
         dragMonitor = monitor
     }
@@ -134,6 +147,7 @@ final class WindowLayoutController: ObservableObject {
     private func stopDragMonitor() {
         dragMonitor?.stop()
         dragMonitor = nil
+        zoneOverlay?.hide()
     }
 
     /// Layouts from a drag use the same gaps and Stage Manager room as shortcuts, without cycling.
@@ -151,6 +165,13 @@ final class WindowLayoutController: ObservableObject {
         }
         catch is CancellationError { }
         catch { onError?(error) }
+    }
+
+    private func showZones(_ layout: SnapZoneLayout?) {
+        guard let layout else { zoneOverlay?.hide(); return }
+        let overlay = zoneOverlay ?? SnapZoneOverlay()
+        zoneOverlay = overlay
+        overlay.show(layout)
     }
 
     private func showDragPreview(_ frame: CGRect?) {

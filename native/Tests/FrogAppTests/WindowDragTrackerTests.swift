@@ -24,6 +24,8 @@ import FrogCore
         var probedKey: WindowKey?
         var slowReads = false
         var time: TimeInterval = 0
+        var shift = false
+        var zones: [SnapZoneLayout?] = []
     }
 
     private func makeTracker(_ access: FixtureWindowAccess, _ manager: WindowManager, _ probe: Probe) -> WindowDragTracker {
@@ -53,6 +55,9 @@ import FrogCore
             macOS: { MacWindowManagerSettings(edgeTiling: probe.edgeTiling) },
             lastMove: { key in await manager.lastMove(of: key).map { ($0.move.applied, $0.frame.size) } },
             shouldIgnore: { $0.key.pid == ProcessInfo.processInfo.processIdentifier },
+            zoneGrid: { .thirds },
+            modifiers: { (probe.shift, false) },
+            showZones: { probe.zones.append($0) },
             now: { probe.time })
     }
 
@@ -235,5 +240,50 @@ import FrogCore
         XCTAssertTrue(access.writes.contains(.size(dragged, CGSize(width: 800, height: 600))))
         tracker.mouseUp(at: CGPoint(x: 380, y: 40), time: 0.1)
         await tracker.settle()
+    }
+
+    func testWithShiftHeldTheReleaseInTheRightThirdAppliesIt() async {
+        let access = fixture(), manager = WindowManager(access: access), probe = Probe()
+        // macOS tiles at the edges, so Frog's edges are paused; the zones still work.
+        probe.edgeTiling = true
+        let tracker = makeTracker(access, manager, probe)
+        tracker.mouseDown(at: grab, time: 0)
+        await drag(tracker, access, to: CGPoint(x: 410, y: 210), time: 0.01)
+        await drag(tracker, access, to: CGPoint(x: 420, y: 210), time: 0.02)
+        XCTAssertEqual(probe.zones, [])
+        probe.shift = true
+        tracker.modifiersChanged(shift: true, option: false)
+        XCTAssertEqual(probe.zones.last??.frame, laptop.visibleFrame)
+        XCTAssertEqual(probe.zones.last??.zones.map(\.action), [.leftThird, .centerThird, .rightThird])
+        XCTAssertEqual(probe.zones.last??.highlight, .leftThird)
+        await drag(tracker, access, to: CGPoint(x: 1200, y: 500), time: 0.2)
+        XCTAssertEqual(probe.zones.last??.highlight, .rightThird)
+        let rightThird = CGRect(x: 960, y: 25, width: 480, height: 875)
+        XCTAssertEqual(probe.previews.last, rightThird)
+        XCTAssertEqual(access.writes, [], "Nothing moves before the release")
+
+        tracker.mouseUp(at: CGPoint(x: 1200, y: 500), time: 0.3)
+        await tracker.settle()
+        XCTAssertEqual(probe.zones.last, .some(nil), "The overlay hides")
+        XCTAssertEqual(access.windows[dragged]?.frame, rightThird)
+        let history = await manager.lastMove(of: dragged)
+        XCTAssertEqual(history?.action, .rightThird)
+    }
+
+    func testShiftHeldBeforeTheDragAndReleasedMidway() async {
+        let access = fixture(), manager = WindowManager(access: access), probe = Probe()
+        probe.shift = true
+        let tracker = makeTracker(access, manager, probe)
+        tracker.mouseDown(at: grab, time: 0)
+        await drag(tracker, access, to: CGPoint(x: 410, y: 210), time: 0.01)
+        await drag(tracker, access, to: CGPoint(x: 420, y: 210), time: 0.02)
+        XCTAssertEqual(probe.zones.last??.highlight, .leftThird, "Shown as soon as the window follows")
+        probe.shift = false
+        tracker.modifiersChanged(shift: false, option: false)
+        XCTAssertEqual(probe.zones.last, .some(nil))
+        await drag(tracker, access, to: CGPoint(x: 700, y: 500), time: 0.2)
+        tracker.mouseUp(at: CGPoint(x: 700, y: 500), time: 0.3)
+        await tracker.settle()
+        XCTAssertEqual(access.writes, [], "Back to the edges, and the middle is no edge")
     }
 }
