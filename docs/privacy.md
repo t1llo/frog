@@ -65,6 +65,7 @@ The optional floating processing indicator shows rule/status messages without ta
 <!-- slot: color-picker -->
 <!-- slot: quicklinks -->
 <!-- slot: emoji-picker -->
+<!-- slot: windows -->
 
 ## Updates
 
