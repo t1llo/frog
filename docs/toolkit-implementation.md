@@ -93,6 +93,16 @@ display the pointer is on. Drag its top grip or footer to move it; that position
 survives reopening in the same session, until the bar is centred again or its display
 is no longer available.
 
+Rows beyond the bar's own (calculations, emoji and what later tools add) come from row
+providers (`CommandBarRowProviding` in `CommandBarRows.swift`), asked in the order of the
+bar's provider list. Catalogue rows are built once per opening and ranked with the other
+records; rows for the typed text are rebuilt on every change, `.leading` ones above the
+ranked results and the others after the file results, and are never remembered as recent
+choices. A row without a primary action is informational: choosing it does nothing and the
+bar stays open. A primary action with `confirm` text asks first: the first Return shows that
+text in place of the subtitle, a second Return on the same row within three seconds runs it,
+and moving the selection, typing or waiting restores the row.
+
 A System Settings pane appears once, with the System Settings icon and that name beside
 it. The shortcut actions that open the same panes stay out of the results; the other
 shortcut actions say where they act: Finder, Mac or Current app.
