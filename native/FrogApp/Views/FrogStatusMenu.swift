@@ -87,6 +87,7 @@ struct FrogStatusMenu: View {
             if model.configuration.preferences.workflowSettings.clipboardHistoryEnabled == true {
                 action("Clipboard history", symbol: "clipboard", key: HotkeyManager.display(model.configuration.preferences.workflowSettings.effectiveClipboardHistoryHotkey)) { dismiss(); model.showClipboardHistory() }
             }
+            // slot: windows
         }
     }
 
