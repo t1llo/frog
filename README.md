@@ -26,6 +26,8 @@ A Mac app that lives in your menu bar and replaces ten small Mac apps.
 
 Enable tools individually in **Features**. No Frog account. No telemetry.
 
+The command bar can learn from your choices, so rows you pick often for what you type
+are listed a bit higher; it is off by default and stays on your Mac.
 Window switcher and Clipboard shortcuts are configured in their Features cards;
 clipboard entries live in **History**. **Shortcuts** groups Application, Windows
 and Other actions. In the window switcher, type to filter; the query shows at the top.

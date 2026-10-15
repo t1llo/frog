@@ -160,6 +160,18 @@ What ranking guarantees:
 under one lock, so two copies of Frog merge their picks. A broken or newer file is left
 as it is, and only forgetting the learned choices deletes it.
 
+`CommandChoiceStore` (FrogApp) reads the file only while **Learn from your choices** and
+the Command bar are both on (`command-bar.learn-choices`). A pick that completed, a copy
+with ⌘↩ included, changes the memory and the index at once and is saved on a serial
+utility queue; forgetting goes through the same queue, so a pick still being saved cannot
+bring the file back. Turning the switch or the Command bar off, from Settings or from the
+configuration file, and **Forget learned choices…** delete the file; quitting keeps it. A
+file that cannot be read or saved pauses learning, and the bar ranks with this session's
+picks only, until the choices are forgotten. After a load and after each pick, the 30
+strongest learned files are checked on a background task and listed before Spotlight
+answers; a learned file that fails to open is forgotten. The index is rebuilt when the bar
+opens if it is more than an hour old, never per keystroke.
+
 ## Dynamic popup sizing
 
 The later native reproduction found a 326-point MenuBarExtra window retaining its

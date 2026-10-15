@@ -52,6 +52,8 @@ The optional floating processing indicator shows rule/status messages without ta
 
 <!-- slot: explain -->
 <!-- slot: command-bar -->
+**Command bar choices.** With Learn from your choices on, Frog keeps the text you typed (up to 32 characters) and the rows you picked (including app and file paths) with their dates in `~/Library/Application Support/Frog/command-choices.json`, readable only by you. Clipboard rows and windows are never recorded. Unused choices fade after a few weeks. The file is never exported, synced or sent anywhere, and it is deleted when you press Forget learned choices, turn the switch off or turn the Command bar off.
+
 <!-- slot: usage -->
 <!-- slot: clipboard -->
 <!-- slot: processes -->
