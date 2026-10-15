@@ -4,6 +4,9 @@ import FrogCore
 /// The Windows page: layout shortcuts for the front window, and the way to the window switcher.
 struct WindowsView: View {
     @EnvironmentObject private var model: AppModel
+    /// What the last "Use suggested shortcuts" did, until the page closes.
+    @State private var suggestion: String?
+    @State private var voiceOverNote = false
 
     var body: some View {
         let rows = WindowAction.shortcutRows(configured: model.configuration.rules)
@@ -29,13 +32,39 @@ struct WindowsView: View {
                 }
             }
             SettingsSection(title: "Layout shortcuts") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Button("Use suggested shortcuts", action: useSuggestedShortcuts).buttonStyle(FrogButtonStyle())
+                    if let suggestion {
+                        Text(suggestion).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if voiceOverNote {
+                        Text("VoiceOver uses Control-Option. These shortcuts work, but VoiceOver users may prefer others.")
+                            .font(.system(size: 11)).foregroundStyle(FrogStyle.warning)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 6)
                 VStack(spacing: 0) {
                     ForEach(rows) { rule in
-                        ShortcutRuleRow(rule: rule, model: model) { ShortcutRuleSymbol() }
+                        ShortcutRuleRow(rule: rule, model: model) {
+                            if let action = rule.action?.windowAction {
+                                WindowLayoutGlyph(action: action).frame(width: 28, height: 28)
+                            } else { ShortcutRuleSymbol() }
+                        }
                             .padding(.vertical, 8)
                             .overlay(alignment: .bottom) {
                                 if rule.id != lastRowID { Divider().opacity(0.5) }
                             }
+                    }
+                }
+            }
+            SettingsSection(title: "Cheat sheet") {
+                CompactRow(title: "Show window shortcuts while holding", detail: "Hold the shortcut to see your window shortcuts. Release it to close.") {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        HotkeyRecorder(hotkey: commandShortcut(.cheatSheet))
+                        if let issue = model.hotkeyErrors[WindowCommand.cheatSheet.id] {
+                            Text(issue).font(.caption2).foregroundStyle(FrogStyle.warning)
+                        }
                     }
                 }
             }
@@ -53,6 +82,25 @@ struct WindowsView: View {
 
     private func binding<Value>(_ field: WritableKeyPath<WindowPreferences, Value>) -> Binding<Value> {
         Binding(get: { settings[keyPath: field] }, set: { value in update { $0[keyPath: field] = value } })
+    }
+
+    /// A command's shortcut. One the window switcher uses is refused, so the switcher keeps working.
+    private func commandShortcut(_ command: WindowCommand) -> Binding<Hotkey?> {
+        Binding(get: { settings.shortcuts[command.rawValue] }, set: { value in
+            if let value, AppModel.windowSwitcherChords(model.configuration.preferences).contains(value) {
+                model.report(FrogError.message("The window shortcut for \(command.title) conflicts with another shortcut."))
+                return
+            }
+            update { $0.shortcuts[command.rawValue] = value }
+        })
+    }
+
+    private func useSuggestedShortcuts() {
+        do {
+            let result = try model.applySuggestedWindowShortcuts()
+            suggestion = result.summary(display: HotkeyManager.display)
+            voiceOverNote = NSWorkspace.shared.isVoiceOverEnabled
+        } catch { model.report(error) }
     }
 
     /// Saves a change to the Windows settings. Every control on this page saves through it.
