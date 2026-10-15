@@ -35,6 +35,30 @@ final class CommandSearchTests: XCTestCase {
         XCTAssertEqual(Set(CommandSearch.results([app, feature], query: "stay", preferred: [files[7]], trailing: files).map(\.id)).count, 80)
     }
 
+    func testOneLatchedRecordLeadsEverythingAndEveryOtherRowKeepsItsPlace() {
+        let exactApp = SearchRecord(id: "app:Budget", title: "Budget", prominent: true)
+        let appPrefix = SearchRecord(id: "app:BudgetPro", title: "Budget Pro", prominent: true)
+        let note = SearchRecord(id: "note:budget", title: "Budget")
+        let family = SearchRecord(id: "note:family", title: "Family budget")
+        let groceries = SearchRecord(id: "note:groceries", title: "Groceries", keywords: "budget")
+        let file = SearchRecord(id: "file:budget", title: "Budget 2026.xlsx")
+        let records = [groceries, family, note, appPrefix, exactApp]
+        let today = CommandSearch.results(records, query: "budget", trailing: [file])
+        XCTAssertEqual(today.map(\.id), ["app:Budget", "app:BudgetPro", "note:budget", "file:budget", "note:family", "note:groceries"])
+        // The latched file passes the exact application, which comes second; nothing else moves.
+        for preferred in [[], [file], [family, file]] {
+            let learned = CommandSearch.results(records, query: "budget", preferred: preferred, trailing: [file], latched: "file:budget")
+            let unlatched = CommandSearch.results(records, query: "budget", preferred: preferred, trailing: [file])
+            XCTAssertEqual(learned.map(\.id), ["file:budget"] + unlatched.map(\.id).filter { $0 != "file:budget" })
+            XCTAssertEqual(learned.dropFirst().first?.id, "app:Budget")
+        }
+        // A latched row the typed text does not find is not listed, and the empty query ignores it.
+        let calendar = SearchRecord(id: "app:Calendar", title: "Calendar", prominent: true)
+        XCTAssertEqual(CommandSearch.results(records + [calendar], query: "budget", trailing: [file], latched: "app:Calendar"), today)
+        XCTAssertEqual(CommandSearch.results(records, query: "budget", trailing: [file], latched: "missing"), today)
+        XCTAssertEqual(CommandSearch.results(records, query: "", latched: "note:budget"), CommandSearch.results(records, query: ""))
+    }
+
     func testTheKindEveryApplicationSharesDoesNotListThemAllButOpenAndLaunchStillFindOne() {
         let apps = (0..<100).map { SearchRecord(id: "app:\($0)", title: "Fixture Tool \($0)", subtitle: "App", keywords: "FixtureWidget\($0)", prominent: true) }
         let note = SearchRecord(id: "note", title: "Groceries", subtitle: "Notes", keywords: "happy hour supplies")

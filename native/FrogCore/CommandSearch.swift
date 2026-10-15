@@ -29,7 +29,8 @@ public struct SearchRecord: Identifiable, Equatable, Sendable {
 
 public enum CommandSearch {
     /// Within one relevance bucket `preferred` records lead, then applications, then the catalogue; `trailing` records come last.
-    public static func results(_ records: [SearchRecord], query: String, limit: Int = 80, preferred: [SearchRecord] = [], trailing: [SearchRecord] = []) -> [SearchRecord] {
+    /// A `latched` record that matches leads every bucket; one that does not match is not listed.
+    public static func results(_ records: [SearchRecord], query: String, limit: Int = 80, preferred: [SearchRecord] = [], trailing: [SearchRecord] = [], latched: String? = nil) -> [SearchRecord] {
         let query = normalized(query)
         guard limit > 0 else { return [] }
         var preferredIDs = Set<String>()
@@ -51,8 +52,9 @@ public enum CommandSearch {
         let named = words.filter { !applicationContext.contains($0) }
         let applicationWords = named.isEmpty ? words : named
         // Stable rank buckets avoid sorting the entire catalogue on every keystroke: five relevance levels
-        // (the fifth holds exact application titles), each with its leading records ahead of the rest.
-        var ranked = [[SearchRecord]](repeating: [], count: 10)
+        // (the fifth holds exact application titles), each with its leading records ahead of the rest, and above
+        // them the one latched record.
+        var ranked = [[SearchRecord]](repeating: [], count: 11)
         func append(_ record: SearchRecord, leading: Bool = false) {
             let title = record.searchTitle
             if record.queryStyle == .command && !canMatchCommand { return }
@@ -62,7 +64,7 @@ public enum CommandSearch {
             let match = title == query || title == effectiveQuery || record.aliases.contains(effectiveQuery) ? 3
                 : title.hasPrefix(effectiveQuery) || record.aliases.contains(where: { $0.hasPrefix(effectiveQuery) }) ? 2
                 : title.contains(effectiveQuery) ? 1 : 0
-            let rank = (record.prominent && match > 0 ? match + 1 : match) * 2 + (leading || record.prominent ? 1 : 0)
+            let rank = record.id == latched ? 10 : (record.prominent && match > 0 ? match + 1 : match) * 2 + (leading || record.prominent ? 1 : 0)
             if ranked[rank].count < limit { ranked[rank].append(record) }
         }
         for record in preferred { append(record, leading: true) }
@@ -75,10 +77,12 @@ public enum CommandSearch {
     fileprivate static func commandSubject(_ query: String) -> [String] {
         query.split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { !commandContext.contains($0) }
     }
-    fileprivate static func normalized(_ value: String) -> String {
+    /// The text the bar compares: case and diacritics folded, outer whitespace trimmed.
+    public static func searchKey(_ value: String) -> String {
         value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
+    fileprivate static func normalized(_ value: String) -> String { searchKey(value) }
 }
 
 /// A bounded arithmetic grammar, never a shell, JavaScript or Objective-C expression.
