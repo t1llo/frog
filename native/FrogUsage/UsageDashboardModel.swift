@@ -167,10 +167,45 @@ public struct UsagePlanPeriod: Identifiable {
 /// The places that show usage on screen.
 public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
 
+/// One Claude account while Frog shows each: its limits as its own store reads them.
+public struct UsageAccountSummary: Identifiable {
+    /// The account's slot path; stable while its folders stay where they are.
+    public let id: String
+    public let label: String
+    /// The first six characters, for the menu bar.
+    public let shortLabel: String
+    /// Session, Week, Week · Sonnet and Week · Opus, as far as the reading has them.
+    public let windows: [UsageWindow]
+    public let plan: String?
+    /// "Claude app · Claude-Account-B", "Claude Code · ~/.claude".
+    public let sources: [String]
+    /// When the reading on display was made.
+    public let age: Date?
+    /// No reading, or one older than 30 minutes.
+    public let stale: Bool
+    public let status: String?
+    /// Counts in the menu bar and in combined values.
+    public let included: Bool
+    /// Known only from the Claude app, which saved nothing recent, while Claude Code could sign in.
+    public let needsLiveSetup: Bool
+    /// "Claude and Claude-2 are signed in to the same account".
+    public let mergedNote: String?
+}
+
+/// One kind of limit, such as the session, over every included Claude account.
+public typealias UsageCombinedWindow = ClaudeAccountsCombination.Combined
+
+extension ClaudeAccountsCombination.Combined: Identifiable {
+    public var id: String { window.id }
+}
+
 /// Optional usage module: construction never scans files or reads credentials.
 /// Disabling cancels owned polling and rejects results from previous generations.
 @MainActor public final class UsageDashboardModel: ObservableObject {
+    /// The one Claude account Frog reads while it does not show each account.
     private let claude: Store
+    /// Every Claude account on this Mac; it only looks for them while the switch is off.
+    let claudeAccountsModel: ClaudeAccountsModel
     private let tokens: TokenStore
     private let fixtureRoot: URL?
     private let defaults: UserDefaults
@@ -184,8 +219,8 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
     public var metrics: [String] { TokenMetric.allCases.map(\.rawValue) }
     public var loginSources: [String] { ClaudeLoginSource.allCases.map(\.rawValue) }
     public var loginSource: String { claude.loginSource.rawValue }
-    public var accountLabel: String? { claude.authLabel }
-    public var claudeConfigDirectory: URL { claude.configDirectory }
+    public var accountLabel: String? { primary.authLabel }
+    public var claudeConfigDirectory: URL { primary.configDirectory }
     public var loaded: Bool { tokens.loaded }
     public var activityWarning: String? { tokens.activityWarning }
     public var hasAccountActivity: Bool { tokens.activity != nil }
@@ -200,7 +235,11 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
     /// Whether something on screen currently keeps the ten-second refresh going.
     public var isVisiblePolling: Bool { visibleTimer != nil }
 
-    public init(defaults: UserDefaults? = nil, fixtureRoot: URL? = nil) {
+    public convenience init(defaults: UserDefaults? = nil, fixtureRoot: URL? = nil) {
+        self.init(defaults: defaults, fixtureRoot: fixtureRoot, claudeAccounts: nil)
+    }
+    /// `claudeAccounts` replaces the accounts' discovery and stores, for tests.
+    init(defaults: UserDefaults?, fixtureRoot: URL?, claudeAccounts: ClaudeAccountsModel?) {
         let defaults = defaults ?? UsagePreferences.defaults
         self.defaults = defaults
         self.fixtureRoot = fixtureRoot
@@ -209,25 +248,78 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
         claude = Store(defaults: defaults, startPolling: false,
                        readDesktop: { live ? readClaudeDesktop(directory: $0, files: desktopFiles) : nil },
                        renewLogin: { live ? ClaudeCodeCLI.renewLogin(directory: $0, deadline: $1) : .unavailable })
+        // A fixture model looks for accounts in the fixture's folders and never reads a login.
+        claudeAccountsModel = claudeAccounts ?? ClaudeAccountsModel(
+            defaults: defaults, home: fixtureRoot ?? FileManager.default.homeDirectoryForCurrentUser,
+            environment: live ? ProcessInfo.processInfo.environment : [:],
+            makeStore: { account, delay in
+                let files = ClaudeDesktopFiles(), profiles = [account.profileFile].compactMap { $0 }
+                let store = Store(account: account, defaults: defaults,
+                                  readAuth: { live ? readClaudeAuth(source: $0, directory: $1) : nil },
+                                  fetchLimits: { token in
+                                      guard live else { throw FetchError.noToken }
+                                      return try await fetchUsage(token: token)
+                                  },
+                                  readDesktop: { readClaudeDesktop(folder: $0, profiles: profiles, files: files) },
+                                  renewLogin: { live ? ClaudeCodeCLI.renewLogin(directory: $0, deadline: $1) : .unavailable })
+                store.startDelay = delay
+                return store
+            })
         tokens = TokenStore(fixtureRoot: fixtureRoot, claudeDirectory: ClaudePaths.directory(defaults: defaults))
         var saved = defaults.data(forKey: "dashboardPreferences").flatMap { try? JSONDecoder().decode(UsageDashboardPreferences.self, from: $0) } ?? UsageDashboardPreferences()
         saved.loginSource = claude.loginSource.rawValue
         preferences = Self.validated(saved)
         claude.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
+        claudeAccountsModel.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         tokens.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
     }
     public func setActive(_ active: Bool) {
         guard !active || available else { return }
         guard active != self.active else { return }; self.active = active
-        if active { if fixtureRoot == nil { claude.start() }; tokens.start() }
-        else { claude.stop(); tokens.stop() }
+        if active {
+            if fixtureRoot == nil, !claudeAccountsModel.enabled { claude.start() }
+            claudeAccountsModel.start(); tokens.start()
+        }
+        else { claude.stop(); claudeAccountsModel.stop(); tokens.stop() }
         updateVisiblePolling()
     }
     public func setAvailable(_ available: Bool) {
         self.available = available
+        updateClaudeAccounts()
         setActive(available)
     }
-    public func refresh() { guard active else { return }; if fixtureRoot == nil { claude.tick() }; tokens.refresh(forceLocal: true) }
+    /// The Refresh button: also looks for Claude accounts again.
+    public func refresh() {
+        guard active else { return }
+        claudeAccountsModel.detect()
+        refreshShown()
+    }
+    private func refreshShown() {
+        guard active else { return }
+        if fixtureRoot == nil { claude.tick() }
+        claudeAccountsModel.tick()
+        tokens.refresh(forceLocal: true)
+    }
+    /// Each account's store takes over from the one store, which shares the default account's
+    /// saved request gate, so only one of them runs at a time.
+    private func updateClaudeAccounts() {
+        let on = preferences.claudeAccounts && available
+        guard on != claudeAccountsModel.enabled else { return }
+        if on { claude.stop() }
+        claudeAccountsModel.setEnabled(on)
+        if !on {
+            claude.reloadPolling()
+            if active, fixtureRoot == nil { claude.start() }
+        }
+    }
+    /// The store the single-account surfaces read: while each account is shown, the default account's.
+    private var primary: Store {
+        guard claudeAccountsModel.enabled else { return claude }
+        let accounts = claudeAccountsModel.accounts
+        guard let account = accounts.first(where: { $0.pollingKey == ClaudePollingState.defaultsKey }) ?? accounts.first,
+              let store = claudeAccountsModel.stores[account.id] else { return claude }
+        return store
+    }
     /// Visible graphs update promptly; cloud polling retains its independent cooldowns.
     /// A presenter may repeat itself: a window that keeps its page after closing reports
     /// "hidden" on every change of its state, also in the middle of a view update.
@@ -240,9 +332,9 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
     private func updateVisiblePolling() {
         visibleTimer?.invalidate(); visibleTimer = nil
         guard active, !presenters.isEmpty else { return }
-        refresh()
+        refreshShown()
         visibleTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+            Task { @MainActor in self?.refreshShown() }
         }
         visibleTimer?.tolerance = 1
     }
@@ -250,18 +342,23 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
         var next = preferences; next.loginSource = value; updatePreferences(next)
     }
     /// Claude limits cannot be read until the user signs in to Claude Code.
-    public var needsClaudeSignIn: Bool { fixtureRoot == nil && active && claude.needsClaudeCodeLogin }
+    /// An account known only from the Claude app is set up with `liveSetupCommand(for:)` instead.
+    public var needsClaudeSignIn: Bool {
+        let store = primary
+        if let account = store.account, account.codeFolder == nil { return false }
+        return fixtureRoot == nil && active && store.needsClaudeCodeLogin
+    }
     /// A sign-in was asked for and Claude Code's login is being checked first; asking again does nothing.
-    public var checkingClaudeSignIn: Bool { claude.checkingLogin }
+    public var checkingClaudeSignIn: Bool { primary.checkingLogin }
     /// The shell command for Claude Code's own sign-in; nil when Claude Code is not installed.
     public var claudeSignInCommand: String? {
-        ClaudeCodeCLI.executable().map { ClaudeCodeCLI.signInCommand(executable: $0, directory: claude.configDirectory) }
+        ClaudeCodeCLI.executable().map { ClaudeCodeCLI.signInCommand(executable: $0, directory: primary.configDirectory) }
     }
     /// The user asked to sign in. From now on the account is checked through Claude Code's login,
     /// and the result says whether the user still has to sign in for that.
     public func beginClaudeSignIn() async -> Bool {
-        if claude.loginSource == .claudeDesktop { selectLoginSource(ClaudeLoginSource.automatic.rawValue) }
-        return await claude.beginSignIn()
+        if !claudeAccountsModel.enabled, claude.loginSource == .claudeDesktop { selectLoginSource(ClaudeLoginSource.automatic.rawValue) }
+        return await primary.beginSignIn()
     }
     /// Machine-local profile selection, matching standalone; never part of portable exports.
     public func selectClaudeConfigDirectory(_ directory: URL) {
@@ -281,6 +378,7 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
         preferences = value
         defaults.set(try? JSONEncoder().encode(value), forKey: "dashboardPreferences")
         if let source = ClaudeLoginSource(rawValue: value.loginSource) { claude.setLoginSource(source) }
+        updateClaudeAccounts()
     }
     private static func validated(_ value: UsageDashboardPreferences) -> UsageDashboardPreferences {
         UsageDashboardPreferences(provider: Provider(rawValue: value.provider)?.rawValue ?? "Claude",
@@ -295,7 +393,10 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
     }
     public func windows(provider: String, now: Date = Date()) -> [UsageWindow] {
         let claude = provider == Provider.claude.rawValue
-        let source = claude ? self.claude.displayUsage(now: now) : tokens.codexLimits?.current(now: now)
+        let source = claude ? primary.displayUsage(now: now) : tokens.codexLimits?.current(now: now)
+        return Self.windows(source, claude: claude, now: now)
+    }
+    private static func windows(_ source: Usage?, claude: Bool, now: Date) -> [UsageWindow] {
         var windows = (source?.limits ?? []).filter { $0.resetsAt.map { $0 > now } ?? true }.map {
             UsageWindow(id: $0.id, title: $0.label, percentage: $0.pct, resetsAt: $0.resetsAt, duration: $0.window)
         }
@@ -308,7 +409,7 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
     }
     public func status(provider: String) -> String {
         if !active { return "Mr. Usage is disabled. Collection is paused." }
-        if provider == Provider.claude.rawValue { return claude.status }
+        if provider == Provider.claude.rawValue { return primary.status }
         if let error = tokens.liveError { return error }
         if tokens.checkingLive { return "Refreshing plan limits…" }
         if let limits = tokens.codexLimits, limits.current(now: Date()).limits.isEmpty, limits.credits == nil {
@@ -317,18 +418,18 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
         return tokens.codexLimits == nil ? "Sign in to Codex or OpenCode to read plan limits." : "Newest available plan limits"
     }
     public func planWarning(provider: String) -> String? {
-        if provider == Provider.claude.rawValue { return claude.warning }
+        if provider == Provider.claude.rawValue { return primary.warning }
         return tokens.liveError
     }
     public func credits(provider: String) -> String? {
         if provider == Provider.claude.rawValue {
-            guard let credits = claude.displayUsage()?.credits else { return nil }
+            guard let credits = primary.displayUsage()?.credits else { return nil }
             return "Extra usage: \(money(credits.usedCents))" + (credits.limitCents.map { " of \(money($0))" } ?? "")
         }
         return tokens.codexCredits.map { "Additional usage: \($0.displayBalance) credits" }
     }
     public func planName(provider: String) -> String? {
-        if provider == "Claude" { return claude.plan }
+        if provider == "Claude" { return primary.plan }
         guard provider == "OpenAI", let plan = tokens.codexLimits?.plan, !plan.isEmpty else { return nil }
         switch plan {
         case "prolite": return "Pro Lite"
@@ -341,12 +442,12 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
         }
     }
     public func planSource(provider: String) -> String? {
-        if provider == "Claude" { return claude.reading().map { $0.source == .desktop ? "Claude app" : "Anthropic account" } }
+        if provider == "Claude" { return primary.reading().map { $0.source == .desktop ? "Claude app" : "Anthropic account" } }
         guard let limits = tokens.codexLimits else { return nil }
         return limits.live ? "OpenAI account" : "Local Codex log"
     }
     public func planUpdatedAt(provider: String) -> Date? {
-        provider == "Claude" ? claude.reading()?.at ?? claude.lastGoodAt : tokens.codexLimits?.asOf
+        provider == "Claude" ? primary.reading()?.at ?? primary.lastGoodAt : tokens.codexLimits?.asOf
     }
     public func chart(provider: String, range: String, metric: String) -> UsageChart {
         let metric = TokenMetric(rawValue: metric) ?? .cost
@@ -372,5 +473,100 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
         guard metric == .cost, value < 1000, value == value.rounded() else { return metric.format(value) }
         return String(format: "$%.0f", value)
     }
-    isolated deinit { visibleTimer?.invalidate(); claude.stop(); tokens.stop() }
+    isolated deinit { visibleTimer?.invalidate(); claude.stop(); claudeAccountsModel.stop(); tokens.stop() }
+}
+
+// MARK: - Several Claude accounts
+
+extension UsageDashboardModel {
+    /// The limit windows an account's row shows, in this order.
+    static let accountWindowIDs = ["five_hour", "seven_day", "seven_day_sonnet", "seven_day_opus"]
+
+    /// Each Claude account on this Mac is shown on its own or combined.
+    public var claudeAccountsEnabled: Bool { claudeAccountsModel.enabled }
+
+    /// Each account and its reading, in slot order; empty while the switch is off.
+    public func accounts(now: Date = Date()) -> [UsageAccountSummary] {
+        guard claudeAccountsModel.enabled else { return [] }
+        let model = claudeAccountsModel
+        return model.accounts.map { account in
+            let store = model.stores[account.id], label = model.label(account)
+            let reading = store?.reading(now: now)
+            let windows = Self.windows(reading?.usage, claude: true, now: now).filter { Self.accountWindowIDs.contains($0.id) }
+            return UsageAccountSummary(
+                id: account.id, label: label, shortLabel: ClaudeAccountLabels.shortLabel(label), windows: windows,
+                plan: store?.plan, sources: sources(of: account), age: reading?.at,
+                stale: reading.map { now.timeIntervalSince($0.at) > ClaudeDesktopUsage.freshness } ?? true,
+                status: store?.status, included: model.isIncluded(account),
+                needsLiveSetup: model.needsLiveSetup(account, now: now), mergedNote: account.mergedDescription)
+        }
+    }
+
+    /// Session, Week and the model weeks over the included accounts, for each kind any of them has.
+    public func combinedWindows(now: Date = Date()) -> [UsageCombinedWindow] {
+        let accounts = accounts(now: now)
+        let inputs = accounts.map { ClaudeAccountsCombination.Account(label: $0.label, included: $0.included, plan: $0.plan, windows: $0.windows) }
+        let kinds = Self.accountWindowIDs.filter { id in accounts.contains { $0.included && $0.windows.contains { $0.id == id } } }
+        return kinds.map { ClaudeAccountsCombination.combine(inputs, window: $0, now: now) }
+    }
+
+    /// Accounts the last search found, also while the switch is off.
+    public var detectedAccountCount: Int { claudeAccountsModel.detectedCount }
+
+    /// Offers once to show each account, until it is accepted or declined.
+    public var accountsNoticeVisible: Bool {
+        !preferences.claudeAccounts && !claudeAccountsModel.noticeDismissed && claudeAccountsModel.detectedCount >= 2
+    }
+
+    /// "Frog found 2 Claude accounts on this Mac: the Claude app’s “Claude” and “Claude-Account-B”
+    /// folders. Show usage for each? Frog reads their saved limits locally."
+    public var accountsNoticeText: String {
+        let found = claudeAccountsModel.detectedFolders
+        let names = found.names.map { "“\($0)”" }
+        let list = names.count <= 2 ? names.joined(separator: " and ")
+            : names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
+        return "Frog found \(claudeAccountsModel.detectedCount) Claude accounts on this Mac: \(found.app ? "the Claude app’s" : "Claude Code’s") \(list) folders. Show usage for each? Frog reads their saved limits locally."
+    }
+
+    /// "Show both", or "Show all 3" for more.
+    public var accountsNoticeAction: String {
+        claudeAccountsModel.detectedCount > 2 ? "Show all \(claudeAccountsModel.detectedCount)" : "Show both"
+    }
+
+    /// Show both: turns the switch on and saves it through `onPreferencesChange`.
+    public func showAllAccounts() {
+        var next = preferences; next.claudeAccounts = true; updatePreferences(next)
+    }
+
+    /// Not now: the notice never comes back; the switch stays on the page.
+    public func dismissAccountsNotice() { claudeAccountsModel.dismissNotice() }
+
+    public func renameAccount(_ id: String, to label: String) { claudeAccountsModel.rename(id, to: label) }
+
+    public func setAccountIncluded(_ id: String, _ on: Bool) { claudeAccountsModel.setIncluded(id, on) }
+
+    /// "Add folder…": a Claude app data folder or a Claude Code folder the search does not find.
+    public func addClaudeAccountFolder(_ url: URL) { claudeAccountsModel.addFolder(url) }
+
+    /// The Terminal command that signs Claude Code in to a new profile for an account known only
+    /// from the Claude app; nil when Claude Code is not installed or the account has a login.
+    public func liveSetupCommand(for id: String) -> String? { claudeAccountsModel.liveSetupCommand(for: id) }
+
+    /// "Claude app · Claude-Account-B", "Claude Code · ~/.claude"; the home folder written as `~`.
+    private func sources(of account: ClaudeAccount) -> [String] {
+        let home = claudeAccountsModel.home.standardizedFileURL.path
+        let support = home + "/Library/Application Support/"
+        func shown(_ url: URL) -> String {
+            let path = url.standardizedFileURL.path
+            if path.hasPrefix(support) { return String(path.dropFirst(support.count)) }
+            return path == home ? "~" : path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
+        }
+        var sources = account.appFolder.map { ["Claude app · \(shown($0))"] } ?? []
+        sources += account.mergedFolders.filter { ClaudeAccountDiscovery.isAppFolderName($0.lastPathComponent) }
+            .map { "Claude app · \(shown($0))" }
+        if let code = account.codeFolder { sources.append("Claude Code · \(shown(code))") }
+        sources += account.mergedFolders.filter { !ClaudeAccountDiscovery.isAppFolderName($0.lastPathComponent) }
+            .map { "Claude Code · \(shown($0))" }
+        return sources
+    }
 }

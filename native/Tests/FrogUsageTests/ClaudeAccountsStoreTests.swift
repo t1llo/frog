@@ -1,0 +1,323 @@
+import XCTest
+@testable import FrogUsage
+
+/// A fixture home in a temporary folder whose name has a space, fake organization ids, and fakes
+/// for every login, request and renewal: no test reads a real login or sends anything.
+@MainActor final class ClaudeAccountsStoreTests: XCTestCase {
+    private let base = Date(timeIntervalSince1970: 1_760_000_000)
+    private var home: URL!
+    private var suite: String!
+    private var defaults: UserDefaults!
+
+    override func setUp() async throws {
+        home = FileManager.default.temporaryDirectory.appendingPathComponent("frog tests \(UUID().uuidString)")
+        suite = "frog-tests-\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suite)!
+    }
+
+    override func tearDown() async throws {
+        try? FileManager.default.removeItem(at: home)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    private final class World: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _now: Date
+        private var _fetches: [String: Int] = [:], _authReads: [String] = [], _desktopReads: [String] = []
+        private var _organizations: [String: Bool] = [:]
+        /// Logins by Claude Code folder name, with their organization.
+        let logins: [String: String]
+        var throttled: Set<String> = []
+        init(now: Date, logins: [String: String]) { _now = now; self.logins = logins }
+        private func locked<Value>(_ body: () -> Value) -> Value { lock.lock(); defer { lock.unlock() }; return body() }
+        var now: Date { get { locked { _now } } set { locked { _now = newValue } } }
+        func fetches(_ folder: String) -> Int { locked { _fetches[folder] ?? 0 } }
+        var authReads: [String] { locked { _authReads } }
+        var desktopReads: [String] { locked { _desktopReads } }
+        var organizationReads: [String] { locked { Array(_organizations.keys) } }
+        func auth(_ directory: URL) -> ClaudeAuth? {
+            let name = directory.lastPathComponent
+            locked { _authReads.append(name) }
+            guard let organization = logins[name] else { return nil }
+            return ClaudeAuth(token: name, source: .claudeCode, identity: "claudeCode|\(directory.path)|account-\(name)|\(organization)",
+                              label: "Fixture", hasAccountMetadata: true)
+        }
+        func fetch(_ token: String, at now: Date) throws -> Usage {
+            let throttle = locked { _fetches[token, default: 0] += 1; return throttled.contains(token) }
+            if throttle { throw FetchError.http(429, retryAfter: nil, message: nil) }
+            return Usage(limits: [Limit(id: "five_hour", label: "Session", pct: 12, resetsAt: now.addingTimeInterval(3600), window: 5 * 3600),
+                                  Limit(id: "seven_day", label: "Week", pct: 20, resetsAt: now.addingTimeInterval(3 * 86_400), window: 7 * 86_400)])
+        }
+        func readDesktop(_ folder: URL) { locked { _desktopReads.append(folder.lastPathComponent) } }
+        func readOrganization(_ source: ClaudeAccountSource) { locked { _organizations[source.folder.lastPathComponent] = true } }
+    }
+
+    // MARK: Fixtures
+
+    private var support: URL { home.appendingPathComponent("Library/Application Support") }
+
+    /// A Claude app folder whose history's newest sample names `organization`.
+    private func app(_ name: String, organization: String, at date: Date, session: Double = 55) throws {
+        let folder = support.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let sample: [String: Any] = ["t": date.timeIntervalSince1970 * 1000, "org": organization, "u": ["fh": session, "sd": 40]]
+        try JSONSerialization.data(withJSONObject: ["version": 2, "samples": [sample]])
+            .write(to: folder.appendingPathComponent("plan-usage-history.json"), options: .atomic)
+    }
+
+    /// A Claude Code profile signed in to `organization`; `.claude` keeps its file in the home folder.
+    private func profile(_ name: String, organization: String) throws {
+        let folder = home.appendingPathComponent(name)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = name == ".claude" ? home.appendingPathComponent(".claude.json") : folder.appendingPathComponent(".claude.json")
+        let account: [String: Any] = ["organizationUuid": organization, "accountUuid": "account-\(name)",
+                                      "emailAddress": "someone@example.com", "organizationRateLimitTier": "default_claude_max_20x"]
+        try JSONSerialization.data(withJSONObject: ["oauthAccount": account]).write(to: file)
+    }
+
+    /// Two accounts: A in the default Claude app folder and `~/.claude`, B in `Claude-Account-B`,
+    /// with a Claude Code profile of its own unless `appOnlyB`.
+    private func twoAccounts(appOnlyB: Bool = false, readingB: Date? = nil) throws {
+        try app("Claude", organization: "org-test-1", at: base.addingTimeInterval(-300))
+        try app("Claude-Account-B", organization: "org-test-2", at: readingB ?? base.addingTimeInterval(-300), session: 80)
+        try profile(".claude", organization: "org-test-1")
+        if !appOnlyB { try profile(".claude-account-b", organization: "org-test-2") }
+    }
+
+    private func accountsModel(_ world: World) -> ClaudeAccountsModel {
+        let defaults = defaults!
+        return ClaudeAccountsModel(defaults: defaults, home: home, environment: [:], makeStore: { account, delay in
+            let files = ClaudeDesktopFiles(), profiles = [account.profileFile].compactMap { $0 }
+            let store = Store(account: account, defaults: defaults,
+                              readAuth: { _, directory in world.auth(directory) },
+                              fetchLimits: { token in try world.fetch(token, at: world.now) },
+                              readDesktop: { folder in
+                                  world.readDesktop(folder)
+                                  return readClaudeDesktop(folder: folder, profiles: profiles, files: files)
+                              },
+                              renewLogin: { _, _ in .unavailable }, currentDate: { world.now })
+            store.startDelay = delay
+            return store
+        }, readOrganization: { source in
+            world.readOrganization(source)
+            return ClaudeAccountsModel.organization(of: source)
+        })
+    }
+
+    private func until(_ condition: () -> Bool) async throws {
+        for _ in 0..<600 where !condition() { try await Task.sleep(for: .milliseconds(5)) }
+    }
+
+    private func settled(_ model: ClaudeAccountsModel) async throws {
+        try await Task.sleep(for: .milliseconds(20))
+        try await until { !model.stores.values.contains { $0.inFlight } }
+    }
+
+    private func store(_ model: ClaudeAccountsModel, _ label: String) -> Store? {
+        model.accounts.first { model.label($0) == label }.flatMap { model.stores[$0.id] }
+    }
+
+    private func world() -> World { World(now: base, logins: [".claude": "org-test-1", ".claude-account-b": "org-test-2"]) }
+
+    // MARK: Tests
+
+    func testThrottlingOfOneAccountLeavesTheOthersScheduleAloneAndTheSecondStartsLater() async throws {
+        try twoAccounts()
+        let world = world(); world.throttled = [".claude-account-b"]
+        let model = accountsModel(world)
+        defer { model.stop() }
+        model.setEnabled(true); model.start()
+        try await until { model.stores.count == 2 && world.fetches(".claude") == 1 }
+        try await settled(model)
+        let a = try XCTUnwrap(store(model, "A")), b = try XCTUnwrap(store(model, "B"))
+        XCTAssertEqual(a.nextFetchAt, base.addingTimeInterval(60))
+        XCTAssertEqual(world.fetches(".claude-account-b"), 0, "B waits 30 s after A")
+        world.now = base.addingTimeInterval(29); model.tick(); try await settled(model)
+        XCTAssertEqual(world.fetches(".claude-account-b"), 0)
+        world.now = base.addingTimeInterval(31); model.tick(); try await settled(model)
+        XCTAssertEqual(world.fetches(".claude-account-b"), 1)
+        XCTAssertEqual(b.lastError, "rate limited")
+        XCTAssertEqual(b.nextFetchAt, base.addingTimeInterval(31 + 120), "B's own pace doubles")
+        XCTAssertEqual(a.nextFetchAt, base.addingTimeInterval(60), "A's schedule is untouched")
+        XCTAssertNil(a.lastError)
+        XCTAssertEqual(world.fetches(".claude"), 1)
+    }
+
+    func testTheDefaultAccountKeepsTheSavedGateAndTheOthersSaveTheirOwn() async throws {
+        try twoAccounts()
+        var saved = ClaudePollingState()
+        _ = saved.begin(at: base)
+        saved.failed(FetchError.http(429, retryAfter: 600, message: nil), at: base)
+        saved.save(to: defaults)
+        let world = world()
+        let model = accountsModel(world)
+        defer { model.stop() }
+        model.setEnabled(true); model.start()
+        try await until { model.stores.count == 2 }
+        try await settled(model)
+        let a = try XCTUnwrap(model.accounts.first { model.label($0) == "A" })
+        let b = try XCTUnwrap(model.accounts.first { model.label($0) == "B" })
+        XCTAssertEqual(a.pollingKey, ClaudePollingState.defaultsKey)
+        XCTAssertNotEqual(b.pollingKey, ClaudePollingState.defaultsKey)
+        XCTAssertEqual(model.stores[a.id]?.nextFetchAt, base.addingTimeInterval(600), "A cooldown saved before honours")
+        XCTAssertEqual(world.fetches(".claude"), 0)
+        world.now = base.addingTimeInterval(31); model.tick(); try await settled(model)
+        XCTAssertEqual(world.fetches(".claude-account-b"), 1)
+        XCTAssertNotNil(defaults.data(forKey: b.pollingKey))
+        XCTAssertEqual(ClaudePollingState.load(from: defaults, now: world.now).nextFetchAt, base.addingTimeInterval(600))
+        XCTAssertEqual(ClaudePollingState.load(from: defaults, key: b.pollingKey, now: world.now).nextFetchAt, base.addingTimeInterval(91))
+    }
+
+    func testWithTheSwitchOffOnlyNamesAreLookedAtAndOneStoreReads() async throws {
+        try twoAccounts()
+        let world = world()
+        let opened = Opened()
+        nonisolated(unsafe) let defaults = defaults!
+        let model = ClaudeAccountsModel(defaults: defaults, home: home, environment: [:], makeStore: { account, _ in
+            XCTFail("No store is made while the switch is off")
+            return Store(account: account, defaults: defaults)
+        }, discover: { home, extra in
+            ClaudeAccountDiscovery.sources(home: home, extraFolders: extra, environment: [:], defaults: defaults,
+                                           read: { opened.add($0); return try? Data(contentsOf: $0) })
+        }, readOrganization: { world.readOrganization($0); return nil })
+        let usage = UsageDashboardModel(defaults: defaults, fixtureRoot: home, claudeAccounts: model)
+        usage.setAvailable(true)
+        defer { usage.setAvailable(false) }
+        try await until { usage.detectedAccountCount == 2 }
+        XCTAssertEqual(usage.detectedAccountCount, 2)
+        XCTAssertTrue(model.stores.isEmpty, "Only the one store reads while the switch is off")
+        XCTAssertTrue(usage.accounts().isEmpty)
+        XCTAssertTrue(world.organizationReads.isEmpty)
+        XCTAssertTrue(world.desktopReads.isEmpty)
+        XCTAssertFalse(opened.paths.contains { $0.hasSuffix("plan-usage-history.json") }, "\(opened.paths)")
+        XCTAssertTrue(opened.paths.allSatisfy { $0.hasSuffix(".claude.json") }, "\(opened.paths)")
+    }
+
+    func testNotNowHidesTheNoticeForGood() async throws {
+        try twoAccounts()
+        let usage = UsageDashboardModel(defaults: defaults, fixtureRoot: home)
+        usage.setAvailable(true)
+        try await until { usage.detectedAccountCount == 2 }
+        XCTAssertTrue(usage.accountsNoticeVisible)
+        XCTAssertEqual(usage.accountsNoticeAction, "Show both")
+        XCTAssertEqual(usage.accountsNoticeText,
+                       "Frog found 2 Claude accounts on this Mac: the Claude app’s “Claude” and “Claude-Account-B” folders. Show usage for each? Frog reads their saved limits locally.")
+        usage.dismissAccountsNotice()
+        XCTAssertFalse(usage.accountsNoticeVisible)
+        usage.setAvailable(false)
+        let again = UsageDashboardModel(defaults: defaults, fixtureRoot: home)
+        again.setAvailable(true)
+        defer { again.setAvailable(false) }
+        try await until { again.detectedAccountCount == 2 }
+        XCTAssertEqual(again.detectedAccountCount, 2)
+        XCTAssertFalse(again.accountsNoticeVisible)
+        XCTAssertFalse(again.preferences.claudeAccounts, "The switch stays off and on the page")
+    }
+
+    func testShowBothTurnsTheSwitchOnOnceAndReadsTheSecondAccount() async throws {
+        try twoAccounts()
+        let world = world()
+        let model = accountsModel(world)
+        let usage = UsageDashboardModel(defaults: defaults, fixtureRoot: home, claudeAccounts: model)
+        var changes: [UsageDashboardPreferences] = []
+        usage.onPreferencesChange = { changes.append($0) }
+        usage.setAvailable(true)
+        defer { usage.setAvailable(false) }
+        try await until { usage.accountsNoticeVisible }
+        usage.showAllAccounts()
+        XCTAssertEqual(changes.map(\.claudeAccounts), [true])
+        XCTAssertTrue(usage.claudeAccountsEnabled)
+        XCTAssertFalse(usage.accountsNoticeVisible)
+        try await until { world.desktopReads.contains("Claude-Account-B") && usage.accounts(now: world.now).count == 2 }
+        XCTAssertTrue(world.desktopReads.contains("Claude-Account-B"))
+        let accounts = usage.accounts(now: world.now)
+        XCTAssertEqual(accounts.map(\.label), ["A", "B"])
+        XCTAssertEqual(accounts.map(\.sources), [["Claude app · Claude", "Claude Code · ~/.claude"],
+                                                 ["Claude app · Claude-Account-B", "Claude Code · ~/.claude-account-b"]])
+        try await until { usage.accounts(now: world.now).last?.windows.first?.percentage == 80 }
+        XCTAssertEqual(usage.accounts(now: world.now).last?.windows.map(\.id), ["five_hour", "seven_day"])
+        XCTAssertEqual(usage.combinedWindows(now: world.now).map(\.id), ["five_hour", "seven_day"])
+        usage.showAllAccounts()
+        XCTAssertEqual(changes.count, 1, "Reported once")
+    }
+
+    func testAnAccountKnownOnlyFromTheClaudeAppNeverSendsARequestAndOffersLiveReadings() async throws {
+        try twoAccounts(appOnlyB: true, readingB: base.addingTimeInterval(-31 * 60))
+        let bin = home.appendingPathComponent(".local/bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        try Data("#!/bin/sh\n".utf8).write(to: bin.appendingPathComponent("claude"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bin.appendingPathComponent("claude").path)
+        let world = world()
+        let model = accountsModel(world)
+        let usage = UsageDashboardModel(defaults: defaults, fixtureRoot: home, claudeAccounts: model)
+        usage.applyPreferences(UsageDashboardPreferences(claudeAccounts: true))
+        usage.setAvailable(true)
+        defer { usage.setAvailable(false) }
+        try await until { model.stores.count == 2 && world.desktopReads.contains("Claude-Account-B") }
+        try await settled(model)
+        world.now = base.addingTimeInterval(120); usage.refresh(); try await settled(model)
+        XCTAssertEqual(world.authReads.filter { $0 != ".claude" }, [], "B has no login to read")
+        XCTAssertEqual(world.fetches("Claude-Account-B"), 0)
+        let accounts = usage.accounts(now: base)
+        XCTAssertEqual(accounts.map(\.label), ["A", "B"])
+        XCTAssertEqual(accounts.map(\.needsLiveSetup), [false, true])
+        XCTAssertEqual(accounts.last?.stale, true)
+        let id = try XCTUnwrap(accounts.last?.id)
+        let command = try XCTUnwrap(usage.liveSetupCommand(for: id))
+        XCTAssertTrue(command.contains("'CLAUDE_CONFIG_DIR=\(home.path)/.claude-account-b'"), command)
+        XCTAssertTrue(command.contains(" '\(bin.path)/claude' 'auth' 'login'"), command)
+        XCTAssertNil(usage.liveSetupCommand(for: try XCTUnwrap(accounts.first?.id)), "A already has a login")
+        XCTAssertEqual(ClaudeAccountsModel.liveSetupFolder(for: URL(fileURLWithPath: "/x/Work Stuff"), home: home).lastPathComponent,
+                       ".claude-work-stuff")
+    }
+
+    func testAFolderSignedInToAnotherAccountDropsTheOldLoginsReadingAndKeepsItsLabel() async throws {
+        try twoAccounts()
+        let world = world()
+        let model = accountsModel(world)
+        let usage = UsageDashboardModel(defaults: defaults, fixtureRoot: home, claudeAccounts: model)
+        usage.applyPreferences(UsageDashboardPreferences(claudeAccounts: true))
+        usage.setAvailable(true)
+        defer { usage.setAvailable(false) }
+        try await until { world.fetches(".claude") == 1 && store(model, "A")?.usage != nil }
+        try await settled(model)
+        XCTAssertEqual(usage.accounts(now: world.now).first?.windows.first?.percentage, 12, "The newer endpoint reading shows")
+        try app("Claude", organization: "org-test-9", at: base.addingTimeInterval(10), session: 70)
+        world.now = base.addingTimeInterval(20); model.tick()
+        try await until { model.accounts.first?.codeFolder == nil && store(model, "A")?.desktop?.organization == "org-test-9" }
+        let a = try XCTUnwrap(store(model, "A"))
+        XCTAssertNil(a.usage, "The old login's reading belongs to another account")
+        let first = try XCTUnwrap(usage.accounts(now: world.now).first)
+        XCTAssertEqual(first.label, "A")
+        XCTAssertEqual(first.windows.first?.percentage, 70)
+        XCTAssertEqual(first.sources, ["Claude app · Claude"], "The profile no longer belongs to the folder")
+    }
+
+    func testSummariesNeverShowAnEmailAddress() async throws {
+        try twoAccounts()
+        let world = world()
+        let model = accountsModel(world)
+        let usage = UsageDashboardModel(defaults: defaults, fixtureRoot: home, claudeAccounts: model)
+        usage.applyPreferences(UsageDashboardPreferences(claudeAccounts: true))
+        usage.setAvailable(true)
+        defer { usage.setAvailable(false) }
+        try await until { usage.accounts(now: world.now).count == 2 && store(model, "A")?.usage != nil }
+        try await settled(model)
+        usage.renameAccount(try XCTUnwrap(usage.accounts(now: world.now).last?.id), to: "  Work  ")
+        let accounts = usage.accounts(now: world.now)
+        XCTAssertEqual(accounts.map(\.label), ["A", "Work"])
+        XCTAssertEqual(accounts.last?.plan, "Max 20×", "From the profile of the same organization")
+        for account in accounts {
+            let texts = [account.id, account.label, account.shortLabel, account.plan ?? "", account.status ?? "", account.mergedNote ?? ""]
+                + account.sources + account.windows.map(\.title)
+            XCTAssertFalse(texts.contains { $0.contains("@") || $0.contains("example.com") }, "\(texts)")
+        }
+    }
+}
+
+private final class Opened: @unchecked Sendable {
+    private let lock = NSLock()
+    private var urls: [URL] = []
+    var paths: [String] { lock.withLock { urls.map(\.path) } }
+    func add(_ url: URL) { lock.withLock { urls.append(url) } }
+}
