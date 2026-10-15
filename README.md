@@ -24,6 +24,7 @@ A Mac app that lives in your menu bar and replaces ten small Mac apps.
 | **Mr. Usage** | Claude/OpenAI limits, token charts and estimated costs; combined OpenCode + Codex activity. |
 | **Menu bar & Stay awake** | Hide/reveal icons, auto-hide, timed awake sessions and low-battery stop. |
 | **System monitor** | CPU/GPU charts, disk capacity and I/O, battery power and thermal status in an optional Frog menu view. |
+| **App cleaner** | Uninstall apps with the files they leave behind, after a full review; everything goes to the Trash. |
 | **Personalization** | Eleven themes including Tokyo Night, transparency, editable config files and optional local statistics. |
 
 Enable tools individually in **Features**. No Frog account. No telemetry.
@@ -65,7 +66,7 @@ See [Development](docs/development.md) for signing and packaging.
 
 ## Guides
 
-[Configuration and themes](docs/configuration.md) · [Providers](docs/providers.md) · [Local models](docs/local-model-sources.md) · [Installed AI tools](docs/local-tool-providers.md) · [Mr. Usage](docs/usage-integration.md) · [Statistics](docs/statistics.md) · [Stay awake](docs/stay-awake.md) · [Verification](docs/verification.md)
+[Configuration and themes](docs/configuration.md) · [Providers](docs/providers.md) · [Local models](docs/local-model-sources.md) · [Installed AI tools](docs/local-tool-providers.md) · [Mr. Usage](docs/usage-integration.md) · [Statistics](docs/statistics.md) · [Stay awake](docs/stay-awake.md) · [App cleaner](docs/cleaner.md) · [Verification](docs/verification.md)
 
 ## License
 

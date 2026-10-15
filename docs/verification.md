@@ -721,6 +721,27 @@ Device checks, with isolated data, still to run:
 - [ ] Activity Monitor Energy Impact over 10 minutes of normal work, bubble on and off:
       ___ / ___.
 
+## App cleaner
+
+Automated: `CleanerPreferencesTests`, `CleanerFeatureTests` and `CleanerModelTests` run the cleaner against
+fixture folders with a fake Trash and system. Manual checks on a real Mac, built with `scripts/build-app.sh`,
+with `FROG_DATA_DIRECTORY` set to a temporary folder and only a sample app:
+
+- [ ] With a fresh data directory, Features shows "App cleaner" off; turning it on adds the sidebar entry and the command-bar route "App cleaner".
+- [ ] Turning it off while a scan or the confirmation sheet is open closes them without moving anything.
+- [ ] The sample app appears; search finds it by name and bundle ID; "Size" sorts it.
+- [ ] Its review shows the sample folders as sure or likely, ticked, with reasons and sizes.
+- [ ] Dropping the sample app from Finder opens the same review; dropping a text file says "Drop an app from Finder."
+- [ ] "Move to Trash…" lists every item; Cancel moves nothing.
+- [ ] Confirming moves the app (through Finder; note whether macOS asked for Automation) and the folders; Finder's Trash shows them and offers Put Back.
+- [ ] With the sample app running, Frog quits it first; with Full Disk Access missing, the notice appears and "Not now" hides it for good.
+- [ ] Owner: remove a small App Store app and a package-installed app with a launch daemon; Finder asks for the password, the daemon note appears, and nothing outside the review list moves.
+<!-- slot: cleaner-leftovers -->
+<!-- slot: cleaner-junk -->
+<!-- slot: cleaner-assist -->
+<!-- slot: cleaner-disk -->
+<!-- slot: cleaner-startup -->
+
 ## Distribution
 
 Developer ID signing/notarization requires the owner's Apple Developer credentials. Ad-hoc signing is suitable for local development, but is not notarization and does not establish that macOS will trust a downloaded release on another machine.

@@ -23,6 +23,7 @@ calculations, saved scripts and quick actions.
 - [x] Saved scripts with bounded output and cancellation; output appears while a script runs and stays after Stop or the time limit
 - [x] Searchable rule, window-layout and quick actions
 - [x] Native feature-disable, interaction and packaging verification
+- [ ] App cleaner: uninstaller with leftovers, Trash only, behind feature.cleaner
 
 The existing window switcher, 23 window actions, 28 native Other shortcuts, 100-item memory-only clipboard
 with formatted/plain-text paste, writing, dictation and model management remain

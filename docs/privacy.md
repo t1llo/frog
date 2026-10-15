@@ -68,6 +68,12 @@ The optional floating processing indicator shows rule/status messages without ta
 <!-- slot: windows -->
 **Windows:** while drag to snap or the zone overlay is on, Frog watches mouse-button and drag events system-wide to notice when you drag a window. It does not record them. Once a drag starts, it reads the position and size of the window under the pointer, a few times at most until the window moves, and keeps nothing after the drag. Window titles are not read. With the zone overlay on, Frog also notices whether Shift or Option is held during a window drag.
 <!-- slot: cleaner -->
+- **App cleaner:** off by default. It scans only when you pick or drop an app. It reads folder and file names in your Library folders, launchd property lists, and the Info.plist files and code signatures of apps, never the contents of other files. Containers are checked by exact name and not read without Full Disk Access. Items move only to the Trash, after a confirmation that lists them; Finder moves apps and items that belong to the system and asks for the administrator password itself. The list Frog keeps for Put Back (paths, sizes and dates) stays in `~/Library/Application Support/Frog/Cleaner/removals.json` for 30 days and is not exported. Nothing is sent anywhere. See [App cleaner](cleaner.md).
+  <!-- slot: cleaner-leftovers -->
+  <!-- slot: cleaner-junk -->
+  <!-- slot: cleaner-assist -->
+  <!-- slot: cleaner-disk -->
+  <!-- slot: cleaner-startup -->
 
 ## Updates
 
