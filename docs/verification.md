@@ -554,6 +554,28 @@ the Claude-app status states what the app's saving depends on. Details in
   running app, and the prompt opened from it. Still open from 1.0.23: a real Claude
   Code renewal and the Terminal sign-in launcher.
 
+## Several Claude accounts — manual checks
+
+Use an isolated `FROG_DATA_DIRECTORY`; the usage defaults suite holds only polling
+state and can stay as it is. Do not finish a Claude Code sign-in for another account
+unless you mean to.
+
+- With two Claude app folders (such as `Claude` and `Claude-Account-B`), the offer
+  appears once in the popup and on the page. **Not now** hides it, also after a
+  relaunch; the switch stays on the page.
+- **Show both** shows `A …%  B …%` in the menu bar; the tooltip lists each account and
+  window with its source and age.
+- Renaming B to "Work" on the page shows "Work" in the menu bar (at most six
+  characters) and in the popup.
+- *Combined*: the popup reads "Plan limits · A + B", each bar has a breakdown such as
+  "A 30% · B 80%", and no bar has a pace mark or renewal time.
+- **Include** off for B removes B from the menu bar and from the combined values.
+- **Set up live readings…** explains first; **Open Terminal** opens a Terminal window
+  running Claude Code's sign-in with `CLAUDE_CONFIG_DIR=…/.claude-account-b`.
+- Switch off: the menu bar item, the popup and the page look exactly as before,
+  including the login source menu and the "Claude Code profile" line.
+- No e-mail address is visible on the page or in the popup without hovering.
+
 ## Distribution
 
 Developer ID signing/notarization requires the owner's Apple Developer credentials. Ad-hoc signing is suitable for local development, but is not notarization and does not establish that macOS will trust a downloaded release on another machine.

@@ -410,7 +410,8 @@ one Claude Code login and the default Claude app folder exactly as before.
 - **Display choices.** The usage preferences gain `claudeAccounts` (off),
   `claudeAccountsView` (`each` or `combined`) and `claudeAccountsMenuBar` (`session`
   or `week`). Configuration files written before them load with these defaults.
-  Their text keys come with the screens that use them.
+  Their text keys are `usage.claude-accounts`, `usage.claude-accounts-view` and
+  `usage.claude-accounts-menu-bar`.
 - **Reading another folder.** `readClaudeDesktop(folder:profiles:)` reads any Claude
   app folder's history and takes the plan from whichever given profile names the same
   organization.
@@ -468,3 +469,47 @@ account's saved gate, nothing opened while the switch is off, the notice, an app
 account sending nothing, the live-reading command with a space in the home folder, an
 organization change, no e-mail address), with `UsageParityTests`,
 `UsageLifecycleTests` and `ClaudeLoginRenewalTests` unchanged.
+
+### Showing each account
+
+Everything here applies while Mr. Usage shows Claude, the switch is on and Frog has
+found at least two accounts; otherwise the menu bar item, the popup and the page look
+as before.
+
+- **Offer.** While the switch is off and two or more accounts are found, the popup and
+  the page show the offer above the limits, with **Show both** and **Not now**.
+- **Menu bar.** *Each account* draws one entry per included account, `A 37%  B 81%`,
+  for the session or the week (`usage.claude-accounts-menu-bar`), at most three; an
+  account without a reading from the last 30 minutes is dimmed on its own.
+  *Combined* looks like the one account's item with the combined values. The tooltip
+  has one line per account and window, such as "B · Session 81% used · resets 17:10 ·
+  Claude app, 2h ago"; combined, it starts with "A + B combined", the combined values
+  and how they are weighted.
+- **Popup** (still 292 points wide). *Each account* replaces the limit bars with one
+  row per included account, at most four: label, plan, age and a warning when stale,
+  then small Session and Week meters with the used share and the renewal ("15:40",
+  "Thu"); hovering a row gives its status. *Combined* heads the bars "Plan limits · A +
+  B", draws them without renewal or pace, and puts each account's share under each
+  bar. The first account that can be set up for live readings gets the row "Set up
+  live readings for B…" in place of "Sign in to Claude Code…". The footer reads "A 3m
+  ago · B 2h ago", with the sources on hover.
+- **Page.** The switch **Show each Claude account** appears once two accounts are found
+  and stays while it is on. While on, an **Accounts** section replaces the "Claude Code
+  profile" line: per account a label field (renamed on Return or when it loses focus),
+  its sources, plan, last reading, status, the **Include** switch, **Set up live
+  readings…** when it applies and the note for app folders that are one account. The
+  login's e-mail address is only in the row's hover help. Below the rows: *Each account
+  | Combined*, the menu bar's *Session | Week* (with two included accounts shown each),
+  and **Add folder…** for a Claude app data folder or a Claude Code folder. The limits
+  show one block per included account, or one combined grid with each bar's breakdown
+  and the weighting. The login source menu is hidden while the switch is on.
+- **Live readings.** Both the popup row and the page button explain first ("Set up live
+  readings for B?") and open Terminal with `CLAUDE_CONFIG_DIR=~/.claude-account-b
+  claude auth login` only after **Open Terminal**.
+
+**Verified:** `UsageStatusReadoutTests` (each account's face and window, per-entry
+dimming, three entries at most with every account described, the tooltip lines and the
+combined basis, today's face unchanged), `TextConfigurationTests` (the three keys round
+trip; an unknown view is refused), `ClaudeSignInTests` (the launcher runs the
+account's command unchanged) and `ConfigurationReferenceTests`. The views were built,
+not looked at on screen.

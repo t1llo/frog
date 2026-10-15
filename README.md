@@ -36,6 +36,8 @@ Enable **System monitor** to switch between **Frog** and **System** in the menu-
 popup. While it is on, CPU and GPU load are recorded every few seconds, so the graph
 already holds the last ten minutes when you open it. Disk and power are read only
 while the view is visible; unsupported metrics show as unavailable.
+Several Claude accounts: Frog finds a second Claude app profile and can show A and B
+side by side or combined in **Mr. Usage**. Off by default.
 
 ## Install
 
