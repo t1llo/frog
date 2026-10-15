@@ -156,7 +156,8 @@ struct CleanerReviewFooter: View {
             Spacer()
             Button("Move to Trash…") { Task { await cleaner.prepareRemoval() } }
                 .buttonStyle(FrogButtonStyle(primary: true))
-                .disabled(count == 0 || cleaner.phase != .reviewing)
+                // After a removal that left the app, the review stays open with the phase back at idle.
+                .disabled(count == 0 || ![.reviewing, .idle].contains(cleaner.phase))
         }
         .padding(.horizontal, 20).padding(.vertical, 10)
         .background(FrogStyle.canvas)
