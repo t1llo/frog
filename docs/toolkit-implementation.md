@@ -115,6 +115,37 @@ coalesces content changes and resizes the native window with its top edge anchor
 The same native reproduction then measured 252 for both host and content, removing
 the translucent strips. The existing shared rounded blur mask remains in use.
 
+## Floating panels
+
+Every new Frog panel is a `FrogFloatingPanel`: a borderless, non-activating panel on
+every Space that is shown with `orderFrontRegardless()`, so the frontmost app keeps its
+focused field. Its SwiftUI content sits in a `FirstMouseHostingView`, which takes the
+first click while another app stays active. A panel next to a selection converts the
+Accessibility bounds with `AXGeometry.cocoaRect` and places itself with
+`PanelPlacement`: on the display holding the selection, below it when it fits, else
+above, else on the side with more room, kept inside the visible frame. Without a
+selection it opens beside the pointer. When its content changes height it keeps the
+edge next to the selection. `PanelFooter` shows the panel's name, what Return does and
+**Actions ⌘K**; `FrogType` and the `FrogStyle` radii are the type and corner tokens new
+views use.
+
+Keys go through `PanelKeyMap`, one convention for every panel. Key codes are physical
+positions, so the letters follow their QWERTY places on any layout. While an input
+method is composing, every key goes to the text field.
+
+| Key | Does |
+| --- | --- |
+| ↩, keypad Enter | Run the selected row's primary action |
+| ⌘↩ | Run its secondary action |
+| ⇧↩ | Run it as plain text where the row has that variant, else the primary action |
+| ⌘K | Open or close the action panel |
+| ↓, ⌃N / ↑, ⌃P | Move the selection |
+| Esc | Close the action panel; else clear the query (panels that clear on Escape); else close |
+| ⌘W | Close the panel |
+| ⌘1 … ⌘9 | Run that action while the action panel is open |
+
+Anything else, ⌘⇧↩ included, goes on to the text field.
+
 ## Data and execution
 
 Portable configuration contains feature choices and settings. Credentials stay
