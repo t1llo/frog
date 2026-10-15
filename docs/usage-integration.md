@@ -359,9 +359,9 @@ reaching the notice and the prompt opened from it.
 
 People who use two Claude accounts on one Mac, for example through a second Claude app
 started with its own folder, want to see both accounts' limits, each on its own or
-combined. This first step adds the pieces that find and name the accounts and combine
-their values; nothing calls them yet, so Frog still reads one Claude Code login and the
-default Claude app folder.
+combined. The pieces below find and name the accounts, read each one, and combine their
+values. The screens that show them come next; until the switch is turned on, Frog reads
+one Claude Code login and the default Claude app folder exactly as before.
 
 - **Finding accounts** (`ClaudeAccountDiscovery`). Claude app folders are the entries
   directly under `~/Library/Application Support` named `Claude`, `Claude-…` or
@@ -419,3 +419,52 @@ default Claude app folder.
 `ClaudeAccountLabelsTests`, `ClaudeAccountsCombinationTests`, `ClaudeDesktopUsageTests`,
 `UsageDisplayPreferencesTests` and `ConfigurationFileTests`, all against fixture folders
 and isolated defaults.
+
+### Reading each account
+
+- **Switch off** (`claudeAccounts` false, the default). One store reads as before, with
+  the login source and folder chosen on the page. While Mr. Usage is on, Frog looks for
+  further accounts once per launch and on each Refresh, by folder names and the
+  existence of files only; no history file is opened. Because those folders are not
+  opened, the count is the larger of the Claude app folders and the Claude Code
+  profiles found. With two or more, the popup and the page offer once: "Frog found 2
+  Claude accounts on this Mac: the Claude app's "Claude" and "Claude-Account-B"
+  folders. Show usage for each? Frog reads their saved limits locally." **Show both**
+  (or "Show all 3") turns the switch on and saves it to the configuration; **Not now**
+  saves `claudeAccountsNoticeDismissed` in `xyz.beffa.frog.usage` and the offer never
+  returns. The switch stays on the page.
+- **Switch on.** Every account gets a store of its own (`ClaudeAccountsModel`), and the
+  one store stops, since it shares `claudePollingState.v1` with the default account.
+  Each store works as Automatic does: it shows the newer of its endpoint reading and
+  its Claude app reading, and borrows renewal times only from a reading of the same
+  organization. It uses only its own Claude Code folder's login (Keychain item through
+  `security`, as before); OpenCode and Pi logins name no account and are not used. A
+  lapsed login is renewed through Claude Code under the same 30-minute gate, per
+  account.
+- **Separate gates, 30 s apart.** Each store saves its polling state under its own key,
+  keeps the one-minute floor and learns its own backoff, so throttling of B never slows
+  A. The stores start 30 seconds apart: A at once, B after 30 s, C after 60 s. Their
+  Claude app files are read at once; only the first request waits.
+- **Accounts known only from the Claude app** read that app's history and never send a
+  request. When such an account's app reading is missing or older than 30 minutes and
+  Claude Code is installed, the account offers live readings: the sign-in command for a
+  new profile named after the app folder (`Claude-Account-B` gives
+  `~/.claude-account-b`), `CLAUDE_CONFIG_DIR=… claude auth login`. Frog does not create
+  that folder; Claude Code does when signing in, and the next detection links it to the
+  app folder by organization.
+- **A folder signed in to another account.** When the newest organization in an
+  account's Claude app history changes, that account's endpoint reading and borrowed
+  renewal times are dropped, Frog looks for accounts again, and the label stays.
+- **For the screens**, `UsageDashboardModel` gives one summary per account (label,
+  short label, Session and Week windows with the model weeks, plan, sources such as
+  "Claude app · Claude-Account-B" and "Claude Code · ~/.claude", age, whether it is
+  stale, status, include switch, live-reading offer, merged note), the combined
+  windows, the notice, renaming, including, "Add folder…" (kept on this Mac under
+  `claudeAccounts.v1.extraFolders`) and the live-reading command. No summary carries an
+  e-mail address.
+
+**Verified:** `ClaudeAccountsStoreTests` (separate gates, the 30 s start, the default
+account's saved gate, nothing opened while the switch is off, the notice, an app-only
+account sending nothing, the live-reading command with a space in the home folder, an
+organization change, no e-mail address), with `UsageParityTests`,
+`UsageLifecycleTests` and `ClaudeLoginRenewalTests` unchanged.
