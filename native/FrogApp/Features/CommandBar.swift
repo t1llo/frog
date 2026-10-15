@@ -46,6 +46,7 @@ import SwiftUI
         // slot: command-bar
         // slot: windows
         WindowCommandRows(),
+        // slot: cleaner
     ] + extraProviders
     private let extraProviders: [any CommandBarRowProviding]
     private var context: CommandBarContext?
