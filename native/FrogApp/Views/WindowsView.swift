@@ -19,6 +19,7 @@ struct WindowsView: View {
                 InlineIssue(message: "Frog needs Accessibility access to move and resize windows.")
                 Button("Allow Accessibility") { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() }
             }
+            WindowSetupCard(macOS: macOS)
             SettingsSection(title: "Sizes") {
                 CompactRow(title: "Gap between windows") {
                     Stepper("\(settings.gap) pt", value: binding(\.gap), in: WindowPreferences.gapRange, step: 2).fixedSize()
@@ -39,7 +40,7 @@ struct WindowsView: View {
                 }
                 if macOS.edgeTiling {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("macOS already tiles windows dragged to screen edges, so Frog's edges are paused. Hold Shift while dragging to use Frog's zones, or turn off \"Drag windows to screen edges to tile\" in Desktop & Dock.")
+                        Text(nativeTilingNote)
                             .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
                             .fixedSize(horizontal: false, vertical: true)
                         Button("Open Desktop & Dock") { MacWindowManagerReader.openDesktopAndDock() }.buttonStyle(.plain)
@@ -49,6 +50,16 @@ struct WindowsView: View {
                 CompactRow(title: "Restore size when dragged away", detail: "A snapped window gets its earlier size back when you drag it out.") {
                     Toggle("Restore size when dragged away", isOn: binding(\.restoreOnDrag)).labelsHidden().toggleStyle(.switch)
                         .disabled(!settings.dragToSnap)
+                }
+                CompactRow(title: "Show zones while holding Shift", detail: "Hold Shift while dragging a window to drop it into a zone.") {
+                    Toggle("Show zones while holding Shift", isOn: binding(\.zoneOverlay)).labelsHidden().toggleStyle(.switch)
+                }
+                CompactRow(title: "Zones") {
+                    CompactMenu(value: WindowSwitches(model.configuration.preferences).zoneGrid.title, width: 180) {
+                        ForEach(ZoneGrid.allCases, id: \.self) { grid in
+                            Button(grid.title) { update { $0.zoneGrid = grid.rawValue } }
+                        }
+                    }.disabled(!settings.zoneOverlay)
                 }
                 CompactRow(title: "Layout picker", detail: "Choose a layout from a small panel, from a shortcut, the Frog menu or the command bar.") {
                     HStack(alignment: .top, spacing: 10) {
@@ -110,6 +121,13 @@ struct WindowsView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             macOS = MacWindowManagerReader.read()
         }
+    }
+
+    /// Why Frog's edges are paused, and the two ways around it.
+    private var nativeTilingNote: String {
+        let zones = settings.zoneOverlay ? "Hold Shift while dragging to use Frog's zones,"
+            : "Turn on \"Show zones while holding Shift\" to use Frog's zones,"
+        return "macOS already tiles windows dragged to screen edges, so Frog's edges are paused. \(zones) or turn off \"Drag windows to screen edges to tile\" in Desktop & Dock."
     }
 
     /// The saved Windows settings, or their defaults.

@@ -45,4 +45,18 @@ public enum WindowSetupChoice: String, CaseIterable, Sendable {
         preferences.toolkit?.windows = windows.normalized
         return preferences
     }
+
+    /// Undo of a choice: `current` with the Windows switch and settings of `previous` again.
+    /// Shortcuts added since stay: layout shortcuts are rules, and command shortcuts are kept.
+    public static func undo(to previous: Preferences, from current: Preferences) -> Preferences {
+        var preferences = current
+        preferences.setFeature(.windows, enabled: previous.featureEnabled(.windows))
+        var windows = previous.toolkitSettings.windows
+        if let shortcuts = current.toolkitSettings.windows?.shortcuts, !shortcuts.isEmpty {
+            windows = windows ?? WindowPreferences()
+            windows?.shortcuts = shortcuts
+        }
+        preferences.toolkit?.windows = windows
+        return preferences
+    }
 }

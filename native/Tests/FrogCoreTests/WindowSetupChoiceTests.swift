@@ -59,4 +59,18 @@ final class WindowSetupChoiceTests: XCTestCase {
         round.setupChoice = "snap"; round.zoneOverlay = true; round.zoneGrid = "main-side"
         XCTAssertEqual(try JSONDecoder().decode(WindowPreferences.self, from: JSONEncoder().encode(round)), round)
     }
+
+    func testUndoRestoresTheSettingsAndKeepsAddedShortcuts() {
+        let before = preferences()
+        var after = WindowSetupChoice.apply(.snap, to: before)
+        let picker = Hotkey(keyCode: 13, modifiers: 4096 | 2048)
+        after.toolkit?.windows?.shortcuts[WindowCommand.layoutPicker.rawValue] = picker
+        let undone = WindowSetupChoice.undo(to: before, from: after)
+        XCTAssertFalse(undone.featureEnabled(.windows))
+        var expected = before.toolkitSettings.windows
+        expected?.shortcuts = [WindowCommand.layoutPicker.rawValue: picker]
+        XCTAssertEqual(undone.toolkitSettings.windows, expected)
+        XCTAssertNil(undone.toolkitSettings.windows?.setupChoice, "The card can show again")
+        XCTAssertTrue(undone.featureEnabled(.commandBar))
+    }
 }
