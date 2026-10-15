@@ -99,9 +99,11 @@ final class ProcessingTests: XCTestCase {
         answer.id = UUID(); answer.providerID = model.configuration.providers[0].id
         try model.saveRule(answer)
         let message = "This rule answers in a panel. Turn on Explain in Features."
+        // With Explain off its shortcut does nothing at all; answer rules never go through Writing.
         model.processSelection(ruleID: answer.id)
         try await waitUntilFinished(model)
-        XCTAssertEqual(model.ruleOutcome, .failed(message))
+        XCTAssertNil(model.ruleOutcome)
+        XCTAssertNil(model.answers.session)
         model.processManual(text: "river bank", ruleID: answer.id)
         try await waitUntilFinished(model)
         XCTAssertEqual(model.ruleOutcome, .failed(message))

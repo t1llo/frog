@@ -103,6 +103,33 @@ final class AppModel: ObservableObject {
     }()
     private let shortcutPanel = ShortcutReferencePanel()
     private let captureSelection: () async throws -> any CapturedTextSelection
+    private let answerStream: (AnswerRequest) -> AsyncThrowingStream<AnswerEvent, Error>
+    private let answerPresenter: AnswerPresenting
+    private var answerCapture: Task<Void, Never>?
+    /// Answer rules: one answer and its follow-ups at a time, in the answer panel.
+    private(set) lazy var answers: AnswerController = {
+        let controller = AnswerController(
+            resolve: { [weak self] rule in
+                guard let self else { throw CancellationError() }
+                return try self.resolved(rule)
+            },
+            readKey: { [weak self] id in try self?.readKey(id) },
+            stream: answerStream,
+            presenter: answerPresenter,
+            modelName: { [weak self] provider in
+                provider.id == Self.localProviderID ? self?.configuration.localModel(provider.model)?.name ?? provider.name
+                    : provider.modelName(provider.model)
+            },
+            report: { [weak self] in self?.report($0) },
+            recordStatistics: { [weak self] in self?.statistics.recordRuleExecution(kind: $0) },
+            copy: { [weak self] text in
+                self?.writeClipboard(text)
+                self?.clipboardHistoryStore.recordCopiedText(text)
+            })
+        controller.onEditRule = { [weak self] _ in self?.openFeature(.explain) }
+        (answerPresenter as? AnswerPanelController)?.controller = controller
+        return controller
+    }()
     private let processingIndicator = ProcessingIndicator()
     private var processingTask: Task<Void, Never>?
     // One handle per kind: launching an app must not cancel a system action that waits for its keys.
@@ -128,6 +155,8 @@ final class AppModel: ObservableObject {
          readLoginStatus: (@Sendable () -> LoginService.Snapshot)? = nil,
          writeLoginItem: (@Sendable (Bool) throws -> Void)? = nil,
          captureSelection: (() async throws -> any CapturedTextSelection)? = nil,
+         answerStream: ((AnswerRequest) -> AsyncThrowingStream<AnswerEvent, Error>)? = nil,
+         answerPresenter: AnswerPresenting? = nil,
          dictationController: DictationController? = nil,
          modelService: LocalModels? = nil,
          powerController: StayAwakeController? = nil,
@@ -148,7 +177,10 @@ final class AppModel: ObservableObject {
         self.clipboardHistoryStore = clipboardHistoryStore ?? ClipboardHistoryStore()
         self.errorDisplayDuration = errorDisplayDuration
         self.systemStatusTick = systemStatusTick ?? { try await Task.sleep(for: .seconds(1)) }
-        localModels = modelService ?? LocalModels(directory: dataDirectory)
+        let localModels = modelService ?? LocalModels(directory: dataDirectory)
+        self.localModels = localModels
+        self.answerStream = answerStream ?? AnswerStreams.live(localModels: localModels, localTools: localTools)
+        self.answerPresenter = answerPresenter ?? (registerShortcuts ? AnswerPanelController() : SilentAnswerPresenter())
         self.readAccessibility = readAccessibility ?? { SelectionService.isTrusted }
         self.readLoginStatus = readLoginStatus ?? { LoginService.readStatus() }
         self.writeLoginItem = writeLoginItem ?? { try LoginService.setEnabled($0) }
@@ -312,6 +344,7 @@ final class AppModel: ObservableObject {
             case .scripts: self.scripts.stop()
             case .commandBar: self.commandBar.stop()
             // slot: explain
+            case .explain: self.answerCapture?.cancel(); self.answers.close()
             // slot: windows
             // slot: cleaner
             // slot: emoji-picker
@@ -372,6 +405,7 @@ final class AppModel: ObservableObject {
             candidate.adoptClipboardDictationDefaults()
             do { try persist(candidate) } catch { report(error) }
         }
+        if registerShortcuts, configurationLoadError == nil { adoptExplainPresetIfNeeded() }
         registerHotkeys()
         configureWindowSwitcher()
         configureClipboardHistory()
@@ -427,6 +461,15 @@ final class AppModel: ObservableObject {
         var preferences = configuration.preferences
         preferences.setFeature(feature, enabled: enabled)
         try savePreferences(preferences)
+        if feature == .explain, enabled { adoptExplainPresetIfNeeded() }
+    }
+    /// Turning Explain on creates the Explain rule once, with the newest text model still available.
+    private func adoptExplainPresetIfNeeded() {
+        guard configuration.preferences.featureEnabled(.explain),
+              configuration.preferences.workflowSettings.explainPresetVersion == nil else { return }
+        var candidate = configuration
+        candidate.adoptExplainPreset(installed: localModels.installed)
+        do { try persist(candidate) } catch { report(error) }
     }
     func ruleFeatureEnabled(_ rule: Rule) -> Bool {
         configuration.preferences.ruleFeatureEnabled(rule)
@@ -1028,8 +1071,32 @@ final class AppModel: ObservableObject {
     }
 
     func processSelection(ruleID: UUID) {
+        if let rule = configuration.rules.first(where: { $0.id == ruleID }), rule.answersInPanel {
+            guard configuration.preferences.featureEnabled(.explain), rule.enabled else { return }
+            startAnswer(rule)
+            return
+        }
         guard configuration.preferences.featureEnabled(.writing) else { return }
         begin(ruleID: ruleID, manualText: nil)
+    }
+
+    /// Captures the selection like a Writing rule and answers it in the panel. Nothing is replaced.
+    private func startAnswer(_ rule: Rule) {
+        answerCapture?.cancel()
+        answerCapture = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let captured = try await self.captureSelection()
+                try Task.checkCancellation()
+                let context = self.configuration.preferences.explainSettings.includeContext ? captured.context : nil
+                self.answers.start(rule: rule, capture: AnswerCapture(text: captured.text, context: context, anchor: captured.anchor,
+                                                                      application: captured.applicationName, source: captured.source))
+            } catch is CancellationError {
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.answers.fail(rule: rule, message: error.localizedDescription)
+            }
+        }
     }
 
     func processManual(text: String, ruleID: UUID, providerID: UUID? = nil, modelID: String? = nil) {
