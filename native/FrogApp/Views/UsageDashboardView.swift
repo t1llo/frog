@@ -11,14 +11,20 @@ struct UsageDashboardView: View {
             }
             UsageProviderControls(usage: usage)
             if usage.preferences.provider == "Claude" {
-                HStack(spacing: 8) {
-                    Text("Claude Code profile: \(usage.claudeConfigDirectory.lastPathComponent)")
-                        .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                        .help(usage.claudeConfigDirectory.path)
-                    Button("Choose folder…") { chooseClaudeProfile() }.buttonStyle(FrogButtonStyle())
+                if usage.accountsNoticeVisible { UsageAccountsNotice(usage: usage) }
+                if !usage.claudeAccountsEnabled {
+                    HStack(spacing: 8) {
+                        Text("Claude Code profile: \(usage.claudeConfigDirectory.lastPathComponent)")
+                            .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                            .help(usage.claudeConfigDirectory.path)
+                        Button("Choose folder…") { chooseClaudeProfile() }.buttonStyle(FrogButtonStyle())
+                    }
                 }
+                // Found once two accounts are, and kept while on, so it can be turned on after Not now.
+                if usage.preferences.claudeAccounts || usage.detectedAccountCount >= 2 { UsageAccountsSection(usage: usage) }
             }
-            UsageLimitsView(usage: usage)
+            if UsageStatusPopover.shownAccounts(usage).isEmpty { UsageLimitsView(usage: usage) }
+            else { UsageAccountsLimits(usage: usage) }
             Divider().overlay(FrogStyle.border.opacity(0.4))
             UsageActivityView(usage: usage)
             UsageAccountDetails(usage: usage)
@@ -313,7 +319,8 @@ private struct UsageProviderControls: View {
                 var next = usage.preferences; next.provider = $0; usage.updatePreferences(next)
             }.accessibilityLabel("Usage provider")
             Spacer(minLength: 0)
-            if usage.preferences.provider == "Claude" {
+            // Each Claude account is read through its own folders while Frog shows each.
+            if usage.preferences.provider == "Claude", !usage.claudeAccountsEnabled {
                 CompactMenu(value: usage.loginSource, width: 180) {
                     ForEach(usage.loginSources, id: \.self) { source in
                         Button(source) { usage.selectLoginSource(source) }
@@ -321,6 +328,143 @@ private struct UsageProviderControls: View {
                 }.accessibilityLabel("Claude login source").help("Where Claude plan limits are read from")
             }
         }
+    }
+}
+
+/// The switch for several Claude accounts and, while it is on, every account Frog found: its
+/// label, where its readings come from, whether it counts, and the display choices.
+private struct UsageAccountsSection: View {
+    @ObservedObject var usage: UsageDashboardModel
+    @State private var liveSetup: UsageAccountSummary?
+    var body: some View {
+        let accounts = usage.claudeAccountsEnabled ? usage.accounts() : []
+        let preferences = usage.preferences
+        VStack(alignment: .leading, spacing: 10) {
+            CompactRow(title: "Show each Claude account",
+                       detail: "Reads the saved limits of every Claude account on this Mac. Live readings need a Claude Code sign-in per account.") {
+                Toggle("Show each Claude account", isOn: Binding(get: { usage.preferences.claudeAccounts }, set: { on in
+                    var next = usage.preferences; next.claudeAccounts = on; usage.updatePreferences(next)
+                })).labelsHidden().toggleStyle(.switch)
+            }
+            if usage.claudeAccountsEnabled {
+                SectionCaption(text: "Accounts")
+                FrogCard(padding: 0) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if accounts.isEmpty {
+                            Text("No Claude account found yet. Add the folder of a Claude app profile or a Claude Code folder.")
+                                .font(FrogType.caption).foregroundStyle(FrogStyle.muted).padding(12)
+                        }
+                        ForEach(accounts) { account in
+                            UsageAccountSettingsRow(usage: usage, account: account) { liveSetup = account }.padding(12)
+                            if account.id != accounts.last?.id { Divider().overlay(FrogStyle.border.opacity(0.35)) }
+                        }
+                    }
+                }
+                HStack(spacing: 12) {
+                    CompactSegments(values: UsageDashboardPreferences.claudeAccountsViews, selected: preferences.claudeAccountsView,
+                                    width: 200, title: { $0 == "combined" ? "Combined" : "Each account" }) { view in
+                        var next = usage.preferences; next.claudeAccountsView = view; usage.updatePreferences(next)
+                    }.accessibilityLabel("Claude accounts view")
+                    if preferences.claudeAccountsView == "each", accounts.filter(\.included).count >= 2 {
+                        CompactSegments(values: UsageDashboardPreferences.claudeAccountsMenuBarWindows, selected: preferences.claudeAccountsMenuBar,
+                                        width: 140, title: { $0 == "week" ? "Week" : "Session" }) { window in
+                            var next = usage.preferences; next.claudeAccountsMenuBar = window; usage.updatePreferences(next)
+                        }.accessibilityLabel("Limit shown in the menu bar").help("The limit the menu bar shows for each account")
+                    }
+                    Spacer(minLength: 0)
+                    Button("Add folder…") { addFolder() }.buttonStyle(FrogButtonStyle())
+                        .help("A Claude app data folder or a Claude Code folder Frog did not find")
+                }
+            }
+        }
+        .alert(liveSetup.map { ClaudeSignIn.liveSetupTitle($0.label) } ?? "",
+               isPresented: Binding(get: { liveSetup != nil }, set: { if !$0 { liveSetup = nil } }), presenting: liveSetup) { account in
+            Button("Open Terminal") { ClaudeSignIn.startLiveSetup(usage, account: account.id) }
+            Button("Cancel", role: .cancel) {}
+        } message: { account in
+            Text(ClaudeSignIn.liveSetupMessage(account.label))
+        }
+    }
+
+    private func addFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false; panel.showsHiddenFiles = true
+        panel.prompt = "Add"
+        panel.message = "Choose a Claude app data folder or a Claude Code folder."
+        panel.begin { response in
+            guard response == .OK, let folder = panel.url else { return }
+            usage.addClaudeAccountFolder(folder)
+        }
+    }
+}
+
+/// One account on the page. Its login's e-mail address is shown only on hover, so a screenshot
+/// of the page shows labels.
+private struct UsageAccountSettingsRow: View {
+    @ObservedObject var usage: UsageDashboardModel
+    let account: UsageAccountSummary
+    let setUpLiveReadings: () -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
+                UsageAccountLabelField(label: account.label) { usage.renameAccount(account.id, to: $0) }
+                ForEach(account.sources, id: \.self) { source in
+                    Text(source).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.innerRadius))
+                }
+                Spacer(minLength: 8)
+                Toggle("Include", isOn: Binding(get: { account.included }, set: { usage.setAccountIncluded(account.id, $0) }))
+                    .toggleStyle(.switch).controlSize(.mini).font(FrogType.caption)
+                    .help("Counts in the menu bar and in combined limits")
+            }
+            Text(details).font(FrogType.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+            if let note = account.mergedNote {
+                Label(note, systemImage: "link").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+            }
+            if account.needsLiveSetup {
+                Button("Set up live readings…", action: setUpLiveReadings).buttonStyle(FrogButtonStyle())
+                    .help("Signs Claude Code in as \(account.label), so Frog can check its limits with Anthropic")
+            }
+        }.help(usage.accountLogin(for: account.id) ?? "")
+    }
+
+    /// "Max plan · Last reading 15:40 (3m ago), Claude app · Newest available plan limits".
+    private var details: String {
+        let now = Date()
+        let reading = account.age.map { age in
+            "Last reading \(age.formatted(date: .omitted, time: .shortened)) (\(UsageStatusPopover.age(of: age, at: now)))"
+                + (account.readingSource.map { ", \($0)" } ?? "")
+        } ?? "No reading yet"
+        return [account.plan.map { "\($0) plan" }, reading, account.status].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+/// Renames on Return or when the field loses focus; the model trims, shortens and keeps labels unique.
+private struct UsageAccountLabelField: View {
+    let label: String
+    let rename: (String) -> Void
+    @State private var text = ""
+    @FocusState private var focused: Bool
+    var body: some View {
+        TextField("Label", text: $text)
+            .textFieldStyle(.plain).font(FrogType.label)
+            .padding(.horizontal, 7).frame(width: 120, height: 24)
+            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+            .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius).strokeBorder(FrogStyle.border.opacity(focused ? 0.9 : 0.5)))
+            .focused($focused)
+            .onSubmit(commit)
+            .onChange(of: focused) { _, focused in if !focused { commit() } }
+            .onChange(of: label) { _, label in text = label }
+            .onAppear { text = label }
+            .accessibilityLabel("Account label")
+    }
+    private func commit() {
+        guard text != label else { return }
+        rename(text)
+        // A label the model keeps as it was, such as one made only of spaces, shows as it is.
+        text = label
     }
 }
 
