@@ -723,9 +723,10 @@ Device checks, with isolated data, still to run:
 
 ## App cleaner
 
-Automated: `CleanerPreferencesTests`, `CleanerFeatureTests` and `CleanerModelTests` run the cleaner against
-fixture folders with a fake Trash and system. Manual checks on a real Mac, built with `scripts/build-app.sh`,
-with `FROG_DATA_DIRECTORY` set to a temporary folder and only a sample app:
+Automated: `CleanerPreferencesTests`, `CleanerFeatureTests`, `CleanerModelTests`, `CleanerCommandTests` and
+`CleanerCommandBarTests` run the cleaner against fixture folders with a fake Trash and system. Manual checks on
+a real Mac, built with `scripts/build-app.sh`, with `FROG_DATA_DIRECTORY` set to a temporary folder and only a
+sample app:
 
 - [ ] With a fresh data directory, Features shows "App cleaner" off; turning it on adds the sidebar entry and the command-bar route "App cleaner".
 - [ ] Turning it off while a scan or the confirmation sheet is open closes them without moving anything.
@@ -736,6 +737,12 @@ with `FROG_DATA_DIRECTORY` set to a temporary folder and only a sample app:
 - [ ] Confirming moves the app (through Finder; note whether macOS asked for Automation) and the folders; Finder's Trash shows them and offers Put Back.
 - [ ] With the sample app running, Frog quits it first; with Full Disk Access missing, the notice appears and "Not now" hides it for good.
 - [ ] Owner: remove a small App Store app and a package-installed app with a launch daemon; Finder asks for the password, the daemon note appears, and nothing outside the review list moves.
+- [ ] With the cleaner off, typing "uninstall cleaner sa" in the command bar shows no Uninstall row. With it on, "Uninstall Cleaner Sample" leads the list with the app's icon; Return opens Frog on the sample's review, and nothing moved.
+- [ ] "uninstall finder", "uninstall notes" and "uninstall frog" offer no Uninstall row.
+- [ ] After moving the sample, "Recently moved" lists it with its item count and size; Put Back returns the app and its folders to their places, the app is listed again, and a second Put Back is disabled.
+- [ ] The outcome of a removal offers Put Back, which shows how many items came back in place of the outcome.
+- [ ] Move the sample again, then drag one of its folders out of the Trash by hand: Put Back says "It is no longer in the Trash." for that item and puts back the rest.
+- [ ] "Remove from this list" forgets the record and leaves the Trash as it was. At the end, move the sample app and its folders to the Trash.
 <!-- slot: cleaner-leftovers -->
 <!-- slot: cleaner-junk -->
 <!-- slot: cleaner-assist -->

@@ -22,6 +22,10 @@ Only sure and likely matches start ticked. Possible matches, items used by other
 
 Notices above the list say when the app is running (Frog quits it first), when it comes with its own uninstaller (**Open Uninstaller** opens it; it can remove parts Frog cannot see), when it has a system extension, and when some items need Full Disk Access.
 
+## From the command bar
+
+Type uninstall or remove and the app's name, for example `uninstall slack`. Frog opens the review; nothing moves until you confirm. The command bar offers up to three apps, the same ones the page lists: never Apple's apps, Finder or Frog itself. Typing the words starts no scan; the scan starts when you choose the row.
+
 <!-- slot: cleaner-leftovers -->
 <!-- slot: cleaner-junk -->
 <!-- slot: cleaner-assist -->
@@ -49,7 +53,17 @@ Whatever found an item, Frog refuses to offer or move:
 - Background services whose files move are stopped first. System services stop after you restart your Mac.
 - If an app does not quit, Frog asks before it force quits it; unsaved changes may be lost.
 
-The space is freed only when you empty the Trash. Until then, you can put items back from the Trash in Finder.
+The space is freed only when you empty the Trash. Until then, you can put items back.
+
+## Putting items back
+
+**Recently moved** (the clock button at the top of the page) lists what Frog moved to the Trash in the last 30 days, newest first, with the number of items, their size and how many are already back. Open a removal to see each item and where it is: "In the Trash", "Put back", or "Use Put Back in Finder". The outcome of a removal offers **Put Back** as well.
+
+- **Put Back** moves your own items from the Trash to their original places. An item fails alone when something else now sits at its place, or when it is no longer in the Trash.
+- **Put Back in Finder** opens the Trash for items Frog cannot put back itself: items that belong to the system (moving them back needs the administrator password) and items Finder did not say where it put. Select them there and choose Put Back.
+- **Remove from this list** forgets the record only; the items stay where they are.
+
+Frog can put items back only while they are in the Trash. After you empty it, they are gone.
 
 ## Permissions
 
