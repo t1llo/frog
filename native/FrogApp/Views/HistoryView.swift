@@ -23,6 +23,7 @@ private struct HistoryContent: View {
     @State private var confirmClear = false
     @State private var deleting: HistoryItem?
     @State private var copiedID: UUID?
+    @State private var note: NoteProgress?
     init(clipboard: ClipboardHistoryStore, visibility: HistoryVisibility) {
         self.clipboard = clipboard; self.visibility = visibility
     }
@@ -47,6 +48,7 @@ private struct HistoryContent: View {
                     Spacer()
                     if viewing.requiresReveal || model.configuration.preferences.hideHistoryText { revealButton(viewing) }
                     // Actions for an answer entry go here, before Delete.
+                    if let saved = viewing.savedEntry, saved.answer != nil, model.answerNotesEnabled, !hidden(viewing) { noteButton(saved) }
                     IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = viewing }
                 }.frame(height: 32)
                 PageHeader(title: viewing.title, subtitle: viewing.timestamp.formatted(date: .abbreviated, time: .shortened))
@@ -76,6 +78,10 @@ private struct HistoryContent: View {
                         if viewing.clipboardEntry != nil { copy(viewing); return [] }
                         return [NSItemProvider(object: viewing.text as NSString)]
                     }
+                if note?.id == viewing.id, case .failed(let message) = note?.state {
+                    Text(message).font(.system(size: 11)).foregroundStyle(FrogStyle.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             } else {
             PageHeader(title: "History", subtitle: clipboardSelected ? "Copied text, kept in memory only." : "Recent text, audio and clipboard activity.") {
                 HStack {
@@ -225,6 +231,26 @@ private struct HistoryContent: View {
             }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
         }
     }
+    /// Saves the answer and its follow-ups as a note; "Saved" shows for two seconds.
+    private func noteButton(_ entry: HistoryEntry) -> some View {
+        let state = note?.id == entry.id ? note?.state : nil
+        return IconAction(title: state == .saved ? "Saved" : "Save to note", symbol: state == .saved ? "checkmark" : "square.and.arrow.down") {
+            let content = AnswerNoteContent(entry: entry)
+            note = NoteProgress(id: entry.id, state: .saving)
+            Task {
+                do {
+                    _ = try await model.saveAnswerNote(content)
+                    note = NoteProgress(id: entry.id, state: .saved)
+                    try? await Task.sleep(for: .seconds(2))
+                    if note == NoteProgress(id: entry.id, state: .saved) { note = nil }
+                } catch is CancellationError {
+                    note = nil
+                } catch {
+                    note = NoteProgress(id: entry.id, state: .failed(error.localizedDescription))
+                }
+            }
+        }.disabled(state == .saving)
+    }
     private func revealButton(_ entry: HistoryItem) -> some View {
         IconAction(title: hidden(entry) ? "Reveal text" : "Hide text", symbol: hidden(entry) ? "eye" : "eye.slash") {
             if visibility.revealed.contains(entry.id) { visibility.revealed.remove(entry.id) } else { visibility.revealed.insert(entry.id) }
@@ -343,6 +369,12 @@ private struct HistoryLongText: View {
             }
         }
     }
+}
+
+/// Save to note for one History entry.
+private struct NoteProgress: Equatable {
+    let id: UUID
+    let state: AnswerController.NoteState
 }
 
 private struct HistoryDetail: View {
