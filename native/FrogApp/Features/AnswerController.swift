@@ -28,6 +28,8 @@ struct AnswerCapture: Sendable {
 @MainActor final class AnswerController {
     /// What the panel offers next to a failure.
     enum Recovery: Equatable { case retry, editRule }
+    /// Save to note, from pressing it until "Saved" goes away.
+    enum NoteState: Equatable { case saving, saved, failed(String) }
 
     static let emptySelection = "Select some text first."
     static let noText = "The model returned no text."
@@ -37,6 +39,7 @@ struct AnswerCapture: Sendable {
     private(set) var recovery: Recovery?
     /// Why the last follow-up was not asked, shown in the follow-up field's place.
     private(set) var followUpMessage: String?
+    private(set) var noteState: NoteState?
     var onEditRule: ((UUID) -> Void)?
 
     private let resolve: (Rule) throws -> ProviderConfiguration
@@ -51,6 +54,9 @@ struct AnswerCapture: Sendable {
     private let copy: (String) -> Void
     private let record: (AnswerSession) -> UUID?
     private let updateRecord: (AnswerSession) -> Bool
+    private let saveNote: (AnswerNoteContent) async throws -> URL
+    private let notesEnabled: () -> Bool
+    private let savedDisplay: Duration
     private let updateInterval: Duration
 
     private var rule: Rule?
@@ -77,6 +83,9 @@ struct AnswerCapture: Sendable {
          copy: @escaping (String) -> Void,
          record: @escaping (AnswerSession) -> UUID? = { _ in nil },
          updateRecord: @escaping (AnswerSession) -> Bool = { _ in false },
+         saveNote: @escaping (AnswerNoteContent) async throws -> URL = { _ in throw CancellationError() },
+         notesEnabled: @escaping () -> Bool = { false },
+         savedDisplay: Duration = .seconds(2),
          updateInterval: Duration = .milliseconds(50)) {
         self.resolve = resolve
         self.readKey = readKey
@@ -90,6 +99,9 @@ struct AnswerCapture: Sendable {
         self.copy = copy
         self.record = record
         self.updateRecord = updateRecord
+        self.saveNote = saveNote
+        self.notesEnabled = notesEnabled
+        self.savedDisplay = savedDisplay
         self.updateInterval = updateInterval
     }
 
@@ -157,6 +169,7 @@ struct AnswerCapture: Sendable {
         }
         followUpMessage = nil
         recovery = nil
+        if case .failed = noteState { noteState = nil }
         self.session = session
         publish(immediately: true)
         send()
@@ -206,6 +219,44 @@ struct AnswerCapture: Sendable {
     func editRule() {
         guard let session else { return }
         onEditRule?(session.ruleID)
+    }
+
+    /// Whether the panel offers Save to note.
+    var offersNotes: Bool { notesEnabled() }
+
+    /// True once there is an answer to save: a completed turn, or the text a stopped one kept.
+    var canSaveNote: Bool {
+        guard let session, noteState != .saving else { return false }
+        return !AnswerNoteContent(session: session, date: Date()).turns.isEmpty
+    }
+
+    /// Saves the conversation so far as a note. It keeps saving when the panel closes meanwhile;
+    /// "Saved" or the error shows only while the same answer is open.
+    func saveToNote() {
+        guard offersNotes, canSaveNote, let session else { return }
+        let content = AnswerNoteContent(session: session, date: Date())
+        let id = session.id
+        noteState = .saving
+        publish(immediately: true)
+        Task { [weak self, saveNote, savedDisplay] in
+            let state: NoteState?
+            do {
+                _ = try await saveNote(content)
+                state = .saved
+            } catch is CancellationError {
+                state = nil
+            } catch {
+                state = .failed(error.localizedDescription)
+            }
+            guard let self, self.session?.id == id else { return }
+            self.noteState = state
+            self.publish(immediately: true)
+            guard state == .saved else { return }
+            try? await Task.sleep(for: savedDisplay)
+            guard self.session?.id == id, self.noteState == .saved else { return }
+            self.noteState = nil
+            self.publish(immediately: true)
+        }
     }
 
     // MARK: Streaming
@@ -308,7 +359,7 @@ struct AnswerCapture: Sendable {
         pendingUpdate?.cancel(); pendingUpdate = nil
         lastUpdate = nil
         session = nil; rule = nil; provider = nil
-        recovery = nil; followUpMessage = nil
+        recovery = nil; followUpMessage = nil; noteState = nil
         recorded = false; updatesRecord = true
     }
 

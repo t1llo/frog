@@ -7,6 +7,10 @@ import FrogCore
     @Published var session: AnswerSession?
     @Published var recovery: AnswerController.Recovery?
     @Published var followUpMessage: String?
+    /// Save to note shows while notes are on; it saves once there is an answer.
+    @Published var offersNotes = false
+    @Published var canSaveNote = false
+    @Published var noteState: AnswerController.NoteState?
     @Published var pinned = false
     @Published var question = ""
     /// The tallest the panel grows before its answer scrolls.
@@ -16,6 +20,7 @@ import FrogCore
     var retry: () -> Void = {}
     var copy: () -> Void = {}
     var editRule: () -> Void = {}
+    var saveNote: () -> Void = {}
     var close: () -> Void = {}
     var togglePin: () -> Void = {}
     /// The height the content asks for, header and footer included.
@@ -48,6 +53,7 @@ import FrogCore
         model.retry = { [weak self] in self?.controller?.retry() }
         model.copy = { [weak self] in self?.controller?.copyLatest() }
         model.editRule = { [weak self] in self?.controller?.editRule() }
+        model.saveNote = { [weak self] in self?.controller?.saveToNote() }
         model.close = { [weak self] in self?.dismiss(.closeButton) }
         model.togglePin = { [weak self] in self?.model.pinned.toggle() }
         model.heightChanged = { [weak self] in self?.resize(to: $0) }
@@ -91,6 +97,7 @@ import FrogCore
         model.session = nil
         model.recovery = nil
         model.followUpMessage = nil
+        model.noteState = nil
         model.question = ""
         model.pinned = false
     }
@@ -123,6 +130,9 @@ import FrogCore
         model.session = session
         model.recovery = controller?.recovery
         model.followUpMessage = controller?.followUpMessage
+        model.offersNotes = controller?.offersNotes ?? false
+        model.canSaveNote = controller?.canSaveNote ?? false
+        model.noteState = controller?.noteState
     }
 
     /// Below the selection the panel keeps its top edge, above it its bottom edge. One the user
@@ -143,7 +153,9 @@ import FrogCore
     // MARK: Closing
 
     private func dismiss(_ event: PanelEvent) {
-        guard panel?.isVisible == true, AnswerPanelDismissal.shouldClose(event, pinned: model.pinned) else { return }
+        // While a note saves, the folder chooser may be open: the panel stays as if pinned.
+        let pinned = model.pinned || model.noteState == .saving
+        guard panel?.isVisible == true, AnswerPanelDismissal.shouldClose(event, pinned: pinned) else { return }
         if let controller { controller.close() } else { close() }
     }
 
@@ -193,12 +205,17 @@ import FrogCore
         activationObserver = nil
     }
 
-    /// Escape and ⌘W close, ⌘↩ copies, ⌘. stops. Every other key goes on to the follow-up field.
+    /// Escape and ⌘W close, ⌘↩ copies, ⌘. stops, ⌘S saves a note while notes are on. Every other key
+    /// goes on to the follow-up field.
     private func handleLocalKey(_ event: NSEvent) -> NSEvent? {
         guard let panel, event.window === panel else { return event }
         let composing = (panel.firstResponder as? NSTextView)?.hasMarkedText() == true
         if !composing, event.keyCode == 47, event.panelModifiers == .command {
             controller?.stop()
+            return nil
+        }
+        if !composing, event.keyCode == 1, event.panelModifiers == .command, controller?.offersNotes == true {
+            controller?.saveToNote()
             return nil
         }
         switch PanelKeyMap.decide(keyCode: event.keyCode, modifiers: event.panelModifiers, state: PanelState(composing: composing)) {

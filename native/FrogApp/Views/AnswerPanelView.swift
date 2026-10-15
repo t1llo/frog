@@ -99,15 +99,16 @@ struct AnswerPanelView: View {
             .overlay(alignment: .top) { Divider().opacity(0.5).offset(y: -4) }
     }
 
+    /// A note that could not be saved takes the line until the next action.
     @ViewBuilder private var statusLine: some View {
-        if let session = model.session, let line = session.statusLine {
+        if let session = model.session, let line = noteFailure ?? session.statusLine {
             HStack(spacing: 8) {
-                if session.phase.isPending { ProgressView().controlSize(.mini) }
+                if noteFailure == nil, session.phase.isPending { ProgressView().controlSize(.mini) }
                 Text(line).font(FrogType.caption)
-                    .foregroundStyle(failed ? FrogStyle.warning : FrogStyle.muted)
+                    .foregroundStyle(failed || noteFailure != nil ? FrogStyle.warning : FrogStyle.muted)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
-                switch model.recovery {
+                switch noteFailure == nil ? model.recovery : nil {
                 case .retry: Button(L10n.text("Retry")) { model.retry() }
                 case .editRule: Button(L10n.text("Edit rule")) { model.editRule() }
                 case nil: EmptyView()
@@ -135,6 +136,7 @@ struct AnswerPanelView: View {
                     Button(L10n.text("Stop")) { model.stop() }.help(L10n.text("Stop (⌘.)"))
                 }
                 Button(L10n.text("Copy")) { model.copy() }.help(L10n.text("Copy (⌘↩)")).disabled(!hasAnswer)
+                if model.offersNotes { saveNoteButton }
             }
             if let message = model.followUpMessage {
                 Text(message).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
@@ -146,7 +148,22 @@ struct AnswerPanelView: View {
         .overlay(alignment: .top) { Divider().opacity(0.6) }
     }
 
+    @ViewBuilder private var saveNoteButton: some View {
+        if model.noteState == .saved {
+            Label(L10n.text("Saved"), systemImage: "checkmark").font(FrogType.caption).foregroundStyle(FrogStyle.accent)
+                .padding(.horizontal, 4).accessibilityLabel(L10n.text("Saved to note"))
+        } else {
+            Button(L10n.text("Save to note")) { model.saveNote() }
+                .help(L10n.text("Save to note (⌘S)"))
+                .disabled(!model.canSaveNote)
+        }
+    }
+
     // MARK: State
+
+    private var noteFailure: String? {
+        if case .failed(let message) = model.noteState { message } else { nil }
+    }
 
     private var failed: Bool {
         if case .failed = model.session?.phase { true } else { false }

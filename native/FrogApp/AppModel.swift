@@ -105,6 +105,8 @@ final class AppModel: ObservableObject {
     private let captureSelection: () async throws -> any CapturedTextSelection
     private let answerStream: (AnswerRequest) -> AsyncThrowingStream<AnswerEvent, Error>
     private let answerPresenter: AnswerPresenting
+    /// Asks for the notes folder the first time an answer is saved. Nil when cancelled.
+    private let chooseNotesFolder: () async -> URL?
     private var answerCapture: Task<Void, Never>?
     /// History as it was when the running answer started: clearing or turning it off since stops saving the answer.
     private var answerHistoryEpoch: UUID?
@@ -130,7 +132,12 @@ final class AppModel: ObservableObject {
                 self?.clipboardHistoryStore.recordCopiedText(text)
             },
             record: { [weak self] in self?.recordAnswer($0) },
-            updateRecord: { [weak self] in self?.updateAnswerRecord($0) ?? false })
+            updateRecord: { [weak self] in self?.updateAnswerRecord($0) ?? false },
+            saveNote: { [weak self] content in
+                guard let self else { throw CancellationError() }
+                return try await self.saveAnswerNote(content)
+            },
+            notesEnabled: { [weak self] in self?.answerNotesEnabled ?? false })
         controller.onEditRule = { [weak self] _ in self?.openFeature(.explain) }
         (answerPresenter as? AnswerPanelController)?.controller = controller
         return controller
@@ -162,6 +169,7 @@ final class AppModel: ObservableObject {
          captureSelection: (() async throws -> any CapturedTextSelection)? = nil,
          answerStream: ((AnswerRequest) -> AsyncThrowingStream<AnswerEvent, Error>)? = nil,
          answerPresenter: AnswerPresenting? = nil,
+         chooseNotesFolder: (() async -> URL?)? = nil,
          dictationController: DictationController? = nil,
          modelService: LocalModels? = nil,
          powerController: StayAwakeController? = nil,
@@ -186,6 +194,7 @@ final class AppModel: ObservableObject {
         self.localModels = localModels
         self.answerStream = answerStream ?? AnswerStreams.live(localModels: localModels, localTools: localTools)
         self.answerPresenter = answerPresenter ?? (registerShortcuts ? AnswerPanelController() : SilentAnswerPresenter())
+        self.chooseNotesFolder = chooseNotesFolder ?? { await Self.chooseNotesFolderInPanel() }
         self.readAccessibility = readAccessibility ?? { SelectionService.isTrusted }
         self.readLoginStatus = readLoginStatus ?? { LoginService.readStatus() }
         self.writeLoginItem = writeLoginItem ?? { try LoginService.setEnabled($0) }
@@ -1135,6 +1144,63 @@ final class AppModel: ObservableObject {
             report(FrogError.message("Answer shown, but history could not be saved: \(error.localizedDescription)"))
             return false
         }
+    }
+
+    static let notesOff = "Turn on Save answers to notes on the Explain page."
+
+    /// Whether answers offer Save to note.
+    var answerNotesEnabled: Bool {
+        configuration.preferences.featureEnabled(.explain) && configuration.preferences.explainSettings.notes
+    }
+
+    /// Saves an answer and its follow-ups as a Markdown note in the notes folder, asking for the
+    /// folder first when none is set. Saving is something the person asks for, so it works with
+    /// History off. Returns the file written; a cancelled folder choice throws `CancellationError`.
+    func saveAnswerNote(_ content: AnswerNoteContent) async throws -> URL {
+        guard configuration.preferences.explainSettings.notes else { throw FrogError.message(Self.notesOff) }
+        do {
+            if configuration.preferences.explainSettings.notesFolder == nil {
+                guard try await chooseAnswerNotesFolder() else { throw CancellationError() }
+            }
+            let settings = configuration.preferences.explainSettings
+            guard let folder = settings.notesFolderURL else { throw CancellationError() }
+            let mode = settings.notesMode, pattern = settings.notesFile
+            let url = try await Task.detached {
+                try AnswerNoteWriter().save(content, folder: folder, mode: mode, file: pattern, now: Date())
+            }.value
+            if settings.notesOpen { NoteOpener.open(url) }
+            return url
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            report(FrogError.message("Note not saved: \(error.localizedDescription)"))
+            throw error
+        }
+    }
+
+    /// Asks for the notes folder and stores it, tilde-abbreviated. False when the choice was cancelled.
+    @discardableResult
+    func chooseAnswerNotesFolder() async throws -> Bool {
+        guard let chosen = await chooseNotesFolder() else { return false }
+        try updateToolkit { toolkit in
+            var settings = toolkit.explain ?? ExplainSettings()
+            settings.notesFolder = (chosen.path as NSString).abbreviatingWithTildeInPath
+            toolkit.explain = settings
+        }
+        return true
+    }
+
+    /// The folder chooser for notes, in front of the app the selection came from.
+    private static func chooseNotesFolderInPanel() async -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = L10n.text("Choose")
+        panel.message = L10n.text("Choose the folder for notes, such as an Obsidian vault.")
+        NSApp.activate(ignoringOtherApps: true)
+        return panel.runModal() == .OK ? panel.url : nil
     }
 
     func processManual(text: String, ruleID: UUID, providerID: UUID? = nil, modelID: String? = nil) {

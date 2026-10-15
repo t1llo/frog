@@ -206,6 +206,74 @@ final class ExplainRoutingTests: XCTestCase {
         XCTAssertTrue(setup.model.history.isEmpty)
     }
 
+    // MARK: Notes
+
+    func testSavingANoteNeedsNotesOnAndAsksForTheFolderOnceWithHistoryOff() async throws {
+        let setup = try Setup(test: self)
+        _ = try await setup.enableExplain()
+        let content = AnswerNoteContent(ruleName: "Explain", selection: "river bank", modelLabel: "Qwen3 4B · Frog", application: "Notes",
+                                        source: nil, date: Date(), turns: [AnswerTurn(question: "", answer: "A raised strip.")])
+        do {
+            _ = try await setup.model.saveAnswerNote(content)
+            XCTFail("Saved with notes off")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "Turn on Save answers to notes on the Explain page.")
+        }
+        XCTAssertEqual(setup.folderChoices, 0)
+
+        try setup.turnOnNotes()
+        XCTAssertFalse(setup.model.configuration.preferences.historyEnabled)
+        let first = try await setup.model.saveAnswerNote(content)
+        XCTAssertEqual(setup.folderChoices, 1)
+        XCTAssertEqual(setup.model.configuration.preferences.explainSettings.notesFolderURL?.resolvingSymlinksInPath().path,
+                       setup.notesFolder.resolvingSymlinksInPath().path)
+        XCTAssertEqual(first.lastPathComponent, "river bank.md")
+        let second = try await setup.model.saveAnswerNote(content)
+        XCTAssertEqual(second.lastPathComponent, "river bank 2.md")
+        XCTAssertEqual(setup.folderChoices, 1, "The stored folder is used from then on")
+        XCTAssertTrue(setup.model.history.isEmpty)
+    }
+
+    func testTheAnswerPanelSavesItsConversationAndShowsTheOutcome() async throws {
+        let setup = try Setup(test: self)
+        let rule = try await setup.enableExplain()
+        XCTAssertFalse(setup.model.answers.offersNotes)
+        try setup.turnOnNotes()
+        XCTAssertTrue(setup.model.answers.offersNotes)
+        setup.model.processSelection(ruleID: rule.id)
+        try await waitUntil { setup.model.answers.session?.phase == .done(truncated: false) }
+        XCTAssertTrue(setup.model.answers.canSaveNote)
+        setup.model.answers.saveToNote()
+        try await waitUntil { setup.model.answers.noteState == .saved }
+        let note = try String(contentsOf: setup.notesFolder.appendingPathComponent("river bank.md"), encoding: .utf8)
+        XCTAssertTrue(note.contains("A raised strip of land along a river."), note)
+        XCTAssertFalse(note.contains("light went"), "The surrounding text is never written")
+        XCTAssertTrue(note.contains("\nsource: \"https://example.com/private/page\"\n"), "The source is kept on this Mac")
+
+        // A folder that is gone shows the reason in the panel and in Logs.
+        try FileManager.default.removeItem(at: setup.notesFolder)
+        setup.model.answers.saveToNote()
+        try await waitUntil { setup.model.answers.noteState == .failed("Choose a notes folder that exists.") }
+        XCTAssertTrue(setup.model.recentErrors.contains { $0.message.contains("Choose a notes folder that exists.") })
+    }
+
+    func testCancellingTheFolderChoiceSavesNothingAndShowsNoError() async throws {
+        let setup = try Setup(test: self)
+        _ = try await setup.enableExplain()
+        try setup.turnOnNotes()
+        setup.cancelsFolderChoice = true
+        let content = AnswerNoteContent(ruleName: "Explain", selection: "x", modelLabel: "", application: nil, source: nil,
+                                        date: Date(), turns: [AnswerTurn(question: "", answer: "y")])
+        do {
+            _ = try await setup.model.saveAnswerNote(content)
+            XCTFail("Saved without a folder")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertNil(setup.model.configuration.preferences.explainSettings.notesFolder)
+        XCTAssertTrue(setup.model.recentErrors.isEmpty)
+    }
+
     private func waitUntil(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async throws {
         for _ in 0..<400 {
             if condition() { return }
@@ -225,12 +293,18 @@ private final class Setup {
     let presenter = Presenter()
     var completions = 0
     var captures = 0
+    var folderChoices = 0
+    var cancelsFolderChoice = false
+    let notesFolder: URL
     private(set) var installedModelID: String?
 
     init(test: XCTestCase, installedTextModel: Bool = false) throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("FrogTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         test.addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let notesFolder = directory.appendingPathComponent("Notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notesFolder, withIntermediateDirectories: true)
+        self.notesFolder = notesFolder
         if installedTextModel, let item = LocalModelDescriptor.catalog.first(where: { $0.kind == .text }) {
             // A catalog entry marked as downloaded, with an empty file in place of its weights.
             let folder = directory.appendingPathComponent("Models/\(item.id)", isDirectory: true)
@@ -242,15 +316,30 @@ private final class Setup {
         let streams = streams, presenter = presenter, selection = selection
         var completions: () -> Void = {}
         var captures: () -> Void = {}
+        var chooseFolder: () -> URL? = { nil }
         model = AppModel(dataDirectory: directory, registerShortcuts: false,
                          complete: { _, _, _, _ in completions(); return "Replaced" },
                          readKey: { _ in nil }, writeClipboard: { _ in },
                          captureSelection: { captures(); return selection },
                          answerStream: { streams.stream($0) }, answerPresenter: presenter,
+                         chooseNotesFolder: { chooseFolder() },
                          errorDisplayDuration: .milliseconds(10))
         completions = { [weak self] in self?.completions += 1 }
         captures = { [weak self] in self?.captures += 1 }
+        chooseFolder = { [weak self] in
+            guard let self else { return nil }
+            self.folderChoices += 1
+            return self.cancelsFolderChoice ? nil : notesFolder
+        }
         try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
+    }
+
+    func turnOnNotes() throws {
+        try model.updateToolkit { toolkit in
+            var settings = toolkit.explain ?? ExplainSettings()
+            settings.notes = true
+            toolkit.explain = settings
+        }
     }
 
     func setHistory(_ enabled: Bool) throws {
