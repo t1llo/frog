@@ -277,6 +277,27 @@ again; a provider error is shown with Retry and logged, and cancelling is not an
 Answers never use Writing's `isProcessing`, its processing pill or its outcome, so a
 Writing rule can run while an answer is open.
 
+### Selection capture for answers
+
+A captured selection (`CapturedTextSelection`) offers four optional values besides its
+text: `anchor`, the selection's rectangle in Cocoa screen coordinates; `context`, the
+sentence or paragraph around it, at most 1,000 characters; `applicationName`; and
+`source`, the document or page address. They are protocol requirements with nil
+defaults, so a capture seen as `any CapturedTextSelection` answers with its own values.
+The compatibility Copy keeps the defaults, and its answer opens at the pointer without
+context.
+
+A selection read through Accessibility computes each value on first use only. Writing
+rules never ask, so they make no extra reads. The anchor is the selected range's
+bounds, or the last character's when the selection is taller than half of its screen.
+The context comes from the field's value already read at capture when it has at most
+200,000 UTF-16 units; otherwise Frog reads the character count and only 1,500 units on
+either side of the selection, and never more than 200,000 characters. The source is the
+focused window's document, else the address of the web area that holds the selection,
+for `http`, `https` and `file` only, without user, password, query or fragment. It stays
+with History and notes and is never sent to a model. Every element these reads touch has
+the same one-second messaging timeout as the capture itself.
+
 ## Data and execution
 
 Portable configuration contains feature choices and settings. Credentials stay
