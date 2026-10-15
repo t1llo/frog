@@ -38,11 +38,41 @@ public struct UsageDashboardPreferences: Codable, Equatable {
     /// Legacy configuration field, retained for round trips; activity is always combined.
     public var allDevices: Bool
     public var loginSource: String
+    /// Shows each Claude account found on this Mac instead of one.
+    public var claudeAccounts: Bool
+    /// "each" or "combined".
+    public var claudeAccountsView: String
+    /// The window the menu bar shows per account: "session" or "week".
+    public var claudeAccountsMenuBar: String
+
+    public static let claudeAccountsViews = ["each", "combined"]
+    public static let claudeAccountsMenuBarWindows = ["session", "week"]
 
     public init(provider: String = "Claude", range: String = "7d", metric: String = "API cost",
-                allDevices: Bool = false, loginSource: String = "Automatic") {
+                allDevices: Bool = false, loginSource: String = "Automatic", claudeAccounts: Bool = false,
+                claudeAccountsView: String = "each", claudeAccountsMenuBar: String = "session") {
         self.provider = provider; self.range = range; self.metric = metric
         self.allDevices = allDevices; self.loginSource = loginSource
+        self.claudeAccounts = claudeAccounts; self.claudeAccountsView = claudeAccountsView
+        self.claudeAccountsMenuBar = claudeAccountsMenuBar
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case provider, range, metric, allDevices, loginSource, claudeAccounts, claudeAccountsView, claudeAccountsMenuBar
+    }
+
+    /// Choices saved before a field existed load with that field's default.
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = Self()
+        provider = try values.decodeIfPresent(String.self, forKey: .provider) ?? defaults.provider
+        range = try values.decodeIfPresent(String.self, forKey: .range) ?? defaults.range
+        metric = try values.decodeIfPresent(String.self, forKey: .metric) ?? defaults.metric
+        allDevices = try values.decodeIfPresent(Bool.self, forKey: .allDevices) ?? defaults.allDevices
+        loginSource = try values.decodeIfPresent(String.self, forKey: .loginSource) ?? defaults.loginSource
+        claudeAccounts = try values.decodeIfPresent(Bool.self, forKey: .claudeAccounts) ?? defaults.claudeAccounts
+        claudeAccountsView = try values.decodeIfPresent(String.self, forKey: .claudeAccountsView) ?? defaults.claudeAccountsView
+        claudeAccountsMenuBar = try values.decodeIfPresent(String.self, forKey: .claudeAccountsMenuBar) ?? defaults.claudeAccountsMenuBar
     }
 }
 public struct UsageChartPoint: Identifiable {
@@ -257,7 +287,11 @@ public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
             range: value.provider == "OpenAI" && value.range == "24h" ? "7d" : TokenRange(rawValue: value.range)?.rawValue ?? "7d",
             metric: TokenMetric(rawValue: value.metric)?.rawValue ?? "API cost",
             allDevices: value.allDevices,
-            loginSource: ClaudeLoginSource(rawValue: value.loginSource)?.rawValue ?? "Automatic")
+            loginSource: ClaudeLoginSource(rawValue: value.loginSource)?.rawValue ?? "Automatic",
+            claudeAccounts: value.claudeAccounts,
+            claudeAccountsView: UsageDashboardPreferences.claudeAccountsViews.contains(value.claudeAccountsView) ? value.claudeAccountsView : "each",
+            claudeAccountsMenuBar: UsageDashboardPreferences.claudeAccountsMenuBarWindows.contains(value.claudeAccountsMenuBar)
+                ? value.claudeAccountsMenuBar : "session")
     }
     public func windows(provider: String, now: Date = Date()) -> [UsageWindow] {
         let claude = provider == Provider.claude.rawValue

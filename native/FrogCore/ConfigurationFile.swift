@@ -169,6 +169,7 @@ public enum ConfigurationFile {
         // slot: command-bar
         try preferences.toolkit?.commandBar?.validate()
         // slot: usage
+        try preferences.toolkit?.usage?.validate()
         // slot: clipboard
         // slot: snippets
         // slot: emoji-picker

@@ -275,7 +275,8 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             var preferences = self.configuration.preferences
             var toolkit = preferences.toolkitSettings
-            toolkit.usage = UsageDisplayPreferences(provider: value.provider, range: value.range, metric: value.metric, allDevices: value.allDevices, loginSource: value.loginSource)
+            toolkit.usage = UsageDisplayPreferences(provider: value.provider, range: value.range, metric: value.metric, allDevices: value.allDevices, loginSource: value.loginSource,
+                                                    claudeAccounts: value.claudeAccounts, claudeAccountsView: value.claudeAccountsView, claudeAccountsMenuBar: value.claudeAccountsMenuBar)
             preferences.toolkit = toolkit
             // Display choices do not change collectors, shortcuts, appearance or history.
             do {
@@ -405,7 +406,8 @@ final class AppModel: ObservableObject {
     func showSettings() { refreshSystemStatus(); openSettings?() }
     private func applyUsagePreferences(_ preferences: Preferences) {
         guard let value = preferences.toolkitSettings.usage else { return }
-        toolkit.applyUsagePreferences(UsageDashboardPreferences(provider: value.provider, range: value.range, metric: value.metric, allDevices: value.allDevices, loginSource: value.loginSource))
+        toolkit.applyUsagePreferences(UsageDashboardPreferences(provider: value.provider, range: value.range, metric: value.metric, allDevices: value.allDevices, loginSource: value.loginSource,
+                                                                claudeAccounts: value.claudeAccounts, claudeAccountsView: value.claudeAccountsView, claudeAccountsMenuBar: value.claudeAccountsMenuBar))
     }
 
     func openFeature(_ feature: FeatureID) { toolkit.select(.feature(feature)); showSettings() }

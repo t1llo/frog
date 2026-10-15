@@ -36,6 +36,26 @@ final class ConfigurationFileTests: XCTestCase {
         XCTAssertEqual(data.last, 0x0A)
     }
 
+    func testUsageChoicesFromBeforeClaudeAccountsLoadAndAreWrittenBackWithTheirDefaults() throws {
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: ConfigurationFile.encode(configured())) as? [String: Any])
+        var preferences = try XCTUnwrap(object["preferences"] as? [String: Any])
+        preferences["toolkit"] = ["enabled": ["usage": true],
+                                  "usage": ["provider": "OpenAI", "range": "30d", "metric": "Input", "allDevices": true, "loginSource": "Pi"]]
+        object["preferences"] = preferences
+        let loaded = try ConfigurationFile.decode(JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(loaded.preferences.toolkit?.usage,
+                       UsageDisplayPreferences(provider: "OpenAI", range: "30d", metric: "Input", allDevices: true, loginSource: "Pi"))
+        let written = try XCTUnwrap(JSONSerialization.jsonObject(with: ConfigurationFile.encode(loaded)) as? [String: Any])
+        let usage = try XCTUnwrap(((written["preferences"] as? [String: Any])?["toolkit"] as? [String: Any])?["usage"] as? [String: Any])
+        XCTAssertEqual(usage["claudeAccounts"] as? Bool, false)
+        XCTAssertEqual(usage["claudeAccountsView"] as? String, "each")
+        XCTAssertEqual(usage["claudeAccountsMenuBar"] as? String, "session")
+        XCTAssertEqual(usage["provider"] as? String, "OpenAI")
+
+        var invalid = loaded; invalid.preferences.toolkit?.usage?.claudeAccountsView = "stacked"
+        XCTAssertThrowsError(try ConfigurationFile.decode(JSONEncoder().encode(invalid)))
+    }
+
     func testInvalidReferencesVersionsBoundsAndDuplicateShortcutsAreRejected() throws {
         let valid = configured()
         var future = valid; future.version = 2

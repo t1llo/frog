@@ -189,9 +189,45 @@ public struct UsageDisplayPreferences: Codable, Equatable, Sendable {
     public var metric: String
     public var allDevices: Bool
     public var loginSource: String
-    public init(provider: String = "Claude", range: String = "7d", metric: String = "API cost", allDevices: Bool = false, loginSource: String = "Automatic") {
+    /// Shows each Claude account found on this Mac instead of one.
+    public var claudeAccounts: Bool
+    /// "each" or "combined".
+    public var claudeAccountsView: String
+    /// The window the menu bar shows per account: "session" or "week".
+    public var claudeAccountsMenuBar: String
+    public init(provider: String = "Claude", range: String = "7d", metric: String = "API cost", allDevices: Bool = false, loginSource: String = "Automatic",
+                claudeAccounts: Bool = false, claudeAccountsView: String = "each", claudeAccountsMenuBar: String = "session") {
         self.provider = provider; self.range = range; self.metric = metric
         self.allDevices = allDevices; self.loginSource = loginSource
+        self.claudeAccounts = claudeAccounts; self.claudeAccountsView = claudeAccountsView
+        self.claudeAccountsMenuBar = claudeAccountsMenuBar
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case provider, range, metric, allDevices, loginSource, claudeAccounts, claudeAccountsView, claudeAccountsMenuBar
+    }
+
+    /// Files written before a field existed load with that field's default.
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = Self()
+        provider = try values.decodeIfPresent(String.self, forKey: .provider) ?? defaults.provider
+        range = try values.decodeIfPresent(String.self, forKey: .range) ?? defaults.range
+        metric = try values.decodeIfPresent(String.self, forKey: .metric) ?? defaults.metric
+        allDevices = try values.decodeIfPresent(Bool.self, forKey: .allDevices) ?? defaults.allDevices
+        loginSource = try values.decodeIfPresent(String.self, forKey: .loginSource) ?? defaults.loginSource
+        claudeAccounts = try values.decodeIfPresent(Bool.self, forKey: .claudeAccounts) ?? defaults.claudeAccounts
+        claudeAccountsView = try values.decodeIfPresent(String.self, forKey: .claudeAccountsView) ?? defaults.claudeAccountsView
+        claudeAccountsMenuBar = try values.decodeIfPresent(String.self, forKey: .claudeAccountsMenuBar) ?? defaults.claudeAccountsMenuBar
+    }
+
+    public func validate() throws {
+        guard ["each", "combined"].contains(claudeAccountsView) else {
+            throw FrogError.message("Choose each or combined for Claude accounts.")
+        }
+        guard ["session", "week"].contains(claudeAccountsMenuBar) else {
+            throw FrogError.message("Choose session or week for the Claude accounts menu bar item.")
+        }
     }
 }
 
