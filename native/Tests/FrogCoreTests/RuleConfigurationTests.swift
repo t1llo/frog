@@ -151,7 +151,7 @@ final class RuleConfigurationTests: XCTestCase {
         used.rules.append(rule)
         try ConfigurationFile.validate(used)
         used.removeLocalModelSource(text.id)
-        XCTAssertThrowsError(try ConfigurationFile.validate(used)) { XCTAssertFalse($0.localizedDescription.contains("default local models"), $0.localizedDescription) }
+        XCTAssertThrowsError(try ConfigurationFile.validate(used)) { XCTAssertFalse($0.localizedDescription.contains("valid local models"), $0.localizedDescription) }
     }
 
     func testRemovedExternalAudioPrefersSameProviderAndCompatibleCategory() throws {

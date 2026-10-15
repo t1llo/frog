@@ -21,7 +21,7 @@ public final class KeychainStore: CredentialStore, Sendable {
         if status == errSecItemNotFound { return nil }
         try check(status)
         guard let data = result as? Data, let key = String(data: data, encoding: .utf8) else {
-            throw FrogError.message("The saved API key could not be read. Replace it in Providers.")
+            throw FrogError.message("The saved API key could not be read. Replace it in Models → Providers.")
         }
         return key
     }

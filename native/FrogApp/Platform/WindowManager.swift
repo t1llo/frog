@@ -85,7 +85,7 @@ actor WindowManager {
 
     func perform(_ action: WindowAction, pid: pid_t, displays: [CGRect]) throws {
         try Task.checkCancellation()
-        guard AXIsProcessTrusted() else { throw FrogError.message("Allow Accessibility in Settings to move windows.") }
+        guard AXIsProcessTrusted() else { throw FrogError.message("Allow Accessibility in Settings → Permissions to move windows.") }
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.2)
         guard let window = AXRead.element(app, kAXFocusedWindowAttribute) ?? AXRead.element(app, kAXMainWindowAttribute) else {

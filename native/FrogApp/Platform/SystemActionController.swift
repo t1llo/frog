@@ -78,7 +78,7 @@ actor SystemActionController {
     }
 
     func command(_ action: SystemAction, pid: pid_t) throws -> AXUIElement {
-        guard AXIsProcessTrusted() else { throw FrogError.message("Allow Accessibility in Settings to use \(action.title).") }
+        guard AXIsProcessTrusted() else { throw FrogError.message("Allow Accessibility in Settings → Permissions to use \(action.title).") }
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.15)
         guard AXRead.boolean(app, kAXFrontmostAttribute) == true,

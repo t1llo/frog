@@ -31,7 +31,7 @@ private struct ShortcutReferenceView: View {
                         Spacer(); ShortcutBadge(text: HotkeyManager.display(rule.hotkey!))
                     }
                 }
-                if !rules.contains(where: { $0.enabled && $0.hotkey != nil }) { Text("Add shortcuts in Rules.").foregroundStyle(FrogStyle.muted) }
+                if !rules.contains(where: { $0.enabled && $0.hotkey != nil }) { Text("No shortcuts yet. Give a Writing or Dictation action a shortcut, or add one in Shortcuts.").foregroundStyle(FrogStyle.muted) }
             }.padding(20)
         }.frame(width: 380, height: 360).foregroundStyle(FrogStyle.ink)
             .frogPanel()

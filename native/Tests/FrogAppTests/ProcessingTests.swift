@@ -209,7 +209,7 @@ final class ProcessingTests: XCTestCase {
     func testIndicatorNamesTheOutcomeItIsGiven() {
         XCTAssertEqual(ProcessingIndicator.appearance(of: .done).text, "Done")
         XCTAssertEqual(ProcessingIndicator.appearance(of: .cancelled).text, "Cancelled")
-        XCTAssertEqual(ProcessingIndicator.appearance(of: .failed("Anything")).text, "Check Frog for details")
+        XCTAssertEqual(ProcessingIndicator.appearance(of: .failed("Anything")).text, "Details in the Frog menu")
     }
 
     func testCancellationAndOverlappingRequestsDoNotPublishLateResult() async throws {

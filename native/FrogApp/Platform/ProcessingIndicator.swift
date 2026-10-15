@@ -25,7 +25,7 @@ final class ProcessingIndicator {
         switch outcome {
         case .done: ("checkmark", "Done")
         case .cancelled: ("checkmark", "Cancelled")
-        case .failed: ("exclamationmark.circle", "Check Frog for details")
+        case .failed: ("exclamationmark.circle", "Details in the Frog menu")
         }
     }
 

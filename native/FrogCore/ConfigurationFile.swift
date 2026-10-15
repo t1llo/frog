@@ -87,7 +87,7 @@ public enum ConfigurationFile {
             throw FrogError.message("The configuration contains duplicate provider or rule IDs.")
         }
         if let id = configuration.defaultProviderID, !providerIDs.contains(id) {
-            throw FrogError.message("The default provider is missing from this configuration.")
+            throw FrogError.message("A provider used by this configuration is missing.")
         }
         for provider in configuration.providers { try validate(provider: provider) }
         if let key = configuration.preferences.toolkitSettings.windowSwitcherHotkey { try ConfigShortcut.validate(key) }
@@ -146,7 +146,7 @@ public enum ConfigurationFile {
             if !rule.model.isEmpty {
                 guard let provider = configuration.providers.first(where: { $0.id == (rule.providerID ?? configuration.defaultProviderID) }),
                       provider.models.contains(where: { $0.id == rule.model && $0.category == .text }) else {
-                    throw FrogError.message("Choose a configured model for \(rule.name). Add it in Providers first.")
+                    throw FrogError.message("Choose a configured model for \(rule.name). Add it in Models → Providers first.")
                 }
             }
             if rule.instructions.contains("{{language}}") {
@@ -183,7 +183,7 @@ public enum ConfigurationFile {
               configuration.localModel(workflow.cleanupModelID)?.kind == .text,
               workflow.defaultLocalTextModelID == nil || configuration.localModel(workflow.defaultLocalTextModelID!)?.kind == .text,
               (0...3600).contains(workflow.idleUnloadSeconds) else {
-            throw FrogError.message("Choose valid default local models and an unload delay between 0 and 3600 seconds.")
+            throw FrogError.message("Choose valid local models and an unload delay between 0 and 3600 seconds.")
         }
         guard (1...200).contains(preferences.historyLimit), (1...30).contains(preferences.historyRetentionDays) else {
             throw FrogError.message("History must keep 1–200 entries for 1–30 days.")

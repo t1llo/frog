@@ -75,7 +75,7 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("How would you like to use Frog?").font(.headline)
             choice("An offline experience", detail: "Download models once, then process text and recordings on your Mac. Apple silicon required.", symbol: "desktopcomputer", selected: !external) { external = false }
-            choice("External providers too", detail: "Connect a cloud API, Ollama or LM Studio. You can also use internal models.", symbol: "network", selected: external) { external = true }
+            choice("External providers too", detail: "Connect a cloud API, Ollama or LM Studio. You can also use local models.", symbol: "network", selected: external) { external = true }
             Text("This only chooses your next setup step. You can add either kind of model at any time.").font(.caption).foregroundStyle(FrogStyle.muted)
             Divider()
             CompactRow(title: "Already have a configuration?", detail: "Import a file and skip the assistant.") { Button("Import settings…") { chooseImport() } }
@@ -117,12 +117,12 @@ struct SetupView: View {
                     }
                 }.disabled(!LocalModels.supported || LocalModelDescriptor.recommendedPair.allSatisfy { model.localModels.installed.contains($0.id) || model.localModels.progress[$0.id] != nil })
                 // The size is the catalog's, like the sizes in the rows above.
-                Text("For faster dictation in 25 European languages, choose Parakeet v3\(LocalModelDescriptor.find("parakeet-v3").map { " (\($0.downloadSize))" } ?? "") under other internal models below.")
+                Text("For faster dictation in 25 European languages, choose Parakeet v3\(LocalModelDescriptor.find("parakeet-v3").map { " (\($0.downloadSize))" } ?? "") under other local models below.")
                     .font(.caption).foregroundStyle(FrogStyle.muted)
                 if !LocalModels.supported { Text("Internal inference requires Apple silicon. Use an external provider on this Mac, or skip for now.").font(.caption).foregroundStyle(FrogStyle.warning) }
                 Text("Downloads continue if you move to the next step. You can cancel them in Models.").font(.caption).foregroundStyle(FrogStyle.muted)
             }
-            DisclosureGroup("Choose other internal models", isExpanded: $browse) {
+            DisclosureGroup("Choose other local models", isExpanded: $browse) {
                 VStack(alignment: .leading, spacing: 12) {
                     CompactSegments(values: [LocalModelDescriptor.Kind.audio, .text], selected: kind, title: { $0 == .audio ? "Speech" : "Text" }) { kind = $0 }
                     ModelInventory(kind: kind)
@@ -153,9 +153,9 @@ struct SetupView: View {
     private var summary: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Your setup is saved as you go.").font(.headline)
-            Text("\(model.localModels.installed.count) internal models downloaded · \(model.configuration.providers.count) external providers")
+            Text("\(model.localModels.installed.count) local models downloaded · \(model.configuration.providers.count) external providers")
             if !model.localModels.progress.isEmpty { Text("Model downloads are still running. See progress in Models.").foregroundStyle(FrogStyle.muted) }
-            Text("Open Rules to choose a model and shortcut for each action. Option–Space is the built-in Dictate shortcut.")
+            Text("Choose a model and shortcut for each action in Writing and Dictation. Option–Space is the built-in Dictate shortcut.")
             Text("Models and Settings are always available. You can mix local and external models, import settings, or reopen this assistant later.")
             Text("History is optional. Local models keep your text and recordings on this Mac; external providers receive what you send them.").font(.caption).foregroundStyle(FrogStyle.muted)
         }.font(.system(size: 13))

@@ -141,7 +141,7 @@ public struct LLMClient: Sendable {
             key = try KeychainStore.validatedKey(apiKey)
         } else { key = nil }
         if [.openAI, .anthropic, .gemini].contains(provider.kind), key == nil {
-            throw FrogError.message("Add an API key for this provider in Providers.")
+            throw FrogError.message("Add an API key for this provider in Models → Providers.")
         }
         let path: String
         let body: [String: Any]
@@ -302,7 +302,7 @@ public struct LLMClient: Sendable {
             key = try KeychainStore.validatedKey(apiKey)
         } else { key = nil }
         if [.openAI, .gemini].contains(provider.kind), key == nil {
-            throw FrogError.message("Add an API key for this provider in Providers.")
+            throw FrogError.message("Add an API key for this provider in Models → Providers.")
         }
         let base = URL(string: provider.endpoint.trimmingCharacters(in: .whitespacesAndNewlines))!
         var request = URLRequest(url: base.appendingPathComponent("models"), cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)

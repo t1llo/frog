@@ -85,7 +85,7 @@ private struct HistoryContent: View {
                         }
                     }
                     Menu {
-                        Button(clipboardSelected ? "Clear clipboard history…" : "Clear all history…", systemImage: "trash", role: .destructive) { confirmClear = true }
+                        Button(clipboardSelected ? "Clear clipboard" : "Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }
                             .disabled(clipboardSelected ? clipboard.entries.isEmpty : all.isEmpty)
                     } label: { Image(systemName: "ellipsis").frame(width: 26).modifier(CompactActionSurface()) }
                         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("History actions")

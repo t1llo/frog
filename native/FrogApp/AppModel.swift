@@ -16,7 +16,7 @@ final class AppModel: ObservableObject {
     @Published var historyFilter: HistoryFilter?
     @Published private(set) var hotkeyErrors: [UUID: String] = [:]
     @Published private(set) var isProcessing = false
-    /// What the running rule is doing, shown while a rule is tried in Rules.
+    /// What the running rule is doing, shown while a rule is tried in Writing or Dictation.
     @Published private(set) var status = "Ready"
     @Published private(set) var errorMessage: String?
     @Published private(set) var recentErrors: [AppIssue] = []
