@@ -181,6 +181,10 @@ These fields select the display and login-source preference only. Accounts, toke
 <!-- slot: windows -->
 <!-- slot: cleaner -->
 <!-- slot: command-bar -->
+### Command bar
+
+- `command-bar.learn-choices`: Learn from your choices: rows you pick for what you type are listed a bit higher. Default false. Stored in `~/Library/Application Support/Frog/command-choices.json`, never in this folder.
+
 <!-- slot: clipboard -->
 <!-- slot: snippets -->
 <!-- slot: emoji-picker -->

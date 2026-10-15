@@ -63,6 +63,7 @@ enum TextConfiguration {
             // slot: windows
             // slot: cleaner
             // slot: command-bar
+            .init("command-bar.learn-choices", "toolkit.commandBar.learnChoices", .bool),
             // slot: clipboard
             // slot: snippets
             // slot: emoji-picker
