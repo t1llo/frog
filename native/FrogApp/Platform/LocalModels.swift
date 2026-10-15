@@ -480,6 +480,32 @@ final class LocalModels: ObservableObject {
             try await runtime.complete(text, instructions: instructions, id: modelID, url: url, residency: { [weak self] ids in await self?.updateResidency(ids) })
         }
     }
+    /// An answer as it is generated. It waits for running work like Writing does,
+    /// so idle unload, residency and memory pressure apply to it unchanged.
+    /// Ending the consumer cancels the generation.
+    func stream(messages: [ChatMessage], instructions: String, modelID: String) -> AsyncThrowingStream<AnswerEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    if !loaded.contains(modelID) {
+                        continuation.yield(.loading(descriptor(modelID)?.name ?? modelID))
+                        try await prepare(modelID)
+                    }
+                    let truncated = try await exclusively(modelID, waiting: true) { url in
+                        try await runtime.stream(messages: messages, instructions: instructions, id: modelID, url: url,
+                                                 residency: { [weak self] ids in await self?.updateResidency(ids) },
+                                                 onChunk: { continuation.yield(.text($0)) })
+                    }
+                    try Task.checkCancellation()
+                    if truncated { continuation.yield(.truncated) }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
     private func updateResidency(_ ids: Set<String>) { loaded = ids }
     func shutdown() {
         downloads.values.forEach { $0.cancel() }
@@ -703,7 +729,20 @@ protocol LocalInferenceEngine: Actor {
     func prepare(model: LocalModelDescriptor, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws
     func transcribe(_ samples: [Float], model: LocalModelDescriptor, url: URL, language: String?, residency: @Sendable (Set<String>) async -> Void) async throws -> String
     func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String
+    /// Streams an answer; returns true when the model stopped at its token limit.
+    func stream(messages: [ChatMessage], instructions: String, id: String, url: URL,
+                residency: @Sendable (Set<String>) async -> Void, onChunk: @Sendable (String) -> Void) async throws -> Bool
     func unload(keepingMetadata: Bool) async
+}
+
+extension LocalInferenceEngine {
+    /// An engine that cannot stream answers in one piece, the conversation as one transcript.
+    func stream(messages: [ChatMessage], instructions: String, id: String, url: URL,
+                residency: @Sendable (Set<String>) async -> Void, onChunk: @Sendable (String) -> Void) async throws -> Bool {
+        let text = try await complete(AnswerPrompt.transcript(messages), instructions: instructions, id: id, url: url, residency: residency)
+        onChunk(text)
+        return false
+    }
 }
 
 actor LocalInference: LocalInferenceEngine {
@@ -894,6 +933,36 @@ actor LocalInference: LocalInferenceEngine {
         // A cancelled task ends the stream early, without a stop reason.
         try Task.checkCancellation()
         return try Self.textResult(output, stop: stop)
+        #else
+        throw FrogError.message("Built-in local models require Apple silicon.")
+        #endif
+    }
+    /// Answers pass each chunk on as it arrives. Unlike Writing, text that reached
+    /// the token limit is kept: the answer panel says that it was cut off.
+    func stream(messages: [ChatMessage], instructions: String, id: String, url: URL,
+                residency: @Sendable (Set<String>) async -> Void, onChunk: @Sendable (String) -> Void) async throws -> Bool {
+        #if arch(arm64)
+        try await prepareText(id: id, url: url, residency: residency)
+        try Task.checkCancellation()
+        let chat: [Chat.Message] = [.system(instructions)] + messages.map { $0.role == .user ? .user($0.text) : .assistant($0.text) }
+        let input = try await textModel!.prepare(input: UserInput(prompt: .chat(chat), additionalContext: ["enable_thinking": false]))
+        try Task.checkCancellation()
+        let stream = try await textModel!.generate(input: input, parameters: GenerateParameters(maxTokens: 2048, temperature: 0.3))
+        var stop: GenerateStopReason?
+        for await generation in stream {
+            try Task.checkCancellation()
+            switch generation {
+            case .chunk(let text): onChunk(text)
+            case .info(let info): stop = info.stopReason
+            case .toolCall: break
+            }
+        }
+        try Task.checkCancellation()
+        switch stop {
+        case .stop: return false
+        case .length: return true
+        case .cancelled, nil: throw CancellationError()
+        }
         #else
         throw FrogError.message("Built-in local models require Apple silicon.")
         #endif

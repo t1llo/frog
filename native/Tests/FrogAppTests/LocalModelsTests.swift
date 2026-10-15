@@ -670,6 +670,45 @@ final class LocalModelsTests: XCTestCase {
         XCTAssertEqual(models.diskUse, restarted.diskUse)
     }
 
+    func testAnAnswerStreamsAfterLoadingAndStopsWithItsConsumer() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let gate = DownloadGate()
+        let engine = FixtureInference(gate: gate)
+        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload, freeSpace: LocalModels.unlimitedFreeSpace)
+        let descriptor = LocalModelDescriptor.find("qwen-0.6b")!
+        models.download(descriptor); await models.waitForDownload(descriptor.id)
+        let messages = [ChatMessage(role: .user, text: "river bank")]
+
+        let first = Task {
+            var events: [AnswerEvent] = []
+            for try await event in models.stream(messages: messages, instructions: "Explain", modelID: descriptor.id) { events.append(event) }
+            return events
+        }
+        await gate.waitUntilStarted()
+        await gate.resume()
+        let events = try await first.value
+        XCTAssertEqual(events, [.loading(descriptor.name), .text("river bank")])
+        XCTAssertEqual(models.loaded, [descriptor.id])
+
+        // A loaded model answers without announcing a load; ending the consumer cancels the generation.
+        let second = Task {
+            var events: [AnswerEvent] = []
+            for try await event in models.stream(messages: messages, instructions: "Explain", modelID: descriptor.id) { events.append(event) }
+            return events
+        }
+        await gate.waitUntilStarted()
+        second.cancel()
+        await gate.resume()
+        let cut = try await second.value
+        XCTAssertFalse(cut.contains(.loading(descriptor.name)))
+        for _ in 0..<200 where models.busy { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertFalse(models.busy)
+        let cancelled = await engine.cancelledCompletions
+        XCTAssertEqual(cancelled, 1)
+        await models.unload()
+    }
+
     func testUnavailableModelFailsWithoutCallingInference() async throws {
         let engine = FixtureInference()
         let models = LocalModels(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString), runtime: engine)
@@ -733,9 +772,12 @@ private actor FixtureInference: LocalInferenceEngine {
         lastSpeechModel = model; lastLanguage = language
         loadedIDs.insert(model.id); calls += 1; await residency(loadedIDs); return "hello"
     }
+    /// Completions whose task was cancelled while they ran.
+    var cancelledCompletions = 0
     func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String {
         loadedIDs.insert(id); calls += 1; await residency(loadedIDs)
         if let gate { await gate.wait() }
+        if Task.isCancelled { cancelledCompletions += 1 }
         if fail { throw FrogError.message("Fixture inference failure") }
         return text
     }
