@@ -4,6 +4,31 @@
 
 Turn it on in **Features → Windows**, or set `feature.windows = true` in the [configuration file](configuration.md). **Windows** then appears in the sidebar.
 
+## First setup
+
+The first time you open the Windows page, a card at the top asks **How do you want to arrange windows?**
+
+- **Snap**: drag windows to screen edges, or pick a layout. Nothing moves by itself. This turns on [drag to snap](#drag-to-snap), **Restore size when dragged away**, [zones while holding Shift](#zones-while-holding-shift) and the [layout picker](#layout-picker).
+- **Add suggested shortcuts (⌃⌥ with arrows and letters)**, checked by default, also gives the layouts, the cheat sheet and the layout picker the [suggested shortcuts](#suggested-shortcuts), where they are free.
+- **Set up myself** hides the card and changes nothing; every setting stays on the page below.
+
+After **Snap**, the card says what is on and how many shortcuts were added. **Undo** puts the Windows settings back as they were; shortcuts that were added stay and can be cleared under **Layout shortcuts**. The confirmation goes away when you leave the page, and the card does not come back once you have chosen. Frog saves the choice as `setupChoice` in `config.json`.
+
+## Walkthrough
+
+Snap is the simple way to use Windows: Frog moves a window only when you ask.
+
+1. Turn on **Features → Windows**, open the **Windows** page, choose **Snap** on the card and keep the shortcuts checkbox ticked. If the page asks for Accessibility, allow it first.
+2. Drag a window by its title bar to the left edge of the screen and let go: it fills the left half. Drag it to a corner for a quarter, to the top to fill the display, or to the bottom for the third under the pointer. A tinted area shows where it will go before you let go.
+3. Drag it away again: it gets back its earlier size.
+4. Hold Shift while dragging: zones cover the display, by default the three thirds. Let go over one to fill it. On macOS 15 and later with macOS's own edge tiling on, this is how you use Frog's zones.
+5. Press ⌃⌥W: the layout picker shows every layout as a small picture. Use the arrows and Return, or type a name such as "third".
+6. Press ⌃⌥← or ⌃⌥→ for the halves, ⌃⌥D, ⌃⌥F and ⌃⌥G for the thirds, ⌃⌥↩ to fill the display and ⌃⌥⌫ to go back to the earlier size.
+7. Hold ⌃⌥/ to see all your window shortcuts at once.
+8. Under **Sizes**, add a gap between windows, or let a half shortcut pressed again cycle through ⅔ and ⅓.
+
+Everything here works on several displays: a window snaps on the display under the pointer, and **Move to next display** (⌃⌥⌘→) sends it to the next one.
+
 ## Sizes
 
 These options change where layouts put windows while Windows is on. Switch Windows off and every layout lands where it always did.
@@ -13,7 +38,7 @@ These options change where layouts put windows while Windows is on. Switch Windo
 - **Thirds run top to bottom on tall displays**: on a display that is taller than wide, such as a rotated monitor, Left third becomes the top third, Center third the middle and Right third the bottom; the two-thirds layouts follow. On by default.
 - **Leave room for Stage Manager**: while Stage Manager is on, layouts keep the left 190 points of each display free so its strip of recent apps stays visible. Frog checks Stage Manager each time you use a layout, so switching it in Control Center counts from the next press. On by default.
 
-The same settings are in the [configuration file](configuration.md) as `windows.gap`, `windows.cycle-sizes`, `windows.portrait-thirds` and `windows.respect-stage-manager`; drag to snap is `windows.drag-to-snap` and `windows.restore-on-drag`.
+The same settings are in the [configuration file](configuration.md) as `windows.gap`, `windows.cycle-sizes`, `windows.portrait-thirds` and `windows.respect-stage-manager`; drag to snap is `windows.drag-to-snap` and `windows.restore-on-drag`, and the Shift zones are `windows.zone-overlay` and `windows.zone-grid`.
 
 ## Layout shortcuts
 
@@ -57,9 +82,22 @@ The window lands on the display under the pointer, with the same gap, thirds and
 
 **Restore size when dragged away** (on by default): drag a window out of the place Frog put it and, after 10 points, it gets back the size it had before, with the pointer at the same spot across its width.
 
+### Zones while holding Shift
+
+Switch on **Snap → Show zones while holding Shift** and hold Shift while you drag a window. Zones cover the display under the pointer, each named after its layout; the one under the pointer lights up and a tinted area shows where the window will go, with your gap. Let go over a zone to apply it. Release Shift to hide the zones and go back to the edges; press Escape to keep the window where macOS drops it. The zones follow the pointer to another display.
+
+Choose the zones under **Snap → Zones**:
+
+- **Halves**: Left half, Right half.
+- **Thirds** (the default): Left third, Center third, Right third.
+- **Quarters**: the four quarters.
+- **Main and side**: Left two-thirds and Right third.
+
+On a tall display with **Thirds run top to bottom on tall displays** on, thirds and main and side stack from top to bottom. Shift zones work with drag to screen edges switched off too, and while macOS's own edge tiling is on (see below).
+
 ### macOS's own tiling
 
-From macOS 15, macOS tiles windows dragged to a screen edge by itself. While that is on, Frog's edges and corners pause so the two do not fight over the window, and the Snap section says so. To use Frog's edges instead, open **System Settings → Desktop & Dock** (the page's **Open Desktop & Dock** button goes there) and, under **Windows**, turn off **Drag windows to screen edges to tile**. Frog reads this setting and never changes it. On macOS 14 there is no such setting and Frog's edges always work.
+From macOS 15, macOS tiles windows dragged to a screen edge by itself. While that is on, Frog's edges and corners pause so the two do not fight over the window, and the Snap section says so. Hold Shift while dragging to use Frog's zones instead: macOS tiles with Option, not Shift. At the outer edges of the screen, within 6 points, macOS still tiles a window you let go there, even with Shift held, so Frog lights no zone and applies nothing there; let go a little further in and Frog's zone applies. An edge that meets another display is not an outer edge. The top edge counts only while **Drag windows to menu bar to fill screen** is on, and while **Hold ⌥ key while dragging windows to tile** is on, holding Option leaves the whole drag to macOS. Frog reads these settings each time the zones show, so a change in Desktop & Dock counts from the next drag. To use Frog's edges instead, open **System Settings → Desktop & Dock** (the page's **Open Desktop & Dock** button goes there) and, under **Windows**, turn off **Drag windows to screen edges to tile**. Frog reads this setting and never changes it. On macOS 14 there is no such setting and Frog's edges always work.
 
 Frog notices a window drag without recording your clicks: a click costs nothing, and only once the pointer has moved does Frog look at the window under it, a few times at most. See [privacy](privacy.md).
 

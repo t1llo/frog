@@ -503,6 +503,18 @@ New optional collectors and system integrations start only when enabled.
 Provider polling retains rate limits/backoff and does not refresh another tool's
 OAuth tokens. Tests use isolated fixtures instead of a user's real accounts.
 
+### Windows
+
+`WindowLayoutController` owns what the Windows feature runs: its commands, the
+layout picker, the cheat sheet, and the drag monitor behind drag to snap and the
+Shift zones. `WindowAccess` is the seam to the windows themselves. The decisions
+are pure FrogCore types tested without windows: layouts and their gaps
+(`WindowLayoutOptions`), snap zones and the drag session (`SnapZoneResolver`,
+`SnapDragSession`), the Shift zones (`ZoneGrid`), suggested shortcuts
+(`WindowShortcutScheme`) and the first setup (`WindowSetupChoice`). Nothing runs
+while its switch is off: no event monitor, panel or app-activation observer
+exists until a switch needs it, and switching off removes them.
+
 Window moves go through `WindowAccess`, so window actions are tested against
 fixture windows. The live implementation reads and writes through
 Accessibility, and turns the app's `AXEnhancedUserInterface` off around its
