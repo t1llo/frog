@@ -116,13 +116,16 @@ final class HotkeyManager {
         return .success(hotkey)
     }
 
-    static func display(_ hotkey: Hotkey) -> String {
-        var result = ""
-        if hotkey.modifiers & UInt32(controlKey) != 0 { result += "⌃" }
-        if hotkey.modifiers & UInt32(optionKey) != 0 { result += "⌥" }
-        if hotkey.modifiers & UInt32(shiftKey) != 0 { result += "⇧" }
-        if hotkey.modifiers & UInt32(cmdKey) != 0 { result += "⌘" }
-        return result + (specialKeys[hotkey.keyCode] ?? layoutLabel(hotkey.keyCode) ?? "Key \(hotkey.keyCode)")
+    static func display(_ hotkey: Hotkey) -> String { keys(hotkey).joined() }
+
+    /// The keys of a shortcut one by one, modifiers first in the order macOS menus show them.
+    static func keys(_ hotkey: Hotkey) -> [String] {
+        var result: [String] = []
+        if hotkey.modifiers & UInt32(controlKey) != 0 { result.append("⌃") }
+        if hotkey.modifiers & UInt32(optionKey) != 0 { result.append("⌥") }
+        if hotkey.modifiers & UInt32(shiftKey) != 0 { result.append("⇧") }
+        if hotkey.modifiers & UInt32(cmdKey) != 0 { result.append("⌘") }
+        return result + [specialKeys[hotkey.keyCode] ?? layoutLabel(hotkey.keyCode) ?? "Key \(hotkey.keyCode)"]
     }
 
     static func validationError(_ hotkey: Hotkey, purpose: ShortcutPurpose = .rule) -> String? {

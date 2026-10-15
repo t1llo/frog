@@ -1023,18 +1023,8 @@ final class AppModel: ObservableObject {
     func cancelProcessing() { processingTask?.cancel(); status = "Cancelling…" }
 
     func showShortcuts() {
-        var rules = configuration.rules.filter { ruleFeatureEnabled($0) }
-        if configuration.preferences.featureEnabled(.menuBar), let key = configuration.preferences.toolkitSettings.menuBar?.hotkey {
-            rules.append(Rule(id: Self.menuBarID, name: "Show or hide menu bar items", hotkey: key))
-        }
-        let workflow = configuration.preferences.workflowSettings
-        if workflow.clipboardHistoryEnabled == true {
-            rules.append(Rule(id: Self.clipboardHistoryID, name: "Clipboard history", hotkey: workflow.effectiveClipboardHistoryHotkey))
-        }
-        if configuration.preferences.featureEnabled(.commandBar) {
-            rules.append(Rule(id: Self.commandBarID, name: "Command bar", hotkey: configuration.preferences.toolkitSettings.effectiveCommandBarHotkey))
-        }
-        shortcutPanel.show(rules: rules)
+        let items = ShortcutReference.items(configuration: configuration, ruleEnabled: configuration.preferences.ruleFeatureEnabled)
+        shortcutPanel.show(groups: ShortcutReference.grouped(items))
     }
 
     private func configureClipboardHistory() {
