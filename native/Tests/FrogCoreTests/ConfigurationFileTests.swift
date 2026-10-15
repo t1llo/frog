@@ -375,4 +375,25 @@ final class ConfigurationFileTests: XCTestCase {
             XCTAssertEqual(try ConfigurationStore(directory: directory).load().preferences.workflows?.microphoneID, identifier)
         }
     }
+
+    func testOnlyTextRulesMayChooseAnOutput() throws {
+        var application = Rule(name: "Safari", instructions: "")
+        application.action = RuleAction(category: .application)
+        application.action?.applicationPath = "/Applications/Safari.app"; application.action?.applicationBundleID = "com.apple.Safari"
+        for base in [Rule.dictationPreset, application, WindowAction.allCases[0].rule, SystemAction.lockScreen.rule] {
+            var rule = base
+            for output in TextOutput.allCases {
+                rule.action?.textOutput = output
+                var configuration = Configuration(); configuration.rules = [rule]
+                XCTAssertThrowsError(try ConfigurationFile.validate(configuration), "\(rule.category)") {
+                    XCTAssertEqual($0.localizedDescription, "Only text rules can answer in a panel.")
+                }
+            }
+        }
+        for output in TextOutput.allCases {
+            var rule = Rule(); rule.action = RuleAction(category: .text); rule.action?.textOutput = output
+            var configuration = Configuration(); configuration.rules.append(rule)
+            XCTAssertNoThrow(try ConfigurationFile.validate(configuration))
+        }
+    }
 }

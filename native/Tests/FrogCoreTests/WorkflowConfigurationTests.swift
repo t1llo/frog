@@ -155,4 +155,123 @@ final class WorkflowConfigurationTests: XCTestCase {
         configuration.preferences.appearance = appearance
         XCTAssertThrowsError(try ConfigurationFile.validate(configuration))
     }
+
+    func testAnswerOutputIsOmittedUntilSetAndRoundTripsWhenSet() throws {
+        let plain = String(decoding: try JSONEncoder().encode(RuleAction(category: .text)), as: UTF8.self)
+        XCTAssertFalse(plain.contains("textOutput"), plain)
+        var configuration = Configuration()
+        var answer = Rule(name: "Define", instructions: "Define it.")
+        answer.action = RuleAction(category: .text); answer.action?.textOutput = .panel
+        configuration.rules.append(answer)
+        let restored = try ConfigurationFile.decode(ConfigurationFile.encode(configuration))
+        XCTAssertEqual(restored.rules.last, answer)
+        XCTAssertTrue(restored.rules.last?.answersInPanel == true)
+        let json = #"{"id":"6A1F2E3D-0000-4000-8000-000000000001","name":"Define","instructions":"Define it.","model":"","targetLanguage":"","enabled":true,"preset":false,"action":{"category":"text","cleanup":false,"textOutput":"panel"}}"#
+        XCTAssertTrue(try JSONDecoder().decode(Rule.self, from: Data(json.utf8)).answersInPanel)
+    }
+
+    func testOnlyTextRulesAnswerInAPanel() {
+        var audio = Rule.dictationPreset
+        audio.action?.textOutput = .panel
+        XCTAssertFalse(audio.answersInPanel)
+        var replace = Rule(); replace.action = RuleAction(category: .text); replace.action?.textOutput = .replace
+        XCTAssertFalse(replace.answersInPanel)
+        XCTAssertFalse(Rule().answersInPanel)
+        XCTAssertTrue(Rule.explainPreset.answersInPanel)
+    }
+
+    func testExplainRuleIsCreatedOnceWithTheMostRecentAvailableTextModel() {
+        var config = Configuration()
+        config.recentModels = [.init(modelID: "qwen-0.6b", category: .text), .init(modelID: "whisper-tiny", category: .audio), .init(modelID: "qwen-4b", category: .text)]
+        let count = config.rules.count
+        config.adoptExplainPreset(installed: ["qwen-0.6b", "whisper-tiny"])
+        XCTAssertEqual(config.rules.count, count + 1)
+        let explain = config.rules.last!
+        XCTAssertEqual(explain.name, "Explain")
+        XCTAssertEqual(explain.instructions, Rule.explainInstructions)
+        XCTAssertTrue(explain.preset)
+        XCTAssertNil(explain.hotkey)
+        XCTAssertEqual(explain.action?.textOutput, .panel)
+        XCTAssertEqual(explain.action?.localTextModelID, "qwen-0.6b", "The newest text model that is still installed")
+        XCTAssertEqual(config.preferences.workflowSettings.explainPresetVersion, 1)
+        let created = config
+        config.adoptExplainPreset(installed: ["qwen-0.6b"])
+        XCTAssertEqual(config, created)
+        config.rules.removeAll { $0.id == explain.id }
+        config.adoptExplainPreset(installed: ["qwen-0.6b"])
+        XCTAssertFalse(config.rules.contains { $0.answersInPanel }, "A deleted Explain rule stays deleted")
+    }
+
+    func testExplainRuleWithoutATextModelReceivesTheFirstOneAdded() {
+        var config = Configuration()
+        config.rules = []
+        config.adoptExplainPreset(installed: [])
+        XCTAssertEqual(config.rules.count, 1)
+        XCTAssertNil(config.rules[0].providerID)
+        XCTAssertEqual(config.rules[0].model, "")
+        XCTAssertNil(config.rules[0].action?.localTextModelID)
+        config.modelAdded(.init(modelID: "qwen-1.7b", category: .text))
+        XCTAssertEqual(config.rules[0].action?.localTextModelID, "qwen-1.7b")
+        XCTAssertEqual(config.rules[0].action?.textOutput, .panel)
+    }
+
+    func testAnswerRulesNeverInheritTheLegacyDefaultModel() {
+        var config = Configuration()
+        XCTAssertNil(config.explicitRuleModels)
+        var workflow = WorkflowPreferences()
+        workflow.textSource = .frog; workflow.defaultLocalTextModelID = "qwen-1.7b"
+        config.preferences.workflows = workflow
+        var answer = Rule(name: "Define", instructions: "Define it.")
+        answer.action = RuleAction(category: .text); answer.action?.textOutput = .panel
+        config.rules = [Rule(name: "Proofread", instructions: "Proofread."), answer]
+        config.adoptExplicitRuleSettings(installed: ["qwen-1.7b"])
+        XCTAssertEqual(config.rules[0].action?.localTextModelID, "qwen-1.7b", "Writing rules keep the legacy migration")
+        XCTAssertNil(config.rules[1].action?.localTextModelID)
+        XCTAssertNil(config.rules[1].providerID)
+        XCTAssertEqual(config.rules[1].model, "")
+        config.recentModels = []
+        config.adoptExplainPreset(installed: ["qwen-1.7b"])
+        let explain = config.rules.last!
+        XCTAssertEqual(explain.name, "Explain")
+        XCTAssertNil(explain.action?.localTextModelID)
+        XCTAssertNil(explain.providerID)
+    }
+
+    func testAnExistingExplainAnswerRulePreventsASecondOne() {
+        var config = Configuration()
+        var existing = Rule.explainPreset
+        existing.instructions = "My own explanation."
+        config.rules.append(existing)
+        let count = config.rules.count
+        config.adoptExplainPreset(installed: [])
+        XCTAssertEqual(config.rules.count, count)
+        XCTAssertEqual(config.rules.last?.instructions, "My own explanation.")
+        XCTAssertEqual(config.preferences.workflowSettings.explainPresetVersion, 1)
+    }
+
+    func testPagesListTextRulesByOutputAndOtherCategoriesIgnoreIt() {
+        let writing = Rule()
+        var answer = Rule.explainPreset
+        answer.id = UUID()
+        XCTAssertTrue(writing.listed(on: .text, output: .replace))
+        XCTAssertFalse(writing.listed(on: .text, output: .panel))
+        XCTAssertTrue(answer.listed(on: .text, output: .panel))
+        XCTAssertFalse(answer.listed(on: .text, output: .replace))
+        XCTAssertFalse(answer.listed(on: .audio, output: .panel))
+        for output in TextOutput.allCases {
+            XCTAssertTrue(Rule.dictationPreset.listed(on: .audio, output: output))
+            XCTAssertTrue(WindowAction.allCases[0].rule.listed(on: .window, output: output))
+            XCTAssertTrue(SystemAction.lockScreen.rule.listed(on: .system, output: output))
+            XCTAssertFalse(Rule.dictationPreset.listed(on: .text, output: output))
+        }
+    }
+
+    func testAnswerRuleShortcutWarnsAboutOlderVersions() {
+        var answer = Rule.explainPreset
+        XCTAssertNil(answer.answerHotkeyWarning)
+        answer.hotkey = Hotkey(keyCode: 14, modifiers: 4096 | 512)
+        XCTAssertEqual(answer.answerHotkeyWarning, "Frog versions before Explain treat this rule as a Writing rule and would replace the selection with the answer.")
+        XCTAssertNil(Rule.presets[0].answerHotkeyWarning)
+        XCTAssertNotNil(Rule.presets[0].hotkey)
+    }
 }

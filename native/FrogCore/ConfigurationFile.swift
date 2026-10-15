@@ -110,6 +110,7 @@ public enum ConfigurationFile {
             throw FrogError.message("The clipboard history shortcut conflicts with another shortcut.")
         }
         for rule in configuration.rules {
+            if rule.action?.textOutput != nil, rule.category != .text { throw FrogError.message("Only text rules can answer in a panel.") }
             if rule.category == .system, rule.action?.systemAction == nil {
                 throw FrogError.message("Choose a system action for \(rule.name).")
             }

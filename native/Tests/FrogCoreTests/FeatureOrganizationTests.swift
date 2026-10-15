@@ -41,6 +41,13 @@ final class FeatureOrganizationTests: XCTestCase {
         XCTAssertTrue(preferences.ruleFeatureEnabled(rule))
     }
 
+    func testAnswerRulesStayInertWhileWritingIsOn() {
+        var preferences = Preferences()
+        preferences.setFeature(.writing, enabled: true)
+        XCTAssertTrue(preferences.ruleFeatureEnabled(Rule()))
+        XCTAssertFalse(preferences.ruleFeatureEnabled(Rule.explainPreset))
+    }
+
     func testLegacyDisabledShortcutsDoNotStartSwitcherDuringMigration() throws {
         let legacy = #"{"historyEnabled":false,"historyLimit":200,"historyRetentionDays":30,"applicationShortcutsEnabled":false,"windowSwitcherEnabled":true}"#
         var preferences = try JSONDecoder().decode(Preferences.self, from: Data(legacy.utf8))

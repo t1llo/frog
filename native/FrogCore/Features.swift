@@ -273,7 +273,8 @@ extension Preferences {
     /// Window arrangement belongs to Shortcuts, independently of the switcher overlay.
     public func ruleFeatureEnabled(_ rule: Rule) -> Bool {
         switch rule.category {
-        case .text: featureEnabled(.writing)
+        // Answer rules stay inert until the Explain feature exists; then they follow `.explain`.
+        case .text: rule.answersInPanel ? false : featureEnabled(.writing)
         case .audio: featureEnabled(.dictation)
         case .application, .window, .system: featureEnabled(.applicationShortcuts)
         }

@@ -170,4 +170,22 @@ final class RuleConfigurationTests: XCTestCase {
         XCTAssertNil(config.rules[0].action?.audioProviderID)
         try ConfigurationFile.validate(config)
     }
+
+    func testNewAnswerRuleStartsFromTheExplainInstructionsAndTheRecentModel() {
+        var config = Configuration()
+        config.recentModels = [.init(modelID: "qwen-0.6b", category: .text)]
+        let answer = config.newRule(category: .text, output: .panel, installed: ["qwen-0.6b"])
+        XCTAssertEqual(answer.name, "New answer rule")
+        XCTAssertEqual(answer.instructions, Rule.explainInstructions)
+        XCTAssertEqual(answer.action?.textOutput, .panel)
+        XCTAssertTrue(answer.answersInPanel)
+        XCTAssertEqual(answer.action?.localTextModelID, "qwen-0.6b")
+        XCTAssertFalse(answer.preset); XCTAssertNil(answer.hotkey)
+        let writing = config.newRule(category: .text, installed: ["qwen-0.6b"])
+        XCTAssertEqual(writing.name, "New text rule")
+        XCTAssertEqual(writing.instructions, Rule().instructions)
+        XCTAssertNil(writing.action?.textOutput)
+        XCTAssertEqual(writing.action?.localTextModelID, "qwen-0.6b")
+        XCTAssertNil(config.newRule(category: .audio, output: .panel, installed: []).action?.textOutput)
+    }
 }
