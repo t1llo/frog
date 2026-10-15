@@ -10,7 +10,7 @@ import SwiftUI
             disarm()
             if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 removeFiles()
-                for file in selectedFiles { addFile(file) }
+                addPickedFiles()
                 for file in recentFiles { addFile(file) }
             }
             updateResults(preserveSelection: false)
@@ -356,11 +356,12 @@ import SwiftUI
         pasteTarget = pastes ? captureTarget() : nil
         context = CommandBarContext(model: model, frontPID: frontPID, pasteboard: pasteboard, pasteTarget: pasteTarget,
                                     waitForRelease: waitForRelease, copy: { [weak self] in self?.copy($0) })
+        if learning { model.commandChoices.refreshIfStale() }
         records = []; recordsByID = [:]; fileRecords = []; actions = [:]; copyActions = [:]; confirmations = [:]; queryRowIDs = []
         query = ""; selection = 0
         selectionWasMoved = false
         addApplications(cachedApplications)
-        for file in selectedFiles { addFile(file) }
+        addPickedFiles()
         for file in recentFiles { addFile(file) }
         if model.configuration.preferences.featureEnabled(.windowSwitcher) { addWindows(cachedWindows) }
         addRoutes(model, frontPID: frontPID)
@@ -509,8 +510,18 @@ import SwiftUI
     private func updateResults(preserveSelection: Bool = true) {
         let preserveChoice = preserveSelection && selectionWasMoved
         let selectedID = preserveChoice && results.indices.contains(selection) ? results[selection].id : nil
-        var preferred = recentSelections.compactMap { recordsByID[$0] }
         let typed = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // Learned rows lead their bucket, those picked for this text first; one may be latched above every bucket.
+        // Off, the rows picked in this session only break ties.
+        var preferred: [SearchRecord], latched: String?
+        if learning, let index = model?.commandChoices.index {
+            let suggestions = index.suggestions(for: query)
+            var listed = Set<String>()
+            preferred = (suggestions.leading + index.frequentItems(limit: 40)).compactMap { id in listed.insert(id).inserted ? recordsByID[id] : nil }
+            latched = suggestions.latched
+        } else {
+            preferred = recentSelections.compactMap { recordsByID[$0] }
+        }
         if !typed {
             let files = fileRecords.prefix(4)
             let commands = records.lazy.filter { $0.id.hasPrefix("feature:") || $0.id.hasPrefix("rule:") }.prefix(4)
@@ -518,7 +529,7 @@ import SwiftUI
             preferred += suggestedApplications
         }
         // Late Spotlight results must not bury an equally good app or Frog command.
-        var next = CommandSearch.results(records, query: query, preferred: preferred, trailing: typed ? fileRecords : [])
+        var next = CommandSearch.results(records, query: query, preferred: preferred, trailing: typed ? fileRecords : [], latched: latched)
         for id in queryRowIDs { actions[id] = nil; copyActions[id] = nil; confirmations[id] = nil }
         queryRowIDs = []
         var leading: [SearchRecord] = [], trailing: [SearchRecord] = []
@@ -573,7 +584,7 @@ import SwiftUI
             ? fileRecords.firstIndex { $0.id == results[selection].id } : nil
         let kept = chosen.map { fileRecords[$0] }
         removeFiles()
-        for file in selectedFiles { addFile(file) }
+        addPickedFiles()
         for file in files { addFile(file) }
         if let chosen, let kept, recordsByID[kept.id] == nil {
             addFile(kept)
@@ -583,6 +594,13 @@ import SwiftUI
         if recent { recentFiles = Array(files.prefix(8)) }
         updateResults()
     }
+    /// Files picked before are listed before Spotlight answers: those of this session, and with learning on the
+    /// learned ones that still exist.
+    private func addPickedFiles() {
+        for file in selectedFiles { addFile(file) }
+        if learning, let learned = model?.commandChoices.learnedFiles { for file in learned { addFile(file) } }
+    }
+    private var learning: Bool { model?.commandChoices.isActive == true }
     private func addFile(_ record: SearchRecord) {
         guard record.id.hasPrefix("file:") else { return }
         let url = URL(fileURLWithPath: String(record.id.dropFirst(5)))
@@ -590,8 +608,12 @@ import SwiftUI
             if previous != record, let index = fileRecords.firstIndex(where: { $0.id == record.id }) { fileRecords[index] = record }
         } else { fileRecords.append(record) }
         let open = openFile
-        actions[record.id] = {
-            guard open(url) else { throw FrogError.message("The file could not be opened.") }
+        actions[record.id] = { [weak self] in
+            guard open(url) else {
+                // A learned file that has gone is not suggested again.
+                self?.model?.commandChoices.forget(id: record.id)
+                throw FrogError.message("The file could not be opened.")
+            }
         }
     }
     func choose(_ index: Int? = nil, copyOnly: Bool = false) {
@@ -606,6 +628,8 @@ import SwiftUI
         }
         // A calculation answers only its own query and is never listed again as a suggestion.
         let suggestible = recordsByID[selectedID] != nil
+        // Hiding and the next open clear the query.
+        let typed = query
         hide()
         let token = generation
         delivery = Task { [weak self] in
@@ -619,6 +643,8 @@ import SwiftUI
                     self.recentSelections.removeAll { $0 == selectedID }
                     self.recentSelections.insert(selectedID, at: 0)
                     self.recentSelections = Array(self.recentSelections.prefix(40))
+                    // Recorded only while learning is still on; a copy is a pick of the same row.
+                    self.model?.commandChoices.record(typed: typed, id: selectedID)
                 }
                 if selectedID.hasPrefix("file:") {
                     self.selectedFiles.removeAll { $0.id == selectedID }

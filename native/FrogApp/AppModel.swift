@@ -70,6 +70,7 @@ final class AppModel: ObservableObject {
     let toolkit: Toolkit
     let systemMonitor = SystemMonitor()
     let statistics: ActivityStatisticsStore
+    let commandChoices: CommandChoiceStore
     let localTools: LocalToolClient
     let scripts = ScriptRunner()
     private var documentsModel: LocalDocuments?
@@ -139,6 +140,7 @@ final class AppModel: ObservableObject {
         self.registerShortcuts = registerShortcuts
         self.toolkit = injectedToolkit ?? Toolkit(showsUsageStatusItem: registerShortcuts, showsMenuBarOrganizer: registerShortcuts)
         self.statistics = ActivityStatisticsStore(directory: dataDirectory)
+        self.commandChoices = CommandChoiceStore(directory: dataDirectory)
         let localTools = localToolClient ?? LocalToolClient()
         self.localTools = localTools
         self.dictation = dictationController ?? DictationController()
@@ -294,6 +296,7 @@ final class AppModel: ObservableObject {
             catch { self.applyUsagePreferences(self.configuration.preferences); self.report(error) }
         }
         toolkit.apply(configuration.preferences)
+        commandChoices.configure(enabled: Self.learnsCommandChoices(configuration.preferences))
         systemMonitor.configure(enabled: configuration.preferences.featureEnabled(.systemMonitor))
         legacyUsagePreferences = toolkit.usage()?.preferences ?? UsageDashboardPreferences()
         power.configureFeature(enabled: configuration.preferences.featureEnabled(.stayAwake))
@@ -377,6 +380,7 @@ final class AppModel: ObservableObject {
     func shutdown() {
         drainUsagePreferences()
         statistics.waitForWrites()
+        commandChoices.waitForWrites()
         systemMonitor.stop()
         commandBar.stop()
         toolkit.stop()
@@ -561,6 +565,8 @@ final class AppModel: ObservableObject {
         systemMonitor.configure(enabled: candidate.preferences.featureEnabled(.systemMonitor))
         if candidate.preferences.toolkit?.usage == nil, let usage = toolkit.usage() { legacyUsagePreferences = usage.preferences }
         if candidate.preferences.featureEnabled(.commandBar) { commandBar.warm() }
+        // Turning the switch or the Command bar off, here or in the configuration file, forgets what was learned.
+        commandChoices.configure(enabled: Self.learnsCommandChoices(candidate.preferences))
         power.configureFeature(enabled: candidate.preferences.featureEnabled(.stayAwake))
         localModels.updateCatalog(candidate.modelCatalog)
         if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
@@ -774,6 +780,12 @@ final class AppModel: ObservableObject {
         change(&preferences.toolkit!)
         try savePreferences(preferences)
     }
+
+    /// Learn from your choices counts only while the Command bar is on.
+    static func learnsCommandChoices(_ preferences: Preferences) -> Bool {
+        preferences.featureEnabled(.commandBar) && preferences.toolkitSettings.commandBarSettings.learnChoices
+    }
+    func forgetCommandChoices() { commandChoices.forget() }
 
     func useCommandBarShortcut(_ hotkey: Hotkey) throws {
         var preferences = configuration.preferences
