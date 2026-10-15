@@ -157,6 +157,7 @@ final class AppModel: ObservableObject {
     private var systemActionTask: Task<Void, Never>?
     private let windowManager = WindowManager()
     private var windowActionTask: Task<Void, Never>?
+    let windowLayout: WindowLayoutController
     private var historyEpoch = UUID()
     private var configurationLoadError: Error?
     private lazy var usagePreferenceWriter = UsagePreferenceWriter(store: configurationStore, initial: configuration)
@@ -225,6 +226,7 @@ final class AppModel: ObservableObject {
         self.writeClipboard = writeClipboard ?? { text in NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
         configurationStore = ConfigurationStore(directory: dataDirectory)
         historyStore = HistoryStore(directory: dataDirectory)
+        windowLayout = WindowLayoutController(manager: windowManager)
         let firstConfiguration = !configurationStore.hasExistingConfiguration
         if registerShortcuts {
             do {
@@ -362,6 +364,8 @@ final class AppModel: ObservableObject {
         legacyUsagePreferences = toolkit.usage()?.preferences ?? UsageDashboardPreferences()
         power.configureFeature(enabled: configuration.preferences.featureEnabled(.stayAwake))
         toolkit.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
+        windowLayout.onError = { [weak self] in self?.report($0) }
+        windowLayout.onToolUse = { [weak self] in self?.statistics.recordToolUse($0) }
         toolkit.onDisable = { [weak self] feature in
             guard let self else { return }
             self.commandBar.hide()
@@ -374,7 +378,7 @@ final class AppModel: ObservableObject {
             // slot: explain
             case .explain: self.answerCapture?.cancel(); self.answers.close(); self.selectionWatcher.stop()
             // slot: windows
-            case .windows: if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }
+            case .windows: if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.windowLayout.stop()
             // slot: cleaner
             // slot: emoji-picker
             // slot: processes
@@ -440,6 +444,7 @@ final class AppModel: ObservableObject {
         configureSelectionWatcher()
         configureClipboardHistory()
         if configuration.preferences.featureEnabled(.commandBar) { commandBar.warm() }
+        configureWindowLayout()
     }
 
     func shutdown() {
@@ -465,6 +470,7 @@ final class AppModel: ObservableObject {
         applicationTask?.cancel()
         systemActionTask?.cancel()
         windowActionTask?.cancel()
+        windowLayout.stop()
         hotkeys.unregister()
     }
 
@@ -646,7 +652,10 @@ final class AppModel: ObservableObject {
         power.configureFeature(enabled: candidate.preferences.featureEnabled(.stayAwake))
         localModels.updateCatalog(candidate.modelCatalog)
         if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
+        configureWindowLayout()
     }
+
+    private func configureWindowLayout() { windowLayout.configure(configuration, active: started && registerShortcuts) }
 
     func saveRule(_ rule: Rule) throws {
         guard !rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -831,6 +840,9 @@ final class AppModel: ObservableObject {
         }
         if let issue = HotkeyManager.validationError(workflow.effectiveClipboardHistoryHotkey, purpose: .clipboardHistory) { throw FrogError.message(issue) }
         if let issue = HotkeyManager.validationError(toolkit.effectiveWindowSwitcherHotkey, purpose: .windowSwitcher) { throw FrogError.message(issue) }
+        for (name, key) in toolkit.windows?.shortcuts ?? [:] where WindowCommand(rawValue: name) != nil {
+            if let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
+        }
     }
 
     func savePreferences(_ preferences: Preferences) throws {
@@ -863,6 +875,28 @@ final class AppModel: ObservableObject {
         preferences.featureEnabled(.commandBar) && preferences.toolkitSettings.commandBarSettings.learnChoices
     }
     func forgetCommandChoices() { commandChoices.forget() }
+
+    /// Gives every window layout and command without a shortcut the suggested one, where it is free.
+    func applySuggestedWindowShortcuts() throws -> WindowShortcutScheme.Result {
+        let taken = Self.windowSwitcherChords(configuration.preferences)
+        let result = WindowShortcutScheme.apply(to: configuration, groups: [.simple], taken: taken)
+        guard !result.added.isEmpty else { return result }
+        for key in Set(WindowShortcutScheme.actions.values).union(WindowShortcutScheme.commands.values) {
+            if let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
+        }
+        try persist(result.configuration)
+        registerHotkeys()
+        configureWindowSwitcher()
+        return result
+    }
+
+    /// The switcher's chord and the same with Shift, which cycles backward, while the switcher is on:
+    /// what `windowSwitcherStep` treats as a conflict, and validation cannot see.
+    static func windowSwitcherChords(_ preferences: Preferences) -> Set<Hotkey> {
+        guard preferences.windowSwitcherEnabled else { return [] }
+        let key = preferences.toolkitSettings.effectiveWindowSwitcherHotkey
+        return [key, Hotkey(keyCode: key.keyCode, modifiers: key.modifiers | 512)]
+    }
 
     func useCommandBarShortcut(_ hotkey: Hotkey) throws {
         var preferences = configuration.preferences
@@ -1033,7 +1067,8 @@ final class AppModel: ObservableObject {
             return conflicts(hotkey)
         }
         let workflow = preferences.workflowSettings
-        let referenceConflict = [workflow.shortcutPanelHotkey, preferences.featureEnabled(.dictation) ? workflow.cancelRecordingHotkey : nil, workflow.clipboardHistoryEnabled == true ? workflow.effectiveClipboardHistoryHotkey : nil, preferences.featureEnabled(.commandBar) ? preferences.toolkitSettings.effectiveCommandBarHotkey : nil, preferences.featureEnabled(.menuBar) ? preferences.toolkitSettings.menuBar?.hotkey : nil].compactMap { $0 }.contains(where: conflicts)
+        let referenceConflict = ([workflow.shortcutPanelHotkey, preferences.featureEnabled(.dictation) ? workflow.cancelRecordingHotkey : nil, workflow.clipboardHistoryEnabled == true ? workflow.effectiveClipboardHistoryHotkey : nil, preferences.featureEnabled(.commandBar) ? preferences.toolkitSettings.effectiveCommandBarHotkey : nil, preferences.featureEnabled(.menuBar) ? preferences.toolkitSettings.menuBar?.hotkey : nil].compactMap { $0 }
+            + WindowSwitches(preferences).shortcutRules.compactMap(\.hotkey)).contains(where: conflicts)
         guard preferences.windowSwitcherEnabled && (conflict || referenceConflict) else { return .configure }
         let message = "A configured shortcut conflicts with \(HotkeyManager.display(switcherHotkey)) — change it to enable window switching"
         // Stopping again would publish "Off" and then the conflict, redrawing Settings each second.
@@ -1070,6 +1105,7 @@ final class AppModel: ObservableObject {
         if preferences.featureEnabled(.commandBar) {
             rules.append(Rule(id: Self.commandBarID, name: "Command bar", hotkey: preferences.toolkitSettings.effectiveCommandBarHotkey))
         }
+        rules.append(contentsOf: WindowSwitches(preferences).shortcutRules)
         return rules
     }
 
@@ -1312,7 +1348,8 @@ final class AppModel: ObservableObject {
     func cancelProcessing() { processingTask?.cancel(); status = "Cancelling…" }
 
     func showShortcuts() {
-        let items = ShortcutReference.items(configuration: configuration, ruleEnabled: configuration.preferences.ruleFeatureEnabled)
+        let items = ShortcutReference.items(configuration: configuration, ruleEnabled: configuration.preferences.ruleFeatureEnabled,
+                                            extraRules: WindowSwitches(configuration.preferences).shortcutRules)
         shortcutPanel.show(groups: ShortcutReference.grouped(items))
     }
 
@@ -1346,6 +1383,7 @@ final class AppModel: ObservableObject {
     }
 
     private func handleShortcut(_ id: UUID, pressed: Bool) {
+        if let command = WindowCommand.command(for: id) { windowLayout.handle(command, pressed: pressed); return }
         if id == Self.commandBarID { if pressed { showCommandBar() }; return }
         if id == Self.clipboardHistoryID { if !pressed { showClipboardHistory() }; return }
         if id == Self.cancelRecordingID {
