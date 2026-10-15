@@ -41,6 +41,9 @@ private struct HistoryContent: View {
             if let viewing = all.first(where: { $0.id == self.viewing }) {
                 HStack {
                     Button { self.viewing = nil } label: { Label("History", systemImage: "arrow.left") }
+                        .keyboardShortcut(.cancelAction)
+                        // ⌘[ goes back too, through a button that is not drawn.
+                        .background { Button("Back to history") { self.viewing = nil }.keyboardShortcut("[", modifiers: .command).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true) }
                     Spacer()
                     if viewing.requiresReveal || model.configuration.preferences.hideHistoryText { revealButton(viewing) }
                     IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = viewing }
