@@ -82,10 +82,10 @@ struct FrogStatusMenu: View {
             }
             MenuBarOrganizerNotice(organizer: model.toolkit.menuBarOrganizer)
             if model.configuration.preferences.featureEnabled(.commandBar) {
-                action("Command bar", symbol: "magnifyingglass") { dismiss(); model.showCommandBar() }
+                action("Command bar", symbol: "magnifyingglass", key: HotkeyManager.display(model.configuration.preferences.toolkitSettings.effectiveCommandBarHotkey)) { dismiss(); model.showCommandBar() }
             }
             if model.configuration.preferences.workflowSettings.clipboardHistoryEnabled == true {
-                action("Clipboard history", symbol: "clipboard") { dismiss(); model.showClipboardHistory() }
+                action("Clipboard history", symbol: "clipboard", key: HotkeyManager.display(model.configuration.preferences.workflowSettings.effectiveClipboardHistoryHotkey)) { dismiss(); model.showClipboardHistory() }
             }
         }
     }
