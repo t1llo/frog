@@ -124,6 +124,20 @@ final class AnswerPromptTests: XCTestCase {
         XCTAssertEqual(AnswerPrompt.modelLabel(modelName: "gpt-5-mini", providerName: "OpenAI", local: false), "gpt-5-mini · OpenAI")
     }
 
+    func testSourceIsNeverSent() throws {
+        let source = "https://example.com/private/page?id=42"
+        var session = AnswerSession(rule: Rule(name: "Explain", instructions: "Explain the selection."), modelName: "gpt-5-mini",
+                                    modelLabel: "gpt-5-mini · OpenAI", selection: "river bank", context: "On the river bank.",
+                                    application: "Safari", source: source, replyLanguage: "English")
+        session.apply(.text("A bank of a river."))
+        session.complete()
+        try session.beginFollowUp("And a sandbank?", instructions: "Explain the selection.")
+        XCTAssertEqual(session.messages.count, 3)
+        for message in session.messages { XCTAssertFalse(message.text.contains(source)) }
+        XCTAssertFalse(AnswerPrompt.transcript(session.messages).contains(source))
+        XCTAssertFalse(AnswerPrompt.transcript(session.messages).contains("example.com"))
+    }
+
     private func user(_ text: String) -> ChatMessage { ChatMessage(role: .user, text: text) }
     private func assistant(_ text: String) -> ChatMessage { ChatMessage(role: .assistant, text: text) }
 }

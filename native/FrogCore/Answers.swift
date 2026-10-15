@@ -257,3 +257,173 @@ public struct ReasoningFilter: Sendable {
         return state == .undecided ? held : ""
     }
 }
+
+/// The state of one answer and its follow-ups, independent of windows and models.
+public struct AnswerSession: Equatable, Sendable {
+    public enum Phase: Equatable, Sendable {
+        case loading(String), waiting, thinking, streaming, done(truncated: Bool), stopped, failed(String)
+    }
+
+    public static let startNewAnswer = "Start a new answer to ask more"
+    public static let waitForAnswer = "Wait for the answer to finish"
+    public static let emptyQuestion = "Type a question first."
+    public static let longQuestion = "Ask a shorter question (at most 2,000 characters)."
+    public static let reachedLimit = "The answer reached the length limit."
+
+    public var id: UUID
+    public var ruleID: UUID
+    public var ruleName: String
+    /// "gpt-5-mini", "Qwen3 4B"
+    public var modelName: String
+    /// "gpt-5-mini · OpenAI"
+    public var modelLabel: String
+    public var selection: String
+    public var context: String?
+    public var application: String?
+    /// The page address or document path. Never sent; History and notes only.
+    public var source: String?
+    public var replyLanguage: String
+    /// The instructions sent with the conversation, counted towards its limit.
+    public var instructions: String
+    /// Completed turns; `turns[0].question` is empty.
+    public var turns: [AnswerTurn]
+    public var pendingQuestion: String?
+    public var partial: String
+    public var phase: Phase
+    public var historyEntryID: UUID?
+    /// Set when the conversation had to drop the surrounding text to fit.
+    public var contextDropped: Bool
+    private var truncated = false
+
+    public init(rule: Rule, modelName: String, modelLabel: String, selection: String, context: String?,
+                application: String?, source: String?, replyLanguage: String, id: UUID = UUID()) {
+        self.id = id
+        ruleID = rule.id
+        ruleName = rule.name
+        self.modelName = modelName
+        self.modelLabel = modelLabel
+        self.selection = selection
+        self.context = context
+        self.application = application
+        self.source = source
+        self.replyLanguage = replyLanguage
+        instructions = (try? rule.expandedInstructions()) ?? rule.instructions
+        turns = []
+        pendingQuestion = nil
+        partial = ""
+        phase = .waiting
+        historyEntryID = nil
+        contextDropped = false
+    }
+
+    public var firstMessage: String {
+        AnswerPrompt.firstMessage(selection: selection, context: contextDropped ? nil : context,
+                                  application: application, replyLanguage: replyLanguage)
+    }
+
+    public var messages: [ChatMessage] {
+        AnswerPrompt.messages(firstMessage: firstMessage, turns: turns, pendingQuestion: pendingQuestion)
+    }
+
+    public mutating func apply(_ event: AnswerEvent) {
+        switch phase {
+        case .done, .stopped, .failed: return
+        case .loading, .waiting, .thinking, .streaming: break
+        }
+        switch event {
+        case .loading(let name): phase = .loading(name)
+        case .thinking: phase = .thinking
+        case .text(let text):
+            partial += text
+            phase = .streaming
+        case .truncated: truncated = true
+        }
+    }
+
+    /// Ends the running turn: its text becomes a completed turn.
+    @discardableResult
+    public mutating func complete() -> AnswerTurn {
+        let turn = AnswerTurn(question: turns.isEmpty ? "" : pendingQuestion ?? "",
+                              answer: partial.trimmingCharacters(in: .whitespacesAndNewlines))
+        turns.append(turn)
+        pendingQuestion = nil
+        partial = ""
+        phase = .done(truncated: truncated)
+        truncated = false
+        return turn
+    }
+
+    /// Keeps the text streamed so far.
+    public mutating func stop() { phase = .stopped }
+
+    public mutating func fail(_ message: String) { phase = .failed(message) }
+
+    /// Discards the running turn's output so the same messages can be sent again.
+    public mutating func resetForRetry() {
+        partial = ""
+        truncated = false
+        phase = .waiting
+    }
+
+    /// Nil when a follow-up may be asked; otherwise the reason it may not.
+    public var followUpBlock: String? {
+        switch phase {
+        case .done: break
+        case .stopped where !partial.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty: break
+        default: return Self.waitForAnswer
+        }
+        var next = self
+        next.foldStoppedAnswer()
+        if next.turns.count - 1 >= AnswerPrompt.maximumFollowUps { return Self.startNewAnswer }
+        next.contextDropped = true
+        next.pendingQuestion = String(repeating: " ", count: AnswerPrompt.maximumQuestion)
+        return next.conversationLength > AnswerPrompt.maximumConversation ? Self.startNewAnswer : nil
+    }
+
+    /// Starts the next turn with a question about the answer.
+    public mutating func beginFollowUp(_ question: String, instructions: String) throws {
+        let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty else { throw FrogError.message(Self.emptyQuestion) }
+        guard question.count <= AnswerPrompt.maximumQuestion else { throw FrogError.message(Self.longQuestion) }
+        switch phase {
+        case .done: break
+        case .stopped where !partial.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty: break
+        default: throw FrogError.message(Self.waitForAnswer)
+        }
+        var next = self
+        next.foldStoppedAnswer()
+        guard next.turns.count - 1 < AnswerPrompt.maximumFollowUps else { throw FrogError.message(Self.startNewAnswer) }
+        next.instructions = instructions
+        next.pendingQuestion = question
+        if next.conversationLength > AnswerPrompt.maximumConversation {
+            next.contextDropped = true
+            if next.conversationLength > AnswerPrompt.maximumConversation { throw FrogError.message(Self.startNewAnswer) }
+        }
+        next.partial = ""
+        next.truncated = false
+        next.phase = .waiting
+        self = next
+    }
+
+    public var statusLine: String? {
+        switch phase {
+        case .loading(let name): return "Loading \(name)…"
+        case .waiting: return "Waiting for \(modelName)…"
+        case .thinking: return "Thinking…"
+        case .streaming: return nil
+        case .done(let truncated): return truncated ? Self.reachedLimit : nil
+        case .stopped: return "Stopped"
+        case .failed(let message): return message
+        }
+    }
+
+    /// A stopped answer with text counts as the turn it answered once the conversation goes on.
+    private mutating func foldStoppedAnswer() {
+        guard phase == .stopped, !partial.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        complete()
+    }
+
+    private var conversationLength: Int {
+        messages.reduce(instructions.count) { $0 + $1.text.count }
+    }
+}
