@@ -442,7 +442,7 @@ import SwiftUI
             }
         }
         for rule in model.configuration.rules where rule.enabled && model.ruleFeatureEnabled(rule) {
-            add(SearchRecord(id: "rule:\(rule.id)", title: rule.name, subtitle: "Run \(rule.category.title.lowercased()) rule", symbol: rule.category == .audio ? "waveform" : "command")) { [weak model] in
+            add(SearchRecord(id: "rule:\(rule.id)", title: rule.action?.systemAction?.title ?? rule.name, subtitle: "Run \(rule.category.title.lowercased()) rule", symbol: rule.category == .audio ? "waveform" : "command")) { [weak model] in
                 guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message("The target application changed. Open the command bar again.") }
                 model?.runRuleFromCommandBar(rule.id)
             }

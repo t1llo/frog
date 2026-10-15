@@ -22,8 +22,11 @@ struct RulesView: View {
             }
             source = windows.filter { $0.hotkey != nil } + windows.filter { $0.hotkey == nil }
         } else if applications, category == .system {
+            // A saved shortcut keeps the name the action had then; show today's title, and saving stores it.
             let actions = SystemAction.allCases.map { action in
-                model.configuration.rules.first { $0.category == .system && $0.action?.systemAction == action } ?? action.rule
+                var rule = model.configuration.rules.first { $0.category == .system && $0.action?.systemAction == action } ?? action.rule
+                rule.name = action.title
+                return rule
             }
             source = actions.filter { $0.hotkey != nil } + actions.filter { $0.hotkey == nil }
         } else {

@@ -10,14 +10,14 @@ public enum SystemAction: String, Codable, CaseIterable, Identifiable, Sendable 
     public var id: String { rawValue }
     public var title: String {
         switch self {
-        case .lockScreen: "Lock Screen"
-        case .openHome: "Open Home"
-        case .openDesktop: "Open Desktop"
-        case .openDocuments: "Open Documents"
-        case .openDownloads: "Open Downloads"
-        case .openApplications: "Open Applications"
-        case .openUtilities: "Open Utilities"
-        case .openLibrary: "Open Library"
+        case .lockScreen: "Lock screen"
+        case .openHome: "Open home folder"
+        case .openDesktop: "Open Desktop folder"
+        case .openDocuments: "Open Documents folder"
+        case .openDownloads: "Open Downloads folder"
+        case .openApplications: "Open Applications folder"
+        case .openUtilities: "Open Utilities folder"
+        case .openLibrary: "Open Library folder"
         case .systemSettings: "Open System Settings"
         case .wifiSettings: "Wi-Fi settings"
         case .bluetoothSettings: "Bluetooth settings"

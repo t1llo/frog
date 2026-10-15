@@ -77,7 +77,7 @@ import FrogCore
         XCTAssertEqual(iconPaths.values, ["/System/Applications/System Settings.app"], "A settings result looks like System Settings")
         bar.query = ""
         XCTAssertFalse(bar.results.contains { $0.subtitle == "Mac action" })
-        for (query, title, label) in [("lock", "Lock Screen", "Mac"), ("downloads", "Open Downloads", "Finder"), ("undo", "Undo", "Current app")] {
+        for (query, title, label) in [("lock", "Lock screen", "Mac"), ("downloads", "Open Downloads folder", "Finder"), ("undo", "Undo", "Current app")] {
             bar.query = query
             let result = try XCTUnwrap(bar.results.first { $0.title == title }, query)
             XCTAssertEqual(result.subtitle, label)

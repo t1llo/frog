@@ -27,7 +27,7 @@ private struct ShortcutReferenceView: View {
             VStack(spacing: 12) {
                 ForEach(rules.filter { $0.enabled && $0.hotkey != nil }) { rule in
                     HStack {
-                        VStack(alignment: .leading, spacing: 3) { Text(rule.name); Text(L10n.text(rule.category.title)).font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
+                        VStack(alignment: .leading, spacing: 3) { Text(rule.action?.systemAction?.title ?? rule.name); Text(L10n.text(rule.category.title)).font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
                         Spacer(); ShortcutBadge(text: HotkeyManager.display(rule.hotkey!))
                     }
                 }
