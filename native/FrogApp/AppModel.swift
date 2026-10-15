@@ -113,6 +113,9 @@ final class AppModel: ObservableObject {
     /// Asks for the notes folder the first time an answer is saved. Nil when cancelled.
     private let chooseNotesFolder: () async -> URL?
     private var answerCapture: Task<Void, Never>?
+    private let injectedSelectionWatcher: (any SelectionWatching)?
+    /// The selection bubble: runs while Explain and the bubble are on and Accessibility is allowed.
+    private(set) lazy var selectionWatcher: any SelectionWatching = injectedSelectionWatcher ?? makeSelectionWatcher()
     /// History as it was when the running answer started: clearing or turning it off since stops saving the answer.
     private var answerHistoryEpoch: UUID?
     private var answerHistoryWasEnabled = false
@@ -177,6 +180,7 @@ final class AppModel: ObservableObject {
          answerStream: ((AnswerRequest) -> AsyncThrowingStream<AnswerEvent, Error>)? = nil,
          answerPresenter: AnswerPresenting? = nil,
          chooseNotesFolder: (() async -> URL?)? = nil,
+         selectionWatcher: (any SelectionWatching)? = nil,
          dictationController: DictationController? = nil,
          modelService: LocalModels? = nil,
          powerController: StayAwakeController? = nil,
@@ -202,6 +206,7 @@ final class AppModel: ObservableObject {
         self.answerStream = answerStream ?? AnswerStreams.live(localModels: localModels, localTools: localTools)
         self.answerPresenter = answerPresenter ?? (registerShortcuts ? AnswerPanelController() : SilentAnswerPresenter())
         self.chooseNotesFolder = chooseNotesFolder ?? { await Self.chooseNotesFolderInPanel() }
+        self.injectedSelectionWatcher = selectionWatcher
         self.readAccessibility = readAccessibility ?? { SelectionService.isTrusted }
         self.readLoginStatus = readLoginStatus ?? { LoginService.readStatus() }
         self.writeLoginItem = writeLoginItem ?? { try LoginService.setEnabled($0) }
@@ -367,7 +372,7 @@ final class AppModel: ObservableObject {
             case .scripts: self.scripts.stop()
             case .commandBar: self.commandBar.stop()
             // slot: explain
-            case .explain: self.answerCapture?.cancel(); self.answers.close()
+            case .explain: self.answerCapture?.cancel(); self.answers.close(); self.selectionWatcher.stop()
             // slot: windows
             // slot: cleaner
             // slot: emoji-picker
@@ -405,7 +410,7 @@ final class AppModel: ObservableObject {
         if !candidate.preferences.historyEnabled { invalidateHistoryRecovery() }
         if !candidate.preferences.showProcessingIndicator { processingIndicator.hide() }
         registerHotkeys(); shortcutPanel.hide()
-        configureWindowSwitcher(); configureClipboardHistory(); refreshHistory()
+        configureWindowSwitcher(); configureSelectionWatcher(); configureClipboardHistory(); refreshHistory()
         dismissError()
     }
     func finishSetup() {
@@ -431,6 +436,7 @@ final class AppModel: ObservableObject {
         if registerShortcuts, configurationLoadError == nil { adoptExplainPresetIfNeeded() }
         registerHotkeys()
         configureWindowSwitcher()
+        configureSelectionWatcher()
         configureClipboardHistory()
         if configuration.preferences.featureEnabled(.commandBar) { commandBar.warm() }
     }
@@ -450,6 +456,7 @@ final class AppModel: ObservableObject {
         dictation.cancel(); localModels.shutdown(); shortcutPanel.hide()
         started = false
         if registerShortcuts { windowSwitcher.stop() }
+        selectionWatcher.stop()
         if registerShortcuts { clipboardHistory.stop() }
         clipboardHistoryStore.configure(enabled: false)
         processingIndicator.hide()
@@ -529,7 +536,7 @@ final class AppModel: ObservableObject {
     func refreshSystemStatus(forceLoginStatus: Bool = false) {
         let trusted = readAccessibility()
         if accessibilityGranted != trusted { accessibilityGranted = trusted }
-        if started { configureWindowSwitcher() }
+        if started { configureWindowSwitcher(); configureSelectionWatcher() }
         refreshLoginStatus(force: forceLoginStatus)
     }
 
@@ -834,6 +841,7 @@ final class AppModel: ObservableObject {
         if !preferences.historyEnabled { invalidateHistoryRecovery() }
         if !preferences.showProcessingIndicator { processingIndicator.hide() }
         configureWindowSwitcher()
+        configureSelectionWatcher()
         configureClipboardHistory()
         localModels.idleSeconds = preferences.workflowSettings.idleUnloadSeconds
         if Self.registersShortcutsAgain(previous: previous, current: configuration, failed: !hotkeyErrors.isEmpty, holding: hotkeys.isHolding) { registerHotkeys(); shortcutPanel.hide() }
@@ -970,6 +978,7 @@ final class AppModel: ObservableObject {
         invalidateHistoryRecovery()
         registerHotkeys()
         configureWindowSwitcher()
+        configureSelectionWatcher()
         if registerShortcuts { clipboardHistory.stop() }
         clipboardHistoryStore.configure(enabled: false)
         configureClipboardHistory()
@@ -1103,15 +1112,18 @@ final class AppModel: ObservableObject {
         begin(ruleID: ruleID, manualText: nil)
     }
 
-    /// Reads the selection and answers it in the panel. Nothing is replaced.
-    private func startAnswer(_ rule: Rule) {
+    /// Reads the selection and answers it in the panel. Nothing is replaced. From the selection bubble, the
+    /// selection is the one the bubble was shown for.
+    private func startAnswer(_ rule: Rule, from snapshot: SelectionSnapshot? = nil) {
         answerCapture?.cancel()
         answerHistoryEpoch = historyEpoch
         answerHistoryWasEnabled = configuration.preferences.historyEnabled
         answerCapture = Task { [weak self] in
             guard let self else { return }
             do {
-                let capture = try await self.answerSelection()
+                let capture: AnswerCapture
+                if let snapshot { capture = await self.bubbleSelection(snapshot) }
+                else { capture = try await self.answerSelection() }
                 try Task.checkCancellation()
                 self.answers.start(rule: rule, capture: capture)
             } catch is CancellationError {
@@ -1146,6 +1158,62 @@ final class AppModel: ObservableObject {
         let captured = try await captureSelection()
         return AnswerCapture(text: captured.text, context: includeContext ? captured.context : nil, anchor: captured.anchor,
                              application: captured.applicationName, source: captured.source)
+    }
+
+    /// The bubble's selection, read again with its context through Accessibility only. A selection that changed
+    /// since the bubble appeared is answered as the bubble read it, without context.
+    private func bubbleSelection(_ snapshot: SelectionSnapshot) async -> AnswerCapture {
+        let includeContext = configuration.preferences.explainSettings.includeContext
+        if includeContext, let selectionReader,
+           case let .selection(fresh) = await selectionReader.read(pid: snapshot.pid, maxCharacters: Self.answerReadLimit, includeContext: true),
+           fresh.fingerprint == snapshot.fingerprint {
+            return AnswerCapture(text: fresh.text, context: fresh.context, anchor: fresh.bounds,
+                                 application: fresh.applicationName, source: fresh.source)
+        }
+        return AnswerCapture(text: snapshot.text, context: nil, anchor: snapshot.bounds,
+                             application: snapshot.applicationName, source: snapshot.source)
+    }
+
+    // MARK: Selection bubble
+
+    /// A rule chosen in the selection bubble: an answer rule answers the bubble's selection without the clipboard
+    /// or a shortcut wait; a Writing rule runs exactly as from its shortcut.
+    func runBubbleItem(_ item: BubbleItem, snapshot: SelectionSnapshot) {
+        guard let rule = configuration.rules.first(where: { $0.id == item.id }), rule.enabled, ruleFeatureEnabled(rule) else { return }
+        if rule.answersInPanel { startAnswer(rule, from: snapshot) }
+        else { processSelection(ruleID: rule.id) }
+    }
+
+    private func configureSelectionWatcher() {
+        let preferences = configuration.preferences
+        let runs = started && preferences.featureEnabled(.explain) && preferences.explainSettings.selectionBubble && accessibilityGranted
+        if runs, !selectionWatcher.isRunning { selectionWatcher.start() }
+        else if !runs, selectionWatcher.isRunning { selectionWatcher.stop() }
+    }
+
+    private func makeSelectionWatcher() -> any SelectionWatching {
+        // Tests without a watcher of their own never install global monitors.
+        guard registerShortcuts else { return SilentSelectionWatcher() }
+        return SelectionWatcher(reader: selectionReader ?? SelectionReader(), presenter: SelectionBubbleController(), hooks: .init(
+            options: { [weak self] in self?.configuration.preferences.explainSettings.bubbleOptions ?? SelectionBubbleOptions() },
+            state: { [weak self] in self?.bubbleState ?? BubbleState(explainEnabled: false, bubbleEnabled: false, writingEnabled: false,
+                                                                    accessibilityTrusted: false, busy: true) },
+            items: { [weak self] in self?.bubbleItems(for: $0) ?? ([], []) },
+            run: { [weak self] in self?.runBubbleItem($0, snapshot: $1) }))
+    }
+
+    private var bubbleState: BubbleState {
+        let preferences = configuration.preferences
+        return BubbleState(explainEnabled: preferences.featureEnabled(.explain), bubbleEnabled: preferences.explainSettings.selectionBubble,
+                           writingEnabled: preferences.featureEnabled(.writing), accessibilityTrusted: accessibilityGranted,
+                           busy: isProcessing || dictation.active || isRecordingShortcut || answerPresenter.isKey)
+    }
+
+    private func bubbleItems(for snapshot: SelectionSnapshot) -> (visible: [BubbleItem], more: [BubbleItem]) {
+        let preferences = configuration.preferences
+        return SelectionBubbleItems.items(rules: configuration.rules, explainEnabled: preferences.featureEnabled(.explain),
+                                          writingEnabled: preferences.featureEnabled(.writing), editable: snapshot.isEditable,
+                                          configured: { (try? self.resolved($0)) != nil })
     }
 
     /// Saves an answer whose first reply completed, when History was on as the answer started and still is.

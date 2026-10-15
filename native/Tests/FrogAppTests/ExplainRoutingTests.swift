@@ -324,6 +324,83 @@ final class ExplainRoutingTests: XCTestCase {
         XCTAssertEqual(reader.calls.count, 4)
     }
 
+    // MARK: Selection bubble
+
+    func testTheSelectionBubbleRunsOnlyWithExplainTheBubbleAndAccessibility() async throws {
+        let watcher = FakeSelectionWatcher()
+        let setup = try Setup(test: self, watcher: watcher)
+        setup.model.start()
+        XCTAssertFalse(watcher.isRunning)
+        _ = try await setup.enableExplain()
+        XCTAssertFalse(watcher.isRunning, "The bubble is off by default")
+        try setup.model.updateToolkit { toolkit in
+            var settings = toolkit.explain ?? ExplainSettings()
+            settings.selectionBubble = true
+            toolkit.explain = settings
+        }
+        XCTAssertTrue(watcher.isRunning)
+
+        setup.trusted = false
+        setup.model.refreshSystemStatus()
+        XCTAssertFalse(watcher.isRunning, "Without Accessibility nothing is watched")
+        setup.trusted = true
+        setup.model.refreshSystemStatus()
+        XCTAssertTrue(watcher.isRunning, "Allowing Accessibility starts it without a restart")
+
+        try await setup.model.setFeature(.explain, enabled: false)
+        XCTAssertFalse(watcher.isRunning)
+        try await setup.model.setFeature(.explain, enabled: true)
+        XCTAssertTrue(watcher.isRunning)
+        setup.model.shutdown()
+        XCTAssertFalse(watcher.isRunning)
+        XCTAssertEqual(watcher.starts, 3)
+    }
+
+    func testABubbleAnswerReadsTheSelectionAgainWithContextAndNeverCopies() async throws {
+        let shown = Self.snapshot("levee", context: nil, element: 1)
+        let reader = FakeSelectionReader(.selection(Self.snapshot("levee", context: "The levee held all night.", element: 1)))
+        let setup = try Setup(test: self, reader: reader)
+        let rule = try await setup.enableExplain()
+        let item = BubbleItem(id: rule.id, title: rule.name, symbol: SelectionBubbleItems.answerSymbol, answers: true)
+        setup.model.runBubbleItem(item, snapshot: shown)
+        try await waitUntil { setup.presenter.sessions.last?.phase == .done(truncated: false) }
+        XCTAssertEqual(reader.calls.map(\.includeContext), [true])
+        XCTAssertEqual(reader.calls.map(\.pid), [FakeSelectionReader.pid])
+        let first = try XCTUnwrap(setup.streams.requests.first?.messages.first?.text)
+        XCTAssertTrue(first.contains("levee"), first)
+        XCTAssertTrue(first.contains("The levee held all night."), first)
+        XCTAssertEqual(setup.presenter.anchors.last, Self.anchor)
+
+        // The selection changed since the bubble appeared: the bubble's text, without context.
+        reader.result = .selection(Self.snapshot("flood", context: "The flood came.", element: 2))
+        setup.model.runBubbleItem(item, snapshot: shown)
+        try await waitUntil { setup.streams.requests.count == 2 }
+        let second = try XCTUnwrap(setup.streams.requests.last?.messages.first?.text)
+        XCTAssertTrue(second.contains("levee"), second)
+        XCTAssertFalse(second.contains("Surrounding text"), second)
+        XCTAssertEqual(setup.captures, 0, "No compatibility Copy")
+        XCTAssertEqual(setup.clipboardWrites, 0)
+    }
+
+    func testABubbleWritingRuleRunsLikeItsShortcut() async throws {
+        let setup = try Setup(test: self, reader: FakeSelectionReader(.unavailable))
+        _ = try await setup.enableExplain()
+        let writing = try XCTUnwrap(setup.model.configuration.rules.first { $0.category == .text && !$0.answersInPanel })
+        let item = BubbleItem(id: writing.id, title: writing.name, symbol: SelectionBubbleItems.writingSymbol, answers: false)
+        setup.model.runBubbleItem(item, snapshot: Self.snapshot("levee", context: nil, element: 1))
+        try await waitUntil { !setup.model.isProcessing && setup.completions == 1 }
+        XCTAssertEqual(setup.selection.replacement, "Replaced")
+        XCTAssertEqual(setup.captures, 1, "The Writing path reads the selection as its shortcut does")
+        XCTAssertTrue(setup.streams.requests.isEmpty)
+    }
+
+    private static func snapshot(_ text: String, context: String?, element: Int) -> SelectionSnapshot {
+        SelectionSnapshot(text: text, bounds: anchor, endBounds: anchor, context: context, source: nil, isEditable: true,
+                          pid: FakeSelectionReader.pid, bundleID: "com.apple.Safari", applicationName: "Safari",
+                          fingerprint: SelectionFingerprint(pid: FakeSelectionReader.pid, element: element, location: 0,
+                                                            length: text.utf16.count, textHash: text.hashValue))
+    }
+
     private func waitUntil(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async throws {
         for _ in 0..<400 {
             if condition() { return }
@@ -343,12 +420,16 @@ private final class Setup {
     let presenter = Presenter()
     var completions = 0
     var captures = 0
+    var clipboardWrites = 0
+    /// What the injected Accessibility check answers.
+    var trusted = true
     var folderChoices = 0
     var cancelsFolderChoice = false
     let notesFolder: URL
     private(set) var installedModelID: String?
 
-    init(test: XCTestCase, installedTextModel: Bool = false, reader: FakeSelectionReader? = nil) throws {
+    init(test: XCTestCase, installedTextModel: Bool = false, reader: FakeSelectionReader? = nil,
+         watcher: (any SelectionWatching)? = nil) throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("FrogTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         test.addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
@@ -366,17 +447,24 @@ private final class Setup {
         let streams = streams, presenter = presenter, selection = selection
         var completions: () -> Void = {}
         var captures: () -> Void = {}
+        var clipboardWrites: () -> Void = {}
+        var trusted: () -> Bool = { true }
         var chooseFolder: () -> URL? = { nil }
         model = AppModel(dataDirectory: directory, registerShortcuts: false,
                          complete: { _, _, _, _ in completions(); return "Replaced" },
-                         readKey: { _ in nil }, writeClipboard: { _ in },
+                         readKey: { _ in nil }, writeClipboard: { _ in clipboardWrites() },
+                         readAccessibility: { trusted() },
                          captureSelection: { captures(); return selection },
                          selectionReader: reader, selectionTarget: { FakeSelectionReader.pid },
                          answerStream: { streams.stream($0) }, answerPresenter: presenter,
                          chooseNotesFolder: { chooseFolder() },
-                         errorDisplayDuration: .milliseconds(10))
+                         selectionWatcher: watcher,
+                         errorDisplayDuration: .milliseconds(10),
+                         systemStatusTick: { try await Task.sleep(for: .seconds(3_600)) })
         completions = { [weak self] in self?.completions += 1 }
         captures = { [weak self] in self?.captures += 1 }
+        clipboardWrites = { [weak self] in self?.clipboardWrites += 1 }
+        trusted = { [weak self] in self?.trusted ?? false }
         chooseFolder = { [weak self] in
             guard let self else { return nil }
             self.folderChoices += 1
@@ -407,6 +495,14 @@ private final class Setup {
         try model.saveRule(rule)
         return rule
     }
+}
+
+@MainActor
+private final class FakeSelectionWatcher: SelectionWatching {
+    private(set) var isRunning = false
+    private(set) var starts = 0
+    func start() { isRunning = true; starts += 1 }
+    func stop() { isRunning = false }
 }
 
 private final class FakeSelectionReader: SelectionReading, @unchecked Sendable {
