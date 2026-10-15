@@ -25,6 +25,8 @@ final class WindowLayoutController: ObservableObject {
     private var pickerTarget: pid_t?
     private var previewTask: Task<Void, Never>?
     private var moveTask: Task<Void, Never>?
+    /// Watches window drags while drag to snap is on; nil otherwise, so no event monitor exists.
+    private var dragMonitor: WindowDragMonitor?
 
     init(manager: WindowManager, access: WindowAccess = AXWindowAccess(),
          displays: @escaping @MainActor () -> [WindowDisplay] = WindowDisplays.current,
@@ -46,6 +48,12 @@ final class WindowLayoutController: ObservableObject {
     /// App activation is watched only while the picker can open.
     var trackingTarget: Bool { tracker.running }
 
+    /// Windows dragged to a screen edge or corner snap: the controller runs and drag to snap is on.
+    var dragToSnapActive: Bool { running && WindowSwitches(configuration.preferences).dragToSnap }
+
+    /// Mouse events are watched for window drags.
+    var watchingDrags: Bool { dragMonitor?.running == true }
+
     func configure(_ configuration: Configuration, active: Bool) {
         let previous = WindowSwitches(self.configuration.preferences).shortcutRules
         self.configuration = configuration
@@ -54,6 +62,7 @@ final class WindowLayoutController: ObservableObject {
         // Registering the shortcuts again forgets one that is held, so its release never comes.
         if WindowSwitches(configuration.preferences).shortcutRules != previous { cheatSheet?.hide() }
         if pickerAvailable { tracker.start() } else { hidePicker(); tracker.stop() }
+        if dragToSnapActive { startDragMonitor() } else { stopDragMonitor() }
     }
 
     func handle(_ command: WindowCommand, pressed: Bool) {
@@ -70,6 +79,7 @@ final class WindowLayoutController: ObservableObject {
         cheatSheet?.hide()
         hidePicker()
         tracker.stop()
+        stopDragMonitor()
     }
 
     /// Moves the focused window of `pid` the way a layout shortcut does, with the same gaps and
@@ -96,6 +106,58 @@ final class WindowLayoutController: ObservableObject {
         }
         moveTask = task
         return task
+    }
+
+    // MARK: Drag to snap
+
+    private func startDragMonitor() {
+        guard dragMonitor == nil else { return }
+        let manager = manager, access = access
+        let own = ProcessInfo.processInfo.processIdentifier
+        let tracker = WindowDragTracker(
+            probe: { await WindowDragMonitor.windowUnder($0) },
+            frame: { await WindowDragMonitor.readFrame($0, access: access) },
+            apply: { [weak self] action, window, display in await self?.snap(action, window: window, display: display) },
+            setFrame: { frame, window in await Task.detached { try? access.setFrame(frame, of: window, resize: true) }.value },
+            preview: { [weak self] frame in self?.showDragPreview(frame) },
+            displays: { [weak self] in self?.displays() ?? [] },
+            options: { [weak self] in self?.snapOptions() ?? .legacy },
+            macOS: { [weak self] in self?.readMacOS() ?? MacWindowManagerSettings() },
+            lastMove: { key in await manager.lastMove(of: key).map { ($0.move.applied, $0.frame.size) } },
+            shouldIgnore: { $0.key.pid == own },
+            restoreOnDrag: { [weak self] in self.map { WindowSwitches($0.configuration.preferences).restoreOnDrag } ?? false })
+        let monitor = WindowDragMonitor(tracker: tracker)
+        monitor.start()
+        dragMonitor = monitor
+    }
+
+    private func stopDragMonitor() {
+        dragMonitor?.stop()
+        dragMonitor = nil
+    }
+
+    /// Layouts from a drag use the same gaps and Stage Manager room as shortcuts, without cycling.
+    private func snapOptions() -> WindowLayoutOptions {
+        var options = WindowSwitches(configuration.preferences).layoutOptions(readMacOS())
+        options.cycleSizes = false
+        return options
+    }
+
+    /// Moves the dragged window on the display under the pointer, recorded for Restore.
+    private func snap(_ action: WindowAction, window: WindowHandle, display: WindowDisplay) async {
+        do {
+            try await manager.apply(action, to: window, displays: [display], options: snapOptions())
+            onToolUse?(.windowCommand)
+        }
+        catch is CancellationError { }
+        catch { onError?(error) }
+    }
+
+    private func showDragPreview(_ frame: CGRect?) {
+        guard let frame else { preview?.hide(); return }
+        let preview = self.preview ?? WindowPreviewPanel()
+        self.preview = preview
+        preview.show(accessibilityFrame: frame)
     }
 
     // MARK: Layout picker

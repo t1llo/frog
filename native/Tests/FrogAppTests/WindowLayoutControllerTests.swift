@@ -89,6 +89,42 @@ import FrogCore
         XCTAssertFalse(controller.trackingTarget)
     }
 
+    func testNoDragMonitorWhileInactiveOrWindowsIsOff() {
+        let controller = controller(FixtureWindowAccess())
+        defer { controller.stop() }
+        var drag = configuration(picker: false)
+        drag.preferences.toolkit?.windows?.dragToSnap = true
+        // Inactive (as in tests and before launch finishes): nothing watches the mouse.
+        controller.configure(drag, active: false)
+        XCTAssertFalse(controller.dragToSnapActive)
+        XCTAssertFalse(controller.watchingDrags)
+        var off = drag
+        off.preferences.setFeature(.windows, enabled: false)
+        controller.configure(off, active: false)
+        XCTAssertFalse(controller.dragToSnapActive)
+        XCTAssertFalse(WindowSwitches(off.preferences).dragToSnap)
+        XCTAssertTrue(WindowSwitches(drag.preferences).dragToSnap)
+        XCTAssertFalse(controller.watchingDrags)
+    }
+
+    func testASnapMovesTheGivenWindowOnTheGivenDisplay() async throws {
+        let access = FixtureWindowAccess()
+        let other = WindowKey(pid: 42, number: 2)
+        access.add(key, frame: original)
+        access.add(other, frame: original)
+        let manager = WindowManager(access: access)
+        let external = WindowDisplay(id: "external", name: "Monitor", frame: CGRect(x: 1440, y: 0, width: 1920, height: 1080),
+                                     visibleFrame: CGRect(x: 1440, y: 25, width: 1920, height: 1055))
+        // The window sits on the laptop, the pointer dropped it on the external display.
+        try await manager.apply(.rightHalf, to: WindowHandle(key: key, element: nil), displays: [external])
+        XCTAssertEqual(access.windows[key]?.frame, CGRect(x: 2400, y: 25, width: 960, height: 1055))
+        XCTAssertEqual(access.windows[other]?.frame, original, "The focused window stays")
+        let restore = await manager.lastMove(of: key)
+        XCTAssertEqual(restore?.frame, original)
+        try await manager.apply(.restore, to: WindowHandle(key: key, element: nil), displays: [laptop, external])
+        XCTAssertEqual(access.windows[key]?.frame, original, "Restore previous size undoes the snap")
+    }
+
     func testRestoreAfterPickerReturnsToThePreviousFrame() async {
         let access = FixtureWindowAccess()
         access.add(key, frame: original)

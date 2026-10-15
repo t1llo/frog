@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import FrogCore
 
 /// Reads the Desktop & Dock settings that decide where macOS puts windows. Read-only: Frog
@@ -7,6 +7,14 @@ enum MacWindowManagerReader {
     private static let domain = "com.apple.WindowManager" as CFString
     /// System Settings → Desktop & Dock, where the user changes these settings.
     static let desktopAndDockURL = URL(string: "x-apple.systempreferences:com.apple.Desktop-Settings.extension")!
+    /// The older name of the same pane, for a system that does not know the one above.
+    static let dockSettingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.dock")!
+
+    /// Opens Desktop & Dock in System Settings, where the user turns macOS's own tiling off.
+    @MainActor
+    static func openDesktopAndDock() {
+        if !NSWorkspace.shared.open(desktopAndDockURL) { NSWorkspace.shared.open(dockSettingsURL) }
+    }
 
     /// The current values. Stage Manager sends no event when it is switched on or off, so every
     /// window action reads them again; that takes microseconds.

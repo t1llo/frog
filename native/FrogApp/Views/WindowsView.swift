@@ -7,6 +7,8 @@ struct WindowsView: View {
     /// What the last "Use suggested shortcuts" did, until the page closes.
     @State private var suggestion: String?
     @State private var voiceOverNote = false
+    /// macOS's own window tiling, read when the page opens and whenever Frog comes to the front.
+    @State private var macOS = MacWindowManagerSettings()
 
     var body: some View {
         let rows = WindowAction.shortcutRows(configured: model.configuration.rules)
@@ -32,6 +34,22 @@ struct WindowsView: View {
                 }
             }
             SettingsSection(title: "Snap") {
+                CompactRow(title: "Drag to screen edges", detail: "Drop a window on an edge or corner to fill that part of the screen.") {
+                    Toggle("Drag to screen edges", isOn: binding(\.dragToSnap)).labelsHidden().toggleStyle(.switch)
+                }
+                if macOS.edgeTiling {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("macOS already tiles windows dragged to screen edges, so Frog's edges are paused. Hold Shift while dragging to use Frog's zones, or turn off \"Drag windows to screen edges to tile\" in Desktop & Dock.")
+                            .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Open Desktop & Dock") { MacWindowManagerReader.openDesktopAndDock() }.buttonStyle(.plain)
+                            .font(.system(size: 11)).foregroundStyle(FrogStyle.accent)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 6)
+                }
+                CompactRow(title: "Restore size when dragged away", detail: "A snapped window gets its earlier size back when you drag it out.") {
+                    Toggle("Restore size when dragged away", isOn: binding(\.restoreOnDrag)).labelsHidden().toggleStyle(.switch)
+                        .disabled(!settings.dragToSnap)
+                }
                 CompactRow(title: "Layout picker", detail: "Choose a layout from a small panel, from a shortcut, the Frog menu or the command bar.") {
                     HStack(alignment: .top, spacing: 10) {
                         VStack(alignment: .trailing, spacing: 4) {
@@ -87,6 +105,10 @@ struct WindowsView: View {
                         .font(.system(size: 11)).foregroundStyle(FrogStyle.accent)
                 }
             }
+        }
+        .onAppear { macOS = MacWindowManagerReader.read() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            macOS = MacWindowManagerReader.read()
         }
     }
 
