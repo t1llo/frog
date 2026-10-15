@@ -81,10 +81,7 @@ public struct RemovalPlan: Sendable, Equatable {
 
         var stop: [String] = [], restart: [String] = []
         for removal in removals {
-            let item = removal.item
-            // A job's file is named after its label by convention, so the name stands in when no label was read.
-            let label = item.launchLabel ?? (item.url.pathExtension == "plist"
-                ? item.url.deletingPathExtension().lastPathComponent : item.url.lastPathComponent)
+            let item = removal.item, label = item.jobLabel
             switch item.kind {
             case .launchAgent: if !stop.contains(label) { stop.append(label) }
             case .launchDaemon, .helperTool: if !restart.contains(label) { restart.append(label) }
@@ -108,6 +105,13 @@ public struct RemovalPlan: Sendable, Equatable {
                            quitBundleIDs: removals.isEmpty ? [] : app?.bundleIDs ?? [],
                            launchLabelsToStop: stop, restartLabels: restart, totalBytes: total,
                            sizeIncomplete: incomplete, removesApp: removesApp)
+    }
+}
+
+extension CleanerItem {
+    /// A job's file is named after its label by convention, so the name stands in when no label was read.
+    var jobLabel: String {
+        launchLabel ?? (url.pathExtension == "plist" ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent)
     }
 }
 
