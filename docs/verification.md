@@ -584,10 +584,43 @@ has a shortcut, pressing it in an older Frog that reads the same configuration r
 the selection with the answer. The built-in Explain rule has no shortcut, and the rule
 editor warns when an answer rule gets one.
 
-In this version answer rules are inert: the Writing page does not list them, they
-register no global shortcut, and running one through the Writing path is refused before
-anything is captured or sent (`ProcessingTests`, `HotkeyRulesTests`). No device checks
-yet; they follow once Explain can be switched on.
+Answer rules never run through Writing: the Writing page does not list them, and running
+one through the Writing path is refused before anything is captured or sent
+(`ProcessingTests`, `HotkeyRulesTests`). With Explain off they register no global shortcut
+and their shortcut does nothing; with Explain on they answer in the panel
+(`ExplainRoutingTests`).
+
+## Explain answers in a panel — October 16
+
+Automated: `AnswerPanelDismissalTests` (every event, pinned and not), `ExplainSettingsTests`
+(defaults, `explain.context` round trip, nothing rendered until edited) and
+`ExplainRoutingTests` (nothing runs while Explain is off; the Explain rule is added once;
+the request holds the selection, surrounding text and app name but never the page
+address; no surrounding text with the setting off; Writing rules still complete and
+replace; turning Explain off closes the panel and cancels the stream; a Frog model is
+labelled "name · Frog"; answer shortcuts follow Explain), plus `ProcessingTests`,
+`AnswerControllerTests`, `CommandBarResultsTests`, `HotkeyRulesTests` and the
+configuration and feature tests. `RuleEditorTests` and `RulesWorkflowTests` open windows
+and are left to the integrator.
+
+Device checks, with an isolated `FROG_DATA_DIRECTORY` and a throwaway provider entry or a
+downloaded local model, to be filled in by the integrator:
+
+- [ ] Turning Explain on adds the Explain rule with a model; giving it a shortcut shows
+      the warning in the rule editor.
+- [ ] Selecting a word in Safari, TextEdit, Notes, Xcode and Terminal and pressing the
+      shortcut opens the panel next to the word within a second, and the answer streams.
+- [ ] The frontmost app stays the same, and typing continues in the original field after
+      the panel appears, after a follow-up is typed and after the panel closes.
+- [ ] Escape, a click outside and switching apps close an unpinned panel; a pinned one
+      stays and can be dragged.
+- [ ] Slack or VS Code (compatibility Copy): the panel opens at the pointer and the
+      clipboard is restored.
+- [ ] Placement on two displays (one with a negative origin), in full screen and across
+      Spaces.
+- [ ] Streaming and the model label with Ollama, a cloud provider, a Frog model, and
+      Claude Code (one piece).
+- [ ] VoiceOver reads the panel as "Explain answer" and announces "Answer ready".
 
 ## Distribution
 

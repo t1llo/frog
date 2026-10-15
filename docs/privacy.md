@@ -51,6 +51,8 @@ The window switcher uses Accessibility to list window titles, observe the recent
 The optional floating processing indicator shows rule/status messages without taking focus. Turn it off in **Settings → Show processing indicator**. Compatibility replacement checks input-event counters, not keystroke contents, to reject changed targets.
 
 <!-- slot: explain -->
+**Explain** is off by default. Besides the selected text and the rule's instructions, for an answer rule (Explain and rules on the Explain page) Frog also sends, only when you run the rule: the sentence or paragraph around the selection (up to 1,000 characters; switch off with **Include surrounding text**), the app's name, the reply language (your Mac's first preferred language), and earlier questions and answers in the same panel. The page or document address is never sent. Nothing in the other app is replaced. While the answer panel is open, Frog watches keys pressed in other apps for the Escape key code only, to close the panel; no characters are read. It also notices clicks outside the panel and which app becomes active, without recording either. These monitors are removed when the panel closes. **Copy** puts the answer on the clipboard like any other copy.
+
 <!-- slot: command-bar -->
 **Command bar choices.** With Learn from your choices on, Frog keeps the text you typed (up to 32 characters) and the rows you picked (including app and file paths) with their dates in `~/Library/Application Support/Frog/command-choices.json`, readable only by you. Clipboard rows and windows are never recorded. Unused choices fade after a few weeks. The file is never exported, synced or sent anywhere, and it is deleted when you press Forget learned choices, turn the switch off or turn the Command bar off.
 

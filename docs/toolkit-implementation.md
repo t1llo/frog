@@ -298,6 +298,43 @@ for `http`, `https` and `file` only, without user, password, query or fragment. 
 with History and notes and is never sent to a model. Every element these reads touch has
 the same one-second messaging timeout as the capture itself.
 
+### Answer panel
+
+`AnswerPanelController` is the app's `AnswerPresenting`: a 400-point `FrogFloatingPanel`
+that may become key, so the follow-up field takes typing, but never activates Frog. It
+places itself with `PanelPlacement` from the selection's anchor, else the pointer, and
+grows with its content up to 560 points or 60 % of the display's visible height,
+whichever is lower; beyond that the answer scrolls. SwiftUI reports the header, answer and
+footer heights, and the controller resizes keeping the edge next to the selection. A
+panel that was dragged or pinned keeps its top edge instead. A model built without
+shortcuts, as in tests, gets `SilentAnswerPresenter` and never opens a window.
+
+The monitors exist only while the panel is open and are removed when it closes: a local
+key monitor for the panel's own keys, a global key monitor that reads the key code and
+acts only on Escape, a global monitor for left and right clicks, and a workspace observer
+for app activation. Events from before the panel opened are ignored. `AnswerPanelDismissal`
+in FrogCore decides, without windows:
+
+| Event | Unpinned | Pinned |
+| --- | --- | --- |
+| Close button, Escape or ⌘W in the panel | Closes | Closes |
+| Escape in another app | Closes | Stays |
+| Click outside the panel | Closes | Stays |
+| Another app becomes active | Closes | Stays |
+| The app the text came from becomes active again | Stays | Stays |
+
+In the panel ⌘↩ copies the latest answer and ⌘. stops it; other keys go to the follow-up
+field, and every key does while an input method is composing. Edit rule opens the Explain
+page, which activates Frog and so closes an unpinned panel. The panel is one
+accessibility group named "Explain answer" and announces "Answer ready" when an answer
+finishes.
+
+`AppModel.processSelection` sends a rule with `textOutput: "panel"` to `AnswerController`
+only while `feature.explain` is on, and otherwise does nothing; such a rule never goes
+through Writing. The capture runs as for Writing, the surrounding text is dropped when
+`explain.context` is off, and turning Explain off cancels a capture in flight and closes
+the answer.
+
 ## Data and execution
 
 Portable configuration contains feature choices and settings. Credentials stay
