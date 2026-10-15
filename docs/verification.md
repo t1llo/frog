@@ -601,10 +601,10 @@ replace; turning Explain off closes the panel and cancels the stream; a Frog mod
 labelled "name · Frog"; answer shortcuts follow Explain), plus `ProcessingTests`,
 `AnswerControllerTests`, `CommandBarResultsTests`, `HotkeyRulesTests` and the
 configuration and feature tests. `RuleEditorTests` and `RulesWorkflowTests` open windows
-and are left to the integrator.
+and run separately.
 
 Device checks, with an isolated `FROG_DATA_DIRECTORY` and a throwaway provider entry or a
-downloaded local model, to be filled in by the integrator:
+downloaded local model, still to run:
 
 - [ ] Turning Explain on adds the Explain rule with a model; giving it a shortcut shows
       the warning in the rule editor.
@@ -633,7 +633,7 @@ yet") and `ExplainRoutingTests` (one entry per answer that its follow-ups update
 saved with History off, turned off or cleared during an answer, or for a failed or
 stopped answer).
 
-Device checks, with History on and isolated data, to be filled in by the integrator:
+Device checks, with History on and isolated data, still to run:
 
 - [ ] Ask, follow up twice, open History → Answers: one entry with two follow-ups; search
       finds a word of a follow-up.
@@ -652,8 +652,8 @@ config.json, validation) and `ExplainRoutingTests` (notes off refuses, the folde
 for once and stored, saving with History off, the panel's Saved and failure states, a
 cancelled folder choice).
 
-Device checks, with isolated data, a throwaway folder and a throwaway Obsidian vault, to be
-filled in by the integrator:
+Device checks, with isolated data, a throwaway folder and a throwaway Obsidian vault, still
+to run:
 
 - [ ] One note per answer, then the same selection again: a second file with " 2".
 - [ ] Add to one note into `Daily/YYYY-MM-DD.md` while `Daily` does not exist yet.
@@ -676,7 +676,7 @@ names no pasteboard, Copy or event posting) and `ExplainRoutingTests` (a selecti
 this way never copies; empty, secure and too long refuse without copying; unavailable
 falls back to the compatibility Copy).
 
-Device checks, with isolated data, to be filled in by the integrator:
+Device checks, with isolated data, still to run:
 
 - [ ] Explain from its shortcut in Safari leaves `NSPasteboard.general.changeCount`
       unchanged and the panel opens next to the selection.
@@ -701,7 +701,7 @@ never copies; a Writing rule from the bubble runs like its shortcut) and
 `SelectionIsolationTests` (the watcher, controller and view name no clipboard, Copy or
 posted event).
 
-Device checks, with isolated data, to be filled in by the integrator:
+Device checks, with isolated data, still to run:
 
 - [ ] With the bubble off, no global monitor exists.
 - [ ] The bubble appears within about 0.5 s in Safari, Notes, Mail, Xcode, TextEdit and
