@@ -77,4 +77,32 @@ final class SnapZoneResolverTests: XCTestCase {
             XCTAssertNil(SnapZoneResolver.candidate(at: point, displays: [laptop, right], edgesPaused: true), "\(point)")
         }
     }
+    func testNativeEdgeBand() {
+        func dead(_ x: CGFloat, _ y: CGFloat, _ macOS: MacWindowManagerSettings, option: Bool = false,
+                  _ displays: [WindowDisplay]? = nil) -> Bool {
+            SnapZoneResolver.nativeEdgeBand(at: CGPoint(x: x, y: y), displays: displays ?? [laptop], macOS: macOS, optionDown: option)
+        }
+        let edges = MacWindowManagerSettings(edgeTiling: true)
+        XCTAssertTrue(dead(3, 400, edges))
+        XCTAssertTrue(dead(1437, 400, edges))
+        XCTAssertTrue(dead(700, 897, edges))
+        XCTAssertFalse(dead(700, 3, edges), "The top follows top-edge tiling")
+        XCTAssertFalse(dead(7, 400, edges))
+        XCTAssertFalse(dead(700, 400, edges))
+        XCTAssertTrue(dead(700, 3, MacWindowManagerSettings(topEdgeTiling: true)))
+        XCTAssertFalse(dead(3, 400, MacWindowManagerSettings(topEdgeTiling: true)))
+        for point in [CGPoint(x: 3, y: 400), CGPoint(x: 700, y: 3), CGPoint(x: 700, y: 400)] {
+            XCTAssertFalse(dead(point.x, point.y, MacWindowManagerSettings()), "All settings off")
+            XCTAssertFalse(dead(point.x, point.y, MacWindowManagerSettings(), option: true), "Option without the accelerator")
+            XCTAssertTrue(dead(point.x, point.y, MacWindowManagerSettings(optionAccelerator: true), option: true))
+        }
+        // The laptop's right edge touches the larger display; its top touches the one above.
+        let all = MacWindowManagerSettings(edgeTiling: true, topEdgeTiling: true)
+        XCTAssertFalse(dead(1437, 400, all, [laptop, right]))
+        XCTAssertFalse(dead(1443, 400, all, [laptop, right]))
+        XCTAssertFalse(dead(700, 3, all, [laptop, above]))
+        XCTAssertFalse(dead(700, -3, all, [laptop, above]))
+        XCTAssertTrue(dead(3, 400, all, [laptop, right, above]))
+        XCTAssertFalse(dead(1437, 880, all, [laptop, right]), "Shared where the other display spans the pointer")
+    }
 }

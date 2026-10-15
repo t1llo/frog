@@ -144,4 +144,102 @@ final class SnapDragSessionTests: XCTestCase {
         XCTAssertEqual(drag.move(to: CGPoint(x: 0, y: 400), time: 0.2, windowFrame: nil, displays: [laptop]), [])
         XCTAssertNil(drag.end(at: CGPoint(x: 0, y: 400), time: 0.3, displays: [laptop]))
     }
+    // MARK: Zone overlay
+
+    /// Confirms a drag and holds Shift with thirds over the laptop.
+    private func shifted(edgeTiling: Bool = false, topEdgeTiling: Bool = false, optionAccelerator: Bool = false, optionDown: Bool = false,
+                         displays: [WindowDisplay]? = nil, at pointer: CGPoint = CGPoint(x: 700, y: 400)) -> (SnapDragSession, [SnapDragSession.Effect]) {
+        var drag = session(edgesPaused: edgeTiling)
+        _ = follow(&drag, dx: 10, dy: 0, displays: displays)
+        let macOS = MacWindowManagerSettings(edgeTiling: edgeTiling, topEdgeTiling: topEdgeTiling, optionAccelerator: optionAccelerator)
+        let effects = drag.shiftChanged(true, pointer: pointer, time: 0.2, displays: displays ?? [laptop], grid: .thirds, options: .legacy,
+                                        macOS: macOS, optionDown: optionDown)
+        return (drag, effects)
+    }
+
+    private func zone(_ action: WindowAction, on display: String = "laptop") -> SnapCandidate {
+        SnapCandidate(action: action, displayID: display, sharedEdge: false)
+    }
+
+    func testShiftShowsTheOverlayAndTheHighlightFollowsThePointer() {
+        let (start, effects) = shifted()
+        var drag = start
+        XCTAssertEqual(effects, [.showOverlay(displayID: "laptop"), .highlight(.centerThird), .showPreview(zone(.centerThird))])
+        XCTAssertEqual(drag.move(to: CGPoint(x: 720, y: 500), time: 0.3, windowFrame: nil, displays: [laptop]), [], "Same zone")
+        XCTAssertEqual(drag.move(to: CGPoint(x: 1200, y: 500), time: 0.4, windowFrame: nil, displays: [laptop]),
+                       [.highlight(.rightThird), .showPreview(zone(.rightThird))])
+        XCTAssertNil(drag.dwellDeadline)
+        XCTAssertEqual(drag.end(at: CGPoint(x: 1200, y: 500), time: 0.5, displays: [laptop]), zone(.rightThird))
+
+        // Shift up hides the overlay and goes back to the edges.
+        XCTAssertEqual(drag.shiftChanged(false, pointer: CGPoint(x: 1200, y: 500), time: 0.6, displays: [laptop], grid: .thirds,
+                                         options: .legacy, macOS: MacWindowManagerSettings(), optionDown: false),
+                       [.hideOverlay, .hidePreview])
+        XCTAssertNil(drag.end(at: CGPoint(x: 1200, y: 500), time: 0.7, displays: [laptop]))
+        XCTAssertEqual(drag.move(to: CGPoint(x: 0, y: 500), time: 0.8, windowFrame: nil, displays: [laptop]),
+                       [.showPreview(zone(.leftHalf))])
+    }
+
+    func testShiftHeldBeforeTheDragIsConfirmedShowsTheOverlayOnConfirmation() {
+        var drag = session()
+        XCTAssertEqual(drag.shiftChanged(true, pointer: grab, time: 0, displays: [laptop], grid: .halves, options: .legacy,
+                                         macOS: MacWindowManagerSettings(), optionDown: false), [])
+        XCTAssertEqual(follow(&drag, dx: 10, dy: 0),
+                       [.confirmDrag, .showOverlay(displayID: "laptop"), .highlight(.leftHalf), .showPreview(zone(.leftHalf))])
+    }
+
+    func testReleaseOverAZoneWorksWithPausedEdgesAndEscapeHidesIt() {
+        var drag = shifted(edgeTiling: true).0
+        XCTAssertEqual(drag.end(at: CGPoint(x: 100, y: 500), time: 0.5, displays: [laptop]), zone(.leftThird))
+        XCTAssertEqual(drag.cancel(), [.hidePreview, .hideOverlay])
+        XCTAssertNil(drag.end(at: CGPoint(x: 100, y: 500), time: 0.6, displays: [laptop]))
+        XCTAssertEqual(drag.shiftChanged(true, pointer: CGPoint(x: 100, y: 500), time: 0.7, displays: [laptop], grid: .thirds,
+                                         options: .legacy, macOS: MacWindowManagerSettings(), optionDown: false), [],
+                       "Cancelled drags show nothing")
+    }
+
+    func testReleaseInTheNativeEdgeBandAppliesNothing() {
+        var drag = shifted(edgeTiling: true).0
+        XCTAssertEqual(drag.move(to: CGPoint(x: 3, y: 500), time: 0.3, windowFrame: nil, displays: [laptop]),
+                       [.highlight(nil), .hidePreview])
+        XCTAssertNil(drag.end(at: CGPoint(x: 3, y: 500), time: 0.4, displays: [laptop]))
+        XCTAssertEqual(drag.move(to: CGPoint(x: 10, y: 500), time: 0.5, windowFrame: nil, displays: [laptop]),
+                       [.highlight(.leftThird), .showPreview(zone(.leftThird))])
+        XCTAssertEqual(drag.end(at: CGPoint(x: 10, y: 500), time: 0.6, displays: [laptop]), zone(.leftThird))
+
+        let off = shifted(edgeTiling: false).0
+        XCTAssertEqual(off.end(at: CGPoint(x: 3, y: 500), time: 0.4, displays: [laptop]), zone(.leftThird))
+    }
+
+    func testTopBandFollowsTopEdgeTiling() {
+        let top = CGPoint(x: 700, y: 3)
+        XCTAssertEqual(shifted(edgeTiling: true).0.end(at: top, time: 0.4, displays: [laptop]), zone(.centerThird),
+                       "The menu bar counts as the zone below it")
+        XCTAssertNil(shifted(edgeTiling: true, topEdgeTiling: true).0.end(at: top, time: 0.4, displays: [laptop]))
+    }
+
+    func testSharedEdgeIsNeverDead() {
+        let displays = [laptop, right]
+        var drag = shifted(edgeTiling: true, displays: displays).0
+        XCTAssertEqual(drag.move(to: CGPoint(x: 1437, y: 500), time: 0.3, windowFrame: nil, displays: displays),
+                       [.highlight(.rightThird), .showPreview(zone(.rightThird))])
+        XCTAssertEqual(drag.move(to: CGPoint(x: 1443, y: 500), time: 0.4, windowFrame: nil, displays: displays),
+                       [.showOverlay(displayID: "right"), .highlight(.leftThird), .showPreview(zone(.leftThird, on: "right"))],
+                       "The overlay follows the pointer to the other display")
+        XCTAssertNil(drag.end(at: CGPoint(x: 2877, y: 500), time: 0.5, displays: displays), "The far outer edge is dead")
+    }
+
+    func testOptionHeldMakesTheOverlayDead() {
+        let (start, effects) = shifted(edgeTiling: true, optionAccelerator: true, optionDown: true)
+        var drag = start
+        XCTAssertEqual(effects, [.showOverlay(displayID: "laptop"), .highlight(nil)])
+        for x in [100, 700, 1200] as [CGFloat] {
+            XCTAssertEqual(drag.move(to: CGPoint(x: x, y: 500), time: 0.3, windowFrame: nil, displays: [laptop]), [])
+            XCTAssertNil(drag.end(at: CGPoint(x: x, y: 500), time: 0.4, displays: [laptop]))
+        }
+        // Option released while Shift stays down.
+        XCTAssertEqual(drag.shiftChanged(true, pointer: CGPoint(x: 1200, y: 500), time: 0.5, displays: [laptop], grid: .thirds, options: .legacy,
+                                         macOS: MacWindowManagerSettings(edgeTiling: true, optionAccelerator: true), optionDown: false),
+                       [.highlight(.rightThird), .showPreview(zone(.rightThird))])
+    }
 }
