@@ -33,6 +33,7 @@ struct FeaturesView: View {
                     Text(feature.detail).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
                     if feature.hasPage, model.configuration.preferences.featureEnabled(feature) {
                         Button("Open") { model.openFeature(feature) }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(FrogStyle.accent)
+                            .accessibilityLabel("Open \(feature.title)")
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 Toggle(feature.title, isOn: Binding(get: { model.configuration.preferences.featureEnabled(feature) }, set: { enabled in

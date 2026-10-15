@@ -112,7 +112,8 @@ struct RulesView: View {
                                         if rule.category == .audio { model.startDictation(rule) }
                                         else { trying = rule }
                                     }.disabled(!rule.enabled || model.isProcessing || model.dictation.active)
-                                    IconAction(title: "Edit rule", symbol: "pencil") { editing = rule }
+                                    .accessibilityLabel(rule.category == .audio ? "Record with \(rule.name)" : "Try \(rule.name)")
+                                    IconAction(title: "Edit \(rule.name)", symbol: "pencil") { editing = rule }
                                 }
                             }.padding(.horizontal, 12).padding(.vertical, 10)
                                 .overlay(alignment: .bottom) {
@@ -233,7 +234,7 @@ struct RuleEditor: View {
                 Toggle("Enabled", isOn: $rule.enabled).toggleStyle(.switch).controlSize(.mini).font(.system(size: 11))
             }.padding(20)
             if rule.category == .audio {
-                CompactSegments(values: [0, 1], selected: step, title: { $0 == 0 ? "Recording" : "Cleanup" }) { step = $0 }.padding(.bottom, 12)
+                CompactSegments(values: [0, 1], selected: step, title: { $0 == 0 ? "Speech-to-text" : "Cleanup" }) { step = $0 }.padding(.bottom, 12)
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
