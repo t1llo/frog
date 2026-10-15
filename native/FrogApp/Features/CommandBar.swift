@@ -45,6 +45,7 @@ import SwiftUI
         // slot: quicklinks
         // slot: command-bar
         // slot: windows
+        WindowCommandRows(),
     ] + extraProviders
     private let extraProviders: [any CommandBarRowProviding]
     private var context: CommandBarContext?

@@ -31,6 +31,19 @@ struct WindowsView: View {
                     Toggle("Leave room for Stage Manager", isOn: binding(\.respectStageManager)).labelsHidden().toggleStyle(.switch)
                 }
             }
+            SettingsSection(title: "Snap") {
+                CompactRow(title: "Layout picker", detail: "Choose a layout from a small panel, from a shortcut, the Frog menu or the command bar.") {
+                    HStack(alignment: .top, spacing: 10) {
+                        VStack(alignment: .trailing, spacing: 4) {
+                            HotkeyRecorder(hotkey: commandShortcut(.layoutPicker)).disabled(!settings.layoutPicker)
+                            if let issue = model.hotkeyErrors[WindowCommand.layoutPicker.id] {
+                                Text(issue).font(.caption2).foregroundStyle(FrogStyle.warning)
+                            }
+                        }
+                        Toggle("Layout picker", isOn: binding(\.layoutPicker)).labelsHidden().toggleStyle(.switch)
+                    }
+                }
+            }
             SettingsSection(title: "Layout shortcuts") {
                 VStack(alignment: .leading, spacing: 6) {
                     Button("Use suggested shortcuts", action: useSuggestedShortcuts).buttonStyle(FrogButtonStyle())

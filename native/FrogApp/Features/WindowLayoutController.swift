@@ -5,6 +5,8 @@ import FrogCore
 /// inactive or Windows is off, so a switched-off feature costs nothing.
 @MainActor
 final class WindowLayoutController: ObservableObject {
+    static let noTarget = "There is no window to arrange. Click a window first."
+
     let manager: WindowManager
     let access: WindowAccess
     let displays: @MainActor () -> [WindowDisplay]
@@ -16,6 +18,13 @@ final class WindowLayoutController: ObservableObject {
     private(set) var configuration = Configuration()
     private(set) var active = false
     private var cheatSheet: WindowCheatSheetPanel?
+    private var picker: LayoutPickerPanel?
+    private var preview: WindowPreviewPanel?
+    private let tracker = WindowTargetTracker()
+    /// The app whose window the open picker arranges.
+    private var pickerTarget: pid_t?
+    private var previewTask: Task<Void, Never>?
+    private var moveTask: Task<Void, Never>?
 
     init(manager: WindowManager, access: WindowAccess = AXWindowAccess(),
          displays: @escaping @MainActor () -> [WindowDisplay] = WindowDisplays.current,
@@ -29,6 +38,14 @@ final class WindowLayoutController: ObservableObject {
     /// Windows is on and the app registers shortcuts.
     var running: Bool { active && WindowSwitches(configuration.preferences).feature }
 
+    /// The layout picker can be opened: from its shortcut, the Frog menu or the command bar.
+    var pickerAvailable: Bool { running && WindowSwitches(configuration.preferences).commandEnabled(.layoutPicker) }
+
+    var pickerVisible: Bool { picker?.isVisible == true }
+
+    /// App activation is watched only while the picker can open.
+    var trackingTarget: Bool { tracker.running }
+
     func configure(_ configuration: Configuration, active: Bool) {
         let previous = WindowSwitches(self.configuration.preferences).shortcutRules
         self.configuration = configuration
@@ -36,13 +53,14 @@ final class WindowLayoutController: ObservableObject {
         guard running else { stop(); return }
         // Registering the shortcuts again forgets one that is held, so its release never comes.
         if WindowSwitches(configuration.preferences).shortcutRules != previous { cheatSheet?.hide() }
+        if pickerAvailable { tracker.start() } else { hidePicker(); tracker.stop() }
     }
 
     func handle(_ command: WindowCommand, pressed: Bool) {
         guard running, WindowSwitches(configuration.preferences).commandEnabled(command) else { return }
         switch command {
         case .cheatSheet: if pressed { showCheatSheet() } else { cheatSheet?.hide() }
-        case .layoutPicker: break
+        case .layoutPicker: if pressed { togglePicker() }
         }
     }
 
@@ -50,6 +68,105 @@ final class WindowLayoutController: ObservableObject {
     /// feature is switched off, and neither waits.
     func stop() {
         cheatSheet?.hide()
+        hidePicker()
+        tracker.stop()
+    }
+
+    /// Moves the focused window of `pid` the way a layout shortcut does, with the same gaps and
+    /// history, so Restore works afterwards. A half is not cycled: only a shortcut pressed again
+    /// cycles.
+    @discardableResult
+    func perform(_ action: WindowAction, pid: pid_t) -> Task<Void, Never> {
+        var options = WindowSwitches(configuration.preferences).layoutOptions(readMacOS())
+        options.cycleSizes = false
+        let displays = displays()
+        moveTask?.cancel()
+        let task = Task { [weak self, manager] in
+            do {
+                try await manager.perform(action, pid: pid, displays: displays, options: options)
+                try Task.checkCancellation()
+                self?.onToolUse?(.windowCommand)
+                // Chosen from the Frog menu, Frog is in front: give the moved window back its focus.
+                if NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier {
+                    NSRunningApplication(processIdentifier: pid)?.activate()
+                }
+            }
+            catch is CancellationError { }
+            catch { self?.onError?(error) }
+        }
+        moveTask = task
+        return task
+    }
+
+    // MARK: Layout picker
+
+    private func togglePicker() {
+        if pickerVisible { hidePicker(); return }
+        let target = tracker.target
+        pickerTarget = target
+        let panel = picker ?? makePicker()
+        let name = target.flatMap { NSRunningApplication(processIdentifier: $0)?.localizedName }
+        let display = target.flatMap { windowDisplay(pid: $0) }
+        panel.show(appName: name, status: target == nil ? Self.noTarget : nil, hotkeys: layoutHotkeys(), target: target, display: display)
+    }
+
+    private func hidePicker() {
+        previewTask?.cancel(); previewTask = nil
+        picker?.hide()
+        preview?.hide()
+        pickerTarget = nil
+    }
+
+    private func makePicker() -> LayoutPickerPanel {
+        let panel = LayoutPickerPanel()
+        panel.onSelect = { [weak self] in self?.showPreview($0) }
+        panel.onApply = { [weak self] in self?.applyPicker($0) }
+        panel.onClose = { [weak self] in self?.hidePicker() }
+        picker = panel
+        return panel
+    }
+
+    private func applyPicker(_ action: WindowAction) {
+        guard let pid = pickerTarget else { picker?.status = Self.noTarget; return }
+        hidePicker()
+        perform(action, pid: pid)
+    }
+
+    /// Shows where the selected layout puts the target window, or nothing.
+    private func showPreview(_ action: WindowAction?) {
+        previewTask?.cancel()
+        guard let action, let pid = pickerTarget else { preview?.hide(); return }
+        var options = WindowSwitches(configuration.preferences).layoutOptions(readMacOS())
+        options.cycleSizes = false
+        let displays = displays()
+        previewTask = Task { [weak self, manager] in
+            let frame = await manager.preview(action, pid: pid, displays: displays, options: options)
+            guard let self, !Task.isCancelled, self.pickerVisible else { return }
+            guard let frame else { self.preview?.hide(); return }
+            let preview = self.preview ?? WindowPreviewPanel()
+            self.preview = preview
+            preview.show(accessibilityFrame: frame, below: self.picker?.window)
+        }
+    }
+
+    /// The visible frame, in Cocoa coordinates, of the display that holds most of the target's
+    /// focused window. One short Accessibility read.
+    private func windowDisplay(pid: pid_t) -> CGRect? {
+        guard let window = access.focusedWindow(pid: pid), let frame = access.frame(of: window) else { return nil }
+        let screens = NSScreen.screens
+        let primaryTop = screens.first?.frame.maxY ?? 0
+        let cocoa = WindowPreviewPanel.cocoaRect(frame, primaryTop: primaryTop)
+        guard let index = WindowGeometry.displayIndex(for: cocoa, displays: screens.map(\.frame)) else { return nil }
+        return screens[index].visibleFrame
+    }
+
+    /// The shortcuts of the layouts, from the enabled rules that run.
+    private func layoutHotkeys() -> [WindowAction: Hotkey] {
+        var hotkeys: [WindowAction: Hotkey] = [:]
+        for rule in configuration.rules where rule.enabled && rule.category == .window && configuration.preferences.ruleFeatureEnabled(rule) {
+            if let action = rule.action?.windowAction, let key = rule.hotkey, hotkeys[action] == nil { hotkeys[action] = key }
+        }
+        return hotkeys
     }
 
     private func showCheatSheet() {

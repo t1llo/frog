@@ -88,6 +88,7 @@ struct FrogStatusMenu: View {
                 action("Clipboard history", symbol: "clipboard", key: HotkeyManager.display(model.configuration.preferences.workflowSettings.effectiveClipboardHistoryHotkey)) { dismiss(); model.showClipboardHistory() }
             }
             // slot: windows
+            if model.windowLayout.pickerAvailable { action("Arrange window…", symbol: "rectangle.split.2x1") { dismiss(); model.windowLayout.handle(.layoutPicker, pressed: true) } }
         }
     }
 

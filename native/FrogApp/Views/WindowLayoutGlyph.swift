@@ -6,6 +6,8 @@ import FrogCore
 /// in the accent colour. Layouts without a place of their own show a symbol.
 struct WindowLayoutGlyph: View {
     let action: WindowAction
+    /// The display outline's size; the symbol grows with it.
+    var size = Self.size
 
     static let size = CGSize(width: 22, height: 14)
     private static let display = CGRect(x: 0, y: 0, width: 16, height: 10)
@@ -36,7 +38,7 @@ struct WindowLayoutGlyph: View {
     var body: some View {
         Group {
             if let symbol = Self.symbol(for: action) {
-                Image(systemName: symbol).font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
+                Image(systemName: symbol).font(.system(size: size.height > 20 ? 18 : 13)).foregroundStyle(FrogStyle.muted)
             } else {
                 let area = Self.area(for: action)
                 Canvas { context, size in
@@ -50,7 +52,7 @@ struct WindowLayoutGlyph: View {
                 }
             }
         }
-        .frame(width: Self.size.width, height: Self.size.height)
+        .frame(width: size.width, height: size.height)
         .accessibilityHidden(true)
     }
 }

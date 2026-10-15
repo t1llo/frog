@@ -7,6 +7,8 @@ struct PanelFooter: View {
     /// The selected row's primary action; nil hides the Return hint.
     var primaryTitle: String?
     var showsActions = true
+    /// What Escape does, for a panel without actions; nil hides the hint.
+    var closeTitle: String? = nil
 
     var body: some View {
         HStack(spacing: 8) {
@@ -24,6 +26,11 @@ struct PanelFooter: View {
                 Text(L10n.text("Actions")).font(FrogType.label).foregroundStyle(FrogStyle.ink)
                 HStack(spacing: 3) { KeyCap("⌘"); KeyCap("K") }
             }
+            if let closeTitle {
+                if primaryTitle != nil || showsActions { Divider().frame(height: 14).padding(.horizontal, 2) }
+                Text(L10n.text(closeTitle)).font(FrogType.label).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                KeyCap("esc")
+            }
         }
         .foregroundStyle(FrogStyle.muted)
         .padding(.horizontal, 12)
@@ -38,6 +45,7 @@ struct PanelFooter: View {
         var parts: [String] = []
         if let primaryTitle { parts.append("\(L10n.text(primaryTitle)), \(L10n.text("Return"))") }
         if showsActions { parts.append("\(L10n.text("Actions")), \(L10n.text("Command K"))") }
+        if let closeTitle { parts.append("\(L10n.text(closeTitle)), \(L10n.text("Escape"))") }
         return parts.isEmpty ? L10n.text(name) : parts.joined(separator: ". ")
     }
 }
