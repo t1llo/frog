@@ -64,6 +64,11 @@ enum TextConfiguration {
             .init("popup-transparency", "appearance.popupTransparency", .number(0...1)),
             // slot: explain
             .init("explain.context", "toolkit.explain.includeContext", .bool),
+            .init("explain.notes", "toolkit.explain.notes", .bool),
+            .init("explain.notes-folder", "toolkit.explain.notesFolder", .string),
+            .init("explain.notes-mode", "toolkit.explain.notesMode", .choice(["per-answer", "append"])),
+            .init("explain.notes-file", "toolkit.explain.notesFile", .string),
+            .init("explain.notes-open", "toolkit.explain.notesOpen", .bool),
             // slot: windows
             // slot: cleaner
             // slot: command-bar
@@ -149,7 +154,7 @@ enum TextConfiguration {
         // configuration Frog started has it from the beginning. A feature key in config creates
         // `toolkit` below, but must not change how the window switcher is read.
         let predatesToolkit = !(preferences["toolkit"] is [String: Any])
-        for field in fields { set(nil, path: field.path, in: &preferences) }
+        for field in fields where !keptInCompanion(field, get(field.path, in: preferences)) { set(nil, path: field.path, in: &preferences) }
         var defaults = try object(JSONEncoder().encode(Preferences()))
         defaults = merge(defaults, preferences)
         let lines = try parse(text)
@@ -233,7 +238,7 @@ enum TextConfiguration {
     static func companion(_ configuration: Configuration) throws -> Data {
         var root = try object(ConfigurationFile.encode(configuration))
         var preferences = root["preferences"] as? [String: Any] ?? [:]
-        for field in fields { set(nil, path: field.path, in: &preferences) }
+        for field in fields where !keptInCompanion(field, get(field.path, in: preferences)) { set(nil, path: field.path, in: &preferences) }
         // Empty dictionaries carry optional-container identity for exact JSON round trips.
         root["preferences"] = preferences
         return try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
@@ -243,7 +248,7 @@ enum TextConfiguration {
         let prefs = try object(JSONEncoder().encode(configuration.preferences))
         var values: [String: String] = [:]
         for field in fields {
-            if let value = get(field.path, in: prefs) { values[field.key] = try spelling(value, kind: field.kind) }
+            if let value = get(field.path, in: prefs), !keptInCompanion(field, value) { values[field.key] = try spelling(value, kind: field.kind) }
         }
         var lines = try parse(text ?? header)
         for index in lines.indices {
@@ -334,6 +339,11 @@ enum TextConfiguration {
             return String(decoding: try JSONEncoder().encode((value as? [String] ?? []).sorted()), as: UTF8.self)
         default: return String(describing: value)
         }
+    }
+    /// A string longer than the text file accepts, such as a deep folder path, stays in config.json.
+    private static func keptInCompanion(_ field: Field, _ value: Any?) -> Bool {
+        guard case .string = field.kind, let string = value as? String else { return false }
+        return string.utf8.count > 256
     }
     private static func object(_ data: Data) throws -> [String: Any] {
         guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw FrogError.message("Expected a configuration JSON object.") }; return value

@@ -198,6 +198,13 @@ Accounts, folders and labels stay on this Mac and are not part of the configurat
 Enable with `feature.explain = true`. Turning it on adds the **Explain** answer rule once; a deleted one stays deleted. Answer rules themselves live in JSON (see `action.textOutput` below).
 
 - `explain.context`: boolean, default `true`. Sends the sentence or paragraph around the selection, up to 1,000 characters, with it.
+- `explain.notes`: boolean, default `false`. Adds **Save to note** to the answer panel (⌘S) and to answers in History.
+- `explain.notes-folder`: the folder notes are written into, as a full path (`/…` or `~/…`). No default: the first Save to note asks for it. A path longer than 256 characters is kept in `config.json` only and is not written to this file.
+- `explain.notes-mode`: `per-answer` (default) writes one Markdown file per answer, named after the selection, with YAML front matter (`source`, `app`, `model`, `date`, `tags`). `append` adds a section to the file `explain.notes-file` names.
+- `explain.notes-file`: default `Daily/YYYY-MM-DD.md`. The file `append` adds to, relative to the notes folder; `YYYY`, `MM` and `DD` become today's date, missing folders are created, and a path without an extension gets `.md`. Only `.md` and `.markdown` files are accepted.
+- `explain.notes-open`: boolean, default `false`. Opens the note after saving: in Obsidian when the folder is inside an Obsidian vault and Obsidian is installed, otherwise in the default Markdown app.
+
+Notes hold the selection, the answer and its follow-ups; the surrounding text sent to the model is never written to them.
 
 <!-- slot: windows -->
 <!-- slot: cleaner -->
