@@ -7,6 +7,7 @@ import SwiftUI
     @Published var query = "" {
         didSet {
             guard query != oldValue else { return }
+            disarm()
             if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 removeFiles()
                 for file in selectedFiles { addFile(file) }
@@ -17,7 +18,13 @@ import SwiftUI
         }
     }
     @Published private(set) var results: [SearchRecord] = []
-    @Published var selection = 0 { didSet { if selection != oldValue { selectionWasMoved = true } } }
+    @Published var selection = 0 {
+        didSet {
+            guard selection != oldValue else { return }
+            selectionWasMoved = true
+            if let armed = armedRecord, !(results.indices.contains(selection) && results[selection].id == armed.id) { disarm() }
+        }
+    }
     private var selectionWasMoved = false
     @Published private(set) var showsPositionReset = false
     /// Set by a drag that left the bar away from the middle of its display, until it is centred again.
@@ -27,7 +34,27 @@ import SwiftUI
     private var records: [SearchRecord] = []
     private var recordsByID: [String: SearchRecord] = [:]
     private var fileRecords: [SearchRecord] = []
-    private var calculationID: String?
+    /// Every source of rows besides the bar's own. Each feature adds its provider below its own slot.
+    private lazy var providers: [any CommandBarRowProviding] = [
+        CalculationRows(),
+        EmojiRows(),
+        // slot: explain
+        // slot: snippets
+        // slot: processes
+        // slot: color-picker
+        // slot: quicklinks
+        // slot: command-bar
+    ] + extraProviders
+    private let extraProviders: [any CommandBarRowProviding]
+    private var context: CommandBarContext?
+    /// The rows the providers built for the typed text, which are listed but not part of the catalogue.
+    private var queryRowIDs: [String] = []
+    /// The text a row shows while its action waits for a second Return.
+    private var confirmations: [String: String] = [:]
+    private var confirmation = CommandConfirmation()
+    /// The armed row as it is listed when it is not waiting.
+    private var armedRecord: SearchRecord?
+    private var disarming: Task<Void, Never>?
     private var actions: [String: () async throws -> Void] = [:]
     private var copyActions: [String: () async throws -> Void] = [:]
     private var sourceObservation: AnyCancellable?
@@ -86,8 +113,9 @@ import SwiftUI
          loadSettings: @escaping @Sendable () async -> [SystemSetting] = { await MacSettingsIndex.shared.load() },
          openSetting: @escaping @MainActor (SystemSetting) throws -> Void = { try MacSettingsNavigation.open($0) },
          loadApplications: @escaping @MainActor () async -> [Rule] = { await ApplicationCatalogStore.shared.load() },
-         applicationNames: @escaping @MainActor (String) -> [String] = { ApplicationCatalogStore.shared.alternativeNames[$0] ?? [] }) {
-        self.model = model; self.pasteboard = pasteboard; self.loadApplications = loadApplications
+         applicationNames: @escaping @MainActor (String) -> [String] = { ApplicationCatalogStore.shared.alternativeNames[$0] ?? [] },
+         extraProviders: [any CommandBarRowProviding] = []) {
+        self.model = model; self.extraProviders = extraProviders; self.pasteboard = pasteboard; self.loadApplications = loadApplications
         self.applicationNames = applicationNames
         self.iconReader = CommandIconReader(load: loadIcon); self.openFile = openFile
         self.loadSettings = loadSettings; self.openSetting = openSetting
@@ -326,7 +354,10 @@ import SwiftUI
         // Finding the focused field is Accessibility IPC to the app in front. Only clipboard rows and snippets paste there.
         let pastes = [.clipboard, .snippets].contains(where: model.configuration.preferences.featureEnabled)
         pasteTarget = pastes ? captureTarget() : nil
-        records = []; recordsByID = [:]; fileRecords = []; actions = [:]; copyActions = [:]; query = ""; selection = 0
+        context = CommandBarContext(model: model, frontPID: frontPID, pasteboard: pasteboard, pasteTarget: pasteTarget,
+                                    waitForRelease: waitForRelease, copy: { [weak self] in self?.copy($0) })
+        records = []; recordsByID = [:]; fileRecords = []; actions = [:]; copyActions = [:]; confirmations = [:]; queryRowIDs = []
+        query = ""; selection = 0
         selectionWasMoved = false
         addApplications(cachedApplications)
         for file in selectedFiles { addFile(file) }
@@ -440,12 +471,8 @@ import SwiftUI
                 self.copy(cleaned)
             }
         }
-        for (symbol, words) in [("😀", "grinning smile happy"), ("🙂", "slightly smiling happy"), ("😂", "laugh tears joy"), ("❤️", "red heart love"),
-                                ("👍", "thumbs up yes"), ("👎", "thumbs down no"), ("🎉", "party celebrate"), ("✅", "check done yes"),
-                                ("❌", "cross no cancel"), ("🚀", "rocket launch"), ("🔥", "fire hot"), ("🐸", "frog"), ("🙏", "thank you please"),
-                                ("🤔", "thinking"), ("👀", "eyes look"), ("✨", "sparkles"), ("💡", "idea bulb"), ("📌", "pin"), ("☕️", "coffee"), ("💻", "computer laptop")] {
-            add(SearchRecord(id: "emoji:\(symbol)", title: "\(symbol)  \(words.capitalized)", subtitle: "Emoji · Copy", keywords: "emoji \(words)", symbol: "face.smiling")) { [weak self] in self?.copy(symbol) }
-        }
+        // Provider rows sit where the emoji rows always have, so equally good matches keep their order.
+        if let context { for provider in providers { for row in provider.rows(in: context) { add(row) } } }
         addClipboard(model.clipboardHistoryStore.entries, model: model)
     }
     /// Paste only goes ahead in the history generation its row was built in, which the store renews before it
@@ -468,7 +495,12 @@ import SwiftUI
             }
         }
     }
-    private func add(_ record: SearchRecord, copy: (() async throws -> Void)? = nil, action: @escaping () async throws -> Void) {
+    private func add(_ row: CommandBarRow) {
+        add(row.record, copy: row.secondary?.run, action: row.primary?.run)
+        confirmations[row.record.id] = row.primary?.confirm
+    }
+    /// A record without an action is listed but choosing it does nothing.
+    private func add(_ record: SearchRecord, copy: (() async throws -> Void)? = nil, action: (() async throws -> Void)?) {
         if recordsByID.updateValue(record, forKey: record.id) == nil { records.append(record) }
         else if let index = records.firstIndex(where: { $0.id == record.id }) { records[index] = record }
         actions[record.id] = action
@@ -487,12 +519,26 @@ import SwiftUI
         }
         // Late Spotlight results must not bury an equally good app or Frog command.
         var next = CommandSearch.results(records, query: query, preferred: preferred, trailing: typed ? fileRecords : [])
-        if let calculationID { actions[calculationID] = nil; self.calculationID = nil }
-        if let answer = QuickCalculation.result(query) {
-            let id = "calculation:\(query)"
-            next.insert(SearchRecord(id: id, title: answer, subtitle: "Calculation · Copy result", symbol: "equal.circle"), at: 0)
-            calculationID = id
-            actions[id] = { [weak self] in self?.copy(answer) }
+        for id in queryRowIDs { actions[id] = nil; copyActions[id] = nil; confirmations[id] = nil }
+        queryRowIDs = []
+        var leading: [SearchRecord] = [], trailing: [SearchRecord] = []
+        if let context {
+            for provider in providers {
+                for row in provider.queryRows(for: query, in: context) where recordsByID[row.record.id] == nil && !queryRowIDs.contains(row.record.id) {
+                    actions[row.record.id] = row.primary?.run
+                    copyActions[row.record.id] = row.secondary?.run
+                    confirmations[row.record.id] = row.primary?.confirm
+                    queryRowIDs.append(row.record.id)
+                    if row.placement == .leading { leading.append(row.record) } else { trailing.append(row.record) }
+                }
+            }
+        }
+        next = leading + next + trailing
+        // A row that waits for a second Return keeps saying so while the list around it changes.
+        if let armed = armedRecord {
+            if let index = next.firstIndex(where: { $0.id == armed.id }), let confirm = confirmations[armed.id] {
+                armedRecord = next[index]; next[index] = Self.asking(next[index], confirm)
+            } else { confirmation.disarm(); armedRecord = nil; disarming?.cancel(); disarming = nil }
         }
         if results != next { results = next }
         let nextSelection = selectedID.flatMap { id in next.firstIndex(where: { $0.id == id }) } ?? 0
@@ -550,9 +596,14 @@ import SwiftUI
     }
     func choose(_ index: Int? = nil, copyOnly: Bool = false) {
         let index = index ?? selection
-        guard let model, model.configuration.preferences.featureEnabled(.commandBar), results.indices.contains(index),
-              let action = (copyOnly ? copyActions[results[index].id] : nil) ?? actions[results[index].id] else { return }
+        guard let model, model.configuration.preferences.featureEnabled(.commandBar), results.indices.contains(index) else { return }
+        let copyAction = copyOnly ? copyActions[results[index].id] : nil
+        guard let action = copyAction ?? actions[results[index].id] else { return }
         let selected = results[index], selectedID = results[index].id
+        if copyAction == nil, let confirm = confirmations[selectedID], !confirmation.press(selectedID, now: Date()) {
+            arm(index, confirm: confirm)
+            return
+        }
         // A calculation answers only its own query and is never listed again as a suggestion.
         let suggestible = recordsByID[selectedID] != nil
         hide()
@@ -579,6 +630,30 @@ import SwiftUI
             catch { self?.model?.report(error) }
         }
     }
+    /// Shows the confirm text in place of the row's subtitle until the second Return, or until the time for it is up.
+    private func arm(_ index: Int, confirm: String) {
+        let id = results[index].id
+        if let armed = armedRecord, armed.id != id, let previous = results.firstIndex(where: { $0.id == armed.id }) { results[previous] = armed }
+        if armedRecord?.id != id { armedRecord = results[index] }
+        results[index] = Self.asking(results[index], confirm)
+        disarming?.cancel()
+        disarming = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(CommandConfirmation.window)) } catch { return }
+            guard let self, self.armedRecord?.id == id else { return }
+            self.disarm()
+        }
+    }
+    /// Forgets the first Return and lists the armed row as it was.
+    private func disarm() {
+        confirmation.disarm()
+        disarming?.cancel(); disarming = nil
+        guard let armed = armedRecord else { return }
+        armedRecord = nil
+        if let index = results.firstIndex(where: { $0.id == armed.id }) { results[index] = armed }
+    }
+    private static func asking(_ record: SearchRecord, _ confirm: String) -> SearchRecord {
+        SearchRecord(id: record.id, title: record.title, subtitle: confirm, keywords: record.keywords, symbol: record.symbol)
+    }
     func hide() {
         showsPositionReset = false
         generation = UUID(); indexing?.cancel(); delivery?.cancel(); indexing = nil; delivery = nil
@@ -592,7 +667,9 @@ import SwiftUI
         if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil
         if let outside { NSEvent.removeMonitor(outside) }; outside = nil
         if let activation { NSWorkspace.shared.notificationCenter.removeObserver(activation) }; activation = nil
-        records = []; recordsByID = [:]; fileRecords = []; actions = [:]; copyActions = [:]; results = []; calculationID = nil
+        confirmation.disarm(); armedRecord = nil; disarming?.cancel(); disarming = nil
+        records = []; recordsByID = [:]; fileRecords = []; actions = [:]; copyActions = [:]; results = []
+        queryRowIDs = []; confirmations = [:]; context = nil
     }
     /// Where the bar opens: where it was dragged to while a display still shows all of it, otherwise in the middle
     /// of the display in use.
