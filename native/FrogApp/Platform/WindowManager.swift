@@ -116,6 +116,14 @@ actor WindowManager {
         guard let window = access.focusedWindow(pid: pid) else {
             throw FrogError.message("There is no focused window to \(action.title.lowercased()).")
         }
+        try apply(action, to: window, displays: displays, options: options)
+    }
+
+    /// Applies an action to one window, such as the one being dragged, with the same history
+    /// and messages as a shortcut. `displays` are the ones the action may use: for a snap,
+    /// only the display under the pointer.
+    func apply(_ action: WindowAction, to window: WindowHandle, displays: [WindowDisplay], options: WindowLayoutOptions = .legacy) throws {
+        guard access.isTrusted() else { throw FrogError.message("Allow Accessibility in Settings to move windows.") }
         try Task.checkCancellation()
         if action == .minimize {
             try access.setMinimized(true, of: window)
