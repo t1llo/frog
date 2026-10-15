@@ -111,6 +111,62 @@ struct CleanerReview: Equatable {
     }
 
     var selectedCount: Int { items.filter { selected.contains($0.id) }.count }
+
+    /// A ticked item has no size yet or only part of one, so `selectedBytes` is a lower bound.
+    var selectedSizeIncomplete: Bool {
+        items.contains { item in
+            guard selected.contains(item.id) else { return false }
+            if let size = sizes[item.id] { return !size.complete }
+            return item.size == nil
+        }
+    }
+
+    /// Containers are measured only with Full Disk Access: reading them could ask the user about other apps' data.
+    func measures(_ item: CleanerItem) -> Bool {
+        fullDiskAccess == true || !(item.needsFullDiskAccess || [.container, .groupContainer].contains(item.kind))
+    }
+
+    /// Some items can be measured or moved only with Full Disk Access, which Frog does not have.
+    var needsFullDiskAccess: Bool { fullDiskAccess != true && items.contains { !measures($0) } }
+}
+
+/// What the page says once a removal has finished.
+struct RemovalSummary: Equatable {
+    /// "Moved 12 items to the Trash · 1.4 GB", "Moved 1 item to the Trash · 12 MB" or "Nothing was moved."
+    let title: String
+    /// "Could not move 1 item", "Could not move 2 items", or nil when nothing failed.
+    let failureTitle: String?
+    /// The outcome's notes, then a reminder that the space is freed only when the Trash is emptied.
+    let notes: [String]
+
+    static let emptyTheTrash = "Empty the Trash to free the space."
+
+    init(_ outcome: RemovalOutcome, formatBytes: (Int64) -> String = CleanerFormat.bytes) {
+        let moved = outcome.moved.count
+        title = moved == 0 ? "Nothing was moved."
+            : "Moved \(moved) \(moved == 1 ? "item" : "items") to the Trash · \(formatBytes(outcome.movedBytes))"
+        let failed = outcome.failures.count
+        failureTitle = failed == 0 ? nil : "Could not move \(failed) \(failed == 1 ? "item" : "items")"
+        notes = outcome.notes + (moved > 0 ? [Self.emptyTheTrash] : [])
+    }
+
+    enum SettingsLink: Equatable {
+        case automation, fullDiskAccess
+        var title: String { self == .automation ? "Open Automation Settings" : "Open Full Disk Access Settings" }
+        var url: URL {
+            URL(string: "x-apple.systempreferences:com.apple.preference.security?"
+                + (self == .automation ? "Privacy_Automation" : "Privacy_AllFiles"))!
+        }
+    }
+
+    /// The System Settings pane that lets the next attempt succeed, for the failures that name one.
+    static func settingsLink(for message: String) -> SettingsLink? {
+        switch message {
+        case CleanerRemover.automationDenied: .automation
+        case CleanerRemover.needsFullDiskAccess: .fullDiskAccess
+        default: nil
+        }
+    }
 }
 
 /// What a tab asks to move to the Trash; the same confirmation sheet and remover serve every tab.
@@ -154,6 +210,8 @@ final class CleanerModel: ObservableObject {
     @Published var sort: CleanerAppSort = .name
     @Published private(set) var review: CleanerReview?
     @Published private(set) var phase: Phase = .idle
+    /// The app whose files a scan is looking for; nil when no scan runs.
+    @Published private(set) var scanningApp: AppIdentity?
     @Published var pending: PendingRemoval?
     @Published private(set) var forceQuit: ForceQuitQuestion?
     @Published private(set) var outcome: RemovalOutcome?
@@ -290,6 +348,7 @@ final class CleanerModel: ObservableObject {
         scanTask?.cancel(); scanTask = nil
         sizeTask?.cancel(); sizeTask = nil
         review = nil
+        scanningApp = nil
         guard !isRemoving else { return }
         pending = nil
         phase = .idle
@@ -356,6 +415,8 @@ final class CleanerModel: ObservableObject {
         sizeTask?.cancel(); sizeTask = nil
         review = nil; pending = nil; outcome = nil; issue = nil
         phase = .scanning
+        scanningApp = app
+        defer { if scanningApp == app { scanningApp = nil } }
         let granted = await dependencies.system.hasFullDiskAccess()
         guard !Task.isCancelled else { return }
         fullDiskAccess = granted
@@ -380,15 +441,15 @@ final class CleanerModel: ObservableObject {
         review = CleanerReview(app: app, removedApp: removedApp, items: items, selected: Set(selected.map(\.id)),
                                sizes: [:], fullDiskAccess: granted)
         phase = .reviewing
-        measureReviewSizes(items, fullDiskAccess: granted)
+        measureReviewSizes(items)
     }
 
-    /// Containers are not measured without Full Disk Access: reading them could ask the user about other apps' data.
-    private func measureReviewSizes(_ items: [CleanerItem], fullDiskAccess: Bool?) {
-        let urls = items.filter { item in
-            fullDiskAccess == true || !(item.needsFullDiskAccess || [.container, .groupContainer].contains(item.kind))
-        }.map(\.url)
-        guard !urls.isEmpty, let app = review?.app else { return }
+    /// Containers are not measured without Full Disk Access (`CleanerReview.measures`).
+    private func measureReviewSizes(_ items: [CleanerItem]) {
+        guard let shown = review else { return }
+        let app = shown.app
+        let urls = items.filter(shown.measures).map(\.url)
+        guard !urls.isEmpty else { return }
         sizeTask = Task {
             guard let sizes = try? await Self.offMain(.utility, { CleanerSizer().measure(urls) }),
                   !Task.isCancelled, review?.app == app else { return }
@@ -524,7 +585,7 @@ final class CleanerModel: ObservableObject {
         for task in [loadTask, appSizeTask, scanTask, sizeTask] { task?.cancel() }
         loadTask = nil; appSizeTask = nil; scanTask = nil; sizeTask = nil
         answerForceQuit(false)
-        review = nil; pending = nil; outcome = nil; issue = nil
+        review = nil; pending = nil; outcome = nil; issue = nil; scanningApp = nil
         apps = []; identities = []; identitiesLoaded = false; identityCache = [:]; appSizes = [:]
         loadingApps = false
         fullDiskAccess = nil

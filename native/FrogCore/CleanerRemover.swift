@@ -101,10 +101,10 @@ public struct CleanerRemover: Sendable {
     }
 
     static let gone = "It is no longer there."
-    static let needsFullDiskAccess = "Frog needs Full Disk Access to move this item."
+    public static let needsFullDiskAccess = "Frog needs Full Disk Access to move this item."
     static let notAllowed = "macOS did not allow Frog to move this item."
     static let couldNotMove = "Frog could not move this item."
-    static let automationDenied = "Frog may not control Finder. Allow it in System Settings → Privacy & Security → Automation."
+    public static let automationDenied = "Frog may not control Finder. Allow it in System Settings → Privacy & Security → Automation."
     static let passwordCancelled = "You cancelled the password prompt."
     static let finderCouldNotMove = "Finder could not move this item."
     static let recordNotSaved = "Frog could not save the list for Put Back."
