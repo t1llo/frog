@@ -11,6 +11,8 @@ public struct WindowPreferences: Codable, Equatable, Sendable {
     public var portraitThirds = true
     /// Layouts keep Stage Manager's strip free while it is on.
     public var respectStageManager = true
+    /// Shortcuts of window commands, by `WindowCommand` raw value. Layout shortcuts stay on their rules.
+    public var shortcuts: [String: Hotkey] = [:]
 
     public static let gapRange = 0...40
 
@@ -27,6 +29,7 @@ public struct WindowPreferences: Codable, Equatable, Sendable {
         case cycleSizes
         case portraitThirds
         case respectStageManager
+        case shortcuts
     }
 
     public init(from decoder: Decoder) throws {
@@ -35,6 +38,7 @@ public struct WindowPreferences: Codable, Equatable, Sendable {
         cycleSizes = try values.decodeIfPresent(Bool.self, forKey: .cycleSizes) ?? false
         portraitThirds = try values.decodeIfPresent(Bool.self, forKey: .portraitThirds) ?? true
         respectStageManager = try values.decodeIfPresent(Bool.self, forKey: .respectStageManager) ?? true
+        shortcuts = try values.decodeIfPresent([String: Hotkey].self, forKey: .shortcuts) ?? [:]
         self = normalized
     }
 
@@ -45,6 +49,14 @@ public struct WindowPreferences: Codable, Equatable, Sendable {
         guard let windows = preferences.toolkitSettings.windows else { return }
         guard gapRange.contains(windows.gap) else {
             throw FrogError.message("The window gap must be between 0 and 40 points.")
+        }
+        // A command this version does not know is left alone, so a newer file still loads.
+        for (name, key) in windows.shortcuts where WindowCommand(rawValue: name) != nil { try ConfigShortcut.validate(key) }
+        for rule in WindowSwitches(preferences).shortcutRules {
+            guard let command = WindowCommand.command(for: rule.id), let key = rule.hotkey else { continue }
+            guard usedShortcuts.insert(key).inserted else {
+                throw FrogError.message("The window shortcut for \(command.title) conflicts with another shortcut.")
+            }
         }
     }
 }
@@ -62,6 +74,21 @@ public struct WindowSwitches: Equatable, Sendable {
         feature = preferences.featureEnabled(.windows)
         actionsEnabled = preferences.windowActionsEnabled
         settings = preferences.toolkitSettings.windows ?? WindowPreferences()
+    }
+
+    /// A window command runs: Windows is on, and so is the command's own switch if it has one.
+    public func commandEnabled(_ command: WindowCommand) -> Bool {
+        switch command {
+        case .cheatSheet: feature
+        }
+    }
+
+    /// The window commands that run and have a shortcut, as the rules Frog registers, in `allCases` order.
+    public var shortcutRules: [Rule] {
+        WindowCommand.allCases.compactMap { command in
+            guard commandEnabled(command), let key = settings.shortcuts[command.rawValue] else { return nil }
+            return command.rule(hotkey: key)
+        }
     }
 
     /// How layouts use the displays. With Windows off they land where they always did.
