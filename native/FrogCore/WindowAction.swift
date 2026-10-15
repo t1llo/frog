@@ -68,4 +68,11 @@ public enum WindowAction: String, Codable, CaseIterable, Identifiable, Sendable 
         rule.action = RuleAction(category: .window); rule.action?.windowAction = self
         return rule
     }
+    /// One row per layout: the configured rule for it, or its default. Assigned shortcuts come first.
+    public static func shortcutRows(configured rules: [Rule]) -> [Rule] {
+        let rows = allCases.map { action in
+            rules.first { $0.category == .window && $0.action?.windowAction == action } ?? action.rule
+        }
+        return rows.filter { $0.hotkey != nil } + rows.filter { $0.hotkey == nil }
+    }
 }

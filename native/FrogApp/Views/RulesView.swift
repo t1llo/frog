@@ -20,10 +20,7 @@ struct RulesView: View {
     private var rules: [Rule] {
         let source: [Rule]
         if applications, category == .window {
-            let windows = WindowAction.allCases.map { action in
-                model.configuration.rules.first { $0.category == .window && $0.action?.windowAction == action } ?? action.rule
-            }
-            source = windows.filter { $0.hotkey != nil } + windows.filter { $0.hotkey == nil }
+            source = WindowAction.shortcutRows(configured: model.configuration.rules)
         } else if applications, category == .system {
             // A saved shortcut keeps the name the action had then; show today's title, and saving stores it.
             let actions = SystemAction.allCases.map { action in
@@ -41,12 +38,10 @@ struct RulesView: View {
     }
     private var pageTitle: String {
         if fixedCategory == .audio { return "Dictation" }
-        if fixedCategory == .window { return "Windows" }
         if fixedCategory == .text { return answers ? "Explain" : "Writing" }
         return applications ? "Shortcuts" : "Rules"
     }
     private var pageSubtitle: String {
-        if fixedCategory == .window { return "Arrange your front window with keyboard shortcuts." }
         if applications { return "Choose your own shortcuts for apps and everyday Mac actions." }
         if category == .audio { return "Turn speech into text with your preferred model and shortcut." }
         if answers { return "Ask about selected text and read the answer in a panel next to it. Each answer rule uses its own model." }
@@ -74,55 +69,48 @@ struct RulesView: View {
                             filter = $0; search = ""
                         }
                     } else {
-                        SectionCaption(text: fixedCategory == .window ? "Layout shortcuts" : "Your rules")
+                        SectionCaption(text: "Your rules")
                     }
                 }.padding(12)
                 Divider().opacity(0.5)
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(displayedRules) { rule in
-                            HStack(spacing: 10) {
+                            Group {
                                 if applications {
-                                    if rule.category == .application { ApplicationIcon(path: rule.action?.applicationPath ?? "") }
-                                    else { Image(systemName: rule.action?.systemAction?.symbol ?? "macwindow").font(.system(size: 20)).foregroundStyle(FrogStyle.muted).frame(width: 28, height: 28) }
-                                } else {
-                                    Image(systemName: rule.category == .audio ? "waveform" : rule.answersInPanel ? "questionmark.bubble" : "text.alignleft")
-                                        .font(.system(size: 13)).foregroundStyle(FrogStyle.muted).frame(width: 24)
-                                }
-                                if applications {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(rule.name).font(.system(size: 12, weight: .medium))
-                                        if let detail = rule.action?.systemAction?.detail {
-                                            Text(detail).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                                        }
-                                        if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(FrogStyle.warning) }
-                                    }.frame(maxWidth: .infinity, alignment: .leading)
-                                } else { Button { editing = rule } label: {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(rule.name).font(.system(size: 12, weight: .medium))
-                                        Text(model.ruleModelLabel(rule)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                                        if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(FrogStyle.warning) }
-                                    }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                                }.buttonStyle(.plain) }
-                                Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { value in
-                                    var updated = rule; updated.enabled = value
-                                    do { try model.saveRule(updated) } catch { model.report(error) }
-                                })).labelsHidden().toggleStyle(.switch).controlSize(.mini)
-                                HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: { value in
-                                    var updated = rule; updated.hotkey = value
-                                    if applications { updated.enabled = value != nil }
-                                    do { try model.saveRule(updated) } catch { model.report(error) }
-                                }), showsClearButton: false)
-                                if !applications {
-                                    // An answer needs a selection and a panel, so answer rules run from their shortcut or the command bar.
-                                    if !rule.answersInPanel {
-                                        Button(rule.category == .audio ? "Record" : "Try") {
-                                            if rule.category == .audio { model.startDictation(rule) }
-                                            else { trying = rule }
-                                        }.disabled(!rule.enabled || model.isProcessing || model.dictation.active)
-                                        .accessibilityLabel(rule.category == .audio ? "Record with \(rule.name)" : "Try \(rule.name)")
+                                    ShortcutRuleRow(rule: rule, detail: rule.action?.systemAction?.detail, model: model) {
+                                        if rule.category == .application { ApplicationIcon(path: rule.action?.applicationPath ?? "") }
+                                        else { ShortcutRuleSymbol(symbol: rule.action?.systemAction?.symbol ?? "macwindow") }
                                     }
-                                    IconAction(title: "Edit \(rule.name)", symbol: "pencil") { editing = rule }
+                                } else {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: rule.category == .audio ? "waveform" : rule.answersInPanel ? "questionmark.bubble" : "text.alignleft")
+                                            .font(.system(size: 13)).foregroundStyle(FrogStyle.muted).frame(width: 24)
+                                        Button { editing = rule } label: {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(rule.name).font(.system(size: 12, weight: .medium))
+                                                Text(model.ruleModelLabel(rule)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                                                if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(FrogStyle.warning) }
+                                            }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                                        }.buttonStyle(.plain)
+                                        Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { value in
+                                            var updated = rule; updated.enabled = value
+                                            do { try model.saveRule(updated) } catch { model.report(error) }
+                                        })).labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                                        HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: { value in
+                                            var updated = rule; updated.hotkey = value
+                                            do { try model.saveRule(updated) } catch { model.report(error) }
+                                        }), showsClearButton: false)
+                                        // An answer needs a selection and a panel, so answer rules run from their shortcut or the command bar.
+                                        if !rule.answersInPanel {
+                                            Button(rule.category == .audio ? "Record" : "Try") {
+                                                if rule.category == .audio { model.startDictation(rule) }
+                                                else { trying = rule }
+                                            }.disabled(!rule.enabled || model.isProcessing || model.dictation.active)
+                                            .accessibilityLabel(rule.category == .audio ? "Record with \(rule.name)" : "Try \(rule.name)")
+                                        }
+                                        IconAction(title: "Edit \(rule.name)", symbol: "pencil") { editing = rule }
+                                    }
                                 }
                             }.padding(.horizontal, 12).padding(.vertical, 10)
                                 .overlay(alignment: .bottom) {
@@ -149,7 +137,7 @@ struct RulesView: View {
         }
             .sheet(item: $trying) { rule in RuleTryView(rule: rule).environmentObject(model) }
             .task {
-                guard applications, fixedCategory != .window else { return }
+                guard applications else { return }
                 await applicationCatalog.loadIfNeeded()
             }
     }
