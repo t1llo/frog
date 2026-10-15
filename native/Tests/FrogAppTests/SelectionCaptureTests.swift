@@ -41,6 +41,6 @@ final class SelectionCaptureTests: XCTestCase {
         XCTAssertTrue(clipboard.contains("AXRead.isEditable("))
         let pasteTarget = try String(contentsOf: platform.appendingPathComponent("ClipboardHistoryPasteTarget.swift"), encoding: .utf8)
         XCTAssertTrue(pasteTarget.contains("AXRead.isEditable($0)"))
-        XCTAssertFalse(pasteTarget.contains("ClipboardSelection.isEditable"))
+        XCTAssertFalse(pasteTarget.contains("Selection.isEditable"))
     }
 }
