@@ -35,4 +35,44 @@ final class HistoryFeedNarrowingTests: XCTestCase {
         XCTAssertTrue(HistoryFeed.narrowed(all, filter: nil, search: "synthetic secret", revealed: []).isEmpty, "Hidden text must not match before it is revealed")
         XCTAssertEqual(HistoryFeed.narrowed(all, filter: nil, search: "synthetic secret", revealed: [secret.id]).map(\.id), [secret.id])
     }
+
+    private func answerEntry() -> HistoryEntry {
+        var entry = HistoryEntry(timestamp: Date(timeIntervalSince1970: 300), originalText: "river bank", processedText: "Land along a river.",
+                                 ruleName: "Explain", providerName: "OpenAI", model: "gpt-5-mini")
+        entry.category = .text
+        entry.answer = AnswerRecord(context: "We sat on the river bank until dusk.", application: "Safari", source: "https://example.com/walks",
+                                    followUps: [AnswerTurn(question: "And a bank for money?", answer: "A place that keeps savings.")])
+        return entry
+    }
+
+    func testAnswersHaveTheirOwnFilterAndTextKeepsWritingResults() {
+        let writing = HistoryEntry(timestamp: Date(timeIntervalSince1970: 10), originalText: "Original", processedText: "Result",
+                                   ruleName: "Proofread", providerName: "Local", model: "fixture")
+        let answer = answerEntry()
+        let all = HistoryFeed.items(saved: [writing, answer], clipboard: [])
+        XCTAssertEqual(HistoryFeed.narrowed(all, filter: .answers, search: "", revealed: []).map(\.id), [answer.id])
+        XCTAssertEqual(HistoryFeed.narrowed(all, filter: .text, search: "", revealed: []).map(\.id), [writing.id])
+        XCTAssertEqual(HistoryFeed.narrowed(all, filter: nil, search: "", revealed: []).map(\.id), [answer.id, writing.id])
+        XCTAssertEqual(all.first?.title, "Explain")
+        XCTAssertEqual(all.first?.text, "Land along a river.")
+    }
+
+    func testSearchFindsWhatAnAnswerKeepsButNotHiddenCopiedText() {
+        let answer = answerEntry()
+        let secret = ClipboardHistoryEntry(text: "savings at the bank until dusk", isSensitive: true, timestamp: Date(timeIntervalSince1970: 400))
+        let all = HistoryFeed.items(saved: [answer], clipboard: [secret])
+        for query in ["until dusk", "safari", "example.com/walks", "bank for money", "keeps savings"] {
+            XCTAssertEqual(HistoryFeed.narrowed(all, filter: nil, search: query, revealed: []).map(\.id), [answer.id], query)
+        }
+        XCTAssertEqual(HistoryFeed.narrowed(all, filter: nil, search: "keeps savings", revealed: [secret.id]).map(\.id), [answer.id])
+        XCTAssertEqual(HistoryFeed.narrowed(all, filter: nil, search: "savings", revealed: [secret.id]).map(\.id), [secret.id, answer.id])
+        XCTAssertTrue(HistoryFeed.narrowed(all, filter: .answers, search: "no such text", revealed: []).isEmpty)
+    }
+
+    func testTheAnswersFilterShowsWhileExplainIsOnOrAnswersRemain() {
+        XCTAssertEqual(HistoryFilter.visible(explainEnabled: false, hasAnswers: false), [.text, .audio, .clipboard])
+        XCTAssertEqual(HistoryFilter.visible(explainEnabled: true, hasAnswers: false), [.text, .answers, .audio, .clipboard])
+        XCTAssertEqual(HistoryFilter.visible(explainEnabled: false, hasAnswers: true), [.text, .answers, .audio, .clipboard])
+        XCTAssertEqual(HistoryFilter.visible(explainEnabled: true, hasAnswers: true), [.text, .answers, .audio, .clipboard])
+    }
 }

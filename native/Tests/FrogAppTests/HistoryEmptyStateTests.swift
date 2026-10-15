@@ -34,6 +34,17 @@ final class HistoryEmptyStateTests: XCTestCase {
         XCTAssertEqual(state(saved: [saved], clipboard: [copied], filter: .audio), .noMatches)
     }
 
+    func testTheAnswersFilterWithoutAnswersSaysHowTheyAppear() {
+        XCTAssertEqual(state(saved: [saved], clipboard: [], filter: .answers), .noAnswers)
+        XCTAssertEqual(state(saved: [saved], clipboard: [], filter: .answers, search: " "), .noAnswers)
+        XCTAssertEqual(state(saved: [saved], clipboard: [], filter: .answers, search: "words"), .noMatches)
+        XCTAssertEqual(state(saved: [], clipboard: [], filter: .answers), .noAnswers)
+        var answer = HistoryEntry(originalText: "bank", processedText: "Land along a river.", ruleName: "Explain", providerName: "", model: "")
+        answer.answer = AnswerRecord(context: nil, application: nil, source: nil, followUps: [])
+        XCTAssertNil(state(saved: [saved, answer], clipboard: [], filter: .answers))
+        XCTAssertEqual(state(saved: [saved, answer], clipboard: [], filter: .answers, search: "no such text"), .noMatches)
+    }
+
     func testAnEmptyFeedSaysWhatWillAppear() {
         XCTAssertEqual(state(saved: [], clipboard: [], filter: nil), .noHistory)
         XCTAssertEqual(state(saved: [], clipboard: [], filter: .text, search: "words"), .noHistory)

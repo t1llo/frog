@@ -46,6 +46,7 @@ private struct HistoryContent: View {
                         .background { Button("Back to history") { self.viewing = nil }.keyboardShortcut("[", modifiers: .command).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true) }
                     Spacer()
                     if viewing.requiresReveal || model.configuration.preferences.hideHistoryText { revealButton(viewing) }
+                    // Actions for an answer entry go here, before Delete.
                     IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = viewing }
                 }.frame(height: 32)
                 PageHeader(title: viewing.title, subtitle: viewing.timestamp.formatted(date: .abbreviated, time: .shortened))
@@ -96,13 +97,18 @@ private struct HistoryContent: View {
             }
                 ListToolbar(placeholder: "Search history", search: $search) {
                     FilterTag(title: "All", selected: model.historyFilter == nil) { model.historyFilter = nil }
-                    ForEach(HistoryFilter.allCases) { value in
+                    ForEach(HistoryFilter.visible(explainEnabled: model.configuration.preferences.featureEnabled(.explain),
+                                                  hasAnswers: all.contains { $0.filter == .answers })) { value in
                         FilterTag(title: value.title, selected: model.historyFilter == value) { model.historyFilter = value }
                     }
                 }
 
             if emptyState == .noMatches {
                 FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another filter or clear your search.")
+                Spacer(minLength: 0)
+            } else if emptyState == .noAnswers {
+                FrogEmptyState(symbol: "questionmark.bubble", title: "No answers yet",
+                               message: "With History on, answers from Explain and your other answer rules appear here.")
                 Spacer(minLength: 0)
             } else if emptyState == .clipboardOff {
                 FrogEmptyState(symbol: "clipboard", title: "Clipboard is off", message: "Enable Clipboard in Features to keep the text you copy here, in memory only.")
@@ -165,7 +171,7 @@ private struct HistoryContent: View {
         HStack(spacing: 10) {
             Button { if item.requiresReveal { visibility.revealed.insert(item.id) }; viewing = item.id } label: {
                 HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: item.filter == .audio ? "waveform" : item.filter == .clipboard ? "clipboard" : "text.alignleft")
+                    Image(systemName: rowSymbol(item.filter))
                         .font(.system(size: 13)).foregroundStyle(FrogStyle.muted).frame(width: 18, height: 18)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
@@ -193,6 +199,9 @@ private struct HistoryContent: View {
                 Button("Copy", systemImage: "doc.on.doc") { copy(item) }.disabled(item.text.isEmpty)
                 Button("Delete entry", systemImage: "trash", role: .destructive) { deleting = item }
             }
+    }
+    private func rowSymbol(_ filter: HistoryFilter) -> String {
+        switch filter { case .text: "text.alignleft"; case .answers: "questionmark.bubble"; case .audio: "waveform"; case .clipboard: "clipboard" }
     }
     private func metadata(_ item: HistoryItem) -> String {
         if let saved = item.savedEntry {
@@ -269,17 +278,18 @@ struct WindowClosing: NSViewRepresentable {
 
 /// What the page says in place of an empty list.
 enum HistoryEmptyState: Equatable {
-    case noHistory, noCopiedText, clipboardOff, noMatches
+    case noHistory, noCopiedText, clipboardOff, noMatches, noAnswers
 
     /// "No matches" is for a filter or search that leaves nothing of an existing feed. The
     /// Clipboard filter without copied items has nothing to match, also when saved history
-    /// exists, and while Clipboard is off nothing copied can appear. The feed trims the
-    /// search, so spaces alone are no search.
+    /// exists, and while Clipboard is off nothing copied can appear. The Answers filter without
+    /// saved answers says how they get there. The feed trims the search, so spaces alone are no search.
     static func describing(all: [HistoryItem], shown: [HistoryItem], filter: HistoryFilter?, search: String, clipboardEnabled: Bool) -> Self? {
         guard shown.isEmpty else { return nil }
         if filter == .clipboard, !clipboardEnabled { return .clipboardOff }
-        if all.isEmpty { return filter == .clipboard ? .noCopiedText : .noHistory }
         let searching = !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if filter == .answers, !searching, !all.contains(where: { $0.filter == .answers }) { return .noAnswers }
+        if all.isEmpty { return filter == .clipboard ? .noCopiedText : .noHistory }
         return filter == .clipboard && !searching ? .noCopiedText : .noMatches
     }
 }
@@ -341,25 +351,63 @@ private struct HistoryDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text([entry.providerName, entry.model, entry.targetLanguage].filter { !$0.isEmpty }.joined(separator: " · "))
-                .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
-            textSection("Result", text: entry.processedText)
-            Divider().opacity(0.5)
-            textSection("Original", text: entry.originalText)
+            if let answer = entry.answer {
+                answerSections(answer)
+            } else {
+                metadataLine([entry.providerName, entry.model, entry.targetLanguage])
+                textSection("Result", text: entry.processedText)
+                Divider().opacity(0.5)
+                textSection("Original", text: entry.originalText)
+            }
         }.padding(.top, 4)
             .foregroundStyle(FrogStyle.ink).buttonStyle(FrogButtonStyle())
     }
 
+    private func metadataLine(_ parts: [String]) -> some View {
+        Text(parts.filter { !$0.isEmpty }.joined(separator: " · "))
+            .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
+    }
+
+    /// An answer: the first answer, its follow-ups, then what was asked about.
+    @ViewBuilder
+    private func answerSections(_ answer: AnswerRecord) -> some View {
+        metadataLine([answer.application ?? "", entry.providerName, entry.model])
+        textSection("Answer", text: entry.processedText)
+        if !answer.followUps.isEmpty {
+            Divider().opacity(0.5)
+            VStack(alignment: .leading, spacing: 12) {
+                sectionHeader("Follow-ups", copying: answer.followUps.map { "\($0.question)\n\n\($0.answer)" }.joined(separator: "\n\n"))
+                ForEach(Array(answer.followUps.enumerated()), id: \.offset) { _, turn in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(turn.question).font(FrogType.label).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HistoryLongText(text: turn.answer, lineSpacing: 4)
+                    }
+                }
+            }
+        }
+        Divider().opacity(0.5)
+        textSection("Selection", text: entry.originalText)
+        if let context = answer.context, !context.isEmpty {
+            Divider().opacity(0.5)
+            textSection("Context", text: context)
+        }
+    }
+
     private func textSection(_ title: String, text: String) -> some View {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    SectionCaption(text: title)
-                    Spacer()
-                    Button(L10n.text(copied == title ? "Copied" : "Copy"), systemImage: copied == title ? "checkmark" : "doc.on.doc") {
-                        ViewActions.copy(text); copied = title
-                    }.accessibilityLabel("Copy \(title.lowercased())").disabled(text.isEmpty)
-                }
+                sectionHeader(title, copying: text)
                 HistoryLongText(text: text, lineSpacing: 4)
             }
+    }
+
+    private func sectionHeader(_ title: String, copying text: String) -> some View {
+        HStack {
+            SectionCaption(text: title)
+            Spacer()
+            Button(L10n.text(copied == title ? "Copied" : "Copy"), systemImage: copied == title ? "checkmark" : "doc.on.doc") {
+                ViewActions.copy(text); copied = title
+            }.accessibilityLabel("Copy \(title.lowercased())").disabled(text.isEmpty)
+        }
     }
 }
