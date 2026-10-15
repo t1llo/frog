@@ -63,7 +63,7 @@ final class WindowManagerFixtureTests: XCTestCase {
 
         access.trusted = false
         var text = await message { try await manager.perform(.leftHalf, pid: 7, displays: [self.laptop]) }
-        XCTAssertEqual(text, "Allow Accessibility in Settings to move windows.")
+        XCTAssertEqual(text, "Allow Accessibility in Settings → Permissions to move windows.")
         access.trusted = true
 
         text = await message { try await manager.perform(.leftHalf, pid: 7, displays: [self.laptop]) }

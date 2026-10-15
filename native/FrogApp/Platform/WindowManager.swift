@@ -123,7 +123,7 @@ actor WindowManager {
     /// and messages as a shortcut. `displays` are the ones the action may use: for a snap,
     /// only the display under the pointer.
     func apply(_ action: WindowAction, to window: WindowHandle, displays: [WindowDisplay], options: WindowLayoutOptions = .legacy) throws {
-        guard access.isTrusted() else { throw FrogError.message("Allow Accessibility in Settings to move windows.") }
+        guard access.isTrusted() else { throw FrogError.message("Allow Accessibility in Settings → Permissions to move windows.") }
         try Task.checkCancellation()
         if action == .minimize {
             try access.setMinimized(true, of: window)
