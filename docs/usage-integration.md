@@ -354,3 +354,68 @@ the popup sizing and outside-click tests, and the status wording in
 `ClaudeDesktopUsageTests`. Sparkle 2.10.0's source confirms that a check resumes a
 staged update with "Install and Relaunch". **Not verified live:** a real update cycle
 reaching the notice and the prompt opened from it.
+
+## Several Claude accounts (2026-10)
+
+People who use two Claude accounts on one Mac, for example through a second Claude app
+started with its own folder, want to see both accounts' limits, each on its own or
+combined. This first step adds the pieces that find and name the accounts and combine
+their values; nothing calls them yet, so Frog still reads one Claude Code login and the
+default Claude app folder.
+
+- **Finding accounts** (`ClaudeAccountDiscovery`). Claude app folders are the entries
+  directly under `~/Library/Application Support` named `Claude`, `Claude-…` or
+  `Claude …` (in any case) that hold `plan-usage-history.json` or a
+  `claude-code-sessions` folder. Other apps such as `ClaudeUsageBar` are left out, and
+  nothing below those folders is opened: not `config.json`, cookies or the app's
+  storage. Claude Code profiles are `~/.claude` (its profile file is `~/.claude.json`),
+  every `~/.claude-*` folder, `~/.config/claude`, the folder chosen with "Choose
+  folder…", `CLAUDE_CONFIG_DIR` and any folder added later, kept when their
+  `.claude.json` holds an `oauthAccount`. A folder reached twice, also through a
+  symbolic link, counts once. The profile files are the only files read; running
+  processes are never looked at.
+- **Which folders are one account** (`ClaudeAccountMatching`). An account is anchored
+  to a slot: a Claude app folder, or a profile that belongs to no app folder. The
+  organization of a folder's newest history sample and a profile's
+  `oauthAccount.organizationUuid` decide. A profile joins an app folder when exactly
+  one app folder names its organization, the rule the plan badge already follows. App
+  folders naming the same organization are one account under the first folder, so a
+  combined value never counts it twice, and the account says "Claude and Claude-2 are
+  signed in to the same account". When a folder's newest organization changes, the
+  slot keeps its label. Organization ids stay in memory; they are never shown, saved
+  or exported.
+- **Labels** (`ClaudeAccountLabels`). The default `Claude` folder is A; a folder named
+  `Claude-Account-X`, `Claude X` or `Claude-X` is X; a profile `.claude-work` is
+  "Work" (`.claude-account-x` and `.claude-x` are X); every other slot gets the next
+  free letter, app folders by name first, then profiles. A new name is trimmed and cut
+  to 16 characters, an empty one returns to the default, and a name another account
+  has gets " 2", then " 3". The menu bar shows the first six characters. Labels and
+  the include switches are saved on this Mac in `xyz.beffa.frog.usage` under
+  `claudeAccounts.v1`, by slot path, and are never part of the configuration.
+- **Polling state per account.** The slot of the default `Claude` folder, or without
+  one the slot of the default profile, keeps `claudePollingState.v1`, so updating
+  loses no cooldowns. Every other slot uses `claudePollingState.v1.` followed by the
+  first 16 hexadecimal characters of the SHA-256 of its slot path; no key derives
+  from a token.
+- **Combined values** (`ClaudeAccountsCombination`). For one kind of window, the
+  included accounts with a current reading count (a finite percentage whose window
+  has not renewed). The value is Σ wᵢ·usedᵢ / Σ wᵢ. When every counted account has a
+  known plan, the weights are the plan sizes (Pro 1, Max and Max 5× 5, Max 20× 20);
+  otherwise every weight is 1, and the row says "Treats A and B as plans of the same
+  size". Team, Enterprise and an unknown plan have no size. Included accounts left out
+  are listed as missing. A combined row has no renewal time and no pace, because each
+  account renews on its own clock; its caption lists each account instead, such as
+  "A 30% · resets 15:40 · B 80% · resets Thu 09:00". Percentages round down as every
+  other row does, so used and left add up to 100.
+- **Display choices.** The usage preferences gain `claudeAccounts` (off),
+  `claudeAccountsView` (`each` or `combined`) and `claudeAccountsMenuBar` (`session`
+  or `week`). Configuration files written before them load with these defaults.
+  Their text keys come with the screens that use them.
+- **Reading another folder.** `readClaudeDesktop(folder:profiles:)` reads any Claude
+  app folder's history and takes the plan from whichever given profile names the same
+  organization.
+
+**Verified:** `ClaudeAccountDiscoveryTests`, `ClaudeAccountMatchingTests`,
+`ClaudeAccountLabelsTests`, `ClaudeAccountsCombinationTests`, `ClaudeDesktopUsageTests`,
+`UsageDisplayPreferencesTests` and `ConfigurationFileTests`, all against fixture folders
+and isolated defaults.
