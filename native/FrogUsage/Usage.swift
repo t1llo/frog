@@ -20,7 +20,8 @@ struct ClaudeAuth {
 
 enum ClaudePaths {
     static let directoryPreference = "claudeConfigDirectory"
-    static var defaultDirectory: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude") }
+    static var defaultDirectory: URL { defaultDirectory(home: FileManager.default.homeDirectoryForCurrentUser) }
+    static func defaultDirectory(home: URL) -> URL { home.appendingPathComponent(".claude") }
     static func directory(defaults: UserDefaults = UsagePreferences.defaults) -> URL {
         let path = defaults.string(forKey: directoryPreference)
             ?? ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"]
@@ -180,9 +181,9 @@ func claudeProfile(at url: URL) -> [String: Any] {
 }
 
 /// The default folder keeps its profile in the home folder, any other one inside itself.
-func claudeProfileURL(directory: URL) -> URL {
-    directory.standardizedFileURL == ClaudePaths.defaultDirectory.standardizedFileURL
-        ? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json")
+func claudeProfileURL(directory: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL {
+    directory.standardizedFileURL == ClaudePaths.defaultDirectory(home: home).standardizedFileURL
+        ? home.appendingPathComponent(".claude.json")
         : directory.appendingPathComponent(".claude.json")
 }
 

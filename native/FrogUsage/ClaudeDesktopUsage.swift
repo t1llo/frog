@@ -39,9 +39,16 @@ enum ClaudeDesktopUsage {
         ("sn", "seven_day_sonnet", "Week · Sonnet", week), ("so", "seven_day_opus", "Week · Opus", week),
     ]
 
-    static func historyURL(home: URL) -> URL {
-        home.appendingPathComponent("Library/Application Support/Claude/plan-usage-history.json")
+    static let historyFileName = "plan-usage-history.json"
+
+    /// The folder the Claude app uses unless it was started with a folder of its own.
+    static func defaultFolder(home: URL) -> URL {
+        home.appendingPathComponent("Library/Application Support/Claude")
     }
+
+    static func historyURL(folder: URL) -> URL { folder.appendingPathComponent(historyFileName) }
+
+    static func historyURL(home: URL) -> URL { historyURL(folder: defaultFolder(home: home)) }
 
     private struct Sample {
         let date: Date
@@ -116,24 +123,43 @@ enum ClaudeDesktopUsage {
 /// `files`, a file that has not changed since the last read is not read or decoded again.
 func readClaudeDesktop(home: URL = FileManager.default.homeDirectoryForCurrentUser, directory: URL,
                        files: ClaudeDesktopFiles = ClaudeDesktopFiles()) -> ClaudeDesktopReading? {
-    let history = ClaudeDesktopUsage.historyURL(home: home)
+    readClaudeDesktop(folder: ClaudeDesktopUsage.defaultFolder(home: home),
+                      profiles: [claudeProfileURL(directory: directory)], files: files)
+}
+
+/// The reading saved in one Claude app folder, with the plan of whichever of the given Claude Code
+/// profile files belongs to the same organization. Blocking, read-only.
+func readClaudeDesktop(folder: URL, profiles: [URL], files: ClaudeDesktopFiles = ClaudeDesktopFiles()) -> ClaudeDesktopReading? {
+    let history = ClaudeDesktopUsage.historyURL(folder: folder)
     guard !Task.isCancelled, var reading = files.history.value(at: history, { size in
         guard size <= ClaudeDesktopUsage.maximumSize, let data = try? Data(contentsOf: history) else { return nil }
         return ClaudeDesktopUsage.reading(from: data)
     }) ?? nil else { return nil }
     guard let organization = reading.organization else { return reading }
-    let profile = claudeProfileURL(directory: directory)
-    let account = files.profile.value(at: profile) { _ in claudeProfile(at: profile) } ?? [:]
-    if account["organizationUuid"] as? String == organization { reading.plan = claudePlanName(account) }
+    for profile in profiles {
+        let account = files.profile(profile).value(at: profile) { _ in claudeProfile(at: profile) } ?? [:]
+        if account["organizationUuid"] as? String == organization { reading.plan = claudePlanName(account); break }
+    }
     return reading
 }
 
 /// The Claude app rewrites its history every few minutes, and Frog looks at it every 10 to 15
 /// seconds. Keeping what was made of each file between those looks spares reading and decoding
-/// both files again while neither has changed.
-final class ClaudeDesktopFiles: Sendable {
+/// the files again while none has changed.
+final class ClaudeDesktopFiles: @unchecked Sendable {
     let history = UnchangedFile<ClaudeDesktopReading?>()
-    let profile = UnchangedFile<[String: Any]>()
+    private let lock = NSLock()
+    private var profiles: [URL: UnchangedFile<[String: Any]>] = [:]
+
+    /// One per profile file, so that looking at several profiles does not read each one every time.
+    func profile(_ url: URL) -> UnchangedFile<[String: Any]> {
+        lock.withLock {
+            if let file = profiles[url] { return file }
+            let file = UnchangedFile<[String: Any]>()
+            profiles[url] = file
+            return file
+        }
+    }
 }
 
 /// What was last made of one file, made again only once the file is replaced or written to.

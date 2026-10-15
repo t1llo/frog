@@ -82,6 +82,30 @@ import XCTest
         XCTAssertEqual(readClaudeDesktop(home: home, directory: claude)?.limits.map(\.pct), [10])
     }
 
+    func testAnyClaudeAppFolderTakesThePlanFromTheProfileOfItsOrganization() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("frog-desktop-usage-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let folder = home.appendingPathComponent("Library/Application Support/Claude-Account-B")
+        XCTAssertEqual(ClaudeDesktopUsage.historyURL(folder: folder), folder.appendingPathComponent("plan-usage-history.json"))
+        XCTAssertEqual(ClaudeDesktopUsage.historyURL(home: home),
+                       ClaudeDesktopUsage.historyURL(folder: home.appendingPathComponent("Library/Application Support/Claude")))
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try history([(0, "org-b", ["fh": 40])]).write(to: ClaudeDesktopUsage.historyURL(folder: folder))
+        let profiles = ["org-a", "org-b"].map { home.appendingPathComponent(".claude-\($0)/.claude.json") }
+        for (url, (organization, type)) in zip(profiles, [("org-a", "claude_max"), ("org-b", "claude_pro")]) {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(#"{"oauthAccount":{"organizationUuid":"\#(organization)","organizationType":"\#(type)"}}"#.utf8).write(to: url)
+        }
+        let files = ClaudeDesktopFiles()
+        let reading = try XCTUnwrap(readClaudeDesktop(folder: folder, profiles: profiles, files: files))
+        XCTAssertEqual(reading.limits.map(\.pct), [40])
+        XCTAssertEqual(reading.plan, "Pro", "The second profile names the folder's organization")
+        XCTAssertEqual(readClaudeDesktop(folder: folder, profiles: profiles, files: files)?.plan, "Pro")
+        XCTAssertNil(readClaudeDesktop(folder: folder, profiles: [profiles[0]])?.plan)
+        // The default folder of this home has no history, so the old reader still finds none.
+        XCTAssertNil(readClaudeDesktop(home: home, directory: profiles[1].deletingLastPathComponent()))
+    }
+
     /// Rewrites `url` in place, so the file stays the same one and only what the test changes differs.
     private func rewrite(_ url: URL, with data: Data, modified: Date) throws {
         if !FileManager.default.fileExists(atPath: url.path) { FileManager.default.createFile(atPath: url.path, contents: nil) }
