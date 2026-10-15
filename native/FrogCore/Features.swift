@@ -2,8 +2,28 @@ import Foundation
 
 /// Stable identities shared by configuration, navigation and command routing.
 public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
-    case writing, dictation, applicationShortcuts, windowSwitcher, clipboard, stayAwake
-    case commandBar, usage, snippets, scratchpad, shelf, scripts, quickActions, menuBar, systemMonitor
+    case writing
+    // slot: explain
+    case dictation
+    case applicationShortcuts
+    case windowSwitcher
+    case clipboard
+    case stayAwake
+    case commandBar
+    case usage
+    case snippets
+    case scratchpad
+    case shelf
+    case scripts
+    case quickActions
+    case menuBar
+    case systemMonitor
+    // slot: windows
+    // slot: cleaner
+    // slot: emoji-picker
+    // slot: processes
+    // slot: color-picker
+    // slot: quicklinks
     public var id: String { rawValue }
     public var title: String {
         switch self {
@@ -22,6 +42,13 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .quickActions: "Quick actions"
         case .menuBar: "Menu bar"
         case .systemMonitor: "System monitor"
+        // slot: explain
+        // slot: windows
+        // slot: cleaner
+        // slot: emoji-picker
+        // slot: processes
+        // slot: color-picker
+        // slot: quicklinks
         }
     }
     public var symbol: String {
@@ -41,6 +68,13 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .quickActions: "bolt"
         case .menuBar: "menubar.rectangle"
         case .systemMonitor: "gauge.medium"
+        // slot: explain
+        // slot: windows
+        // slot: cleaner
+        // slot: emoji-picker
+        // slot: processes
+        // slot: color-picker
+        // slot: quicklinks
         }
     }
     public var detail: String {
@@ -60,11 +94,32 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .quickActions: "Common Mac actions and useful text tools in one place."
         case .menuBar: "Keep menu bar items behind a divider and reveal them when needed."
         case .systemMonitor: "See CPU, GPU, disk and power activity in the Frog menu."
+        // slot: explain
+        // slot: windows
+        // slot: cleaner
+        // slot: emoji-picker
+        // slot: processes
+        // slot: color-picker
+        // slot: quicklinks
         }
     }
 
     /// Small background tools are configured in Features rather than separate pages.
-    public var hasPage: Bool { self != .windowSwitcher && self != .clipboard && self != .systemMonitor }
+    public var hasPage: Bool {
+        switch self {
+        case .windowSwitcher: false
+        case .clipboard: false
+        case .systemMonitor: false
+        // slot: explain
+        // slot: windows
+        // slot: cleaner
+        // slot: emoji-picker
+        // slot: processes
+        // slot: color-picker
+        // slot: quicklinks
+        default: true
+        }
+    }
 }
 
 public struct ToolkitPreferences: Codable, Equatable, Sendable {
@@ -74,10 +129,35 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
     public var windowSwitcherHotkey: Hotkey?
     public var usage: UsageDisplayPreferences?
     public var menuBar: MenuBarPreferences?
+    // slot: explain
+    // slot: windows
+    // slot: cleaner
+    // slot: command-bar
+    // slot: clipboard
+    // slot: snippets
+    // slot: emoji-picker
+    // slot: color-picker
+    // slot: quicklinks
     public var effectiveCommandBarHotkey: Hotkey { commandBarHotkey ?? Hotkey(keyCode: 49, modifiers: 4096 | 2048) }
     public var effectiveWindowSwitcherHotkey: Hotkey { windowSwitcherHotkey ?? Hotkey(keyCode: 48, modifiers: 256) }
     public init() {}
-    private enum CodingKeys: String, CodingKey { case enabled, hiddenSidebarItems, commandBarHotkey, windowSwitcherHotkey, usage, menuBar }
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case hiddenSidebarItems
+        case commandBarHotkey
+        case windowSwitcherHotkey
+        case usage
+        case menuBar
+        // slot: explain
+        // slot: windows
+        // slot: cleaner
+        // slot: command-bar
+        // slot: clipboard
+        // slot: snippets
+        // slot: emoji-picker
+        // slot: color-picker
+        // slot: quicklinks
+    }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         enabled = try values.decodeIfPresent([String: Bool].self, forKey: .enabled) ?? [:]
@@ -86,6 +166,15 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         windowSwitcherHotkey = try values.decodeIfPresent(Hotkey.self, forKey: .windowSwitcherHotkey)
         usage = try values.decodeIfPresent(UsageDisplayPreferences.self, forKey: .usage)
         menuBar = try values.decodeIfPresent(MenuBarPreferences.self, forKey: .menuBar)
+        // slot: explain
+        // slot: windows
+        // slot: cleaner
+        // slot: command-bar
+        // slot: clipboard
+        // slot: snippets
+        // slot: emoji-picker
+        // slot: color-picker
+        // slot: quicklinks
     }
 }
 
@@ -123,10 +212,7 @@ extension Preferences {
         if toolkit == nil { toolkit = ToolkitPreferences() }
     }
     public mutating func setFeature(_ feature: FeatureID, enabled: Bool) {
-        if toolkit == nil {
-            separateWindowSwitcherFromShortcuts()
-            toolkit = ToolkitPreferences()
-        }
+        ensureToolkit()
         switch feature {
         case .applicationShortcuts: applicationShortcutsEnabled = enabled
         case .windowSwitcher: windowSwitcherEnabled = enabled
@@ -134,6 +220,12 @@ extension Preferences {
             var settings = workflowSettings; settings.clipboardHistoryEnabled = enabled; workflows = settings
         default: toolkit?.enabled[feature.rawValue] = enabled
         }
+    }
+    /// Creates `toolkit` the way `setFeature` does, so callers in FrogApp never build it by hand.
+    public mutating func ensureToolkit() {
+        guard toolkit == nil else { return }
+        separateWindowSwitcherFromShortcuts()
+        toolkit = ToolkitPreferences()
     }
     public var sidebarFeatures: [FeatureID] {
         FeatureID.allCases.filter { $0.hasPage && featureEnabled($0) && !toolkitSettings.hiddenSidebarItems.contains($0.rawValue) }

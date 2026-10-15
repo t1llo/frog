@@ -46,6 +46,7 @@ enum TextConfiguration {
             .init("usage.metric", "toolkit.usage.metric", .choice(["API cost", "Input", "Output", "Cache write", "Cache read"])),
             .init("usage.all-devices", "toolkit.usage.allDevices", .bool),
             .init("usage.login-source", "toolkit.usage.loginSource", .choice(["Automatic", "Claude Code", "Claude Desktop", "OpenCode", "Pi"])),
+            // slot: usage
             .init("menubar.auto-hide", "toolkit.menuBar.autoHide", .bool),
             .init("menubar.auto-hide-seconds", "toolkit.menuBar.autoHideSeconds", .number(1...3600)),
             .init("menubar.start-collapsed", "toolkit.menuBar.startCollapsed", .bool),
@@ -57,7 +58,15 @@ enum TextConfiguration {
             .init("theme-accent", "appearance.useThemeAccent", .bool),
             .init("accent", "appearance.accentHex", .color),
             .init("transparency", "appearance.transparency", .number(0...1)),
-            .init("popup-transparency", "appearance.popupTransparency", .number(0...1))
+            .init("popup-transparency", "appearance.popupTransparency", .number(0...1)),
+            // slot: explain
+            // slot: windows
+            // slot: cleaner
+            // slot: command-bar
+            // slot: clipboard
+            // slot: snippets
+            // slot: emoji-picker
+            // slot: color-picker
         ]
         for feature in FeatureID.allCases where ![.windowSwitcher, .applicationShortcuts, .clipboard].contains(feature) {
             fields.append(.init("feature.\(kebab(feature.rawValue))", "toolkit.enabled.\(feature.rawValue)", .bool))
@@ -194,8 +203,19 @@ enum TextConfiguration {
             if let nested = preferences[key] as? [String: Any] ?? (creating ? [:] : nil) { preferences[key] = merge(try object(data), nested) }
         }
         if var toolkit = preferences["toolkit"] as? [String: Any] {
-            for (key, data) in [("usage", try JSONEncoder().encode(UsageDisplayPreferences())),
-                                ("menuBar", try JSONEncoder().encode(MenuBarPreferences()))] {
+            for (key, data) in [
+                ("usage", try JSONEncoder().encode(UsageDisplayPreferences())),
+                ("menuBar", try JSONEncoder().encode(MenuBarPreferences())),
+                // slot: explain
+                // slot: windows
+                // slot: cleaner
+                // slot: command-bar
+                // slot: clipboard
+                // slot: snippets
+                // slot: emoji-picker
+                // slot: color-picker
+                // slot: quicklinks
+            ] {
                 if let nested = toolkit[key] as? [String: Any] ?? (creating ? [:] : nil) { toolkit[key] = merge(try object(data), nested) }
             }
             preferences["toolkit"] = toolkit

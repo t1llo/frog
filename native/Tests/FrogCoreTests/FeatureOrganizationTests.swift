@@ -139,6 +139,58 @@ final class FeatureOrganizationTests: XCTestCase {
         expectSeparate(try handWritten.load().preferences, "written by hand")
     }
 
+    func testOnlyTheOriginalFiveFeaturesStartOn() {
+        let preferences = Preferences()
+        let on: Set<FeatureID> = [.writing, .dictation, .applicationShortcuts, .windowSwitcher, .stayAwake]
+        for feature in FeatureID.allCases {
+            XCTAssertEqual(preferences.featureEnabled(feature), on.contains(feature), feature.rawValue)
+        }
+    }
+
+    func testTitlesSymbolsAndDetailsAreNonEmptyAndUnique() {
+        for property in [\FeatureID.title, \.symbol, \.detail] {
+            let values = FeatureID.allCases.map { $0[keyPath: property] }
+            XCTAssertFalse(values.contains { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+            XCTAssertEqual(Set(values).count, values.count, "\(values)")
+        }
+    }
+
+    func testEveryFeatureHasATextKey() {
+        let keys = Set(TextConfiguration.keys)
+        for feature in FeatureID.allCases where ![.windowSwitcher, .applicationShortcuts, .clipboard].contains(feature) {
+            let kebab = feature.rawValue.reduce("") { $0 + ($1.isUppercase ? "-" + $1.lowercased() : String($1)) }
+            XCTAssertTrue(keys.contains("feature.\(kebab)"), feature.rawValue)
+        }
+    }
+
+    func testExistingFeaturesKeepTheirRelativeOrder() {
+        let existing: [FeatureID] = [.writing, .dictation, .applicationShortcuts, .windowSwitcher, .clipboard, .stayAwake,
+                                     .commandBar, .usage, .snippets, .scratchpad, .shelf, .scripts, .quickActions, .menuBar, .systemMonitor]
+        XCTAssertEqual(FeatureID.allCases.filter(existing.contains), existing)
+    }
+
+    func testEnsureToolkitRunsTheSwitcherMigration() {
+        var preferences = Preferences()
+        preferences.applicationShortcutsEnabled = false
+        preferences.windowSwitcherEnabled = true
+        XCTAssertNil(preferences.toolkit)
+        preferences.ensureToolkit()
+        XCTAssertNotNil(preferences.toolkit)
+        XCTAssertFalse(preferences.windowSwitcherEnabled)
+        let once = preferences
+        preferences.ensureToolkit()
+        XCTAssertEqual(preferences, once)
+
+        var existing = Preferences()
+        existing.toolkit = ToolkitPreferences()
+        existing.toolkit?.commandBarHotkey = Hotkey(keyCode: 49, modifiers: 4096)
+        existing.applicationShortcutsEnabled = false
+        let before = existing
+        existing.ensureToolkit()
+        XCTAssertEqual(existing, before)
+        XCTAssertTrue(existing.windowSwitcherEnabled)
+    }
+
     func testImportRejectsInvalidSwitcherShortcut() {
         var configuration = Configuration()
         configuration.preferences.toolkit = ToolkitPreferences()
