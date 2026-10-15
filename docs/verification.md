@@ -685,6 +685,38 @@ Device checks, with isolated data, to be filled in by the integrator:
       restored.
 - [ ] A password field: refused.
 
+### Selection bubble
+
+Automated: `ExplainSettingsTests` (the five keys round-trip through the text file, the
+longest selection is clamped, an invalid excluded app is refused with its message, the list
+is written sorted), `SelectionWatcherTests` (a drag reads once without context after the
+settle and shows the rules at the end of the selection; a later input cancels the read;
+busy, secure input, excluded apps, games, Frog frontmost and missing Accessibility never
+read; empty, secure and whitespace selections show nothing; Escape keeps the same selection
+away and another key does not; a keyboard selection without a position shows nothing; idle
+dismissal after six seconds unless hovered; a choice runs for the bubble's selection),
+`ExplainRoutingTests` (the watcher runs only with Explain, the bubble and Accessibility on
+and follows a change of Accessibility; an answer from the bubble reads again with context and
+never copies; a Writing rule from the bubble runs like its shortcut) and
+`SelectionIsolationTests` (the watcher, controller and view name no clipboard, Copy or
+posted event).
+
+Device checks, with isolated data, to be filled in by the integrator:
+
+- [ ] With the bubble off, no global monitor exists.
+- [ ] The bubble appears within about 0.5 s in Safari, Notes, Mail, Xcode, TextEdit and
+      Terminal.app.
+- [ ] It does not appear in a password field, `sudo` in Terminal, 1Password, a game, VS Code
+      or Obsidian.
+- [ ] `NSPasteboard.general.changeCount` is unchanged across selecting, the bubble
+      appearing, and Explain run from it.
+- [ ] The frontmost app and its focused field are unchanged; typing continues in the field.
+- [ ] Keyboard selection (Shift and the arrow keys) shows it after Shift is released; typing
+      capital letters shows nothing.
+- [ ] More expands the bubble inline; a Writing rule from it replaces the selection.
+- [ ] Activity Monitor Energy Impact over 10 minutes of normal work, bubble on and off:
+      ___ / ___.
+
 ## Distribution
 
 Developer ID signing/notarization requires the owner's Apple Developer credentials. Ad-hoc signing is suitable for local development, but is not notarization and does not establish that macOS will trust a downloaded release on another machine.

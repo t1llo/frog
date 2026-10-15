@@ -442,6 +442,58 @@ instead of opening a menu, so Frog never activates. `BundleIdentifiers` checks a
 excluded apps: at most 200 identifiers of 1 to 255 letters, digits, dots and hyphens, each
 with a dot.
 
+### Selection bubble on screen
+
+`SelectionWatcher` (`Platform/SelectionWatcher.swift`) is the shell around
+`SelectionWatcherCore`. `AppModel.configureSelectionWatcher()` starts it only while Frog
+has started, Explain is on, **Show a bubble when you select text** is on and Accessibility
+is allowed, and stops it otherwise; it runs from `start()`, every settings save, reload and
+import, and the once-a-second status refresh, so allowing Accessibility starts it without a
+restart. Turning Explain off and `shutdown()` stop it.
+
+- `start()` installs one global monitor for left mouse down and up, right mouse down,
+  scrolling and modifier changes, and observes which app becomes active. A global key-down
+  monitor exists only while the bubble is visible and reads the key code only. No
+  mouse-moved or dragged monitor is installed. `stop()` removes all of them and hides the
+  bubble.
+- Events become `SelectionInput`s: the pointer from `NSEvent.mouseLocation`, the click count
+  of mouse events, the modifiers; Shift going up while no mouse button is down is
+  `shiftReleased`. Scrolling with nothing pending or shown is ignored.
+- A scheduled read is one task that sleeps until the settle time, checks
+  `settleFired(token)`, builds `BubbleContext` (secure input from
+  `IsSecureEventInputEnabled()`, the frontmost app, a game category cached per bundle ID from
+  `LSApplicationCategoryType`, and Frog's busy state from `AppModel`), calls `mayRead`, reads
+  through `SelectionReading` with `includeContext: false` and the bubble's character limit,
+  asks `AppModel` for `SelectionBubbleItems`, calls `mayShow` and shows the bubble. A read
+  that finishes after a later input or a stop shows nothing.
+- Position: the anchor is a zero-width rectangle at the right edge of the selection's last
+  character; without one, a mouse gesture uses the mouse-up point and a keyboard gesture
+  shows nothing.
+- The bubble hides on any mouse down elsewhere, a key press, scrolling, an app switch, after
+  an action, and six seconds after it appeared or the pointer last left it (checked once a
+  second while it shows). Escape also remembers the selection so it does not come back.
+
+`SelectionBubbleController` (`Platform/SelectionBubbleController.swift`) is a
+`FrogFloatingPanel` that cannot become key, with `.ignoresCycle` added; its content is a
+`FirstMouseHostingView` inside a view with an always-active tracking area that reports
+hovering. It measures `SelectionBubbleView` and places it with `PanelPlacement.place` and a
+6 pt gap; expanding **More** measures and places it again. `SelectionBubbleView` is a capsule
+of rule buttons (icon and name, `.help` with the rule name, the Explain rule labelled
+"Explain selection" for VoiceOver).
+
+`AppModel.runBubbleItem(_:snapshot:)` runs a choice. An answer rule reads the selection
+again through Accessibility with its context (only while **Include surrounding text** is on);
+when the fingerprint still matches it answers that read, otherwise the bubble's text without
+context, with no shortcut wait and no clipboard. A Writing rule runs through
+`processSelection(ruleID:)` exactly like its shortcut. `SelectionIsolationTests` scans the
+watcher, the controller and the view as well as the reader for any clipboard, Copy, posted
+event or accessibility-forcing attribute.
+
+Apps that do not expose their selection through Accessibility show no bubble: Electron apps
+such as VS Code, Slack and Obsidian, GPU terminals, canvas web apps such as Google Docs, and
+Chromium browsers unless their accessibility is already on. Their rules still work from a
+shortcut through the compatibility Copy.
+
 ## Data and execution
 
 Portable configuration contains feature choices and settings. Credentials stay
