@@ -177,6 +177,19 @@ These fields select the display and login-source preference only. Accounts, toke
 
 <!-- slot: usage -->
 
+Several Claude accounts on one Mac, such as two Claude app profiles:
+
+- `usage.claude-accounts`: boolean, default `false`. Reads the saved limits of every Claude
+  account Frog finds on this Mac and shows each of them; while it is on, the login source
+  menu is hidden and each account is read on its own.
+- `usage.claude-accounts-view`: `each` (default) shows every account's limits side by side;
+  `combined` shows one value per limit over the included accounts, weighted by plan size
+  when every plan is known.
+- `usage.claude-accounts-menu-bar`: `session` (default) or `week`, the limit the menu bar
+  item shows for each account while the view is `each`.
+
+Accounts, folders and labels stay on this Mac and are not part of the configuration.
+
 <!-- slot: explain -->
 <!-- slot: windows -->
 <!-- slot: cleaner -->

@@ -47,6 +47,9 @@ enum TextConfiguration {
             .init("usage.all-devices", "toolkit.usage.allDevices", .bool),
             .init("usage.login-source", "toolkit.usage.loginSource", .choice(["Automatic", "Claude Code", "Claude Desktop", "OpenCode", "Pi"])),
             // slot: usage
+            .init("usage.claude-accounts", "toolkit.usage.claudeAccounts", .bool),
+            .init("usage.claude-accounts-view", "toolkit.usage.claudeAccountsView", .choice(["each", "combined"])),
+            .init("usage.claude-accounts-menu-bar", "toolkit.usage.claudeAccountsMenuBar", .choice(["session", "week"])),
             .init("menubar.auto-hide", "toolkit.menuBar.autoHide", .bool),
             .init("menubar.auto-hide-seconds", "toolkit.menuBar.autoHideSeconds", .number(1...3600)),
             .init("menubar.start-collapsed", "toolkit.menuBar.startCollapsed", .bool),
