@@ -41,6 +41,20 @@ final class SelectionService {
         }
     }
 
+    /// The app whose selection an answer rule reads: the frontmost one, once the shortcut keys are released.
+    static func answerTarget() async throws -> pid_t {
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
+            throw FrogError.message("Select text in another application before using a rule.")
+        }
+        try await ClipboardSelection.waitForShortcutRelease(
+            message: "Release the shortcut keys before Frog reads the selection, then try again.")
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier else {
+            throw FrogError.message("The selected app changed before reading the selection. Try again.")
+        }
+        return app.processIdentifier
+    }
+
     func capture() async throws -> any CapturedTextSelection {
         guard Self.isTrusted else {
             throw FrogError.message("Allow Frog in System Settings → Privacy & Security → Accessibility, then try again.")

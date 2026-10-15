@@ -103,6 +103,11 @@ final class AppModel: ObservableObject {
     }()
     private let shortcutPanel = ShortcutReferencePanel()
     private let captureSelection: () async throws -> any CapturedTextSelection
+    /// Reads an answer's selection through Accessibility before `captureSelection` is tried. Nil when a test
+    /// injects only a capture.
+    private let selectionReader: SelectionReading?
+    /// The app an answer reads from, after the shortcut keys are released.
+    private let selectionTarget: () async throws -> pid_t
     private let answerStream: (AnswerRequest) -> AsyncThrowingStream<AnswerEvent, Error>
     private let answerPresenter: AnswerPresenting
     /// Asks for the notes folder the first time an answer is saved. Nil when cancelled.
@@ -167,6 +172,8 @@ final class AppModel: ObservableObject {
          readLoginStatus: (@Sendable () -> LoginService.Snapshot)? = nil,
          writeLoginItem: (@Sendable (Bool) throws -> Void)? = nil,
          captureSelection: (() async throws -> any CapturedTextSelection)? = nil,
+         selectionReader: SelectionReading? = nil,
+         selectionTarget: (() async throws -> pid_t)? = nil,
          answerStream: ((AnswerRequest) -> AsyncThrowingStream<AnswerEvent, Error>)? = nil,
          answerPresenter: AnswerPresenting? = nil,
          chooseNotesFolder: (() async -> URL?)? = nil,
@@ -199,6 +206,8 @@ final class AppModel: ObservableObject {
         self.readLoginStatus = readLoginStatus ?? { LoginService.readStatus() }
         self.writeLoginItem = writeLoginItem ?? { try LoginService.setEnabled($0) }
         self.captureSelection = captureSelection ?? { try await SelectionService().capture() }
+        self.selectionReader = selectionReader ?? (captureSelection == nil ? SelectionReader() : nil)
+        self.selectionTarget = selectionTarget ?? { try await SelectionService.answerTarget() }
         self.complete = complete ?? { text, rule, provider, key in
             if let kind = provider.kind.localTool {
                 return try await localTools.complete(LocalToolRequest(kind: kind, text: text, rule: rule, providerModel: provider.model))
@@ -1094,7 +1103,7 @@ final class AppModel: ObservableObject {
         begin(ruleID: ruleID, manualText: nil)
     }
 
-    /// Captures the selection like a Writing rule and answers it in the panel. Nothing is replaced.
+    /// Reads the selection and answers it in the panel. Nothing is replaced.
     private func startAnswer(_ rule: Rule) {
         answerCapture?.cancel()
         answerHistoryEpoch = historyEpoch
@@ -1102,17 +1111,41 @@ final class AppModel: ObservableObject {
         answerCapture = Task { [weak self] in
             guard let self else { return }
             do {
-                let captured = try await self.captureSelection()
+                let capture = try await self.answerSelection()
                 try Task.checkCancellation()
-                let context = self.configuration.preferences.explainSettings.includeContext ? captured.context : nil
-                self.answers.start(rule: rule, capture: AnswerCapture(text: captured.text, context: context, anchor: captured.anchor,
-                                                                      application: captured.applicationName, source: captured.source))
+                self.answers.start(rule: rule, capture: capture)
             } catch is CancellationError {
             } catch {
                 guard !Task.isCancelled else { return }
                 self.answers.fail(rule: rule, message: error.localizedDescription)
             }
         }
+    }
+
+    /// The longest selection an answer reads through Accessibility, in UTF-16 units.
+    static let answerReadLimit = 100_000
+
+    /// The selection an answer rule answers: read through Accessibility first, so Safari and other apps that expose
+    /// it answer without a Copy. Only an app that does not expose it that way gets the compatibility Copy, which
+    /// restores the clipboard. A password field, a caret in a text field and a selection that is too long stop here.
+    private func answerSelection() async throws -> AnswerCapture {
+        let includeContext = configuration.preferences.explainSettings.includeContext
+        if let selectionReader {
+            let pid = try await selectionTarget()
+            try Task.checkCancellation()
+            switch await selectionReader.read(pid: pid, maxCharacters: Self.answerReadLimit, includeContext: includeContext) {
+            case .selection(let snapshot):
+                return AnswerCapture(text: snapshot.text, context: includeContext ? snapshot.context : nil, anchor: snapshot.bounds,
+                                     application: snapshot.applicationName, source: snapshot.source)
+            case .empty: throw FrogError.message(AnswerController.emptySelection)
+            case .secure: throw FrogError.message("Frog does not read password fields.")
+            case .tooLong: throw FrogError.message(AnswerPrompt.selectionTooLong(limit: Self.answerReadLimit))
+            case .unavailable: try Task.checkCancellation()
+            }
+        }
+        let captured = try await captureSelection()
+        return AnswerCapture(text: captured.text, context: includeContext ? captured.context : nil, anchor: captured.anchor,
+                             application: captured.applicationName, source: captured.source)
     }
 
     /// Saves an answer whose first reply completed, when History was on as the answer started and still is.

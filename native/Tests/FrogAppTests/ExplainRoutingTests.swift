@@ -274,6 +274,56 @@ final class ExplainRoutingTests: XCTestCase {
         XCTAssertTrue(setup.model.recentErrors.isEmpty)
     }
 
+    // MARK: Reading the selection
+
+    func testASelectionReadThroughAccessibilityIsAnsweredWithoutCopying() async throws {
+        let snapshot = SelectionSnapshot(text: "levee", bounds: Self.anchor, endBounds: nil, context: "The levee held all night.",
+                                         source: "https://example.com/flood", isEditable: false, pid: FakeSelectionReader.pid,
+                                         bundleID: "com.apple.Safari", applicationName: "Safari",
+                                         fingerprint: SelectionFingerprint(pid: FakeSelectionReader.pid, element: 1, location: 0,
+                                                                           length: 5, textHash: 0))
+        let reader = FakeSelectionReader(.selection(snapshot))
+        let setup = try Setup(test: self, reader: reader)
+        let rule = try await setup.enableExplain()
+        setup.model.processSelection(ruleID: rule.id)
+        try await waitUntil { setup.presenter.sessions.last?.phase == .done(truncated: false) }
+        XCTAssertEqual(setup.captures, 0, "No compatibility Copy")
+        XCTAssertEqual(reader.calls.map(\.pid), [FakeSelectionReader.pid])
+        XCTAssertEqual(reader.calls.first?.maxCharacters, 100_000)
+        XCTAssertEqual(reader.calls.first?.includeContext, true)
+        let first = try XCTUnwrap(setup.streams.requests.first?.messages.first?.text)
+        XCTAssertTrue(first.contains("levee"), first)
+        XCTAssertTrue(first.contains("The levee held all night."), first)
+        XCTAssertTrue(first.contains("App: Safari"), first)
+        XCTAssertEqual(setup.presenter.anchors, [Self.anchor])
+        XCTAssertEqual(setup.model.answers.session?.source, "https://example.com/flood")
+    }
+
+    func testOnlyAnAppThatDoesNotExposeTheSelectionGetsTheCompatibilityCopy() async throws {
+        let reader = FakeSelectionReader(.empty)
+        let setup = try Setup(test: self, reader: reader)
+        let rule = try await setup.enableExplain()
+        setup.model.processSelection(ruleID: rule.id)
+        try await waitUntil { setup.model.answers.session?.phase == .failed("Select some text first.") }
+
+        reader.result = .secure
+        setup.model.processSelection(ruleID: rule.id)
+        try await waitUntil { setup.model.answers.session?.phase == .failed("Frog does not read password fields.") }
+
+        reader.result = .tooLong(150_000)
+        setup.model.processSelection(ruleID: rule.id)
+        try await waitUntil { setup.model.answers.session?.phase == .failed(AnswerPrompt.selectionTooLong(limit: 100_000)) }
+        XCTAssertEqual(setup.captures, 0)
+        XCTAssertTrue(setup.streams.requests.isEmpty)
+
+        reader.result = .unavailable
+        setup.model.processSelection(ruleID: rule.id)
+        try await waitUntil { setup.streams.requests.count == 1 }
+        XCTAssertEqual(setup.captures, 1, "Falls back to the compatibility Copy")
+        XCTAssertTrue(try XCTUnwrap(setup.streams.requests.first?.messages.first?.text).contains(setup.selection.text))
+        XCTAssertEqual(reader.calls.count, 4)
+    }
+
     private func waitUntil(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async throws {
         for _ in 0..<400 {
             if condition() { return }
@@ -298,7 +348,7 @@ private final class Setup {
     let notesFolder: URL
     private(set) var installedModelID: String?
 
-    init(test: XCTestCase, installedTextModel: Bool = false) throws {
+    init(test: XCTestCase, installedTextModel: Bool = false, reader: FakeSelectionReader? = nil) throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("FrogTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         test.addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
@@ -321,6 +371,7 @@ private final class Setup {
                          complete: { _, _, _, _ in completions(); return "Replaced" },
                          readKey: { _ in nil }, writeClipboard: { _ in },
                          captureSelection: { captures(); return selection },
+                         selectionReader: reader, selectionTarget: { FakeSelectionReader.pid },
                          answerStream: { streams.stream($0) }, answerPresenter: presenter,
                          chooseNotesFolder: { chooseFolder() },
                          errorDisplayDuration: .milliseconds(10))
@@ -355,6 +406,26 @@ private final class Setup {
         rule.providerID = model.configuration.providers[0].id
         try model.saveRule(rule)
         return rule
+    }
+}
+
+private final class FakeSelectionReader: SelectionReading, @unchecked Sendable {
+    static let pid: pid_t = 4242
+    struct Call { var pid: pid_t; var maxCharacters: Int; var includeContext: Bool }
+    private let lock = NSLock()
+    private var current: SelectionReadResult
+    private var recorded: [Call] = []
+    init(_ result: SelectionReadResult) { current = result }
+    var result: SelectionReadResult {
+        get { lock.withLock { current } }
+        set { lock.withLock { current = newValue } }
+    }
+    var calls: [Call] { lock.withLock { recorded } }
+    func read(pid: pid_t, maxCharacters: Int, includeContext: Bool) async -> SelectionReadResult {
+        lock.withLock {
+            recorded.append(Call(pid: pid, maxCharacters: maxCharacters, includeContext: includeContext))
+            return current
+        }
     }
 }
 
