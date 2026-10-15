@@ -41,6 +41,11 @@ struct FrogSurfaceStyle: ShapeStyle {
 /// Shared adaptive colors keep the app, sheets, and controls in the same visual language.
 enum FrogStyle {
     static let corner: CGFloat = 6
+    /// Key caps and other small marks inside a control.
+    static let innerRadius: CGFloat = 4
+    static let controlRadius: CGFloat = 5
+    /// Cards and panels; the same value as `corner`, which existing views keep using.
+    static let cardRadius: CGFloat = 6
     static var canvas: AnyShapeStyle { adaptiveSurface(themed(\.canvas), strength: 0.85) }
     static var sidebar: AnyShapeStyle { adaptiveSurface(themed(\.sidebar), strength: 0.85) }
     static var surface: AnyShapeStyle { adaptiveSurface(themed(\.surface), strength: 0.78) }
@@ -191,6 +196,16 @@ enum FrogStyle {
                            blue: Double(value & 255) / 255, alpha: 1)
         })
     }
+}
+
+/// The type scale for new views; existing views move to it as they are touched.
+enum FrogType {
+    static let title = Font.system(size: 19, weight: .semibold)
+    static let section = Font.system(size: 13, weight: .semibold)
+    static let body = Font.system(size: 12)
+    static let label = Font.system(size: 11, weight: .medium)
+    static let caption = Font.system(size: 10)
+    static let mono = Font.system(size: 11, design: .monospaced)
 }
 
 extension View {
