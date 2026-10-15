@@ -47,6 +47,7 @@ import SwiftUI
         // slot: windows
         WindowCommandRows(),
         // slot: cleaner
+        CleanerCommandRows(applications: { [unowned self] in self.cleanerApplications() }),
     ] + extraProviders
     private let extraProviders: [any CommandBarRowProviding]
     private var context: CommandBarContext?
@@ -191,6 +192,7 @@ import SwiftUI
     }
     private func iconPath(for result: SearchRecord) -> String? {
         if result.id.hasPrefix("app:") { return String(result.id.dropFirst(4)) }
+        if let path = CleanerCommand.path(fromRowID: result.id) { return path }
         if let windowPath = windowIconPaths[result.id] { return windowPath }
         if result.id.hasPrefix("mac-setting:") { return "/System/Applications/System Settings.app" }
         return nil
@@ -724,6 +726,16 @@ import SwiftUI
     }
     private func copy(_ value: String) { pasteboard.clearContents(); pasteboard.setString(value, forType: .string) }
     isolated deinit { stop() }
+
+    // MARK: - Cleaner
+
+    /// The listed applications, for the App cleaner's "Uninstall" rows.
+    private func cleanerApplications() -> [CleanerCommandApp] {
+        cachedApplications.compactMap { rule in
+            guard let path = rule.action?.applicationPath, let record = applicationRecords[path] else { return nil }
+            return CleanerCommandApp(record: record, path: path, bundleID: rule.action?.applicationBundleID)
+        }
+    }
 }
 
 /// Serial reads keep a fast scroll from flooding the cooperative pool with blocking icon I/O.
