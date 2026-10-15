@@ -25,7 +25,7 @@ Layout shortcuts run while **Windows** or **Shortcuts** is on, so you can switch
 
 ## Suggested shortcuts
 
-**Use suggested shortcuts** above the list gives every layout that has no shortcut yet the one below, and the cheat sheet its shortcut. A layout or command that already has a shortcut keeps it, even when it is switched off. A combination that another Frog shortcut already uses, including the window switcher's, is skipped, and the line under the button names what was skipped. Press it again later and it adds only what is still free.
+**Use suggested shortcuts** above the list gives every layout that has no shortcut yet the one below, and the cheat sheet and the layout picker their shortcuts. A layout or command that already has a shortcut keeps it, even when it is switched off. A combination that another Frog shortcut already uses, including the window switcher's, is skipped, and the line under the button names what was skipped. Press it again later and it adds only what is still free.
 
 | Layout | Shortcut |
 | --- | --- |
@@ -38,8 +38,23 @@ Layout shortcuts run while **Windows** or **Shortcuts** is on, so you can switch
 | Restore previous size | ⌃⌥⌫ |
 | Move to next display, Move to previous display | ⌃⌥⌘→, ⌃⌥⌘← |
 | Window cheat sheet | ⌃⌥/ |
+| Arrange window… (layout picker) | ⌃⌥W |
 
 Minimize, full screen and the centered sizes get no suggestion. VoiceOver uses Control-Option for its own commands; while VoiceOver is on, the page says so after you press the button.
+
+## Layout picker
+
+The layout picker is the easiest way to arrange a window without learning any shortcut. Switch on **Snap → Layout picker** and record a shortcut next to it (**Use suggested shortcuts** gives it ⌃⌥W). It is off by default and works only while Windows is on.
+
+Open it in any of three ways: press its shortcut, choose **Arrange window…** in the Frog menu, or type "arrange" in the command bar. It arranges the window that was in front: the front app's focused window, or, when Frog itself is in front, the app you used just before. If there is none, the panel says so; click a window and open it again.
+
+The panel opens in the middle of the display that holds the window. It shows the layouts as small pictures in rows of four, grouped into halves, quarters, thirds, sizes, displays and undo, each with its shortcut if it has one. Minimize and full screen are not offered.
+
+- The arrow keys move the selection; hovering a tile selects it too. While a layout is selected, a tinted area on screen shows where the window would go. For **Restore previous size** it shows the size the window returns to, if Frog moved it before.
+- Type to filter the layouts by name: "two" leaves the two-thirds layouts.
+- Return or a click applies the selected layout; Escape, ⌘W, a click outside or the shortcut again closes the panel.
+
+The panel never takes the focus from the app you are in. Layouts applied from it use the same gaps as the shortcuts, and **Restore previous size** returns the window to where it was. A half is not cycled through other sizes from the picker.
 
 ## Cheat sheet
 
