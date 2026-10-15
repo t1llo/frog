@@ -1173,6 +1173,11 @@ final class AppModel: ObservableObject {
             let error = FrogError.message("Select an enabled rule.")
             report(error); ruleOutcome = .failed(error.localizedDescription); return
         }
+        // An answer belongs in the panel: this path would send the selection and paste over it.
+        if rule.answersInPanel {
+            let error = FrogError.message("This rule answers in a panel. Turn on Explain in Features.")
+            report(error); ruleOutcome = .failed(error.localizedDescription); return
+        }
         if manualText != nil { manualResult = "" }
         if let providerID { rule.providerID = providerID; rule.model = modelID ?? "" }
         else if let modelID { rule.model = modelID }

@@ -7,6 +7,7 @@ struct RulesView: View {
     @EnvironmentObject private var model: AppModel
     var applications = false
     var fixedCategory: RuleCategory?
+    var output: TextOutput = .replace
     @State private var editing: Rule?
     @State private var trying: Rule?
     @State private var filter: RuleCategory = .text
@@ -33,7 +34,7 @@ struct RulesView: View {
             source = applications ? applicationCatalog.rows(configured: model.configuration.rules) : model.configuration.rules
         }
         return source.filter {
-            $0.category == category && (search.isEmpty || ($0.name + " " + $0.instructions + " " + ($0.action?.systemAction?.detail ?? "")).localizedStandardContains(search))
+            $0.listed(on: category, output: output) && (search.isEmpty || ($0.name + " " + $0.instructions + " " + ($0.action?.systemAction?.detail ?? "")).localizedStandardContains(search))
         }
     }
     private var pageTitle: String {
@@ -54,7 +55,7 @@ struct RulesView: View {
         VStack(alignment: .leading, spacing: 14) {
             PageHeader(title: pageTitle, subtitle: pageSubtitle) {
                 if !applications { Button("New rule", systemImage: "plus") {
-                    editing = model.configuration.newRule(category: category, installed: model.localModels.installed)
+                    editing = model.configuration.newRule(category: category, output: output, installed: model.localModels.installed)
                 }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut("n", modifiers: .command) }
             }
             VStack(spacing: 0) {
@@ -125,7 +126,7 @@ struct RulesView: View {
                                 Text(search.isEmpty ? "No rules yet" : "No matching rules").font(.system(size: 12, weight: .medium))
                                 if !applications && search.isEmpty {
                                     Button("Create a rule", systemImage: "plus") {
-                                        editing = model.configuration.newRule(category: category, installed: model.localModels.installed)
+                                        editing = model.configuration.newRule(category: category, output: output, installed: model.localModels.installed)
                                     }
                                 } else if !search.isEmpty { Button("Clear search") { search = "" }.buttonStyle(.plain) }
                             }.foregroundStyle(FrogStyle.muted).frame(maxWidth: .infinity).padding(24)

@@ -64,6 +64,30 @@ final class ProcessingTests: XCTestCase {
         XCTAssertEqual(model.statistics.snapshot.allTime.ruleRuns, 0)
     }
 
+    func testAnAnswerRuleNeverCapturesSendsOrPastes() async throws {
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false, complete: { _, _, _, _ in
+            XCTFail("An answer rule must not send text through Writing"); return "Unexpected"
+        }, readKey: { _ in nil }, writeClipboard: { _ in XCTFail("An answer must not be pasted") },
+            captureSelection: { XCTFail("An answer rule must not capture through Writing"); throw FrogError.message("No selection") })
+        try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
+        var preferences = model.configuration.preferences
+        preferences.historyEnabled = true
+        try model.savePreferences(preferences)
+        var answer = Rule.explainPreset
+        answer.id = UUID(); answer.providerID = model.configuration.providers[0].id
+        try model.saveRule(answer)
+        let message = "This rule answers in a panel. Turn on Explain in Features."
+        model.processSelection(ruleID: answer.id)
+        try await waitUntilFinished(model)
+        XCTAssertEqual(model.ruleOutcome, .failed(message))
+        model.processManual(text: "river bank", ruleID: answer.id)
+        try await waitUntilFinished(model)
+        XCTAssertEqual(model.ruleOutcome, .failed(message))
+        XCTAssertEqual(model.errorMessage, message)
+        XCTAssertTrue(model.history.isEmpty)
+        XCTAssertEqual(model.statistics.snapshot.allTime.ruleRuns, 0)
+    }
+
     func testReplacementFailureStillRecordsCompletedTransformation() async throws {
         let selection = FixtureSelection(text: "original", failsReplacement: true)
         let model = AppModel(dataDirectory: try directory(), registerShortcuts: false,

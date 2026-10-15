@@ -103,4 +103,16 @@ final class HotkeyRulesTests: XCTestCase {
         changed.preferences.workflows?.shortcutPanelHotkey = Hotkey(keyCode: 1, modifiers: 256 | 2048)
         XCTAssertTrue(AppModel.registersShortcutsAgain(previous: configuration, current: changed, failed: true, holding: true), "A changed shortcut is registered even during a hold")
     }
+
+    func testAnAnswerRuleRegistersNoGlobalShortcut() {
+        var configuration = Configuration()
+        var answer = Rule.explainPreset
+        answer.hotkey = Hotkey(keyCode: 14, modifiers: 256 | 2048)
+        let writing = Rule(name: "Proofread", hotkey: Hotkey(keyCode: 35, modifiers: 256 | 2048))
+        configuration.rules = [writing, answer]
+        configuration.preferences.setFeature(.writing, enabled: true)
+        let registered = AppModel.hotkeyRules(for: configuration)
+        XCTAssertTrue(registered.contains { $0.id == writing.id })
+        XCTAssertFalse(registered.contains { $0.id == answer.id })
+    }
 }
