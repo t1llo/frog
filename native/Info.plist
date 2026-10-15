@@ -23,6 +23,7 @@
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSAccessibilityUsageDescription</key><string>Frog reads and replaces selected text for writing shortcuts, and lists and activates windows for Command-Tab switching.</string>
+    <key>NSAppleEventsUsageDescription</key><string>Frog asks Finder to move apps and system items to the Trash when you remove them. Finder asks for your password; Frog never sees it.</string>
     <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Tillo Beffa</string>
 </dict>
 </plist>
