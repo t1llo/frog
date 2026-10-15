@@ -167,6 +167,7 @@ public enum ConfigurationFile {
         // slot: explain
         try preferences.toolkit?.explain?.validate()
         // slot: windows
+        try WindowPreferences.validate(preferences, usedShortcuts: &shortcuts)
         // slot: cleaner
         // slot: command-bar
         try preferences.toolkit?.commandBar?.validate()

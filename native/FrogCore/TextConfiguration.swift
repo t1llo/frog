@@ -77,6 +77,10 @@ enum TextConfiguration {
             .init("explain.bubble-max-characters", "toolkit.explain.bubbleMaxCharacters", .integer(100...20_000)),
             .init("explain.bubble-excluded-apps", "toolkit.explain.bubbleExcludedApps", .identifiers),
             // slot: windows
+            .init("windows.gap", "toolkit.windows.gap", .integer(0...40)),
+            .init("windows.cycle-sizes", "toolkit.windows.cycleSizes", .bool),
+            .init("windows.portrait-thirds", "toolkit.windows.portraitThirds", .bool),
+            .init("windows.respect-stage-manager", "toolkit.windows.respectStageManager", .bool),
             // slot: cleaner
             // slot: command-bar
             .init("command-bar.learn-choices", "toolkit.commandBar.learnChoices", .bool),

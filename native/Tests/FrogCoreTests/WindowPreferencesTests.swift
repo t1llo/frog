@@ -58,4 +58,102 @@ final class WindowPreferencesTests: XCTestCase {
         }
         XCTAssertEqual(rows.filter { $0.hotkey != nil }.count, 1)
     }
+
+    func testSizeDefaultsAndTheGapIsClamped() {
+        let defaults = WindowPreferences()
+        XCTAssertEqual(defaults.gap, 0)
+        XCTAssertFalse(defaults.cycleSizes)
+        XCTAssertTrue(defaults.portraitThirds)
+        XCTAssertTrue(defaults.respectStageManager)
+        var windows = WindowPreferences()
+        windows.gap = 60
+        XCTAssertEqual(windows.normalized.gap, 40)
+        windows.gap = -4
+        XCTAssertEqual(windows.normalized.gap, 0)
+        windows.gap = 12
+        XCTAssertEqual(windows.normalized, windows)
+    }
+
+    func testDecodingOlderWindowPreferencesFillsDefaults() throws {
+        XCTAssertEqual(try JSONDecoder().decode(WindowPreferences.self, from: Data("{}".utf8)), WindowPreferences())
+        var expected = WindowPreferences(); expected.gap = 8
+        XCTAssertEqual(try JSONDecoder().decode(WindowPreferences.self, from: Data(#"{"gap": 8}"#.utf8)), expected)
+        var changed = WindowPreferences()
+        changed.gap = 14; changed.cycleSizes = true; changed.portraitThirds = false; changed.respectStageManager = false
+        XCTAssertEqual(try JSONDecoder().decode(WindowPreferences.self, from: JSONEncoder().encode(changed)), changed)
+    }
+
+    func testDecoderClampsTheGap() throws {
+        XCTAssertEqual(try JSONDecoder().decode(WindowPreferences.self, from: Data(#"{"gap": 60}"#.utf8)).gap, 40)
+    }
+
+    func testTheFourTextKeysParseAndRoundTrip() throws {
+        var configuration = Configuration()
+        configuration.preferences.ensureToolkit()
+        var windows = WindowPreferences()
+        windows.gap = 12; windows.cycleSizes = true; windows.portraitThirds = false; windows.respectStageManager = false
+        configuration.preferences.toolkit?.windows = windows
+        let text = try TextConfiguration.render(configuration)
+        let lines = ["windows.gap = 12", "windows.cycle-sizes = true", "windows.portrait-thirds = false", "windows.respect-stage-manager = false"]
+        for line in lines { XCTAssertTrue(text.contains(line + "\n"), line) }
+        let companion = try TextConfiguration.companion(configuration)
+        XCTAssertEqual(try TextConfiguration.decode(text, companion: companion).preferences.toolkitSettings.windows, windows)
+
+        let edited = text.replacingOccurrences(of: "windows.gap = 12", with: "windows.gap = 40")
+            .replacingOccurrences(of: "windows.portrait-thirds = false", with: "windows.portrait-thirds = true")
+        let read = try TextConfiguration.decode(edited, companion: companion).preferences.toolkitSettings.windows
+        XCTAssertEqual(read?.gap, 40)
+        XCTAssertEqual(read?.portraitThirds, true)
+        XCTAssertEqual(read?.cycleSizes, true)
+        for invalid in ["windows.gap = 41", "windows.gap = -2", "windows.cycle-sizes = sometimes"] {
+            let line = invalid.components(separatedBy: " = ")[0]
+            let broken = text.components(separatedBy: "\n").map { $0.hasPrefix(line + " =") ? invalid : $0 }.joined(separator: "\n")
+            XCTAssertThrowsError(try TextConfiguration.decode(broken, companion: companion), invalid)
+        }
+    }
+
+    func testLayoutOptionsFollowTheFeatureAndStageManager() {
+        var preferences = Preferences()
+        preferences.ensureToolkit()
+        var windows = WindowPreferences()
+        windows.gap = 10; windows.cycleSizes = true
+        preferences.toolkit?.windows = windows
+        let stageManager = MacWindowManagerSettings(stageManager: true)
+        XCTAssertEqual(WindowSwitches(preferences).layoutOptions(stageManager), .legacy)
+
+        preferences.setFeature(.windows, enabled: true)
+        XCTAssertEqual(WindowSwitches(preferences).layoutOptions(stageManager),
+                       WindowLayoutOptions(gap: 10, portraitThirds: true, leadingInset: 190, cycleSizes: true))
+        XCTAssertEqual(WindowSwitches(preferences).layoutOptions(MacWindowManagerSettings()).leadingInset, 0)
+        preferences.toolkit?.windows?.respectStageManager = false
+        XCTAssertEqual(WindowSwitches(preferences).layoutOptions(stageManager).leadingInset, 0)
+
+        // Without saved settings, the defaults apply.
+        preferences.toolkit?.windows = nil
+        XCTAssertEqual(WindowSwitches(preferences).layoutOptions(stageManager), WindowLayoutOptions(portraitThirds: true, leadingInset: 190))
+    }
+
+    func testValidateRejectsAGapOutsideTheRangeEvenWhileWindowsIsOff() throws {
+        var preferences = Preferences()
+        preferences.ensureToolkit()
+        var windows = WindowPreferences()
+        windows.gap = 60
+        preferences.toolkit?.windows = windows
+        XCTAssertFalse(preferences.featureEnabled(.windows))
+        var used: Set<Hotkey> = [Hotkey(keyCode: 0, modifiers: 4096)]
+        XCTAssertThrowsError(try WindowPreferences.validate(preferences, usedShortcuts: &used)) {
+            XCTAssertEqual($0.localizedDescription, "The window gap must be between 0 and 40 points.")
+        }
+        preferences.toolkit?.windows?.gap = 8
+        try WindowPreferences.validate(preferences, usedShortcuts: &used)
+        XCTAssertEqual(used, [Hotkey(keyCode: 0, modifiers: 4096)])
+
+        var configuration = Configuration()
+        configuration.preferences = preferences
+        configuration.preferences.toolkit?.windows?.gap = 60
+        XCTAssertNoThrow(try ConfigurationFile.validate(Configuration()))
+        XCTAssertThrowsError(try ConfigurationFile.validate(configuration)) {
+            XCTAssertEqual($0.localizedDescription, "The window gap must be between 0 and 40 points.")
+        }
+    }
 }

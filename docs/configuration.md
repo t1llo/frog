@@ -216,6 +216,15 @@ The selection bubble offers Explain, the other answer rules and, in text fields,
 - `explain.bubble-excluded-apps`: a JSON list of app bundle identifiers the bubble never shows in, such as `["com.apple.Terminal", "com.apple.TextEdit"]`; at most 200, written sorted. Default: 1Password (`com.1password.1password`, `com.agilebits.onepassword7`), Bitwarden (`com.bitwarden.desktop`), Keychain Access (`com.apple.keychainaccess`) and Passwords (`com.apple.Passwords`). `[]` shows it in every app.
 
 <!-- slot: windows -->
+### Windows
+
+Enable with `feature.windows = true`. These settings change layouts only while Windows is on:
+
+- `windows.gap`: 0–40 points around the display edge and between windows, default 0.
+- `windows.cycle-sizes`: boolean, default `false`; a half shortcut pressed again gives ⅔, then ⅓, then ½ again.
+- `windows.portrait-thirds`: boolean, default `true`; thirds run top to bottom on a display taller than wide.
+- `windows.respect-stage-manager`: boolean, default `true`; keeps the left 190 points free while Stage Manager is on.
+
 <!-- slot: cleaner -->
 <!-- slot: command-bar -->
 ### Command bar
