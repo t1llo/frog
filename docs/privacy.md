@@ -66,6 +66,7 @@ The optional floating processing indicator shows rule/status messages without ta
 <!-- slot: quicklinks -->
 <!-- slot: emoji-picker -->
 <!-- slot: windows -->
+**Windows:** while drag to snap is on, Frog watches mouse-button and drag events system-wide to notice when you drag a window. It does not record them. Once a drag starts, it reads the position and size of the window under the pointer, a few times at most until the window moves, and keeps nothing after the drag. Window titles are not read.
 
 ## Updates
 

@@ -13,7 +13,7 @@ These options change where layouts put windows while Windows is on. Switch Windo
 - **Thirds run top to bottom on tall displays**: on a display that is taller than wide, such as a rotated monitor, Left third becomes the top third, Center third the middle and Right third the bottom; the two-thirds layouts follow. On by default.
 - **Leave room for Stage Manager**: while Stage Manager is on, layouts keep the left 190 points of each display free so its strip of recent apps stays visible. Frog checks Stage Manager each time you use a layout, so switching it in Control Center counts from the next press. On by default.
 
-The same settings are in the [configuration file](configuration.md) as `windows.gap`, `windows.cycle-sizes`, `windows.portrait-thirds` and `windows.respect-stage-manager`.
+The same settings are in the [configuration file](configuration.md) as `windows.gap`, `windows.cycle-sizes`, `windows.portrait-thirds` and `windows.respect-stage-manager`; drag to snap is `windows.drag-to-snap` and `windows.restore-on-drag`.
 
 ## Layout shortcuts
 
@@ -41,6 +41,27 @@ Layout shortcuts run while **Windows** or **Shortcuts** is on, so you can switch
 | Arrange window… (layout picker) | ⌃⌥W |
 
 Minimize, full screen and the centered sizes get no suggestion. VoiceOver uses Control-Option for its own commands; while VoiceOver is on, the page says so after you press the button.
+
+## Drag to snap
+
+Switch on **Snap → Drag to screen edges** to arrange windows with the mouse. It is off by default and works only while Windows is on. Drag a window by its title bar and let go at the edge of the screen:
+
+- **Left or right edge**: the window fills the left or right half.
+- **Top edge**: the window fills the display (Maximize on display).
+- **A corner**: the window fills that quarter. Each corner is a 20-point square.
+- **Bottom edge**: the window fills the third under the pointer: Left third, Center third or Right third.
+
+An edge counts while the pointer is within 5 points of it. While the pointer is in a zone, a tinted area shows where the window will go; move away and it disappears. Press Escape before letting go to keep the window where macOS drops it.
+
+The window lands on the display under the pointer, with the same gap, thirds and Stage Manager room as the shortcuts, and **Restore previous size** undoes it. An edge or corner shared with another display only counts once the pointer has rested there for 0.3 seconds, so dragging a window across to the other display never snaps it on the way. Frog's own windows, full-screen windows and a drag that resizes a window are never snapped.
+
+**Restore size when dragged away** (on by default): drag a window out of the place Frog put it and, after 10 points, it gets back the size it had before, with the pointer at the same spot across its width.
+
+### macOS's own tiling
+
+From macOS 15, macOS tiles windows dragged to a screen edge by itself. While that is on, Frog's edges and corners pause so the two do not fight over the window, and the Snap section says so. To use Frog's edges instead, open **System Settings → Desktop & Dock** (the page's **Open Desktop & Dock** button goes there) and, under **Windows**, turn off **Drag windows to screen edges to tile**. Frog reads this setting and never changes it. On macOS 14 there is no such setting and Frog's edges always work.
+
+Frog notices a window drag without recording your clicks: a click costs nothing, and only once the pointer has moved does Frog look at the window under it, a few times at most. See [privacy](privacy.md).
 
 ## Layout picker
 
