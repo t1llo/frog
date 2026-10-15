@@ -4,6 +4,8 @@ import Foundation
 enum TextConfiguration {
     private enum Kind: Sendable {
         case bool, integer(ClosedRange<Int>), number(ClosedRange<Double>), string, choice([String]), color, shortcut, strings
+        /// A JSON list of app bundle identifiers.
+        case identifiers
     }
     private struct Field: Sendable {
         let key: String
@@ -69,6 +71,11 @@ enum TextConfiguration {
             .init("explain.notes-mode", "toolkit.explain.notesMode", .choice(["per-answer", "append"])),
             .init("explain.notes-file", "toolkit.explain.notesFile", .string),
             .init("explain.notes-open", "toolkit.explain.notesOpen", .bool),
+            .init("explain.selection-bubble", "toolkit.explain.selectionBubble", .bool),
+            .init("explain.bubble-double-click", "toolkit.explain.bubbleDoubleClick", .bool),
+            .init("explain.bubble-keyboard", "toolkit.explain.bubbleKeyboard", .bool),
+            .init("explain.bubble-max-characters", "toolkit.explain.bubbleMaxCharacters", .integer(100...20_000)),
+            .init("explain.bubble-excluded-apps", "toolkit.explain.bubbleExcludedApps", .identifiers),
             // slot: windows
             // slot: cleaner
             // slot: command-bar
@@ -317,6 +324,8 @@ enum TextConfiguration {
             guard !string.isEmpty, string.utf8.count <= 256, !string.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { throw FrogError.message("expected 1–256 characters without control characters") }; return string
         case .strings:
             guard let strings = try? JSONDecoder().decode([String].self, from: Data(raw.utf8)), strings.allSatisfy({ FeatureID(rawValue: $0) != nil }) else { throw FrogError.message("expected a JSON list of feature IDs, such as [\"usage\", \"scripts\"]") }; return strings
+        case .identifiers:
+            guard let ids = try? JSONDecoder().decode([String].self, from: Data(raw.utf8)), (try? BundleIdentifiers.validate(ids)) != nil else { throw FrogError.message("expected a JSON list of app bundle identifiers, such as [\"com.apple.TextEdit\"]") }; return ids
         case .shortcut:
             let key = try ConfigShortcut.parse(string)
             return ["keyCode": key.keyCode, "modifiers": key.modifiers]
@@ -335,7 +344,7 @@ enum TextConfiguration {
             }
             return string
         case .bool: return (value as? Bool) == true ? "true" : "false"
-        case .strings:
+        case .strings, .identifiers:
             return String(decoding: try JSONEncoder().encode((value as? [String] ?? []).sorted()), as: UTF8.self)
         default: return String(describing: value)
         }

@@ -206,6 +206,14 @@ Enable with `feature.explain = true`. Turning it on adds the **Explain** answer 
 
 Notes hold the selection, the answer and its follow-ups; the surrounding text sent to the model is never written to them.
 
+The selection bubble offers Explain, the other answer rules and, in text fields, the Writing rules right after text is selected in another app. It needs Explain on and Accessibility allowed.
+
+- `explain.selection-bubble`: boolean, default `false`. Shows the bubble after a selection made with the mouse or the keyboard.
+- `explain.bubble-double-click`: boolean, default `true`. Also shows it after a double- or triple-click.
+- `explain.bubble-keyboard`: boolean, default `true`. Also shows it when Shift is released after selecting with Shift and the arrow keys.
+- `explain.bubble-max-characters`: integer from `100` to `20000`, default `4000`. Longer selections show no bubble.
+- `explain.bubble-excluded-apps`: a JSON list of app bundle identifiers the bubble never shows in, such as `["com.apple.Terminal", "com.apple.TextEdit"]`; at most 200, written sorted. Default: 1Password (`com.1password.1password`, `com.agilebits.onepassword7`), Bitwarden (`com.bitwarden.desktop`), Keychain Access (`com.apple.keychainaccess`) and Passwords (`com.apple.Passwords`). `[]` shows it in every app.
+
 <!-- slot: windows -->
 <!-- slot: cleaner -->
 <!-- slot: command-bar -->

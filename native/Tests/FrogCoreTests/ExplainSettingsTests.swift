@@ -100,4 +100,74 @@ final class ExplainSettingsTests: XCTestCase {
         settings.notesFile = "Daily.txt"
         XCTAssertThrowsError(try settings.validate()) { XCTAssertEqual($0.localizedDescription, "Choose a Markdown file (.md).") }
     }
+
+    // MARK: Selection bubble
+
+    func testSelectionBubbleSettingsRoundTripThroughTheTextFile() throws {
+        let defaults = try JSONDecoder().decode(ExplainSettings.self, from: Data("{}".utf8))
+        XCTAssertFalse(defaults.selectionBubble)
+        XCTAssertTrue(defaults.bubbleDoubleClick)
+        XCTAssertTrue(defaults.bubbleKeyboard)
+        XCTAssertEqual(defaults.bubbleMaxCharacters, 4_000)
+        XCTAssertEqual(Set(defaults.bubbleExcludedApps), SelectionBubbleOptions.defaultExcludedApps)
+        XCTAssertEqual(defaults.bubbleOptions, SelectionBubbleOptions())
+
+        let text = """
+        explain.selection-bubble = true
+        explain.bubble-double-click = false
+        explain.bubble-keyboard = false
+        explain.bubble-max-characters = 500
+        explain.bubble-excluded-apps = ["com.apple.Terminal","com.apple.TextEdit"]
+
+        """
+        let loaded = try TextConfiguration.decode(text, companion: TextConfiguration.companion(Configuration()))
+        let settings = loaded.preferences.explainSettings
+        XCTAssertTrue(settings.selectionBubble)
+        XCTAssertFalse(settings.bubbleDoubleClick)
+        XCTAssertFalse(settings.bubbleKeyboard)
+        XCTAssertEqual(settings.bubbleMaxCharacters, 500)
+        XCTAssertEqual(settings.bubbleExcludedApps, ["com.apple.Terminal", "com.apple.TextEdit"])
+        XCTAssertEqual(settings.bubbleOptions.excludedApps, ["com.apple.Terminal", "com.apple.TextEdit"])
+        let rendered = try TextConfiguration.render(loaded)
+        for line in text.split(separator: "\n") { XCTAssertTrue(rendered.contains("\n\(line)\n"), "\(line)\n\(rendered)") }
+        XCTAssertEqual(try TextConfiguration.decode(rendered, companion: TextConfiguration.companion(loaded)), loaded)
+        try ConfigurationFile.validate(loaded)
+    }
+
+    func testTheLongestSelectionIsClampedAndOutOfRangeValuesAreRefusedInTheTextFile() throws {
+        let short = try JSONDecoder().decode(ExplainSettings.self, from: Data(#"{"bubbleMaxCharacters": 5}"#.utf8))
+        XCTAssertEqual(short.bubbleMaxCharacters, 100)
+        let long = try JSONDecoder().decode(ExplainSettings.self, from: Data(#"{"bubbleMaxCharacters": 90000}"#.utf8))
+        XCTAssertEqual(long.bubbleMaxCharacters, 20_000)
+        var settings = ExplainSettings()
+        settings.bubbleMaxCharacters = 1
+        XCTAssertEqual(settings.normalized.bubbleMaxCharacters, 100)
+        XCTAssertEqual(settings.bubbleOptions.maxCharacters, 100)
+        let companion = try TextConfiguration.companion(Configuration())
+        XCTAssertThrowsError(try TextConfiguration.decode("explain.bubble-max-characters = 50\n", companion: companion))
+    }
+
+    func testAnInvalidExcludedAppIsRefusedWithTheExactMessage() throws {
+        let companion = try TextConfiguration.companion(Configuration())
+        for value in [#"["not a bundle id"]"#, "com.apple.TextEdit", #"["com.apple.TextEdit", 3]"#] {
+            XCTAssertThrowsError(try TextConfiguration.decode("explain.bubble-excluded-apps = \(value)\n", companion: companion)) {
+                XCTAssertEqual($0.localizedDescription, "config:1: explain.bubble-excluded-apps: expected a JSON list of app bundle identifiers, such as [\"com.apple.TextEdit\"]. Previous working settings were kept.")
+            }
+        }
+        var settings = ExplainSettings()
+        settings.bubbleExcludedApps = ["bad id"]
+        XCTAssertThrowsError(try settings.validate()) { XCTAssertEqual($0.localizedDescription, BundleIdentifiers.message) }
+    }
+
+    func testTheExcludedAppsRenderSorted() throws {
+        var configuration = Configuration()
+        configuration.preferences.ensureToolkit()
+        configuration.preferences.toolkit?.explain = ExplainSettings()
+        let rendered = try TextConfiguration.render(configuration)
+        let sorted = SelectionBubbleOptions.defaultExcludedApps.sorted().map { "\"\($0)\"" }.joined(separator: ",")
+        XCTAssertTrue(rendered.contains("\nexplain.bubble-excluded-apps = [\(sorted)]\n"), rendered)
+
+        configuration.preferences.toolkit?.explain?.bubbleExcludedApps = ["org.b.App", "com.a.App"]
+        XCTAssertTrue(try TextConfiguration.render(configuration).contains(#"explain.bubble-excluded-apps = ["com.a.App","org.b.App"]"#))
+    }
 }

@@ -24,13 +24,29 @@ public struct ExplainSettings: Codable, Equatable, Sendable {
     public var notesFile = "Daily/YYYY-MM-DD.md"
     /// Opens the note after saving, in Obsidian when the folder is inside a vault.
     public var notesOpen = false
+    /// Shows a bubble with Explain and the other rules after text is selected in another app.
+    public var selectionBubble = false
+    /// The bubble also follows a double- or triple-click.
+    public var bubbleDoubleClick = true
+    /// The bubble also follows a selection made with Shift and the arrow keys.
+    public var bubbleKeyboard = true
+    /// Longer selections show no bubble.
+    public var bubbleMaxCharacters = 4_000
+    /// Apps the bubble never shows in, by bundle identifier.
+    public var bubbleExcludedApps: [String] = SelectionBubbleOptions.defaultExcludedApps.sorted()
 
     public init() {}
 
-    public var normalized: Self { self }
+    public var normalized: Self {
+        var settings = self
+        let range = SelectionBubbleOptions.characterRange
+        settings.bubbleMaxCharacters = min(max(bubbleMaxCharacters, range.lowerBound), range.upperBound)
+        return settings
+    }
 
     private enum CodingKeys: String, CodingKey {
         case includeContext, notes, notesFolder, notesMode, notesFile, notesOpen
+        case selectionBubble, bubbleDoubleClick, bubbleKeyboard, bubbleMaxCharacters, bubbleExcludedApps
     }
 
     public init(from decoder: Decoder) throws {
@@ -41,6 +57,12 @@ public struct ExplainSettings: Codable, Equatable, Sendable {
         notesMode = try values.decodeIfPresent(NotesMode.self, forKey: .notesMode) ?? .perAnswer
         notesFile = try values.decodeIfPresent(String.self, forKey: .notesFile) ?? "Daily/YYYY-MM-DD.md"
         notesOpen = try values.decodeIfPresent(Bool.self, forKey: .notesOpen) ?? false
+        selectionBubble = try values.decodeIfPresent(Bool.self, forKey: .selectionBubble) ?? false
+        bubbleDoubleClick = try values.decodeIfPresent(Bool.self, forKey: .bubbleDoubleClick) ?? true
+        bubbleKeyboard = try values.decodeIfPresent(Bool.self, forKey: .bubbleKeyboard) ?? true
+        bubbleMaxCharacters = try values.decodeIfPresent(Int.self, forKey: .bubbleMaxCharacters) ?? 4_000
+        bubbleExcludedApps = try values.decodeIfPresent([String].self, forKey: .bubbleExcludedApps)
+            ?? SelectionBubbleOptions.defaultExcludedApps.sorted()
         self = normalized
     }
 
@@ -51,6 +73,17 @@ public struct ExplainSettings: Codable, Equatable, Sendable {
             else { throw FrogError.message(Self.invalidNotesFolder) }
         }
         _ = try AnswerNote.expand(pattern: notesFile, date: Date(), calendar: Calendar(identifier: .gregorian))
+        try BundleIdentifiers.validate(bubbleExcludedApps)
+    }
+
+    /// What the selection bubble decides with.
+    public var bubbleOptions: SelectionBubbleOptions {
+        var options = SelectionBubbleOptions()
+        options.doubleClick = bubbleDoubleClick
+        options.keyboard = bubbleKeyboard
+        options.maxCharacters = normalized.bubbleMaxCharacters
+        options.excludedApps = Set(bubbleExcludedApps)
+        return options
     }
 
     /// The notes folder as a file URL, with the tilde expanded.
