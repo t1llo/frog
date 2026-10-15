@@ -8,6 +8,10 @@ public struct CleanerSafety: Sendable {
 
     public let roots: CleanerRoots
     private let protectedPaths: [String]
+    /// Every leftover location folder, and those plus the roots and Library folders, built once: a scan asks
+    /// about hundreds of items.
+    private let locationFolders: [URL]
+    private let wholeFolders: Set<String>
     private let fileFlags: @Sendable (URL) -> UInt32?
 
     /// `protectedPaths` are Frog's own app bundle, data folder and configuration folder.
@@ -15,6 +19,12 @@ public struct CleanerSafety: Sendable {
                 fileFlags: @escaping @Sendable (URL) -> UInt32? = CleanerSafety.lstatFlags) {
         self.roots = roots
         self.fileFlags = fileFlags
+        let locationFolders = LeftoverLocation.allCases.flatMap { location in
+            location.domains.compactMap { roots.folder(location, $0) }
+        }
+        self.locationFolders = locationFolders
+        wholeFolders = Set([roots.home, roots.system, roots.userLibrary, roots.systemLibrary].map(\.path)
+            + locationFolders.map(\.path))
         // Both spellings, so a protected folder reached through a link is still protected.
         self.protectedPaths = Array(Set(protectedPaths.flatMap { url -> [String] in
             let given = roots.resolved(url).path
@@ -113,15 +123,6 @@ public struct CleanerSafety: Sendable {
                   let first = relative.split(separator: "/").first else { return false }
             return Self.appleOwnedLowercased.contains(first.lowercased())
         }
-    }
-
-    private var locationFolders: [URL] {
-        LeftoverLocation.allCases.flatMap { location in location.domains.compactMap { roots.folder(location, $0) } }
-    }
-
-    /// The roots, the Library folders and every leftover location folder itself.
-    private var wholeFolders: Set<String> {
-        Set([roots.home, roots.system, roots.userLibrary, roots.systemLibrary].map(\.path) + locationFolders.map(\.path))
     }
 
     /// Checks every parent between the root and the item, from the root down. The item itself may be a link:
