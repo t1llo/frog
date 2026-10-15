@@ -1411,15 +1411,7 @@ final class AppModel: ObservableObject {
 
     private func manageWindow(_ rule: Rule) {
         guard let action = rule.action?.windowAction, let app = NSWorkspace.shared.frontmostApplication else { return }
-        let primaryTop = NSScreen.screens.first?.frame.maxY ?? 0
-        var displays: [CGRect] = NSScreen.screens.map { screen -> CGRect in
-            let frame = screen.visibleFrame
-            return CGRect(x: frame.minX, y: primaryTop - frame.maxY, width: frame.width, height: frame.height)
-        }
-        displays.sort { left, right in
-            if left.minX == right.minX { return left.minY < right.minY }
-            return left.minX < right.minX
-        }
+        let displays = WindowDisplays.current()
         let pid = app.processIdentifier
         windowActionTask?.cancel()
         windowActionTask = Task {

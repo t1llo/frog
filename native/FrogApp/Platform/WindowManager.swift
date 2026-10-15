@@ -75,46 +75,46 @@ enum WindowGeometry {
 
 /// AX messaging is kept off the UI thread. Restore state is bounded and device-local.
 actor WindowManager {
-    private struct PreviousFrame {
-        let window: AXUIElement
-        let frame: CGRect
-        /// The action that left `frame` behind.
-        let move: WindowGeometry.Move
-    }
-    private var previous: [PreviousFrame] = []
+    private let access: WindowAccess
+    private var history = WindowFrameHistory()
 
-    func perform(_ action: WindowAction, pid: pid_t, displays: [CGRect]) throws {
+    init(access: WindowAccess = AXWindowAccess()) {
+        self.access = access
+    }
+
+    /// What Restore would return the window to, and the action that moved it last.
+    func lastMove(of key: WindowKey) -> WindowFrameHistory.Entry? { history.entry(for: key) }
+
+    func perform(_ action: WindowAction, pid: pid_t, displays: [WindowDisplay]) throws {
         try Task.checkCancellation()
-        guard AXIsProcessTrusted() else { throw FrogError.message("Allow Accessibility in Settings → Permissions to move windows.") }
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.2)
-        guard let window = AXRead.element(app, kAXFocusedWindowAttribute) ?? AXRead.element(app, kAXMainWindowAttribute) else {
+        guard access.isTrusted() else { throw FrogError.message("Allow Accessibility in Settings → Permissions to move windows.") }
+        guard let window = access.focusedWindow(pid: pid) else {
             throw FrogError.message("There is no focused window to \(action.title.lowercased()).")
         }
-        AXUIElementSetMessagingTimeout(window, 0.2)
         try Task.checkCancellation()
         if action == .minimize {
-            try set(window, kAXMinimizedAttribute, kCFBooleanTrue)
+            try access.setMinimized(true, of: window)
             return
         }
+        let state = access.state(of: window)
         if action == .toggleFullScreen {
-            let fullScreen = AXRead.boolean(window, "AXFullScreen") ?? false
-            try set(window, "AXFullScreen", fullScreen ? kCFBooleanFalse : kCFBooleanTrue)
+            try access.setFullScreen(!state.fullScreen, of: window)
             return
         }
-        guard AXRead.boolean(window, "AXFullScreen") != true else {
+        guard !state.fullScreen else {
             throw FrogError.message("Exit full screen before moving or resizing this window.")
         }
-        guard let current = frame(window), !displays.isEmpty else {
+        let displays = displays.map(\.visibleFrame)
+        guard let current = access.frame(of: window), !displays.isEmpty else {
             throw FrogError.message("macOS could not read this window's size or display.")
         }
-        let saved = previous.firstIndex { CFEqual($0.window, window) }
+        let saved = history.entry(for: window.key)
         let target: CGRect
         // What Restore returns to once this action has moved the window.
         var before = current
         if action == .restore {
             guard let saved else { throw FrogError.message("There is no previous size for this window yet.") }
-            let original = previous[saved].frame
+            let original = saved.frame
             // Keep a restored window reachable after a display has been disconnected.
             if displays.contains(where: { $0.intersects(original) }) { target = original }
             else { target = WindowGeometry.target(.center, window: original, displays: displays) ?? current }
@@ -122,45 +122,19 @@ actor WindowManager {
             guard let proposed = WindowGeometry.target(action, window: current, displays: displays) else { return }
             // The same shortcut again on a window that could not take the exact frame sets
             // that frame once more. Restore still returns to the frame before the first press.
-            if let saved, previous[saved].move.isRepeated(by: proposed, from: current) { before = previous[saved].frame }
+            if let saved, saved.move.isRepeated(by: proposed, from: current) { before = saved.frame }
             target = proposed
         }
         guard target != current else { return }
-        var movable = DarwinBoolean(false), resizable = DarwinBoolean(false)
-        guard AXUIElementIsAttributeSettable(window, kAXPositionAttribute as CFString, &movable) == .success, movable.boolValue else {
+        guard state.movable else {
             throw FrogError.message("This window does not allow its position to be changed.")
         }
-        if target.size != current.size {
-            guard AXUIElementIsAttributeSettable(window, kAXSizeAttribute as CFString, &resizable) == .success, resizable.boolValue else {
-                throw FrogError.message("This window does not allow resizing.")
-            }
+        let resize = target.size != current.size
+        if resize, !state.resizable {
+            throw FrogError.message("This window does not allow resizing.")
         }
         try Task.checkCancellation()
-        var point = target.origin, size = target.size
-        guard let position = AXValueCreate(.cgPoint, &point), let dimensions = AXValueCreate(.cgSize, &size) else { return }
-        // Position first permits moving from a smaller display; repeating it handles app size constraints.
-        try set(window, kAXPositionAttribute, position)
-        if target.size != current.size { try set(window, kAXSizeAttribute, dimensions) }
-        try set(window, kAXPositionAttribute, position)
-        if let saved { previous.remove(at: saved) }
-        previous.append(PreviousFrame(window: window, frame: before, move: .init(target: target, applied: frame(window) ?? target)))
-        previous = Array(previous.suffix(50))
-    }
-
-    private func set(_ window: AXUIElement, _ attribute: String, _ value: CFTypeRef) throws {
-        guard AXUIElementSetAttributeValue(window, attribute as CFString, value) == .success else {
-            throw FrogError.message("macOS could not apply this window action. The app may not support it.")
-        }
-    }
-
-    private func frame(_ window: AXUIElement) -> CGRect? {
-        guard let rawPoint = AXRead.attribute(window, kAXPositionAttribute), CFGetTypeID(rawPoint) == AXValueGetTypeID(),
-              let rawSize = AXRead.attribute(window, kAXSizeAttribute), CFGetTypeID(rawSize) == AXValueGetTypeID() else { return nil }
-        let pointValue = rawPoint as! AXValue, sizeValue = rawSize as! AXValue
-        var point = CGPoint.zero, size = CGSize.zero
-        guard AXValueGetType(pointValue) == .cgPoint, AXValueGetType(sizeValue) == .cgSize,
-              AXValueGetValue(pointValue, .cgPoint, &point), AXValueGetValue(sizeValue, .cgSize, &size),
-              size.width > 0, size.height > 0 else { return nil }
-        return CGRect(origin: point, size: size)
+        try access.setFrame(target, of: window, resize: resize)
+        history.record(window.key, before: before, move: .init(target: target, applied: access.frame(of: window) ?? target))
     }
 }
