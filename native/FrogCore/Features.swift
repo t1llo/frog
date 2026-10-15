@@ -22,6 +22,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
     // slot: windows
     case windows
     // slot: cleaner
+    case cleaner
     // slot: emoji-picker
     // slot: processes
     // slot: color-picker
@@ -49,6 +50,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         // slot: windows
         case .windows: "Windows"
         // slot: cleaner
+        case .cleaner: "App cleaner"
         // slot: emoji-picker
         // slot: processes
         // slot: color-picker
@@ -77,6 +79,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         // slot: windows
         case .windows: "rectangle.split.2x1"
         // slot: cleaner
+        case .cleaner: "trash.circle"
         // slot: emoji-picker
         // slot: processes
         // slot: color-picker
@@ -105,6 +108,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         // slot: windows
         case .windows: "Snap, tile and arrange windows with the mouse or keyboard."
         // slot: cleaner
+        case .cleaner: "Uninstall apps with the files they leave behind. Everything goes to the Trash first."
         // slot: emoji-picker
         // slot: processes
         // slot: color-picker

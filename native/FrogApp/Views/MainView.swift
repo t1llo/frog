@@ -59,6 +59,7 @@ struct MainView: View {
             // slot: windows
             case .windows: WindowsView()
             // slot: cleaner
+            case .cleaner: CleanerView(cleaner: model.cleaner)
             // slot: emoji-picker
             // slot: processes
             // slot: color-picker

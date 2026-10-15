@@ -78,6 +78,16 @@ final class AppModel: ObservableObject {
         if documentsModel == nil { documentsModel = LocalDocuments(directory: configurationStore.directory.appendingPathComponent("Toolkit")) }
         return documentsModel!
     }
+    /// Tests set this before anything touches `cleaner`, so no test reads the real Applications folders.
+    var cleanerDependencies: (@MainActor () -> CleanerDependencies)?
+    private var cleanerModel: CleanerModel?
+    var cleaner: CleanerModel {
+        if cleanerModel == nil {
+            cleanerModel = CleanerModel(dependencies: cleanerDependencies?() ?? .live(dataDirectory: historyStore.directory,
+                protectedPaths: [Bundle.main.bundleURL, historyStore.directory, configurationStore.directory]))
+        }
+        return cleanerModel!
+    }
     var hasPendingDocumentWrites: Bool { documentsModel?.needsFlush == true }
     func flushDocuments() async -> Bool { await documentsModel?.flush() ?? true }
     private lazy var commandBar: CommandBar = {
@@ -380,6 +390,7 @@ final class AppModel: ObservableObject {
             // slot: windows
             case .windows: if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.windowLayout.stop()
             // slot: cleaner
+            case .cleaner: self.cleanerModel?.stop()
             // slot: emoji-picker
             // slot: processes
             // slot: color-picker
@@ -454,6 +465,7 @@ final class AppModel: ObservableObject {
         systemMonitor.stop()
         commandBar.stop()
         toolkit.stop()
+        cleanerModel?.stop()
         systemStatusTask?.cancel(); systemStatusTask = nil
         loginStatusTask?.cancel(); loginStatusTask = nil
         loginWriteTask?.cancel(); loginWriteTask = nil

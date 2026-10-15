@@ -90,6 +90,7 @@ Disabled by default:
 <!-- slot: windows -->
 - `windows`
 <!-- slot: cleaner -->
+- `cleaner`
 <!-- slot: emoji-picker -->
 <!-- slot: processes -->
 <!-- slot: color-picker -->
@@ -108,6 +109,7 @@ Older installations retain their existing shortcut/window enablement semantics d
 - `explain`
 <!-- slot: windows -->
 <!-- slot: cleaner -->
+- `cleaner`
 <!-- slot: emoji-picker -->
 <!-- slot: processes -->
 <!-- slot: color-picker -->

@@ -4,13 +4,14 @@ import SwiftUI
 /// Icons are requested only for mounted rows and reused when rows or tabs are revisited.
 struct ApplicationIcon: View {
     let path: String
+    var size: CGFloat = 28
     @State private var image: CGImage?
 
     var body: some View {
         Group {
             if let image { Image(decorative: image, scale: 2).resizable() }
             else { Image(systemName: "app").resizable().foregroundStyle(FrogStyle.muted) }
-        }.frame(width: 28, height: 28)
+        }.frame(width: size, height: size)
             .task(id: path) {
                 guard !Task.isCancelled else { return }
                 let loaded = await ApplicationIconCache.shared.image(for: path)
