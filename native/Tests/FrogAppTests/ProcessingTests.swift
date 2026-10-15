@@ -22,6 +22,28 @@ final class ProcessingTests: XCTestCase {
         XCTAssertEqual(try model.resolved(legacy).model, "other")
         XCTAssertEqual(model.ruleModelLabel(legacy), provider.name + " · Other model")
     }
+    func testAnAnswerRuleNeverInheritsTheLegacyDefaultModel() async throws {
+        let model = AppModel(dataDirectory: try directory(), registerShortcuts: false)
+        let provider = ProviderConfiguration(kind: .ollama)
+        try model.saveProvider(provider, apiKey: nil, clearKey: false)
+        try model.setDefaultProvider(id: provider.id, activate: false)
+        var prefs = model.configuration.preferences.workflowSettings
+        prefs.defaultLocalTextModelID = "qwen-1.7b"
+        prefs.textSource = .frog
+        try model.saveWorkflowPreferences(prefs)
+        XCTAssertNil(model.configuration.explicitRuleModels)
+        var answer = Rule.explainPreset
+        XCTAssertThrowsError(try model.resolved(answer)) { XCTAssertEqual($0.localizedDescription, "Choose a text model for Explain.") }
+        prefs.textSource = .provider
+        try model.saveWorkflowPreferences(prefs)
+        XCTAssertThrowsError(try model.resolved(answer)) { XCTAssertEqual($0.localizedDescription, "Choose a text model for Explain.") }
+        XCTAssertEqual(try model.resolved(Rule()).id, provider.id, "A Writing rule still uses the legacy default")
+        prefs.textSource = .frog
+        try model.saveWorkflowPreferences(prefs)
+        XCTAssertEqual(try model.resolved(Rule()).model, "qwen-1.7b", "A Writing rule still uses the legacy default")
+        answer.providerID = provider.id
+        XCTAssertEqual(try model.resolved(answer).id, provider.id)
+    }
     func testShortcutProcessesOnlyCapturedSelectionReplacesAndPersistsHistory() async throws {
         let folder = try directory()
         let selection = FixtureSelection(text: "teh selected text")

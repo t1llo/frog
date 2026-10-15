@@ -1010,12 +1010,14 @@ final class AppModel: ObservableObject {
     }
 
     func resolved(_ rule: Rule) throws -> ProviderConfiguration {
-        if let id = rule.action?.localTextModelID ?? (configuration.explicitRuleModels != true && rule.providerID == nil && configuration.preferences.workflowSettings.effectiveTextSource == .frog ? configuration.preferences.workflowSettings.defaultLocalTextModelID ?? LocalModelDescriptor.legacyTextModelID : nil),
+        if let id = rule.action?.localTextModelID ?? (!rule.answersInPanel && configuration.explicitRuleModels != true && rule.providerID == nil && configuration.preferences.workflowSettings.effectiveTextSource == .frog ? configuration.preferences.workflowSettings.defaultLocalTextModelID ?? LocalModelDescriptor.legacyTextModelID : nil),
            let model = configuration.localModel(id) {
             return ProviderConfiguration(id: Self.localProviderID, name: model.name, kind: .compatible, model: id)
         }
-        guard let providerID = rule.providerID ?? (configuration.explicitRuleModels == true ? nil : configuration.defaultProviderID),
+        guard let providerID = rule.providerID ?? (!rule.answersInPanel && configuration.explicitRuleModels != true ? configuration.defaultProviderID : nil),
               var provider = configuration.providers.first(where: { $0.id == providerID }) else {
+            // An answer rule never inherits a model, so it has to name one.
+            if rule.answersInPanel { throw FrogError.message("Choose a text model for \(rule.name).") }
             throw FrogError.message("Choose a text model in \(rule.name). Add a provider or download a model in Models first.")
         }
         if configuration.explicitRuleModels == true, rule.model.isEmpty { throw FrogError.message("Choose a text model for \(rule.name).") }
