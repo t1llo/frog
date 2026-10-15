@@ -15,7 +15,15 @@ struct StayAwakeView: View {
                 CompactRow(title: "Duration") {
                     CompactMenu(value: power.duration.title) {
                         ForEach(StayAwakeController.DurationChoice.allCases) { duration in
-                            Button(duration.title) { power.duration = duration }
+                            Button { power.duration = duration } label: {
+                                HStack {
+                                    Text(L10n.text(duration.title))
+                                    Spacer()
+                                    if power.duration == duration {
+                                        Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(FrogStyle.accent)
+                                    }
+                                }
+                            }.accessibilityAddTraits(power.duration == duration ? .isSelected : [])
                         }
                     }.disabled(power.isEnabled || power.isBusy)
                 }
