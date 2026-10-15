@@ -285,4 +285,20 @@ final class CleanerRemoverTests: XCTestCase {
         XCTAssertEqual(restored.entries.filter(\.restored).map(\.original), [free.id])
         XCTAssertEqual(try store.records().first, restored)
     }
+
+    func testPutBackExplainsAnItemThatLeftTheTrash() async throws {
+        let kept = item(try fixture.item(.caches, "com.example.kept"))
+        let dragged = item(try fixture.item(.caches, "com.example.dragged"))
+        let outcome = await run(plan([kept, dragged]))
+        let record = try XCTUnwrap(outcome.record)
+        let trashed = try XCTUnwrap(record.entries.first { $0.original == dragged.id }?.trashed)
+        try FileManager.default.moveItem(at: URL(fileURLWithPath: trashed), to: fixture.root.appendingPathComponent("Elsewhere"))
+
+        let (restored, failures) = await remover().putBack(record)
+
+        XCTAssertEqual(failures, [RemovalFailure(path: dragged.id, message: "It is no longer in the Trash.")])
+        XCTAssertEqual(restored.entries.filter(\.restored).map(\.original), [kept.id])
+        XCTAssertFalse(log.entries.contains("putBack com.example.dragged"), "Frog does not try to move what is gone")
+        XCTAssertFalse(exists(dragged.url))
+    }
 }

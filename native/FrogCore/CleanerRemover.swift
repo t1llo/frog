@@ -110,6 +110,7 @@ public struct CleanerRemover: Sendable {
     static let recordNotSaved = "Frog could not save the list for Put Back."
     static let useFinder = "Use Put Back in the Trash in Finder."
     static let placeTaken = "Something else is now at the original place."
+    static let leftTheTrash = "It is no longer in the Trash."
     static let couldNotPutBack = "Frog could not put this item back."
     static func stillRunning(_ name: String) -> String { "\(name) is still running. Nothing was moved." }
     static func notStopped(_ label: String) -> String { "Frog could not stop \(label). It stops after you log out or restart." }
@@ -230,6 +231,11 @@ public struct CleanerRemover: Sendable {
             let original = URL(fileURLWithPath: entry.original)
             guard entry.restorable, let trashed = entry.trashed else {
                 failures.append(RemovalFailure(path: entry.original, message: Self.useFinder))
+                continue
+            }
+            // The Trash was emptied, or the item was dragged out of it.
+            guard exists(URL(fileURLWithPath: trashed)) else {
+                failures.append(RemovalFailure(path: entry.original, message: Self.leftTheTrash))
                 continue
             }
             if exists(original) {
