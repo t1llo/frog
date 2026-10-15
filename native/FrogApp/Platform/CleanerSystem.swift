@@ -195,9 +195,8 @@ enum CleanerProcessRunner {
         let drained = DispatchSemaphore(value: 0)
         DispatchQueue.global(qos: .utility).async {
             let handle = pipe.fileHandleForReading
-            while true {
-                let chunk = handle.availableData
-                if chunk.isEmpty { break }
+            // `read(upToCount:)` throws instead of raising an exception, and is nil at the end.
+            while let chunk = try? handle.read(upToCount: 16 * 1024), !chunk.isEmpty {
                 output.append(chunk)
             }
             drained.signal()
