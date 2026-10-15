@@ -165,6 +165,7 @@ public enum ConfigurationFile {
             }
         }
         // slot: explain
+        try preferences.toolkit?.explain?.validate()
         // slot: windows
         // slot: cleaner
         // slot: command-bar

@@ -63,6 +63,7 @@ enum TextConfiguration {
             .init("transparency", "appearance.transparency", .number(0...1)),
             .init("popup-transparency", "appearance.popupTransparency", .number(0...1)),
             // slot: explain
+            .init("explain.context", "toolkit.explain.includeContext", .bool),
             // slot: windows
             // slot: cleaner
             // slot: command-bar
@@ -211,6 +212,7 @@ enum TextConfiguration {
                 ("usage", try JSONEncoder().encode(UsageDisplayPreferences())),
                 ("menuBar", try JSONEncoder().encode(MenuBarPreferences())),
                 // slot: explain
+                ("explain", try JSONEncoder().encode(ExplainSettings())),
                 // slot: windows
                 // slot: cleaner
                 // slot: command-bar

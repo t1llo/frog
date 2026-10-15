@@ -55,6 +55,7 @@ struct MainView: View {
                         do { try model.updateToolkit { $0.menuBar = value.normalized } } catch { model.report(error) }
                     }))
             // slot: explain
+            case .explain: ExplainView()
             // slot: windows
             // slot: cleaner
             // slot: emoji-picker

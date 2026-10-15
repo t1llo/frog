@@ -8,6 +8,8 @@ struct RulesView: View {
     var applications = false
     var fixedCategory: RuleCategory?
     var output: TextOutput = .replace
+    /// Settings shown below the list, so a page with its own settings needs no second scroll view.
+    var trailing: AnyView?
     @State private var editing: Rule?
     @State private var trying: Rule?
     @State private var filter: RuleCategory = .text
@@ -40,21 +42,24 @@ struct RulesView: View {
     private var pageTitle: String {
         if fixedCategory == .audio { return "Dictation" }
         if fixedCategory == .window { return "Windows" }
-        if fixedCategory == .text { return "Writing" }
+        if fixedCategory == .text { return answers ? "Explain" : "Writing" }
         return applications ? "Shortcuts" : "Rules"
     }
     private var pageSubtitle: String {
         if fixedCategory == .window { return "Arrange your front window with keyboard shortcuts." }
         if applications { return "Choose your own shortcuts for apps and everyday Mac actions." }
         if category == .audio { return "Turn speech into text with your preferred model and shortcut." }
+        if answers { return "Ask about selected text and read the answer in a panel next to it. Each answer rule uses its own model." }
         return "Transform selected text with reusable instructions and shortcuts."
     }
+    /// The Explain page: answer rules only.
+    private var answers: Bool { fixedCategory == .text && output == .panel }
     var body: some View {
         let displayedRules = rules
         let lastRuleID = displayedRules.last?.id
         VStack(alignment: .leading, spacing: 14) {
             PageHeader(title: pageTitle, subtitle: pageSubtitle) {
-                if !applications { Button("New rule", systemImage: "plus") {
+                if !applications { Button(answers ? "New answer rule" : "New rule", systemImage: "plus") {
                     editing = model.configuration.newRule(category: category, output: output, installed: model.localModels.installed)
                 }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut("n", modifiers: .command) }
             }
@@ -81,7 +86,7 @@ struct RulesView: View {
                                     if rule.category == .application { ApplicationIcon(path: rule.action?.applicationPath ?? "") }
                                     else { Image(systemName: rule.action?.systemAction?.symbol ?? "macwindow").font(.system(size: 20)).foregroundStyle(FrogStyle.muted).frame(width: 28, height: 28) }
                                 } else {
-                                    Image(systemName: rule.category == .audio ? "waveform" : "text.alignleft")
+                                    Image(systemName: rule.category == .audio ? "waveform" : rule.answersInPanel ? "questionmark.bubble" : "text.alignleft")
                                         .font(.system(size: 13)).foregroundStyle(FrogStyle.muted).frame(width: 24)
                                 }
                                 if applications {
@@ -109,11 +114,14 @@ struct RulesView: View {
                                     do { try model.saveRule(updated) } catch { model.report(error) }
                                 }), showsClearButton: false)
                                 if !applications {
-                                    Button(rule.category == .audio ? "Record" : "Try") {
-                                        if rule.category == .audio { model.startDictation(rule) }
-                                        else { trying = rule }
-                                    }.disabled(!rule.enabled || model.isProcessing || model.dictation.active)
-                                    .accessibilityLabel(rule.category == .audio ? "Record with \(rule.name)" : "Try \(rule.name)")
+                                    // An answer needs a selection and a panel, so answer rules run from their shortcut or the command bar.
+                                    if !rule.answersInPanel {
+                                        Button(rule.category == .audio ? "Record" : "Try") {
+                                            if rule.category == .audio { model.startDictation(rule) }
+                                            else { trying = rule }
+                                        }.disabled(!rule.enabled || model.isProcessing || model.dictation.active)
+                                        .accessibilityLabel(rule.category == .audio ? "Record with \(rule.name)" : "Try \(rule.name)")
+                                    }
                                     IconAction(title: "Edit \(rule.name)", symbol: "pencil") { editing = rule }
                                 }
                             }.padding(.horizontal, 12).padding(.vertical, 10)
@@ -134,6 +142,7 @@ struct RulesView: View {
                     }.minimalScrollbars()
                 }
             }.frogTableSurface()
+            if let trailing { trailing }
         }.padding(20).sheet(item: $editing) { rule in
             // A saved copy replaces this editor with one on the copy.
             RuleEditor(rule: rule, onSave: { search = "" }, onSaveCopy: { copy in search = ""; editing = copy }).environmentObject(model)
@@ -143,6 +152,12 @@ struct RulesView: View {
                 guard applications, fixedCategory != .window else { return }
                 await applicationCatalog.loadIfNeeded()
             }
+    }
+}
+
+extension RulesView {
+    init<Trailing: View>(fixedCategory: RuleCategory, output: TextOutput, @ViewBuilder trailing: () -> Trailing) {
+        self.init(fixedCategory: fixedCategory, output: output, trailing: AnyView(trailing()))
     }
 }
 
@@ -231,7 +246,7 @@ struct RuleEditor: View {
         VStack(spacing: 0) {
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(rule.category == .application ? "Application shortcut" : rule.category == .audio ? "Audio rule" : "Text rule").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                    Text(rule.category == .application ? "Application shortcut" : rule.category == .audio ? "Audio rule" : rule.answersInPanel ? "Answer rule" : "Text rule").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
                     TextField("Name your rule", text: $rule.name).textFieldStyle(.plain).font(.system(size: 23, weight: .semibold)).accessibilityLabel("Rule name")
                 }
                 Toggle("Enabled", isOn: $rule.enabled).toggleStyle(.switch).controlSize(.mini).font(.system(size: 11))
@@ -258,6 +273,10 @@ struct RuleEditor: View {
                             }
                             Divider()
                             CompactRow(title: "Shortcut") { HotkeyRecorder(hotkey: $rule.hotkey) }
+                            if let warning = rule.answerHotkeyWarning {
+                                Text(warning).font(.system(size: 10)).foregroundStyle(FrogStyle.warning)
+                                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                            }
                             if rule.category == .audio { audioOptions }
                         }.padding(13).frogTableSurface()
                         if rule.category == .text { instructions }
@@ -304,7 +323,7 @@ struct RuleEditor: View {
     }
     private var instructions: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack { Text("Instructions").font(.system(size: 12, weight: .medium)); Spacer(); if rule.category == .text { Text("Applied to selected text").font(.system(size: 10)).foregroundStyle(FrogStyle.muted) } }
+            HStack { Text("Instructions").font(.system(size: 12, weight: .medium)); Spacer(); if rule.category == .text { Text(rule.answersInPanel ? "Sent with the selected text" : "Applied to selected text").font(.system(size: 10)).foregroundStyle(FrogStyle.muted) } }
             TextEditor(text: $rule.instructions).font(.system(size: 12)).scrollContentBackground(.hidden).padding(9).frame(height: 120)
                 .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(FrogStyle.border.opacity(0.6)))
         }

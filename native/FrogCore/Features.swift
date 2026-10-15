@@ -4,6 +4,7 @@ import Foundation
 public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
     case writing
     // slot: explain
+    case explain
     case dictation
     case applicationShortcuts
     case windowSwitcher
@@ -43,6 +44,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .menuBar: "Menu bar"
         case .systemMonitor: "System monitor"
         // slot: explain
+        case .explain: "Explain"
         // slot: windows
         // slot: cleaner
         // slot: emoji-picker
@@ -69,6 +71,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .menuBar: "menubar.rectangle"
         case .systemMonitor: "gauge.medium"
         // slot: explain
+        case .explain: "questionmark.bubble"
         // slot: windows
         // slot: cleaner
         // slot: emoji-picker
@@ -95,6 +98,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .menuBar: "Keep menu bar items behind a divider and reveal them when needed."
         case .systemMonitor: "See CPU, GPU, disk and power activity in the Frog menu."
         // slot: explain
+        case .explain: "Ask about selected text and read the answer in a panel next to it, without changing the text."
         // slot: windows
         // slot: cleaner
         // slot: emoji-picker
@@ -130,6 +134,7 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
     public var usage: UsageDisplayPreferences?
     public var menuBar: MenuBarPreferences?
     // slot: explain
+    public var explain: ExplainSettings?
     // slot: windows
     // slot: cleaner
     // slot: command-bar
@@ -151,6 +156,7 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         case usage
         case menuBar
         // slot: explain
+        case explain
         // slot: windows
         // slot: cleaner
         // slot: command-bar
@@ -170,6 +176,7 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         usage = try values.decodeIfPresent(UsageDisplayPreferences.self, forKey: .usage)
         menuBar = try values.decodeIfPresent(MenuBarPreferences.self, forKey: .menuBar)
         // slot: explain
+        explain = try values.decodeIfPresent(ExplainSettings.self, forKey: .explain)
         // slot: windows
         // slot: cleaner
         // slot: command-bar
@@ -273,8 +280,7 @@ extension Preferences {
     /// Window arrangement belongs to Shortcuts, independently of the switcher overlay.
     public func ruleFeatureEnabled(_ rule: Rule) -> Bool {
         switch rule.category {
-        // Answer rules stay inert until the Explain feature exists; then they follow `.explain`.
-        case .text: rule.answersInPanel ? false : featureEnabled(.writing)
+        case .text: rule.answersInPanel ? featureEnabled(.explain) : featureEnabled(.writing)
         case .audio: featureEnabled(.dictation)
         case .application, .window, .system: featureEnabled(.applicationShortcuts)
         }

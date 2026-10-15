@@ -86,6 +86,7 @@ Disabled by default:
 - `menu-bar`
 - `system-monitor`
 <!-- slot: explain -->
+- `explain`
 <!-- slot: windows -->
 <!-- slot: cleaner -->
 <!-- slot: emoji-picker -->
@@ -103,6 +104,7 @@ Older installations retain their existing shortcut/window enablement semantics d
 - `menuBar`
 - `systemMonitor`
 <!-- slot: explain -->
+- `explain`
 <!-- slot: windows -->
 <!-- slot: cleaner -->
 <!-- slot: emoji-picker -->
@@ -191,6 +193,12 @@ Several Claude accounts on one Mac, such as two Claude app profiles:
 Accounts, folders and labels stay on this Mac and are not part of the configuration.
 
 <!-- slot: explain -->
+### Explain
+
+Enable with `feature.explain = true`. Turning it on adds the **Explain** answer rule once; a deleted one stays deleted. Answer rules themselves live in JSON (see `action.textOutput` below).
+
+- `explain.context`: boolean, default `true`. Sends the sentence or paragraph around the selection, up to 1,000 characters, with it.
+
 <!-- slot: windows -->
 <!-- slot: cleaner -->
 <!-- slot: command-bar -->
