@@ -190,7 +190,7 @@ This version-sensitive behavior is why support is gated to 0.159.x.
   stdin, not process arguments. Prompt files and generated config are removed.
 - Only a small allowlist of environment values is passed. Shell/Node injection,
   inherited API keys and arbitrary tool config overrides are not forwarded.
-- Defaults: 90-second deadline (maximum configurable 300), 4 MiB for each output
+- Defaults: 90-second deadline (180 for answers in a panel; maximum configurable 300), 4 MiB for each output
   stream, 1,000,000-byte text, 100,000-byte instructions. Pipes are serviced together
   to avoid stdout/stderr/stdin deadlocks. Oversized/truncated output is an error.
 - Every direct child owns a new process group. Cancellation, timeout, output-limit

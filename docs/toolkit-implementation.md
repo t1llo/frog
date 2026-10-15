@@ -250,6 +250,33 @@ enclosing paragraph, else the line, else the nearest sentences, up to 1,000 char
 with "…" where text was left out. `ReasoningFilter` hides one leading
 `<think>…</think>` block; an answer that is only reasoning ends with an error.
 
+### Answer engine
+
+`AnswerController` runs one answer and its follow-ups at a time; starting another cancels
+the running stream and replaces the session. Before anything is sent it checks, in order,
+that the selection is not empty, that the rule's model resolves, that the selection fits
+the model's limit and that the instructions expand. A failure opens the panel with the
+message, offers Edit rule for a model or rule problem, and goes to the log. An answer
+rule never inherits the older default model or provider: without a model of its own it
+asks for one.
+
+`AnswerStreams` picks the backend. Frog's own models stream through `LocalModels.stream`,
+which waits for running work like Writing does and keeps idle unload, residency and
+memory pressure; an answer may use up to 2,048 new tokens, and text that reaches the
+limit is kept and marked rather than refused. HTTP providers stream through
+`LLMClient.stream`. A coding tool cannot stream: it receives the conversation as one
+transcript and answers in one piece, within 180 seconds.
+
+Each turn's text passes a fresh `ReasoningFilter` before it reaches the session. The
+panel, behind the `AnswerPresenting` protocol, is updated at most every 50 ms while text
+streams, and at once when the phase changes or a turn ends. A turn with no visible text
+fails. The first completed turn counts one rule run (local, coding tool or remote, as
+Writing counts) and is recorded; later turns update that record until an update is
+refused. Stop keeps the text so far and records nothing; Retry sends the same messages
+again; a provider error is shown with Retry and logged, and cancelling is not an error.
+Answers never use Writing's `isProcessing`, its processing pill or its outcome, so a
+Writing rule can run while an answer is open.
+
 ## Data and execution
 
 Portable configuration contains feature choices and settings. Credentials stay

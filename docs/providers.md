@@ -46,7 +46,7 @@ Discovery sends a model-list request, not your writing or recordings. Frog does 
 
 ### Streaming answers
 
-Answers that Frog shows while they are written arrive in pieces. OpenAI, OpenAI-compatible and LM Studio connections stream from `chat/completions`, Claude from `v1/messages`, Gemini from `streamGenerateContent` with server-sent events, and Ollama from `api/chat`, each with the same endpoint, key and HTTPS rules as any other request. The request timeout counts the silence between pieces, so a server that loads its model on demand can still answer. A compatible server that ignores streaming answers in one piece, as do the coding tools. Rules that replace your text still wait for the complete answer.
+Answers that Frog shows while they are written arrive in pieces. OpenAI, OpenAI-compatible and LM Studio connections stream from `chat/completions`, Claude from `v1/messages`, Gemini from `streamGenerateContent` with server-sent events, and Ollama from `api/chat`, each with the same endpoint, key and HTTPS rules as any other request. The request timeout counts the silence between pieces, so a server that loads its model on demand can still answer. A compatible server that ignores streaming answers in one piece. Coding tools answer in one piece too, from the whole conversation as one transcript, and have 180 seconds to do so. Rules that replace your text still wait for the complete answer.
 
 ## Internal models
 
