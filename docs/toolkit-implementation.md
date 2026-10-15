@@ -298,6 +298,48 @@ for `http`, `https` and `file` only, without user, password, query or fragment. 
 with History and notes and is never sent to a model. Every element these reads touch has
 the same one-second messaging timeout as the capture itself.
 
+### Reading a selection without copying
+
+An answer rule run from its shortcut or the command bar first waits for the shortcut keys
+to be released, checks that the frontmost app is not Frog, and asks `SelectionReader` for
+the selection, at most 100,000 characters, with context when **Include surrounding text**
+is on. `SelectionReader` uses Accessibility only. It runs every call on its own serial
+queue, never the main thread, on an application element with a 0.25-second messaging
+timeout that every element read from it gets as well. The screen frames are read once on
+the main actor before the read; the primary display's height comes from
+`CGDisplayBounds`, which is safe off the main thread.
+
+- **Path A, text attributes:** the focused element's role, subrole and selected range
+  decide before any text is fetched (`SelectionReadDecision` in FrogCore). A password
+  field is refused. No range means path B. A zero-length range is empty only in an
+  `AXTextArea` or `AXTextField`; anywhere else, such as a web area, it means path B, since
+  a caret there is not a selection Frog can tell is empty. A range longer than the limit
+  is refused. Otherwise Frog reads the selected text, else that part of the text, else the
+  range of the value when the element reports at most 200,000 characters. The rectangle,
+  last character, context and source are read as for a captured selection.
+- **Path B, text markers (WebKit, and Chromium while its accessibility is on):** the
+  selected marker range of the focused element or of its nearest `AXWebArea` within eight
+  parents, its string and its bounds. The last character's rectangle comes from the end
+  marker and the one before it when the app supports that, else the selection's bottom
+  right corner. Context is the paragraph where the selection starts, when the app gives
+  it. The length is checked after reading. No marker range, or an empty one, is
+  unavailable.
+
+The result is a `SelectionSnapshot` (text, rectangle, last character, context, source,
+whether the field is editable, the app's process, bundle identifier and name, and a
+fingerprint of process, element, range and text hash), or empty, secure, too long or
+unavailable. An answer uses a snapshot as it is. Empty, secure and too long end in the
+panel with "Select some text first.", "Frog does not read password fields." or the
+length message. Only unavailable falls back to `captureSelection()`, whose compatibility
+Copy restores the clipboard, so Electron apps, Chromium without accessibility and canvas
+apps still answer. Writing rules keep `captureSelection()`, which they need to replace text.
+
+`SelectionReader.swift` never names the pasteboard, `ClipboardSelection` or
+`FreshSelectionCopy`, never posts events and never sets `AXManualAccessibility` or
+`AXEnhancedUserInterface`, which would make Chromium and Electron apps build their whole
+accessibility tree at a cost in memory and CPU. `SelectionIsolationTests` scans the file
+for these names.
+
 ### Answer panel
 
 `AnswerPanelController` is the app's `AnswerPresenting`: a 400-point `FrogFloatingPanel`

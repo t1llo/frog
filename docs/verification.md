@@ -664,6 +664,27 @@ filled in by the integrator:
 - [ ] ⌘S in the panel and Save to note in History's answer detail; with no folder, the
       chooser opens and the panel stays open.
 
+### Answers read without copying
+
+Automated: `SelectionReadDecisionTests` (password fields, no range, a caret empty only in
+text areas and text fields, too long before any text is read, marker text),
+`SelectionReaderTests` (fake elements: a text field's text, rectangles and fingerprint; a
+password field refused without reading text; a web area read through text markers and a
+caret there unavailable; the web area found within eight parents; context only when asked
+and a long value read only around the selection), `SelectionIsolationTests` (the reader
+names no pasteboard, Copy or event posting) and `ExplainRoutingTests` (a selection read
+this way never copies; empty, secure and too long refuse without copying; unavailable
+falls back to the compatibility Copy).
+
+Device checks, with isolated data, to be filled in by the integrator:
+
+- [ ] Explain from its shortcut in Safari leaves `NSPasteboard.general.changeCount`
+      unchanged and the panel opens next to the selection.
+- [ ] TextEdit with only a caret: "Select some text first."
+- [ ] Slack or another Electron app: the compatibility Copy runs and the clipboard is
+      restored.
+- [ ] A password field: refused.
+
 ## Distribution
 
 Developer ID signing/notarization requires the owner's Apple Developer credentials. Ad-hoc signing is suitable for local development, but is not notarization and does not establish that macOS will trust a downloaded release on another machine.
