@@ -244,6 +244,19 @@ A command shortcut runs only while Windows is on, and must not repeat another gl
 `preferences.toolkit.windows.setupChoice` records what was chosen on the Windows page the first time (`snap` or `manual`); the choice card shows while it is missing. It has no text key. A value this version of Frog does not know keeps the card hidden.
 
 <!-- slot: cleaner -->
+### App cleaner
+
+Enable with `feature.cleaner = true`. Portable settings, read only while the cleaner is on:
+
+- `cleaner.possible-matches`: boolean, default `false`. Also lists files whose names only resemble the app; Frog never ticks them.
+<!-- slot: cleaner-leftovers -->
+<!-- slot: cleaner-junk -->
+<!-- slot: cleaner-assist -->
+<!-- slot: cleaner-disk -->
+<!-- slot: cleaner-startup -->
+
+Removal history, ignored items and dismissed notices stay on each Mac in `~/Library/Application Support/Frog/Cleaner/`. See the [App cleaner guide](cleaner.md).
+
 <!-- slot: command-bar -->
 ### Command bar
 

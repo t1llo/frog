@@ -87,6 +87,12 @@ enum TextConfiguration {
             .init("windows.zone-overlay", "toolkit.windows.zoneOverlay", .bool),
             .init("windows.zone-grid", "toolkit.windows.zoneGrid", .choice(ZoneGrid.allCases.map(\.rawValue))),
             // slot: cleaner
+            .init("cleaner.possible-matches", "toolkit.cleaner.possibleMatches", .bool),
+            // slot: cleaner-leftovers
+            // slot: cleaner-junk
+            // slot: cleaner-assist
+            // slot: cleaner-disk
+            // slot: cleaner-startup
             // slot: command-bar
             .init("command-bar.learn-choices", "toolkit.commandBar.learnChoices", .bool),
             // slot: clipboard
@@ -237,6 +243,7 @@ enum TextConfiguration {
                 // slot: windows
                 ("windows", try JSONEncoder().encode(WindowPreferences())),
                 // slot: cleaner
+                ("cleaner", try JSONEncoder().encode(CleanerPreferences())),
                 // slot: command-bar
                 ("commandBar", try JSONEncoder().encode(CommandBarPreferences())),
                 // slot: clipboard

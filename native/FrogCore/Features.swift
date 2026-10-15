@@ -142,6 +142,7 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
     // slot: windows
     public var windows: WindowPreferences?
     // slot: cleaner
+    public var cleaner: CleanerPreferences?
     // slot: command-bar
     public var commandBar: CommandBarPreferences?
     public var commandBarSettings: CommandBarPreferences { commandBar ?? CommandBarPreferences() }
@@ -165,6 +166,7 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         // slot: windows
         case windows
         // slot: cleaner
+        case cleaner
         // slot: command-bar
         case commandBar
         // slot: clipboard
@@ -186,6 +188,7 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         // slot: windows
         windows = try values.decodeIfPresent(WindowPreferences.self, forKey: .windows)
         // slot: cleaner
+        cleaner = try values.decodeIfPresent(CleanerPreferences.self, forKey: .cleaner)
         // slot: command-bar
         commandBar = try values.decodeIfPresent(CommandBarPreferences.self, forKey: .commandBar)
         // slot: clipboard
