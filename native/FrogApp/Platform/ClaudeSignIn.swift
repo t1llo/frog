@@ -11,6 +11,12 @@ enum ClaudeSignIn {
         }
     }
 
+    /// "Set up live readings for B…", after the view has explained it: signs Claude Code in to a
+    /// new profile for an account known only from the Claude app. Without Claude Code, its page.
+    @MainActor static func startLiveSetup(_ usage: UsageDashboardModel, account: String) {
+        open(command: usage.liveSetupCommand(for: account))
+    }
+
     @MainActor static func open(command: String?) {
         guard let command, let terminal = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal"),
               let launcher = try? launcher(command: command) else {
