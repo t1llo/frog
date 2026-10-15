@@ -85,7 +85,7 @@ struct ModelInventory: View {
                     }.padding(.vertical, 10).padding(.horizontal, 8)
                     if item.id != items.last?.id { Divider().opacity(0.5) }
                 }
-                if items.isEmpty { Text(L10n.text(installed ? "No downloaded models" : "No additional models")).font(.system(size: 11)).foregroundStyle(.secondary).padding(14).frame(maxWidth: .infinity, alignment: .leading) }
+                if items.isEmpty { Text(L10n.text(installed ? "No downloaded models" : "No additional models")).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).padding(14).frame(maxWidth: .infinity, alignment: .leading) }
             }
         }
     }

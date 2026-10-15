@@ -194,7 +194,7 @@ struct PreferencesView: View {
         CompactRow(title: title) {
             HStack(spacing: 10) {
                 Label(allowed ? "Allowed" : "Permission needed", systemImage: allowed ? "checkmark.circle.fill" : "exclamationmark.circle")
-                    .font(.system(size: 11)).foregroundStyle(allowed ? FrogStyle.accent : .orange)
+                    .font(.system(size: 11)).foregroundStyle(allowed ? FrogStyle.accent : FrogStyle.warning)
                 Button(allowed ? "Manage…" : "Allow…", action: action)
             }
         }

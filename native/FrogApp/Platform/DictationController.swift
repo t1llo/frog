@@ -703,12 +703,12 @@ private struct DictationPopup: View {
                     .frame(minHeight: 0, maxHeight: DictationPopupLayout.maximumTranscriptHeight)
             }
             if controller.phase == .recording {
-                Text(controller.hint).font(.system(size: 9)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                Text(controller.hint).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
             }
             if failed {
                 HStack(spacing: 8) {
                     Text("The recording is kept until you retry or discard it.")
-                        .font(.system(size: 9)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                        .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                     Spacer(minLength: 0)
                     if !controller.liveText.isEmpty {
                         Button(copiedPartial ? "Copied" : "Copy partial text") {

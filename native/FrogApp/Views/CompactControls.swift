@@ -5,10 +5,10 @@ struct SearchBox: View {
     @Binding var text: String
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            Image(systemName: "magnifyingglass").foregroundStyle(FrogStyle.muted)
             TextField(L10n.text(placeholder), text: $text).textFieldStyle(.plain)
             if !text.isEmpty {
-                Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(FrogStyle.muted) }
                     .buttonStyle(.plain).accessibilityLabel("Clear search")
             }
         }.font(.system(size: 12)).padding(.horizontal, 9).padding(.vertical, 7)
@@ -106,9 +106,9 @@ struct CompactDropdownLabel: View {
             Image(systemName: "chevron.down").font(.system(size: 9)).foregroundStyle(FrogStyle.muted)
         }.font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.ink)
             .padding(.horizontal, height < 28 ? 7 : 9).frame(width: width, height: height)
-            .background(hovering ? AnyShapeStyle(FrogStyle.selection) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 5))
-            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(FrogStyle.border.opacity(0.6)))
-            .contentShape(RoundedRectangle(cornerRadius: 7)).onHover { hovering = $0 }
+            .background(hovering ? AnyShapeStyle(FrogStyle.selection) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+            .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius).strokeBorder(FrogStyle.border.opacity(0.6)))
+            .contentShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius)).onHover { hovering = $0 }
     }
 }
 
@@ -146,7 +146,7 @@ struct CompactSegments<Value: Hashable>: View {
                     Text(L10n.text(title(value))).font(.system(size: 11, weight: selected == value ? .semibold : .regular))
                         .frame(maxWidth: .infinity).padding(.vertical, compact ? 3 : 6)
                         .foregroundStyle(selected == value ? FrogStyle.ink : FrogStyle.muted)
-                        .background(selected == value ? FrogStyle.surface : AnyShapeStyle(Color.clear), in: RoundedRectangle(cornerRadius: 4))
+                        .background(selected == value ? FrogStyle.surface : AnyShapeStyle(Color.clear), in: RoundedRectangle(cornerRadius: FrogStyle.innerRadius))
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityAddTraits(selected == value ? .isSelected : [])
             }

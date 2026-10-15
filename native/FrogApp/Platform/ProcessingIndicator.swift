@@ -51,7 +51,7 @@ final class ProcessingIndicator {
         guard let panel else { return }
         panel.alphaValue = 1
         panel.contentView = NSHostingView(rootView: HStack(spacing: 8) {
-            if let symbol { Image(systemName: symbol).foregroundStyle(warning ? .orange : FrogStyle.accent) }
+            if let symbol { Image(systemName: symbol).foregroundStyle(warning ? FrogStyle.warning : FrogStyle.accent) }
             else { ProgressView().controlSize(.small) }
             Text(text).font(.system(size: 11, weight: .medium)).lineLimit(1)
         }.frame(width: 200, height: 36).frogPanel(corner: 18))

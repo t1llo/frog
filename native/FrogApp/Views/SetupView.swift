@@ -169,8 +169,8 @@ struct SetupView: View {
                 Spacer()
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(selected ? FrogStyle.accent : FrogStyle.muted)
             }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                .background(selected ? AnyShapeStyle(FrogStyle.accentSoft) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 9))
-                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(selected ? FrogStyle.accent.opacity(0.5) : FrogStyle.border))
+                .background(selected ? AnyShapeStyle(FrogStyle.accentSoft) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
+                .overlay(RoundedRectangle(cornerRadius: FrogStyle.cardRadius).strokeBorder(selected ? FrogStyle.accent.opacity(0.5) : FrogStyle.border))
         }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -178,7 +178,7 @@ struct SetupView: View {
         CompactRow(title: title, detail: detail) {
             HStack(spacing: 8) {
                 Label(allowed ? "Allowed" : "Not allowed", systemImage: allowed ? "checkmark.circle.fill" : "exclamationmark.circle")
-                    .font(.system(size: 10)).foregroundStyle(allowed ? FrogStyle.accent : .orange)
+                    .font(.system(size: 10)).foregroundStyle(allowed ? FrogStyle.accent : FrogStyle.warning)
                 if !allowed { Button("Allow…", action: action) }
             }
         }

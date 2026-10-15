@@ -73,7 +73,7 @@ struct MainView: View {
                 selectedPage.id(section).frame(maxWidth: .infinity, maxHeight: .infinity)
                 if let error = model.errorMessage {
                     HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
+                        Image(systemName: "exclamationmark.circle.fill").foregroundStyle(FrogStyle.critical)
                         Text(error).font(.system(size: 12)).textSelection(.enabled)
                             .lineLimit(3).help("Full details are in Settings → Logs.")
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -189,6 +189,6 @@ struct InlineIssue: View {
             .font(.system(size: 12)).foregroundStyle(FrogStyle.ink)
             .fixedSize(horizontal: false, vertical: true).padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
+            .background(FrogStyle.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
     }
 }

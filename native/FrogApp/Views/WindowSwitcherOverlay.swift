@@ -62,7 +62,7 @@ struct WindowSwitcherOverlay: View {
                                                  .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                                                  .help(window.minimized ? "Minimized" : "Hidden")
                                         }
-                                        if let shortcut = model.shortcuts[window.pid] { Text(shortcut).font(.system(size: 10)).foregroundStyle(.secondary) }
+                                        if let shortcut = model.shortcuts[window.pid] { Text(shortcut).font(.system(size: 10)).foregroundStyle(FrogStyle.muted) }
                                          Image(systemName: "return").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                                              .opacity(model.selected == window.id ? 1 : 0)
                                      }.padding(.horizontal, 8).frame(height: WindowSwitcherLayout.rowHeight)

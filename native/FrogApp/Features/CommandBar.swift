@@ -874,7 +874,7 @@ private struct CommandResultRow: View, Equatable {
                 Text(result.subtitle).font(.system(size: 10)).foregroundStyle(result.isFrogCommand ? FrogStyle.accent : FrogStyle.muted).lineLimit(1).frame(maxWidth: 160, alignment: .trailing)
                 if selected { Image(systemName: "return").font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.accent) }
             }.padding(.horizontal, 10).frame(height: 40)
-                .background(selected ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: 7))
+                .background(selected ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }

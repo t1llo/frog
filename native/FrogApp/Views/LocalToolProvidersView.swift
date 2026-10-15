@@ -50,13 +50,13 @@ struct LocalToolProvidersView: View {
                 Button("Use model") { onSelect(selected, model.trimmingCharacters(in: .whitespacesAndNewlines)) }
                     .disabled(!canSelect)
             }
-            if let modelError { Text(modelError).font(.caption).foregroundStyle(.secondary) }
+            if let modelError { Text(modelError).font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
             if selected == .opencode {
                 Text("OpenCode keeps its own CLI history, independently of Frog's history setting.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
             }
             Text("Claude Desktop alone has no supported headless interface. Sign in or change accounts in the tool itself.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
         }
         .task { await refresh() }
         .task(id: selected) {

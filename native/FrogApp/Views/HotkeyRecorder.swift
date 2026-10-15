@@ -23,7 +23,7 @@ struct HotkeyRecorder: View {
                     ShortcutBadge(text: recording ? L10n.text("Press shortcut…") : hotkey.map(HotkeyManager.display) ?? L10n.text("Record shortcut"))
                 }.buttonStyle(.plain).help(recording ? "Press a new shortcut, or Escape to cancel." : "Click to change shortcut")
                 if showsClearButton && (hotkey != nil || recording) {
-                    Button { hotkey = nil; recording = false; hint = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    Button { hotkey = nil; recording = false; hint = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(FrogStyle.muted) }
                         .buttonStyle(.plain).accessibilityLabel("Clear shortcut")
                 }
                 if recording {

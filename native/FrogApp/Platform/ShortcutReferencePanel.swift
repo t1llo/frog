@@ -27,11 +27,11 @@ private struct ShortcutReferenceView: View {
             VStack(spacing: 12) {
                 ForEach(rules.filter { $0.enabled && $0.hotkey != nil }) { rule in
                     HStack {
-                        VStack(alignment: .leading, spacing: 3) { Text(rule.name); Text(L10n.text(rule.category.title)).font(.caption).foregroundStyle(.secondary) }
+                        VStack(alignment: .leading, spacing: 3) { Text(rule.name); Text(L10n.text(rule.category.title)).font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
                         Spacer(); ShortcutBadge(text: HotkeyManager.display(rule.hotkey!))
                     }
                 }
-                if !rules.contains(where: { $0.enabled && $0.hotkey != nil }) { Text("Add shortcuts in Rules.").foregroundStyle(.secondary) }
+                if !rules.contains(where: { $0.enabled && $0.hotkey != nil }) { Text("Add shortcuts in Rules.").foregroundStyle(FrogStyle.muted) }
             }.padding(20)
         }.frame(width: 380, height: 360).foregroundStyle(FrogStyle.ink)
             .frogPanel()

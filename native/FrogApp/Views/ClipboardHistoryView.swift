@@ -105,7 +105,7 @@ struct ClipboardHistoryView: View {
                     Text(entry.timestamp, style: .time)
                     if entry.isSensitive { Text("·"); Text(hidden ? "Space to reveal" : "Click to hide") }
                     else if !entry.formatting.isEmpty { Text("·"); Text("Formatted text") }
-                }.font(.system(size: 9)).foregroundStyle(FrogStyle.muted)
+                }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
             }.frame(maxWidth: .infinity, minHeight: 36, alignment: .leading).contentShape(Rectangle())
                 .onTapGesture { select(entry, index: index) }
                 // Alongside the single click, so selecting never waits for a possible second one.

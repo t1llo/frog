@@ -264,7 +264,7 @@ struct RuleEditor: View {
             }
             HStack(spacing: 8) {
                 if existing {
-                    Button("Delete", systemImage: "trash", role: .destructive) { deleting = true }.buttonStyle(.plain).foregroundStyle(.red.opacity(0.8))
+                    Button("Delete", systemImage: "trash", role: .destructive) { deleting = true }.buttonStyle(.plain).foregroundStyle(FrogStyle.critical)
                     Button("Duplicate", systemImage: "square.on.square") { rule.id = UUID(); rule.name += " copy"; rule.hotkey = nil; rule.preset = false }.buttonStyle(.plain).foregroundStyle(FrogStyle.muted).padding(.leading, 8)
                 }
                 Spacer()

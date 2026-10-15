@@ -43,18 +43,18 @@ struct ProvidersView: View {
                 HStack(spacing: 12) {
                     CompactSegments(values: [LocalModelDescriptor.Kind.audio, .text], selected: kind, title: { $0 == .audio ? "Speech" : "Text" }) { kind = $0 }
                     Spacer()
-                    if !LocalModels.supported { Text("Requires Apple silicon").font(.caption).foregroundStyle(.secondary) }
+                    if !LocalModels.supported { Text("Requires Apple silicon").font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
                 }
                 ModelInventory(kind: kind, search: search, revealedModelID: revealedModelID)
             } else {
                 VStack(spacing: 0) {
                     ForEach(providers) { provider in
                         HStack(spacing: 10) {
-                            Image(systemName: provider.kind.localTool != nil ? "terminal" : provider.kind.isLocal ? "desktopcomputer" : "cloud").foregroundStyle(.secondary)
+                            Image(systemName: provider.kind.localTool != nil ? "terminal" : provider.kind.isLocal ? "desktopcomputer" : "cloud").foregroundStyle(FrogStyle.muted)
                             Button { editing = provider } label: {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(provider.name).font(.system(size: 12, weight: .medium))
-                                    Text("\(provider.models.filter { $0.category == .text }.count) text · \(provider.models.filter { $0.category == .audio }.count) speech").font(.system(size: 10)).foregroundStyle(.secondary)
+                                    Text("\(provider.models.filter { $0.category == .text }.count) text · \(provider.models.filter { $0.category == .audio }.count) speech").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }.buttonStyle(.plain)
                             IconAction(title: "Edit provider", symbol: "pencil") { editing = provider }
@@ -66,7 +66,7 @@ struct ProvidersView: View {
                         }.padding(.vertical, 10).padding(.horizontal, 8)
                         if provider.id != providers.last?.id { Divider().opacity(0.5) }
                     }
-                    if providers.isEmpty { Text(search.isEmpty ? "Connect a cloud provider, Ollama or LM Studio." : "No providers match this search.").font(.caption).foregroundStyle(.secondary).padding(14) }
+                    if providers.isEmpty { Text(search.isEmpty ? "Connect a cloud provider, Ollama or LM Studio." : "No providers match this search.").font(FrogType.caption).foregroundStyle(FrogStyle.muted).padding(14) }
                 }
             }
             }.frame(maxWidth: .infinity, alignment: .leading).minimalScrollbars()

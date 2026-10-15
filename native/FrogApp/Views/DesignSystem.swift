@@ -331,7 +331,7 @@ struct FrogBadge: View {
         Text(L10n.text(text)).font(.system(size: 10, weight: .semibold))
             .foregroundStyle(active ? FrogStyle.accent : FrogStyle.muted)
             .padding(.horizontal, 6).padding(.vertical, 3)
-            .background(active ? AnyShapeStyle(FrogStyle.accentSoft) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 4))
+            .background(active ? AnyShapeStyle(FrogStyle.accentSoft) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.innerRadius))
     }
 }
 
@@ -349,9 +349,9 @@ struct CompactActionSurface: ViewModifier {
     func body(content: Content) -> some View {
         content.frame(height: 24)
             .foregroundStyle(FrogStyle.ink)
-            .background(hovering ? AnyShapeStyle(FrogStyle.selection) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 4))
-            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(FrogStyle.border.opacity(0.6)))
-            .contentShape(RoundedRectangle(cornerRadius: 5))
+            .background(hovering ? AnyShapeStyle(FrogStyle.selection) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+            .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius).strokeBorder(FrogStyle.border.opacity(0.6)))
+            .contentShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
             .onHover { hovering = $0 }
     }
 }
@@ -398,7 +398,7 @@ struct IconAction: View {
                     .frame(width: 24).modifier(CompactActionSurface())
             } else {
             Image(systemName: symbol).font(.system(size: 13, weight: .medium))
-                .foregroundStyle(destructive ? Color.red : hovering ? FrogStyle.accent : FrogStyle.muted)
+                .foregroundStyle(destructive ? FrogStyle.critical : hovering ? FrogStyle.accent : FrogStyle.muted)
                 .frame(width: 26, height: 26)
                 .contentShape(RoundedRectangle(cornerRadius: FrogStyle.corner))
             }
