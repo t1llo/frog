@@ -356,6 +356,138 @@ final class CleanerModelTests: XCTestCase {
         XCTAssertEqual(model.pending?.prompt.title, "Move 1 item of Gone to the Trash?")
     }
 
+    // MARK: - Recently moved
+
+    func testRecentlyMovedListsRecordsAndPutBackRestoresThem() async throws {
+        let fixture = try CleanerFixture()
+        defer { fixture.remove() }
+        let chatter = try fixture.app("Chatter", bundleID: "com.example.chatter")
+        let cache = try fixture.item(.caches, "com.example.chatter", bytes: 100)
+        let support = try fixture.item(.applicationSupport, "Chatter", bytes: 100)
+        let log = CleanerCallLog()
+        let trash = FakeCleanerTrash(folder: fixture.root.appendingPathComponent("Trash"), log: log)
+        let model = CleanerModel(dependencies: .fake(root: fixture.root, trash: trash))
+        await model.loadApps()
+        await model.open(chatter)
+        await model.prepareRemoval()
+        await model.confirmRemoval()
+        let record = try XCTUnwrap(model.outcome?.record)
+        XCTAssertEqual(model.apps, [])
+
+        model.loadRecords()
+        XCTAssertEqual(model.records.map(\.title), ["Chatter"])
+        let row = RecentlyMovedRow(try XCTUnwrap(model.records.first))
+        XCTAssertTrue(row.canPutBack)
+        XCTAssertFalse(row.needsFinder)
+        XCTAssertNil(row.restoredText)
+
+        await model.putBack(record.id)
+
+        XCTAssertEqual(model.putBackSummary?.title, "Put back 3 items.")
+        XCTAssertEqual(model.putBackSummary?.failures, [])
+        for url in [chatter, cache, support] { XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), url.lastPathComponent) }
+        let after = RecentlyMovedRow(try XCTUnwrap(model.records.first))
+        XCTAssertEqual(after.restoredText, "3 put back")
+        XCTAssertFalse(after.canPutBack, "A second Put Back has nothing to do")
+        XCTAssertEqual(model.apps.map(\.identity.name), ["Chatter"], "The app is listed again")
+        model.dismissPutBack()
+        XCTAssertNil(model.putBackSummary)
+
+        model.showsRecent = true
+        model.stop()
+        XCTAssertEqual(model.records, [])
+        XCTAssertFalse(model.showsRecent)
+    }
+
+    func testForgettingARecordLeavesTheTrashAlone() async throws {
+        let fixture = try CleanerFixture()
+        defer { fixture.remove() }
+        let chatter = try fixture.app("Chatter", bundleID: "com.example.chatter")
+        try fixture.item(.caches, "com.example.chatter")
+        let log = CleanerCallLog()
+        let trash = FakeCleanerTrash(folder: fixture.root.appendingPathComponent("Trash"), log: log)
+        let model = CleanerModel(dependencies: .fake(root: fixture.root, trash: trash))
+        await model.open(chatter)
+        await model.prepareRemoval()
+        await model.confirmRemoval()
+        model.loadRecords()
+        let record = try XCTUnwrap(model.records.first)
+
+        model.forget(record.id)
+
+        XCTAssertEqual(model.records, [])
+        XCTAssertEqual(try model.dependencies.store.records(), [])
+        XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: fixture.root.appendingPathComponent("Trash").path)),
+                       ["Chatter.app", "com.example.chatter"])
+        XCTAssertFalse(log.entries.contains { $0.hasPrefix("putBack") })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: chatter.path))
+    }
+
+    func testPutBackSummaryTexts() {
+        func entry(_ name: String, restored: Bool = false, bytes: Int64? = 100) -> RemovalRecord.Entry {
+            RemovalRecord.Entry(original: "/fixture/\(name)", trashed: "/fixture/Trash/\(name)", bytes: bytes, route: .fileManager,
+                                owner: .user, restored: restored)
+        }
+        let before = RemovalRecord(date: Date(), title: "12 items", entries: (1...12).map { entry("\($0)") })
+        var all = before
+        for index in all.entries.indices { all.entries[index].restored = true }
+        XCTAssertEqual(PutBackSummary(before: before, after: all, failures: []).title, "Put back 12 items.")
+        var one = before
+        one.entries[3].restored = true
+        XCTAssertEqual(PutBackSummary(before: before, after: one, failures: []).title, "Put back 1 item.")
+        XCTAssertEqual(PutBackSummary(before: one, after: one, failures: []).title, "Nothing was put back.",
+                       "Items put back earlier are not counted again")
+        let failure = RemovalFailure(path: "/fixture/1", message: "Something else is now at the original place.")
+        XCTAssertEqual(PutBackSummary(before: before, after: before, failures: [failure]).failures, [failure])
+
+        let format: (Int64) -> String = { "\($0) B" }
+        XCTAssertEqual(RecentlyMovedRow(before, formatBytes: format).detail, "12 items · 1200 B")
+        let unknown = RemovalRecord(date: Date(), title: "Example", entries: [entry("a"), entry("b", bytes: nil)])
+        XCTAssertEqual(RecentlyMovedRow(unknown, formatBytes: format).detail, "2 items · at least 100 B")
+        let none = RemovalRecord(date: Date(), title: "Example", entries: [entry("a", bytes: nil)])
+        XCTAssertEqual(RecentlyMovedRow(none, formatBytes: format).detail, "1 item")
+        let partly = RemovalRecord(date: Date(), title: "Example", entries: [entry("a", restored: true), entry("b", restored: true), entry("c", restored: true), entry("d")])
+        XCTAssertEqual(RecentlyMovedRow(partly).restoredText, "3 put back")
+        XCTAssertEqual(RecentlyMovedRow.state(of: entry("a")), "In the Trash")
+        XCTAssertEqual(RecentlyMovedRow.state(of: entry("a", restored: true)), "Put back")
+    }
+
+    func testAdministratorEntriesOfferPutBackInFinderOnly() async throws {
+        let fixture = try CleanerFixture()
+        defer { fixture.remove() }
+        let folder = fixture.root.appendingPathComponent("Trash", isDirectory: true)
+        let log = CleanerCallLog()
+        let model = CleanerModel(dependencies: .fake(root: fixture.root, trash: FakeCleanerTrash(folder: folder, log: log)))
+        let mine = fixture.home.appendingPathComponent("Library/Caches/com.example.mine")
+        let shared = fixture.system.appendingPathComponent("Library/Caches/com.example.shared")
+        for name in ["com.example.mine", "com.example.shared"] {
+            try FileManager.default.createDirectory(at: folder.appendingPathComponent(name), withIntermediateDirectories: true)
+        }
+        let record = RemovalRecord(date: Date(), title: "2 items", entries: [
+            RemovalRecord.Entry(original: mine.path, trashed: folder.appendingPathComponent("com.example.mine").path, bytes: 10,
+                                route: .fileManager, owner: .user),
+            RemovalRecord.Entry(original: shared.path, trashed: folder.appendingPathComponent("com.example.shared").path, bytes: 10,
+                                route: .finder, owner: .administrator)
+        ])
+        try model.dependencies.store.add(record)
+        model.loadRecords()
+        let row = RecentlyMovedRow(try XCTUnwrap(model.records.first))
+        XCTAssertTrue(row.canPutBack)
+        XCTAssertTrue(row.needsFinder)
+
+        await model.putBack(record.id)
+
+        XCTAssertEqual(model.putBackSummary?.title, "Put back 1 item.")
+        XCTAssertEqual(model.putBackSummary?.failures.map(\.path), [shared.path])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: mine.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: shared.path), "Only Finder puts the administrator's item back")
+        XCTAssertEqual(log.entries, ["putBack com.example.mine"])
+        let after = try XCTUnwrap(model.records.first)
+        XCTAssertFalse(RecentlyMovedRow(after).canPutBack)
+        XCTAssertTrue(RecentlyMovedRow(after).needsFinder)
+        XCTAssertEqual(after.entries.map(RecentlyMovedRow.state(of:)), ["Put back", "Use Put Back in Finder"])
+    }
+
     func testOnFinishRunsAfterARemovalAndAfterACancelledOne() async throws {
         let fixture = try CleanerFixture()
         defer { fixture.remove() }

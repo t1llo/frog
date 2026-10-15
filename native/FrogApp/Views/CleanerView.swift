@@ -49,6 +49,12 @@ struct CleanerView: View {
         let tabs = CleanerTab.available(preferences)
         PageScroll {
             PageHeader(title: "App cleaner", subtitle: "Move apps and the files they leave behind to the Trash.") {
+                IconAction(title: "Recently moved", symbol: "clock.arrow.circlepath") {
+                    cleaner.dismissPutBack(); cleaner.loadRecords(); cleaner.showsRecent = true
+                }
+                .sheet(isPresented: $cleaner.showsRecent, onDismiss: { cleaner.dismissPutBack() }) {
+                    CleanerRestoreView(cleaner: cleaner)
+                }
                 IconAction(title: "Cleaner settings", symbol: "slider.horizontal.3") { showsSettings.toggle() }
                     .popover(isPresented: $showsSettings, arrowEdge: .bottom) {
                         CleanerSettingsView().environmentObject(model)

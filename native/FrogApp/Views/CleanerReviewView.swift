@@ -185,9 +185,25 @@ struct CleanerOutcomeView: View {
     @ObservedObject var cleaner: CleanerModel
 
     var body: some View {
+        // After Put Back, its summary takes the outcome's place until Done.
+        if let putBack = cleaner.putBackSummary {
+            VStack(alignment: .leading, spacing: 12) {
+                CleanerPutBackSummaryView(summary: putBack, roots: cleaner.dependencies.roots)
+                HStack {
+                    Spacer()
+                    Button("Done") { cleaner.dismissPutBack(); cleaner.dismissOutcome() }
+                        .buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.defaultAction)
+                }
+            }
+        } else {
+            outcomeView
+        }
+    }
+
+    private var outcomeView: some View {
         let summary = RemovalSummary(outcome)
         let roots = cleaner.dependencies.roots
-        VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: outcome.moved.isEmpty ? "exclamationmark.circle" : "checkmark.circle")
                     .foregroundStyle(outcome.moved.isEmpty ? FrogStyle.warning : FrogStyle.good).accessibilityHidden(true)
@@ -220,6 +236,10 @@ struct CleanerOutcomeView: View {
             }
             HStack {
                 Spacer()
+                if let record = outcome.record {
+                    Button("Put Back") { Task { await cleaner.putBack(record.id) } }.buttonStyle(FrogButtonStyle())
+                        .disabled(cleaner.puttingBack != nil)
+                }
                 Button("Done") { cleaner.dismissOutcome() }.buttonStyle(FrogButtonStyle(primary: true))
                     .keyboardShortcut(.defaultAction)
             }

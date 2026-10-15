@@ -169,6 +169,22 @@ struct RemovalSummary: Equatable {
     }
 }
 
+/// What the page says once items were put back from the Trash.
+struct PutBackSummary: Equatable {
+    /// "Put back 12 items.", "Put back 1 item." or "Nothing was put back."
+    let title: String
+    let failures: [RemovalFailure]
+    /// How many items this Put Back moved out of the Trash.
+    let restored: Int
+
+    init(before: RemovalRecord, after: RemovalRecord, failures: [RemovalFailure]) {
+        let earlier = Set(before.entries.filter(\.restored).map(\.original))
+        restored = after.entries.filter { $0.restored && !earlier.contains($0.original) }.count
+        title = restored == 0 ? "Nothing was put back." : "Put back \(restored) \(restored == 1 ? "item" : "items")."
+        self.failures = failures
+    }
+}
+
 /// What a tab asks to move to the Trash; the same confirmation sheet and remover serve every tab.
 struct RemovalRequest: Equatable {
     var app: AppIdentity?
@@ -605,6 +621,54 @@ final class CleanerModel: ObservableObject {
         }
     }
 
+    // MARK: - Recently moved
+
+    /// What Frog moved in the last 30 days, newest first; read when the list opens.
+    @Published private(set) var records: [RemovalRecord] = []
+    @Published var showsRecent = false
+    @Published private(set) var putBackSummary: PutBackSummary?
+    /// The record whose items are moving back; nil otherwise.
+    @Published private(set) var puttingBack: UUID?
+
+    nonisolated static let recordsUnreadable = "Frog could not read the list of moved items."
+    nonisolated static let recordsUnchanged = "Frog could not change the list of moved items."
+
+    func loadRecords() {
+        do { records = try dependencies.store.records() } catch { issue = Self.recordsUnreadable }
+    }
+
+    /// Moves the record's own items back that Frog may restore; the rest are explained in the summary.
+    func putBack(_ id: UUID) async {
+        guard puttingBack == nil else { return }
+        // A removal's outcome may name a record the list was not read for yet, or one that could not be saved.
+        let stored = records.first { $0.id == id } ?? (try? dependencies.store.records())?.first { $0.id == id }
+        guard let record = stored ?? outcome?.record.flatMap({ $0.id == id ? $0 : nil }) else { return }
+        let generation = self.generation
+        puttingBack = id
+        let remover = CleanerRemover(trash: dependencies.trash, system: dependencies.system, store: dependencies.store,
+                                     safety: dependencies.safety)
+        let result = await remover.putBack(record)
+        guard generation == self.generation else { return }
+        puttingBack = nil
+        putBackSummary = PutBackSummary(before: record, after: result.record, failures: result.failures)
+        loadRecords()
+        // An app that came back belongs in the list again.
+        let earlier = Set(record.entries.filter(\.restored).map(\.original))
+        let returned = result.record.entries.filter { $0.restored && !earlier.contains($0.original) }
+        if identitiesLoaded, returned.contains(where: { $0.original.lowercased().hasSuffix(".app") }) { await loadApps() }
+    }
+
+    /// Forgets the record only; whatever is in the Trash stays there.
+    func forget(_ id: UUID) {
+        do { try dependencies.store.delete(id: id) } catch {
+            issue = Self.recordsUnchanged
+            return
+        }
+        records.removeAll { $0.id == id }
+    }
+
+    func dismissPutBack() { putBackSummary = nil }
+
     // MARK: - Stop
 
     /// Called when the feature is turned off: nothing keeps running and nothing stays in memory.
@@ -622,6 +686,7 @@ final class CleanerModel: ObservableObject {
         apps = []; identities = []; identitiesLoaded = false; identityCache = [:]; appSizes = [:]
         loadingApps = false
         fullDiskAccess = nil
+        records = []; showsRecent = false; putBackSummary = nil; puttingBack = nil
         phase = .idle
     }
 
