@@ -29,6 +29,7 @@ public enum WindowShortcutScheme {
 
     public static let commands: [WindowCommand: Hotkey] = [
         .cheatSheet: Hotkey(keyCode: 44, modifiers: controlOption),
+        .layoutPicker: Hotkey(keyCode: 13, modifiers: controlOption),
     ]
 
     /// A suggestion that was left out because its shortcut is in use.

@@ -13,6 +13,8 @@ public struct WindowPreferences: Codable, Equatable, Sendable {
     public var respectStageManager = true
     /// Shortcuts of window commands, by `WindowCommand` raw value. Layout shortcuts stay on their rules.
     public var shortcuts: [String: Hotkey] = [:]
+    /// The layout picker opens from its shortcut, the Frog menu and the command bar.
+    public var layoutPicker = false
 
     public static let gapRange = 0...40
 
@@ -30,6 +32,7 @@ public struct WindowPreferences: Codable, Equatable, Sendable {
         case portraitThirds
         case respectStageManager
         case shortcuts
+        case layoutPicker
     }
 
     public init(from decoder: Decoder) throws {
@@ -39,6 +42,7 @@ public struct WindowPreferences: Codable, Equatable, Sendable {
         portraitThirds = try values.decodeIfPresent(Bool.self, forKey: .portraitThirds) ?? true
         respectStageManager = try values.decodeIfPresent(Bool.self, forKey: .respectStageManager) ?? true
         shortcuts = try values.decodeIfPresent([String: Hotkey].self, forKey: .shortcuts) ?? [:]
+        layoutPicker = try values.decodeIfPresent(Bool.self, forKey: .layoutPicker) ?? false
         self = normalized
     }
 
@@ -80,7 +84,13 @@ public struct WindowSwitches: Equatable, Sendable {
     public func commandEnabled(_ command: WindowCommand) -> Bool {
         switch command {
         case .cheatSheet: feature
+        case .layoutPicker: feature && settings.layoutPicker
         }
+    }
+
+    /// The window commands the command bar lists, in `allCases` order.
+    public var commandBarCommands: [WindowCommand] {
+        WindowCommand.allCases.filter { $0.showsInCommandBar && commandEnabled($0) }
     }
 
     /// The window commands that run and have a shortcut, as the rules Frog registers, in `allCases` order.

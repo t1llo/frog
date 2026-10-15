@@ -42,6 +42,7 @@ final class WindowLayoutController: ObservableObject {
         guard running, WindowSwitches(configuration.preferences).commandEnabled(command) else { return }
         switch command {
         case .cheatSheet: if pressed { showCheatSheet() } else { cheatSheet?.hide() }
+        case .layoutPicker: break
         }
     }
 

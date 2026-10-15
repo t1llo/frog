@@ -81,6 +81,7 @@ enum TextConfiguration {
             .init("windows.cycle-sizes", "toolkit.windows.cycleSizes", .bool),
             .init("windows.portrait-thirds", "toolkit.windows.portraitThirds", .bool),
             .init("windows.respect-stage-manager", "toolkit.windows.respectStageManager", .bool),
+            .init("windows.layout-picker", "toolkit.windows.layoutPicker", .bool),
             // slot: cleaner
             // slot: command-bar
             .init("command-bar.learn-choices", "toolkit.commandBar.learnChoices", .bool),

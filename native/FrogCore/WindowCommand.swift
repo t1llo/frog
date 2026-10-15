@@ -4,6 +4,7 @@ import Foundation
 /// front window. Its shortcut is kept in `WindowPreferences.shortcuts` under its raw value.
 public enum WindowCommand: String, CaseIterable, Codable, Sendable, Identifiable {
     case cheatSheet
+    case layoutPicker
 
     /// The part of Windows a command belongs to; suggested shortcuts are added per part.
     public enum Group: String, Sendable { case simple, tiling, canvas }
@@ -13,6 +14,7 @@ public enum WindowCommand: String, CaseIterable, Codable, Sendable, Identifiable
     public var number: Int {
         switch self {
         case .cheatSheet: 2
+        case .layoutPicker: 1
         }
     }
 
@@ -22,18 +24,20 @@ public enum WindowCommand: String, CaseIterable, Codable, Sendable, Identifiable
     public var title: String {
         switch self {
         case .cheatSheet: "Window cheat sheet"
+        case .layoutPicker: "Arrange window…"
         }
     }
 
     public var symbol: String {
         switch self {
         case .cheatSheet: "keyboard"
+        case .layoutPicker: "rectangle.split.2x1"
         }
     }
 
     public var group: Group {
         switch self {
-        case .cheatSheet: .simple
+        case .cheatSheet, .layoutPicker: .simple
         }
     }
 
@@ -41,6 +45,26 @@ public enum WindowCommand: String, CaseIterable, Codable, Sendable, Identifiable
     public var isMomentary: Bool {
         switch self {
         case .cheatSheet: true
+        case .layoutPicker: false
+        }
+    }
+
+    /// The command bar row's subtitle.
+    public var commandBarSubtitle: String {
+        switch self {
+        case .layoutPicker: "Choose a layout"
+        default: "Windows"
+        }
+    }
+
+    /// A command held down has nothing to run from the command bar.
+    public var showsInCommandBar: Bool { !isMomentary }
+
+    /// Extra words the command bar matches.
+    public var keywords: String {
+        switch self {
+        case .layoutPicker: "window layout arrange snap"
+        case .cheatSheet: "window shortcuts cheat sheet"
         }
     }
 

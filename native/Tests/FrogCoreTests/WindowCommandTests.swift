@@ -9,6 +9,27 @@ final class WindowCommandTests: XCTestCase {
         XCTAssertTrue(WindowCommand.cheatSheet.isMomentary)
     }
 
+    func testLayoutPickerIsCommandOneAndRunsOnlyWithItsSwitch() {
+        XCTAssertEqual(WindowCommand.layoutPicker.id, UUID(uuidString: "AC57F601-63D0-4E76-9900-000000000001"))
+        XCTAssertEqual(WindowCommand.layoutPicker.title, "Arrange window…")
+        XCTAssertEqual(WindowCommand.layoutPicker.commandBarSubtitle, "Choose a layout")
+        XCTAssertTrue(WindowCommand.layoutPicker.showsInCommandBar)
+        XCTAssertFalse(WindowCommand.cheatSheet.showsInCommandBar)
+
+        var preferences = Preferences()
+        preferences.ensureToolkit()
+        preferences.setFeature(.windows, enabled: true)
+        XCTAssertFalse(WindowSwitches(preferences).commandEnabled(.layoutPicker))
+        XCTAssertEqual(WindowSwitches(preferences).commandBarCommands, [])
+        var windows = WindowPreferences(); windows.layoutPicker = true
+        preferences.toolkit?.windows = windows
+        XCTAssertTrue(WindowSwitches(preferences).commandEnabled(.layoutPicker))
+        XCTAssertEqual(WindowSwitches(preferences).commandBarCommands, [.layoutPicker])
+        preferences.setFeature(.windows, enabled: false)
+        XCTAssertEqual(WindowSwitches(preferences).commandBarCommands, [])
+        XCTAssertEqual(try JSONDecoder().decode(WindowPreferences.self, from: JSONEncoder().encode(windows)).layoutPicker, true)
+    }
+
     func testCommandForIDRoundTrips() {
         for command in WindowCommand.allCases { XCTAssertEqual(WindowCommand.command(for: command.id), command) }
         XCTAssertNil(WindowCommand.command(for: WindowAction.leftHalf.rule.id))

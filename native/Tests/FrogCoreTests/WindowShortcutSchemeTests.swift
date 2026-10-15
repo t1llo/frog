@@ -20,7 +20,7 @@ final class WindowShortcutSchemeTests: XCTestCase {
     func testEmptyConfigurationGetsTheWholeScheme() throws {
         let result = apply(Configuration())
         XCTAssertEqual(WindowShortcutScheme.actions.count, 18)
-        XCTAssertEqual(result.added.count, 19)
+        XCTAssertEqual(result.added.count, 20)
         XCTAssertEqual(result.skipped, [])
         for (action, key) in WindowShortcutScheme.actions {
             let rule = try XCTUnwrap(layoutRule(action, in: result.configuration), action.title)
@@ -36,12 +36,25 @@ final class WindowShortcutSchemeTests: XCTestCase {
                        Hotkey(keyCode: 44, modifiers: controlOption))
         XCTAssertTrue(result.added.contains(WindowCommand.cheatSheet.title))
         XCTAssertNoThrow(try ConfigurationFile.validate(result.configuration))
-        XCTAssertEqual(result.summary(display: display), "Added 19 shortcuts.")
+        XCTAssertEqual(result.summary(display: display), "Added 20 shortcuts.")
 
         let again = apply(result.configuration)
         XCTAssertEqual(again.added, [])
         XCTAssertEqual(again.configuration, result.configuration)
         XCTAssertEqual(again.summary(display: display), "Every suggested shortcut is already assigned or in use.")
+    }
+
+    func testThePickerGetsControlOptionWWhenFree() {
+        let pickerKey = Hotkey(keyCode: 13, modifiers: controlOption)
+        let result = apply(Configuration())
+        XCTAssertEqual(result.configuration.preferences.toolkitSettings.windows?.shortcuts[WindowCommand.layoutPicker.rawValue], pickerKey)
+        XCTAssertTrue(result.added.contains(WindowCommand.layoutPicker.title))
+
+        var configuration = Configuration()
+        configuration.rules.append(Rule(name: "Text", instructions: "test", hotkey: pickerKey))
+        let taken = apply(configuration)
+        XCTAssertNil(taken.configuration.preferences.toolkitSettings.windows?.shortcuts[WindowCommand.layoutPicker.rawValue])
+        XCTAssertEqual(taken.skipped, [WindowShortcutScheme.Skip(title: WindowCommand.layoutPicker.title, hotkey: pickerKey)])
     }
 
     func testAssignedActionsAreNeverChanged() {
@@ -69,7 +82,7 @@ final class WindowShortcutSchemeTests: XCTestCase {
         XCTAssertFalse(result.added.contains(WindowAction.maximize.title))
         XCTAssertFalse(result.added.contains(WindowCommand.cheatSheet.title))
         XCTAssertEqual(result.skipped, [])
-        XCTAssertEqual(result.added.count, 16)
+        XCTAssertEqual(result.added.count, 17)
     }
 
     func testUsedCombinationsAreSkippedAndReported() throws {
@@ -80,7 +93,7 @@ final class WindowShortcutSchemeTests: XCTestCase {
         let result = apply(configuration, taken: [switcher, Hotkey(keyCode: 36, modifiers: controlOption | 512)])
         XCTAssertEqual(result.skipped, [WindowShortcutScheme.Skip(title: WindowAction.leftHalf.title, hotkey: leftArrow),
                                         WindowShortcutScheme.Skip(title: WindowAction.maximize.title, hotkey: switcher)])
-        XCTAssertEqual(result.added.count, 17)
+        XCTAssertEqual(result.added.count, 18)
         XCTAssertNil(layoutRule(.leftHalf, in: result.configuration))
         XCTAssertNoThrow(try ConfigurationFile.validate(result.configuration))
     }
