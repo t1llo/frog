@@ -1349,7 +1349,8 @@ final class AppModel: ObservableObject {
 
     func showShortcuts() {
         let items = ShortcutReference.items(configuration: configuration, ruleEnabled: configuration.preferences.ruleFeatureEnabled,
-                                            extraRules: WindowSwitches(configuration.preferences).shortcutRules)
+                                            extraRules: WindowSwitches(configuration.preferences).shortcutRules,
+                                            answersInPanel: \.answersInPanel)
         shortcutPanel.show(groups: ShortcutReference.grouped(items))
     }
 
