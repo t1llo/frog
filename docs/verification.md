@@ -576,6 +576,19 @@ unless you mean to.
   including the login source menu and the "Claude Code profile" line.
 - No e-mail address is visible on the page or in the popup without hovering.
 
+## Answer rules and older versions
+
+A text rule that answers in a panel stores `action.textOutput: "panel"`. Frog versions
+before Explain ignore that field and treat the rule as a Writing rule. If such a rule
+has a shortcut, pressing it in an older Frog that reads the same configuration replaces
+the selection with the answer. The built-in Explain rule has no shortcut, and the rule
+editor warns when an answer rule gets one.
+
+In this version answer rules are inert: the Writing page does not list them, they
+register no global shortcut, and running one through the Writing path is refused before
+anything is captured or sent (`ProcessingTests`, `HotkeyRulesTests`). No device checks
+yet; they follow once Explain can be switched on.
+
 ## Distribution
 
 Developer ID signing/notarization requires the owner's Apple Developer credentials. Ad-hoc signing is suitable for local development, but is not notarization and does not establish that macOS will trust a downloaded release on another machine.
