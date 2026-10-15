@@ -28,7 +28,8 @@ Enable tools individually in **Features**. No Frog account. No telemetry.
 
 Window switcher and Clipboard shortcuts are configured in their Features cards;
 clipboard entries live in **History**. **Shortcuts** groups Application, Windows
-and Other actions.
+and Other actions. In the window switcher, type to filter; the query shows at the top.
+Give **Show shortcuts** a key and hold it to see every shortcut, grouped by page.
 Enable **System monitor** to switch between **Frog** and **System** in the menu-bar
 popup. While it is on, CPU and GPU load are recorded every few seconds, so the graph
 already holds the last ten minutes when you open it. Disk and power are read only
