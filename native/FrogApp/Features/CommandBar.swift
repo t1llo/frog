@@ -44,6 +44,7 @@ import SwiftUI
         // slot: color-picker
         // slot: quicklinks
         // slot: command-bar
+        // slot: windows
     ] + extraProviders
     private let extraProviders: [any CommandBarRowProviding]
     private var context: CommandBarContext?
