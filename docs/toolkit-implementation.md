@@ -212,6 +212,44 @@ method is composing, every key goes to the text field.
 
 Anything else, ⌘⇧↩ included, goes on to the text field.
 
+## Answers
+
+An answer rule sends its instructions and one conversation, which `AnswerPrompt` in
+FrogCore builds without windows, network or models. The first message is:
+
+````
+App: Safari
+Reply language: German
+
+Selected text:
+```
+river bank
+```
+
+Surrounding text:
+```
+We had a picnic on the river bank before the storm.
+```
+````
+
+A line or block without a value is left out, and so is surrounding text equal to the
+selection. The fence is one backtick longer than the longest backtick run in the texts,
+at least three. The reply language is the Mac's first preferred language named in
+English, else English. The page address or document path stays with History and notes
+and is never part of a message. Each follow-up adds the previous answer and the next
+question, so roles alternate from user to user; coding tools receive the same
+conversation as one transcript.
+
+A selection may have up to 12,000 characters for Frog's own models, Ollama, LM Studio
+and OpenAI-compatible servers, whose small context windows truncate silently, and up to
+100,000 for OpenAI, Claude, Gemini and the coding tools. A longer one is refused, not
+cut. An answer takes at most 10 follow-ups of up to 2,000 characters each; when the
+messages and instructions would pass 200,000 characters, the surrounding text is dropped
+first, and the follow-up is refused if that is not enough. `SurroundingText` sends the
+enclosing paragraph, else the line, else the nearest sentences, up to 1,000 characters
+with "…" where text was left out. `ReasoningFilter` hides one leading
+`<think>…</think>` block; an answer that is only reasoning ends with an error.
+
 ## Data and execution
 
 Portable configuration contains feature choices and settings. Credentials stay
