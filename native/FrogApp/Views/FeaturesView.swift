@@ -43,14 +43,9 @@ struct FeaturesView: View {
                     }
                 })).labelsHidden().toggleStyle(.switch).controlSize(.small).disabled(pending.contains(feature))
             }
-            if model.configuration.preferences.featureEnabled(feature) {
-                if feature == .windowSwitcher {
-                    Divider().opacity(0.5)
-                    WindowSwitcherFeatureView()
-                } else if feature == .clipboard {
-                    Divider().opacity(0.5)
-                    ClipboardFeatureView()
-                }
+            if model.configuration.preferences.featureEnabled(feature), FeatureCardSettings.hasSettings(feature) {
+                Divider().opacity(0.5)
+                FeatureCardSettings(feature: feature)
             }
         }.padding(14).frogTableSurface()
     }
@@ -64,10 +59,7 @@ struct CommandBarSettingsView: View {
             SettingsSection(title: "Shortcut") {
                 CompactRow(title: "Open command bar") {
                     HotkeyRecorder(hotkey: Binding(get: { model.configuration.preferences.toolkitSettings.effectiveCommandBarHotkey }, set: { key in
-                        var prefs = model.configuration.preferences
-                        if prefs.toolkit == nil { prefs.toolkit = ToolkitPreferences() }
-                        prefs.toolkit?.commandBarHotkey = key
-                        do { try model.savePreferences(prefs) } catch { model.report(error) }
+                        do { try model.updateToolkit { $0.commandBarHotkey = key } } catch { model.report(error) }
                     }), showsClearButton: false)
                     Button("Open") { model.showCommandBar() }
                 }

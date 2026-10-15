@@ -36,7 +36,9 @@ struct MainView: View {
             case .writing: RulesView(fixedCategory: .text)
             case .dictation: RulesView(fixedCategory: .audio)
             case .applicationShortcuts: RulesView(applications: true)
-            case .windowSwitcher, .clipboard, .systemMonitor: FeaturesView()
+            case .windowSwitcher: FeaturesView()
+            case .clipboard: FeaturesView()
+            case .systemMonitor: FeaturesView()
             case .commandBar: CommandBarSettingsView()
             case .usage:
                 if let usage = model.toolkit.usage() { UsageDashboardView(usage: usage) }
@@ -50,11 +52,15 @@ struct MainView: View {
                 MenuBarSettingsView(organizer: model.toolkit.menuBarOrganizer, settings: Binding(
                     get: { model.configuration.preferences.toolkitSettings.menuBar ?? MenuBarPreferences() },
                     set: { value in
-                        var preferences = model.configuration.preferences
-                        var toolkit = preferences.toolkitSettings
-                        toolkit.menuBar = value.normalized; preferences.toolkit = toolkit
-                        do { try model.savePreferences(preferences) } catch { model.report(error) }
+                        do { try model.updateToolkit { $0.menuBar = value.normalized } } catch { model.report(error) }
                     }))
+            // slot: explain
+            // slot: windows
+            // slot: cleaner
+            // slot: emoji-picker
+            // slot: processes
+            // slot: color-picker
+            // slot: quicklinks
             }
         }
     }

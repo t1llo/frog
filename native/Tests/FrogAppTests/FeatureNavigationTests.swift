@@ -22,6 +22,12 @@ import FrogCore
         XCTAssertEqual(try ConfigurationStore(directory: directory).load(), saved)
     }
 
+    func testEveryFeatureWithoutAPageHasInlineSettingsOrIsSystemMonitor() {
+        for feature in FeatureID.allCases where !feature.hasPage {
+            XCTAssertTrue(FeatureCardSettings.hasSettings(feature) || feature == .systemMonitor, feature.rawValue)
+        }
+    }
+
     func testLegacyToolLinksOpenTheirFeatureCardEvenWhenDisabled() {
         let toolkit = Toolkit(showsUsageStatusItem: false)
         defer { toolkit.stop() }

@@ -307,6 +307,13 @@ final class AppModel: ObservableObject {
             case .applicationShortcuts: self.applicationTask?.cancel(); self.systemActionTask?.cancel(); self.windowActionTask?.cancel(); self.shortcutPanel.hide()
             case .scripts: self.scripts.stop()
             case .commandBar: self.commandBar.stop()
+            // slot: explain
+            // slot: windows
+            // slot: cleaner
+            // slot: emoji-picker
+            // slot: processes
+            // slot: color-picker
+            // slot: quicklinks
             default: break
             }
         }
@@ -758,6 +765,14 @@ final class AppModel: ObservableObject {
         if Self.registersShortcutsAgain(previous: previous, current: configuration, failed: !hotkeyErrors.isEmpty, holding: hotkeys.isHolding) { registerHotkeys(); shortcutPanel.hide() }
         // Only these settings decide what is kept; any other save need not read the history file.
         if historyChanged { refreshHistory() }
+    }
+
+    /// Changes toolkit settings through `ensureToolkit`, so a missing toolkit is created the way Features creates it.
+    func updateToolkit(_ change: (inout ToolkitPreferences) -> Void) throws {
+        var preferences = configuration.preferences
+        preferences.ensureToolkit()
+        change(&preferences.toolkit!)
+        try savePreferences(preferences)
     }
 
     func useCommandBarShortcut(_ hotkey: Hotkey) throws {
