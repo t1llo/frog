@@ -640,6 +640,30 @@ Device checks, with History on and isolated data, to be filled in by the integra
 - [ ] Clear history while the panel is open, ask a follow-up: no entry comes back.
 - [ ] Hide text in History hides answer rows and details until revealed.
 
+### Answers saved to notes
+
+Automated: `AnswerNoteTests` (file names, the daily file pattern and its refusals, front
+matter and sections byte for byte, quoting, a shortened long selection, no surrounding
+text), `AnswerNoteWriterTests` (no overwriting, folders created, one blank line between
+sections, a missing folder, a file over 5 MB, symbolic links out of the folder refused),
+`NoteOpenerTests` (Obsidian or the file, the vault search stops at the home folder),
+`ExplainSettingsTests` (the five keys, a folder path too long for the text file kept in
+config.json, validation) and `ExplainRoutingTests` (notes off refuses, the folder is asked
+for once and stored, saving with History off, the panel's Saved and failure states, a
+cancelled folder choice).
+
+Device checks, with isolated data, a throwaway folder and a throwaway Obsidian vault, to be
+filled in by the integrator:
+
+- [ ] One note per answer, then the same selection again: a second file with " 2".
+- [ ] Add to one note into `Daily/YYYY-MM-DD.md` while `Daily` does not exist yet.
+- [ ] Open the note after saving opens it in Obsidian inside the vault, in the Markdown app
+      outside it.
+- [ ] A folder in iCloud Drive (macOS may ask for access once).
+- [ ] Obsidian shows the front matter as properties.
+- [ ] ⌘S in the panel and Save to note in History's answer detail; with no folder, the
+      chooser opens and the panel stays open.
+
 ## Distribution
 
 Developer ID signing/notarization requires the owner's Apple Developer credentials. Ad-hoc signing is suitable for local development, but is not notarization and does not establish that macOS will trust a downloaded release on another machine.

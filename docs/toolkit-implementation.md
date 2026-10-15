@@ -329,6 +329,23 @@ page, which activates Frog and so closes an unpinned panel. The panel is one
 accessibility group named "Explain answer" and announces "Answer ready" when an answer
 finishes.
 
+With `explain.notes` on, the footer adds **Save to note** and ⌘S saves. `AnswerController`
+builds `AnswerNoteContent` from the session (a stopped answer keeps its text) and hands it
+to `AppModel.saveAnswerNote`, which asks for the folder with an `NSOpenPanel` when none is
+set, stores it tilde-abbreviated, and runs `AnswerNoteWriter` off the main actor. While a
+note saves the panel treats closing events as pinned, so the folder chooser does not close
+it. The footer shows "Saved" for two seconds; a failure takes the status line and goes to
+Logs. History's answer detail offers the same action for a saved entry.
+
+`AnswerNote` in FrogCore makes the Markdown without files: one note per answer has YAML
+front matter (`source`, `app`, `model`, `date`, `tags`) and is named after the selection's
+first line; "Add to one note" appends a section headed with the time, rule and selection,
+its follow-ups one level lower. `AnswerNoteWriter` resolves the folder and every folder
+and file it touches, refusing anything that resolves outside it, writes new notes without
+overwriting, and appends to files up to 5 MB. `NoteOpener` opens the file through
+`obsidian://open?path=` when a folder above it holds `.obsidian` (searched up to the home
+folder) and Obsidian is installed, otherwise with the default Markdown app.
+
 `AppModel.processSelection` sends a rule with `textOutput: "panel"` to `AnswerController`
 only while `feature.explain` is on, and otherwise does nothing; such a rule never goes
 through Writing. The capture runs as for Writing, the surrounding text is dropped when

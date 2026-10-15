@@ -17,7 +17,7 @@ A Mac app that lives in your menu bar and replaces ten small Mac apps.
 | | |
 | --- | --- |
 | **Writing & dictation** | Local speech models, custom rewrite rules, connected providers and installed AI tools. |
-| **Explain** | Select text and read an answer in a panel next to it: any model, follow-up questions, nothing replaced. |
+| **Explain** | Select text and read an answer in a panel next to it: any model, follow-up questions, nothing replaced; save answers to Obsidian or any Markdown folder. |
 | **Command bar & windows** | App/file and macOS settings search, calculations, conversions, window switching and layout shortcuts. |
 | **Clipboard & documents** | Searchable clipboard, snippets, Markdown notes, file/link shelf and saved scripts. |
 | **Mr. Usage** | Claude/OpenAI limits, token charts and estimated costs; combined OpenCode + Codex activity. |
