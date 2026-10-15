@@ -84,6 +84,8 @@ enum TextConfiguration {
             .init("windows.layout-picker", "toolkit.windows.layoutPicker", .bool),
             .init("windows.drag-to-snap", "toolkit.windows.dragToSnap", .bool),
             .init("windows.restore-on-drag", "toolkit.windows.restoreOnDrag", .bool),
+            .init("windows.zone-overlay", "toolkit.windows.zoneOverlay", .bool),
+            .init("windows.zone-grid", "toolkit.windows.zoneGrid", .choice(ZoneGrid.allCases.map(\.rawValue))),
             // slot: cleaner
             // slot: command-bar
             .init("command-bar.learn-choices", "toolkit.commandBar.learnChoices", .bool),

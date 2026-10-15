@@ -19,6 +19,13 @@ public struct WindowPreferences: Codable, Equatable, Sendable {
     public var dragToSnap = false
     /// A snapped window gets its earlier size back when it is dragged away.
     public var restoreOnDrag = true
+    /// Holding Shift while dragging a window shows zones to drop it into.
+    public var zoneOverlay = false
+    /// The zones the overlay shows, a `ZoneGrid` raw value.
+    public var zoneGrid = ZoneGrid.default.rawValue
+    /// What the first-run card recorded, a `WindowSetupChoice` raw value; nil while the card shows.
+    /// A string, so a choice from a newer version still decodes and keeps the card hidden.
+    public var setupChoice: String?
 
     public static let gapRange = 0...40
 
@@ -27,6 +34,7 @@ public struct WindowPreferences: Codable, Equatable, Sendable {
     public var normalized: WindowPreferences {
         var value = self
         value.gap = min(Self.gapRange.upperBound, max(Self.gapRange.lowerBound, gap))
+        if ZoneGrid(rawValue: zoneGrid) == nil { value.zoneGrid = ZoneGrid.default.rawValue }
         return value
     }
 
@@ -39,6 +47,9 @@ public struct WindowPreferences: Codable, Equatable, Sendable {
         case layoutPicker
         case dragToSnap
         case restoreOnDrag
+        case zoneOverlay
+        case zoneGrid
+        case setupChoice
     }
 
     public init(from decoder: Decoder) throws {
@@ -51,6 +62,9 @@ public struct WindowPreferences: Codable, Equatable, Sendable {
         layoutPicker = try values.decodeIfPresent(Bool.self, forKey: .layoutPicker) ?? false
         dragToSnap = try values.decodeIfPresent(Bool.self, forKey: .dragToSnap) ?? false
         restoreOnDrag = try values.decodeIfPresent(Bool.self, forKey: .restoreOnDrag) ?? true
+        zoneOverlay = try values.decodeIfPresent(Bool.self, forKey: .zoneOverlay) ?? false
+        zoneGrid = try values.decodeIfPresent(String.self, forKey: .zoneGrid) ?? ZoneGrid.default.rawValue
+        setupChoice = try values.decodeIfPresent(String.self, forKey: .setupChoice)
         self = normalized
     }
 
@@ -101,6 +115,15 @@ public struct WindowSwitches: Equatable, Sendable {
 
     /// A snapped window dragged away gets its earlier size back. Only while drag to snap runs.
     public var restoreOnDrag: Bool { dragToSnap && settings.restoreOnDrag }
+
+    /// Holding Shift during a window drag shows Frog's zones: Windows is on, and so is the switch.
+    public var zoneOverlay: Bool { feature && settings.zoneOverlay }
+
+    /// The zones the overlay shows.
+    public var zoneGrid: ZoneGrid { ZoneGrid(rawValue: settings.zoneGrid) ?? .default }
+
+    /// Window drags are watched: for drag to snap, the zone overlay, or both.
+    public var watchesDrags: Bool { dragToSnap || zoneOverlay }
 
     /// The window commands the command bar lists, in `allCases` order.
     public var commandBarCommands: [WindowCommand] {

@@ -227,6 +227,8 @@ Enable with `feature.windows = true`. These settings change layouts only while W
 - `windows.layout-picker`: boolean, default `false`; the layout picker opens from its shortcut, the Frog menu and the command bar.
 - `windows.drag-to-snap`: boolean, default `false`; a window dragged to a screen edge or corner fills that part of the screen. Paused at the edges while macOS's own edge tiling is on.
 - `windows.restore-on-drag`: boolean, default `true`; a window Frog snapped gets its earlier size back when you drag it away. Applies while `windows.drag-to-snap` is on.
+- `windows.zone-overlay`: boolean, default `false`; holding Shift while dragging a window shows zones to drop it into. Works while macOS's own edge tiling is on; at an outer screen edge where macOS tiles, Frog leaves the window to macOS.
+- `windows.zone-grid`: `halves`, `thirds`, `quarters` or `main-side`, default `thirds`; the zones the overlay shows. Main and side is a left two-thirds and a right third. With `windows.portrait-thirds` on, thirds and main and side run top to bottom on a tall display.
 
 Layout shortcuts stay on their window rules in `config.json` (`rules`). Window commands that are not layouts keep their shortcuts in `config.json` under `preferences.toolkit.windows.shortcuts`, keyed by command name, in the same format as rule shortcuts: the macOS virtual key code and the Carbon modifier bits (Control 4096, Option 2048, Shift 512, Command 256). They have no text keys; record them on the Windows page or edit the JSON:
 
@@ -238,6 +240,8 @@ Layout shortcuts stay on their window rules in `config.json` (`rules`). Window c
 - `layoutPicker`: opens the layout picker; works only while `windows.layout-picker` is on.
 
 A command shortcut runs only while Windows is on, and must not repeat another global shortcut then. A command name this version of Frog does not know is ignored.
+
+`preferences.toolkit.windows.setupChoice` records what was chosen on the Windows page the first time (`snap` or `manual`); the choice card shows while it is missing. It has no text key. A value this version of Frog does not know keeps the card hidden.
 
 <!-- slot: cleaner -->
 <!-- slot: command-bar -->
