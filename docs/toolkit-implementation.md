@@ -394,6 +394,54 @@ through Writing. The capture runs as for Writing, the surrounding text is droppe
 `explain.context` is off, and turning Explain off cancels a capture in flight and closes
 the answer.
 
+### Selection bubble decisions
+
+The selection bubble's decisions live in `SelectionBubble.swift` in FrogCore, without
+windows, events or timers; time is always passed in. Its inputs are value types that hold
+positions, click counts, modifier sets and key codes only, never characters.
+`SelectionGestureTracker` decides what an input means:
+
+| Input | Decision |
+| --- | --- |
+| Left or right mouse down | Dismiss; remember where it went down |
+| Mouse up with ⌘ held | Nothing |
+| Mouse up 4 points or more from its mouse down | Read after a drag |
+| Mouse up with click count 2, or 3 and more, while **Double-click** is on | Read after a double- or triple-click |
+| Mouse up with Shift held and click count 1 | Read after a Shift-click |
+| Any other mouse up | Nothing |
+| Shift released while no mouse button is down, **Keyboard** on | Read after a keyboard selection |
+| Escape | Dismiss and remember the selection shown |
+| Any other key, a scroll, another app becoming active | Dismiss |
+
+Key presses are watched only while the bubble is visible, to dismiss it. A keyboard
+selection is noticed from the modifier change alone: Shift going up. ⌘A is therefore no
+trigger, and a click without a drag never reads. Releasing Shift right after a mouse up
+made with Shift held repeats that mouse up's decision, so a Shift-click keeps its pointer
+position and a ⌘⇧-click stays ignored.
+
+`SelectionWatcherCore` turns decisions into effects: every input first cancels a pending
+read, and a read is scheduled 0.3 seconds later under a new token, so a settle that fires
+after a later input finds its token stale and does nothing. Escape while the bubble shows
+remembers that selection's fingerprint. The bubble goes away by itself six seconds after
+it appeared or was last hovered.
+
+`SelectionBubblePolicy.mayRead` runs before any Accessibility call and stops at the first
+block, in this order: the bubble or Explain is off; Accessibility is not allowed; Frog is
+frontmost; secure input is on; the app is in the excluded list; the app is a game (its
+`LSApplicationCategoryType` contains "games"); Frog is busy with a rule, dictation, a
+shortcut recording or a focused answer panel. `mayShow` runs after the read: a password
+field, an empty, unavailable or whitespace-only selection, one too long, the selection
+dismissed with Escape, and a rule list with nothing to offer show nothing; the selection
+already showing keeps the bubble as it is.
+
+`SelectionBubbleItems` offers enabled answer rules whose model is set up while Explain is
+on, the Explain rule first and the others in configuration order, then enabled, set-up
+Writing rules while Writing is on and only in an editable field. Up to four show; with
+more, three show and the rest wait behind **More**, which expands the bubble inline
+instead of opening a menu, so Frog never activates. `BundleIdentifiers` checks a list of
+excluded apps: at most 200 identifiers of 1 to 255 letters, digits, dots and hyphens, each
+with a dot.
+
 ## Data and execution
 
 Portable configuration contains feature choices and settings. Credentials stay
