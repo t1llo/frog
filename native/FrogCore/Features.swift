@@ -20,6 +20,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
     case menuBar
     case systemMonitor
     // slot: windows
+    case windows
     // slot: cleaner
     // slot: emoji-picker
     // slot: processes
@@ -46,6 +47,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         // slot: explain
         case .explain: "Explain"
         // slot: windows
+        case .windows: "Windows"
         // slot: cleaner
         // slot: emoji-picker
         // slot: processes
@@ -73,6 +75,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         // slot: explain
         case .explain: "questionmark.bubble"
         // slot: windows
+        case .windows: "rectangle.split.2x1"
         // slot: cleaner
         // slot: emoji-picker
         // slot: processes
@@ -100,6 +103,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         // slot: explain
         case .explain: "Ask about selected text and read the answer in a panel next to it, without changing the text."
         // slot: windows
+        case .windows: "Snap, tile and arrange windows with the mouse or keyboard."
         // slot: cleaner
         // slot: emoji-picker
         // slot: processes
@@ -136,6 +140,7 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
     // slot: explain
     public var explain: ExplainSettings?
     // slot: windows
+    public var windows: WindowPreferences?
     // slot: cleaner
     // slot: command-bar
     public var commandBar: CommandBarPreferences?
@@ -158,6 +163,7 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         // slot: explain
         case explain
         // slot: windows
+        case windows
         // slot: cleaner
         // slot: command-bar
         case commandBar
@@ -178,6 +184,7 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         // slot: explain
         explain = try values.decodeIfPresent(ExplainSettings.self, forKey: .explain)
         // slot: windows
+        windows = try values.decodeIfPresent(WindowPreferences.self, forKey: .windows)
         // slot: cleaner
         // slot: command-bar
         commandBar = try values.decodeIfPresent(CommandBarPreferences.self, forKey: .commandBar)
@@ -282,7 +289,8 @@ extension Preferences {
         switch rule.category {
         case .text: rule.answersInPanel ? featureEnabled(.explain) : featureEnabled(.writing)
         case .audio: featureEnabled(.dictation)
-        case .application, .window, .system: featureEnabled(.applicationShortcuts)
+        case .application, .system: featureEnabled(.applicationShortcuts)
+        case .window: windowActionsEnabled
         }
     }
 }

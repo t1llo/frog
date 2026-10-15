@@ -88,6 +88,7 @@ Disabled by default:
 <!-- slot: explain -->
 - `explain`
 <!-- slot: windows -->
+- `windows`
 <!-- slot: cleaner -->
 <!-- slot: emoji-picker -->
 <!-- slot: processes -->

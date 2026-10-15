@@ -16,7 +16,16 @@ struct RulesView: View {
     @State private var search = ""
     @ObservedObject private var applicationCatalog = ApplicationCatalogStore.shared
     @State private var shortcutCategory: RuleCategory = .application
-    private var category: RuleCategory { fixedCategory ?? (applications ? shortcutCategory : filter) }
+    private var windowsEnabled: Bool { model.configuration.preferences.featureEnabled(.windows) }
+    /// While Windows is on, window layouts live on its page and Shortcuts drops the segment.
+    static func shortcutCategories(windowsEnabled: Bool) -> [RuleCategory] {
+        windowsEnabled ? [.application, .system] : [.application, .window, .system]
+    }
+    private var category: RuleCategory {
+        if let fixedCategory { return fixedCategory }
+        guard applications else { return filter }
+        return Self.shortcutCategories(windowsEnabled: windowsEnabled).contains(shortcutCategory) ? shortcutCategory : .application
+    }
     private var rules: [Rule] {
         let source: [Rule]
         if applications, category == .window {
@@ -61,7 +70,7 @@ struct RulesView: View {
             VStack(spacing: 0) {
                 ListToolbar(placeholder: applications ? "Search shortcuts" : "Search rules", search: $search) {
                     if applications, fixedCategory == nil {
-                        CompactSegments(values: [RuleCategory.application, .window, .system], selected: shortcutCategory, title: { $0 == .application ? "Application" : $0.title }) {
+                        CompactSegments(values: Self.shortcutCategories(windowsEnabled: windowsEnabled), selected: category, title: { $0 == .application ? "Application" : $0.title }) {
                             shortcutCategory = $0; search = ""
                         }
                     } else if fixedCategory == nil {
@@ -72,6 +81,14 @@ struct RulesView: View {
                         SectionCaption(text: "Your rules")
                     }
                 }.padding(12)
+                if applications, fixedCategory == nil, windowsEnabled {
+                    Divider().opacity(0.5)
+                    HStack(spacing: 8) {
+                        Text("Window layouts are on the Windows page.").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                        Spacer()
+                        Button("Open Windows") { model.openFeature(.windows) }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(FrogStyle.accent)
+                    }.padding(.horizontal, 12).padding(.vertical, 8)
+                }
                 Divider().opacity(0.5)
                 ScrollView {
                     LazyVStack(spacing: 0) {

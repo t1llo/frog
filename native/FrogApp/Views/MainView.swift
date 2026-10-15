@@ -57,6 +57,7 @@ struct MainView: View {
             // slot: explain
             case .explain: ExplainView()
             // slot: windows
+            case .windows: WindowsView()
             // slot: cleaner
             // slot: emoji-picker
             // slot: processes

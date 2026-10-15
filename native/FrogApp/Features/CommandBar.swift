@@ -448,7 +448,7 @@ import SwiftUI
                 model?.runRuleFromCommandBar(rule.id)
             }
         }
-        if model.configuration.preferences.featureEnabled(.applicationShortcuts) {
+        if model.configuration.preferences.windowActionsEnabled {
             for action in WindowAction.allCases {
                 add(SearchRecord(id: "layout:\(action.rawValue)", title: action.title, subtitle: "Arrange front window", keywords: "window layout", symbol: "macwindow")) { [weak model] in
                     guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message("The target application changed. Open the command bar again.") }

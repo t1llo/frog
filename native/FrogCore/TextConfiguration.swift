@@ -226,6 +226,7 @@ enum TextConfiguration {
                 // slot: explain
                 ("explain", try JSONEncoder().encode(ExplainSettings())),
                 // slot: windows
+                ("windows", try JSONEncoder().encode(WindowPreferences())),
                 // slot: cleaner
                 // slot: command-bar
                 ("commandBar", try JSONEncoder().encode(CommandBarPreferences())),

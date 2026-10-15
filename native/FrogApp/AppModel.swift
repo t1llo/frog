@@ -368,12 +368,13 @@ final class AppModel: ObservableObject {
             switch feature {
             case .writing: self.processingTask?.cancel(); self.processingIndicator.hide()
             case .dictation: self.dictation.cancel(); self.invalidateHistoryRecovery()
-            case .applicationShortcuts: self.applicationTask?.cancel(); self.systemActionTask?.cancel(); self.windowActionTask?.cancel(); self.shortcutPanel.hide()
+            case .applicationShortcuts: self.applicationTask?.cancel(); self.systemActionTask?.cancel(); if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.shortcutPanel.hide()
             case .scripts: self.scripts.stop()
             case .commandBar: self.commandBar.stop()
             // slot: explain
             case .explain: self.answerCapture?.cancel(); self.answers.close(); self.selectionWatcher.stop()
             // slot: windows
+            case .windows: if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }
             // slot: cleaner
             // slot: emoji-picker
             // slot: processes
@@ -525,7 +526,7 @@ final class AppModel: ObservableObject {
         }
     }
     func runWindowAction(_ action: WindowAction) {
-        guard configuration.preferences.featureEnabled(.applicationShortcuts) else { return }
+        guard configuration.preferences.windowActionsEnabled else { return }
         manageWindow(action.rule)
     }
     func runSystemAction(_ action: SystemAction) {
