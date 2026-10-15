@@ -22,11 +22,7 @@ public enum AnswerPrompt {
 
     public static func firstMessage(selection: String, context: String?, application: String?, replyLanguage: String) -> String {
         let selection = selection.trimmingCharacters(in: .newlines)
-        var context = context?.trimmingCharacters(in: .newlines)
-        if let text = context, text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || text.trimmingCharacters(in: .whitespacesAndNewlines) == selection.trimmingCharacters(in: .whitespacesAndNewlines) {
-            context = nil
-        }
+        let context = sentContext(selection: selection, context: context)
         let fence = fence(for: [selection] + (context.map { [$0] } ?? []))
         var header: [String] = []
         if let application = application?.trimmingCharacters(in: .whitespacesAndNewlines), !application.isEmpty {
@@ -39,6 +35,14 @@ public enum AnswerPrompt {
         sections.append("Selected text:\n\(fence)\n\(selection)\n\(fence)")
         if let context { sections.append("Surrounding text:\n\(fence)\n\(context)\n\(fence)") }
         return sections.joined(separator: "\n\n")
+    }
+
+    /// The surrounding text as the first message sends it: none when it is blank or only repeats the selection.
+    public static func sentContext(selection: String, context: String?) -> String? {
+        guard let context = context?.trimmingCharacters(in: .newlines) else { return nil }
+        let text = context.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text != selection.trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
+        return context
     }
 
     /// The conversation for the next answer: the first message, then for each later turn the
@@ -425,5 +429,43 @@ public struct AnswerSession: Equatable, Sendable {
 
     private var conversationLength: Int {
         messages.reduce(instructions.count) { $0 + $1.text.count }
+    }
+}
+
+/// What History keeps of an answer beyond the selection and the first answer. The source is
+/// kept on this Mac only.
+public struct AnswerRecord: Codable, Equatable, Sendable {
+    public var context: String?
+    public var application: String?
+    public var source: String?
+    /// Completed follow-ups, in order; the first answer is the entry's result.
+    public var followUps: [AnswerTurn]
+    public init(context: String?, application: String?, source: String?, followUps: [AnswerTurn]) {
+        self.context = context
+        self.application = application
+        self.source = source
+        self.followUps = followUps
+    }
+}
+
+extension HistoryEntry {
+    /// The entry for a session whose first answer completed.
+    public init(answer session: AnswerSession, providerName: String, model: String) {
+        self.init(id: session.historyEntryID ?? UUID(), originalText: session.selection,
+                  processedText: session.turns.first?.answer ?? "", ruleName: session.ruleName,
+                  providerName: providerName, model: model)
+        category = .text
+        answer = AnswerRecord(context: AnswerPrompt.sentContext(selection: session.selection, context: session.context),
+                              application: session.application, source: session.source,
+                              followUps: Array(session.turns.dropFirst()))
+    }
+
+    /// Copies the session's follow-ups into `answer.followUps`.
+    public mutating func updateAnswer(from session: AnswerSession) {
+        guard answer != nil else {
+            answer = HistoryEntry(answer: session, providerName: providerName, model: model).answer
+            return
+        }
+        answer?.followUps = Array(session.turns.dropFirst())
     }
 }
