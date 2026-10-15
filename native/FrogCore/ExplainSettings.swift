@@ -69,7 +69,7 @@ public struct ExplainSettings: Codable, Equatable, Sendable {
     public func validate() throws {
         if let notesFolder {
             guard notesFolder.hasPrefix("/") || notesFolder.hasPrefix("~/"),
-                  !notesFolder.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+                  !notesFolder.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
             else { throw FrogError.message(Self.invalidNotesFolder) }
         }
         _ = try AnswerNote.expand(pattern: notesFile, date: Date(), calendar: Calendar(identifier: .gregorian))

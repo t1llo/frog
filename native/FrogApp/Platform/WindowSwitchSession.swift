@@ -143,7 +143,7 @@ struct WindowSwitchKeyRouter: Sendable {
         case 124, 125: action = .step(backwards: false)
         case 51 where active: action = .deleteSearch
         default:
-            if active && matches && !text.isEmpty && !text.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) {
+            if active && matches && !text.isEmpty && !text.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
                 swallowed.insert(code)
                 return Result(consume: true, action: .search(text), sessionID: id)
             }

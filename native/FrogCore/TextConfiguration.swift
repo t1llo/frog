@@ -338,7 +338,7 @@ enum TextConfiguration {
             let hex = string.hasPrefix("#") ? String(string.dropFirst()) : string
             guard hex.count == 6, UInt32(hex, radix: 16) != nil else { throw FrogError.message("expected #RRGGBB (six hex digits)") }; return hex.uppercased()
         case .string:
-            guard !string.isEmpty, string.utf8.count <= 256, !string.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { throw FrogError.message("expected 1–256 characters without control characters") }; return string
+            guard !string.isEmpty, string.utf8.count <= 256, !string.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { throw FrogError.message("expected 1–256 characters without control characters") }; return string
         case .strings:
             guard let strings = try? JSONDecoder().decode([String].self, from: Data(raw.utf8)), strings.allSatisfy({ FeatureID(rawValue: $0) != nil }) else { throw FrogError.message("expected a JSON list of feature IDs, such as [\"usage\", \"scripts\"]") }; return strings
         case .identifiers:
