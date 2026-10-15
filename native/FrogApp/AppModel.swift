@@ -106,6 +106,9 @@ final class AppModel: ObservableObject {
     private let answerStream: (AnswerRequest) -> AsyncThrowingStream<AnswerEvent, Error>
     private let answerPresenter: AnswerPresenting
     private var answerCapture: Task<Void, Never>?
+    /// History as it was when the running answer started: clearing or turning it off since stops saving the answer.
+    private var answerHistoryEpoch: UUID?
+    private var answerHistoryWasEnabled = false
     /// Answer rules: one answer and its follow-ups at a time, in the answer panel.
     private(set) lazy var answers: AnswerController = {
         let controller = AnswerController(
@@ -125,7 +128,9 @@ final class AppModel: ObservableObject {
             copy: { [weak self] text in
                 self?.writeClipboard(text)
                 self?.clipboardHistoryStore.recordCopiedText(text)
-            })
+            },
+            record: { [weak self] in self?.recordAnswer($0) },
+            updateRecord: { [weak self] in self?.updateAnswerRecord($0) ?? false })
         controller.onEditRule = { [weak self] _ in self?.openFeature(.explain) }
         (answerPresenter as? AnswerPanelController)?.controller = controller
         return controller
@@ -1083,6 +1088,8 @@ final class AppModel: ObservableObject {
     /// Captures the selection like a Writing rule and answers it in the panel. Nothing is replaced.
     private func startAnswer(_ rule: Rule) {
         answerCapture?.cancel()
+        answerHistoryEpoch = historyEpoch
+        answerHistoryWasEnabled = configuration.preferences.historyEnabled
         answerCapture = Task { [weak self] in
             guard let self else { return }
             do {
@@ -1096,6 +1103,37 @@ final class AppModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 self.answers.fail(rule: rule, message: error.localizedDescription)
             }
+        }
+    }
+
+    /// Saves an answer whose first reply completed, when History was on as the answer started and still is.
+    private func recordAnswer(_ session: AnswerSession) -> UUID? {
+        guard answerHistoryWasEnabled, configuration.preferences.historyEnabled, historyEpoch == answerHistoryEpoch,
+              let provider = answers.provider else { return nil }
+        let entry = HistoryEntry(answer: session, providerName: provider.id == Self.localProviderID ? "Frog" : provider.name,
+                                 model: session.modelName)
+        do {
+            guard let retained = try historyStore.append(entry, preferences: configuration.preferences) else { return nil }
+            adoptHistory(retained)
+            return entry.id
+        } catch {
+            report(FrogError.message("Answer shown, but history could not be saved: \(error.localizedDescription)"))
+            return nil
+        }
+    }
+
+    /// Adds the session's follow-ups to its saved entry. False when the entry is gone, so the answer stops updating it.
+    private func updateAnswerRecord(_ session: AnswerSession) -> Bool {
+        guard answerHistoryWasEnabled, configuration.preferences.historyEnabled, historyEpoch == answerHistoryEpoch,
+              let id = session.historyEntryID, var entry = history.first(where: { $0.id == id }) else { return false }
+        entry.updateAnswer(from: session)
+        do {
+            let kept = try historyStore.update(entry, preferences: configuration.preferences)
+            refreshHistory()
+            return kept
+        } catch {
+            report(FrogError.message("Answer shown, but history could not be saved: \(error.localizedDescription)"))
+            return false
         }
     }
 

@@ -119,6 +119,93 @@ final class ExplainRoutingTests: XCTestCase {
         XCTAssertFalse(configuration.preferences.ruleFeatureEnabled(answer))
     }
 
+    // MARK: History
+
+    func testWithHistoryOnAnAnswerIsSavedOnceAndItsFollowUpsUpdateTheSameEntry() async throws {
+        let setup = try Setup(test: self)
+        let rule = try await setup.enableExplain()
+        try setup.setHistory(true)
+        setup.model.processSelection(ruleID: rule.id)
+        try await waitUntil { setup.model.history.count == 1 }
+        let entry = setup.model.history[0]
+        XCTAssertEqual(entry.ruleName, rule.name)
+        XCTAssertEqual(entry.originalText, setup.selection.text)
+        XCTAssertEqual(entry.processedText, "A raised strip of land along a river.")
+        XCTAssertEqual(entry.providerName, setup.model.configuration.providers[0].name)
+        XCTAssertEqual(entry.answer, AnswerRecord(context: setup.selection.context, application: "Notes",
+                                                  source: setup.selection.source, followUps: []))
+        XCTAssertEqual(setup.model.answers.session?.historyEntryID, entry.id)
+
+        XCTAssertNil(setup.model.answers.ask("And on a boat?"))
+        try await waitUntil { setup.model.history.first?.answer?.followUps.count == 1 }
+        XCTAssertEqual(setup.model.history.map(\.id), [entry.id])
+        XCTAssertEqual(setup.model.history[0].answer?.followUps.first?.question, "And on a boat?")
+        setup.model.refreshHistory()
+        XCTAssertEqual(setup.model.history.count, 1, "The file holds one entry")
+        XCTAssertEqual(setup.model.history[0].answer?.followUps.count, 1)
+    }
+
+    func testWithHistoryOffOrTurnedOffDuringTheAnswerNothingIsSaved() async throws {
+        let setup = try Setup(test: self)
+        let rule = try await setup.enableExplain()
+        setup.model.processSelection(ruleID: rule.id)
+        try await waitUntil { setup.presenter.sessions.last?.phase == .done(truncated: false) }
+        try setup.setHistory(true)
+        setup.model.refreshHistory()
+        XCTAssertTrue(setup.model.history.isEmpty, "History was off when the answer started")
+
+        setup.streams.hangs = true
+        setup.model.processSelection(ruleID: rule.id)
+        try await waitUntil { setup.streams.requests.count == 2 }
+        try setup.setHistory(false)
+        try setup.setHistory(true)
+        setup.streams.release()
+        try await waitUntil { setup.model.answers.session?.phase == .done(truncated: false) }
+        setup.model.refreshHistory()
+        XCTAssertTrue(setup.model.history.isEmpty, "Turning History off during the answer stops it being saved")
+    }
+
+    func testAFollowUpAfterHistoryWasClearedDoesNotRecreateTheEntry() async throws {
+        let setup = try Setup(test: self)
+        let rule = try await setup.enableExplain()
+        try setup.setHistory(true)
+        setup.model.processSelection(ruleID: rule.id)
+        try await waitUntil { setup.model.history.count == 1 }
+        try setup.model.clearHistory()
+        XCTAssertNil(setup.model.answers.ask("And on a boat?"))
+        try await waitUntil { setup.model.answers.session?.turns.count == 2 }
+        setup.model.refreshHistory()
+        XCTAssertTrue(setup.model.history.isEmpty)
+
+        // An answer still running when History is cleared is not saved either.
+        setup.streams.hangs = true
+        setup.model.processSelection(ruleID: rule.id)
+        try await waitUntil { setup.streams.requests.count == 3 }
+        try setup.model.clearHistory()
+        setup.streams.release()
+        try await waitUntil { setup.model.answers.session?.phase == .done(truncated: false) }
+        setup.model.refreshHistory()
+        XCTAssertTrue(setup.model.history.isEmpty)
+    }
+
+    func testAFailedOrStoppedAnswerSavesNothing() async throws {
+        let setup = try Setup(test: self)
+        let rule = try await setup.enableExplain()
+        try setup.setHistory(true)
+        setup.streams.failure = FrogError.message("The server is offline.")
+        setup.model.processSelection(ruleID: rule.id)
+        try await waitUntil { setup.model.answers.session?.phase == .failed("The server is offline.") }
+
+        setup.streams.failure = nil
+        setup.streams.hangs = true
+        setup.model.processSelection(ruleID: rule.id)
+        try await waitUntil { setup.streams.requests.count == 2 }
+        setup.model.answers.stop()
+        XCTAssertEqual(setup.model.answers.session?.phase, .stopped)
+        setup.model.refreshHistory()
+        XCTAssertTrue(setup.model.history.isEmpty)
+    }
+
     private func waitUntil(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async throws {
         for _ in 0..<400 {
             if condition() { return }
@@ -159,10 +246,17 @@ private final class Setup {
                          complete: { _, _, _, _ in completions(); return "Replaced" },
                          readKey: { _ in nil }, writeClipboard: { _ in },
                          captureSelection: { captures(); return selection },
-                         answerStream: { streams.stream($0) }, answerPresenter: presenter)
+                         answerStream: { streams.stream($0) }, answerPresenter: presenter,
+                         errorDisplayDuration: .milliseconds(10))
         completions = { [weak self] in self?.completions += 1 }
         captures = { [weak self] in self?.captures += 1 }
         try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
+    }
+
+    func setHistory(_ enabled: Bool) throws {
+        var preferences = model.configuration.preferences
+        preferences.historyEnabled = enabled
+        try model.savePreferences(preferences)
     }
 
     /// Turns Explain on and gives the Explain rule the Ollama model.
@@ -208,17 +302,31 @@ private final class Presenter: AnswerPresenting {
 @MainActor
 private final class Streams {
     var requests: [AnswerRequest] = []
+    /// Streams wait for `release` instead of answering.
     var hangs = false
+    var failure: Error?
     let termination = Terminations()
+    private var held: [AsyncThrowingStream<AnswerEvent, Error>.Continuation] = []
     func stream(_ request: AnswerRequest) -> AsyncThrowingStream<AnswerEvent, Error> {
         requests.append(request)
-        let hangs = hangs, termination = termination
-        return AsyncThrowingStream { continuation in
-            continuation.onTermination = { _ in termination.record() }
-            guard !hangs else { return }
-            continuation.yield(.text("A raised strip of land along a river."))
-            continuation.finish()
-        }
+        let termination = termination
+        let (stream, continuation) = AsyncThrowingStream.makeStream(of: AnswerEvent.self, throwing: Error.self)
+        continuation.onTermination = { _ in termination.record() }
+        if hangs { held.append(continuation) }
+        else if let failure { continuation.finish(throwing: failure) }
+        else { Self.answer(continuation) }
+        return stream
+    }
+
+    /// Answers the streams that wait.
+    func release() {
+        held.forEach(Self.answer)
+        held = []
+    }
+
+    private static func answer(_ continuation: AsyncThrowingStream<AnswerEvent, Error>.Continuation) {
+        continuation.yield(.text("A raised strip of land along a river."))
+        continuation.finish()
     }
 }
 

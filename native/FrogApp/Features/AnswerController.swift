@@ -54,7 +54,8 @@ struct AnswerCapture: Sendable {
     private let updateInterval: Duration
 
     private var rule: Rule?
-    private var provider: ProviderConfiguration?
+    /// The model the running answer streams from.
+    private(set) var provider: ProviderConfiguration?
     private var task: Task<Void, Never>?
     /// Identifies the running turn, so events of a cancelled one never reach the session.
     private var turn = UUID()
