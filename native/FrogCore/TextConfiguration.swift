@@ -210,6 +210,7 @@ enum TextConfiguration {
                 // slot: windows
                 // slot: cleaner
                 // slot: command-bar
+                ("commandBar", try JSONEncoder().encode(CommandBarPreferences())),
                 // slot: clipboard
                 // slot: snippets
                 // slot: emoji-picker

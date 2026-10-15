@@ -133,6 +133,8 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
     // slot: windows
     // slot: cleaner
     // slot: command-bar
+    public var commandBar: CommandBarPreferences?
+    public var commandBarSettings: CommandBarPreferences { commandBar ?? CommandBarPreferences() }
     // slot: clipboard
     // slot: snippets
     // slot: emoji-picker
@@ -152,6 +154,7 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         // slot: windows
         // slot: cleaner
         // slot: command-bar
+        case commandBar
         // slot: clipboard
         // slot: snippets
         // slot: emoji-picker
@@ -170,6 +173,7 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         // slot: windows
         // slot: cleaner
         // slot: command-bar
+        commandBar = try values.decodeIfPresent(CommandBarPreferences.self, forKey: .commandBar)
         // slot: clipboard
         // slot: snippets
         // slot: emoji-picker

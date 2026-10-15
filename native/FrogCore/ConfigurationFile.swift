@@ -167,6 +167,7 @@ public enum ConfigurationFile {
         // slot: windows
         // slot: cleaner
         // slot: command-bar
+        try preferences.toolkit?.commandBar?.validate()
         // slot: usage
         // slot: clipboard
         // slot: snippets
