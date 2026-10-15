@@ -134,7 +134,8 @@ struct RulesView: View {
                 }
             }.frogTableSurface()
         }.padding(20).sheet(item: $editing) { rule in
-            RuleEditor(rule: rule, onSave: { search = "" }).environmentObject(model)
+            // A saved copy replaces this editor with one on the copy.
+            RuleEditor(rule: rule, onSave: { search = "" }, onSaveCopy: { copy in search = ""; editing = copy }).environmentObject(model)
         }
             .sheet(item: $trying) { rule in RuleTryView(rule: rule).environmentObject(model) }
             .task {
@@ -216,12 +217,13 @@ struct RuleEditor: View {
     @State private var deleting = false
     @State private var step = 0
     private let onSave: () -> Void
-    init(rule: Rule, onSave: @escaping () -> Void = {}) {
+    private let onSaveCopy: ((Rule) -> Void)?
+    init(rule: Rule, onSave: @escaping () -> Void = {}, onSaveCopy: ((Rule) -> Void)? = nil) {
         var draft = rule
         if !draft.targetLanguage.isEmpty { draft.instructions = draft.instructions.replacingOccurrences(of: "{{language}}", with: draft.targetLanguage); draft.targetLanguage = "" }
         if draft.action == nil { draft.action = RuleAction(category: draft.category) }
         _rule = State(initialValue: draft)
-        self.onSave = onSave
+        self.onSave = onSave; self.onSaveCopy = onSaveCopy
     }
     private var existing: Bool { model.configuration.rules.contains { $0.id == rule.id } }
     var body: some View {
@@ -269,7 +271,9 @@ struct RuleEditor: View {
             HStack(spacing: 8) {
                 if existing {
                     Button("Delete", systemImage: "trash", role: .destructive) { deleting = true }.buttonStyle(.plain).foregroundStyle(FrogStyle.critical)
-                    Button("Duplicate", systemImage: "square.on.square") { rule.id = UUID(); rule.name += " copy"; rule.hotkey = nil; rule.preset = false }.buttonStyle(.plain).foregroundStyle(FrogStyle.muted).padding(.leading, 8)
+                    Button("Save as copy", systemImage: "square.on.square") { saveCopy() }.buttonStyle(.plain).foregroundStyle(FrogStyle.muted).padding(.leading, 8)
+                        .help("Save this rule with your changes as a new rule, without its shortcut. The original stays as it was.")
+                        .disabled(rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -284,6 +288,14 @@ struct RuleEditor: View {
             .confirmationDialog("Delete this rule?", isPresented: $deleting) {
                 Button("Delete rule", role: .destructive) { do { try model.deleteRule(id: rule.id); dismiss() } catch { issue = error.localizedDescription } }
             }
+    }
+    /// Saves the draft, edits included, as a new rule and leaves the original as it was saved.
+    private func saveCopy() {
+        let copy = rule.copy()
+        do {
+            try model.saveRule(copy)
+            if let onSaveCopy { onSaveCopy(copy) } else { onSave(); dismiss() }
+        } catch { issue = error.localizedDescription }
     }
     private func reconcileModels() {
         let updated = model.configuration.reconcilingModels(in: rule, installed: model.localModels.installed)

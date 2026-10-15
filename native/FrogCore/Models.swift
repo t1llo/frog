@@ -172,6 +172,12 @@ public extension Rule {
         guard !language.isEmpty, language.utf8.count <= 256 else { throw FrogError.message("Choose a target language for this rule.") }
         return instructions.replacingOccurrences(of: "{{language}}", with: language)
     }
+    /// A new rule like this one, named as a copy. The shortcut stays with the original, and a copy is never a preset.
+    func copy() -> Rule {
+        var copy = self
+        copy.id = UUID(); copy.name += " copy"; copy.hotkey = nil; copy.preset = false
+        return copy
+    }
 }
 
 public struct Preferences: Codable, Equatable, Sendable {
