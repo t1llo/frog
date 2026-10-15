@@ -5,7 +5,24 @@ import FrogCore
 @MainActor
 protocol CapturedTextSelection: AnyObject {
     var text: String { get }
+    /// Where the selection is, in Cocoa screen coordinates.
+    var anchor: CGRect? { get }
+    /// The sentence or paragraph around the selection, at most 1,000 characters.
+    var context: String? { get }
+    var applicationName: String? { get }
+    /// The document or page address. Kept in History and notes, never sent to a model.
+    var source: String? { get }
     func replace(with text: String) async throws
+}
+
+/// Captures that cannot tell where the selection is or what surrounds it, like the compatibility
+/// Copy, provide none of it. These are protocol requirements so that a capture seen as
+/// `any CapturedTextSelection` still answers with its own values.
+extension CapturedTextSelection {
+    var anchor: CGRect? { nil }
+    var context: String? { nil }
+    var applicationName: String? { nil }
+    var source: String? { nil }
 }
 
 @MainActor
@@ -150,6 +167,72 @@ final class TextSelection: CapturedTextSelection {
         !invalidated && !consumed && matchesSnapshot
     }
 
+    // Answers read these right after capture. Writing never does, so it makes none of these reads.
+    private(set) lazy var anchor: CGRect? = self.readAnchor()
+    private(set) lazy var context: String? = self.readContext()
+    private(set) lazy var applicationName: String? = NSRunningApplication(processIdentifier: self.pid)?.localizedName
+    private(set) lazy var source: String? = self.readSource()
+
+    /// The most text read to find the context, in UTF-16 units.
+    private static let contextReadLimit = 200_000
+
+    private func readAnchor() -> CGRect? {
+        let screens = NSScreen.screens.map(\.frame)
+        let primaryHeight = screens.first?.height ?? 0
+        func rect(_ range: CFRange) -> CGRect? {
+            AXRead.bounds(element, range: range).flatMap {
+                AXGeometry.cocoaRect($0, primaryHeight: primaryHeight, screens: screens)
+            }
+        }
+        let union = rect(range)
+        // The screen that shows most of the selection.
+        let screen = union.flatMap { union in
+            screens.max { lhs, rhs in
+                let a = lhs.intersection(union), b = rhs.intersection(union)
+                return a.width * a.height < b.width * b.height
+            }
+        }
+        return SelectionAnchor.choose(union: union,
+                                      last: rect(CFRange(location: range.location + range.length - 1, length: 1)),
+                                      screenHeight: screen?.height ?? primaryHeight)
+    }
+
+    private func readContext() -> String? {
+        let span: (location: Int, length: Int)
+        let windowText: String
+        if let value, (value as NSString).length <= Self.contextReadLimit {
+            span = (0, (value as NSString).length)
+            windowText = value
+        } else {
+            guard let count = AXRead.numberOfCharacters(element) else { return nil }
+            span = ContextWindow.range(selection: (range.location, range.length), count: count, margin: 1_500)
+            guard span.length > 0, span.length <= Self.contextReadLimit,
+                  let text = AXRead.string(element, range: CFRange(location: span.location, length: span.length))
+            else { return nil }
+            windowText = text
+        }
+        guard range.location >= span.location else { return nil }
+        return SurroundingText.around(selection: NSRange(location: range.location - span.location, length: range.length),
+                                      in: windowText)
+    }
+
+    private func readSource() -> String? {
+        if let window, let document = AXRead.url(window, kAXDocumentAttribute),
+           let address = SourceAddress.clean(document) {
+            return address
+        }
+        // A browser exposes the page address on the web area that holds the selection.
+        var current: AXUIElement? = element
+        for _ in 0...8 {
+            guard let candidate = current else { return nil }
+            if AXRead.string(candidate, kAXRoleAttribute) == "AXWebArea" {
+                return AXRead.url(candidate, "AXURL").flatMap(SourceAddress.clean)
+            }
+            current = AXRead.element(candidate, kAXParentAttribute, timeout: AXRead.selectionTimeout)
+        }
+        return nil
+    }
+
     private var matchesSnapshot: Bool {
         guard SelectionService.isTrusted,
               NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
@@ -223,5 +306,44 @@ enum AXRead {
         guard range.location >= 0, range.length >= 0, range.location <= string.length,
               range.length <= string.length - range.location else { return nil }
         return string.substring(with: NSRange(location: range.location, length: range.length))
+    }
+
+    private static func attribute(_ element: AXUIElement, _ name: String, range: CFRange) -> CFTypeRef? {
+        var range = range
+        guard let parameter = AXValueCreate(.cfRange, &range) else { return nil }
+        var result: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(element, name as CFString, parameter, &result) == .success else { return nil }
+        return result
+    }
+    /// The rectangle of a text range, in Accessibility coordinates (origin top left of the primary display).
+    static func bounds(_ element: AXUIElement, range: CFRange) -> CGRect? {
+        guard let raw = attribute(element, kAXBoundsForRangeParameterizedAttribute, range: range),
+              CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
+        let value = raw as! AXValue
+        guard AXValueGetType(value) == .cgRect else { return nil }
+        var rect = CGRect.zero
+        return AXValueGetValue(value, .cgRect, &rect) ? rect : nil
+    }
+    /// Only the given part of an element's text, so a long document is never read whole.
+    static func string(_ element: AXUIElement, range: CFRange) -> String? {
+        attribute(element, kAXStringForRangeParameterizedAttribute, range: range) as? String
+    }
+    static func numberOfCharacters(_ element: AXUIElement) -> Int? {
+        (attribute(element, kAXNumberOfCharactersAttribute) as? NSNumber)?.intValue
+    }
+    static func url(_ element: AXUIElement, _ name: String) -> URL? {
+        guard let raw = attribute(element, name) else { return nil }
+        if CFGetTypeID(raw) == CFURLGetTypeID() { return (raw as! CFURL) as URL }
+        return (raw as? String).flatMap { URL(string: $0) }
+    }
+
+    static func isEditable(_ element: AXUIElement) -> Bool {
+        guard let role = AXRead.string(element, kAXRoleAttribute),
+              [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole, "AXWebArea"].contains(role),
+              AXRead.string(element, kAXSubroleAttribute) != kAXSecureTextFieldSubrole,
+              AXRead.boolean(element, kAXEnabledAttribute) != false else { return false }
+        var settable = DarwinBoolean(false)
+        return AXRead.boolean(element, "AXEditable") == true ||
+            (AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable) == .success && settable.boolValue)
     }
 }

@@ -52,7 +52,7 @@ struct ClipboardHistoryTargetAccess {
              range: { AXRead.range($0) }, role: { AXRead.string($0, kAXRoleAttribute) },
              secure: { AXRead.string($0, kAXSubroleAttribute) == kAXSecureTextFieldSubrole },
              enabled: { AXRead.boolean($0, kAXEnabledAttribute) != false },
-             editable: { ClipboardSelection.isEditable($0) },
+             editable: { AXRead.isEditable($0) },
              nativePasteAvailable: { menu.item("v") != nil },
              keyboardFocused: { AXRead.boolean($0, kAXFocusedAttribute) != false },
              restoreFocus: { focused in

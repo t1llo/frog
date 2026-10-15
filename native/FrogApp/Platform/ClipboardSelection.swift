@@ -108,7 +108,7 @@ final class ClipboardSelection: CapturedTextSelection {
     }
 
     private var canPaste: Bool {
-        if let focused, Self.isEditable(focused) { return true }
+        if let focused, AXRead.isEditable(focused) { return true }
         // Electron/Chromium may omit the focused AX field entirely. An enabled
         // native Paste command is another app-provided signal of editability.
         return menu.item("v") != nil
@@ -144,16 +144,6 @@ final class ClipboardSelection: CapturedTextSelection {
     /// Whether `element` is the enabled menu item for Command plus `character`.
     static func isMenuCommand(_ element: AXUIElement, _ character: String) -> Bool {
         MenuCommandSearch.matches(element, character: character, modifiers: 0, reader: .live)
-    }
-
-    static func isEditable(_ element: AXUIElement) -> Bool {
-        guard let role = AXRead.string(element, kAXRoleAttribute),
-              [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole, "AXWebArea"].contains(role),
-              AXRead.string(element, kAXSubroleAttribute) != kAXSecureTextFieldSubrole,
-              AXRead.boolean(element, kAXEnabledAttribute) != false else { return false }
-        var settable = DarwinBoolean(false)
-        return AXRead.boolean(element, "AXEditable") == true ||
-            (AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable) == .success && settable.boolValue)
     }
 
     private static func inputSnapshot() -> [UInt32] {
