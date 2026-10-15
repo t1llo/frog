@@ -97,6 +97,19 @@ actor WindowManager {
     /// What Restore would return the window to, and the action that moved it last.
     func lastMove(of key: WindowKey) -> WindowFrameHistory.Entry? { history.entry(for: key) }
 
+    /// Where an action would put the focused window of `pid`; for Restore, the frame it would
+    /// return to. Reads the window once and writes nothing. Nil when there is nothing to show.
+    func preview(_ action: WindowAction, pid: pid_t, displays: [WindowDisplay], options: WindowLayoutOptions = .legacy) -> CGRect? {
+        guard access.isTrusted(), let window = access.focusedWindow(pid: pid), !access.state(of: window).fullScreen,
+              let current = access.frame(of: window) else { return nil }
+        let displays = displays.map(\.visibleFrame)
+        guard !displays.isEmpty else { return nil }
+        guard action == .restore else { return WindowGeometry.target(action, window: current, displays: displays, options: options) }
+        guard let original = history.entry(for: window.key)?.frame else { return nil }
+        if displays.contains(where: { $0.intersects(original) }) { return original }
+        return WindowGeometry.target(.center, window: original, displays: displays, options: options)
+    }
+
     func perform(_ action: WindowAction, pid: pid_t, displays: [WindowDisplay], options: WindowLayoutOptions = .legacy) throws {
         try Task.checkCancellation()
         guard access.isTrusted() else { throw FrogError.message("Allow Accessibility in Settings → Permissions to move windows.") }
