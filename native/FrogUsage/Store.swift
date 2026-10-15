@@ -18,9 +18,20 @@ final class Store: ObservableObject {
     /// The user asked to sign in, and Frog is first finding out whether Claude Code's login
     /// can still be used or renewed.
     @Published private(set) var checkingLogin = false
-    var configDirectory: URL { ClaudePaths.directory(defaults: defaults) }
+    /// The Claude account this store reads, when Frog shows each account on its own. Nil for the
+    /// one account Frog reads otherwise, through the login source and folder chosen on the page.
+    let account: ClaudeAccount?
+    var configDirectory: URL {
+        guard let account else { return ClaudePaths.directory(defaults: defaults) }
+        return account.codeFolder ?? account.appFolder ?? URL(fileURLWithPath: account.slotPath)
+    }
+    /// Stores of several accounts start a little apart, so their first requests do not arrive together.
+    var startDelay: TimeInterval = 0
+    /// Told when the account the Claude app's folder is signed in to is no longer the one it was.
+    var onOrganizationChange: (() -> Void)?
 
     private let defaults: UserDefaults
+    private let pollingKey: String
     private var polling: ClaudePollingState
     var nextFetchAt: Date { polling.nextFetchAt }
     /// Claude Code rewrites the Keychain item when it refreshes the token. A read that lands in
@@ -48,39 +59,93 @@ final class Store: ObservableObject {
     private var awaitingLoginUntil: Date?
     private var awaitingLogin: Bool { awaitingLoginUntil.map { currentDate() < $0 } ?? false }
     private var active = false
+    /// No request before this time, which `startDelay` puts after the start.
+    private var fetchesFrom = Date.distantPast
+    private var delayedStart: Task<Void, Never>?
+    /// The organization the Claude app's folder was last seen signed in to.
+    private var knownOrganization: String?
 
-    init(defaults: UserDefaults = UsagePreferences.defaults, startPolling: Bool = false,
-         readAuth: @escaping @Sendable (ClaudeLoginSource, URL) -> ClaudeAuth? = { readClaudeAuth(source: $0, directory: $1) },
-         fetchLimits: @escaping @Sendable (String) async throws -> Usage = { try await fetchUsage(token: $0) },
-         readDesktop: @escaping @Sendable (URL) -> ClaudeDesktopReading? = { _ in nil },
-         renewLogin: @escaping @Sendable (URL, TimeInterval) -> ClaudeLoginRenewal = { _, _ in .unavailable },
-         currentDate: @escaping @Sendable () -> Date = { Date() }) {
+    convenience init(defaults: UserDefaults = UsagePreferences.defaults, startPolling: Bool = false,
+                     readAuth: @escaping @Sendable (ClaudeLoginSource, URL) -> ClaudeAuth? = { readClaudeAuth(source: $0, directory: $1) },
+                     fetchLimits: @escaping @Sendable (String) async throws -> Usage = { try await fetchUsage(token: $0) },
+                     readDesktop: @escaping @Sendable (URL) -> ClaudeDesktopReading? = { _ in nil },
+                     renewLogin: @escaping @Sendable (URL, TimeInterval) -> ClaudeLoginRenewal = { _, _ in .unavailable },
+                     currentDate: @escaping @Sendable () -> Date = { Date() }) {
+        self.init(slot: nil, defaults: defaults, readAuth: readAuth, fetchLimits: fetchLimits, readDesktop: readDesktop,
+                  renewLogin: renewLogin, currentDate: currentDate)
+        if startPolling { start() }
+    }
+
+    /// One of several Claude accounts. It works as Automatic does, with the account's own Claude
+    /// Code login, its own Claude app folder and its own request gate. An account known only from
+    /// the Claude app reads that app's file and sends nothing. `readDesktop` is handed the
+    /// account's Claude app folder.
+    convenience init(account: ClaudeAccount, defaults: UserDefaults = UsagePreferences.defaults,
+                     readAuth: @escaping @Sendable (ClaudeLoginSource, URL) -> ClaudeAuth? = { readClaudeAuth(source: $0, directory: $1) },
+                     fetchLimits: @escaping @Sendable (String) async throws -> Usage = { try await fetchUsage(token: $0) },
+                     readDesktop: @escaping @Sendable (URL) -> ClaudeDesktopReading? = { _ in nil },
+                     renewLogin: @escaping @Sendable (URL, TimeInterval) -> ClaudeLoginRenewal = { _, _ in .unavailable },
+                     currentDate: @escaping @Sendable () -> Date = { Date() }) {
+        self.init(slot: account, defaults: defaults, readAuth: readAuth, fetchLimits: fetchLimits, readDesktop: readDesktop,
+                  renewLogin: renewLogin, currentDate: currentDate)
+    }
+
+    private init(slot account: ClaudeAccount?, defaults: UserDefaults,
+                 readAuth: @escaping @Sendable (ClaudeLoginSource, URL) -> ClaudeAuth?,
+                 fetchLimits: @escaping @Sendable (String) async throws -> Usage,
+                 readDesktop: @escaping @Sendable (URL) -> ClaudeDesktopReading?,
+                 renewLogin: @escaping @Sendable (URL, TimeInterval) -> ClaudeLoginRenewal,
+                 currentDate: @escaping @Sendable () -> Date) {
+        self.account = account
         self.defaults = defaults
         self.readAuth = readAuth
         self.fetchLimits = fetchLimits
         self.readDesktop = readDesktop
         self.renewLogin = renewLogin
         self.currentDate = currentDate
-        loginSource = defaults.string(forKey: "claudeLoginSource").flatMap(ClaudeLoginSource.init(rawValue:)) ?? .automatic
-        polling = ClaudePollingState.load(from: defaults, now: currentDate())
+        if let account {
+            loginSource = account.codeFolder == nil ? .claudeDesktop : .automatic
+            pollingKey = account.pollingKey
+            knownOrganization = account.appFolder == nil ? nil : account.organization
+        } else {
+            loginSource = defaults.string(forKey: "claudeLoginSource").flatMap(ClaudeLoginSource.init(rawValue:)) ?? .automatic
+            pollingKey = ClaudePollingState.defaultsKey
+        }
+        polling = ClaudePollingState.load(from: defaults, key: pollingKey, now: currentDate())
         usage = polling.usage
         lastGoodAt = polling.lastGoodAt
         lastError = polling.lastFailure
         authLabel = polling.authLabel
-        if startPolling { start() }
     }
 
     func start() {
         guard !active else { return }; active = true
+        fetchesFrom = currentDate().addingTimeInterval(startDelay)
         tick()
+        if startDelay > 0 {
+            let delay = startDelay
+            delayedStart = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled else { return }
+                self?.tick()
+            }
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
         timer?.tolerance = 3
     }
 
+    /// The saved state again, after another store of the same account saved its own.
+    func reloadPolling() {
+        guard !active else { return }
+        polling = ClaudePollingState.load(from: defaults, key: pollingKey, now: currentDate())
+        usage = polling.usage; lastGoodAt = polling.lastGoodAt; lastError = polling.lastFailure; authLabel = polling.authLabel
+    }
+
     func stop() {
         active = false; loginGeneration += 1
+        delayedStart?.cancel(); delayedStart = nil
         timer?.invalidate(); timer = nil
         request?.cancel(); request = nil
         desktopRead?.cancel(); desktopRead = nil
@@ -94,28 +159,40 @@ final class Store: ObservableObject {
     func tick() {
         guard active else { return }
         refreshDesktop()
-        if loginSource != .claudeDesktop, currentDate() >= nextFetchAt { fetch() }
+        let now = currentDate()
+        if loginSource != .claudeDesktop, now >= nextFetchAt, now >= fetchesFrom { fetch() }
     }
 
     private func refreshDesktop() {
-        guard desktopRead == nil else { return }
-        let generation = loginGeneration, directory = configDirectory, reader = readDesktop
+        // An account known only from its Claude Code login has no Claude app folder to look in.
+        guard desktopRead == nil, account == nil || account?.appFolder != nil else { return }
+        let generation = loginGeneration, directory = account?.appFolder ?? configDirectory, reader = readDesktop
         desktopRead = Task {
             let reading = try? await usageWork { reader(directory) }
             guard !Task.isCancelled, generation == loginGeneration else { return }
             desktopRead = nil
-            if reading != desktop { desktop = reading }
+            guard reading != desktop else { return }
+            desktop = reading
+            guard account != nil, let organization = reading?.organization else { return }
+            defer { knownOrganization = organization }
+            // The folder is signed in to another account now: what was read with the old one's
+            // login, and the renewal times borrowed from it, belong to that other account.
+            if let known = knownOrganization, known != organization {
+                clearSelectedLogin()
+                onOrganizationChange?()
+            }
         }
     }
 
     func setLoginSource(_ source: ClaudeLoginSource) {
-        guard source != loginSource else { return }
+        guard account == nil, source != loginSource else { return }
         loginSource = source
         defaults.set(source.rawValue, forKey: "claudeLoginSource")
         clearSelectedLogin()
     }
 
     func setConfigDirectory(_ directory: URL) {
+        guard account == nil else { return }
         defaults.set(directory.standardizedFileURL.path, forKey: ClaudePaths.directoryPreference)
         loginSource = .claudeCode
         defaults.set(loginSource.rawValue, forKey: "claudeLoginSource")
@@ -130,7 +207,7 @@ final class Store: ObservableObject {
         cachedToken = nil
         polling.clearReading()
         usage = nil; lastGoodAt = nil; lastError = nil; authLabel = nil; authPlan = nil; missingLogin = false
-        polling.save(to: defaults)
+        polling.save(to: defaults, key: pollingKey)
         tick()
     }
 
@@ -139,6 +216,8 @@ final class Store: ObservableObject {
     /// this is being checked does nothing.
     func beginSignIn() async -> Bool {
         guard active, !checkingLogin else { return false }
+        // An account known only from the Claude app has no Claude Code folder to look in yet.
+        if let account, account.codeFolder == nil { return true }
         checkingLogin = true
         defer { checkingLogin = false }
         // Set before the first suspension, so a check already under way starts no second renewal.
@@ -156,7 +235,7 @@ final class Store: ObservableObject {
         if missingLogin { polling.retry(at: currentDate()) }
         // Automatic stays with the tool it resolved; let it find Claude Code's login instead.
         if loginSource == .automatic, let pinned = polling.authSource, pinned != .claudeCode { clearSelectedLogin() }
-        else { polling.save(to: defaults); tick() }
+        else { polling.save(to: defaults, key: pollingKey); tick() }
         return !usable
     }
 
@@ -231,12 +310,13 @@ final class Store: ObservableObject {
         guard !inFlight, polling.begin(at: currentDate()) else { return }
         inFlight = true
         // Save the request gate before starting, so quitting/relaunching cannot bypass it.
-        polling.save(to: defaults)
+        polling.save(to: defaults, key: pollingKey)
         let generation = loginGeneration
-        let source = loginSource == .automatic ? polling.authSource ?? .automatic : loginSource
+        // One of several accounts reads only its own Claude Code login: OpenCode and Pi name no account.
+        let source = account != nil ? .claudeCode : loginSource == .automatic ? polling.authSource ?? .automatic : loginSource
         let directory = configDirectory, reader = readAuth
         request = Task {
-            defer { if generation == loginGeneration { polling.save(to: defaults); inFlight = false } }
+            defer { if generation == loginGeneration { polling.save(to: defaults, key: pollingKey); inFlight = false } }
             do {
                 // Pin Automatic to its resolved tool after a successful read. A temporary
                 // Keychain failure must not silently select someone else's OpenCode/Pi login.
@@ -245,7 +325,7 @@ final class Store: ObservableObject {
                 // A login that ran out is Claude Code's to renew. Ask it to, rarely, and look again.
                 if auth == nil, source == .automatic || source == .claudeCode, !awaitingLogin,
                    polling.beginRenewal(at: currentDate()) {
-                    polling.save(to: defaults)
+                    polling.save(to: defaults, key: pollingKey)
                     let renewal = await renew(directory, deadline: Self.renewalDeadline)
                     guard active, !Task.isCancelled, generation == loginGeneration else { return }
                     // Unlike a Keychain item caught mid-rewrite, this login is known to be over.

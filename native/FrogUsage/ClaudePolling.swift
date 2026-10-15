@@ -116,8 +116,10 @@ struct ClaudePollingState: Codable {
         nextFetchAt = max(nextFetchAt, now.addingTimeInterval(max(wait, error.retryAfter ?? 0)))
     }
 
-    static func load(from defaults: UserDefaults, now: Date = Date()) -> ClaudePollingState {
-        guard let data = defaults.data(forKey: defaultsKey),
+    /// Each Claude account keeps its own state under its own key; the one Frog read before it
+    /// knew several accounts keeps `defaultsKey`.
+    static func load(from defaults: UserDefaults, key: String = defaultsKey, now: Date = Date()) -> ClaudePollingState {
+        guard let data = defaults.data(forKey: key),
               var state = try? JSONDecoder().decode(Self.self, from: data),
               state.interval.isFinite, (60...600).contains(state.interval) else { return Self() }
         // Frog may have been closed for longer than the throttling is worth remembering.
@@ -125,7 +127,7 @@ struct ClaudePollingState: Codable {
         return state
     }
 
-    func save(to defaults: UserDefaults) {
-        if let data = try? JSONEncoder().encode(self) { defaults.set(data, forKey: Self.defaultsKey) }
+    func save(to defaults: UserDefaults, key: String = defaultsKey) {
+        if let data = try? JSONEncoder().encode(self) { defaults.set(data, forKey: key) }
     }
 }
