@@ -116,6 +116,50 @@ Clipboard is a settings page with the paste-picker shortcut. **Open clipboard hi
 navigates to the single History page with **Clipboard** selected. That filter's clear
 action only clears in-memory clips; saved text/audio history remains separate.
 
+## Learned command bar choices
+
+`CommandChoices` (FrogCore) remembers which row was picked for what was typed; it is
+the model behind the Command bar's **Learn from your choices**. The typed text is stored
+as its search key (`CommandSearch.searchKey`: case and diacritics folded) with runs of
+whitespace collapsed, in canonical composed form, cut to its first 32 characters. Rows
+whose ids start with `clipboard:`, `window:` or `calculation:`, and ids over 1,024 UTF-8
+bytes, are never recorded.
+
+- A strength is stored as of its last pick and read decayed:
+  `decayed = strength × 0.5 ^ (max(0, now − last) / 14 days)`.
+- A pick sets the pair (text, row) to `min(decayed + 1, 5)` and every other pair with the
+  same text to `decayed × 0.5`, all with `last = now`. Empty text creates no pair. The
+  row's own item becomes `min(decayed + 1, 10)`.
+- Entries whose decayed strength is below 0.1 are dropped, so a single pick lasts about
+  seven weeks; at most the strongest 500 pairs and 300 items are kept.
+- For typed text `q`, `S(id)` is the largest decayed strength of a pair whose text starts
+  with `q` (compared on UTF-8 bytes), counted whole when the text equals `q` and half when
+  it is longer. Rows with `S > 0` lead, strongest first, then the latest pick.
+  The strongest is **latched** when `S ≥ 2` and strictly above the next row's.
+- `CommandSearch.results(…, latched:)` puts a latched row that the typed text finds above
+  every bucket, in the same single pass; the other learned rows only lead their bucket
+  through `preferred`.
+
+What ranking guarantees:
+
+1. Apart from the one latched row, no row passes a better match; learning only reorders
+   rows inside a bucket.
+2. At most one row leaves its bucket, so an exact title or alias match, an exact
+   application included, loses at most one place.
+3. A latched row was picked at least twice for this text, or about four times for a
+   longer text starting with it, and more than any other row.
+4. Two picks of another row for the same text move the latch: with Calculator at 5 for
+   "ca", one pick of Calendar gives Calendar 1 and Calculator 2.5 (the latch stays), a
+   second gives 2 and 1.25 (it moves to Calendar). Alternating picks never latch.
+5. A row that the typed text does not find is never listed.
+
+`CommandChoicesPersistence` keeps them in `command-choices.json` in Frog's data folder
+(`~/Library/Application Support/Frog/`), never in the configuration: a 0600 file in a
+0700 folder, written through a temporary file, read with a 1 MB limit and rewritten below
+512 KB by dropping the weakest pairs 50 at a time. Each change reads, applies and writes
+under one lock, so two copies of Frog merge their picks. A broken or newer file is left
+as it is, and only forgetting the learned choices deletes it.
+
 ## Dynamic popup sizing
 
 The later native reproduction found a 326-point MenuBarExtra window retaining its
