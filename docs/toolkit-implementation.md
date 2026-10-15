@@ -502,3 +502,9 @@ usage records, indexes and captured media are not configuration-export payloads.
 New optional collectors and system integrations start only when enabled.
 Provider polling retains rate limits/backoff and does not refresh another tool's
 OAuth tokens. Tests use isolated fixtures instead of a user's real accounts.
+
+Window moves go through `WindowAccess`, so window actions are tested against
+fixture windows. The live implementation reads and writes through
+Accessibility, and turns the app's `AXEnhancedUserInterface` off around its
+writes and back on afterwards, because Chromium and Electron apps animate and
+settle at another size while it is on.
