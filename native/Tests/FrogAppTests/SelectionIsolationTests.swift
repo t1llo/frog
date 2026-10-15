@@ -6,6 +6,9 @@ final class SelectionIsolationTests: XCTestCase {
     /// Paths below `native/FrogApp`.
     private static let files = [
         "Platform/SelectionReader.swift",
+        "Platform/SelectionWatcher.swift",
+        "Platform/SelectionBubbleController.swift",
+        "Views/SelectionBubbleView.swift",
     ]
 
     private static let forbidden = [
