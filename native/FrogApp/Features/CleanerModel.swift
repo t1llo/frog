@@ -1,0 +1,600 @@
+import Darwin
+import Foundation
+import FrogCore
+
+/// Everything the App cleaner reads and changes, so the whole page runs against a fixture folder and fakes in tests.
+struct CleanerDependencies {
+    var roots: CleanerRoots
+    var safety: CleanerSafety
+    var inspector: AppBundleInspector
+    var trash: any CleanerTrash
+    var system: any CleanerSystemControl
+    var store: CleanerStore
+    /// Every app bundle the catalogue knows, system ones included (they still claim names and IDs).
+    var applications: @MainActor () async -> [URL]
+    var displayName: @Sendable (URL) -> String
+    var ownBundleID: String
+    // slot: cleaner-leftovers
+    // slot: cleaner-junk
+    // slot: cleaner-assist
+    // slot: cleaner-disk
+    // slot: cleaner-startup
+
+    /// Only builds values: nothing is read until the page asks.
+    @MainActor static func live(dataDirectory: URL, protectedPaths: [URL]) -> CleanerDependencies {
+        let roots = CleanerRoots()
+        var dependencies = CleanerDependencies(
+            roots: roots, safety: CleanerSafety(roots: roots, protectedPaths: protectedPaths),
+            inspector: AppBundleInspector(signatures: SecurityCodeSignatureReader()),
+            trash: SystemCleanerTrash(), system: SystemCleanerControl(),
+            store: CleanerStore(directory: dataDirectory.appendingPathComponent("Cleaner", isDirectory: true)),
+            applications: {
+                await ApplicationCatalogStore.shared.load().compactMap { $0.action?.applicationPath }
+                    .map { URL(fileURLWithPath: $0, isDirectory: true) }
+            },
+            displayName: { FileManager.default.displayName(atPath: $0.path) },
+            ownBundleID: "xyz.beffa.frog")
+        // `swift run` has no Info.plist; a bundled Frog names itself.
+        if let own = Bundle.main.bundleIdentifier { dependencies.ownBundleID = own }
+        // slot: cleaner-leftovers
+        // slot: cleaner-junk
+        // slot: cleaner-assist
+        // slot: cleaner-disk
+        // slot: cleaner-startup
+        return dependencies
+    }
+}
+
+struct CleanerAppRow: Identifiable, Equatable {
+    var identity: AppIdentity
+    var size: CleanerSize?
+    var id: String { identity.path }
+}
+
+enum CleanerGroupKind: String, CaseIterable, Identifiable {
+    case application, sure, likely, possible, shared, suggested
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .application: "App"
+        case .sure: "Sure matches"
+        case .likely: "Likely matches"
+        case .possible: "Possible matches"
+        case .shared: "Used by other apps"
+        case .suggested: "Suggested by AI"
+        }
+    }
+
+    /// The group an item is listed in; nil for a possible match while those are hidden.
+    static func of(_ item: CleanerItem, showPossible: Bool) -> CleanerGroupKind? {
+        if item.kind == .application { return .application }
+        if item.suggested { return .suggested }
+        if item.confidence == .possible, !showPossible { return nil }
+        if !item.sharedWith.isEmpty { return .shared }
+        switch item.confidence {
+        case .certain: return .sure
+        case .likely: return .likely
+        case .possible: return .possible
+        }
+    }
+}
+
+struct CleanerGroup: Identifiable, Equatable {
+    var kind: CleanerGroupKind
+    var items: [CleanerItem]
+    var id: CleanerGroupKind { kind }
+}
+
+/// One app's bundle and leftovers, with what the user ticked.
+struct CleanerReview: Equatable {
+    var app: AppIdentity
+    /// The bundle is already gone; only its leftovers are listed.
+    var removedApp = false
+    var items: [CleanerItem]
+    var selected: Set<String>
+    var sizes: [String: CleanerSize]
+    var fullDiskAccess: Bool?
+
+    /// application, sure (certain), likely, possible (only when shown), shared, suggested; empty groups dropped.
+    func groups(showPossible: Bool) -> [CleanerGroup] {
+        var found: [CleanerGroupKind: [CleanerItem]] = [:]
+        for item in items {
+            guard let kind = CleanerGroupKind.of(item, showPossible: showPossible) else { continue }
+            found[kind, default: []].append(item)
+        }
+        return CleanerGroupKind.allCases.compactMap { kind in found[kind].map { CleanerGroup(kind: kind, items: $0) } }
+    }
+
+    var selectedBytes: Int64 {
+        items.filter { selected.contains($0.id) }.reduce(0) { $0 + (sizes[$1.id]?.bytes ?? $1.size ?? 0) }
+    }
+
+    var selectedCount: Int { items.filter { selected.contains($0.id) }.count }
+}
+
+/// What a tab asks to move to the Trash; the same confirmation sheet and remover serve every tab.
+struct RemovalRequest: Equatable {
+    var app: AppIdentity?
+    var items: [CleanerItem]
+    var selected: Set<String>
+    var purpose: CleanerSafety.Purpose
+    /// The record's title: the app's name or "12 items".
+    var title: String
+    var sizes: [String: CleanerSize]
+}
+
+struct PendingRemoval: Identifiable {
+    let id = UUID()
+    var request: RemovalRequest
+    var plan: RemovalPlan
+    var prompt: RemovalPrompt
+}
+
+struct ForceQuitQuestion: Identifiable, Equatable {
+    let id = UUID()
+    var title: String
+    var message: String
+}
+
+enum CleanerAppSort: String, CaseIterable {
+    case name, size
+    var title: String { self == .name ? "Name" : "Size" }
+}
+
+/// The App cleaner's page: the app list, the review of one app, the confirmation, the force-quit question,
+/// the removal and its outcome. Later tabs reuse `prepare(_:)` for their own confirmation.
+@MainActor
+final class CleanerModel: ObservableObject {
+    enum Phase: Equatable { case idle, scanning, reviewing, removing(done: Int, total: Int) }
+
+    @Published private(set) var apps: [CleanerAppRow] = []
+    @Published private(set) var loadingApps = false
+    @Published var search = ""
+    @Published var sort: CleanerAppSort = .name
+    @Published private(set) var review: CleanerReview?
+    @Published private(set) var phase: Phase = .idle
+    @Published var pending: PendingRemoval?
+    @Published private(set) var forceQuit: ForceQuitQuestion?
+    @Published private(set) var outcome: RemovalOutcome?
+    @Published var issue: String?
+    @Published private(set) var fullDiskAccess: Bool?
+    var showPossibleMatches = false {
+        didSet { if !showPossibleMatches { untickHidden() } }
+    }
+    /// Set for reviews of removed apps; nil otherwise.
+    var isInstalledAgain: (@MainActor (AppIdentity) -> Bool)?
+
+    let dependencies: CleanerDependencies
+
+    nonisolated static let notAnApp = "Drop an app from Finder."
+    nonisolated static let unreadable = "Frog cannot read this app."
+    nonisolated static let appleApp = "Frog leaves Apple's apps alone. Remove them in Finder."
+    nonisolated static let frogItself = "Frog cannot remove itself. Quit Frog, then move it to the Trash in Finder."
+    nonisolated static let outsideApplications = "Frog removes apps from the Applications folders. Move this one to the Trash in Finder."
+    nonisolated static let nothingTicked = "Tick at least one item."
+    nonisolated static func installedAgain(_ name: String) -> String { "\(name) is installed again." }
+    nonisolated static func didNotQuit(_ name: String) -> String { "\(name) did not quit. Force quit it?" }
+    nonisolated static func unsavedChanges(_ name: String) -> String { "Unsaved changes in \(name) may be lost." }
+
+    /// Every identity the last load inspected, Apple's and Frog's included.
+    private var identities: [AppIdentity] = []
+    private var identitiesLoaded = false
+    private var identityCache: [String: CachedIdentity] = [:]
+    /// Bundle sizes for this session, by resolved path.
+    private var appSizes: [String: CleanerSize] = [:]
+    private var loadTask: Task<Void, Never>?
+    private var appSizeTask: Task<Void, Never>?
+    private var scanTask: Task<Void, Never>?
+    private var sizeTask: Task<Void, Never>?
+    private var forceQuitAnswer: CheckedContinuation<Bool, Never>?
+    /// Changes with `stop`, so work that started before never publishes after it.
+    private var generation = 0
+
+    init(dependencies: CleanerDependencies) { self.dependencies = dependencies }
+
+    private var isRemoving: Bool {
+        if case .removing = phase { return true }
+        return false
+    }
+
+    // MARK: - App list
+
+    var visibleApps: [CleanerAppRow] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        let matching = query.isEmpty ? apps : apps.filter { row in
+            let identity = row.identity
+            return [identity.name, identity.bundleName, identity.displayName, identity.bundleID].compactMap { $0 }
+                .contains { $0.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
+        }
+        return matching.sorted { first, second in
+            if sort == .size, first.size?.bytes != second.size?.bytes {
+                guard let one = first.size?.bytes else { return false }
+                guard let other = second.size?.bytes else { return true }
+                return one > other
+            }
+            return first.identity.name.localizedStandardCompare(second.identity.name) == .orderedAscending
+        }
+    }
+
+    /// Callers that arrive during a load share it.
+    func loadApps() async {
+        if let loadTask { return await loadTask.value }
+        loadingApps = true
+        let task = Task { await reloadApps() }
+        loadTask = task
+        await task.value
+    }
+
+    /// Every identity `loadApps` inspected, system apps included (they still claim IDs and names),
+    /// loading them first when needed. Leftovers, the removed-app notice and the AI assist use it.
+    func allIdentities() async -> [AppIdentity] {
+        if !identitiesLoaded { await loadApps() }
+        return identities
+    }
+
+    /// Measures the listed bundles once per session and publishes them together.
+    func measureAppSizes() async {
+        if let appSizeTask { return await appSizeTask.value }
+        let urls = apps.filter { appSizes[key($0.identity.path)] == nil }.map(\.identity.url)
+        guard !urls.isEmpty else { return }
+        let task = Task {
+            guard let sizes = try? await Self.offMain(.utility, { CleanerSizer().measure(urls) }),
+                  !Task.isCancelled else { return }
+            for url in urls { appSizes[key(url.path)] = sizes[url.path] }
+            apps = apps.map { row in
+                var row = row
+                row.size = appSizes[key(row.identity.path)]
+                return row
+            }
+            appSizeTask = nil
+        }
+        appSizeTask = task
+        await task.value
+    }
+
+    private func reloadApps() async {
+        let urls = await dependencies.applications()
+        guard !Task.isCancelled else { return }
+        let context = ListContext(roots: dependencies.roots, safety: dependencies.safety, inspector: dependencies.inspector,
+                                  displayName: dependencies.displayName, ownBundleID: dependencies.ownBundleID)
+        let cache = identityCache
+        guard let found = try? await Self.offMain(.utility, { try Self.inspect(urls, context: context, cache: cache) }),
+              !Task.isCancelled else { return }
+        identityCache = found.cache
+        identities = found.identities
+        identitiesLoaded = true
+        apps = found.listed.map { CleanerAppRow(identity: $0, size: appSizes[key($0.path)]) }
+        loadingApps = false
+        loadTask = nil
+    }
+
+    // MARK: - Review
+
+    /// For list clicks, drops and the command bar. Refused apps leave the open review as it is.
+    func open(_ url: URL) async {
+        await runScan { [weak self] in await self?.checkAndScan(url) }
+    }
+
+    /// Opens the review of an app Frog has already identified, such as one whose bundle is gone.
+    func openReview(of app: AppIdentity, removedApp: Bool) async {
+        await runScan { [weak self] in await self?.scan(app, removedApp: removedApp) }
+    }
+
+    /// The sentence that keeps an app out of the uninstaller, or nil when Frog may remove it.
+    func refusal(for app: AppIdentity) -> String? {
+        Self.refusal(for: app, roots: dependencies.roots, safety: dependencies.safety, ownBundleID: dependencies.ownBundleID)
+    }
+
+    func closeReview() {
+        scanTask?.cancel(); scanTask = nil
+        sizeTask?.cancel(); sizeTask = nil
+        review = nil
+        guard !isRemoving else { return }
+        pending = nil
+        phase = .idle
+    }
+
+    /// Ticking is the user's choice, so any item may be ticked here, shared and suggested ones too.
+    func toggle(_ id: String) {
+        guard var review, review.items.contains(where: { $0.id == id }) else { return }
+        if review.selected.remove(id) == nil { review.selected.insert(id) }
+        self.review = review
+    }
+
+    func setGroup(_ kind: CleanerGroupKind, selected: Bool) {
+        guard var review else { return }
+        let ids = review.groups(showPossible: showPossibleMatches).first { $0.kind == kind }?.items.map(\.id) ?? []
+        if selected { review.selected.formUnion(ids) } else { review.selected.subtract(ids) }
+        self.review = review
+    }
+
+    func refreshFullDiskAccess() async {
+        let generation = self.generation
+        let granted = await dependencies.system.hasFullDiskAccess()
+        guard generation == self.generation else { return }
+        fullDiskAccess = granted
+        review?.fullDiskAccess = granted
+    }
+
+    /// For tests: waits until the open review's sizes are published.
+    func waitForSizes() async { await sizeTask?.value }
+
+    private func runScan(_ work: @escaping @MainActor () async -> Void) async {
+        guard !isRemoving else { return }
+        scanTask?.cancel()
+        let task = Task { await work() }
+        scanTask = task
+        await task.value
+        if scanTask == task { scanTask = nil }
+    }
+
+    private func checkAndScan(_ url: URL) async {
+        issue = nil
+        let url = url.standardizedFileURL
+        var isFolder: ObjCBool = false
+        guard url.pathExtension.lowercased() == "app", FileManager.default.fileExists(atPath: url.path, isDirectory: &isFolder),
+              isFolder.boolValue else {
+            issue = Self.notAnApp
+            return
+        }
+        let inspector = dependencies.inspector, displayName = dependencies.displayName
+        let identity = try? await Self.offMain(.userInitiated) { try inspector.identity(of: url, displayName: displayName(url)) }
+        guard !Task.isCancelled else { return }
+        guard let identity else {
+            issue = Self.unreadable
+            return
+        }
+        if let refusal = refusal(for: identity) {
+            issue = refusal
+            return
+        }
+        await scan(identity, removedApp: false)
+    }
+
+    private func scan(_ app: AppIdentity, removedApp: Bool) async {
+        sizeTask?.cancel(); sizeTask = nil
+        review = nil; pending = nil; outcome = nil; issue = nil
+        phase = .scanning
+        let granted = await dependencies.system.hasFullDiskAccess()
+        guard !Task.isCancelled else { return }
+        fullDiskAccess = granted
+        let path = key(app.path)
+        let others = await allIdentities().filter { key($0.path) != path }
+        guard !Task.isCancelled else { return }
+
+        let scanner = LeftoverScanner(roots: dependencies.roots, safety: dependencies.safety, hasFullDiskAccess: granted ?? false)
+        var items: [CleanerItem]
+        do {
+            items = try await Self.offMain(.userInitiated) { try scanner.scan(app: app, otherApps: others) }
+        } catch {
+            guard !Task.isCancelled else { return }
+            phase = .idle
+            issue = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            return
+        }
+        guard !Task.isCancelled else { return }
+        if removedApp { items.removeAll { $0.kind == .application } }
+        // Group containers hold data other apps of the developer may share, so Frog never ticks them.
+        let selected = items.filter { $0.kind == .application || ($0.isPreselected && $0.kind != .groupContainer) }
+        review = CleanerReview(app: app, removedApp: removedApp, items: items, selected: Set(selected.map(\.id)),
+                               sizes: [:], fullDiskAccess: granted)
+        phase = .reviewing
+        measureReviewSizes(items, fullDiskAccess: granted)
+    }
+
+    /// Containers are not measured without Full Disk Access: reading them could ask the user about other apps' data.
+    private func measureReviewSizes(_ items: [CleanerItem], fullDiskAccess: Bool?) {
+        let urls = items.filter { item in
+            fullDiskAccess == true || !(item.needsFullDiskAccess || [.container, .groupContainer].contains(item.kind))
+        }.map(\.url)
+        guard !urls.isEmpty, let app = review?.app else { return }
+        sizeTask = Task {
+            guard let sizes = try? await Self.offMain(.utility, { CleanerSizer().measure(urls) }),
+                  !Task.isCancelled, review?.app == app else { return }
+            review?.sizes = sizes
+        }
+    }
+
+    private func untickHidden() {
+        guard var review else { return }
+        let shown = Set(review.groups(showPossible: showPossibleMatches).flatMap(\.items).map(\.id))
+        let kept = review.selected.intersection(shown)
+        guard kept != review.selected else { return }
+        review.selected = kept
+        self.review = review
+    }
+
+    // MARK: - Removal
+
+    func prepareRemoval() async {
+        guard let review else { return }
+        if review.removedApp, isInstalledAgain?(review.app) == true {
+            issue = Self.installedAgain(review.app.name)
+            closeReview()
+            return
+        }
+        await prepare(RemovalRequest(app: review.app, items: review.items, selected: review.selected, purpose: .leftover,
+                                     title: review.app.name, sizes: review.sizes))
+    }
+
+    func prepare(_ request: RemovalRequest) async {
+        guard !isRemoving else { return }
+        issue = nil
+        // The record and the outcome count bytes from the items themselves.
+        let items = request.items.map { item in
+            var item = item
+            if let size = request.sizes[item.id] { item.size = size.bytes }
+            return item
+        }
+        let plan = RemovalPlan.make(app: request.app, items: items, selected: request.selected, purpose: request.purpose,
+                                    safety: dependencies.safety, sizes: request.sizes)
+        guard !plan.isEmpty else {
+            issue = plan.refused.first?.reason ?? Self.nothingTicked
+            return
+        }
+        var appIsRunning = false, helpers = 0
+        if let app = request.app, !plan.quitBundleIDs.isEmpty {
+            let generation = self.generation
+            let running = await dependencies.system.running(bundleIDs: Set(plan.quitBundleIDs),
+                                                            inside: plan.removesApp ? app.path : nil)
+            guard generation == self.generation, !isRemoving else { return }
+            let main = running.filter { $0.bundleID == app.bundleID || $0.bundlePath.map(key) == key(app.path) }
+            appIsRunning = !main.isEmpty
+            helpers = running.count - main.count
+        }
+        pending = PendingRemoval(request: request, plan: plan,
+                                 prompt: RemovalPrompt(plan: plan, appIsRunning: appIsRunning, runningHelpers: helpers))
+    }
+
+    func confirmRemoval() async {
+        guard let pending, !isRemoving else { return }
+        let generation = self.generation, app = pending.request.app
+        phase = .removing(done: 0, total: pending.plan.removals.count)
+        let remover = CleanerRemover(trash: dependencies.trash, system: dependencies.system, store: dependencies.store,
+                                     safety: dependencies.safety)
+        let result = await remover.perform(pending.plan, title: pending.request.title, confirmForceQuit: { [weak self] running in
+            await self?.askForceQuit(running, app: app, generation: generation) ?? false
+        }, progress: { [weak self] done, total in
+            Task { @MainActor in self?.progressed(done: done, total: total, generation: generation) }
+        })
+        guard generation == self.generation else { return }
+        finish(pending, result)
+    }
+
+    func answerForceQuit(_ forceQuit: Bool) {
+        self.forceQuit = nil
+        let answer = forceQuitAnswer
+        forceQuitAnswer = nil
+        answer?.resume(returning: forceQuit)
+    }
+
+    /// Only before anything ran; a removal under way finishes.
+    func cancelRemoval() {
+        guard !isRemoving else { return }
+        pending = nil
+    }
+
+    func dismissOutcome() { outcome = nil }
+
+    private func askForceQuit(_ running: [RunningAppInfo], app: AppIdentity?, generation: Int) async -> Bool {
+        guard generation == self.generation, forceQuitAnswer == nil else { return false }
+        let name = app?.name ?? running.first?.name ?? ""
+        return await withCheckedContinuation { continuation in
+            forceQuitAnswer = continuation
+            forceQuit = ForceQuitQuestion(title: Self.didNotQuit(name), message: Self.unsavedChanges(name))
+        }
+    }
+
+    private func progressed(done: Int, total: Int, generation: Int) {
+        // Progress hops here in tasks of its own, so a late or out-of-order one never moves the bar back.
+        guard generation == self.generation, case .removing(let shown, _) = phase, done > shown else { return }
+        phase = .removing(done: done, total: total)
+    }
+
+    private func finish(_ pending: PendingRemoval, _ result: RemovalOutcome) {
+        outcome = result
+        self.pending = nil
+        phase = .idle
+        let moved = result.moved.map(\.original)
+        guard !moved.isEmpty else { return }
+        func isMoved(_ path: String) -> Bool { moved.contains { path == $0 || path.hasPrefix($0 + "/") } }
+
+        if let app = pending.request.app,
+           pending.plan.removals.contains(where: { $0.item.kind == .application && isMoved($0.item.id) }) {
+            let path = key(app.path)
+            apps.removeAll { key($0.identity.path) == path }
+            identities.removeAll { key($0.path) == path }
+            identityCache[path] = nil
+            if let review, key(review.app.path) == path { closeReview() }
+        }
+        // Whatever moved leaves the open review, items inside moved folders too.
+        if var review {
+            review.items.removeAll { isMoved($0.id) }
+            review.selected = review.selected.filter { !isMoved($0) }
+            self.review = review
+        }
+    }
+
+    // MARK: - Stop
+
+    /// Called when the feature is turned off: nothing keeps running and nothing stays in memory.
+    func stop() {
+        generation += 1
+        for task in [loadTask, appSizeTask, scanTask, sizeTask] { task?.cancel() }
+        loadTask = nil; appSizeTask = nil; scanTask = nil; sizeTask = nil
+        answerForceQuit(false)
+        review = nil; pending = nil; outcome = nil; issue = nil
+        apps = []; identities = []; identitiesLoaded = false; identityCache = [:]; appSizes = [:]
+        loadingApps = false
+        fullDiskAccess = nil
+        phase = .idle
+    }
+
+    // MARK: - Helpers
+
+    /// Paths compare in the roots' resolved spelling (`/private/var`, not `/var`).
+    private func key(_ path: String) -> String { dependencies.roots.resolved(URL(fileURLWithPath: path)).path }
+
+    private struct CachedIdentity: Sendable {
+        var stamp: Double
+        var identity: AppIdentity
+    }
+
+    private struct ListContext: Sendable {
+        var roots: CleanerRoots
+        var safety: CleanerSafety
+        var inspector: AppBundleInspector
+        var displayName: @Sendable (URL) -> String
+        var ownBundleID: String
+    }
+
+    nonisolated private static func refusal(for app: AppIdentity, roots: CleanerRoots, safety: CleanerSafety,
+                                            ownBundleID: String) -> String? {
+        if app.isAppleApp { return appleApp }
+        if app.bundleID.caseInsensitiveCompare(ownBundleID) == .orderedSame { return frogItself }
+        let path = roots.resolved(app.url).path
+        guard roots.applicationFolders.contains(where: { path.hasPrefix($0.path + "/") }) else { return outsideApplications }
+        return safety.refusal(for: app.url, purpose: .application)
+    }
+
+    /// Inspects each bundle once per change of its Info.plist; unreadable bundles are left out.
+    nonisolated private static func inspect(_ urls: [URL], context: ListContext, cache: [String: CachedIdentity]) throws
+        -> (identities: [AppIdentity], listed: [AppIdentity], cache: [String: CachedIdentity]) {
+        var identities: [AppIdentity] = [], listed: [AppIdentity] = []
+        var fresh: [String: CachedIdentity] = [:]
+        for url in urls {
+            try Task.checkCancellation()
+            let url = url.standardizedFileURL
+            let path = context.roots.resolved(url).path
+            guard fresh[path] == nil, let stamp = infoStamp(url) else { continue }
+            let identity: AppIdentity
+            if let cached = cache[path], cached.stamp == stamp {
+                identity = cached.identity
+            } else {
+                guard let inspected = try? context.inspector.identity(of: url, displayName: context.displayName(url)) else { continue }
+                identity = inspected
+            }
+            fresh[path] = CachedIdentity(stamp: stamp, identity: identity)
+            identities.append(identity)
+            if refusal(for: identity, roots: context.roots, safety: context.safety, ownBundleID: context.ownBundleID) == nil {
+                listed.append(identity)
+            }
+        }
+        return (identities, listed, fresh)
+    }
+
+    /// The Info.plist's modification time, or nil when it is missing.
+    nonisolated private static func infoStamp(_ bundle: URL) -> Double? {
+        var info = stat()
+        guard lstat(bundle.appendingPathComponent("Contents/Info.plist").path, &info) == 0 else { return nil }
+        return Double(info.st_mtimespec.tv_sec) + Double(info.st_mtimespec.tv_nsec) / 1_000_000_000
+    }
+
+    /// Runs blocking disk work off the main actor and cancels it with the caller.
+    nonisolated static func offMain<T: Sendable>(_ priority: TaskPriority,
+                                                 _ work: @escaping @Sendable () throws -> T) async throws -> T {
+        let task = Task.detached(priority: priority) { try work() }
+        return try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+    }
+}
