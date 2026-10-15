@@ -50,6 +50,15 @@ The window switcher uses Accessibility to list window titles, observe the recent
 
 The optional floating processing indicator shows rule/status messages without taking focus. Turn it off in **Settings → Show processing indicator**. Compatibility replacement checks input-event counters, not keystroke contents, to reject changed targets.
 
+<!-- slot: explain -->
+<!-- slot: command-bar -->
+<!-- slot: usage -->
+<!-- slot: clipboard -->
+<!-- slot: processes -->
+<!-- slot: color-picker -->
+<!-- slot: quicklinks -->
+<!-- slot: emoji-picker -->
+
 ## Updates
 
 Sparkle checks the GitHub release feed and downloads signed updates. Automatic checks and downloads are configurable in Settings. System profiling is disabled. GitHub receives the network requests needed to serve the feed and downloads; no text, audio or provider keys are included.

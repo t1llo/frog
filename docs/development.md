@@ -35,6 +35,22 @@ opening separately before making latency claims. Native action catalogs are
 `SystemAction` (28) and `WindowAction` (23); settings destinations open panes rather
 than toggling hardware.
 
+## Registering a feature this round
+
+Several features are being built in parallel this round. Each registration point (the
+`FeatureID` cases and their `title`, `symbol`, `detail` and `hasPage` switches,
+`ToolkitPreferences`, the text configuration keys, validation, page routes, Features cards,
+teardown in `AppModel`, and `docs/configuration.md` and `docs/privacy.md`) is one entry per
+line and holds a `// slot: <name>` comment (`<!-- slot: <name> -->` in Markdown) for each
+feature that registers there, so that parallel changes merge without conflicts:
+
+- Add your lines directly below your own slot line, in the order you need. Never edit, move
+  or delete a slot line.
+- Never add lines below another feature's slot.
+- If your feature has no slot at a registration point, add a new slot line for it at the end
+  of that list in a separate one-line commit first, then your lines.
+- All slot lines are removed in one commit once the round's features have landed.
+
 ## Release packaging
 
 For a local app without release archives or publication, run `make build`. It builds the current checkout into `dist/Frog.app`, using a locally available Developer ID identity when possible, otherwise ad-hoc signing. It does not notarize, upload or increment the release version. Each local build gets its own build number. Use `make build CONFIGURATION=debug` for a debug build; set `FROG_SIGN_IDENTITY` explicitly to choose a certificate. Full releases use the separate local release script.

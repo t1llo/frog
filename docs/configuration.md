@@ -63,12 +63,52 @@ Recording values are defaults/legacy compatibility; each audio rule can explicit
 
 ### Features
 
-Each `feature.<name>` takes a boolean:
+Each `feature.<name>` takes a boolean.
 
-- `writing`, `dictation`, `application-shortcuts`, `window-switcher`, `stay-awake`: enabled by default.
-- `clipboard`, `command-bar`, `usage`, `snippets`, `scratchpad`, `shelf`, `scripts`, `quick-actions`, `menu-bar`, `system-monitor`: disabled by default.
+Enabled by default:
 
-Older installations retain their existing shortcut/window enablement semantics during migration. `hidden-sidebar-items` hides navigation entries without disabling the feature; use a JSON list of stable feature IDs, for example `["usage", "scripts", "commandBar"]`. Multiword feature **keys** are kebab-case; IDs in this list use `applicationShortcuts`, `windowSwitcher`, `stayAwake`, `commandBar`, `quickActions`, `menuBar`, `systemMonitor`.
+- `writing`
+- `dictation`
+- `application-shortcuts`
+- `window-switcher`
+- `stay-awake`
+
+Disabled by default:
+
+- `clipboard`
+- `command-bar`
+- `usage`
+- `snippets`
+- `scratchpad`
+- `shelf`
+- `scripts`
+- `quick-actions`
+- `menu-bar`
+- `system-monitor`
+<!-- slot: explain -->
+<!-- slot: windows -->
+<!-- slot: cleaner -->
+<!-- slot: emoji-picker -->
+<!-- slot: processes -->
+<!-- slot: color-picker -->
+<!-- slot: quicklinks -->
+
+Older installations retain their existing shortcut/window enablement semantics during migration. `hidden-sidebar-items` hides navigation entries without disabling the feature; use a JSON list of stable feature IDs, for example `["usage", "scripts", "commandBar"]`. Multiword feature **keys** are kebab-case; IDs in this list are camelCase:
+
+- `applicationShortcuts`
+- `windowSwitcher`
+- `stayAwake`
+- `commandBar`
+- `quickActions`
+- `menuBar`
+- `systemMonitor`
+<!-- slot: explain -->
+<!-- slot: windows -->
+<!-- slot: cleaner -->
+<!-- slot: emoji-picker -->
+<!-- slot: processes -->
+<!-- slot: color-picker -->
+<!-- slot: quicklinks -->
 
 ### Global shortcuts
 
@@ -134,6 +174,19 @@ macOS status-item positions stay on each Mac.
 - `usage.login-source`: `Automatic`, `Claude Code`, `Claude Desktop`, `OpenCode`, `Pi`. `Claude Desktop` reads the limits the Claude app saves locally and makes no request; `Automatic` shows whichever reading is newer.
 
 These fields select the display and login-source preference only. Accounts, tokens, readings and polling state are not configuration payloads.
+
+<!-- slot: usage -->
+
+<!-- slot: explain -->
+<!-- slot: windows -->
+<!-- slot: cleaner -->
+<!-- slot: command-bar -->
+<!-- slot: clipboard -->
+<!-- slot: snippets -->
+<!-- slot: emoji-picker -->
+<!-- slot: processes -->
+<!-- slot: color-picker -->
+<!-- slot: quicklinks -->
 
 ## Migration, sync and JSON interchange
 
