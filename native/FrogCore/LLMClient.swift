@@ -1,6 +1,6 @@
 import Foundation
 
-/// Non-streaming text transformations. The supplied session enables deterministic protocol fixtures.
+/// Text transformations and streamed answers. The supplied session enables deterministic protocol fixtures.
 public struct LLMClient: Sendable {
     private let session: URLSession
     public init(session: URLSession = .shared) { self.session = session }
@@ -8,19 +8,13 @@ public struct LLMClient: Sendable {
     public func complete(text: String, rule: Rule, provider: ProviderConfiguration, apiKey: String?) async throws -> String {
         try Task.checkCancellation()
         guard provider.kind.localTool == nil else { throw FrogError.message("Use the installed coding-tool client for this provider.") }
-        let request = try makeRequest(text: text, rule: rule, provider: provider, apiKey: apiKey)
+        let request = try makeRequest(messages: [ChatMessage(role: .user, text: text)], instructions: Self.ruleInstructions(rule),
+                                      rule: rule, provider: provider, apiKey: apiKey, stream: false, maxTokens: nil)
         let data: Data
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: request, delegate: NoRedirects())
-        } catch {
-            if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
-            if (error as? URLError)?.code == .timedOut {
-                throw FrogError.message("The provider request timed out. Try again or choose a faster model.")
-            }
-            // URLSession errors can include the full URL; provider payloads can echo text or keys.
-            throw FrogError.message("Could not connect to the provider. Check its endpoint and your network connection.")
-        }
+        } catch { throw Self.transportError(error) }
         try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse else { throw FrogError.message("The provider returned an invalid HTTP response.") }
         guard (200...299).contains(http.statusCode) else { throw statusError(http.statusCode) }
@@ -28,18 +22,111 @@ public struct LLMClient: Sendable {
         return try decode(data, kind: provider.kind)
     }
 
-    private func makeRequest(text: String, rule: Rule, provider: ProviderConfiguration, apiKey: String?) throws -> URLRequest {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("Select or enter some text first.") }
-        guard text.utf8.count <= 1_000_000 else { throw FrogError.message("The selected text is too large. Process a smaller selection.") }
+    /// Streams an answer to a conversation as it is generated. The rule contributes only its model
+    /// override; the instructions are sent as the system prompt. Cancelling the consumer cancels the request.
+    public func stream(messages: [ChatMessage], instructions: String, rule: Rule, provider: ProviderConfiguration,
+                       apiKey: String?, maxTokens: Int = 4_096) -> AsyncThrowingStream<AnswerEvent, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    try await streamAnswer(messages: messages, instructions: instructions, rule: rule, provider: provider,
+                                           apiKey: apiKey, maxTokens: maxTokens) { continuation.yield($0) }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    private func streamAnswer(messages: [ChatMessage], instructions: String, rule: Rule, provider: ProviderConfiguration,
+                              apiKey: String?, maxTokens: Int, yield: (AnswerEvent) -> Void) async throws {
+        try Task.checkCancellation()
+        guard provider.kind.localTool == nil else { throw FrogError.message("Coding tools do not use an HTTP endpoint.") }
+        let request = try makeRequest(messages: messages, instructions: Self.checkedInstructions(instructions), rule: rule,
+                                      provider: provider, apiKey: apiKey, stream: true, maxTokens: maxTokens)
+        let bytes: URLSession.AsyncBytes
+        let response: URLResponse
+        do {
+            (bytes, response) = try await session.bytes(for: request, delegate: NoRedirects())
+        } catch { throw Self.transportError(error) }
+        // Ends the connection when the answer is complete, fails or is cancelled before the server closes it.
+        defer { bytes.task.cancel() }
+        try Task.checkCancellation()
+        guard let http = response as? HTTPURLResponse else { throw FrogError.message("The provider returned an invalid HTTP response.") }
+        guard (200...299).contains(http.statusCode) else { throw statusError(http.statusCode) }
+        let type = http.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
+        var decoder = StreamDecoder(kind: provider.kind)
+        do {
+            if type.contains("text/event-stream") || type.contains("application/x-ndjson") {
+                for try await line in bytes.lines {
+                    for event in try decoder.feed(line: line) { yield(event) }
+                    if decoder.isFinished { break }
+                }
+            } else {
+                // A compatible server that ignores "stream" answers in one piece.
+                var data = Data()
+                for try await byte in bytes {
+                    data.append(byte)
+                    guard data.count <= StreamDecoder.textLimit else { throw FrogError.message("The answer was too long.") }
+                }
+                try Task.checkCancellation()
+                let body = String(decoding: data, as: UTF8.self)
+                if body.drop(while: { $0.isWhitespace }).hasPrefix("data:") {
+                    for line in body.split(omittingEmptySubsequences: true, whereSeparator: \.isNewline) {
+                        for event in try decoder.feed(line: String(line)) { yield(event) }
+                    }
+                } else {
+                    yield(.text(try decode(data, kind: provider.kind)))
+                    return
+                }
+            }
+        } catch let error as FrogError { throw error }
+        catch { throw Self.transportError(error) }
+        try Task.checkCancellation()
+        for event in try decoder.finish() { yield(event) }
+    }
+
+    /// URLSession errors can include the full URL; provider payloads can echo text or keys.
+    private static func transportError(_ error: Error) -> Error {
+        if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled { return CancellationError() }
+        if (error as? URLError)?.code == .timedOut {
+            return FrogError.message("The provider request timed out. Try again or choose a faster model.")
+        }
+        return FrogError.message("Could not connect to the provider. Check its endpoint and your network connection.")
+    }
+
+    private static func ruleInstructions(_ rule: Rule) throws -> String {
+        guard !rule.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, rule.instructions.utf8.count <= 100_000 else {
+            throw FrogError.message("Enter rule instructions of at most 100,000 bytes.")
+        }
+        return try rule.expandedInstructions()
+    }
+
+    private static func checkedInstructions(_ instructions: String) throws -> String {
+        guard !instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, instructions.utf8.count <= 100_000 else {
+            throw FrogError.message("Enter rule instructions of at most 100,000 bytes.")
+        }
+        return instructions
+    }
+
+    /// Builds the request for one answer. `instructions` is evaluated after the text and model checks,
+    /// so the first problem found is reported in the same order for every request.
+    private func makeRequest(messages: [ChatMessage], instructions: @autoclosure () throws -> String, rule: Rule,
+                             provider: ProviderConfiguration, apiKey: String?, stream: Bool, maxTokens: Int?) throws -> URLRequest {
+        guard !messages.isEmpty, messages.allSatisfy({ !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+            throw FrogError.message("Select or enter some text first.")
+        }
+        guard messages.reduce(0, { $0 + $1.text.utf8.count }) <= 1_000_000 else {
+            throw FrogError.message("The selected text is too large. Process a smaller selection.")
+        }
         let modelOverride = rule.model.trimmingCharacters(in: .whitespacesAndNewlines)
         let model = modelOverride.isEmpty ? provider.model.trimmingCharacters(in: .whitespacesAndNewlines) : modelOverride
         guard !model.isEmpty, model.utf8.count <= 256, !model.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
             throw FrogError.message("Choose a valid model in the provider or rule settings.")
         }
-        guard !rule.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, rule.instructions.utf8.count <= 100_000 else {
-            throw FrogError.message("Enter rule instructions of at most 100,000 bytes.")
-        }
-        let instructions = try rule.expandedInstructions()
+        let instructions = try instructions()
         guard let base = URLComponents(string: provider.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)),
               let scheme = base.scheme?.lowercased(), ["http", "https"].contains(scheme),
               let host = base.host, !host.isEmpty, base.user == nil, base.password == nil,
@@ -58,36 +145,48 @@ public struct LLMClient: Sendable {
         }
         let path: String
         let body: [String: Any]
-        let messages: [[String: String]] = [["role": "system", "content": instructions], ["role": "user", "content": text]]
+        let conversation: [[String: String]] = messages.map { ["role": $0.role.rawValue, "content": $0.text] }
+        let messages: [[String: String]] = [["role": "system", "content": instructions]] + conversation
         switch provider.kind {
         case .openAI, .compatible, .lmStudio:
             path = "chat/completions"
-            body = ["model": model, "messages": messages, "stream": false]
+            body = ["model": model, "messages": messages, "stream": stream]
         case .anthropic:
             path = baseURL.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).hasSuffix("v1") ? "messages" : "v1/messages"
             // The limit covers the model's thinking as well as the text. A request that does not
             // stream should not ask for more: the whole answer has to arrive within the timeout.
-            body = ["model": model, "system": instructions, "messages": [["role": "user", "content": text]], "max_tokens": 16_000, "stream": false]
+            body = ["model": model, "system": instructions, "messages": conversation, "max_tokens": maxTokens ?? 16_000, "stream": stream]
         case .gemini:
             let name = model.hasPrefix("models/") ? String(model.dropFirst(7)) : model
             guard !name.isEmpty, name.unicodeScalars.allSatisfy({ CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.").contains($0) }) else {
                 throw FrogError.message("Enter a valid Gemini model name.")
             }
-            path = "models/\(name):generateContent"
+            path = "models/\(name):\(stream ? "streamGenerateContent" : "generateContent")"
             body = ["system_instruction": ["parts": [["text": instructions]]],
-                    "contents": [["role": "user", "parts": [["text": text]]]]]
+                    "contents": conversation.map { ["role": $0["role"] == "assistant" ? "model" : "user", "parts": [["text": $0["content"] ?? ""]]] }]
         case .ollama:
             path = baseURL.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).hasSuffix("api") ? "chat" : "api/chat"
-            body = ["model": model, "messages": messages, "stream": false]
+            body = ["model": model, "messages": messages, "stream": stream]
         case .claudeCode, .codex, .opencode:
             throw FrogError.message("Coding tools do not use an HTTP endpoint.")
         }
-        var request = URLRequest(url: baseURL.appendingPathComponent(path), cachePolicy: .reloadIgnoringLocalCacheData,
+        var url = baseURL.appendingPathComponent(path)
+        if stream, provider.kind == .gemini {
+            // Without alt=sse Gemini streams one JSON array instead of server-sent events.
+            guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+                throw FrogError.message("Enter a valid Gemini model name.")
+            }
+            components.queryItems = [URLQueryItem(name: "alt", value: "sse")]
+            guard let streamURL = components.url else { throw FrogError.message("Enter a valid Gemini model name.") }
+            url = streamURL
+        }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData,
                                  timeoutInterval: Self.timeout(for: provider.kind))
         request.httpMethod = "POST"
         request.httpShouldHandleCookies = false
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let accept = !stream ? "application/json" : provider.kind == .ollama ? "application/x-ndjson" : "text/event-stream"
+        request.setValue(accept, forHTTPHeaderField: "Accept")
         if let key {
             switch provider.kind {
             case .anthropic: request.setValue(key, forHTTPHeaderField: "x-api-key")
