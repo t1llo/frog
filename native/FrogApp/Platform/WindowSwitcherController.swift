@@ -518,7 +518,7 @@ final class WindowSwitcherController {
         session.search(windows.map(\.id), query: display.query, current: frontWindow, backwards: openedBackwards)
         display.selected = session.selected
         if let panel, panel.isVisible {
-            let size = WindowSwitcherLayout.size(windowCount: windows.count)
+            let size = WindowSwitcherLayout.size(windowCount: windows.count, queryVisible: !display.query.isEmpty)
             panel.setFrame(NSRect(x: panel.frame.midX - size.width / 2, y: panel.frame.midY - size.height / 2,
                                   width: size.width, height: size.height), display: true)
         }
@@ -642,7 +642,7 @@ final class WindowSwitcherController {
         preparePanel()
         guard let panel else { return }
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
-        let size = WindowSwitcherLayout.size(windowCount: display.windows.count)
+        let size = WindowSwitcherLayout.size(windowCount: display.windows.count, queryVisible: !display.query.isEmpty)
         if let screen {
             panel.setFrame(NSRect(x: screen.visibleFrame.midX - size.width / 2,
                                   y: screen.visibleFrame.midY - size.height / 2,

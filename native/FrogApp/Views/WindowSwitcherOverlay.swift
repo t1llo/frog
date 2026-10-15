@@ -4,9 +4,11 @@ import SwiftUI
 enum WindowSwitcherLayout {
     static let width: CGFloat = 500
     static let rowHeight: CGFloat = 34
+    static let queryLineHeight: CGFloat = 30
     static let visibleRows = 10
-    static func size(windowCount: Int) -> CGSize {
-        CGSize(width: width, height: 12 + CGFloat(max(1, min(visibleRows, windowCount))) * rowHeight)
+    /// The panel fits up to ten rows, at least one for the empty message, and the search line while there is a query.
+    static func size(windowCount: Int, queryVisible: Bool = false) -> CGSize {
+        CGSize(width: width, height: 12 + CGFloat(max(1, min(visibleRows, windowCount))) * rowHeight + (queryVisible ? queryLineHeight : 0))
     }
 }
 
@@ -27,7 +29,7 @@ final class WindowSwitcherDisplay: ObservableObject {
         loading = false
         // Build the first visible rows during idle inventory refresh, rather than
         // on the first Command–Tab. Subsequent selections reuse the hosted tree.
-        panel?.setContentSize(WindowSwitcherLayout.size(windowCount: windows.count))
+        panel?.setContentSize(WindowSwitcherLayout.size(windowCount: windows.count, queryVisible: false))
         panel?.contentView?.layoutSubtreeIfNeeded()
     }
 }
@@ -39,9 +41,11 @@ struct WindowSwitcherOverlay: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if !model.query.isEmpty { queryLine }
             if model.windows.isEmpty {
                 Spacer()
-                Text(L10n.text(model.query.isEmpty ? "No accessible windows" : "No matching windows")).font(.system(size: 14, weight: .medium))
+                Text(model.query.isEmpty ? L10n.text("No accessible windows") : "No windows match \"\(model.query)\"").font(.system(size: 14, weight: .medium))
+                    .lineLimit(1).truncationMode(.middle).padding(.horizontal, 16)
                 Spacer()
             } else {
                 ScrollViewReader { proxy in
@@ -83,5 +87,19 @@ struct WindowSwitcherOverlay: View {
             .environment(\.locale, L10n.locale)
             .frogPanel()
             .foregroundStyle(FrogStyle.ink)
+    }
+
+    /// What has been typed to narrow the list; Backspace takes it back a character at a time.
+    private var queryLine: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(FrogType.body).foregroundStyle(FrogStyle.muted)
+            Text(model.query).font(FrogType.body).lineLimit(1).truncationMode(.head)
+            Spacer(minLength: 8)
+            KeyCap("⌫")
+        }.padding(.horizontal, 13).frame(height: WindowSwitcherLayout.queryLineHeight)
+            .overlay(alignment: .bottom) { Divider() }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(L10n.text("Search"))
+            .accessibilityValue(model.query)
     }
 }
