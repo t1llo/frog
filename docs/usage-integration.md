@@ -360,8 +360,9 @@ reaching the notice and the prompt opened from it.
 People who use two Claude accounts on one Mac, for example through a second Claude app
 started with its own folder, want to see both accounts' limits, each on its own or
 combined. The pieces below find and name the accounts, read each one, and combine their
-values. The screens that show them come next; until the switch is turned on, Frog reads
-one Claude Code login and the default Claude app folder exactly as before.
+values. The screens that show them follow under "Showing each account"; until the
+switch is turned on, Frog reads one Claude Code login and the default Claude app folder
+exactly as before.
 
 - **Finding accounts** (`ClaudeAccountDiscovery`). Claude app folders are the entries
   directly under `~/Library/Application Support` named `Claude`, `Claude-…` or
@@ -425,10 +426,10 @@ and isolated defaults.
 
 - **Switch off** (`claudeAccounts` false, the default). One store reads as before, with
   the login source and folder chosen on the page. While Mr. Usage is on, Frog looks for
-  further accounts once per launch and on each Refresh, by folder names and the
-  existence of files only; no history file is opened. Because those folders are not
-  opened, the count is the larger of the Claude app folders and the Claude Code
-  profiles found. With two or more, the popup and the page offer once: "Frog found 2
+  further accounts once per launch and on each Refresh, by folder names, the existence
+  of files and whether each Claude Code profile file holds a login; no history file is
+  opened. Because the app folders' histories are not read, the count is the larger of
+  the Claude app folders and the Claude Code profiles found. With two or more, the popup and the page offer once: "Frog found 2
   Claude accounts on this Mac: the Claude app's "Claude" and "Claude-Account-B"
   folders. Show usage for each? Frog reads their saved limits locally." **Show both**
   (or "Show all 3") turns the switch on and saves it to the configuration; **Not now**
