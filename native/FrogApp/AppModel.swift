@@ -1412,11 +1412,12 @@ final class AppModel: ObservableObject {
     private func manageWindow(_ rule: Rule) {
         guard let action = rule.action?.windowAction, let app = NSWorkspace.shared.frontmostApplication else { return }
         let displays = WindowDisplays.current()
+        let options = WindowSwitches(configuration.preferences).layoutOptions(MacWindowManagerReader.read())
         let pid = app.processIdentifier
         windowActionTask?.cancel()
         windowActionTask = Task {
             do {
-                try await windowManager.perform(action, pid: pid, displays: displays)
+                try await windowManager.perform(action, pid: pid, displays: displays, options: options)
                 try Task.checkCancellation()
                 if configuration.rules.contains(where: { $0.id == rule.id }) { statistics.recordRuleExecution(kind: .window) }
                 else { statistics.recordToolUse(.windowCommand) }

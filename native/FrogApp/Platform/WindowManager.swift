@@ -15,41 +15,53 @@ enum WindowGeometry {
         }
     }
 
-    static func target(_ action: WindowAction, window: CGRect, displays: [CGRect]) -> CGRect? {
+    /// The frame an action gives a window, inside the usable area of the display that holds
+    /// most of it. `step` picks the size of a cycled half from `WindowSizeCycle.fractions`.
+    static func target(_ action: WindowAction, window: CGRect, displays: [CGRect],
+                       options: WindowLayoutOptions = .legacy, step: Int = 0) -> CGRect? {
         guard let index = displayIndex(for: window, displays: displays) else { return nil }
-        let display = displays[index]
-        let halfWidth = display.width / 2, halfHeight = display.height / 2
+        let area = options.usableArea(displays[index])
+        let halfWidth = area.width / 2, halfHeight = area.height / 2
+        let share = WindowSizeCycle.fractions[min(max(0, step), WindowSizeCycle.fractions.count - 1)]
+        let tile: CGRect
         switch action {
-        case .leftHalf: return CGRect(x: display.minX, y: display.minY, width: halfWidth, height: display.height)
-        case .rightHalf: return CGRect(x: display.midX, y: display.minY, width: halfWidth, height: display.height)
-        case .topHalf: return CGRect(x: display.minX, y: display.minY, width: display.width, height: halfHeight)
-        case .bottomHalf: return CGRect(x: display.minX, y: display.midY, width: display.width, height: halfHeight)
-        case .topLeft: return CGRect(x: display.minX, y: display.minY, width: halfWidth, height: halfHeight)
-        case .topRight: return CGRect(x: display.midX, y: display.minY, width: halfWidth, height: halfHeight)
-        case .bottomLeft: return CGRect(x: display.minX, y: display.midY, width: halfWidth, height: halfHeight)
-        case .bottomRight: return CGRect(x: display.midX, y: display.midY, width: halfWidth, height: halfHeight)
+        case .leftHalf: tile = CGRect(x: area.minX, y: area.minY, width: area.width * share, height: area.height)
+        case .rightHalf: tile = CGRect(x: area.minX + area.width * (1 - share), y: area.minY, width: area.width * share, height: area.height)
+        case .topHalf: tile = CGRect(x: area.minX, y: area.minY, width: area.width, height: area.height * share)
+        case .bottomHalf: tile = CGRect(x: area.minX, y: area.minY + area.height * (1 - share), width: area.width, height: area.height * share)
+        case .topLeft: tile = CGRect(x: area.minX, y: area.minY, width: halfWidth, height: halfHeight)
+        case .topRight: tile = CGRect(x: area.midX, y: area.minY, width: halfWidth, height: halfHeight)
+        case .bottomLeft: tile = CGRect(x: area.minX, y: area.midY, width: halfWidth, height: halfHeight)
+        case .bottomRight: tile = CGRect(x: area.midX, y: area.midY, width: halfWidth, height: halfHeight)
         case .leftThird, .centerThird, .rightThird, .leftTwoThirds, .rightTwoThirds:
-            let third = display.width / 3
             let offset: CGFloat = action == .rightThird ? 2 : (action == .centerThird || action == .rightTwoThirds ? 1 : 0)
-            let width = (action == .leftTwoThirds || action == .rightTwoThirds) ? third * 2 : third
-            return CGRect(x: display.minX + offset * third, y: display.minY, width: width, height: display.height)
+            let span: CGFloat = (action == .leftTwoThirds || action == .rightTwoThirds) ? 2 : 1
+            // On a display taller than wide, left becomes top and right becomes bottom.
+            if options.portraitThirds && area.height > area.width {
+                let third = area.height / 3
+                tile = CGRect(x: area.minX, y: area.minY + offset * third, width: area.width, height: third * span)
+            } else {
+                let third = area.width / 3
+                tile = CGRect(x: area.minX + offset * third, y: area.minY, width: third * span, height: area.height)
+            }
         case .centeredSmall, .centeredMedium, .centeredLarge:
             let fraction: CGFloat = action == .centeredSmall ? 0.5 : (action == .centeredMedium ? 0.7 : 0.9)
-            let width = display.width * fraction, height = display.height * fraction
-            return CGRect(x: display.midX - width / 2, y: display.midY - height / 2, width: width, height: height)
-        case .maximize: return display
+            let width = area.width * fraction, height = area.height * fraction
+            return CGRect(x: area.midX - width / 2, y: area.midY - height / 2, width: width, height: height)
+        case .maximize: tile = area
         case .center:
-            let size = CGSize(width: min(window.width, display.width), height: min(window.height, display.height))
-            return CGRect(x: display.midX - size.width / 2, y: display.midY - size.height / 2, width: size.width, height: size.height)
+            let size = CGSize(width: min(window.width, area.width), height: min(window.height, area.height))
+            return CGRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2, width: size.width, height: size.height)
         case .nextDisplay, .previousDisplay:
             guard displays.count > 1 else { return window }
-            let next = displays[(index + (action == .nextDisplay ? 1 : displays.count - 1)) % displays.count]
+            let next = options.usableArea(displays[(index + (action == .nextDisplay ? 1 : displays.count - 1)) % displays.count])
             let width = min(window.width, next.width), height = min(window.height, next.height)
-            let x = max(0, min(1, (window.minX - display.minX) / max(1, display.width - window.width)))
-            let y = max(0, min(1, (window.minY - display.minY) / max(1, display.height - window.height)))
+            let x = max(0, min(1, (window.minX - area.minX) / max(1, area.width - window.width)))
+            let y = max(0, min(1, (window.minY - area.minY) / max(1, area.height - window.height)))
             return CGRect(x: next.minX + x * (next.width - width), y: next.minY + y * (next.height - height), width: width, height: height)
         case .minimize, .restore, .toggleFullScreen: return nil
         }
+        return options.spaced(tile, in: area)
     }
 
     /// Where an action asked a window to go and where its app put it. Targets such as a third
@@ -85,7 +97,7 @@ actor WindowManager {
     /// What Restore would return the window to, and the action that moved it last.
     func lastMove(of key: WindowKey) -> WindowFrameHistory.Entry? { history.entry(for: key) }
 
-    func perform(_ action: WindowAction, pid: pid_t, displays: [WindowDisplay]) throws {
+    func perform(_ action: WindowAction, pid: pid_t, displays: [WindowDisplay], options: WindowLayoutOptions = .legacy) throws {
         try Task.checkCancellation()
         guard access.isTrusted() else { throw FrogError.message("Allow Accessibility in Settings → Permissions to move windows.") }
         guard let window = access.focusedWindow(pid: pid) else {
@@ -112,14 +124,23 @@ actor WindowManager {
         let target: CGRect
         // What Restore returns to once this action has moved the window.
         var before = current
+        // The size a cycled half has reached.
+        var step = 0
         if action == .restore {
             guard let saved else { throw FrogError.message("There is no previous size for this window yet.") }
             let original = saved.frame
             // Keep a restored window reachable after a display has been disconnected.
             if displays.contains(where: { $0.intersects(original) }) { target = original }
-            else { target = WindowGeometry.target(.center, window: original, displays: displays) ?? current }
+            else { target = WindowGeometry.target(.center, window: original, displays: displays, options: options) ?? current }
         } else {
-            guard let proposed = WindowGeometry.target(action, window: current, displays: displays) else { return }
+            // A half pressed again on a window still where the last press put it takes the next size.
+            if options.cycleSizes, WindowSizeCycle.cycles(action), let saved, saved.action == action,
+               let last = WindowGeometry.target(action, window: current, displays: displays, options: options, step: saved.step),
+               saved.move.isRepeated(by: last, from: current) {
+                step = WindowSizeCycle.next(after: saved.step)
+                before = saved.frame
+            }
+            guard let proposed = WindowGeometry.target(action, window: current, displays: displays, options: options, step: step) else { return }
             // The same shortcut again on a window that could not take the exact frame sets
             // that frame once more. Restore still returns to the frame before the first press.
             if let saved, saved.move.isRepeated(by: proposed, from: current) { before = saved.frame }
@@ -135,6 +156,7 @@ actor WindowManager {
         }
         try Task.checkCancellation()
         try access.setFrame(target, of: window, resize: resize)
-        history.record(window.key, before: before, move: .init(target: target, applied: access.frame(of: window) ?? target))
+        history.record(window.key, before: before, move: .init(target: target, applied: access.frame(of: window) ?? target),
+                       action: action, step: step)
     }
 }

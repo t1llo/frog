@@ -138,4 +138,62 @@ final class WindowManagerFixtureTests: XCTestCase {
         try await manager.perform(.toggleFullScreen, pid: 7, displays: [laptop])
         XCTAssertEqual(access.writes, [.fullScreen(key, true), .fullScreen(key, false)])
     }
+
+    func testRepeatedLeftHalfCyclesWhenCycleSizesIsOn() async throws {
+        let access = FixtureWindowAccess()
+        access.add(key, frame: CGRect(x: 200, y: 200, width: 600, height: 400))
+        let manager = WindowManager(access: access)
+        let options = WindowLayoutOptions(cycleSizes: true)
+        for width: CGFloat in [720, 960, 480, 720] {
+            try await manager.perform(.leftHalf, pid: 7, displays: [laptop], options: options)
+            XCTAssertEqual(access.windows[key]?.frame, CGRect(x: 0, y: 25, width: width, height: 875))
+        }
+        // Another half starts at ½ again.
+        try await manager.perform(.rightHalf, pid: 7, displays: [laptop], options: options)
+        XCTAssertEqual(access.windows[key]?.frame, CGRect(x: 720, y: 25, width: 720, height: 875))
+        // A window the user moved since starts at ½ too.
+        try await manager.perform(.rightHalf, pid: 7, displays: [laptop], options: options)
+        let twoThirds = try XCTUnwrap(access.windows[key]?.frame)
+        XCTAssertTrue(WindowGeometry.close(twoThirds, CGRect(x: 480, y: 25, width: 960, height: 875)), "\(twoThirds)")
+        access.windows[key]?.frame = CGRect(x: 400, y: 25, width: 960, height: 875)
+        try await manager.perform(.rightHalf, pid: 7, displays: [laptop], options: options)
+        XCTAssertEqual(access.windows[key]?.frame, CGRect(x: 720, y: 25, width: 720, height: 875))
+    }
+
+    func testRepeatedLeftHalfIsTodaysRepeatWhenCycleSizesIsOff() async throws {
+        for options in [WindowLayoutOptions.legacy, WindowLayoutOptions(gap: 10, portraitThirds: true)] {
+            let access = FixtureWindowAccess()
+            access.add(key, frame: CGRect(x: 200, y: 200, width: 600, height: 400))
+            let manager = WindowManager(access: access)
+            try await manager.perform(.leftHalf, pid: 7, displays: [laptop], options: options)
+            let placed = access.windows[key]?.frame
+            access.writes = []
+            try await manager.perform(.leftHalf, pid: 7, displays: [laptop], options: options)
+            XCTAssertEqual(access.writes, [])
+            XCTAssertEqual(access.windows[key]?.frame, placed)
+        }
+    }
+
+    func testRestoreAfterCyclingReturnsToTheFrameBeforeTheFirstPress() async throws {
+        let options = WindowLayoutOptions(cycleSizes: true)
+        // An app with a minimum width wider than ½ and ⅓ still cycles, and still restores.
+        for minimum in [nil, CGSize(width: 800, height: 100)] {
+            let access = FixtureWindowAccess()
+            let original = CGRect(x: 200, y: 200, width: 900, height: 600)
+            access.add(key, frame: original, minimumSize: minimum)
+            let manager = WindowManager(access: access)
+            var widths: [CGFloat] = []
+            for _ in 0..<3 {
+                try await manager.perform(.leftHalf, pid: 7, displays: [laptop], options: options)
+                widths.append(try XCTUnwrap(access.windows[key]?.frame?.width))
+            }
+            XCTAssertEqual(widths, minimum == nil ? [720, 960, 480] : [800, 960, 800])
+            let last = await manager.lastMove(of: key)
+            XCTAssertEqual(last?.frame, original)
+            XCTAssertEqual(last?.action, .leftHalf)
+            XCTAssertEqual(last?.step, 2)
+            try await manager.perform(.restore, pid: 7, displays: [laptop], options: options)
+            XCTAssertEqual(access.windows[key]?.frame, original)
+        }
+    }
 }

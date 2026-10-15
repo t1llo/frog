@@ -141,4 +141,111 @@ final class WindowGeometryTests: XCTestCase {
         let screenshot = try XCTUnwrap(SystemActionController.destination(for: .screenshot))
         XCTAssertEqual(screenshot.path, "/System/Applications/Utilities/Screenshot.app")
     }
+
+    func testDefaultOptionsGiveTodaysFrameForEveryAction() {
+        let layouts: [[CGRect]] = [
+            [CGRect(x: 0, y: 25, width: 1511, height: 957)],
+            [CGRect(x: 0, y: 25, width: 1511, height: 957), CGRect(x: 1511, y: -217, width: 2560, height: 1415)],
+            [CGRect(x: 0, y: 25, width: 1440, height: 875), CGRect(x: -240, y: -1080, width: 1920, height: 1055)],
+        ]
+        let windows = [CGRect(x: 101, y: 133, width: 701, height: 503), CGRect(x: 1300, y: 90, width: 801, height: 611),
+                       CGRect(x: 1700, y: -900, width: 1201, height: 2000)]
+        for displays in layouts {
+            for window in windows {
+                for action in WindowAction.allCases {
+                    let today = Self.todaysTarget(action, window: window, displays: displays)
+                    XCTAssertEqual(WindowGeometry.target(action, window: window, displays: displays), today, "\(action) \(window) \(displays)")
+                    XCTAssertEqual(WindowGeometry.target(action, window: window, displays: displays, options: .legacy), today, "\(action)")
+                    XCTAssertEqual(WindowGeometry.target(action, window: window, displays: displays, options: .legacy, step: 0), today, "\(action)")
+                }
+            }
+        }
+    }
+
+    func testPortraitThirdsRunTopToBottom() throws {
+        let tall = CGRect(x: 1440, y: -500, width: 1080, height: 1895)
+        let window = CGRect(x: 1500, y: 0, width: 600, height: 400)
+        let options = WindowLayoutOptions(portraitThirds: true)
+        let third = tall.height / 3
+        let expected: [(WindowAction, CGFloat, CGFloat)] = [(.leftThird, 0, 1), (.centerThird, 1, 1), (.rightThird, 2, 1),
+                                                            (.leftTwoThirds, 0, 2), (.rightTwoThirds, 1, 2)]
+        for (action, offset, span) in expected {
+            let frame = try XCTUnwrap(WindowGeometry.target(action, window: window, displays: [tall], options: options))
+            XCTAssertEqual(frame.minX, tall.minX, "\(action)")
+            XCTAssertEqual(frame.width, tall.width, "\(action)")
+            XCTAssertEqual(frame.minY, tall.minY + offset * third, accuracy: 0.0001, "\(action)")
+            XCTAssertEqual(frame.height, span * third, accuracy: 0.0001, "\(action)")
+            // Switched off, or on a wide display, thirds stay side by side.
+            XCTAssertEqual(WindowGeometry.target(action, window: window, displays: [tall]), Self.todaysTarget(action, window: window, displays: [tall]))
+            let wide = CGRect(x: 0, y: 25, width: 1440, height: 875)
+            XCTAssertEqual(WindowGeometry.target(action, window: CGRect(x: 10, y: 40, width: 300, height: 200), displays: [wide], options: options),
+                           Self.todaysTarget(action, window: CGRect(x: 10, y: 40, width: 300, height: 200), displays: [wide]))
+        }
+    }
+
+    func testCycledHalvesUseTwoThirdsThenOneThirdOfTheGappedArea() throws {
+        let display = CGRect(x: 0, y: 25, width: 1440, height: 875)
+        let window = CGRect(x: 200, y: 200, width: 600, height: 400)
+        let options = WindowLayoutOptions(gap: 10, cycleSizes: true)
+        // The gapped area is 10, 35, 1420 × 855; the inner edge of each half keeps half the gap.
+        func frame(_ action: WindowAction, _ step: Int) throws -> CGRect {
+            try XCTUnwrap(WindowGeometry.target(action, window: window, displays: [display], options: options, step: step))
+        }
+        XCTAssertEqual(try frame(.leftHalf, 0), CGRect(x: 10, y: 35, width: 705, height: 855))
+        let leftTwoThirds = try frame(.leftHalf, 1), leftThird = try frame(.leftHalf, 2)
+        XCTAssertEqual(leftTwoThirds.minX, 10)
+        XCTAssertEqual(leftTwoThirds.width, 1420 * 2 / 3 - 5, accuracy: 0.0001)
+        XCTAssertEqual(leftThird.width, 1420 / 3 - 5, accuracy: 0.0001)
+        let rightTwoThirds = try frame(.rightHalf, 1)
+        XCTAssertEqual(rightTwoThirds.maxX, 1430, accuracy: 0.0001)
+        XCTAssertEqual(rightTwoThirds.width, 1420 * 2 / 3 - 5, accuracy: 0.0001)
+        // Left ⅓ and right ⅔ sit one gap apart.
+        XCTAssertEqual(rightTwoThirds.minX - leftThird.maxX, 10, accuracy: 0.0001)
+        let topTwoThirds = try frame(.topHalf, 1), bottomThird = try frame(.bottomHalf, 2)
+        XCTAssertTrue(WindowGeometry.close(topTwoThirds, CGRect(x: 10, y: 35, width: 1420, height: 565)), "\(topTwoThirds)")
+        XCTAssertTrue(WindowGeometry.close(bottomThird, CGRect(x: 10, y: 610, width: 1420, height: 280)), "\(bottomThird)")
+        XCTAssertEqual(bottomThird.minY - topTwoThirds.maxY, 10, accuracy: 0.0001)
+        XCTAssertEqual(bottomThird.maxY, 890, accuracy: 0.0001)
+        // Quarters and thirds do not cycle.
+        XCTAssertEqual(try frame(.topLeft, 2), try frame(.topLeft, 0))
+        XCTAssertEqual(try frame(.leftThird, 1), try frame(.leftThird, 0))
+    }
+
+    /// The layouts as they were before layout options existed.
+    private static func todaysTarget(_ action: WindowAction, window: CGRect, displays: [CGRect]) -> CGRect? {
+        guard let index = WindowGeometry.displayIndex(for: window, displays: displays) else { return nil }
+        let display = displays[index]
+        let halfWidth = display.width / 2, halfHeight = display.height / 2
+        switch action {
+        case .leftHalf: return CGRect(x: display.minX, y: display.minY, width: halfWidth, height: display.height)
+        case .rightHalf: return CGRect(x: display.midX, y: display.minY, width: halfWidth, height: display.height)
+        case .topHalf: return CGRect(x: display.minX, y: display.minY, width: display.width, height: halfHeight)
+        case .bottomHalf: return CGRect(x: display.minX, y: display.midY, width: display.width, height: halfHeight)
+        case .topLeft: return CGRect(x: display.minX, y: display.minY, width: halfWidth, height: halfHeight)
+        case .topRight: return CGRect(x: display.midX, y: display.minY, width: halfWidth, height: halfHeight)
+        case .bottomLeft: return CGRect(x: display.minX, y: display.midY, width: halfWidth, height: halfHeight)
+        case .bottomRight: return CGRect(x: display.midX, y: display.midY, width: halfWidth, height: halfHeight)
+        case .leftThird, .centerThird, .rightThird, .leftTwoThirds, .rightTwoThirds:
+            let third = display.width / 3
+            let offset: CGFloat = action == .rightThird ? 2 : (action == .centerThird || action == .rightTwoThirds ? 1 : 0)
+            let width = (action == .leftTwoThirds || action == .rightTwoThirds) ? third * 2 : third
+            return CGRect(x: display.minX + offset * third, y: display.minY, width: width, height: display.height)
+        case .centeredSmall, .centeredMedium, .centeredLarge:
+            let fraction: CGFloat = action == .centeredSmall ? 0.5 : (action == .centeredMedium ? 0.7 : 0.9)
+            let width = display.width * fraction, height = display.height * fraction
+            return CGRect(x: display.midX - width / 2, y: display.midY - height / 2, width: width, height: height)
+        case .maximize: return display
+        case .center:
+            let size = CGSize(width: min(window.width, display.width), height: min(window.height, display.height))
+            return CGRect(x: display.midX - size.width / 2, y: display.midY - size.height / 2, width: size.width, height: size.height)
+        case .nextDisplay, .previousDisplay:
+            guard displays.count > 1 else { return window }
+            let next = displays[(index + (action == .nextDisplay ? 1 : displays.count - 1)) % displays.count]
+            let width = min(window.width, next.width), height = min(window.height, next.height)
+            let x = max(0, min(1, (window.minX - display.minX) / max(1, display.width - window.width)))
+            let y = max(0, min(1, (window.minY - display.minY) / max(1, display.height - window.height)))
+            return CGRect(x: next.minX + x * (next.width - width), y: next.minY + y * (next.height - height), width: width, height: height)
+        case .minimize, .restore, .toggleFullScreen: return nil
+        }
+    }
 }
