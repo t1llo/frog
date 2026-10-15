@@ -34,7 +34,6 @@ enum CleanerTab: String, CaseIterable, Identifiable {
 struct CleanerView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var cleaner: CleanerModel
-    @State private var tab: CleanerTab = .apps
     @State private var showsSettings = false
     @State private var dropTargeted = false
     /// Read from the cleaner's store when the page opens; hidden until then.
@@ -48,7 +47,6 @@ struct CleanerView: View {
 
     var body: some View {
         let tabs = CleanerTab.available(preferences)
-        let current = tabs.contains(tab) ? tab : .apps
         PageScroll {
             PageHeader(title: "App cleaner", subtitle: "Move apps and the files they leave behind to the Trash.") {
                 IconAction(title: "Cleaner settings", symbol: "slider.horizontal.3") { showsSettings.toggle() }
@@ -58,17 +56,21 @@ struct CleanerView: View {
             }
             if tabs.count > 1 {
                 HStack(spacing: 4) {
-                    ForEach(tabs) { item in FilterTag(title: item.title, selected: item == current) { tab = item } }
+                    ForEach(tabs) { item in FilterTag(title: item.title, selected: item == cleaner.tab) { cleaner.tab = item } }
                 }
             }
             if cleaner.fullDiskAccess == false, !noticeDismissed { fullDiskAccessNotice }
             if let issue = cleaner.issue { InlineIssue(message: issue) }
-            switch current {
-            case .apps: appsContent
+            switch cleaner.tab {
+            case .apps: appsContent        // outcome, review or app list
+            // slot: cleaner-leftovers
+            // slot: cleaner-junk
+            // slot: cleaner-disk
+            // slot: cleaner-startup
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if current == .apps, cleaner.outcome == nil, let review = cleaner.review {
+            if cleaner.tab == .apps, cleaner.outcome == nil, let review = cleaner.review {
                 CleanerReviewFooter(cleaner: cleaner, review: review)
             }
         }
@@ -97,8 +99,6 @@ struct CleanerView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await cleaner.refreshFullDiskAccess() }
         }
-        .onAppear { cleaner.showPossibleMatches = showPossible }
-        .onChange(of: showPossible) { _, value in cleaner.showPossibleMatches = value }
     }
 
     @ViewBuilder private var appsContent: some View {

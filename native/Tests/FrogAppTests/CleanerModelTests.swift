@@ -356,6 +356,37 @@ final class CleanerModelTests: XCTestCase {
         XCTAssertEqual(model.pending?.prompt.title, "Move 1 item of Gone to the Trash?")
     }
 
+    func testOnFinishRunsAfterARemovalAndAfterACancelledOne() async throws {
+        let fixture = try CleanerFixture()
+        defer { fixture.remove() }
+        let chatter = try fixture.app("Chatter", bundleID: "com.example.chatter")
+        try fixture.item(.caches, "com.example.chatter")
+        let system = FakeCleanerSystem()
+        await system.setRunning([RunningAppInfo(pid: 101, bundleID: "com.example.chatter", name: "Chatter", bundlePath: chatter.path)])
+        await system.setSurvivors(quit: 1)
+        let model = CleanerModel(dependencies: .fake(root: fixture.root, system: system))
+        await model.open(chatter)
+        let review = try XCTUnwrap(model.review)
+        let request = RemovalRequest(app: review.app, items: review.items, selected: review.selected, purpose: .leftover,
+                                     title: review.app.name, sizes: review.sizes)
+        var finished: [RemovalOutcome] = []
+
+        await model.prepare(request) { finished.append($0) }
+        let confirming = Task { await model.confirmRemoval() }
+        await eventually { model.forceQuit != nil }
+        XCTAssertEqual(finished, [], "Nothing finished while the question is open")
+        model.answerForceQuit(false)
+        await confirming.value
+        XCTAssertEqual(finished.map(\.cancelled), [true])
+
+        await system.setRunning([])
+        await model.prepare(request) { finished.append($0) }
+        await model.confirmRemoval()
+        XCTAssertEqual(finished.count, 2)
+        XCTAssertEqual(finished.last, model.outcome)
+        XCTAssertEqual(finished.last?.moved.count, 2)
+    }
+
     // MARK: - Helpers
 
     /// The id the scanner gives an item: its standardized path, which spells the temporary folder `/var`.

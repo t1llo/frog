@@ -185,6 +185,8 @@ struct PendingRemoval: Identifiable {
     var request: RemovalRequest
     var plan: RemovalPlan
     var prompt: RemovalPrompt
+    /// Runs once the removal finished, also when it was cancelled, so a tab can update its own list.
+    var onFinish: @MainActor (RemovalOutcome) -> Void = { _ in }
 }
 
 struct ForceQuitQuestion: Identifiable, Equatable {
@@ -250,6 +252,29 @@ final class CleanerModel: ObservableObject {
     private var generation = 0
 
     init(dependencies: CleanerDependencies) { self.dependencies = dependencies }
+
+    // MARK: - Tabs
+
+    @Published var tab: CleanerTab = .apps
+    // One lazy sub-model per part, each below its own slot.
+    // slot: cleaner-leftovers
+    // slot: cleaner-junk
+    // slot: cleaner-assist
+    // slot: cleaner-disk
+    // slot: cleaner-startup
+
+    /// Called after every saved configuration. Keeps showPossibleMatches current, stops sub-models whose
+    /// switch is off (each part adds its line below its slot), and falls back to .apps when the selected
+    /// tab disappears.
+    func apply(_ preferences: Preferences) {
+        showPossibleMatches = preferences.featureEnabled(.cleaner) && preferences.cleanerSettings.possibleMatches
+        // slot: cleaner-leftovers
+        // slot: cleaner-junk
+        // slot: cleaner-assist
+        // slot: cleaner-disk
+        // slot: cleaner-startup
+        if !CleanerTab.available(preferences).contains(tab) { tab = .apps }
+    }
 
     private var isRemoving: Bool {
         if case .removing = phase { return true }
@@ -479,7 +504,8 @@ final class CleanerModel: ObservableObject {
                                      title: review.app.name, sizes: review.sizes))
     }
 
-    func prepare(_ request: RemovalRequest) async {
+    /// Every tab confirms through here; `onFinish` lets the tab update its list after the removal.
+    func prepare(_ request: RemovalRequest, onFinish: @escaping @MainActor (RemovalOutcome) -> Void = { _ in }) async {
         guard !isRemoving else { return }
         issue = nil
         // The record and the outcome count bytes from the items themselves.
@@ -505,7 +531,8 @@ final class CleanerModel: ObservableObject {
             helpers = running.count - main.count
         }
         pending = PendingRemoval(request: request, plan: plan,
-                                 prompt: RemovalPrompt(plan: plan, appIsRunning: appIsRunning, runningHelpers: helpers))
+                                 prompt: RemovalPrompt(plan: plan, appIsRunning: appIsRunning, runningHelpers: helpers),
+                                 onFinish: onFinish)
     }
 
     func confirmRemoval() async {
@@ -521,6 +548,7 @@ final class CleanerModel: ObservableObject {
         })
         guard generation == self.generation else { return }
         finish(pending, result)
+        pending.onFinish(result)
     }
 
     func answerForceQuit(_ forceQuit: Bool) {
@@ -581,6 +609,11 @@ final class CleanerModel: ObservableObject {
 
     /// Called when the feature is turned off: nothing keeps running and nothing stays in memory.
     func stop() {
+        // slot: cleaner-leftovers
+        // slot: cleaner-junk
+        // slot: cleaner-assist
+        // slot: cleaner-disk
+        // slot: cleaner-startup
         generation += 1
         for task in [loadTask, appSizeTask, scanTask, sizeTask] { task?.cancel() }
         loadTask = nil; appSizeTask = nil; scanTask = nil; sizeTask = nil

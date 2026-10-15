@@ -127,4 +127,27 @@ import FrogCore
                        CleanerRoots(home: fixture.home, system: fixture.system).home.path)
         XCTAssertTrue(model.cleaner === model.cleaner, "The model is made once")
     }
+
+    func testSavingPreferencesUpdatesTheCleaner() async throws {
+        let fixture = try CleanerFixture()
+        defer { fixture.remove() }
+        var configuration = Configuration()
+        configuration.preferences.setFeature(.cleaner, enabled: true)
+        let (model, directory) = try makeModel(configuration, fixture: fixture)
+        defer { model.shutdown(); try? FileManager.default.removeItem(at: directory) }
+        XCTAssertFalse(model.cleaner.showPossibleMatches)
+
+        try model.updateCleanerSettings { $0.possibleMatches = true }
+        XCTAssertTrue(model.cleaner.showPossibleMatches)
+
+        try await model.setFeature(.cleaner, enabled: false)
+        XCTAssertFalse(model.cleaner.showPossibleMatches, "Sub-switches count only while the cleaner is on")
+        XCTAssertEqual(model.cleaner.tab, .apps)
+
+        // A model made after the save starts from the saved switch.
+        try await model.setFeature(.cleaner, enabled: true)
+        let (other, otherDirectory) = try makeModel(model.configuration, fixture: fixture)
+        defer { other.shutdown(); try? FileManager.default.removeItem(at: otherDirectory) }
+        XCTAssertTrue(other.cleaner.showPossibleMatches)
+    }
 }

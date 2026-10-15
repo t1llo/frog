@@ -85,6 +85,7 @@ final class AppModel: ObservableObject {
         if cleanerModel == nil {
             cleanerModel = CleanerModel(dependencies: cleanerDependencies?() ?? .live(dataDirectory: historyStore.directory,
                 protectedPaths: [Bundle.main.bundleURL, historyStore.directory, configurationStore.directory]))
+            cleanerModel?.apply(configuration.preferences)
         }
         return cleanerModel!
     }
@@ -657,6 +658,7 @@ final class AppModel: ObservableObject {
         applyUsagePreferences(candidate.preferences)
         toolkit.apply(candidate.preferences)
         systemMonitor.configure(enabled: candidate.preferences.featureEnabled(.systemMonitor))
+        cleanerModel?.apply(candidate.preferences)
         if candidate.preferences.toolkit?.usage == nil, let usage = toolkit.usage() { legacyUsagePreferences = usage.preferences }
         if candidate.preferences.featureEnabled(.commandBar) { commandBar.warm() }
         // Turning the switch or the Command bar off, here or in the configuration file, forgets what was learned.
