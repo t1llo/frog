@@ -109,6 +109,8 @@ struct ProviderEditor: View {
     /// Whether the Keychain holds a key for this provider. Each look is a Keychain query, and the editor
     /// draws again for every keystroke and every change in Frog, so it is read when the editor opens.
     @State private var hasSavedKey = false
+    /// Whether this provider is already saved; its editor then saves from any step. Read when the editor opens.
+    @State private var isSaved = false
 
     init(provider: ProviderConfiguration, step: Int = 0) {
         _provider = State(initialValue: provider); _step = State(initialValue: step)
@@ -254,15 +256,15 @@ struct ProviderEditor: View {
                 Button("Cancel") { testTask?.cancel(); discoveryTask?.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
                 if step > 0 { Button("Back") { step -= 1 } }
-                Button(step < 2 ? "Continue" : "Save") { if step < 2 { step += 1 } else { save() } }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.defaultAction)
-                    .disabled((step == 2 && validation != nil) || testing || discovering)
+                Button(step < 2 && !isSaved ? "Continue" : "Save") { if step < 2 && !isSaved { step += 1 } else { save() } }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.defaultAction)
+                    .disabled(((step == 2 || isSaved) && validation != nil) || testing || discovering)
             }.padding(20).background(FrogStyle.surface)
                 .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border).frame(height: 1) }
         }
         .frame(width: 540, height: 560).background(FrogStyle.canvas).background(FrogWindowMaterial())
         .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
         // Read before the first frame, so the Connection step does not change its labels once shown.
-        .onAppear { hasSavedKey = model.hasAPIKey(provider.id) }
+        .onAppear { hasSavedKey = model.hasAPIKey(provider.id); isSaved = model.configuration.providers.contains { $0.id == provider.id } }
         .onDisappear { testTask?.cancel(); discoveryTask?.cancel(); apiKey = "" }
         .onChange(of: provider) { _, _ in testResult = nil }
         .onChange(of: apiKey) { _, _ in testResult = nil }
