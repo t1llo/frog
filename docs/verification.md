@@ -622,6 +622,24 @@ downloaded local model, to be filled in by the integrator:
       Claude Code (one piece).
 - [ ] VoiceOver reads the panel as "Explain answer" and announces "Answer ready".
 
+### Answers in History
+
+Automated: `AnswerRecordTests` (an entry keeps the selection, first answer, sent context,
+app, address and follow-ups; history written before answers still loads; an entry without
+an answer writes no `answer` key), `HistoryFeedNarrowingTests` (answers under Answers,
+Writing under Text, search over context, app, address and follow-ups, hidden copied text
+still unmatched, when the Answers filter shows), `HistoryEmptyStateTests` ("No answers
+yet") and `ExplainRoutingTests` (one entry per answer that its follow-ups update; nothing
+saved with History off, turned off or cleared during an answer, or for a failed or
+stopped answer).
+
+Device checks, with History on and isolated data, to be filled in by the integrator:
+
+- [ ] Ask, follow up twice, open History → Answers: one entry with two follow-ups; search
+      finds a word of a follow-up.
+- [ ] Clear history while the panel is open, ask a follow-up: no entry comes back.
+- [ ] Hide text in History hides answer rows and details until revealed.
+
 ## Distribution
 
 Developer ID signing/notarization requires the owner's Apple Developer credentials. Ad-hoc signing is suitable for local development, but is not notarization and does not establish that macOS will trust a downloaded release on another machine.
