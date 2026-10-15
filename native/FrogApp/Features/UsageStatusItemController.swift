@@ -112,6 +112,8 @@ import FrogUsage
             if let usage = self?.usage { ClaudeSignIn.start(usage) }
         }, installUpdate: { [weak self] in
             self?.closePopup(); UpdateService.shared.installReadyUpdate()
+        }, liveSetup: { [weak self] account in
+            self?.closePopup(); self?.confirmLiveSetup(account)
         }).background(MenuWindowSizing()))
         let size = host.fittingSize
         let panel = UsagePopupPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
@@ -145,6 +147,18 @@ import FrogUsage
             let other = note.object as? String != UsageStatusPopover.popupName
             MainActor.assumeIsolated { if other { self?.closePopup() } }
         }
+    }
+
+    /// The popup has closed; the explanation comes first, then Terminal opens on request.
+    private func confirmLiveSetup(_ account: UsageAccountSummary) {
+        let alert = NSAlert()
+        alert.messageText = ClaudeSignIn.liveSetupTitle(account.label)
+        alert.informativeText = ClaudeSignIn.liveSetupMessage(account.label)
+        alert.addButton(withTitle: "Open Terminal")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        ClaudeSignIn.startLiveSetup(usage, account: account.id)
     }
 
     /// Directly beneath the status item and left-aligned with it, like a MenuBarExtra window,

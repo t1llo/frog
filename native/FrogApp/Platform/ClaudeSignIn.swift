@@ -17,6 +17,14 @@ enum ClaudeSignIn {
         open(command: usage.liveSetupCommand(for: account))
     }
 
+    /// What the confirmation before live readings says, for the account labelled `label`.
+    static func liveSetupTitle(_ label: String) -> String { "Set up live readings for \(label)?" }
+    static func liveSetupMessage(_ label: String) -> String {
+        "Opens Terminal to sign in to Claude Code as \(label). Make sure your browser is signed in to \(label)’s Claude account. "
+            + "Frog then checks \(label)’s limits with Anthropic every minute; when that login runs out, Claude Code renews it "
+            + "with one tiny request on \(label)’s plan."
+    }
+
     @MainActor static func open(command: String?) {
         guard let command, let terminal = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal"),
               let launcher = try? launcher(command: command) else {
