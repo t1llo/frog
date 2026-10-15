@@ -18,7 +18,7 @@ A Mac app that lives in your menu bar and replaces ten small Mac apps.
 | --- | --- |
 | **Writing & dictation** | Local speech models, custom rewrite rules, connected providers and installed AI tools. |
 | **Explain** | Select text and read an answer in a panel next to it: any model, follow-up questions, nothing replaced; save answers to Obsidian or any Markdown folder; an optional bubble that appears when you select text. |
-| **Command bar & windows** | App/file and macOS settings search, calculations, conversions, window switching and layout shortcuts. |
+| **Command bar & windows** | App/file and macOS settings search, calculations, conversions, window switching, layout shortcuts and the Windows page. |
 | **Clipboard & documents** | Searchable clipboard, snippets, Markdown notes, file/link shelf and saved scripts. |
 | **Mr. Usage** | Claude/OpenAI limits, token charts and estimated costs; combined OpenCode + Codex activity. |
 | **Menu bar & Stay awake** | Hide/reveal icons, auto-hide, timed awake sessions and low-battery stop. |
@@ -31,7 +31,8 @@ The command bar can learn from your choices, so rows you pick often for what you
 are listed a bit higher; it is off by default and stays on your Mac.
 Window switcher and Clipboard shortcuts are configured in their Features cards;
 clipboard entries live in **History**. **Shortcuts** groups Application, Windows
-and Other actions. In the window switcher, type to filter; the query shows at the top.
+and Other actions. Window layouts live on the **Windows** page when it is on.
+In the window switcher, type to filter; the query shows at the top.
 Give **Show shortcuts** a key and hold it to see every shortcut, grouped by page.
 Enable **System monitor** to switch between **Frog** and **System** in the menu-bar
 popup. While it is on, CPU and GPU load are recorded every few seconds, so the graph
