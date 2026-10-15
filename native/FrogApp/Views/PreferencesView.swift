@@ -18,7 +18,7 @@ struct PreferencesView: View {
         ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                PageHeader(title: "Settings", subtitle: "")
+                PageHeader(title: "Settings", subtitle: "General behaviour, appearance, permissions and data")
                 SettingsSection(title: "General") {
                     CompactRow(title: "Setup assistant", detail: "Choose models and review permissions. Every step is optional.") {
                         Button("Open setup…") { model.showSetup() }
@@ -116,8 +116,12 @@ struct PreferencesView: View {
                         }
                     }
                     Text(model.configurationFileURL.path).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
-                    Text("Sync config and config.json with chezmoi. Rules, connections and custom model definitions stay in config.json. App edits preserve comments; external edits must be reloaded first.")
-                        .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                    Text("Keep config and config.json in a dotfiles manager or a synced folder to use them on several Macs.")
+                        .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                    DisclosureGroup("How this works") {
+                        Text("Sync both files with a dotfiles manager. Rules, connections and custom model definitions stay in config.json. App edits preserve comments; external edits must be reloaded first.")
+                            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                    }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                     Button("Show configuration folder") { NSWorkspace.shared.activateFileViewerSelecting([model.configurationFileURL]) }
                     Divider()
                     CompactRow(title: "Import / export", detail: "Rules, models and preferences. API keys stay in Keychain.") {

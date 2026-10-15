@@ -191,9 +191,13 @@ struct AppearanceSettingsView: View {
                 .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
         }
         Divider()
-        CompactRow(title: "Custom palette", detail: "Edit palette.light.* and palette.dark.* in config, then Reload. Background, sidebar, surface, inset, border, text, muted and accent inherit the preset until overridden. Choosing a preset resets overrides.") {
+        CompactRow(title: "Custom palette", detail: "Override single colours of the theme in the configuration file, then Reload.") {
             Button("Open config") { model.openConfiguration() }
         }
+        DisclosureGroup("How this works") {
+            Text("Edit palette.light.* and palette.dark.* in config. Background, sidebar, surface, inset, border, text, muted and accent inherit the preset until overridden. Choosing a preset resets overrides.")
+                .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+        }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
     }
     private var appearance: AppearancePreferences { draft.value ?? model.configuration.preferences.appearance ?? AppearancePreferences() }
     /// The nearest six-digit sRGB hex of a picked colour.

@@ -51,8 +51,12 @@ struct StayAwakeSettingsView: View {
                 Text(notice).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             }
             Divider()
-            Text("Reset restores sleep and empties /etc/sudoers.d/frog-awake. Setup and reset explain their commands in Terminal; your administrator password stays there.")
-                .font(.system(size: 10)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+            Text("Reset restores sleep and removes Frog's permission to change it. Terminal shows each command first; your administrator password stays there.")
+                .font(FrogType.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+            DisclosureGroup("How this works") {
+                Text("Setup adds a rule in /etc/sudoers.d/frog-awake that lets your account run pmset -a disablesleep 0 and 1 without a password. Reset restores sleep and empties that file; the main sudoers file is never edited.")
+                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+            }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
             HStack {
                 if power.isConfiguringAccess {
                     ProgressView().controlSize(.small)
