@@ -225,6 +225,16 @@ Enable with `feature.windows = true`. These settings change layouts only while W
 - `windows.portrait-thirds`: boolean, default `true`; thirds run top to bottom on a display taller than wide.
 - `windows.respect-stage-manager`: boolean, default `true`; keeps the left 190 points free while Stage Manager is on.
 
+Layout shortcuts stay on their window rules in `config.json` (`rules`). Window commands that are not layouts keep their shortcuts in `config.json` under `preferences.toolkit.windows.shortcuts`, keyed by command name, in the same format as rule shortcuts: the macOS virtual key code and the Carbon modifier bits (Control 4096, Option 2048, Shift 512, Command 256). They have no text keys; record them on the Windows page or edit the JSON:
+
+```json
+"windows": { "shortcuts": { "cheatSheet": { "keyCode": 44, "modifiers": 6144 } } }
+```
+
+- `cheatSheet`: shows your window shortcuts while held.
+
+A command shortcut runs only while Windows is on, and must not repeat another global shortcut then. A command name this version of Frog does not know is ignored.
+
 <!-- slot: cleaner -->
 <!-- slot: command-bar -->
 ### Command bar

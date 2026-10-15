@@ -23,6 +23,28 @@ Click a row's shortcut field and press a key combination to assign it. Recording
 
 Layout shortcuts run while **Windows** or **Shortcuts** is on, so you can switch off Shortcuts (applications and Mac actions) and keep your window layouts. While Windows is on, Shortcuts shows only its Application and Other segments and links to this page; switch Windows off and the layouts appear under **Shortcuts → Windows** again, with the same shortcuts.
 
+## Suggested shortcuts
+
+**Use suggested shortcuts** above the list gives every layout that has no shortcut yet the one below, and the cheat sheet its shortcut. A layout or command that already has a shortcut keeps it, even when it is switched off. A combination that another Frog shortcut already uses, including the window switcher's, is skipped, and the line under the button names what was skipped. Press it again later and it adds only what is still free.
+
+| Layout | Shortcut |
+| --- | --- |
+| Left half, Right half, Top half, Bottom half | ⌃⌥←, ⌃⌥→, ⌃⌥↑, ⌃⌥↓ |
+| Top-left, Top-right, Bottom-left, Bottom-right quarter | ⌃⌥U, ⌃⌥I, ⌃⌥J, ⌃⌥K |
+| Left third, Center third, Right third | ⌃⌥D, ⌃⌥F, ⌃⌥G |
+| Left two-thirds, Right two-thirds | ⌃⌥E, ⌃⌥T |
+| Maximize on display | ⌃⌥↩ |
+| Center | ⌃⌥C |
+| Restore previous size | ⌃⌥⌫ |
+| Move to next display, Move to previous display | ⌃⌥⌘→, ⌃⌥⌘← |
+| Window cheat sheet | ⌃⌥/ |
+
+Minimize, full screen and the centered sizes get no suggestion. VoiceOver uses Control-Option for its own commands; while VoiceOver is on, the page says so after you press the button.
+
+## Cheat sheet
+
+Record a shortcut under **Cheat sheet → Show window shortcuts while holding**. Hold it and a panel lists every layout and window command that has a shortcut, grouped into halves, quarters, thirds, sizes, displays and undo, each with a small picture of where it puts the window. Release the shortcut and the panel closes. It works over full-screen apps and never takes the focus from the app you are in. The cheat sheet has no shortcut until you give it one, and works only while Windows is on.
+
 ## Window switcher
 
 The ⌘Tab window switcher, which switches between individual windows rather than apps, is a separate feature. **Related → Window switcher → Open in Features** on the Windows page takes you to its card.
