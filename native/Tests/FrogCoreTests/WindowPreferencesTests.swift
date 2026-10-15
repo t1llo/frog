@@ -112,6 +112,35 @@ final class WindowPreferencesTests: XCTestCase {
         }
     }
 
+    func testDragSwitchesDefaultsKeysAndGating() throws {
+        let defaults = WindowPreferences()
+        XCTAssertFalse(defaults.dragToSnap)
+        XCTAssertTrue(defaults.restoreOnDrag)
+        XCTAssertEqual(try JSONDecoder().decode(WindowPreferences.self, from: Data("{}".utf8)), defaults)
+
+        var configuration = Configuration()
+        configuration.preferences.ensureToolkit()
+        var windows = WindowPreferences()
+        windows.dragToSnap = true; windows.restoreOnDrag = false
+        configuration.preferences.toolkit?.windows = windows
+        XCTAssertFalse(WindowSwitches(configuration.preferences).dragToSnap, "Off while Windows is off")
+        configuration.preferences.setFeature(.windows, enabled: true)
+        XCTAssertTrue(WindowSwitches(configuration.preferences).dragToSnap)
+        XCTAssertFalse(WindowSwitches(configuration.preferences).restoreOnDrag)
+        configuration.preferences.toolkit?.windows?.restoreOnDrag = true
+        XCTAssertTrue(WindowSwitches(configuration.preferences).restoreOnDrag)
+        configuration.preferences.toolkit?.windows?.dragToSnap = false
+        XCTAssertFalse(WindowSwitches(configuration.preferences).restoreOnDrag, "Only matters while drag to snap is on")
+
+        configuration.preferences.toolkit?.windows = windows
+        let text = try TextConfiguration.render(configuration)
+        for line in ["windows.drag-to-snap = true", "windows.restore-on-drag = false"] { XCTAssertTrue(text.contains(line + "\n"), line) }
+        let companion = try TextConfiguration.companion(configuration)
+        XCTAssertEqual(try TextConfiguration.decode(text, companion: companion).preferences.toolkitSettings.windows, windows)
+        let edited = text.replacingOccurrences(of: "windows.drag-to-snap = true", with: "windows.drag-to-snap = false")
+        XCTAssertEqual(try TextConfiguration.decode(edited, companion: companion).preferences.toolkitSettings.windows?.dragToSnap, false)
+    }
+
     func testLayoutOptionsFollowTheFeatureAndStageManager() {
         var preferences = Preferences()
         preferences.ensureToolkit()

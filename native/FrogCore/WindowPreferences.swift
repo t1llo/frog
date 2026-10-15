@@ -15,6 +15,10 @@ public struct WindowPreferences: Codable, Equatable, Sendable {
     public var shortcuts: [String: Hotkey] = [:]
     /// The layout picker opens from its shortcut, the Frog menu and the command bar.
     public var layoutPicker = false
+    /// A window dropped on a screen edge or corner fills that part of the screen.
+    public var dragToSnap = false
+    /// A snapped window gets its earlier size back when it is dragged away.
+    public var restoreOnDrag = true
 
     public static let gapRange = 0...40
 
@@ -33,6 +37,8 @@ public struct WindowPreferences: Codable, Equatable, Sendable {
         case respectStageManager
         case shortcuts
         case layoutPicker
+        case dragToSnap
+        case restoreOnDrag
     }
 
     public init(from decoder: Decoder) throws {
@@ -43,6 +49,8 @@ public struct WindowPreferences: Codable, Equatable, Sendable {
         respectStageManager = try values.decodeIfPresent(Bool.self, forKey: .respectStageManager) ?? true
         shortcuts = try values.decodeIfPresent([String: Hotkey].self, forKey: .shortcuts) ?? [:]
         layoutPicker = try values.decodeIfPresent(Bool.self, forKey: .layoutPicker) ?? false
+        dragToSnap = try values.decodeIfPresent(Bool.self, forKey: .dragToSnap) ?? false
+        restoreOnDrag = try values.decodeIfPresent(Bool.self, forKey: .restoreOnDrag) ?? true
         self = normalized
     }
 
@@ -87,6 +95,12 @@ public struct WindowSwitches: Equatable, Sendable {
         case .layoutPicker: feature && settings.layoutPicker
         }
     }
+
+    /// Windows dropped on a screen edge or corner snap: Windows is on, and so is the switch.
+    public var dragToSnap: Bool { feature && settings.dragToSnap }
+
+    /// A snapped window dragged away gets its earlier size back. Only while drag to snap runs.
+    public var restoreOnDrag: Bool { dragToSnap && settings.restoreOnDrag }
 
     /// The window commands the command bar lists, in `allCases` order.
     public var commandBarCommands: [WindowCommand] {

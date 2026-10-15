@@ -225,6 +225,8 @@ Enable with `feature.windows = true`. These settings change layouts only while W
 - `windows.portrait-thirds`: boolean, default `true`; thirds run top to bottom on a display taller than wide.
 - `windows.respect-stage-manager`: boolean, default `true`; keeps the left 190 points free while Stage Manager is on.
 - `windows.layout-picker`: boolean, default `false`; the layout picker opens from its shortcut, the Frog menu and the command bar.
+- `windows.drag-to-snap`: boolean, default `false`; a window dragged to a screen edge or corner fills that part of the screen. Paused at the edges while macOS's own edge tiling is on.
+- `windows.restore-on-drag`: boolean, default `true`; a window Frog snapped gets its earlier size back when you drag it away. Applies while `windows.drag-to-snap` is on.
 
 Layout shortcuts stay on their window rules in `config.json` (`rules`). Window commands that are not layouts keep their shortcuts in `config.json` under `preferences.toolkit.windows.shortcuts`, keyed by command name, in the same format as rule shortcuts: the macOS virtual key code and the Carbon modifier bits (Control 4096, Option 2048, Shift 512, Command 256). They have no text keys; record them on the Windows page or edit the JSON:
 
