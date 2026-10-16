@@ -111,6 +111,40 @@ final class CommandChoicesTests: XCTestCase {
         XCTAssertEqual(alternating.index(now: start).suggestions(for: "s").latched, "app:Safari")
     }
 
+    func testTwoPicksInOneSittingLatchThoughTheFirstFadedInBetween() throws {
+        let minute: TimeInterval = 60
+        var choices = CommandChoices()
+        choices.record(typed: "ca", id: "app:Calendar", now: start)
+        choices.record(typed: "ca", id: "app:Calendar", now: start.addingTimeInterval(minute))
+        XCTAssertLessThan(try XCTUnwrap(strength(choices, "ca", "app:Calendar")), 2)
+        XCTAssertEqual(choices.index(now: start.addingTimeInterval(10 * minute)).suggestions(for: "ca").latched, "app:Calendar")
+        XCTAssertNil(choices.index(now: start.addingTimeInterval(day)).suggestions(for: "ca").latched, "Two picks fade within hours")
+        choices.record(typed: "ca", id: "app:Calendar", now: start.addingTimeInterval(day))
+        XCTAssertEqual(choices.index(now: start.addingTimeInterval(7 * day)).suggestions(for: "ca").latched, "app:Calendar",
+                       "A third keeps it for about a week")
+
+        // Two picks a week apart are not a habit yet.
+        var apart = CommandChoices()
+        apart.record(typed: "ca", id: "app:Calendar", now: start)
+        apart.record(typed: "ca", id: "app:Calendar", now: start.addingTimeInterval(7 * day))
+        XCTAssertNil(apart.index(now: start.addingTimeInterval(7 * day)).suggestions(for: "ca").latched)
+
+        // A habit a day old moves to another row picked twice in one sitting.
+        var habit = CommandChoices()
+        for _ in 0..<6 { habit.record(typed: "ca", id: "app:Calculator", now: start) }
+        habit.record(typed: "ca", id: "app:Calendar", now: start.addingTimeInterval(day))
+        habit.record(typed: "ca", id: "app:Calendar", now: start.addingTimeInterval(day + minute))
+        XCTAssertEqual(habit.index(now: start.addingTimeInterval(day + 2 * minute)).suggestions(for: "ca").latched, "app:Calendar")
+
+        // Quick alternating picks still do not latch for a long while.
+        var alternating = CommandChoices()
+        for round in 0..<12 {
+            let now = start.addingTimeInterval(Double(round) * minute)
+            alternating.record(typed: "s", id: round.isMultiple(of: 2) ? "app:Slack" : "app:Safari", now: now)
+            XCTAssertNil(alternating.index(now: now).suggestions(for: "s").latched, "\(round)")
+        }
+    }
+
     func testClipboardWindowsCalculationsAndHugeIDsAreNeverRemembered() {
         for id in ["clipboard:1", "window:2", "calculation:1+1", "", "file:/" + String(repeating: "x", count: 1_024)] {
             XCTAssertFalse(CommandChoices.isRememberable(id), id)

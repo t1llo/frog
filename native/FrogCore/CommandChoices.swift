@@ -33,6 +33,10 @@ public struct CommandChoices: Codable, Equatable, Sendable {
         public static let halfLife: TimeInterval = 14 * 86_400
         public static let pairCap = 5.0, itemCap = 10.0, competitorFactor = 0.5, dropBelow = 0.1
         public static let prefixWeight = 0.5, latchThreshold = 2.0
+        /// Two picks a minute apart give a little less than 2, because the first faded in between. Up to this
+        /// much less still latches, so two picks in one sitting latch as two at the same instant do; alternating
+        /// picks, which approach 2 from below, would need about fifteen in a row.
+        public static let latchTolerance = 0.01
         public static let textLength = 32, maxPairs = 500, maxItems = 300, maxFileBytes = 512 * 1024, maxIDBytes = 1_024
     }
 
@@ -182,7 +186,8 @@ public struct CommandChoiceIndex: Sendable {
         }
         let ranked = order.compactMap { best[$0] }.sorted(by: Self.stronger)
         guard let top = ranked.first else { return ([], nil) }
-        let latched = top.value >= CommandChoices.Tuning.latchThreshold && (ranked.count == 1 || top.value > ranked[1].value)
+        let threshold = CommandChoices.Tuning.latchThreshold - CommandChoices.Tuning.latchTolerance
+        let latched = top.value >= threshold && (ranked.count == 1 || top.value > ranked[1].value)
         return (ranked.map(\.id), latched ? top.id : nil)
     }
 

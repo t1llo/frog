@@ -136,7 +136,9 @@ bytes, are never recorded.
 - For typed text `q`, `S(id)` is the largest decayed strength of a pair whose text starts
   with `q` (compared on UTF-8 bytes), counted whole when the text equals `q` and half when
   it is longer. Rows with `S > 0` lead, strongest first, then the latest pick.
-  The strongest is **latched** when `S ≥ 2` and strictly above the next row's.
+  The strongest is **latched** when `S ≥ 1.99` and strictly above the next row's. The
+  0.01 below 2 lets two picks a minute apart latch, though the first faded a little in
+  between.
 - `CommandSearch.results(…, latched:)` puts a latched row that the typed text finds above
   every bucket, in the same single pass; the other learned rows only lead their bucket
   through `preferred`.
@@ -148,10 +150,12 @@ What ranking guarantees:
 2. At most one row leaves its bucket, so an exact title or alias match, an exact
    application included, loses at most one place.
 3. A latched row was picked at least twice for this text, or about four times for a
-   longer text starting with it, and more than any other row.
+   longer text starting with it, and more than any other row. Strengths fade, so two
+   picks in one sitting latch for about two hours and three for about a week.
 4. Two picks of another row for the same text move the latch: with Calculator at 5 for
    "ca", one pick of Calendar gives Calendar 1 and Calculator 2.5 (the latch stays), a
-   second gives 2 and 1.25 (it moves to Calendar). Alternating picks never latch.
+   second gives 2 and 1.25 (it moves to Calendar). Alternating picks approach 2 from
+   below and latch only after about fifteen in a row.
 5. A row that the typed text does not find is never listed.
 
 `CommandChoicesPersistence` keeps them in `command-choices.json` in Frog's data folder
