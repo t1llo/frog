@@ -357,6 +357,22 @@ final class CleanerRemoverTests: XCTestCase {
         XCTAssertTrue(exists(trashed))
     }
 
+    func testAPlaceFrogMayNotReadCountsAsStillThere() throws {
+        // Without Full Disk Access macOS may refuse to read the Trash; Frog then cannot say the item left it.
+        let locked = fixture.root.appendingPathComponent("Locked", isDirectory: true)
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: locked.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path) }
+        let inside = locked.appendingPathComponent("com.example.app")
+        let entry = RemovalRecord.Entry(original: fixture.root.appendingPathComponent("Original").path, trashed: inside.path,
+                                        bytes: 1, route: .fileManager, owner: .user, fileNumber: 42)
+
+        XCTAssertTrue(CleanerRemover.lstatExists(inside))
+        XCTAssertFalse(CleanerRemover.lstatExists(fixture.root.appendingPathComponent("Missing")))
+        XCTAssertFalse(CleanerRemover.lstatExists(fixture.root.appendingPathComponent("Missing/Inside")))
+        XCTAssertTrue(remover().isInTrash(entry))
+    }
+
     func testPutBackSaysWhenTheFolderItWasInIsGone() async throws {
         let vendor = try fixture.item(.applicationSupport, "Example Vendor")
         let inside = item(vendor.appendingPathComponent("Example", isDirectory: true))

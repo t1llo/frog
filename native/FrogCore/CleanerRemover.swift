@@ -85,10 +85,11 @@ public struct CleanerRemover: Sendable {
     private let fileNumber: @Sendable (URL) -> UInt64?
     private let now: @Sendable () -> Date
 
-    /// lstat, so a link counts as there whatever it points to.
+    /// lstat, so a link counts as there whatever it points to. A path macOS does not let Frog read (the Trash
+    /// without Full Disk Access) counts as there too: only "no such file" says for sure that nothing is.
     public static let lstatExists: @Sendable (URL) -> Bool = { url in
         var info = stat()
-        return lstat(url.path, &info) == 0
+        return lstat(url.path, &info) == 0 || ![ENOENT, ENOTDIR].contains(errno)
     }
 
     /// lstat's inode number, or nil when the item is missing.
@@ -289,11 +290,13 @@ public struct CleanerRemover: Sendable {
     }
 
     /// False when the item Frog moved is no longer at its place in the Trash: the place is empty, or it holds an
-    /// item with another file number. True when Frog does not know the place, since it cannot tell then.
+    /// item with another file number. True when Frog does not know the place or cannot read it, since it cannot
+    /// tell then.
     public func isInTrash(_ entry: RemovalRecord.Entry) -> Bool {
         guard let trashed = entry.trashed.map({ URL(fileURLWithPath: $0) }) else { return true }
         guard exists(trashed) else { return false }
-        return entry.fileNumber.map { fileNumber(trashed) == $0 } ?? true
+        guard let expected = entry.fileNumber, let found = fileNumber(trashed) else { return true }
+        return found == expected
     }
 
     private func entry(_ removal: PlannedRemoval, trashed: String?) -> RemovalRecord.Entry {

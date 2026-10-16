@@ -555,9 +555,7 @@ final class CleanerModel: ObservableObject {
         guard let pending, !isRemoving else { return }
         let generation = self.generation, app = pending.request.app
         phase = .removing(done: 0, total: pending.plan.removals.count)
-        let remover = CleanerRemover(trash: dependencies.trash, system: dependencies.system, store: dependencies.store,
-                                     safety: dependencies.safety)
-        let result = await remover.perform(pending.plan, title: pending.request.title, confirmForceQuit: { [weak self] running in
+        let result = await makeRemover().perform(pending.plan, title: pending.request.title, confirmForceQuit: { [weak self] running in
             await self?.askForceQuit(running, app: app, generation: generation) ?? false
         }, progress: { [weak self] done, total in
             Task { @MainActor in self?.progressed(done: done, total: total, generation: generation) }
@@ -625,6 +623,9 @@ final class CleanerModel: ObservableObject {
 
     /// What Frog moved in the last 30 days, newest first; read when the list opens.
     @Published private(set) var records: [RemovalRecord] = []
+    /// By record: the original paths of items that left the Trash since they moved (it was emptied, or they
+    /// were dragged out), so the list does not offer to put them back.
+    @Published private(set) var missingFromTrash: [UUID: Set<String>] = [:]
     @Published var showsRecent = false
     @Published private(set) var putBackSummary: PutBackSummary?
     /// The record whose items are moving back; nil otherwise.
@@ -634,8 +635,19 @@ final class CleanerModel: ObservableObject {
     nonisolated static let recordsUnchanged = "Frog could not change the list of moved items."
 
     func loadRecords() {
-        do { records = try dependencies.store.records() } catch { issue = Self.recordsUnreadable }
+        do { records = try dependencies.store.records() } catch {
+            issue = Self.recordsUnreadable
+            return
+        }
+        let remover = makeRemover()
+        missingFromTrash = records.reduce(into: [:]) { missing, record in
+            let gone = record.entries.filter { !$0.restored && !remover.isInTrash($0) }.map(\.original)
+            if !gone.isEmpty { missing[record.id] = Set(gone) }
+        }
     }
+
+    /// The rows of Recently moved, newest first.
+    var recentRows: [RecentlyMovedRow] { records.map { RecentlyMovedRow($0, missing: missingFromTrash[$0.id] ?? []) } }
 
     /// Moves the record's own items back that Frog may restore; the rest are explained in the summary.
     func putBack(_ id: UUID) async {
@@ -645,9 +657,7 @@ final class CleanerModel: ObservableObject {
         guard let record = stored ?? outcome?.record.flatMap({ $0.id == id ? $0 : nil }) else { return }
         let generation = self.generation
         puttingBack = id
-        let remover = CleanerRemover(trash: dependencies.trash, system: dependencies.system, store: dependencies.store,
-                                     safety: dependencies.safety)
-        let result = await remover.putBack(record)
+        let result = await makeRemover().putBack(record)
         guard generation == self.generation else { return }
         puttingBack = nil
         putBackSummary = PutBackSummary(before: record, after: result.record, failures: result.failures)
@@ -665,6 +675,7 @@ final class CleanerModel: ObservableObject {
             return
         }
         records.removeAll { $0.id == id }
+        missingFromTrash[id] = nil
     }
 
     func dismissPutBack() { putBackSummary = nil }
@@ -686,11 +697,16 @@ final class CleanerModel: ObservableObject {
         apps = []; identities = []; identitiesLoaded = false; identityCache = [:]; appSizes = [:]
         loadingApps = false
         fullDiskAccess = nil
-        records = []; showsRecent = false; putBackSummary = nil; puttingBack = nil
+        records = []; missingFromTrash = [:]; showsRecent = false; putBackSummary = nil; puttingBack = nil
         phase = .idle
     }
 
     // MARK: - Helpers
+
+    private func makeRemover() -> CleanerRemover {
+        CleanerRemover(trash: dependencies.trash, system: dependencies.system, store: dependencies.store,
+                       safety: dependencies.safety)
+    }
 
     /// Paths compare in the roots' resolved spelling (`/private/var`, not `/var`).
     private func key(_ path: String) -> String { dependencies.roots.resolved(URL(fileURLWithPath: path)).path }

@@ -58,7 +58,7 @@ The space is freed only when you empty the Trash. Until then, you can put items 
 
 ## Putting items back
 
-**Recently moved** (the clock button at the top of the page) lists what Frog moved to the Trash in the last 30 days, newest first, with the number of items, their size and how many are already back. Open a removal to see each item and where it is: "In the Trash", "Put back", or "Use Put Back in Finder". The outcome of a removal offers **Put Back** as well.
+**Recently moved** (the clock button at the top of the page) lists what Frog moved to the Trash in the last 30 days, newest first, with the number of items, their size and how many are already back. Open a removal to see each item and where it is: "In the Trash", "Put back", "Use Put Back in Finder", or "No longer in the Trash" when the Trash was emptied or the item was dragged out of it. The outcome of a removal offers **Put Back** as well.
 
 - **Put Back** moves your own items from the Trash to their original places. An item fails alone when something else now sits at its place, or when it is no longer in the Trash.
 - **Put Back in Finder** opens the Trash for items Frog cannot put back itself: items that belong to the system (moving them back needs the administrator password) and items Finder did not say where it put. Select them there and choose Put Back.

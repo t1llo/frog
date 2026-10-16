@@ -9,14 +9,19 @@ struct RecentlyMovedRow: Identifiable {
     let detail: String
     /// "3 put back", or nil while nothing is back.
     let restoredText: String?
+    /// "2 no longer in the Trash", or nil while every item that is not back is still there.
+    let missingText: String?
     /// Some item Frog may put back itself is still in the Trash.
     let canPutBack: Bool
     /// Some item still in the Trash needs Finder's Put Back: an administrator's item, or one Finder gave no place for.
     let needsFinder: Bool
+    /// The original paths of items that left the Trash after they moved.
+    let missing: Set<String>
     var id: UUID { record.id }
 
-    init(_ record: RemovalRecord, formatBytes: (Int64) -> String = CleanerFormat.bytes) {
+    init(_ record: RemovalRecord, missing: Set<String> = [], formatBytes: (Int64) -> String = CleanerFormat.bytes) {
         self.record = record
+        self.missing = missing
         let count = record.entries.count
         let items = "\(count) \(count == 1 ? "item" : "items")"
         let known = record.entries.compactMap(\.bytes)
@@ -28,14 +33,17 @@ struct RecentlyMovedRow: Identifiable {
         }
         let restored = record.entries.filter(\.restored).count
         restoredText = restored == 0 ? nil : "\(restored) put back"
-        let waiting = record.entries.filter { !$0.restored }
+        let waiting = record.entries.filter { !$0.restored && !missing.contains($0.original) }
+        let gone = record.entries.filter { !$0.restored && missing.contains($0.original) }.count
+        missingText = gone == 0 ? nil : "\(gone) no longer in the Trash"
         canPutBack = waiting.contains(where: \.restorable)
         needsFinder = waiting.contains { !$0.restorable }
     }
 
-    /// What the disclosure says about one item.
-    static func state(of entry: RemovalRecord.Entry) -> String {
+    /// What the disclosure says about one item; `missing` when it left the Trash after it moved.
+    static func state(of entry: RemovalRecord.Entry, missing: Bool = false) -> String {
         if entry.restored { return "Put back" }
+        if missing { return "No longer in the Trash" }
         if entry.trashed == nil { return "Finder did not say where it went · Use Put Back in Finder" }
         if !entry.restorable { return "Use Put Back in Finder" }
         return "In the Trash"
@@ -69,7 +77,7 @@ struct CleanerRestoreView: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(cleaner.records.map { RecentlyMovedRow($0) }) { row in
+                        ForEach(cleaner.recentRows) { row in
                             recordRow(row)
                             if row.id != cleaner.records.last?.id { Divider().opacity(0.4) }
                         }
@@ -111,7 +119,7 @@ struct CleanerRestoreView: View {
                         Text(Self.relativeDate.localizedString(for: record.date, relativeTo: Date()))
                             .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineLimit(1)
                     }
-                    Text([row.detail, row.restoredText].compactMap { $0 }.joined(separator: " · "))
+                    Text([row.detail, row.restoredText, row.missingText].compactMap { $0 }.joined(separator: " · "))
                         .font(.system(size: 11).monospacedDigit()).foregroundStyle(FrogStyle.muted).lineLimit(1)
                 }
                 Spacer(minLength: 8)
@@ -133,7 +141,7 @@ struct CleanerRestoreView: View {
                             Text(roots.displayPath(URL(fileURLWithPath: entry.original))).font(.system(size: 11))
                                 .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                             Spacer(minLength: 8)
-                            Text(RecentlyMovedRow.state(of: entry)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                            Text(RecentlyMovedRow.state(of: entry, missing: row.missing.contains(entry.original))).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                                 .lineLimit(1)
                         }
                     }
@@ -163,13 +171,22 @@ struct CleanerPutBackSummaryView: View {
                     .foregroundStyle(summary.restored == 0 ? FrogStyle.warning : FrogStyle.good).accessibilityHidden(true)
                 Text(summary.title).font(.system(size: 14, weight: .medium))
             }
-            ForEach(Array(summary.failures.enumerated()), id: \.offset) { _, failure in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(roots.displayPath(URL(fileURLWithPath: failure.path))).font(.system(size: 12))
-                        .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
-                    Text(failure.message).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                        .fixedSize(horizontal: false, vertical: true)
+            if !summary.failures.isEmpty {
+                // A removal of many items can fail as a whole after the Trash was emptied; the list scrolls then.
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(Array(summary.failures.enumerated()), id: \.offset) { _, failure in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(roots.displayPath(URL(fileURLWithPath: failure.path))).font(.system(size: 12))
+                                    .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                                Text(failure.message).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
                 }
+                .frame(maxHeight: 260).fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()

@@ -399,6 +399,45 @@ final class CleanerModelTests: XCTestCase {
         XCTAssertFalse(model.showsRecent)
     }
 
+    func testRecentlyMovedMarksItemsThatLeftTheTrash() async throws {
+        let fixture = try CleanerFixture()
+        defer { fixture.remove() }
+        let chatter = try fixture.app("Chatter", bundleID: "com.example.chatter")
+        try fixture.item(.caches, "com.example.chatter", bytes: 100)
+        try fixture.item(.applicationSupport, "Chatter", bytes: 100)
+        let log = CleanerCallLog()
+        let trash = FakeCleanerTrash(folder: fixture.root.appendingPathComponent("Trash"), log: log)
+        let model = CleanerModel(dependencies: .fake(root: fixture.root, trash: trash))
+        await model.open(chatter)
+        await model.prepareRemoval()
+        await model.confirmRemoval()
+        model.loadRecords()
+        XCTAssertNil(try XCTUnwrap(model.recentRows.first).missingText)
+        let record = try XCTUnwrap(model.records.first)
+        let cache = try XCTUnwrap(record.entries.first { $0.original.hasSuffix("Caches/com.example.chatter") })
+
+        // Dragged out of the Trash by hand: that item only is marked, the rest can still go back.
+        try FileManager.default.removeItem(atPath: try XCTUnwrap(cache.trashed))
+        model.loadRecords()
+        let row = try XCTUnwrap(model.recentRows.first)
+        XCTAssertEqual(row.missingText, "1 no longer in the Trash")
+        XCTAssertTrue(row.missing.contains(cache.original))
+        XCTAssertEqual(RecentlyMovedRow.state(of: cache, missing: true), "No longer in the Trash")
+        XCTAssertTrue(row.canPutBack)
+
+        // The Trash was emptied: nothing is offered any more.
+        for entry in record.entries { try? FileManager.default.removeItem(atPath: try XCTUnwrap(entry.trashed)) }
+        model.loadRecords()
+        let emptied = try XCTUnwrap(model.recentRows.first)
+        XCTAssertEqual(emptied.missingText, "3 no longer in the Trash")
+        XCTAssertFalse(emptied.canPutBack)
+        XCTAssertFalse(emptied.needsFinder)
+        XCTAssertEqual(emptied.missing, Set(record.entries.map(\.original)))
+
+        model.forget(record.id)
+        XCTAssertEqual(model.missingFromTrash, [:])
+    }
+
     func testForgettingARecordLeavesTheTrashAlone() async throws {
         let fixture = try CleanerFixture()
         defer { fixture.remove() }
@@ -485,7 +524,7 @@ final class CleanerModelTests: XCTestCase {
         let after = try XCTUnwrap(model.records.first)
         XCTAssertFalse(RecentlyMovedRow(after).canPutBack)
         XCTAssertTrue(RecentlyMovedRow(after).needsFinder)
-        XCTAssertEqual(after.entries.map(RecentlyMovedRow.state(of:)), ["Put back", "Use Put Back in Finder"])
+        XCTAssertEqual(after.entries.map { RecentlyMovedRow.state(of: $0) }, ["Put back", "Use Put Back in Finder"])
     }
 
     func testOnFinishRunsAfterARemovalAndAfterACancelledOne() async throws {
