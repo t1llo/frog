@@ -48,10 +48,11 @@ import FrogCore
                 probe.running -= 1
                 return access.frame(of: window)
             },
-            apply: { action, window, display in
-                try? await manager.apply(action, to: window, displays: [display], options: .legacy)
+            apply: { action, window, display, start in
+                try? await manager.apply(action, to: window, displays: [display], options: .legacy, from: start)
             },
             setFrame: { frame, window in try? access.setFrame(frame, of: window, resize: true) },
+            forget: { await manager.forget($0.key) },
             preview: { probe.previews.append($0) },
             displays: { [laptop] },
             options: { .legacy },
@@ -103,6 +104,7 @@ import FrogCore
         XCTAssertEqual(access.windows[focused]?.frame, CGRect(x: 50, y: 50, width: 500, height: 400))
         let history = await manager.lastMove(of: dragged)
         XCTAssertEqual(history?.action, .leftHalf, "Restore previous size can undo the snap")
+        XCTAssertEqual(history?.frame, original, "Restore returns to where the drag began, not to where the window was dropped")
         XCTAssertEqual(probe.probes, [CGPoint(x: 410, y: 210)])
         XCTAssertLessThanOrEqual(probe.reads, 2)
         XCTAssertFalse(tracker.wantsRelease)
@@ -290,6 +292,32 @@ import FrogCore
         XCTAssertTrue(access.writes.contains(.size(dragged, CGSize(width: 800, height: 600))))
         tracker.mouseUp(at: CGPoint(x: 380, y: 40), time: 0.1)
         await tracker.settle()
+        let history = await manager.lastMove(of: dragged)
+        XCTAssertNil(history, "Dropped with its own size back, the window has nothing left to restore")
+    }
+
+    func testASnappedWindowDraggedAwayAndSnappedAgainRestoresItsFrameFromBeforeTheFirstSnap() async throws {
+        let access = fixture(), manager = WindowManager(access: access), probe = Probe()
+        try await manager.apply(.leftHalf, to: WindowHandle(key: dragged, element: nil), displays: [laptop])
+        let tracker = makeTracker(access, manager, probe)
+        var pointer = CGPoint(x: 360, y: 35)
+        tracker.mouseDown(at: pointer, time: 0)
+        // The window keeps its place under the pointer, whatever size it has.
+        func move(to point: CGPoint, time: TimeInterval) async {
+            access.windows[dragged]?.frame = access.windows[dragged]?.frame?.offsetBy(dx: point.x - pointer.x, dy: point.y - pointer.y)
+            pointer = point
+            tracker.dragged(to: point, time: time)
+            await tracker.settle()
+        }
+        await move(to: CGPoint(x: 365, y: 35), time: 0.01)
+        await move(to: CGPoint(x: 380, y: 40), time: 0.02)
+        XCTAssertEqual(access.windows[dragged]?.frame?.size, CGSize(width: 800, height: 600))
+        await move(to: CGPoint(x: 1439, y: 400), time: 0.2)
+        tracker.mouseUp(at: CGPoint(x: 1439, y: 400), time: 0.3)
+        await tracker.settle()
+        XCTAssertEqual(access.windows[dragged]?.frame, CGRect(x: 720, y: 25, width: 720, height: 875))
+        try await manager.apply(.restore, to: WindowHandle(key: dragged, element: nil), displays: [laptop])
+        XCTAssertEqual(access.windows[dragged]?.frame, original)
     }
 
     func testWithShiftHeldTheReleaseInTheRightThirdAppliesIt() async {

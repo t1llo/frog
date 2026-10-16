@@ -126,8 +126,9 @@ final class WindowLayoutController: ObservableObject {
         let tracker = WindowDragTracker(
             probe: { await WindowDragMonitor.windowUnder($0) },
             frame: { await WindowDragMonitor.readFrame($0, access: access) },
-            apply: { [weak self] action, window, display in await self?.snap(action, window: window, display: display) },
+            apply: { [weak self] action, window, display, start in await self?.snap(action, window: window, display: display, from: start) },
             setFrame: { frame, window in await Task.detached { try? access.setFrame(frame, of: window, resize: true) }.value },
+            forget: { await manager.forget($0.key) },
             preview: { [weak self] frame in self?.showDragPreview(frame) },
             displays: { [weak self] in self?.displays() ?? [] },
             options: { [weak self] in self?.snapOptions() ?? .legacy },
@@ -157,10 +158,11 @@ final class WindowLayoutController: ObservableObject {
         return options
     }
 
-    /// Moves the dragged window on the display under the pointer, recorded for Restore.
-    private func snap(_ action: WindowAction, window: WindowHandle, display: WindowDisplay) async {
+    /// Moves the dragged window on the display under the pointer, recorded for Restore, which
+    /// returns it to `start`, where the drag began.
+    private func snap(_ action: WindowAction, window: WindowHandle, display: WindowDisplay, from start: CGRect) async {
         do {
-            try await manager.apply(action, to: window, displays: [display], options: snapOptions())
+            try await manager.apply(action, to: window, displays: [display], options: snapOptions(), from: start)
             onToolUse?(.windowCommand)
         }
         catch is CancellationError { }

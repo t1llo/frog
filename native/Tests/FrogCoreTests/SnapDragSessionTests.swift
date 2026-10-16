@@ -60,6 +60,31 @@ final class SnapDragSessionTests: XCTestCase {
         XCTAssertEqual(effects, [.confirmDrag])
     }
 
+    func testAWindowReadAtAnEarlierPointerPositionConfirmsAndKnowsWhereTheDragBegan() {
+        // Pressed 5 pt left of `grab`, looked up while the pointer went on to 30 pt past it; the
+        // frame is from when the pointer was 15 pt along, not from the end.
+        let down = CGPoint(x: grab.x - 5, y: grab.y)
+        var drag = SnapDragSession(window: window.offsetBy(dx: 15, dy: 0), pointer: grab, time: 0, lastMove: nil, sizeBeforeMove: nil,
+                                   restoreOnDrag: false, edgesPaused: false, travel: 5,
+                                   readAt: [CGPoint(x: grab.x + 15, y: grab.y), CGPoint(x: grab.x + 30, y: grab.y)], mouseDown: down)
+        let effects = drag.move(to: CGPoint(x: grab.x + 50, y: grab.y), time: 0.05, windowFrame: window.offsetBy(dx: 50, dy: 0),
+                                displays: [laptop])
+        XCTAssertEqual(effects, [.confirmDrag])
+        XCTAssertEqual(drag.frameBeforeDrag, window.offsetBy(dx: -5, dy: 0), "Held 100 pt from its left edge since the press")
+    }
+
+    func testAWindowWhereFrogPutItStartedThereAndTheEarlierSizeKeepsThePressedPoint() {
+        let snapped = CGRect(x: 0, y: 25, width: 720, height: 875)
+        // Pressed halfway across, 10 pt below the top; the read frame lags the pointer by 3 pt.
+        var drag = SnapDragSession(window: snapped.offsetBy(dx: 20, dy: 0), pointer: CGPoint(x: 365, y: 35), time: 0,
+                                   lastMove: snapped, sizeBeforeMove: CGSize(width: 800, height: 600), restoreOnDrag: true,
+                                   edgesPaused: false, travel: 20, readAt: [CGPoint(x: 380, y: 35)], mouseDown: CGPoint(x: 360, y: 35))
+        let effects = drag.move(to: CGPoint(x: 390, y: 35), time: 0.05, windowFrame: snapped.offsetBy(dx: 27, dy: 0), displays: [laptop])
+        XCTAssertEqual(effects, [.confirmDrag, .restoreSize(CGRect(x: 390 - 400, y: 35 - 10, width: 800, height: 600))])
+        XCTAssertTrue(drag.restored)
+        XCTAssertEqual(drag.frameBeforeDrag, snapped)
+    }
+
     func testTheEarlierSizeComesBackUnderThePointerAfterALateRead() {
         let snapped = CGRect(x: 0, y: 25, width: 720, height: 875)
         // Grabbed at (360, 35); the frame was read once the pointer had reached (380, 35).

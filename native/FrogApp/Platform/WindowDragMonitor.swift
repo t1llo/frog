@@ -93,8 +93,13 @@ final class WindowDragTracker {
 
     private let probe: (CGPoint) async -> (WindowHandle, CGRect)?
     private let frame: (WindowHandle) async -> CGRect?
-    private let apply: (WindowAction, WindowHandle, WindowDisplay) async -> Void
+    /// Snaps the window on the display; the frame is where the window was when the drag began,
+    /// which Restore returns to.
+    private let apply: (WindowAction, WindowHandle, WindowDisplay, CGRect) async -> Void
     private let setFrame: (CGRect, WindowHandle) async -> Void
+    /// A drag gave the window its earlier size back and snapped nowhere: Frog no longer holds
+    /// it anywhere, so Restore has nothing to return to.
+    private let forget: (WindowHandle) async -> Void
     private let preview: (CGRect?) -> Void
     private let displays: () -> [WindowDisplay]
     private let options: () -> WindowLayoutOptions
@@ -139,8 +144,9 @@ final class WindowDragTracker {
 
     init(probe: @escaping (CGPoint) async -> (WindowHandle, CGRect)?,
          frame: @escaping (WindowHandle) async -> CGRect?,
-         apply: @escaping (WindowAction, WindowHandle, WindowDisplay) async -> Void,
+         apply: @escaping (WindowAction, WindowHandle, WindowDisplay, CGRect) async -> Void,
          setFrame: @escaping (CGRect, WindowHandle) async -> Void,
+         forget: @escaping (WindowHandle) async -> Void = { _ in },
          preview: @escaping (CGRect?) -> Void,
          displays: @escaping () -> [WindowDisplay],
          options: @escaping () -> WindowLayoutOptions,
@@ -153,7 +159,7 @@ final class WindowDragTracker {
          modifiers: @escaping () -> (shift: Bool, option: Bool) = { (false, false) },
          showZones: @escaping (SnapZoneLayout?) -> Void = { _ in },
          now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
-        self.probe = probe; self.frame = frame; self.apply = apply; self.setFrame = setFrame
+        self.probe = probe; self.frame = frame; self.apply = apply; self.setFrame = setFrame; self.forget = forget
         self.preview = preview; self.displays = displays; self.options = options; self.macOS = macOS
         self.lastMove = lastMove; self.shouldIgnore = shouldIgnore; self.restoreOnDrag = restoreOnDrag
         self.dragToSnap = dragToSnap; self.zoneGrid = zoneGrid; self.modifiers = modifiers; self.showZones = showZones; self.now = now
@@ -198,26 +204,25 @@ final class WindowDragTracker {
 
     func mouseUp(at point: CGPoint, time: TimeInterval) {
         guard down != nil else { return }
-        if phase == .confirmed, let session, let window,
-           let candidate = session.end(at: point, time: time, displays: dragDisplays),
-           let display = dragDisplays.first(where: { $0.id == candidate.displayID }) {
-            let previous = writeTask
-            writeTask = Task { [apply] in
-                await previous?.value
-                await apply(candidate.action, window, display)
+        if phase == .confirmed, let session, let window {
+            if let candidate = session.end(at: point, time: time, displays: dragDisplays),
+               let display = dragDisplays.first(where: { $0.id == candidate.displayID }) {
+                let start = session.frameBeforeDrag
+                enqueue { [apply] in await apply(candidate.action, window, display, start) }
+            } else if session.restored {
+                enqueue { [forget] in await forget(window) }
             }
         } else if phase == .reading, let session, let window {
             // Released before a read showed the window following, as after a quick throw to an
             // edge: one read where the window came to rest decides.
-            let displays = dragDisplays, previous = writeTask
-            writeTask = Task { [frame, apply] in
-                await previous?.value
+            let displays = dragDisplays
+            enqueue { [frame, apply] in
                 var session = session
                 guard let read = await frame(window) else { return }
                 _ = session.move(to: point, time: time, windowFrame: read, displays: displays)
                 guard let candidate = session.end(at: point, time: time, displays: displays),
                       let display = displays.first(where: { $0.id == candidate.displayID }) else { return }
-                await apply(candidate.action, window, display)
+                await apply(candidate.action, window, display, session.frameBeforeDrag)
             }
         }
         reset()
@@ -288,7 +293,9 @@ final class WindowDragTracker {
             defer { if self.generation == generation { self.probeTask = nil } }
             guard self.generation == generation, self.phase == .probing else { return }
             guard let (window, frame) = result, !self.shouldIgnore(window) else { self.abandon(); return }
-            let move = self.restoreOnDrag() ? await self.lastMove(window.key) : nil
+            // Where Frog last put the window: Restore returns from a snap to the frame before
+            // that, and a drag away gives the size back.
+            let move = await self.lastMove(window.key)
             guard self.generation == generation, self.phase == .probing, let down = self.down?.point else { return }
             // The window was read at one of the positions the pointer passed meanwhile.
             let readAt = self.probePath
@@ -298,8 +305,8 @@ final class WindowDragTracker {
             self.dragOptions = self.options()
             self.dragGrid = self.zoneGrid()
             self.session = SnapDragSession(window: frame, pointer: pointer, time: time, lastMove: move?.0, sizeBeforeMove: move?.1,
-                                           restoreOnDrag: move != nil, edgesPaused: !self.dragToSnap() || self.macOS().edgeTiling,
-                                           travel: max(travel, farthest), readAt: readAt)
+                                           restoreOnDrag: self.restoreOnDrag(), edgesPaused: !self.dragToSnap() || self.macOS().edgeTiling,
+                                           travel: max(travel, farthest), readAt: readAt, mouseDown: down)
             self.phase = .reading
             // Shift held from before the drag shows the zones once the window follows.
             let held = self.modifiers()
@@ -350,11 +357,7 @@ final class WindowDragTracker {
                 preview(nil)
             case .restoreSize(let frame):
                 guard let window else { continue }
-                let previous = writeTask
-                writeTask = Task { [setFrame] in
-                    await previous?.value
-                    await setFrame(frame, window)
-                }
+                enqueue { [setFrame] in await setFrame(frame, window) }
             case .showOverlay(let displayID):
                 guard let grid = dragGrid, let display = dragDisplays.first(where: { $0.id == displayID }) else { continue }
                 zoneLayout = SnapZoneLayout(display: display, grid: grid, options: dragOptions)
@@ -368,6 +371,15 @@ final class WindowDragTracker {
                 zoneLayout = nil
                 showZones(nil)
             }
+        }
+    }
+
+    /// Runs `work` after the writes queued before it, so the window takes its frames in order.
+    private func enqueue(_ work: @escaping () async -> Void) {
+        let previous = writeTask
+        writeTask = Task {
+            await previous?.value
+            await work()
         }
     }
 

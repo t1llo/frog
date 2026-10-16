@@ -128,6 +128,8 @@ public struct SnapDragSession: Sendable {
 
     private let window: CGRect
     private let pointer: CGPoint
+    /// Where the button went down; nil when not known.
+    private let mouseDown: CGPoint?
     /// The pointer positions while `window` was read, `pointer` first: it was read at one of
     /// them, because the pointer keeps moving while the window is looked up.
     private let origins: [CGPoint]
@@ -135,6 +137,8 @@ public struct SnapDragSession: Sendable {
     /// a read confirms the drag, then measured.
     private var grab: CGPoint
     private let edgesPaused: Bool
+    /// Where Frog last put the window, when the drag began there; nil otherwise.
+    private let placed: CGRect?
     /// The size to give back once the drag has gone far enough; nil when the window is not
     /// where Frog last put it.
     private let restoreSize: CGSize?
@@ -145,7 +149,8 @@ public struct SnapDragSession: Sendable {
     public private(set) var confirmed = false
     /// The window changed size, or Escape was pressed: this drag snaps nothing.
     public private(set) var finished = false
-    private var restored = false
+    /// The window got its earlier size back during this drag.
+    public private(set) var restored = false
     /// The zone the pointer is in and since when.
     private var zone: (candidate: SnapCandidate, since: TimeInterval)?
     private var shown: SnapCandidate?
@@ -158,18 +163,24 @@ public struct SnapDragSession: Sendable {
     ///   - readAt: the pointer positions after `pointer` while the window was read.
     ///   - travel: how far the pointer had moved from the mouse-down when the window was read;
     ///     a window still where Frog put it may have followed the pointer that far.
+    ///   - mouseDown: where the button went down; nil when not known.
     public init(window: CGRect, pointer: CGPoint, time: TimeInterval, lastMove: CGRect?, sizeBeforeMove: CGSize?,
-                restoreOnDrag: Bool, edgesPaused: Bool, travel: CGFloat = 0, readAt: [CGPoint] = []) {
+                restoreOnDrag: Bool, edgesPaused: Bool, travel: CGFloat = 0, readAt: [CGPoint] = [], mouseDown: CGPoint? = nil) {
         self.window = window
         self.pointer = pointer
+        self.mouseDown = mouseDown
         origins = [pointer] + readAt.suffix(63)
         grab = CGPoint(x: pointer.x - window.minX, y: pointer.y - window.minY)
         self.edgesPaused = edgesPaused
         self.travel = travel
         path = [origins.last ?? pointer]
-        if restoreOnDrag, let lastMove, let sizeBeforeMove,
-           abs(window.width - lastMove.width) <= 1, abs(window.height - lastMove.height) <= 1,
-           abs(window.minX - lastMove.minX) <= 1 + travel, abs(window.minY - lastMove.minY) <= 1 + travel,
+        if let lastMove, abs(window.width - lastMove.width) <= 1, abs(window.height - lastMove.height) <= 1,
+           abs(window.minX - lastMove.minX) <= 1 + travel, abs(window.minY - lastMove.minY) <= 1 + travel {
+            placed = lastMove
+        } else {
+            placed = nil
+        }
+        if restoreOnDrag, placed != nil, let sizeBeforeMove,
            abs(sizeBeforeMove.width - window.width) > 1 || abs(sizeBeforeMove.height - window.height) > 1 {
             restoreSize = sizeBeforeMove
         } else {
@@ -179,6 +190,15 @@ public struct SnapDragSession: Sendable {
 
     /// The window's frame when the drag was first read.
     public var startFrame: CGRect { window }
+
+    /// Where the window was when the button went down, which Restore returns to after a snap:
+    /// where Frog last put it when the drag began there, else under the mouse-down point the
+    /// way the pointer holds it.
+    public var frameBeforeDrag: CGRect {
+        if let placed { return placed }
+        let down = mouseDown ?? pointer
+        return CGRect(x: down.x - grab.x, y: down.y - grab.y, width: window.width, height: window.height)
+    }
 
     /// When the pointer, resting where it is, makes a shared edge count; nil when nothing waits.
     public var dwellDeadline: TimeInterval? {
@@ -203,11 +223,13 @@ public struct SnapDragSession: Sendable {
             confirmed = true
             effects.append(.confirmDrag)
         }
-        if let restoreSize, !restored, travel + hypot(point.x - pointer.x, point.y - pointer.y) >= Self.restoreDistance {
+        if let restoreSize, let placed, !restored, travel + hypot(point.x - pointer.x, point.y - pointer.y) >= Self.restoreDistance {
             restored = true
-            // The pointer keeps its place across the width and its distance from the top.
-            let share = window.width > 0 ? min(1, max(0, grab.x / window.width)) : 0.5
-            effects.append(.restoreSize(CGRect(x: point.x - share * restoreSize.width, y: point.y - grab.y,
+            // The pointer keeps its place across the width and its distance from the top. The
+            // window sat where Frog put it when the button went down, so that is exact.
+            let held = mouseDown.map { CGPoint(x: $0.x - placed.minX, y: $0.y - placed.minY) } ?? grab
+            let share = window.width > 0 ? min(1, max(0, held.x / window.width)) : 0.5
+            effects.append(.restoreSize(CGRect(x: point.x - share * restoreSize.width, y: point.y - held.y,
                                                width: restoreSize.width, height: restoreSize.height)))
         }
         effects += overlay == nil ? track(point, time: time, displays: displays) : trackOverlay(point, displays: displays)

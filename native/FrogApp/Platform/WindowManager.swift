@@ -97,6 +97,9 @@ actor WindowManager {
     /// What Restore would return the window to, and the action that moved it last.
     func lastMove(of key: WindowKey) -> WindowFrameHistory.Entry? { history.entry(for: key) }
 
+    /// Forgets what Restore would return the window to.
+    func forget(_ key: WindowKey) { history.remove(key) }
+
     /// Where an action would put the focused window of `pid`; for Restore, the frame it would
     /// return to. Reads the window once and writes nothing. Nil when there is nothing to show.
     func preview(_ action: WindowAction, pid: pid_t, displays: [WindowDisplay], options: WindowLayoutOptions = .legacy) -> CGRect? {
@@ -121,8 +124,10 @@ actor WindowManager {
 
     /// Applies an action to one window, such as the one being dragged, with the same history
     /// and messages as a shortcut. `displays` are the ones the action may use: for a snap,
-    /// only the display under the pointer.
-    func apply(_ action: WindowAction, to window: WindowHandle, displays: [WindowDisplay], options: WindowLayoutOptions = .legacy) throws {
+    /// only the display under the pointer. `start`, for a snap, is where the window was when
+    /// the drag began: Restore returns there, not to where the window was dropped.
+    func apply(_ action: WindowAction, to window: WindowHandle, displays: [WindowDisplay], options: WindowLayoutOptions = .legacy,
+               from start: CGRect? = nil) throws {
         guard access.isTrusted() else { throw FrogError.message("Allow Accessibility in Settings → Permissions to move windows.") }
         try Task.checkCancellation()
         if action == .minimize {
@@ -142,9 +147,10 @@ actor WindowManager {
             throw FrogError.message("macOS could not read this window's size or display.")
         }
         let saved = history.entry(for: window.key)
+        let start = start ?? current
         let target: CGRect
         // What Restore returns to once this action has moved the window.
-        var before = current
+        var before = start
         // The size a cycled half has reached.
         var step = 0
         if action == .restore {
@@ -154,11 +160,11 @@ actor WindowManager {
             if displays.contains(where: { $0.intersects(original) }) { target = original }
             else { target = WindowGeometry.target(.center, window: original, displays: displays, options: options) ?? current }
         } else {
-            // A window still where Frog last put it keeps what Restore returns to, so after
-            // Left half then Right half, or the same shortcut twice, Restore returns to the frame
-            // from before the first. After Restore the window is back at that frame, so the
-            // next layout leaves it behind.
-            if let saved, saved.action != .restore, WindowGeometry.close(current, saved.move.applied) { before = saved.frame }
+            // A window still where Frog last put it, or dragged from there, keeps what Restore
+            // returns to, so after Left half then Right half, or the same shortcut twice, Restore
+            // returns to the frame from before the first. After Restore the window is back at
+            // that frame, so the next layout leaves it behind.
+            if let saved, saved.action != .restore, WindowGeometry.close(start, saved.move.applied) { before = saved.frame }
             // A half pressed again on a window still where the last press put it takes the next size.
             if options.cycleSizes, WindowSizeCycle.cycles(action), let saved, saved.action == action,
                let last = WindowGeometry.target(action, window: current, displays: displays, options: options, step: saved.step),
