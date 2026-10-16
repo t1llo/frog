@@ -271,6 +271,37 @@ import XCTest
                        ".claude-work-stuff")
     }
 
+    func testAnAccountWhoseOwnLoginIsGoneOffersItsOwnSignInAndSaysWhy() async throws {
+        try twoAccounts(readingB: base.addingTimeInterval(-31 * 60))
+        let bin = home.appendingPathComponent(".local/bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        try Data("#!/bin/sh\n".utf8).write(to: bin.appendingPathComponent("claude"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bin.appendingPathComponent("claude").path)
+        // B has its own Claude Code folder, but no login in it.
+        let world = World(now: base, logins: [".claude": "org-test-1"])
+        let model = accountsModel(world)
+        let usage = UsageDashboardModel(defaults: defaults, fixtureRoot: home, claudeAccounts: model)
+        usage.applyPreferences(UsageDashboardPreferences(claudeAccounts: true))
+        XCTAssertFalse(usage.searchingClaudeAccounts, "Nothing is looked for before Mr. Usage is on")
+        usage.setAvailable(true)
+        defer { usage.setAvailable(false) }
+        XCTAssertTrue(usage.searchingClaudeAccounts, "The empty list says it is still looking")
+        try await until { model.stores.count == 2 && store(model, "A")?.usage != nil }
+        XCTAssertFalse(usage.searchingClaudeAccounts)
+        world.now = base.addingTimeInterval(31); usage.refresh(); try await settled(model)
+        let accounts = usage.accounts(now: world.now)
+        XCTAssertEqual(accounts.map(\.label), ["A", "B"])
+        XCTAssertEqual(accounts.map(\.needsSignIn), [false, true])
+        XCTAssertEqual(accounts.map(\.needsLiveSetup), [false, false], "B signs in to its own folder; no new profile")
+        XCTAssertNil(accounts.first?.warning, "A's reading is current")
+        let warning = try XCTUnwrap(accounts.last?.warning)
+        XCTAssertTrue(warning.contains("Sign in to Claude Code"), warning)
+        let command = try XCTUnwrap(usage.claudeSignInCommand(for: try XCTUnwrap(accounts.last?.id)))
+        XCTAssertTrue(command.contains("'CLAUDE_CONFIG_DIR=\(home.path)/.claude-account-b'"), command)
+        XCTAssertTrue(command.contains(" '\(bin.path)/claude' 'auth' 'login'"), command)
+        XCTAssertNil(usage.claudeSignInCommand(for: "/no/such/slot"))
+    }
+
     func testAFolderSignedInToAnotherAccountDropsTheOldLoginsReadingAndKeepsItsLabel() async throws {
         try twoAccounts()
         let world = world()

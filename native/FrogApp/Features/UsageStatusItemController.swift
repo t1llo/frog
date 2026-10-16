@@ -114,6 +114,9 @@ import FrogUsage
             self?.closePopup(); UpdateService.shared.installReadyUpdate()
         }, liveSetup: { [weak self] account in
             self?.closePopup(); self?.confirmLiveSetup(account)
+        }, accountSignIn: { [weak self] account in
+            self?.closePopup()
+            if let usage = self?.usage { ClaudeSignIn.start(usage, account: account.id) }
         }).background(MenuWindowSizing()))
         let size = host.fittingSize
         let panel = UsagePopupPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],

@@ -11,6 +11,19 @@ enum ClaudeSignIn {
         }
     }
 
+    /// The same for one account while each is shown, in that account's own Claude Code folder.
+    @MainActor static func start(_ usage: UsageDashboardModel, account: String) {
+        Task { @MainActor in
+            guard await usage.beginClaudeSignIn(for: account) else { return }
+            open(command: usage.claudeSignInCommand(for: account))
+        }
+    }
+
+    /// "Sign in to Claude Code for B…", or while its login is checked first, "Checking B’s login…".
+    static func accountSignInTitle(_ account: UsageAccountSummary) -> String {
+        account.checkingSignIn ? "Checking \(account.label)’s login…" : "Sign in to Claude Code for \(account.label)…"
+    }
+
     /// "Set up live readings for B…", after the view has explained it: signs Claude Code in to a
     /// new profile for an account known only from the Claude app. Without Claude Code, its page.
     @MainActor static func startLiveSetup(_ usage: UsageDashboardModel, account: String) {

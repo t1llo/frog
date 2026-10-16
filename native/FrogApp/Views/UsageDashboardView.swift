@@ -60,6 +60,8 @@ struct UsageStatusPopover: View {
     var installUpdate: () -> Void = {}
     /// "Set up live readings for B…": the caller explains it before Terminal opens.
     var liveSetup: (UsageAccountSummary) -> Void = { _ in }
+    /// "Sign in to Claude Code for B…", for an account whose own Claude Code login is gone.
+    var accountSignIn: (UsageAccountSummary) -> Void = { _ in }
     var body: some View {
         let provider = usage.preferences.provider
         let accounts = Self.shownAccounts(usage)
@@ -80,12 +82,16 @@ struct UsageStatusPopover: View {
                 UsageActivityView(usage: usage, compact: true,
                     showsCompactTokens: accounts.isEmpty && usage.windows(provider: provider).count <= 1)
             }.padding(.horizontal, 9).padding(.top, 4).padding(.bottom, 12)
-            // At most one account is offered live readings: the first that needs them.
+            // At most one account is offered live readings or a sign-in: the first that needs one.
             if let account = accounts.first(where: \.needsLiveSetup) {
                 MenuActionRow(title: "Set up live readings for \(account.label)…", symbol: "person.crop.circle.badge.plus") {
                     liveSetup(account)
                 }.help(account.status ?? "")
-            } else if provider == "Claude", usage.needsClaudeSignIn {
+            } else if let account = accounts.first(where: \.needsSignIn) {
+                MenuActionRow(title: ClaudeSignIn.accountSignInTitle(account), symbol: "person.crop.circle.badge.checkmark") {
+                    accountSignIn(account)
+                }.disabled(account.checkingSignIn).help(account.warning ?? account.status ?? "")
+            } else if provider == "Claude", accounts.isEmpty, usage.needsClaudeSignIn {
                 MenuActionRow(title: usage.checkingClaudeSignIn ? "Checking Claude Code’s login…" : "Sign in to Claude Code…",
                               symbol: "person.crop.circle.badge.checkmark", action: signIn)
                     .disabled(usage.checkingClaudeSignIn).help(usage.status(provider: provider))
@@ -170,10 +176,6 @@ private struct UsageAccountsLimits: View {
                     ForEach(accounts.prefix(4)) { UsageAccountRow(account: $0, now: context.date) }
                 } else {
                     ForEach(accounts) { UsageAccountLimits(account: $0, now: context.date) }
-                }
-                if !compact, usage.needsClaudeSignIn {
-                    Button(usage.checkingClaudeSignIn ? "Checking Claude Code’s login…" : "Sign in to Claude Code…") { ClaudeSignIn.start(usage) }
-                        .buttonStyle(FrogButtonStyle()).disabled(usage.checkingClaudeSignIn)
                 }
             }
         }
@@ -456,6 +458,10 @@ private struct UsageAccountSettingsRow: View {
             if account.needsLiveSetup {
                 Button("Set up live readings…", action: setUpLiveReadings).buttonStyle(FrogButtonStyle())
                     .help("Signs Claude Code in as \(account.label), so Frog can check its limits with Anthropic")
+            } else if account.needsSignIn {
+                Button(account.checkingSignIn ? "Checking the login…" : "Sign in to Claude Code…") { ClaudeSignIn.start(usage, account: account.id) }
+                    .buttonStyle(FrogButtonStyle()).disabled(account.checkingSignIn)
+                    .help("Opens Terminal to sign in to Claude Code as \(account.label), in this account’s own Claude Code folder")
             }
         }.help(usage.accountLogin(for: account.id) ?? "")
     }

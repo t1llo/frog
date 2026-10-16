@@ -456,13 +456,20 @@ and isolated defaults.
   `~/.claude-account-b`), `CLAUDE_CONFIG_DIR=… claude auth login`. Frog does not create
   that folder; Claude Code does when signing in, and the next detection links it to the
   app folder by organization.
+- **An account whose own login is gone.** An account with a Claude Code folder whose
+  login is missing, and no current Claude app reading, offers "Sign in to Claude Code…"
+  in its row on the page and "Sign in to Claude Code for B…" in the popup. It checks
+  and renews that folder's login first, as the single account's sign-in does, and only
+  then opens Terminal with `CLAUDE_CONFIG_DIR=… claude auth login` for that folder.
+  While each account is shown, the popup and the page offer no unnamed sign-in.
 - **A folder signed in to another account.** When the newest organization in an
   account's Claude app history changes, that account's endpoint reading and borrowed
   renewal times are dropped, Frog looks for accounts again, and the label stays.
 - **For the screens**, `UsageDashboardModel` gives one summary per account (label,
   short label, Session and Week windows with the model weeks, plan, sources such as
   "Claude app · Claude-Account-B" and "Claude Code · ~/.claude", age, whether it is
-  stale, status, include switch, live-reading offer, merged note), the combined
+  stale, status, a warning only while the reading is out of date, include switch,
+  live-reading and sign-in offers, merged note), the combined
   windows, the notice, renaming, including, "Add folder…" (kept on this Mac under
   `claudeAccounts.v1.extraFolders`) and the live-reading command. No summary carries an
   e-mail address.

@@ -246,6 +246,14 @@ final class ClaudeAccountsModel: ObservableObject {
         return ClaudeCodeCLI.signInCommand(executable: executable, directory: Self.liveSetupFolder(for: folder, home: home))
     }
 
+    /// Claude Code's sign-in for an account's own Claude Code folder, such as `~/.claude-work`
+    /// after its login ran out.
+    func signInCommand(for slot: String) -> String? {
+        guard let account = accounts.first(where: { $0.id == slot }), let folder = account.codeFolder,
+              let executable = claudeExecutable else { return nil }
+        return ClaudeCodeCLI.signInCommand(executable: executable, directory: folder)
+    }
+
     /// `Claude-Account-B` → `~/.claude-account-b`, `Work` → `~/.claude-work`.
     nonisolated static func liveSetupFolder(for appFolder: URL, home: URL) -> URL {
         let name = appFolder.lastPathComponent.lowercased().replacingOccurrences(of: " ", with: "-")

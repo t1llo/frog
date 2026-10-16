@@ -197,6 +197,10 @@ public struct UsageAccountSummary: Identifiable {
     /// What is wrong with the reading on display, nil while it is current: "Saved by the Claude
     /// app at 07:53. …" for an old app reading, or why the account could not be checked.
     public var warning: String? = nil
+    /// Has a Claude Code folder whose login is gone, and no current Claude app reading.
+    public var needsSignIn = false
+    /// Its sign-in was asked for and Claude Code's login is being checked first.
+    public var checkingSignIn = false
 }
 
 /// One kind of limit, such as the session, over every included Claude account.
@@ -508,7 +512,8 @@ extension UsageDashboardModel {
                 status: store?.status, included: model.isIncluded(account),
                 needsLiveSetup: model.needsLiveSetup(account, now: now), mergedNote: account.mergedDescription,
                 // A login that is gone is worth saying also before the first reading.
-                warning: store.flatMap { $0.warning ?? ($0.needsClaudeCodeLogin ? $0.status : nil) })
+                warning: store.flatMap { $0.warning ?? ($0.needsClaudeCodeLogin ? $0.status : nil) }, needsSignIn: active && account.codeFolder != nil && store?.needsClaudeCodeLogin == true,
+                checkingSignIn: store?.checkingLogin ?? false)
         }
     }
 
@@ -564,6 +569,17 @@ extension UsageDashboardModel {
     /// The Terminal command that signs Claude Code in to a new profile for an account known only
     /// from the Claude app; nil when Claude Code is not installed or the account has a login.
     public func liveSetupCommand(for id: String) -> String? { claudeAccountsModel.liveSetupCommand(for: id) }
+
+    /// Claude Code's own sign-in for an account's Claude Code folder, while each account is
+    /// shown; nil when Claude Code is not installed or the account has no such folder.
+    public func claudeSignInCommand(for id: String) -> String? { claudeAccountsModel.signInCommand(for: id) }
+
+    /// As `beginClaudeSignIn()`, for one account: false when its login turned out to be current
+    /// or could be renewed, so nobody has to sign in.
+    public func beginClaudeSignIn(for id: String) async -> Bool {
+        guard let store = claudeAccountsModel.stores[id] else { return false }
+        return await store.beginSignIn()
+    }
 
     /// The Claude Code login an account's readings use, with its e-mail address: only for hover help.
     public func accountLogin(for id: String) -> String? { claudeAccountsModel.stores[id]?.authLabel }
