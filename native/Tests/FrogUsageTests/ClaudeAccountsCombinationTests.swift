@@ -56,6 +56,22 @@ final class ClaudeAccountsCombinationTests: XCTestCase {
         XCTAssertEqual(nobody.missing, ["A"])
     }
 
+    func testAPlanWithoutAModelWeekIsLeftOutWithoutBeingNamed() {
+        func week(_ id: String, _ percentage: Double) -> UsageWindow {
+            UsageWindow(id: id, title: id == "seven_day" ? "Week" : "Week · Opus", percentage: percentage,
+                        resetsAt: now.addingTimeInterval(86_400), duration: 7 * 86_400)
+        }
+        let max = ClaudeAccountsCombination.Account(label: "A", plan: "Max 5×", windows: [week("seven_day", 60), week("seven_day_opus", 20)])
+        let pro = ClaudeAccountsCombination.Account(label: "B", plan: "Pro", windows: [week("seven_day", 40)])
+        let opus = ClaudeAccountsCombination.combine([max, pro], window: "seven_day_opus", now: now)
+        XCTAssertEqual(opus.percentage, 20)
+        XCTAssertEqual(opus.missing, [], "B's plan has no Opus week, so its reading is not out of date")
+        XCTAssertEqual(opus.breakdown, "A 20%")
+
+        let session = ClaudeAccountsCombination.combine([max, pro], window: "five_hour", now: now)
+        XCTAssertEqual(session.missing, ["A", "B"], "Every plan has a session; a reading without one renewed since")
+    }
+
     func testCombinedRowRoundsLikeEveryRowAndHasNoRenewalOrPace() {
         let combined = ClaudeAccountsCombination.combine([account("A", session: 33.9), account("B", session: 66.8, resets: nil)],
                                                          window: "five_hour", now: now)

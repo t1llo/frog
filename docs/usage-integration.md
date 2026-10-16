@@ -404,7 +404,9 @@ exactly as before.
   known plan, the weights are the plan sizes (Pro 1, Max and Max 5× 5, Max 20× 20);
   otherwise every weight is 1, and the row says "Treats A and B as plans of the same
   size". Team, Enterprise and an unknown plan have no size. Included accounts left out
-  are listed as missing. A combined row has no renewal time and no pace, because each
+  are listed as missing, except one whose current reading has no model week of that
+  kind: its plan may have none, such as Pro without Week · Opus. Every plan has a
+  session and a week, so a reading without one of them is missing. A combined row has no renewal time and no pace, because each
   account renews on its own clock; its caption lists each account instead, such as
   "A 30% · resets 15:40 · B 80% · resets Thu 09:00". Percentages round down as every
   other row does, so used and left add up to 100.

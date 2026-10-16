@@ -27,7 +27,9 @@ public enum ClaudeAccountsCombination {
         /// The share of all counted accounts' limits used, NaN when no account counts.
         public let percentage: Double
         public let basis: Basis
-        /// Included accounts without a current reading for this window.
+        /// Included accounts that should count but have no current reading for this window. An
+        /// account whose plan has no limit of this kind, such as a Pro plan without Week · Opus,
+        /// is left out without being named.
         public let missing: [String]
         /// "A 30% · B 80%".
         public let breakdown: String
@@ -39,6 +41,10 @@ public enum ClaudeAccountsCombination {
         /// window's length, for the menu bar's "5h" and "7d", but has no renewal time.
         public let window: UsageWindow
     }
+
+    /// Limits every Claude plan has. A reading without one of them is out of date (that limit
+    /// renewed since); a reading without a model week may just be of a plan that has none.
+    static let everyPlanHas: Set<String> = ["five_hour", "seven_day"]
 
     /// How much more a plan allows than Pro. Team, Enterprise and an unknown plan have no size.
     static func weight(plan: String?) -> Double? {
@@ -58,10 +64,10 @@ public enum ClaudeAccountsCombination {
         var counted: [(account: Account, window: UsageWindow)] = []
         var missing: [String] = []
         for account in included {
-            if let window = account.windows.first(where: { $0.id == id }), window.percentage.isFinite,
-               window.resetsAt.map({ $0 > now }) ?? true {
+            let window = account.windows.first { $0.id == id }
+            if let window, window.percentage.isFinite, window.resetsAt.map({ $0 > now }) ?? true {
                 counted.append((account, window))
-            } else {
+            } else if window != nil || account.windows.isEmpty || everyPlanHas.contains(id) {
                 missing.append(account.label)
             }
         }
