@@ -30,8 +30,6 @@ struct CleanerReviewView: View {
                     }.font(.system(size: 11)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
                 }
                 Spacer(minLength: 12)
-                Text(movesText).font(.system(size: 12, weight: .medium).monospacedDigit())
-                    .foregroundStyle(review.selectedCount == 0 ? FrogStyle.muted : FrogStyle.ink)
             }
             notices
             ForEach(review.groups(showPossible: showPossible)) { group in groupView(group) }
@@ -40,12 +38,6 @@ struct CleanerReviewView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await checkRunning() }
         }
-    }
-
-    private var movesText: String {
-        guard review.selectedCount > 0 else { return "Nothing ticked" }
-        let bytes = CleanerFormat.bytes(review.selectedBytes)
-        return review.selectedSizeIncomplete ? "Moves at least \(bytes) to the Trash" : "Moves \(bytes) to the Trash"
     }
 
     @ViewBuilder private var notices: some View {
@@ -151,8 +143,7 @@ struct CleanerReviewFooter: View {
     var body: some View {
         let count = review.selectedCount
         HStack(spacing: 12) {
-            Text("\(count) \(count == 1 ? "item" : "items") · \(CleanerFormat.bytes(review.selectedBytes))")
-                .font(.system(size: 12).monospacedDigit()).foregroundStyle(FrogStyle.muted)
+            Text(review.selectionSummary()).font(.system(size: 12).monospacedDigit()).foregroundStyle(FrogStyle.muted)
             Spacer()
             Button("Move to Trash…") { Task { await cleaner.prepareRemoval() } }
                 .buttonStyle(FrogButtonStyle(primary: true))

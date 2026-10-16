@@ -18,7 +18,7 @@ Frog then looks for the app's files and groups them by how sure it is that they 
 - **Possible matches:** only resemble the app ("Name contains example.", "Folder of the developer, Vendor.", "Starts with the developer's team ID.", "Label shares Example's developer prefix."). They appear only when **Show possible matches** is on in the page's settings.
 - **Used by other apps:** another installed app claims the same name or ID.
 
-Only sure and likely matches start ticked. Possible matches, items used by other apps and group containers are never ticked by Frog; tick them yourself when you know they can go. Each row shows its size and a **Reveal in Finder** button. The header says how much the ticked items take; "at least" means some sizes are not known yet or could not be read completely.
+Only sure and likely matches start ticked. Possible matches, items used by other apps and group containers are never ticked by Frog; tick them yourself when you know they can go. Each row shows its size and a **Reveal in Finder** button. The bar at the bottom says how many items are ticked and how much they take; an item inside a ticked folder moves with it and counts once. "At least" means some sizes are not known yet or could not be read completely.
 
 Notices above the list say when the app is running (Frog quits it first), when it comes with its own uninstaller (**Open Uninstaller** opens it; it can remove parts Frog cannot see), when it has a system extension, and when some items need Full Disk Access.
 

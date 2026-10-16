@@ -162,8 +162,12 @@ public enum CleanerIOPolicy {
 }
 
 public enum CleanerFormat {
-    /// ByteCountFormatter, `.file` style, for display only.
+    /// ByteCountFormatter, `.file` style, for display only. Digits always, so an empty file reads "0 bytes"
+    /// beside "4 KB", not "Zero KB".
     public static func bytes(_ value: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: value, countStyle: .file)
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.allowsNonnumericFormatting = false
+        return formatter.string(fromByteCount: value)
     }
 }

@@ -68,8 +68,10 @@ import FrogCore
 
         let one = RemovalSummary(RemovalOutcome(moved: [entry("/a", nil)],
                                                 failures: [RemovalFailure(path: "/b", message: "No.")]), formatBytes: format)
-        XCTAssertEqual(one.title, "Moved 1 item to the Trash · 0 B")
+        XCTAssertEqual(one.title, "Moved 1 item to the Trash", "No size is known, so none is shown")
         XCTAssertEqual(one.failureTitle, "Could not move 1 item")
+        let partly = RemovalSummary(RemovalOutcome(moved: [entry("/a", 100), entry("/b", nil)]), formatBytes: format)
+        XCTAssertEqual(partly.title, "Moved 2 items to the Trash · at least 100 B")
 
         let none = RemovalSummary(RemovalOutcome(failures: [RemovalFailure(path: "/a", message: "No."),
                                                             RemovalFailure(path: "/b", message: "No.")]), formatBytes: format)
@@ -83,6 +85,37 @@ import FrogCore
         XCTAssertNil(RemovalSummary.settingsLink(for: "No."))
         XCTAssertTrue(RemovalSummary.SettingsLink.automation.url.absoluteString.hasSuffix("?Privacy_Automation"))
         XCTAssertTrue(RemovalSummary.SettingsLink.fullDiskAccess.url.absoluteString.hasSuffix("?Privacy_AllFiles"))
+    }
+
+    func testTheReviewCountsAnItemInsideATickedFolderOnce() {
+        let format: (Int64) -> String = { "\($0) B" }
+        func item(_ path: String, size: Int64? = nil) -> CleanerItem {
+            CleanerItem(url: URL(fileURLWithPath: path), kind: .folder, confidence: .certain, reason: "Named after the bundle ID.",
+                        size: size)
+        }
+        let vendor = item("/fixture/Library/Application Support/Vendor")
+        let inside = item("/fixture/Library/Application Support/Vendor/Example")
+        let cache = item("/fixture/Library/Caches/com.example.app")
+        let lookalike = item("/fixture/Library/Application Support/Vendor Tools")
+        let app = AppIdentity(path: "/fixture/Applications/Example.app", name: "Example", bundleID: "com.example.app")
+        var review = CleanerReview(app: app, items: [vendor, inside, cache, lookalike], selected: [], sizes: [:],
+                                   fullDiskAccess: true)
+        XCTAssertEqual(review.selectionSummary(formatBytes: format), "Nothing ticked")
+
+        review.selected = Set([vendor, inside, cache, lookalike].map(\.id))
+        XCTAssertEqual(review.tickedItems.map(\.id), [vendor, cache, lookalike].map(\.id),
+                       "The folder inside Vendor moves with it; Vendor Tools is a folder of its own")
+        XCTAssertEqual(review.selectionSummary(formatBytes: format), "3 items", "No size is known yet")
+
+        review.sizes = [vendor.id: CleanerSize(bytes: 300, complete: true), inside.id: CleanerSize(bytes: 200, complete: true),
+                        cache.id: CleanerSize(bytes: 50, complete: true)]
+        XCTAssertEqual(review.selectedBytes, 350)
+        XCTAssertEqual(review.selectionSummary(formatBytes: format), "3 items · at least 350 B")
+        review.sizes[lookalike.id] = CleanerSize(bytes: 1, complete: true)
+        XCTAssertEqual(review.selectionSummary(formatBytes: format), "3 items · 351 B")
+        review.sizes[cache.id] = CleanerSize(bytes: 50, complete: false)
+        XCTAssertEqual(review.selectionSummary(formatBytes: format), "3 items · at least 351 B")
+        XCTAssertEqual(CleanerFormat.bytes(0), "0 bytes")
     }
 
     func testUpdatingCleanerSettingsKeepsTheRestOfTheToolkit() throws {

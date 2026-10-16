@@ -106,19 +106,35 @@ struct CleanerReview: Equatable {
         return CleanerGroupKind.allCases.compactMap { kind in found[kind].map { CleanerGroup(kind: kind, items: $0) } }
     }
 
-    var selectedBytes: Int64 {
-        items.filter { selected.contains($0.id) }.reduce(0) { $0 + (sizes[$1.id]?.bytes ?? $1.size ?? 0) }
+    /// The ticked items without those inside another ticked folder: they move with it (`RemovalPlan`), so they
+    /// are neither counted nor measured twice.
+    var tickedItems: [CleanerItem] {
+        let chosen = items.filter { selected.contains($0.id) }
+        let ids = chosen.map(\.id)
+        return chosen.filter { item in !ids.contains { item.id.hasPrefix($0 + "/") } }
     }
 
-    var selectedCount: Int { items.filter { selected.contains($0.id) }.count }
+    var selectedBytes: Int64 { tickedItems.reduce(0) { $0 + (sizes[$1.id]?.bytes ?? $1.size ?? 0) } }
+
+    var selectedCount: Int { tickedItems.count }
 
     /// A ticked item has no size yet or only part of one, so `selectedBytes` is a lower bound.
     var selectedSizeIncomplete: Bool {
-        items.contains { item in
-            guard selected.contains(item.id) else { return false }
+        tickedItems.contains { item in
             if let size = sizes[item.id] { return !size.complete }
             return item.size == nil
         }
+    }
+
+    /// "7 items · 4.9 MB", "7 items · at least 4.9 MB" while a size is unknown, "1 item" while none is known,
+    /// or "Nothing ticked".
+    func selectionSummary(formatBytes: (Int64) -> String = CleanerFormat.bytes) -> String {
+        let ticked = tickedItems
+        guard !ticked.isEmpty else { return "Nothing ticked" }
+        let items = "\(ticked.count) \(ticked.count == 1 ? "item" : "items")"
+        guard ticked.contains(where: { sizes[$0.id] != nil || $0.size != nil }) else { return items }
+        let bytes = formatBytes(selectedBytes)
+        return items + " · " + (selectedSizeIncomplete ? "at least \(bytes)" : bytes)
     }
 
     /// Containers are measured only with Full Disk Access: reading them could ask the user about other apps' data.
@@ -132,7 +148,8 @@ struct CleanerReview: Equatable {
 
 /// What the page says once a removal has finished.
 struct RemovalSummary: Equatable {
-    /// "Moved 12 items to the Trash · 1.4 GB", "Moved 1 item to the Trash · 12 MB" or "Nothing was moved."
+    /// "Moved 12 items to the Trash · 1.4 GB", "… · at least 1.4 GB" when a size is unknown, "Moved 1 item to the
+    /// Trash" when none is known, or "Nothing was moved."
     let title: String
     /// "Could not move 1 item", "Could not move 2 items", or nil when nothing failed.
     let failureTitle: String?
@@ -143,8 +160,10 @@ struct RemovalSummary: Equatable {
 
     init(_ outcome: RemovalOutcome, formatBytes: (Int64) -> String = CleanerFormat.bytes) {
         let moved = outcome.moved.count
-        title = moved == 0 ? "Nothing was moved."
-            : "Moved \(moved) \(moved == 1 ? "item" : "items") to the Trash · \(formatBytes(outcome.movedBytes))"
+        let known = outcome.moved.compactMap(\.bytes)
+        let size = known.isEmpty ? ""
+            : " · " + (known.count < moved ? "at least " : "") + formatBytes(known.reduce(0, +))
+        title = moved == 0 ? "Nothing was moved." : "Moved \(moved) \(moved == 1 ? "item" : "items") to the Trash" + size
         let failed = outcome.failures.count
         failureTitle = failed == 0 ? nil : "Could not move \(failed) \(failed == 1 ? "item" : "items")"
         notes = outcome.notes + (moved > 0 ? [Self.emptyTheTrash] : [])
