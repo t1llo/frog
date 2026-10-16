@@ -154,17 +154,18 @@ actor WindowManager {
             if displays.contains(where: { $0.intersects(original) }) { target = original }
             else { target = WindowGeometry.target(.center, window: original, displays: displays, options: options) ?? current }
         } else {
+            // A window still where Frog last put it keeps what Restore returns to, so after
+            // Left half then Right half, or the same shortcut twice, Restore returns to the frame
+            // from before the first. After Restore the window is back at that frame, so the
+            // next layout leaves it behind.
+            if let saved, saved.action != .restore, WindowGeometry.close(current, saved.move.applied) { before = saved.frame }
             // A half pressed again on a window still where the last press put it takes the next size.
             if options.cycleSizes, WindowSizeCycle.cycles(action), let saved, saved.action == action,
                let last = WindowGeometry.target(action, window: current, displays: displays, options: options, step: saved.step),
                saved.move.isRepeated(by: last, from: current) {
                 step = WindowSizeCycle.next(after: saved.step)
-                before = saved.frame
             }
             guard let proposed = WindowGeometry.target(action, window: current, displays: displays, options: options, step: step) else { return }
-            // The same shortcut again on a window that could not take the exact frame sets
-            // that frame once more. Restore still returns to the frame before the first press.
-            if let saved, saved.move.isRepeated(by: proposed, from: current) { before = saved.frame }
             target = proposed
         }
         guard target != current else { return }

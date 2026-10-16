@@ -56,6 +56,31 @@ final class WindowManagerFixtureTests: XCTestCase {
         XCTAssertEqual(access.windows[key]?.frame, original)
     }
 
+    func testRestoreAfterOneLayoutThenAnotherReturnsToTheFrameBeforeBoth() async throws {
+        let access = FixtureWindowAccess()
+        let original = CGRect(x: 200, y: 200, width: 900, height: 600)
+        access.add(key, frame: original)
+        let manager = WindowManager(access: access)
+        try await manager.perform(.leftHalf, pid: 7, displays: [laptop])
+        try await manager.perform(.rightHalf, pid: 7, displays: [laptop])
+        let last = await manager.lastMove(of: key)
+        XCTAssertEqual(last?.frame, original, "Dragged away, the window gets its own size back, not the half's")
+        try await manager.perform(.restore, pid: 7, displays: [laptop])
+        XCTAssertEqual(access.windows[key]?.frame, original)
+
+        // Back at its own frame, the window leaves that frame behind for the next layout.
+        try await manager.perform(.leftHalf, pid: 7, displays: [laptop])
+        let again = await manager.lastMove(of: key)
+        XCTAssertEqual(again?.frame, original)
+
+        // Moved since Frog put it there: the next layout starts from where it is now.
+        let moved = CGRect(x: 100, y: 100, width: 720, height: 875)
+        access.windows[key]?.frame = moved
+        try await manager.perform(.rightHalf, pid: 7, displays: [laptop])
+        let fresh = await manager.lastMove(of: key)
+        XCTAssertEqual(fresh?.frame, moved)
+    }
+
     func testRestoreWithoutHistoryAndOtherMessagesMatchToday() async {
         let access = FixtureWindowAccess()
         let manager = WindowManager(access: access)
