@@ -96,19 +96,24 @@ struct RulesView: View {
 
     private func ruleTable(scrolls: Bool) -> some View {
         VStack(spacing: 0) {
-            ListToolbar(placeholder: applications ? "Search shortcuts" : "Search rules", search: $search) {
-                if applications, fixedCategory == nil {
-                    CompactSegments(values: Self.shortcutCategories(windowsEnabled: windowsEnabled), selected: category, title: { $0 == .application ? "Application" : $0.title }) {
-                        shortcutCategory = $0; search = ""
+            // Answer rules are few, so the Explain page lists them without a search field.
+            if answers {
+                HStack(spacing: 4) { SectionCaption(text: "Your rules"); Spacer(minLength: 0) }.frame(height: 32).padding(12)
+            } else {
+                ListToolbar(placeholder: applications ? "Search shortcuts" : "Search rules", search: $search) {
+                    if applications, fixedCategory == nil {
+                        CompactSegments(values: Self.shortcutCategories(windowsEnabled: windowsEnabled), selected: category, title: { $0 == .application ? "Application" : $0.title }) {
+                            shortcutCategory = $0; search = ""
+                        }
+                    } else if fixedCategory == nil {
+                        CompactSegments(values: [RuleCategory.text, .audio], selected: filter, title: { $0.title }) {
+                            filter = $0; search = ""
+                        }
+                    } else {
+                        SectionCaption(text: "Your rules")
                     }
-                } else if fixedCategory == nil {
-                    CompactSegments(values: [RuleCategory.text, .audio], selected: filter, title: { $0.title }) {
-                        filter = $0; search = ""
-                    }
-                } else {
-                    SectionCaption(text: "Your rules")
-                }
-            }.padding(12)
+                }.padding(12)
+            }
             if applications, fixedCategory == nil, windowsEnabled {
                 Divider().opacity(0.5)
                 HStack(spacing: 8) {
