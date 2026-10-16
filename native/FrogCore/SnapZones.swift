@@ -114,6 +114,14 @@ public struct SnapDragSession: Sendable {
         case hideOverlay
     }
 
+    /// What a release decides when no read had shown the window following before it.
+    public enum Release: Equatable, Sendable {
+        /// Snap the window to this edge or corner.
+        case snap(SnapCandidate)
+        /// Give the window this frame: its size before Frog last moved it, under the pointer.
+        case restoreSize(CGRect)
+    }
+
     /// What the zone overlay works with, kept while Shift is held.
     private struct Overlay {
         var grid: ZoneGrid
@@ -290,6 +298,20 @@ public struct SnapDragSession: Sendable {
         guard candidate.sharedEdge else { return candidate }
         guard let zone, zone.candidate == candidate, time - zone.since >= SnapZoneResolver.sharedEdgeDwell else { return nil }
         return candidate
+    }
+
+    /// The button went up before a read showed the window following, as after a quick throw:
+    /// `windowFrame`, read where the window came to rest, decides. Only an edge or a corner
+    /// snaps, never a zone of an overlay that never showed, so with Shift held nothing does. A
+    /// window thrown out of the place Frog put it, and snapped nowhere, gets its earlier size back.
+    public mutating func release(at point: CGPoint, time: TimeInterval, windowFrame: CGRect, displays: [WindowDisplay]) -> Release? {
+        let shift = overlay != nil
+        overlay = nil
+        let effects = move(to: point, time: time, windowFrame: windowFrame, displays: displays)
+        guard confirmed, !finished else { return nil }
+        if !shift, let candidate = end(at: point, time: time, displays: displays) { return .snap(candidate) }
+        for case .restoreSize(let frame) in effects { return .restoreSize(frame) }
+        return nil
     }
 
     /// Where the pointer holds the window, when its origin moved as far as the pointer did: from

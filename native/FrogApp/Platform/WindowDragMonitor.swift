@@ -217,13 +217,19 @@ final class WindowDragTracker {
             // Released before a read showed the window following, as after a quick throw to an
             // edge: one read where the window came to rest decides.
             let displays = dragDisplays
-            enqueue { [frame, apply] in
+            enqueue { [frame, apply, setFrame, forget] in
                 var session = session
                 guard let read = await frame(window) else { return }
-                _ = session.move(to: point, time: time, windowFrame: read, displays: displays)
-                guard let candidate = session.end(at: point, time: time, displays: displays),
-                      let display = displays.first(where: { $0.id == candidate.displayID }) else { return }
-                await apply(candidate.action, window, display, session.frameBeforeDrag)
+                switch session.release(at: point, time: time, windowFrame: read, displays: displays) {
+                case .snap(let candidate)?:
+                    guard let display = displays.first(where: { $0.id == candidate.displayID }) else { return }
+                    await apply(candidate.action, window, display, session.frameBeforeDrag)
+                case .restoreSize(let frame)?:
+                    await setFrame(frame, window)
+                    await forget(window)
+                case nil:
+                    break
+                }
             }
         }
         reset()

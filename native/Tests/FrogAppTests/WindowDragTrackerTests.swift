@@ -146,6 +146,48 @@ import FrogCore
         XCTAssertEqual(access.windows[dragged]?.frame, CGRect(x: 0, y: 25, width: 720, height: 875))
     }
 
+    func testAThrowWithShiftHeldSnapsIntoNoZoneItNeverShowed() async {
+        let access = fixture(), manager = WindowManager(access: access), probe = Probe()
+        probe.shift = true
+        let tracker = makeTracker(access, manager, probe)
+        tracker.mouseDown(at: grab, time: 0)
+        await drag(tracker, access, to: CGPoint(x: 410, y: 210), time: 0.01)
+        let release = CGPoint(x: 1200, y: 500)
+        access.windows[dragged]?.frame = original.offsetBy(dx: release.x - grab.x, dy: release.y - grab.y)
+        tracker.mouseUp(at: release, time: 0.05)
+        await tracker.settle()
+        XCTAssertEqual(probe.reads, 1)
+        XCTAssertEqual(probe.zones, [])
+        XCTAssertEqual(access.writes, [])
+    }
+
+    func testAThrownSnappedWindowGetsItsSizeBackOrSnapsRestoringItsFirstFrame() async throws {
+        let snapped = CGRect(x: 0, y: 25, width: 720, height: 875)
+        for (release, landing) in [(CGPoint(x: 700, y: 500), CGRect(x: 700 - 400, y: 500 - 10, width: 800, height: 600)),
+                                   (CGPoint(x: 1439, y: 400), CGRect(x: 720, y: 25, width: 720, height: 875))] {
+            let access = fixture(), manager = WindowManager(access: access), probe = Probe()
+            let handle = WindowHandle(key: dragged, element: nil)
+            try await manager.apply(.leftHalf, to: handle, displays: [laptop])
+            let tracker = makeTracker(access, manager, probe)
+            // Grabbed halfway across, 10 pt below the top, and thrown before any read.
+            let grabbed = CGPoint(x: 360, y: 35)
+            tracker.mouseDown(at: grabbed, time: 0)
+            access.windows[dragged]?.frame = snapped.offsetBy(dx: 5, dy: 0)
+            tracker.dragged(to: CGPoint(x: 365, y: 35), time: 0.01)
+            await tracker.settle()
+            access.windows[dragged]?.frame = snapped.offsetBy(dx: release.x - grabbed.x, dy: release.y - grabbed.y)
+            tracker.mouseUp(at: release, time: 0.05)
+            await tracker.settle()
+            XCTAssertEqual(access.windows[dragged]?.frame, landing, "\(release)")
+            let history = await manager.lastMove(of: dragged)
+            if release.x < 1000 {
+                XCTAssertNil(history, "Its own size back, nothing left to restore")
+            } else {
+                XCTAssertEqual(history?.frame, original, "Restore returns to the frame before the first snap")
+            }
+        }
+    }
+
     func testAPressAndReleaseOnAWindowThatDidNotMoveSnapsNothing() async {
         let access = fixture(), manager = WindowManager(access: access), probe = Probe()
         let tracker = makeTracker(access, manager, probe)

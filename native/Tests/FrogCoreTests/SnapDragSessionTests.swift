@@ -96,6 +96,39 @@ final class SnapDragSessionTests: XCTestCase {
         XCTAssertEqual(effects, [.confirmDrag, .restoreSize(CGRect(x: 390 - 400, y: 35 - 10, width: 800, height: 600))])
     }
 
+    func testAReleaseBeforeAnyReadSnapsOnlyToAnEdge() {
+        let edge = CGPoint(x: 0, y: 400), middle = CGPoint(x: 1200, y: 500)
+        func released(at point: CGPoint, _ drag: SnapDragSession, followed: Bool = true) -> SnapDragSession.Release? {
+            var drag = drag
+            let frame = followed ? window.offsetBy(dx: point.x - grab.x, dy: point.y - grab.y) : window
+            return drag.release(at: point, time: 0.1, windowFrame: frame, displays: [laptop])
+        }
+        XCTAssertEqual(released(at: edge, session()), .snap(zone(.leftHalf)))
+        XCTAssertNil(released(at: middle, session()))
+        XCTAssertNil(released(at: edge, session(), followed: false), "The window stayed: no window drag")
+
+        // Shift held from the start: its zones never showed, so neither a zone nor an edge applies.
+        var shifted = session()
+        _ = shifted.shiftChanged(true, pointer: grab, time: 0, displays: [laptop], grid: .thirds, options: .legacy,
+                                 macOS: MacWindowManagerSettings(), optionDown: false)
+        XCTAssertNil(released(at: middle, shifted))
+        XCTAssertNil(released(at: edge, shifted))
+    }
+
+    func testAThrownSnappedWindowGetsItsSizeBackOrSnapsFromWhereFrogPutIt() {
+        let earlier = CGSize(width: 400, height: 300)
+        var away = session(lastMove: window, sizeBeforeMove: earlier)
+        let middle = CGPoint(x: 700, y: 500)
+        // The pointer was an eighth across the window's width, 10 pt below its top.
+        XCTAssertEqual(away.release(at: middle, time: 0.1, windowFrame: window.offsetBy(dx: 300, dy: 290), displays: [laptop]),
+                       .restoreSize(CGRect(x: 700 - 50, y: 500 - 10, width: 400, height: 300)))
+
+        var snapped = session(lastMove: window, sizeBeforeMove: earlier)
+        XCTAssertEqual(snapped.release(at: CGPoint(x: 1439, y: 400), time: 0.1, windowFrame: window.offsetBy(dx: 1039, dy: 190),
+                                       displays: [laptop]), .snap(zone(.rightHalf)))
+        XCTAssertEqual(snapped.frameBeforeDrag, window, "Restore then returns to the frame before Frog put it there")
+    }
+
     func testResizeOnlyDragsNeverPreview() {
         var drag = session()
         // A resize from the bottom-right corner: the origin stays, the size grows.
