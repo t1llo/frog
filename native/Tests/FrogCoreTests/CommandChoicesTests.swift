@@ -11,11 +11,16 @@ final class CommandChoicesTests: XCTestCase {
         let emoji = String(repeating: "a", count: 31) + "👨‍👩‍👧" + "b"
         XCTAssertEqual(CommandChoices.key(emoji), String(repeating: "a", count: 31) + "👨‍👩‍👧")
         XCTAssertEqual(CommandChoices.key("\u{1112}\u{1161}\u{11AB}").utf8.count, CommandChoices.key("한").utf8.count)
-        // Empty text, such as a pick from the opening list, only strengthens the item.
+        // Empty text, such as a pick from the opening list, only strengthens the item. It still counts, so it can
+        // be forgotten; a row also picked for typed text counts once.
         var choices = CommandChoices()
         choices.record(typed: "   ", id: "app:Calendar", now: start)
-        XCTAssertEqual(choices.count, 0)
+        XCTAssertTrue(choices.pairs.isEmpty)
         XCTAssertEqual(choices.items.map(\.id), ["app:Calendar"])
+        XCTAssertEqual(choices.count, 1)
+        choices.record(typed: "cal", id: "app:Calendar", now: start)
+        choices.record(typed: "", id: "app:Notes", now: start)
+        XCTAssertEqual(choices.count, 2)
     }
 
     func testStrengthHalvesEveryTwoWeeksIsCappedAndFadesAway() {

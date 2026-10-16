@@ -111,8 +111,12 @@ public struct CommandChoices: Codable, Equatable, Sendable {
         }
     }
 
-    /// "Frog remembers N choices".
-    public var count: Int { pairs.count }
+    /// "Frog remembers N choices": each typed text with its row, and each row picked only from the opening
+    /// list, which leads that list as well and must be something Forget can be pressed for.
+    public var count: Int {
+        let paired = Set(pairs.map(\.id))
+        return pairs.count + items.reduce(0) { $0 + (paired.contains($1.id) ? 0 : 1) }
+    }
 
     public func index(now: Date) -> CommandChoiceIndex { CommandChoiceIndex(self, now: now) }
 

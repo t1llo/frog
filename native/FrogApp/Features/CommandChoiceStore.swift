@@ -5,7 +5,7 @@ import FrogCore
 /// asks `index` on every keystroke; a pick changes the memory and the index at once and reaches the file on a serial
 /// queue, so it never waits for the disk.
 @MainActor final class CommandChoiceStore: ObservableObject {
-    /// "Frog remembers N choices": the pairs of typed text and row.
+    /// "Frog remembers N choices": the pairs of typed text and row, and rows picked from the opening list.
     @Published private(set) var count = 0
     /// Set when the file cannot be read or saved. Learning pauses, and the bar ranks as it always has, until the
     /// learned choices are forgotten.
