@@ -25,24 +25,28 @@ struct AnswerPanelView: View {
             .background(WindowDragRegion())
             .overlay(alignment: .bottom) { Divider().opacity(0.6) }
             .measured(ChromeHeightKey.self)
-            ScrollViewReader { proxy in
-                ScrollView {
-                    answer.padding(.horizontal, 14).padding(.vertical, 10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .measured(ContentHeightKey.self)
-                }
-                .minimalScrollbars()
-                .frame(height: scrollHeight)
-                .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
-                // A follow-up's answer starts below the earlier ones, often out of sight in a full panel.
-                .onChange(of: model.session?.pendingQuestion) { _, question in
-                    guard question != nil else { return }
-                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.followUpID, anchor: .top) }
+            // Before the first text and after a failure without any, the status line follows the header directly.
+            if hasContent {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        answer.padding(.horizontal, 14).padding(.vertical, 10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .measured(ContentHeightKey.self)
+                    }
+                    .minimalScrollbars()
+                    .frame(height: scrollHeight)
+                    .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
+                    // A follow-up's answer starts below the earlier ones, often out of sight in a full panel.
+                    .onChange(of: model.session?.pendingQuestion) { _, question in
+                        guard question != nil else { return }
+                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.followUpID, anchor: .top) }
+                    }
                 }
             }
             VStack(alignment: .leading, spacing: 0) {
                 statusLine
-                footer
+                // A failure or stop without any answer has nothing to ask about, copy or save.
+                if hasAnswer || model.session?.phase.isRunning == true { footer }
             }
             .measured(ChromeHeightKey.self)
         }
@@ -101,11 +105,14 @@ struct AnswerPanelView: View {
 
     private static let followUpID = "follow-up"
 
+    /// A rule across the panel's width sets each follow-up apart from the answer before it.
     private func question(_ text: String) -> some View {
-        Text(text).font(FrogType.label).foregroundStyle(FrogStyle.ink)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, 4)
-            .overlay(alignment: .top) { Divider().opacity(0.5).offset(y: -4) }
+        VStack(alignment: .leading, spacing: 8) {
+            Divider().opacity(0.5)
+            Text(text).font(FrogType.label).foregroundStyle(FrogStyle.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, 2)
     }
 
     /// A note that could not be saved takes the line until the next action.
@@ -125,7 +132,7 @@ struct AnswerPanelView: View {
             }
             .buttonStyle(FrogButtonStyle()).controlSize(.small)
             .padding(.horizontal, 14).padding(.vertical, 7)
-            .overlay(alignment: .top) { Divider().opacity(0.6) }
+            .overlay(alignment: .top) { if hasContent { Divider().opacity(0.6) } }
             .accessibilityElement(children: .combine)
         }
     }
@@ -193,6 +200,12 @@ struct AnswerPanelView: View {
     private var followUpPlaceholder: String {
         guard let session = model.session, !failed, !session.phase.isRunning, let block = session.followUpBlock else { return "Ask a follow-up" }
         return block
+    }
+
+    /// Any answer text or follow-up question to show above the status line.
+    private var hasContent: Bool {
+        guard let session = model.session else { return false }
+        return !session.turns.isEmpty || !session.partial.isEmpty
     }
 
     private var hasAnswer: Bool {
