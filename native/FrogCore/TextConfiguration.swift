@@ -6,6 +6,8 @@ enum TextConfiguration {
         case bool, integer(ClosedRange<Int>), number(ClosedRange<Double>), string, choice([String]), color, shortcut, strings
         /// A JSON list of app bundle identifiers.
         case identifiers
+        /// A JSON list of feature IDs whose order counts, so it is written as it is.
+        case featureOrder
     }
     private struct Field: Sendable {
         let key: String
@@ -43,6 +45,8 @@ enum TextConfiguration {
             .init("shortcut.command-bar", "toolkit.commandBarHotkey", .shortcut),
             .init("shortcut.window-switcher", "toolkit.windowSwitcherHotkey", .shortcut),
             .init("hidden-sidebar-items", "toolkit.hiddenSidebarItems", .strings),
+            .init("pinned-sidebar-items", "toolkit.pinnedSidebarItems", .strings),
+            .init("sidebar-order", "toolkit.sidebarOrder", .featureOrder),
             .init("usage.provider", "toolkit.usage.provider", .choice(["Claude", "OpenAI"])),
             .init("usage.range", "toolkit.usage.range", .choice(["24h", "7d", "30d"])),
             .init("usage.metric", "toolkit.usage.metric", .choice(["API cost", "Input", "Output", "Cache write", "Cache read"])),
@@ -339,7 +343,7 @@ enum TextConfiguration {
             guard hex.count == 6, UInt32(hex, radix: 16) != nil else { throw FrogError.message("expected #RRGGBB (six hex digits)") }; return hex.uppercased()
         case .string:
             guard !string.isEmpty, string.utf8.count <= 256, !string.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { throw FrogError.message("expected 1–256 characters without control characters") }; return string
-        case .strings:
+        case .strings, .featureOrder:
             guard let strings = try? JSONDecoder().decode([String].self, from: Data(raw.utf8)), strings.allSatisfy({ FeatureID(rawValue: $0) != nil }) else { throw FrogError.message("expected a JSON list of feature IDs, such as [\"usage\", \"scripts\"]") }; return strings
         case .identifiers:
             guard let ids = try? JSONDecoder().decode([String].self, from: Data(raw.utf8)), (try? BundleIdentifiers.validate(ids)) != nil else { throw FrogError.message("expected a JSON list of app bundle identifiers, such as [\"com.apple.TextEdit\"]") }; return ids
@@ -363,6 +367,8 @@ enum TextConfiguration {
         case .bool: return (value as? Bool) == true ? "true" : "false"
         case .strings, .identifiers:
             return String(decoding: try JSONEncoder().encode((value as? [String] ?? []).sorted()), as: UTF8.self)
+        case .featureOrder:
+            return String(decoding: try JSONEncoder().encode(value as? [String] ?? []), as: UTF8.self)
         default: return String(describing: value)
         }
     }

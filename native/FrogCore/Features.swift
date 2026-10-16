@@ -137,6 +137,10 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
 public struct ToolkitPreferences: Codable, Equatable, Sendable {
     public var enabled: [String: Bool] = [:]
     public var hiddenSidebarItems: Set<String> = []
+    /// Features shown at the top of the sidebar, above the others.
+    public var pinnedSidebarItems: Set<String> = []
+    /// Feature IDs in the order the user arranged the sidebar; empty for the catalog's order.
+    public var sidebarOrder: [String] = []
     public var commandBarHotkey: Hotkey?
     public var windowSwitcherHotkey: Hotkey?
     public var usage: UsageDisplayPreferences?
@@ -161,6 +165,8 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case enabled
         case hiddenSidebarItems
+        case pinnedSidebarItems
+        case sidebarOrder
         case commandBarHotkey
         case windowSwitcherHotkey
         case usage
@@ -183,6 +189,8 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         enabled = try values.decodeIfPresent([String: Bool].self, forKey: .enabled) ?? [:]
         hiddenSidebarItems = try values.decodeIfPresent(Set<String>.self, forKey: .hiddenSidebarItems) ?? []
+        pinnedSidebarItems = try values.decodeIfPresent(Set<String>.self, forKey: .pinnedSidebarItems) ?? []
+        sidebarOrder = try values.decodeIfPresent([String].self, forKey: .sidebarOrder) ?? []
         commandBarHotkey = try values.decodeIfPresent(Hotkey.self, forKey: .commandBarHotkey)
         windowSwitcherHotkey = try values.decodeIfPresent(Hotkey.self, forKey: .windowSwitcherHotkey)
         usage = try values.decodeIfPresent(UsageDisplayPreferences.self, forKey: .usage)
@@ -288,8 +296,11 @@ extension Preferences {
         separateWindowSwitcherFromShortcuts()
         toolkit = ToolkitPreferences()
     }
+    /// The sidebar's features: pinned ones first, each group in the user's order.
     public var sidebarFeatures: [FeatureID] {
-        FeatureID.allCases.filter { $0.hasPage && featureEnabled($0) && !toolkitSettings.hiddenSidebarItems.contains($0.rawValue) }
+        let settings = toolkitSettings
+        return SidebarArrangement(order: settings.sidebarOrder, pinned: settings.pinnedSidebarItems).shown(
+            FeatureID.allCases.filter { $0.hasPage && featureEnabled($0) && !settings.hiddenSidebarItems.contains($0.rawValue) })
     }
     /// Window arrangement belongs to Shortcuts, independently of the switcher overlay.
     public func ruleFeatureEnabled(_ rule: Rule) -> Bool {

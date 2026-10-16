@@ -115,6 +115,13 @@ Older installations retain their existing shortcut/window enablement semantics d
 <!-- slot: color-picker -->
 <!-- slot: quicklinks -->
 
+`pinned-sidebar-items` lists the features shown at the top of the sidebar, and `sidebar-order` the feature IDs in the order the sidebar shows them; both take the same IDs. An empty `sidebar-order` keeps Frog's own order, and a feature it leaves out follows the one it comes after in that order. Both are what the sidebar writes when you pin a row from its context menu or hold Shift and drag one; **Reset sidebar order** in that menu empties them.
+
+```ini
+pinned-sidebar-items = ["usage"]
+sidebar-order = ["writing", "scripts", "explain", "dictation"]
+```
+
 ### Global shortcuts
 
 `shortcut.rules`, `shortcut.cancel-recording`, `shortcut.clipboard`, `shortcut.command-bar` and `shortcut.window-switcher` accept readable physical macOS key names:

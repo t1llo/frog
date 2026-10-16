@@ -12,10 +12,12 @@ struct MainView: View {
         let title: String
         let symbol: String
         var key: KeyEquivalent?
+        /// A small symbol at the row's end, such as the pin of a pinned feature.
+        var marker: String?
     }
-    private var navigation: [NavigationItem] {
-        model.toolkit.sidebar.map { NavigationItem(id: .feature($0), title: $0.title, symbol: $0.symbol,
-            key: $0 == .writing ? "1" : $0 == .applicationShortcuts ? "4" : nil) }
+    private func featureItem(_ feature: FeatureID, marker: String?) -> NavigationItem {
+        NavigationItem(id: .feature(feature), title: feature.title, symbol: feature.symbol,
+            key: feature == .writing ? "1" : feature == .applicationShortcuts ? "4" : nil, marker: marker)
     }
     private var workspaceNavigation: [NavigationItem] {
         [NavigationItem(id: .history, title: "History", symbol: "clock.arrow.circlepath", key: "2"),
@@ -112,8 +114,8 @@ struct MainView: View {
 
                 ScrollViewReader { proxy in
                     ScrollView {
-                        VStack(spacing: 2) {
-                            ForEach(navigation) { item in navigationButton(item).id(item.id) }
+                        SidebarFeatureList(features: model.toolkit.sidebar) { feature, marker in
+                            navigationButton(featureItem(feature, marker: marker)).id(ToolkitRoute.feature(feature))
                         }.padding(.horizontal, 8)
                     }
                     .onChange(of: section) { _, route in
@@ -150,6 +152,9 @@ struct MainView: View {
                 Image(systemName: item.symbol).font(.system(size: 13)).frame(width: 18)
                 Text(L10n.text(item.title)).font(.system(size: 12, weight: section == item.id ? .medium : .regular)).lineLimit(1)
                 Spacer(minLength: 0)
+                if let marker = item.marker {
+                    Image(systemName: marker).font(.system(size: 9)).foregroundStyle(FrogStyle.muted).accessibilityHidden(true)
+                }
             }
             .foregroundStyle(section == item.id ? FrogStyle.ink : FrogStyle.muted)
             .padding(.horizontal, 9).padding(.vertical, 7)
