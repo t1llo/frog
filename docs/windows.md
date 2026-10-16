@@ -80,7 +80,7 @@ An edge counts while the pointer is within 5 points of it. While the pointer is 
 
 The window lands on the display under the pointer, with the same gap, thirds and Stage Manager room as the shortcuts, and **Restore previous size** undoes it. An edge or corner shared with another display only counts once the pointer has rested there for 0.3 seconds, so dragging a window across to the other display never snaps it on the way. Frog's own windows, full-screen windows and a drag that resizes a window are never snapped.
 
-**Restore size when dragged away** (on by default): drag a window out of the place Frog put it and, after 10 points, it gets back the size it had before, with the pointer at the same spot across its width.
+**Restore size when dragged away** (on by default): drag a window out of the place Frog put it and, after 10 points, it gets back the size it had before, with the pointer at the same spot across its width. Let go away from the edges and **Restore previous size** has nothing left to undo; let go on another edge and it returns the window to where it was before Frog first moved it.
 
 ### Zones while holding Shift
 
