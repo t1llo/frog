@@ -12,18 +12,22 @@ public struct RemovalRecord: Codable, Identifiable, Sendable, Equatable {
         /// The item's owner when it moved.
         public var owner: CleanerOwner
         public var restored: Bool
+        /// The item's file number (inode) in the Trash when it moved; nil when Frog could not read it. A rename
+        /// keeps it, so Put Back can tell the item from a later one that took its name after the Trash was emptied.
+        public var fileNumber: UInt64?
         /// Frog can put it back itself: it knows the Trash location and the item was the user's.
         /// Administrator items need Finder's Put Back (moving them back needs the password).
         public var restorable: Bool { trashed != nil && owner == .user }
 
         public init(original: String, trashed: String?, bytes: Int64?, route: TrashRoute, owner: CleanerOwner,
-                    restored: Bool = false) {
+                    restored: Bool = false, fileNumber: UInt64? = nil) {
             self.original = original
             self.trashed = trashed
             self.bytes = bytes
             self.route = route
             self.owner = owner
             self.restored = restored
+            self.fileNumber = fileNumber
         }
     }
 

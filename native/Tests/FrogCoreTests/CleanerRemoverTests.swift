@@ -301,4 +301,38 @@ final class CleanerRemoverTests: XCTestCase {
         XCTAssertFalse(log.entries.contains("putBack com.example.dragged"), "Frog does not try to move what is gone")
         XCTAssertFalse(exists(dragged.url))
     }
+
+    func testPutBackLeavesAnotherItemThatTookTheNameInTheTrashAlone() async throws {
+        let cache = item(try fixture.item(.caches, "com.example.app", bytes: 4))
+        let outcome = await run(plan([cache]))
+        let record = try XCTUnwrap(outcome.record)
+        let trashed = URL(fileURLWithPath: try XCTUnwrap(record.entries.first?.trashed))
+        XCTAssertNotNil(record.entries.first?.fileNumber)
+        XCTAssertTrue(remover().isInTrash(record.entries[0]))
+        // The Trash was emptied, and a later item landed under the same name.
+        try FileManager.default.removeItem(at: trashed)
+        try FileManager.default.createDirectory(at: trashed, withIntermediateDirectories: true)
+
+        let (restored, failures) = await remover().putBack(record)
+
+        XCTAssertFalse(remover().isInTrash(record.entries[0]))
+        XCTAssertEqual(failures, [RemovalFailure(path: cache.id, message: "It is no longer in the Trash.")])
+        XCTAssertFalse(restored.entries[0].restored)
+        XCTAssertFalse(exists(cache.url), "The other item stays in the Trash")
+        XCTAssertTrue(exists(trashed))
+    }
+
+    func testPutBackSaysWhenTheFolderItWasInIsGone() async throws {
+        let vendor = try fixture.item(.applicationSupport, "Example Vendor")
+        let inside = item(vendor.appendingPathComponent("Example", isDirectory: true))
+        try FileManager.default.createDirectory(at: inside.url, withIntermediateDirectories: true)
+        let outcome = await run(plan([inside]))
+        try FileManager.default.removeItem(at: vendor)
+
+        let (restored, failures) = await remover().putBack(try XCTUnwrap(outcome.record))
+
+        XCTAssertEqual(failures, [RemovalFailure(path: inside.id, message: "The folder it was in is gone.")])
+        XCTAssertFalse(restored.entries[0].restored)
+        XCTAssertFalse(log.entries.contains("putBack Example"))
+    }
 }

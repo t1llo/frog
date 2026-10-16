@@ -81,6 +81,7 @@ public struct CleanerRemover: Sendable {
     private let store: CleanerStore?
     private let safety: CleanerSafety
     private let exists: @Sendable (URL) -> Bool
+    private let fileNumber: @Sendable (URL) -> UInt64?
     private let now: @Sendable () -> Date
 
     /// lstat, so a link counts as there whatever it points to.
@@ -89,14 +90,23 @@ public struct CleanerRemover: Sendable {
         return lstat(url.path, &info) == 0
     }
 
+    /// lstat's inode number, or nil when the item is missing.
+    public static let lstatFileNumber: @Sendable (URL) -> UInt64? = { url in
+        var info = stat()
+        guard lstat(url.path, &info) == 0 else { return nil }
+        return UInt64(info.st_ino)
+    }
+
     public init(trash: any CleanerTrash, system: any CleanerSystemControl, store: CleanerStore?,
                 safety: CleanerSafety, exists: @escaping @Sendable (URL) -> Bool = CleanerRemover.lstatExists,
+                fileNumber: @escaping @Sendable (URL) -> UInt64? = CleanerRemover.lstatFileNumber,
                 now: @escaping @Sendable () -> Date = { Date() }) {
         self.trash = trash
         self.system = system
         self.store = store
         self.safety = safety
         self.exists = exists
+        self.fileNumber = fileNumber
         self.now = now
     }
 
@@ -111,6 +121,7 @@ public struct CleanerRemover: Sendable {
     static let useFinder = "Use Put Back in the Trash in Finder."
     static let placeTaken = "Something else is now at the original place."
     static let leftTheTrash = "It is no longer in the Trash."
+    static let folderGone = "The folder it was in is gone."
     static let couldNotPutBack = "Frog could not put this item back."
     static func stillRunning(_ name: String) -> String { "\(name) is still running. Nothing was moved." }
     static func notStopped(_ label: String) -> String { "Frog could not stop \(label). It stops after you log out or restart." }
@@ -233,13 +244,17 @@ public struct CleanerRemover: Sendable {
                 failures.append(RemovalFailure(path: entry.original, message: Self.useFinder))
                 continue
             }
-            // The Trash was emptied, or the item was dragged out of it.
-            guard exists(URL(fileURLWithPath: trashed)) else {
+            // The Trash was emptied, or the item was dragged out of it, or another item now has its name there.
+            guard isInTrash(entry) else {
                 failures.append(RemovalFailure(path: entry.original, message: Self.leftTheTrash))
                 continue
             }
             if exists(original) {
                 failures.append(RemovalFailure(path: entry.original, message: Self.placeTaken))
+                continue
+            }
+            guard exists(original.deletingLastPathComponent()) else {
+                failures.append(RemovalFailure(path: entry.original, message: Self.folderGone))
                 continue
             }
             do {
@@ -254,9 +269,17 @@ public struct CleanerRemover: Sendable {
         return (record, failures)
     }
 
+    /// False when the item Frog moved is no longer at its place in the Trash: the place is empty, or it holds an
+    /// item with another file number. True when Frog does not know the place, since it cannot tell then.
+    public func isInTrash(_ entry: RemovalRecord.Entry) -> Bool {
+        guard let trashed = entry.trashed.map({ URL(fileURLWithPath: $0) }) else { return true }
+        guard exists(trashed) else { return false }
+        return entry.fileNumber.map { fileNumber(trashed) == $0 } ?? true
+    }
+
     private func entry(_ removal: PlannedRemoval, trashed: String?) -> RemovalRecord.Entry {
         RemovalRecord.Entry(original: removal.item.id, trashed: trashed, bytes: removal.item.size, route: removal.route,
-                            owner: removal.item.owner)
+                            owner: removal.item.owner, fileNumber: trashed.flatMap { fileNumber(URL(fileURLWithPath: $0)) })
     }
 
     private static func isPermissionError(_ error: Error) -> Bool {
