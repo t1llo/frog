@@ -27,11 +27,12 @@ struct AnswerCapture: Sendable {
 /// a Writing rule can run while an answer is open.
 @MainActor final class AnswerController {
     /// What the panel offers next to a failure or a stopped answer.
-    enum Recovery: Equatable { case retry, editRule }
+    enum Recovery: Equatable { case retry, editRule, allowAccessibility }
     /// Save to note, from pressing it until "Saved" goes away.
     enum NoteState: Equatable { case saving, saved, failed(String) }
 
     static let emptySelection = "Select some text first."
+    static let needsAccessibility = "Frog needs Accessibility to read the selection."
     static let noText = "The model returned no text."
 
     private(set) var session: AnswerSession?
@@ -41,6 +42,7 @@ struct AnswerCapture: Sendable {
     private(set) var followUpMessage: String?
     private(set) var noteState: NoteState?
     var onEditRule: ((UUID) -> Void)?
+    var onAllowAccessibility: (() -> Void)?
 
     private let resolve: (Rule) throws -> ProviderConfiguration
     private let readKey: (UUID) throws -> String?
@@ -145,9 +147,10 @@ struct AnswerCapture: Sendable {
     }
 
     /// A capture that failed: the panel opens at the pointer with the message.
-    func fail(rule: Rule?, message: String) {
+    func fail(rule: Rule?, message: String, recovery: Recovery? = nil) {
         reset()
         self.rule = rule
+        self.recovery = recovery
         var session = AnswerSession(rule: rule ?? Rule(name: "Explain"), modelName: "", modelLabel: "", selection: "", context: nil,
                                     application: nil, source: nil, replyLanguage: replyLanguage())
         session.fail(message)
@@ -222,6 +225,8 @@ struct AnswerCapture: Sendable {
         guard let session else { return }
         onEditRule?(session.ruleID)
     }
+
+    func allowAccessibility() { onAllowAccessibility?() }
 
     /// Whether the panel offers Save to note.
     var offersNotes: Bool { notesEnabled() }

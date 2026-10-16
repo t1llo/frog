@@ -356,6 +356,17 @@ final class ExplainRoutingTests: XCTestCase {
         XCTAssertEqual(watcher.starts, 3)
     }
 
+    func testWithoutAccessibilityTheAnswerPanelOffersTheSettingAndNothingIsCopied() async throws {
+        let setup = try Setup(test: self)
+        let rule = try await setup.enableExplain()
+        setup.trusted = false
+        setup.model.processSelection(ruleID: rule.id)
+        try await waitUntil { setup.presenter.sessions.last?.phase == .failed(AnswerController.needsAccessibility) }
+        XCTAssertEqual(setup.model.answers.recovery, .allowAccessibility)
+        XCTAssertEqual(setup.captures, 0)
+        XCTAssertTrue(setup.streams.requests.isEmpty)
+    }
+
     func testRunningARuleFromItsShortcutHidesTheBubble() async throws {
         let watcher = FakeSelectionWatcher()
         let setup = try Setup(test: self, watcher: watcher)

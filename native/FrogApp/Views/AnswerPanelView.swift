@@ -127,6 +127,7 @@ struct AnswerPanelView: View {
                 switch noteFailure == nil ? model.recovery : nil {
                 case .retry: Button(L10n.text("Retry")) { model.retry() }
                 case .editRule: Button(L10n.text("Edit rule")) { model.editRule() }
+                case .allowAccessibility: Button(L10n.text("Open System Settings")) { model.allowAccessibility() }
                 case nil: EmptyView()
                 }
             }

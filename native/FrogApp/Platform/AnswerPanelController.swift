@@ -22,6 +22,7 @@ import FrogCore
     var retry: () -> Void = {}
     var copy: () -> Void = {}
     var editRule: () -> Void = {}
+    var allowAccessibility: () -> Void = {}
     var saveNote: () -> Void = {}
     var close: () -> Void = {}
     var togglePin: () -> Void = {}
@@ -56,6 +57,7 @@ import FrogCore
         model.retry = { [weak self] in self?.controller?.retry() }
         model.copy = { [weak self] in self?.copyLatest() }
         model.editRule = { [weak self] in self?.controller?.editRule() }
+        model.allowAccessibility = { [weak self] in self?.controller?.allowAccessibility() }
         model.saveNote = { [weak self] in self?.controller?.saveToNote() }
         model.close = { [weak self] in self?.dismiss(.closeButton) }
         model.togglePin = { [weak self] in self?.model.pinned.toggle() }

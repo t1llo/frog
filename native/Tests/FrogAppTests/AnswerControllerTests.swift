@@ -204,6 +204,15 @@ final class AnswerControllerTests: XCTestCase {
         XCTAssertEqual(fixture.streams.requests.last?.messages.last?.text, "And a levee?")
     }
 
+    func testACaptureFailureOffersItsWayOut() {
+        let fixture = Fixture(provider: cloud)
+        fixture.controller.fail(rule: .explainPreset, message: AnswerController.needsAccessibility, recovery: .allowAccessibility)
+        XCTAssertEqual(fixture.controller.recovery, .allowAccessibility)
+        XCTAssertEqual(fixture.presenter.phases, [.failed(AnswerController.needsAccessibility)])
+        fixture.controller.fail(rule: .explainPreset, message: AnswerController.emptySelection)
+        XCTAssertNil(fixture.controller.recovery)
+    }
+
     func testTheSourceIsNeverSent() async throws {
         let fixture = Fixture(provider: cloud)
         let source = "https://example.com/private/page"

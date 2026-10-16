@@ -158,6 +158,7 @@ final class AppModel: ObservableObject {
             },
             notesEnabled: { [weak self] in self?.answerNotesEnabled ?? false })
         controller.onEditRule = { [weak self] _ in self?.openFeature(.explain) }
+        controller.onAllowAccessibility = { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() }
         (answerPresenter as? AnswerPanelController)?.controller = controller
         return controller
     }()
@@ -1180,12 +1181,18 @@ final class AppModel: ObservableObject {
                 try Task.checkCancellation()
                 self.answers.start(rule: rule, capture: capture)
             } catch is CancellationError {
+            } catch is AccessibilityMissing {
+                guard !Task.isCancelled else { return }
+                self.answers.fail(rule: rule, message: AnswerController.needsAccessibility, recovery: .allowAccessibility)
             } catch {
                 guard !Task.isCancelled else { return }
                 self.answers.fail(rule: rule, message: error.localizedDescription)
             }
         }
     }
+
+    /// Without Accessibility neither the read nor the Copy works, so the panel offers the setting instead.
+    private struct AccessibilityMissing: Error {}
 
     /// The longest selection an answer reads through Accessibility, in UTF-16 units.
     static let answerReadLimit = 100_000
@@ -1208,6 +1215,7 @@ final class AppModel: ObservableObject {
             case .unavailable: try Task.checkCancellation()
             }
         }
+        guard readAccessibility() else { throw AccessibilityMissing() }
         let captured = try await captureSelection()
         return AnswerCapture(text: captured.text, context: includeContext ? captured.context : nil, anchor: captured.anchor,
                              application: captured.applicationName, source: captured.source)
