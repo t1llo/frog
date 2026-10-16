@@ -96,11 +96,13 @@ final class AnswerControllerTests: XCTestCase {
         XCTAssertEqual(fixture.controller.session?.phase, .stopped)
         XCTAssertEqual(fixture.controller.session?.statusLine, "Stopped")
         XCTAssertEqual(fixture.controller.session?.partial, "A ")
+        XCTAssertEqual(fixture.controller.recovery, .retry, "A stopped answer offers Retry")
         try await waitUntil { fixture.streams.terminated(0) }
         XCTAssertTrue(fixture.calls.records.isEmpty)
         XCTAssertTrue(fixture.calls.statistics.isEmpty)
 
         fixture.controller.retry()
+        XCTAssertNil(fixture.controller.recovery)
         try await waitUntilSettled(fixture.controller)
         XCTAssertEqual(fixture.streams.requests.count, 2)
         XCTAssertEqual(fixture.streams.requests[1].messages, fixture.streams.requests[0].messages)

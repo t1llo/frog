@@ -26,7 +26,7 @@ struct AnswerCapture: Sendable {
 /// throttled panel updates, statistics and History. It never uses Writing's processing state, so
 /// a Writing rule can run while an answer is open.
 @MainActor final class AnswerController {
-    /// What the panel offers next to a failure.
+    /// What the panel offers next to a failure or a stopped answer.
     enum Recovery: Equatable { case retry, editRule }
     /// Save to note, from pressing it until "Saved" goes away.
     enum NoteState: Equatable { case saving, saved, failed(String) }
@@ -337,11 +337,13 @@ struct AnswerCapture: Sendable {
         publish(immediately: true)
     }
 
+    /// Retry runs the turn again, for a stop pressed too early or a stream cut off.
     private func endStopped() {
         task = nil
         guard var session else { return }
         session.stop()
         self.session = session
+        recovery = .retry
         publish(immediately: true)
     }
 
