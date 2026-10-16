@@ -63,6 +63,17 @@ final class SelectionWatcherCoreTests: XCTestCase {
         XCTAssertNil(core.dismissedFingerprint)
     }
 
+    func testARuleRunningElsewhereDropsThePendingReadAndTheShownSelection() {
+        core.shown(fingerprint, now: start)
+        _ = send(.shiftReleased)
+        core.interrupted()
+        XCTAssertNil(core.pendingToken)
+        XCTAssertFalse(core.settleFired(token: 1), "the read scheduled before the rule ran never shows")
+        XCTAssertNil(core.shownFingerprint)
+        XCTAssertNil(core.dismissedFingerprint, "the same selection may bring the bubble back later")
+        XCTAssertEqual(send(.scroll), [.dismiss(rememberShown: false)], "nothing pending to cancel")
+    }
+
     func testIdleDismissalAfterSixSecondsAndHoverResetsIt() {
         XCTAssertFalse(core.shouldIdleDismiss(now: start.addingTimeInterval(60)), "nothing shown")
         core.shown(fingerprint, now: start)

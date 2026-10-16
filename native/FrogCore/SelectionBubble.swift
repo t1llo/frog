@@ -148,6 +148,13 @@ public struct SelectionWatcherCore {
         lastActivity = nil
     }
 
+    /// A rule ran on the selection some other way, such as its shortcut: the bubble goes and a pending read is
+    /// dropped, so the bubble does not appear next to the rule's own result.
+    public mutating func interrupted() {
+        pendingToken = nil
+        hidden()
+    }
+
     public mutating func hovered(now: Date) {
         guard shownFingerprint != nil else { return }
         lastActivity = now

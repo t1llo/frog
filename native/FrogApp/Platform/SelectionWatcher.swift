@@ -7,6 +7,8 @@ import FrogCore
     var isRunning: Bool { get }
     func start()
     func stop()
+    /// Hides the bubble and drops a pending read, because a rule just ran on the selection.
+    func dismiss()
 }
 
 /// Shows the bubble next to a selection. It never activates Frog or takes focus.
@@ -130,6 +132,15 @@ struct BubbleState: Equatable {
         hideBubble()
         core = SelectionWatcherCore()
         isRunning = false
+    }
+
+    /// A rule's shortcut is a Carbon hot key, which the key monitor never sees, so the rule tells the watcher
+    /// itself. Without this the bubble stayed beside the answer panel, or a read already scheduled showed it there.
+    func dismiss() {
+        generation += 1
+        pending?.cancel(); pending = nil
+        core.interrupted()
+        hideBubble()
     }
 
     // MARK: Inputs
@@ -306,4 +317,5 @@ struct BubbleState: Equatable {
     private(set) var isRunning = false
     func start() { isRunning = true }
     func stop() { isRunning = false }
+    func dismiss() {}
 }

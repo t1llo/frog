@@ -1160,12 +1160,14 @@ final class AppModel: ObservableObject {
             return
         }
         guard configuration.preferences.featureEnabled(.writing) else { return }
+        selectionWatcher.dismiss()
         begin(ruleID: ruleID, manualText: nil)
     }
 
     /// Reads the selection and answers it in the panel. Nothing is replaced. From the selection bubble, the
     /// selection is the one the bubble was shown for.
     private func startAnswer(_ rule: Rule, from snapshot: SelectionSnapshot? = nil) {
+        selectionWatcher.dismiss()
         answerCapture?.cancel()
         answerHistoryEpoch = historyEpoch
         answerHistoryWasEnabled = configuration.preferences.historyEnabled

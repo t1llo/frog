@@ -135,6 +135,24 @@ final class SelectionWatcherTests: XCTestCase {
         XCTAssertEqual(fixture.ran.first?.1.text, "levee")
     }
 
+    func testARuleRunByItsShortcutHidesTheBubbleAndDropsAReadAlreadyScheduled() async throws {
+        let fixture = Fixture()
+        fixture.drag()
+        try await waitUntil { fixture.presenter.shows.count == 1 }
+        fixture.watcher.dismiss()
+        XCTAssertFalse(fixture.presenter.isVisible)
+
+        let scheduled = Fixture()
+        scheduled.drag()
+        scheduled.watcher.dismiss()
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertTrue(scheduled.reader.calls.isEmpty)
+        XCTAssertTrue(scheduled.presenter.shows.isEmpty, "No bubble beside the rule's answer")
+
+        scheduled.drag()
+        try await waitUntil { scheduled.presenter.shows.count == 1 }
+    }
+
     static func snapshot(_ text: String = "levee", element: Int = 1, end: CGRect? = SelectionWatcherTests.end) -> SelectionSnapshot {
         SelectionSnapshot(text: text, bounds: end, endBounds: end, context: nil, source: nil, isEditable: false,
                           pid: Fixture.pid, bundleID: "com.apple.Safari", applicationName: "Safari",

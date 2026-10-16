@@ -356,6 +356,20 @@ final class ExplainRoutingTests: XCTestCase {
         XCTAssertEqual(watcher.starts, 3)
     }
 
+    func testRunningARuleFromItsShortcutHidesTheBubble() async throws {
+        let watcher = FakeSelectionWatcher()
+        let setup = try Setup(test: self, watcher: watcher)
+        let rule = try await setup.enableExplain()
+        setup.model.processSelection(ruleID: rule.id)
+        XCTAssertEqual(watcher.dismissals, 1)
+        try await waitUntil { setup.presenter.sessions.last?.phase == .done(truncated: false) }
+
+        let writing = try XCTUnwrap(setup.model.configuration.rules.first { $0.category == .text && !$0.answersInPanel })
+        setup.model.processSelection(ruleID: writing.id)
+        XCTAssertEqual(watcher.dismissals, 2)
+        try await waitUntil { !setup.model.isProcessing && setup.completions == 1 }
+    }
+
     func testABubbleAnswerReadsTheSelectionAgainWithContextAndNeverCopies() async throws {
         let shown = Self.snapshot("levee", context: nil, element: 1)
         let reader = FakeSelectionReader(.selection(Self.snapshot("levee", context: "The levee held all night.", element: 1)))
@@ -501,8 +515,10 @@ private final class Setup {
 private final class FakeSelectionWatcher: SelectionWatching {
     private(set) var isRunning = false
     private(set) var starts = 0
+    private(set) var dismissals = 0
     func start() { isRunning = true; starts += 1 }
     func stop() { isRunning = false }
+    func dismiss() { dismissals += 1 }
 }
 
 private final class FakeSelectionReader: SelectionReading, @unchecked Sendable {
