@@ -224,6 +224,57 @@ final class CleanerModelTests: XCTestCase {
         XCTAssertFalse(identities.contains { $0.bundleID == "com.example.chatter" })
     }
 
+    func testAnItemThatDidNotMoveStaysListedAfterTheAppMoved() async throws {
+        let fixture = try CleanerFixture()
+        defer { fixture.remove() }
+        let chatter = try fixture.app("Chatter", bundleID: "com.example.chatter")
+        let cache = try fixture.item(.caches, "com.example.chatter", bytes: 100)
+        let support = try fixture.item(.applicationSupport, "Chatter", bytes: 100)
+        let trash = FakeCleanerTrash(folder: fixture.root.appendingPathComponent("Trash"))
+        await trash.fail(support)
+        let model = CleanerModel(dependencies: .fake(root: fixture.root, trash: trash))
+        await model.loadApps()
+        await model.open(chatter)
+        await model.prepareRemoval()
+
+        await model.confirmRemoval()
+
+        XCTAssertEqual(model.outcome?.failures.map(\.path), [id(support)])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: chatter.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cache.path))
+        let review = try XCTUnwrap(model.review, "What did not move stays listed to try again")
+        XCTAssertTrue(review.removedApp)
+        XCTAssertEqual(review.items.map(\.id), [id(support)])
+        XCTAssertEqual(review.selected, [id(support)])
+        XCTAssertEqual(model.apps, [])
+        model.dismissOutcome()
+        await model.prepareRemoval()
+        XCTAssertEqual(model.pending?.prompt.title, "Move 1 item of Chatter to the Trash?")
+        model.cancelRemoval()
+
+        // Put Back brings the app back: the review closes and the list shows the app again.
+        await model.putBack(try XCTUnwrap(model.dependencies.store.records().first).id)
+        XCTAssertNil(model.review)
+        XCTAssertEqual(model.apps.map(\.identity.name), ["Chatter"])
+    }
+
+    func testAReviewClosesWhenEverythingTickedMoved() async throws {
+        let fixture = try CleanerFixture()
+        defer { fixture.remove() }
+        let chatter = try fixture.app("Chatter", bundleID: "com.example.chatter")
+        let cache = try fixture.item(.caches, "com.example.chatter", bytes: 100)
+        let model = CleanerModel(dependencies: .fake(root: fixture.root))
+        await model.open(chatter)
+        model.toggle(id(cache))
+        await model.prepareRemoval()
+
+        await model.confirmRemoval()
+
+        XCTAssertEqual(model.outcome?.failures, [])
+        XCTAssertNil(model.review, "An unticked item is the user's choice, not something to try again")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cache.path))
+    }
+
     func testAForceQuitQuestionWaitsForTheAnswerAndNoMovesNothing() async throws {
         let fixture = try CleanerFixture()
         defer { fixture.remove() }

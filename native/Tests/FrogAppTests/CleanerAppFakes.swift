@@ -125,14 +125,21 @@ final class CleanerCallLog: @unchecked Sendable {
 actor FakeCleanerTrash: CleanerTrash {
     let folder: URL
     let log: CleanerCallLog
+    private var failing: Set<String> = []
+    private var automation = AutomationStatus.allowed
 
     init(folder: URL, log: CleanerCallLog = CleanerCallLog()) {
         self.folder = folder
         self.log = log
     }
 
+    /// `trash` refuses this item as macOS does without the needed permission.
+    func fail(_ url: URL) { failing.insert(url.standardizedFileURL.path) }
+    func setAutomation(_ status: AutomationStatus) { automation = status }
+
     func trash(_ url: URL) async throws -> URL {
         log.append("trash \(url.lastPathComponent)")
+        if failing.contains(url.standardizedFileURL.path) { throw CocoaError(.fileWriteNoPermission) }
         return try move(url)
     }
 
@@ -141,7 +148,7 @@ actor FakeCleanerTrash: CleanerTrash {
         return try urls.map { try move($0) }
     }
 
-    func finderAutomation() async -> AutomationStatus { .allowed }
+    func finderAutomation() async -> AutomationStatus { automation }
 
     func putBack(_ trashed: URL, to original: URL) async throws {
         log.append("putBack \(original.lastPathComponent)")

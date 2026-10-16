@@ -23,6 +23,7 @@ struct CleanerReviewView: View {
                         if let version = app.version {
                             Text(version).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineLimit(1)
                         }
+                        if review.removedApp { FrogBadge(text: "In the Trash") }
                     }
                     Group {
                         Text(app.bundleID)

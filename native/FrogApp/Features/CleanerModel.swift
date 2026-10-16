@@ -622,20 +622,30 @@ final class CleanerModel: ObservableObject {
         guard !moved.isEmpty else { return }
         func isMoved(_ path: String) -> Bool { moved.contains { path == $0 || path.hasPrefix($0 + "/") } }
 
+        var appMoved = false
         if let app = pending.request.app,
            pending.plan.removals.contains(where: { $0.item.kind == .application && isMoved($0.item.id) }) {
             let path = key(app.path)
             apps.removeAll { key($0.identity.path) == path }
             identities.removeAll { key($0.path) == path }
             identityCache[path] = nil
-            if let review, key(review.app.path) == path { closeReview() }
+            appMoved = review.map { key($0.app.path) == path } ?? false
         }
         // Whatever moved leaves the open review, items inside moved folders too.
-        if var review {
-            review.items.removeAll { isMoved($0.id) }
-            review.selected = review.selected.filter { !isMoved($0) }
-            self.review = review
+        guard var review else { return }
+        review.items.removeAll { isMoved($0.id) }
+        review.selected = review.selected.filter { !isMoved($0) }
+        if appMoved {
+            // The app is in the Trash. Its items that did not move stay listed and ticked, so the user can try
+            // again, for example after allowing Full Disk Access; with none of them left, the list comes back.
+            let failed = Set(result.failures.map(\.path))
+            guard review.items.contains(where: { failed.contains($0.id) }) else {
+                closeReview()
+                return
+            }
+            review.removedApp = true
         }
+        self.review = review
     }
 
     // MARK: - Recently moved
@@ -681,9 +691,11 @@ final class CleanerModel: ObservableObject {
         puttingBack = nil
         putBackSummary = PutBackSummary(before: record, after: result.record, failures: result.failures)
         loadRecords()
-        // An app that came back belongs in the list again.
         let earlier = Set(record.entries.filter(\.restored).map(\.original))
         let returned = result.record.entries.filter { $0.restored && !earlier.contains($0.original) }
+        // An open review no longer lists what is back; the list shows the app again, and opening it reads anew.
+        if !returned.isEmpty, review != nil, !isRemoving { closeReview() }
+        // An app that came back belongs in the list again.
         if identitiesLoaded, returned.contains(where: { $0.original.lowercased().hasSuffix(".app") }) { await loadApps() }
     }
 

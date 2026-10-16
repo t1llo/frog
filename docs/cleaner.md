@@ -53,6 +53,7 @@ Whatever found an item, Frog refuses to offer or move:
 - If the app itself does not move, for example because you cancel the password prompt or do not allow Frog to control Finder, Frog leaves the app's other files where they are.
 - Background services whose files move are stopped first. System services stop after you restart your Mac.
 - If an app does not quit, Frog asks before it force quits it; unsaved changes may be lost.
+- Items that did not move stay listed after **Done**, still ticked, so you can try again, for example after allowing Full Disk Access. When the app itself moved, the review marks it "In the Trash".
 
 The space is freed only when you empty the Trash. Until then, you can put items back.
 
