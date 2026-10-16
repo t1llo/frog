@@ -118,11 +118,14 @@ extension CleanerItem {
 /// What the confirmation sheet says before items move: one title and the notes that apply, in a fixed order.
 public struct RemovalPrompt: Equatable, Sendable {
     public let title: String
+    /// Set when Frog already knows that Finder will refuse: the user did not allow Frog to control it.
+    public let finderDenied: String?
     public let notes: [String]
     public let confirm: String
     public let cancel: String
 
-    public init(plan: RemovalPlan, appIsRunning: Bool, runningHelpers: Int,
+    /// `finderAutomation` is Frog's current permission to control Finder, nil when it was not read.
+    public init(plan: RemovalPlan, appIsRunning: Bool, runningHelpers: Int, finderAutomation: AutomationStatus? = nil,
                 formatBytes: (Int64) -> String = CleanerFormat.bytes) {
         let count = plan.removals.count
         let appName = plan.app?.name ?? plan.removals.first { $0.item.kind == .application }
@@ -154,8 +157,25 @@ public struct RemovalPrompt: Equatable, Sendable {
         if stopping == 1 { notes.append("Frog stops 1 background service first.") }
         if stopping > 1 { notes.append("Frog stops \(stopping) background services first.") }
         let finder = plan.finderCount
-        if finder == 1 { notes.append("Finder moves 1 item. macOS asks once whether Frog may control Finder.") }
-        if finder > 1 { notes.append("Finder moves \(finder) items. macOS asks once whether Frog may control Finder.") }
+        let allow = "Allow it in System Settings → Privacy & Security → Automation."
+        if finder > 0, finderAutomation == .denied {
+            // The remover leaves the app's other files alone when the app stays, so none of them would move.
+            let staying: String
+            if plan.removesApp, let name = appName {
+                staying = count == 1 ? "\(name) stays where it is" : "\(name) and its files stay where they are"
+            } else {
+                staying = finder == 1 ? "1 item stays where it is" : "\(finder) items stay where they are"
+            }
+            finderDenied = "Frog may not control Finder, so \(staying). \(allow)"
+        } else {
+            finderDenied = nil
+            let items = finder == 1 ? "1 item" : "\(finder) items"
+            // Once allowed, macOS does not ask again.
+            if finder > 0 {
+                notes.append(finderAutomation == .allowed ? "Finder moves \(items)."
+                    : "Finder moves \(items). macOS asks once whether Frog may control Finder.")
+            }
+        }
         let administrator = plan.administratorCount
         if administrator == 1 {
             notes.append("1 item belongs to the system. Finder asks for your administrator password; Frog never sees it.")

@@ -177,7 +177,8 @@ final class CleanerModelTests: XCTestCase {
         XCTAssertEqual(pending.plan.removals.count, 3)
         XCTAssertEqual(pending.prompt.title, "Move Chatter and 2 other items to the Trash?")
         XCTAssertEqual(pending.prompt.notes.first, "Frog quits Chatter and 1 of its helpers first.")
-        XCTAssertEqual(pending.prompt, RemovalPrompt(plan: pending.plan, appIsRunning: true, runningHelpers: 1))
+        XCTAssertEqual(pending.prompt, RemovalPrompt(plan: pending.plan, appIsRunning: true, runningHelpers: 1,
+                                                     finderAutomation: .allowed))
         let sizes = try XCTUnwrap(model.review?.sizes)
         XCTAssertEqual(pending.plan.totalBytes, pending.plan.removals.reduce(0) { $0 + (sizes[$1.item.id]?.bytes ?? 0) })
         XCTAssertFalse(pending.plan.sizeIncomplete)
@@ -187,6 +188,22 @@ final class CleanerModelTests: XCTestCase {
         model.cancelRemoval()
         XCTAssertNil(model.pending)
         XCTAssertTrue(FileManager.default.fileExists(atPath: chatter.path))
+    }
+
+    func testTheSheetSaysBeforehandWhenFrogMayNotControlFinder() async throws {
+        let fixture = try CleanerFixture()
+        defer { fixture.remove() }
+        let chatter = try fixture.app("Chatter", bundleID: "com.example.chatter")
+        try fixture.item(.caches, "com.example.chatter")
+        let trash = FakeCleanerTrash(folder: fixture.root.appendingPathComponent("Trash"))
+        await trash.setAutomation(.denied)
+        let model = CleanerModel(dependencies: .fake(root: fixture.root, trash: trash))
+        await model.open(chatter)
+
+        await model.prepareRemoval()
+
+        XCTAssertEqual(model.pending?.prompt.finderDenied, "Frog may not control Finder, so Chatter and its files stay where "
+            + "they are. Allow it in System Settings → Privacy & Security → Automation.")
     }
 
     func testConfirmingMovesThroughTheFakesRecordsAndDropsTheApp() async throws {

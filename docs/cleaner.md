@@ -70,7 +70,7 @@ Frog can put items back only while they are in the Trash. After you empty it, th
 ## Permissions
 
 - **Full Disk Access** (optional): lets Frog measure and move app containers and other protected folders. Without it, those items show "Needs Full Disk Access" and Frog does not read them. A notice on the page opens the setting; **Not now** hides it on this Mac.
-- **Automation for Finder:** macOS asks once, the first time Finder moves something for Frog. If it was denied, the outcome offers **Open Automation Settings**.
+- **Automation for Finder:** macOS asks once, the first time Finder moves something for Frog. If it was denied, the confirmation says what stays where it is before anything moves, and both the confirmation and the outcome offer **Open Automation Settings**.
 - **Administrator password:** asked by Finder, only for items that belong to the system.
 - **App Management:** not expected; Finder moves app bundles, not Frog.
 <!-- slot: cleaner-leftovers -->

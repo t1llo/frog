@@ -28,8 +28,10 @@ final class RemovalPromptTests: XCTestCase {
                            totalBytes: total, sizeIncomplete: incomplete, removesApp: removesApp)
     }
 
-    private func prompt(_ plan: RemovalPlan, running: Bool = false, helpers: Int = 0) -> RemovalPrompt {
-        RemovalPrompt(plan: plan, appIsRunning: running, runningHelpers: helpers, formatBytes: { "\($0) B" })
+    private func prompt(_ plan: RemovalPlan, running: Bool = false, helpers: Int = 0,
+                        automation: AutomationStatus? = nil) -> RemovalPrompt {
+        RemovalPrompt(plan: plan, appIsRunning: running, runningHelpers: helpers, finderAutomation: automation,
+                      formatBytes: { "\($0) B" })
     }
 
     // MARK: - Titles
@@ -76,6 +78,30 @@ final class RemovalPromptTests: XCTestCase {
         XCTAssertTrue(prompt(plan(removals: [bundle, removal("a", route: .finder), removal("b", route: .finder)], removesApp: true)).notes
             .contains("Finder moves 3 items. macOS asks once whether Frog may control Finder."))
         XCTAssertFalse(prompt(plan()).notes.contains { $0.hasPrefix("Finder moves") })
+    }
+
+    func testFinderNoteLeavesOutTheQuestionOnceFrogMayControlFinder() {
+        let finderItems = [bundle, removal("a", route: .finder)]
+        let allowed = prompt(plan(removals: finderItems, removesApp: true), automation: .allowed)
+        XCTAssertTrue(allowed.notes.contains("Finder moves 2 items."))
+        XCTAssertNil(allowed.finderDenied)
+        XCTAssertTrue(prompt(plan(removals: finderItems, removesApp: true), automation: .notDetermined).notes
+            .contains("Finder moves 2 items. macOS asks once whether Frog may control Finder."))
+    }
+
+    func testDeniedAutomationSaysWhatStaysBeforeAnythingMoves() {
+        let allow = "Allow it in System Settings → Privacy & Security → Automation."
+        let app = prompt(plan(removals: [bundle] + items(2), removesApp: true), automation: .denied)
+        XCTAssertEqual(app.finderDenied, "Frog may not control Finder, so Slack and its files stay where they are. \(allow)")
+        XCTAssertFalse(app.notes.contains { $0.hasPrefix("Finder moves") })
+        XCTAssertEqual(prompt(plan(removals: [bundle], removesApp: true), automation: .denied).finderDenied,
+                       "Frog may not control Finder, so Slack stays where it is. \(allow)")
+        let containers = [removal("a", kind: .container, route: .finder), removal("b", kind: .container, route: .finder)]
+        XCTAssertEqual(prompt(plan(removals: containers + items(1)), automation: .denied).finderDenied,
+                       "Frog may not control Finder, so 2 items stay where they are. \(allow)")
+        XCTAssertEqual(prompt(plan(removals: [containers[0]]), automation: .denied).finderDenied,
+                       "Frog may not control Finder, so 1 item stays where it is. \(allow)")
+        XCTAssertNil(prompt(plan(), automation: .denied).finderDenied, "Nothing goes through Finder")
     }
 
     func testAdministratorNoteSaysFrogNeverSeesThePassword() {

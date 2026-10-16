@@ -556,8 +556,8 @@ final class CleanerModel: ObservableObject {
             return
         }
         var appIsRunning = false, helpers = 0
+        let generation = self.generation
         if let app = request.app, !plan.quitBundleIDs.isEmpty {
-            let generation = self.generation
             let running = await dependencies.system.running(bundleIDs: Set(plan.quitBundleIDs),
                                                             inside: plan.removesApp ? app.path : nil)
             guard generation == self.generation, !isRemoving else { return }
@@ -565,8 +565,12 @@ final class CleanerModel: ObservableObject {
             appIsRunning = !main.isEmpty
             helpers = running.count - main.count
         }
+        // Only read, never asked: the sheet says whether macOS will ask, or that Finder will refuse.
+        let automation = plan.finderCount > 0 ? await dependencies.trash.finderAutomation() : nil
+        guard generation == self.generation, !isRemoving else { return }
         pending = PendingRemoval(request: request, plan: plan,
-                                 prompt: RemovalPrompt(plan: plan, appIsRunning: appIsRunning, runningHelpers: helpers),
+                                 prompt: RemovalPrompt(plan: plan, appIsRunning: appIsRunning, runningHelpers: helpers,
+                                                       finderAutomation: automation),
                                  onFinish: onFinish)
     }
 

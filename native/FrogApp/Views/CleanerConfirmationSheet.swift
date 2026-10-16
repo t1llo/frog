@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import FrogCore
 
@@ -7,6 +8,12 @@ struct CleanerConfirmationSheet: View {
     let pending: PendingRemoval
     @ObservedObject var cleaner: CleanerModel
     let roots: CleanerRoots
+
+    /// The app first, then the rest by path.
+    private var removals: [PlannedRemoval] {
+        let removals = pending.plan.removals
+        return removals.filter { $0.item.kind == .application } + removals.filter { $0.item.kind != .application }
+    }
 
     private var removing: (done: Int, total: Int)? {
         if case .removing(let done, let total) = cleaner.phase { return (done, total) }
@@ -19,14 +26,22 @@ struct CleanerConfirmationSheet: View {
             Text(prompt.title).font(.system(size: 14, weight: .medium)).fixedSize(horizontal: false, vertical: true)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(plan.removals, id: \.item.id) { removal in
+                    ForEach(removals, id: \.item.id) { removal in
                         itemRow(removal.item)
-                        if removal.item.id != plan.removals.last?.item.id { Divider().opacity(0.4) }
+                        if removal.item.id != removals.last?.item.id { Divider().opacity(0.4) }
                     }
                 }
             }
             .frame(maxHeight: 260).fixedSize(horizontal: false, vertical: true)
             .frogTableSurface()
+            if let denied = prompt.finderDenied {
+                VStack(alignment: .leading, spacing: 8) {
+                    InlineIssue(message: denied)
+                    Button(RemovalSummary.SettingsLink.automation.title) {
+                        NSWorkspace.shared.open(RemovalSummary.SettingsLink.automation.url)
+                    }
+                }
+            }
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(prompt.notes, id: \.self) { note in
                     Text(note).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
