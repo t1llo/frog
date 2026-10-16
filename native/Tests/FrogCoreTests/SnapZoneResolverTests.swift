@@ -77,6 +77,22 @@ final class SnapZoneResolverTests: XCTestCase {
             XCTAssertNil(SnapZoneResolver.candidate(at: point, displays: [laptop, right], edgesPaused: true), "\(point)")
         }
     }
+    func testAPausedTopLeavesTheMenuBarToMacOS() {
+        func candidate(_ x: CGFloat, _ y: CGFloat, _ displays: [WindowDisplay]) -> SnapCandidate? {
+            SnapZoneResolver.candidate(at: CGPoint(x: x, y: y), displays: displays, edgesPaused: false, topPaused: true)
+        }
+        for point in [CGPoint(x: 700, y: 0), CGPoint(x: 10, y: 10), CGPoint(x: 1430, y: 3), CGPoint(x: 2, y: 2)] {
+            XCTAssertNil(candidate(point.x, point.y, [laptop]), "\(point)")
+        }
+        XCTAssertEqual(candidate(0, 400, [laptop])?.action, .leftHalf)
+        XCTAssertEqual(candidate(1439, 400, [laptop])?.action, .rightHalf)
+        XCTAssertEqual(candidate(2, 899, [laptop])?.action, .bottomLeft)
+        XCTAssertEqual(candidate(700, 898, [laptop])?.action, .centerThird)
+        // Under another display the top edge leads there, not to a menu bar macOS fills from.
+        XCTAssertEqual(candidate(700, 0, [laptop, above]), SnapCandidate(action: .maximize, displayID: "laptop", sharedEdge: true))
+        XCTAssertNil(candidate(700, -1080, [laptop, above]), "The upper display's own top edge")
+    }
+
     func testNativeEdgeBand() {
         func dead(_ x: CGFloat, _ y: CGFloat, _ macOS: MacWindowManagerSettings, option: Bool = false,
                   _ displays: [WindowDisplay]? = nil) -> Bool {

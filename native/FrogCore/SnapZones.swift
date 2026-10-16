@@ -22,15 +22,19 @@ public enum SnapZoneResolver {
     /// How long the pointer rests on an edge shared with another display before it counts.
     public static let sharedEdgeDwell: TimeInterval = 0.3
 
-    public static func candidate(at point: CGPoint, displays: [WindowDisplay], edgesPaused: Bool) -> SnapCandidate? {
+    /// - Parameter topPaused: macOS fills the screen with a window dropped on the menu bar, so
+    ///   the top edge and the top corners are left to it, unless another display lies above.
+    public static func candidate(at point: CGPoint, displays: [WindowDisplay], edgesPaused: Bool,
+                                 topPaused: Bool = false) -> SnapCandidate? {
         guard !edgesPaused, let display = display(at: point, in: displays) else { return nil }
         let frame = display.frame
         let left = point.x - frame.minX, right = frame.maxX - point.x
         let top = point.y - frame.minY, bottom = frame.maxY - point.y
         let others = displays.filter { $0.id != display.id }.map(\.frame)
         func shared(_ edge: Edge) -> Bool { others.contains { touches($0, edge, of: frame, at: point) } }
-        func result(_ action: WindowAction, _ edges: Edge...) -> SnapCandidate {
-            SnapCandidate(action: action, displayID: display.id, sharedEdge: edges.contains { shared($0) })
+        func result(_ action: WindowAction, _ edges: Edge...) -> SnapCandidate? {
+            if topPaused, edges.contains(.top), !shared(.top) { return nil }
+            return SnapCandidate(action: action, displayID: display.id, sharedEdge: edges.contains { shared($0) })
         }
         switch (left <= cornerSize, right <= cornerSize, top <= cornerSize, bottom <= cornerSize) {
         case (true, _, true, _): return result(.topLeft, .left, .top)
@@ -137,6 +141,8 @@ public struct SnapDragSession: Sendable {
     /// a read confirms the drag, then measured.
     private var grab: CGPoint
     private let edgesPaused: Bool
+    /// macOS fills the screen from the menu bar: the top edge and corners are paused.
+    private let topEdgePaused: Bool
     /// Where Frog last put the window, when the drag began there; nil otherwise.
     private let placed: CGRect?
     /// The size to give back once the drag has gone far enough; nil when the window is not
@@ -163,15 +169,19 @@ public struct SnapDragSession: Sendable {
     ///   - readAt: the pointer positions after `pointer` while the window was read.
     ///   - travel: how far the pointer had moved from the mouse-down when the window was read;
     ///     a window still where Frog put it may have followed the pointer that far.
+    ///   - topEdgePaused: macOS fills the screen with a window dropped on the menu bar, so the
+    ///     top edge and the top corners are paused even while the other edges work.
     ///   - mouseDown: where the button went down; nil when not known.
     public init(window: CGRect, pointer: CGPoint, time: TimeInterval, lastMove: CGRect?, sizeBeforeMove: CGSize?,
-                restoreOnDrag: Bool, edgesPaused: Bool, travel: CGFloat = 0, readAt: [CGPoint] = [], mouseDown: CGPoint? = nil) {
+                restoreOnDrag: Bool, edgesPaused: Bool, topEdgePaused: Bool = false, travel: CGFloat = 0, readAt: [CGPoint] = [],
+                mouseDown: CGPoint? = nil) {
         self.window = window
         self.pointer = pointer
         self.mouseDown = mouseDown
         origins = [pointer] + readAt.suffix(63)
         grab = CGPoint(x: pointer.x - window.minX, y: pointer.y - window.minY)
         self.edgesPaused = edgesPaused
+        self.topEdgePaused = topEdgePaused
         self.travel = travel
         path = [origins.last ?? pointer]
         if let lastMove, abs(window.width - lastMove.width) <= 1, abs(window.height - lastMove.height) <= 1,
@@ -275,7 +285,8 @@ public struct SnapDragSession: Sendable {
     public func end(at point: CGPoint, time: TimeInterval, displays: [WindowDisplay]) -> SnapCandidate? {
         guard confirmed, !finished else { return nil }
         if let overlay { return Self.overlayZone(at: point, displays: displays, overlay: overlay) }
-        guard let candidate = SnapZoneResolver.candidate(at: point, displays: displays, edgesPaused: edgesPaused) else { return nil }
+        guard let candidate = SnapZoneResolver.candidate(at: point, displays: displays, edgesPaused: edgesPaused,
+                                                         topPaused: topEdgePaused) else { return nil }
         guard candidate.sharedEdge else { return candidate }
         guard let zone, zone.candidate == candidate, time - zone.since >= SnapZoneResolver.sharedEdgeDwell else { return nil }
         return candidate
@@ -332,7 +343,7 @@ public struct SnapDragSession: Sendable {
     }
 
     private mutating func track(_ point: CGPoint, time: TimeInterval, displays: [WindowDisplay]) -> [Effect] {
-        let candidate = SnapZoneResolver.candidate(at: point, displays: displays, edgesPaused: edgesPaused)
+        let candidate = SnapZoneResolver.candidate(at: point, displays: displays, edgesPaused: edgesPaused, topPaused: topEdgePaused)
         if candidate != zone?.candidate { zone = candidate.map { ($0, time) } }
         let visible = zone.flatMap { zone in
             !zone.candidate.sharedEdge || time - zone.since >= SnapZoneResolver.sharedEdgeDwell ? zone.candidate : nil

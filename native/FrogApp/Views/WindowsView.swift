@@ -38,7 +38,7 @@ struct WindowsView: View {
                 CompactRow(title: "Drag to screen edges", detail: "Drop a window on an edge or corner to fill that part of the screen.") {
                     Toggle("Drag to screen edges", isOn: binding(\.dragToSnap)).labelsHidden().toggleStyle(.switch)
                 }
-                if macOS.edgeTiling {
+                if macOS.edgeTiling || macOS.topEdgeTiling {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(nativeTilingNote)
                             .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
@@ -123,11 +123,17 @@ struct WindowsView: View {
         }
     }
 
-    /// Why Frog's edges are paused, and the two ways around it.
+    /// Why Frog's edges, or only its top edge and corners, are paused, and the ways around it.
     private var nativeTilingNote: String {
+        let fill = "\"Drag windows to menu bar to fill screen\""
+        guard macOS.edgeTiling else {
+            return "macOS fills the screen with a window dragged to the menu bar, so Frog's top edge and corners are paused. To use them, turn off \(fill) in Desktop & Dock."
+        }
         let zones = settings.zoneOverlay ? "Hold Shift while dragging to use Frog's zones,"
             : "Turn on \"Show zones while holding Shift\" to use Frog's zones,"
-        return "macOS already tiles windows dragged to screen edges, so Frog's edges are paused. \(zones) or turn off \"Drag windows to screen edges to tile\" in Desktop & Dock."
+        let tile = "\"Drag windows to screen edges to tile\""
+        let off = macOS.topEdgeTiling ? "\(tile), and for the top edge \(fill)," : tile
+        return "macOS already tiles windows dragged to screen edges, so Frog's edges are paused. \(zones) or turn off \(off) in Desktop & Dock."
     }
 
     /// The saved Windows settings, or their defaults.

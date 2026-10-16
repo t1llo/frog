@@ -305,9 +305,12 @@ final class WindowDragTracker {
             self.dragDisplays = self.displays()
             self.dragOptions = self.options()
             self.dragGrid = self.zoneGrid()
+            // macOS tiles at the edges, or fills the screen from the menu bar, by itself.
+            let macOS = self.macOS()
             self.session = SnapDragSession(window: frame, pointer: pointer, time: time, lastMove: move?.0, sizeBeforeMove: move?.1,
-                                           restoreOnDrag: self.restoreOnDrag(), edgesPaused: !self.dragToSnap() || self.macOS().edgeTiling,
-                                           travel: max(travel, farthest), readAt: readAt, mouseDown: down)
+                                           restoreOnDrag: self.restoreOnDrag(), edgesPaused: !self.dragToSnap() || macOS.edgeTiling,
+                                           topEdgePaused: macOS.topEdgeTiling, travel: max(travel, farthest), readAt: readAt,
+                                           mouseDown: down)
             self.phase = .reading
             // Shift held from before the drag shows the zones once the window follows.
             let held = self.modifiers()

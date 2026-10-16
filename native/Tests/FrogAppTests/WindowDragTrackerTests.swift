@@ -21,6 +21,7 @@ import FrogCore
         var mostAtOnce = 0
         var previews: [CGRect?] = []
         var edgeTiling = false
+        var topEdgeTiling = false
         var probedKey: WindowKey?
         var slowReads = false
         /// The lookup takes this long, and reads the window's frame at its end.
@@ -56,7 +57,7 @@ import FrogCore
             preview: { probe.previews.append($0) },
             displays: { [laptop] },
             options: { .legacy },
-            macOS: { MacWindowManagerSettings(edgeTiling: probe.edgeTiling) },
+            macOS: { MacWindowManagerSettings(edgeTiling: probe.edgeTiling, topEdgeTiling: probe.topEdgeTiling) },
             lastMove: { await manager.placement(of: $0) },
             shouldIgnore: { $0.key.pid == ProcessInfo.processInfo.processIdentifier },
             zoneGrid: { .thirds },
@@ -205,6 +206,23 @@ import FrogCore
         await tracker.settle()
         XCTAssertEqual(probe.previews, [])
         XCTAssertEqual(access.writes, [])
+    }
+
+    func testFillingTheScreenFromTheMenuBarPausesOnlyTheTop() async {
+        for (release, frame) in [(CGPoint(x: 10, y: 5), nil), (CGPoint(x: 700, y: 2), nil),
+                                 (CGPoint(x: 0, y: 400), CGRect(x: 0, y: 25, width: 720, height: 875))] as [(CGPoint, CGRect?)] {
+            let access = fixture(), manager = WindowManager(access: access), probe = Probe()
+            probe.topEdgeTiling = true
+            let tracker = makeTracker(access, manager, probe)
+            tracker.mouseDown(at: grab, time: 0)
+            await drag(tracker, access, to: CGPoint(x: 410, y: 210), time: 0.01)
+            await drag(tracker, access, to: CGPoint(x: 420, y: 210), time: 0.02)
+            await drag(tracker, access, to: release, time: 0.2)
+            tracker.mouseUp(at: release, time: 0.3)
+            await tracker.settle()
+            XCTAssertEqual(access.windows[dragged]?.frame, frame ?? original.offsetBy(dx: release.x - grab.x, dy: release.y - grab.y),
+                           "\(release)")
+        }
     }
 
     func testMouseDownAloneCallsNoProbe() async {
