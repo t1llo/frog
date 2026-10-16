@@ -118,6 +118,40 @@ import FrogCore
         XCTAssertEqual(CleanerFormat.bytes(0), "0 bytes")
     }
 
+    func testTheReviewSaysWhatFullDiskAccessIsNeededFor() {
+        func item(_ path: String, _ kind: CleanerItemKind, confidence: MatchConfidence = .certain) -> CleanerItem {
+            CleanerItem(url: URL(fileURLWithPath: path), kind: kind, confidence: confidence, reason: "Named after the bundle ID.")
+        }
+        let app = AppIdentity(path: "/fixture/Applications/Example.app", name: "Example", bundleID: "com.example.app")
+        let bundle = item(app.path, .application)
+        let container = item("/fixture/Library/Containers/com.example.app", .container)
+        var cookies = item("/fixture/Library/Cookies/com.example.app.binarycookies", .file)
+        cookies.needsFullDiskAccess = true
+        var review = CleanerReview(app: app, items: [bundle, container], selected: [], sizes: [:], fullDiskAccess: false)
+        XCTAssertFalse(review.needsFullDiskAccessToMove(container), "Finder moves containers")
+        XCTAssertEqual(review.fullDiskAccessNotice,
+                       "Without Full Disk Access, Frog cannot measure some items. Finder can still move them.")
+        review.items.append(cookies)
+        XCTAssertTrue(review.needsFullDiskAccessToMove(cookies))
+        XCTAssertEqual(review.fullDiskAccessNotice, "Some items need Full Disk Access to be measured or moved.")
+        review.fullDiskAccess = true
+        XCTAssertNil(review.fullDiskAccessNotice)
+        XCTAssertFalse(review.needsFullDiskAccessToMove(cookies))
+    }
+
+    func testTheReviewSaysWhenOnlyTheAppWasFound() {
+        let app = AppIdentity(path: "/fixture/Applications/Example.app", name: "Example", bundleID: "com.example.app")
+        let bundle = CleanerItem(url: app.url, kind: .application, confidence: .certain, reason: "The app itself.")
+        let possible = CleanerItem(url: URL(fileURLWithPath: "/fixture/Library/Logs/ExampleSync"), kind: .folder,
+                                   confidence: .possible, reason: "Name contains example.")
+        var review = CleanerReview(app: app, items: [bundle], selected: [], sizes: [:], fullDiskAccess: true)
+        XCTAssertEqual(review.nothingElseFound(showPossible: false), "Frog found no other files of Example.")
+        review.items.append(possible)
+        XCTAssertEqual(review.nothingElseFound(showPossible: false),
+                       "Frog found no other files of Example it is sure about. 1 possible match is hidden.")
+        XCTAssertNil(review.nothingElseFound(showPossible: true))
+    }
+
     func testUpdatingCleanerSettingsKeepsTheRestOfTheToolkit() throws {
         let fixture = try CleanerFixture()
         defer { fixture.remove() }

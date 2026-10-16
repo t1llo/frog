@@ -144,6 +144,32 @@ struct CleanerReview: Equatable {
 
     /// Some items can be measured or moved only with Full Disk Access, which Frog does not have.
     var needsFullDiskAccess: Bool { fullDiskAccess != true && items.contains { !measures($0) } }
+
+    /// Finder moves containers without Full Disk Access; only the items Frog moves itself need it to move.
+    func needsFullDiskAccessToMove(_ item: CleanerItem) -> Bool {
+        !measures(item) && RemovalPlan.route(for: item) == .fileManager
+    }
+
+    /// The review's notice while Frog lacks Full Disk Access, or nil when nothing needs it.
+    var fullDiskAccessNotice: String? {
+        guard needsFullDiskAccess else { return nil }
+        return items.contains(where: needsFullDiskAccessToMove)
+            ? "Some items need Full Disk Access to be measured or moved."
+            : "Without Full Disk Access, Frog cannot measure some items. Finder can still move them."
+    }
+
+    /// The sentence shown when the app was found without any other file; nil when there are others.
+    func nothingElseFound(showPossible: Bool) -> String? {
+        guard !items.contains(where: { $0.kind != .application && CleanerGroupKind.of($0, showPossible: showPossible) != nil })
+        else { return nil }
+        let hidden = items.filter { $0.kind != .application && CleanerGroupKind.of($0, showPossible: showPossible) == nil }.count
+        let found = removedApp ? "Frog found no files of \(app.name)" : "Frog found no other files of \(app.name)"
+        switch hidden {
+        case 0: return found + "."
+        case 1: return found + " it is sure about. 1 possible match is hidden."
+        default: return found + " it is sure about. \(hidden) possible matches are hidden."
+        }
+    }
 }
 
 /// What the page says once a removal has finished.
@@ -433,7 +459,15 @@ final class CleanerModel: ObservableObject {
         let granted = await dependencies.system.hasFullDiskAccess()
         guard generation == self.generation else { return }
         fullDiskAccess = granted
-        review?.fullDiskAccess = granted
+        guard var review, review.fullDiskAccess != granted else { return }
+        let measuredBefore = review.items.filter(review.measures).count
+        review.fullDiskAccess = granted
+        self.review = review
+        // Access granted in System Settings: the items Frog could not measure get their sizes now, and so do
+        // those a measuring still under way had not finished.
+        guard review.items.filter(review.measures).count > measuredBefore else { return }
+        sizeTask?.cancel(); sizeTask = nil
+        measureReviewSizes(review.items.filter { review.measures($0) && review.sizes[$0.id] == nil })
     }
 
     /// For tests: waits until the open review's sizes are published.
@@ -511,9 +545,10 @@ final class CleanerModel: ObservableObject {
         let urls = items.filter(shown.measures).map(\.url)
         guard !urls.isEmpty else { return }
         sizeTask = Task {
+            defer { if !Task.isCancelled { sizeTask = nil } }
             guard let sizes = try? await Self.offMain(.utility, { CleanerSizer().measure(urls) }),
                   !Task.isCancelled, review?.app == app else { return }
-            review?.sizes = sizes
+            review?.sizes.merge(sizes) { $1 }
         }
     }
 

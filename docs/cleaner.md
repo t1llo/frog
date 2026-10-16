@@ -18,7 +18,7 @@ Frog then looks for the app's files and groups them by how sure it is that they 
 - **Possible matches:** only resemble the app ("Name contains example.", "Folder of the developer, Vendor.", "Starts with the developer's team ID.", "Label shares Example's developer prefix."). They appear only when **Show possible matches** is on in the page's settings.
 - **Used by other apps:** another installed app claims the same name or ID.
 
-Only sure and likely matches start ticked. Possible matches, items used by other apps and group containers are never ticked by Frog; tick them yourself when you know they can go. Each row shows its size and a **Reveal in Finder** button. The bar at the bottom says how many items are ticked and how much they take; an item inside a ticked folder moves with it and counts once. "At least" means some sizes are not known yet or could not be read completely.
+Only sure and likely matches start ticked. Possible matches, items used by other apps and group containers are never ticked by Frog; tick them yourself when you know they can go; a click anywhere on a row ticks or unticks it. Each row shows its size and a **Reveal in Finder** button. When Frog found nothing besides the app, the review says so. The bar at the bottom says how many items are ticked and how much they take; an item inside a ticked folder moves with it and counts once. "At least" means some sizes are not known yet or could not be read completely.
 
 Notices above the list say when the app is running (Frog quits it first), when it comes with its own uninstaller (**Open Uninstaller** opens it; it can remove parts Frog cannot see), when it has a system extension, and when some items need Full Disk Access.
 
@@ -69,7 +69,7 @@ Frog can put items back only while they are in the Trash. After you empty it, th
 
 ## Permissions
 
-- **Full Disk Access** (optional): lets Frog measure and move app containers and other protected folders. Without it, those items show "Needs Full Disk Access" and Frog does not read them. A notice on the page opens the setting; **Not now** hides it on this Mac.
+- **Full Disk Access** (optional): lets Frog measure app containers and other protected folders, and move protected items it moves itself, such as cookies. Without it, Frog does not read those items: their size shows "—", and the ones Frog would move itself show "Needs Full Disk Access". Finder still moves containers. A notice on the page opens the setting; **Not now** hides it on this Mac. Once you allow it and return to Frog, the open review measures what it could not.
 - **Automation for Finder:** macOS asks once, the first time Finder moves something for Frog. If it was denied, the confirmation says what stays where it is before anything moves, and both the confirmation and the outcome offer **Open Automation Settings**.
 - **Administrator password:** asked by Finder, only for items that belong to the system.
 - **App Management:** not expected; Finder moves app bundles, not Frog.

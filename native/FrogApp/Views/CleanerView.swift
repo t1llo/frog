@@ -65,7 +65,8 @@ struct CleanerView: View {
                     ForEach(tabs) { item in FilterTag(title: item.title, selected: item == cleaner.tab) { cleaner.tab = item } }
                 }
             }
-            if cleaner.fullDiskAccess == false, !noticeDismissed { fullDiskAccessNotice }
+            // An open review says itself which of its items need Full Disk Access.
+            if cleaner.fullDiskAccess == false, !noticeDismissed, cleaner.review == nil { fullDiskAccessNotice }
             if let issue = cleaner.issue { InlineIssue(message: issue) }
             switch cleaner.tab {
             case .apps: appsContent        // outcome, review or app list

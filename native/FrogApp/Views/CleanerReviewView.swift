@@ -14,8 +14,8 @@ struct CleanerReviewView: View {
     var body: some View {
         let app = review.app
         VStack(alignment: .leading, spacing: 14) {
+            CleanerBackButton(cleaner: cleaner)
             HStack(alignment: .center, spacing: 12) {
-                IconAction(title: "Back to apps", symbol: "chevron.left") { cleaner.closeReview() }
                 ApplicationIcon(path: app.path, size: 40)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -34,6 +34,10 @@ struct CleanerReviewView: View {
             }
             notices
             ForEach(review.groups(showPossible: showPossible)) { group in groupView(group) }
+            if let nothing = review.nothingElseFound(showPossible: showPossible) {
+                Text(nothing).font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
         }
         .task(id: app.path) { await checkRunning() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -54,8 +58,10 @@ struct CleanerReviewView: View {
         if app.hasSystemExtensions, !review.removedApp {
             notice("\(app.name) has a system extension. Finder removes it with the app.", symbol: "puzzlepiece.extension")
         }
-        if review.needsFullDiskAccess {
-            notice("Some items need Full Disk Access to be measured or moved.", symbol: "lock.shield")
+        if let fullDiskAccess = review.fullDiskAccessNotice {
+            notice(fullDiskAccess, symbol: "lock.shield") {
+                Button("Open Settings") { NSWorkspace.shared.open(RemovalSummary.SettingsLink.fullDiskAccess.url) }
+            }
         }
     }
 
@@ -95,25 +101,30 @@ struct CleanerReviewView: View {
         return HStack(spacing: 10) {
             Toggle(path, isOn: Binding(get: { review.selected.contains(item.id) }, set: { _ in cleaner.toggle(item.id) }))
                 .toggleStyle(.checkbox).labelsHidden()
-            Image(systemName: item.kind.symbol).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
-                .frame(width: 18).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(path).font(.system(size: 12)).lineLimit(1).truncationMode(.middle).help(path)
-                HStack(spacing: 6) {
-                    Text(item.reason).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                    if item.owner == .administrator { FrogBadge(text: "Needs password") }
-                    if !review.measures(item) { FrogBadge(text: "Needs Full Disk Access") }
-                    if !item.sharedWith.isEmpty {
-                        FrogBadge(text: "Also used by \(item.sharedWith.formatted(.list(type: .and)))")
+            // The name and reason tick the item too, not only the small checkbox; the controls keep their own click.
+            HStack(spacing: 10) {
+                Image(systemName: item.kind.symbol).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
+                    .frame(width: 18).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(path).font(.system(size: 12)).lineLimit(1).truncationMode(.middle).help(path)
+                    HStack(spacing: 6) {
+                        Text(item.reason).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                        if item.owner == .administrator { FrogBadge(text: "Needs password") }
+                        if review.needsFullDiskAccessToMove(item) { FrogBadge(text: "Needs Full Disk Access") }
+                        if !item.sharedWith.isEmpty {
+                            FrogBadge(text: "Also used by \(item.sharedWith.formatted(.list(type: .and)))")
+                        }
                     }
                 }
+                Spacer(minLength: 8)
+                size(of: item)
             }
-            Spacer(minLength: 8)
-            size(of: item)
+            .contentShape(Rectangle()).onTapGesture { cleaner.toggle(item.id) }
             IconAction(title: "Reveal in Finder", symbol: "magnifyingglass") {
                 NSWorkspace.shared.activateFileViewerSelecting([item.url])
             }
-        }.padding(.horizontal, 10).padding(.vertical, 6)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
     }
 
     @ViewBuilder private func size(of item: CleanerItem) -> some View {
@@ -126,6 +137,7 @@ struct CleanerReviewView: View {
             ProgressView().controlSize(.mini).accessibilityLabel("Measuring")
         } else {
             Text("—").font(.system(size: 11)).foregroundStyle(FrogStyle.muted).accessibilityLabel("Size unknown")
+                .help(review.measures(item) ? "Frog could not measure this item." : "Frog needs Full Disk Access to measure this item.")
         }
     }
 
@@ -162,12 +174,25 @@ struct CleanerScanningView: View {
     @ObservedObject var cleaner: CleanerModel
 
     var body: some View {
-        HStack(spacing: 10) {
-            IconAction(title: "Back to apps", symbol: "chevron.left") { cleaner.closeReview() }
-            ProgressView().controlSize(.small)
-            Text(cleaner.scanningApp.map { "Looking for \($0.name)'s files…" } ?? "Looking for the app's files…")
-                .font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
+        VStack(alignment: .leading, spacing: 14) {
+            CleanerBackButton(cleaner: cleaner)
+            HStack(spacing: 10) {
+                ProgressView().controlSize(.small)
+                Text(cleaner.scanningApp.map { "Looking for \($0.name)'s files…" } ?? "Looking for the app's files…")
+                    .font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
+            }
         }
+    }
+}
+
+/// Returns to the app list, worded like the other pages' way back.
+struct CleanerBackButton: View {
+    @ObservedObject var cleaner: CleanerModel
+
+    var body: some View {
+        Button("Apps", systemImage: "chevron.left") { cleaner.closeReview() }
+            .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
+            .help("Back to apps")
     }
 }
 

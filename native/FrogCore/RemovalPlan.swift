@@ -73,11 +73,7 @@ public struct RemovalPlan: Sendable, Equatable {
             return true
         }
 
-        let removals = kept.map { item in
-            let finder = [CleanerItemKind.application, .container, .groupContainer].contains(item.kind)
-                || item.owner == .administrator
-            return PlannedRemoval(item: item, route: finder ? .finder : .fileManager)
-        }.sorted { $0.item.id < $1.item.id }
+        let removals = kept.map { PlannedRemoval(item: $0, route: route(for: $0)) }.sorted { $0.item.id < $1.item.id }
 
         var stop: [String] = [], restart: [String] = []
         for removal in removals {
@@ -105,6 +101,14 @@ public struct RemovalPlan: Sendable, Equatable {
                            quitBundleIDs: removals.isEmpty ? [] : app?.bundleIDs ?? [],
                            launchLabelsToStop: stop, restartLabels: restart, totalBytes: total,
                            sizeIncomplete: incomplete, removesApp: removesApp)
+    }
+}
+
+extension RemovalPlan {
+    /// Finder moves app bundles, containers and the system's items; FileManager moves the rest.
+    public static func route(for item: CleanerItem) -> TrashRoute {
+        [CleanerItemKind.application, .container, .groupContainer].contains(item.kind) || item.owner == .administrator
+            ? .finder : .fileManager
     }
 }
 

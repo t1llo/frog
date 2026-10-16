@@ -206,6 +206,29 @@ final class CleanerModelTests: XCTestCase {
             + "they are. Allow it in System Settings → Privacy & Security → Automation.")
     }
 
+    func testGrantingFullDiskAccessMeasuresWhatFrogCouldNotMeasure() async throws {
+        let fixture = try CleanerFixture()
+        defer { fixture.remove() }
+        let chatter = try fixture.app("Chatter", bundleID: "com.example.chatter")
+        let cache = try fixture.item(.caches, "com.example.chatter", bytes: 100)
+        let container = try fixture.item(.containers, "com.example.chatter", bytes: 5_000)
+        let system = FakeCleanerSystem()
+        await system.setFullDiskAccess(false)
+        let model = CleanerModel(dependencies: .fake(root: fixture.root, system: system))
+        await model.open(chatter)
+        await model.waitForSizes()
+        XCTAssertNotNil(model.review?.sizes[id(cache)])
+        XCTAssertNil(model.review?.sizes[id(container)], "Containers are not read without Full Disk Access")
+
+        await system.setFullDiskAccess(true)
+        await model.refreshFullDiskAccess()
+        await model.waitForSizes()
+
+        XCTAssertEqual(model.review?.fullDiskAccess, true)
+        XCTAssertGreaterThanOrEqual(model.review?.sizes[id(container)]?.bytes ?? 0, 5_000)
+        XCTAssertNotNil(model.review?.sizes[id(cache)], "Sizes measured before stay")
+    }
+
     func testConfirmingMovesThroughTheFakesRecordsAndDropsTheApp() async throws {
         let fixture = try CleanerFixture()
         defer { fixture.remove() }
