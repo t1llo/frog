@@ -71,10 +71,19 @@ struct RulesView: View {
             RuleEditor(rule: rule, onSave: { search = "" }, onSaveCopy: { copy in search = ""; editing = copy }).environmentObject(model)
         }
             .sheet(item: $trying) { rule in RuleTryView(rule: rule).environmentObject(model) }
+            .onChange(of: model.ruleEditRequest, initial: true) { _, id in openRequestedEditor(id) }
             .task {
                 guard applications else { return }
                 await applicationCatalog.loadIfNeeded()
             }
+    }
+
+    /// Edit rule in the answer panel opens that rule's editor on its page.
+    private func openRequestedEditor(_ id: UUID?) {
+        guard let id, let rule = model.configuration.rules.first(where: { $0.id == id }),
+              rule.listed(on: category, output: output) else { return }
+        model.ruleEditRequest = nil
+        editing = rule
     }
 
     private var header: some View {

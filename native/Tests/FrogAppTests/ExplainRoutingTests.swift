@@ -367,6 +367,19 @@ final class ExplainRoutingTests: XCTestCase {
         XCTAssertTrue(setup.streams.requests.isEmpty)
     }
 
+    func testEditRuleOpensTheEditorOfTheRuleThatFailed() async throws {
+        let setup = try Setup(test: self)
+        try await setup.model.setFeature(.explain, enabled: true)
+        var rule = try XCTUnwrap(setup.model.configuration.rules.first { $0.answersInPanel })
+        rule.providerID = nil
+        try setup.model.saveRule(rule)
+        setup.model.processSelection(ruleID: rule.id)
+        try await waitUntil { setup.model.answers.recovery == .editRule }
+        setup.model.answers.editRule()
+        XCTAssertEqual(setup.model.ruleEditRequest, rule.id)
+        XCTAssertEqual(setup.model.toolkit.route, .feature(.explain))
+    }
+
     func testRunningARuleFromItsShortcutHidesTheBubble() async throws {
         let watcher = FakeSelectionWatcher()
         let setup = try Setup(test: self, watcher: watcher)

@@ -34,6 +34,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var windowSwitcherStatus = "Not started"
     @Published private(set) var windowSwitcherReady = false
     @Published private(set) var setupPresented = false
+    /// A rule whose editor the rules page opens as it appears: Edit rule in the answer panel asks for one.
+    @Published var ruleEditRequest: UUID?
 
     var openSettings: (() -> Void)?
     private let configurationStore: ConfigurationStore
@@ -157,7 +159,7 @@ final class AppModel: ObservableObject {
                 return try await self.saveAnswerNote(content)
             },
             notesEnabled: { [weak self] in self?.answerNotesEnabled ?? false })
-        controller.onEditRule = { [weak self] _ in self?.openFeature(.explain) }
+        controller.onEditRule = { [weak self] in self?.editAnswerRule($0) }
         controller.onAllowAccessibility = { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() }
         (answerPresenter as? AnswerPanelController)?.controller = controller
         return controller
@@ -1193,6 +1195,12 @@ final class AppModel: ObservableObject {
 
     /// Without Accessibility neither the read nor the Copy works, so the panel offers the setting instead.
     private struct AccessibilityMissing: Error {}
+
+    /// The Explain page with the editor of the rule an answer failed for, such as one without a model.
+    func editAnswerRule(_ id: UUID) {
+        ruleEditRequest = id
+        openFeature(.explain)
+    }
 
     /// The longest selection an answer reads through Accessibility, in UTF-16 units.
     static let answerReadLimit = 100_000
