@@ -59,96 +59,14 @@ struct RulesView: View {
     /// The Explain page: answer rules only.
     private var answers: Bool { fixedCategory == .text && output == .panel }
     var body: some View {
-        let displayedRules = rules
-        let lastRuleID = displayedRules.last?.id
-        VStack(alignment: .leading, spacing: 14) {
-            PageHeader(title: pageTitle, subtitle: pageSubtitle) {
-                if !applications { Button(answers ? "New answer rule" : "New rule", systemImage: "plus") {
-                    editing = model.configuration.newRule(category: category, output: output, installed: model.localModels.installed)
-                }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut("n", modifiers: .command) }
+        Group {
+            // Settings below the rules scroll with the page, so a long list of them stays reachable.
+            if let trailing {
+                PageScroll { header; ruleTable(scrolls: false); trailing }
+            } else {
+                VStack(alignment: .leading, spacing: 14) { header; ruleTable(scrolls: true) }.padding(20)
             }
-            VStack(spacing: 0) {
-                ListToolbar(placeholder: applications ? "Search shortcuts" : "Search rules", search: $search) {
-                    if applications, fixedCategory == nil {
-                        CompactSegments(values: Self.shortcutCategories(windowsEnabled: windowsEnabled), selected: category, title: { $0 == .application ? "Application" : $0.title }) {
-                            shortcutCategory = $0; search = ""
-                        }
-                    } else if fixedCategory == nil {
-                        CompactSegments(values: [RuleCategory.text, .audio], selected: filter, title: { $0.title }) {
-                            filter = $0; search = ""
-                        }
-                    } else {
-                        SectionCaption(text: "Your rules")
-                    }
-                }.padding(12)
-                if applications, fixedCategory == nil, windowsEnabled {
-                    Divider().opacity(0.5)
-                    HStack(spacing: 8) {
-                        Text("Window layouts are on the Windows page.").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                        Spacer()
-                        Button("Open Windows") { model.openFeature(.windows) }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(FrogStyle.accent)
-                    }.padding(.horizontal, 12).padding(.vertical, 8)
-                }
-                Divider().opacity(0.5)
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(displayedRules) { rule in
-                            Group {
-                                if applications {
-                                    ShortcutRuleRow(rule: rule, detail: rule.action?.systemAction?.detail, model: model) {
-                                        if rule.category == .application { ApplicationIcon(path: rule.action?.applicationPath ?? "") }
-                                        else { ShortcutRuleSymbol(symbol: rule.action?.systemAction?.symbol ?? "macwindow") }
-                                    }
-                                } else {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: rule.category == .audio ? "waveform" : rule.answersInPanel ? "questionmark.bubble" : "text.alignleft")
-                                            .font(.system(size: 13)).foregroundStyle(FrogStyle.muted).frame(width: 24)
-                                        Button { editing = rule } label: {
-                                            VStack(alignment: .leading, spacing: 4) {
-                                                Text(rule.name).font(.system(size: 12, weight: .medium))
-                                                Text(model.ruleModelLabel(rule)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                                                if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(FrogStyle.warning) }
-                                            }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                                        }.buttonStyle(.plain)
-                                        Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { value in
-                                            var updated = rule; updated.enabled = value
-                                            do { try model.saveRule(updated) } catch { model.report(error) }
-                                        })).labelsHidden().toggleStyle(.switch).controlSize(.mini)
-                                        HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: { value in
-                                            var updated = rule; updated.hotkey = value
-                                            do { try model.saveRule(updated) } catch { model.report(error) }
-                                        }), showsClearButton: false)
-                                        // An answer needs a selection and a panel, so answer rules run from their shortcut or the command bar.
-                                        if !rule.answersInPanel {
-                                            Button(rule.category == .audio ? "Record" : "Try") {
-                                                if rule.category == .audio { model.startDictation(rule) }
-                                                else { trying = rule }
-                                            }.disabled(!rule.enabled || model.isProcessing || model.dictation.active)
-                                            .accessibilityLabel(rule.category == .audio ? "Record with \(rule.name)" : "Try \(rule.name)")
-                                        }
-                                        IconAction(title: "Edit \(rule.name)", symbol: "pencil") { editing = rule }
-                                    }
-                                }
-                            }.padding(.horizontal, 12).padding(.vertical, 10)
-                                .overlay(alignment: .bottom) {
-                                    if rule.id != lastRuleID { Divider().opacity(0.5) }
-                                }
-                        }
-                        if displayedRules.isEmpty {
-                            VStack(spacing: 8) {
-                                Text(search.isEmpty ? "No rules yet" : "No matching rules").font(.system(size: 12, weight: .medium))
-                                if !applications && search.isEmpty {
-                                    Button("Create a rule", systemImage: "plus") {
-                                        editing = model.configuration.newRule(category: category, output: output, installed: model.localModels.installed)
-                                    }
-                                } else if !search.isEmpty { Button("Clear search") { search = "" }.buttonStyle(.plain) }
-                            }.foregroundStyle(FrogStyle.muted).frame(maxWidth: .infinity).padding(24)
-                        }
-                    }.minimalScrollbars()
-                }
-            }.frogTableSurface()
-            if let trailing { trailing }
-        }.padding(20).sheet(item: $editing) { rule in
+        }.sheet(item: $editing) { rule in
             // A saved copy replaces this editor with one on the copy.
             RuleEditor(rule: rule, onSave: { search = "" }, onSaveCopy: { copy in search = ""; editing = copy }).environmentObject(model)
         }
@@ -157,6 +75,101 @@ struct RulesView: View {
                 guard applications else { return }
                 await applicationCatalog.loadIfNeeded()
             }
+    }
+
+    private var header: some View {
+        PageHeader(title: pageTitle, subtitle: pageSubtitle) {
+            if !applications { Button(answers ? "New answer rule" : "New rule", systemImage: "plus") {
+                editing = model.configuration.newRule(category: category, output: output, installed: model.localModels.installed)
+            }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut("n", modifiers: .command) }
+        }
+    }
+
+    private func ruleTable(scrolls: Bool) -> some View {
+        VStack(spacing: 0) {
+            ListToolbar(placeholder: applications ? "Search shortcuts" : "Search rules", search: $search) {
+                if applications, fixedCategory == nil {
+                    CompactSegments(values: Self.shortcutCategories(windowsEnabled: windowsEnabled), selected: category, title: { $0 == .application ? "Application" : $0.title }) {
+                        shortcutCategory = $0; search = ""
+                    }
+                } else if fixedCategory == nil {
+                    CompactSegments(values: [RuleCategory.text, .audio], selected: filter, title: { $0.title }) {
+                        filter = $0; search = ""
+                    }
+                } else {
+                    SectionCaption(text: "Your rules")
+                }
+            }.padding(12)
+            if applications, fixedCategory == nil, windowsEnabled {
+                Divider().opacity(0.5)
+                HStack(spacing: 8) {
+                    Text("Window layouts are on the Windows page.").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                    Spacer()
+                    Button("Open Windows") { model.openFeature(.windows) }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(FrogStyle.accent)
+                }.padding(.horizontal, 12).padding(.vertical, 8)
+            }
+            Divider().opacity(0.5)
+            if scrolls { ScrollView { ruleRows.minimalScrollbars() } } else { ruleRows }
+        }.frogTableSurface()
+    }
+
+    private var ruleRows: some View {
+        let displayedRules = rules
+        let lastRuleID = displayedRules.last?.id
+        return LazyVStack(spacing: 0) {
+            ForEach(displayedRules) { rule in
+                Group {
+                    if applications {
+                        ShortcutRuleRow(rule: rule, detail: rule.action?.systemAction?.detail, model: model) {
+                            if rule.category == .application { ApplicationIcon(path: rule.action?.applicationPath ?? "") }
+                            else { ShortcutRuleSymbol(symbol: rule.action?.systemAction?.symbol ?? "macwindow") }
+                        }
+                    } else {
+                        HStack(spacing: 10) {
+                            Image(systemName: rule.category == .audio ? "waveform" : rule.answersInPanel ? "questionmark.bubble" : "text.alignleft")
+                                .font(.system(size: 13)).foregroundStyle(FrogStyle.muted).frame(width: 24)
+                            Button { editing = rule } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(rule.name).font(.system(size: 12, weight: .medium))
+                                    Text(model.ruleModelLabel(rule)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                                    if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(FrogStyle.warning) }
+                                }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                            Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { value in
+                                var updated = rule; updated.enabled = value
+                                do { try model.saveRule(updated) } catch { model.report(error) }
+                            })).labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                            HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: { value in
+                                var updated = rule; updated.hotkey = value
+                                do { try model.saveRule(updated) } catch { model.report(error) }
+                            }), showsClearButton: false)
+                            // An answer needs a selection and a panel, so answer rules run from their shortcut or the command bar.
+                            if !rule.answersInPanel {
+                                Button(rule.category == .audio ? "Record" : "Try") {
+                                    if rule.category == .audio { model.startDictation(rule) }
+                                    else { trying = rule }
+                                }.disabled(!rule.enabled || model.isProcessing || model.dictation.active)
+                                .accessibilityLabel(rule.category == .audio ? "Record with \(rule.name)" : "Try \(rule.name)")
+                            }
+                            IconAction(title: "Edit \(rule.name)", symbol: "pencil") { editing = rule }
+                        }
+                    }
+                }.padding(.horizontal, 12).padding(.vertical, 10)
+                    .overlay(alignment: .bottom) {
+                        if rule.id != lastRuleID { Divider().opacity(0.5) }
+                    }
+            }
+            if displayedRules.isEmpty {
+                VStack(spacing: 8) {
+                    Text(search.isEmpty ? "No rules yet" : "No matching rules").font(.system(size: 12, weight: .medium))
+                    if !applications && search.isEmpty {
+                        Button("Create a rule", systemImage: "plus") {
+                            editing = model.configuration.newRule(category: category, output: output, installed: model.localModels.installed)
+                        }
+                    } else if !search.isEmpty { Button("Clear search") { search = "" }.buttonStyle(.plain) }
+                }.foregroundStyle(FrogStyle.muted).frame(maxWidth: .infinity).padding(24)
+            }
+        }
     }
 }
 
