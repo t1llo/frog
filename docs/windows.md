@@ -109,7 +109,7 @@ Open it in any of three ways: press its shortcut, choose **Arrange window…** i
 
 The panel opens in the middle of the display that holds the window. It shows the layouts as small pictures in rows of four, grouped into halves, quarters, thirds, sizes, displays and undo, each with its shortcut if it has one. Minimize and full screen are not offered.
 
-- The arrow keys move the selection; hovering a tile selects it too. While a layout is selected, a tinted area on screen shows where the window would go. For **Restore previous size** it shows the size the window returns to, if Frog moved it before.
+- The arrow keys move the selection; moving the pointer over a tile selects it too. While a layout is selected, a tinted area on screen shows where the window would go. For **Restore previous size** it shows the size the window returns to, if Frog moved it before.
 - Type to filter the layouts by name: "two" leaves the two-thirds layouts.
 - Return or a click applies the selected layout; Escape, ⌘W, a click outside or the shortcut again closes the panel.
 

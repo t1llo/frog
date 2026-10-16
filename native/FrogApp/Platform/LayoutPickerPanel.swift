@@ -31,11 +31,15 @@ final class LayoutPickerPanel: ObservableObject {
     var onApply: ((WindowAction) -> Void)?
     /// Escape, a click outside or another app in front.
     var onClose: (() -> Void)?
+    /// Where the mouse is, in Cocoa coordinates. Replaced in tests.
+    var mouseLocation: () -> CGPoint = { NSEvent.mouseLocation }
 
     private var panel: FrogFloatingPanel?
     private var placement: PanelPlacement.Result?
     private var target: pid_t?
     private var lastSelection: WindowAction?
+    /// Where the mouse was when the panel opened or a key was last pressed, until it moves.
+    private var restingPointer: CGPoint?
     private var monitor: Any?
     private var outside: Any?
     private var activation: NSObjectProtocol?
@@ -67,6 +71,7 @@ final class LayoutPickerPanel: ObservableObject {
         panel.show(at: placed.frame)
         panel.makeKey()
         installMonitors()
+        pointerRests()
         selectionChanged()
     }
 
@@ -81,6 +86,19 @@ final class LayoutPickerPanel: ObservableObject {
         picker.select(action)
         selectionChanged()
     }
+
+    /// The pointer came over a tile. It selects the tile only once the mouse has moved since
+    /// the panel opened or a key was pressed: a tile that opens, scrolls or filters in under a
+    /// resting pointer reports a hover too, and would take the selection from the arrow keys.
+    func hovered(_ action: WindowAction) {
+        let pointer = mouseLocation()
+        if let restingPointer, restingPointer == pointer { return }
+        restingPointer = nil
+        select(action)
+    }
+
+    /// The mouse stays where it is until it moves: hovers until then do not select.
+    func pointerRests() { restingPointer = mouseLocation() }
 
     func apply(_ action: WindowAction) {
         picker.select(action)
@@ -158,6 +176,7 @@ final class LayoutPickerPanel: ObservableObject {
     /// Return applies, Escape and ⌘W close, the arrows move in the grid; every other key goes
     /// to the filter field.
     private func handleKey(_ event: NSEvent) -> Bool {
+        pointerRests()
         let composing = (panel?.firstResponder as? NSTextInputClient)?.hasMarkedText() == true
         let state = PanelState(queryIsEmpty: query.isEmpty, composing: composing)
         switch PanelKeyMap.decide(keyCode: event.keyCode, modifiers: event.panelModifiers, state: state) {
@@ -240,7 +259,7 @@ struct LayoutPickerView: View {
                         HStack(spacing: 6) {
                             ForEach(row) { tile in
                                 LayoutPickerTile(tile: tile, selected: panel.picker.selection == tile.action, showsBadge: badges,
-                                                 select: { panel.select(tile.action) }, apply: { panel.apply(tile.action) })
+                                                 hover: { panel.hovered(tile.action) }, apply: { panel.apply(tile.action) })
                             }
                             ForEach(row.count..<LayoutPickerModel.columns, id: \.self) { _ in
                                 Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
@@ -258,7 +277,7 @@ private struct LayoutPickerTile: View {
     let tile: LayoutPickerModel.Tile
     let selected: Bool
     let showsBadge: Bool
-    let select: () -> Void
+    let hover: () -> Void
     let apply: () -> Void
 
     var body: some View {
@@ -276,7 +295,7 @@ private struct LayoutPickerTile: View {
         .background(selected ? FrogStyle.selection : Color.clear, in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selected ? FrogStyle.accent.opacity(0.6) : Color.clear))
         .contentShape(RoundedRectangle(cornerRadius: 8))
-        .onHover { if $0 { select() } }
+        .onHover { if $0 { hover() } }
         .onTapGesture(perform: apply)
         .id(tile.action.rawValue)
         .accessibilityElement(children: .ignore)
