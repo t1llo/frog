@@ -128,6 +128,12 @@ public struct SnapDragSession: Sendable {
 
     private let window: CGRect
     private let pointer: CGPoint
+    /// The pointer positions while `window` was read, `pointer` first: it was read at one of
+    /// them, because the pointer keeps moving while the window is looked up.
+    private let origins: [CGPoint]
+    /// Where the pointer holds the window, from its top-left corner. Assumed at `pointer` until
+    /// a read confirms the drag, then measured.
+    private var grab: CGPoint
     private let edgesPaused: Bool
     /// The size to give back once the drag has gone far enough; nil when the window is not
     /// where Frog last put it.
@@ -149,15 +155,18 @@ public struct SnapDragSession: Sendable {
     /// - Parameters:
     ///   - window: the dragged window's frame, read while the pointer was at `pointer`.
     ///   - lastMove: the frame Frog last gave this window, and `sizeBeforeMove` its size before.
+    ///   - readAt: the pointer positions after `pointer` while the window was read.
     ///   - travel: how far the pointer had moved from the mouse-down when the window was read;
     ///     a window still where Frog put it may have followed the pointer that far.
     public init(window: CGRect, pointer: CGPoint, time: TimeInterval, lastMove: CGRect?, sizeBeforeMove: CGSize?,
-                restoreOnDrag: Bool, edgesPaused: Bool, travel: CGFloat = 0) {
+                restoreOnDrag: Bool, edgesPaused: Bool, travel: CGFloat = 0, readAt: [CGPoint] = []) {
         self.window = window
         self.pointer = pointer
+        origins = [pointer] + readAt.suffix(63)
+        grab = CGPoint(x: pointer.x - window.minX, y: pointer.y - window.minY)
         self.edgesPaused = edgesPaused
         self.travel = travel
-        path = [pointer]
+        path = [origins.last ?? pointer]
         if restoreOnDrag, let lastMove, let sizeBeforeMove,
            abs(window.width - lastMove.width) <= 1, abs(window.height - lastMove.height) <= 1,
            abs(window.minX - lastMove.minX) <= 1 + travel, abs(window.minY - lastMove.minY) <= 1 + travel,
@@ -189,15 +198,16 @@ public struct SnapDragSession: Sendable {
                 finished = true
                 return []
             }
-            guard follows(windowFrame) else { path = [point]; return [] }
+            guard let grab = grab(followedTo: windowFrame) else { path = [point]; return [] }
+            self.grab = grab
             confirmed = true
             effects.append(.confirmDrag)
         }
         if let restoreSize, !restored, travel + hypot(point.x - pointer.x, point.y - pointer.y) >= Self.restoreDistance {
             restored = true
             // The pointer keeps its place across the width and its distance from the top.
-            let share = window.width > 0 ? (pointer.x - window.minX) / window.width : 0.5
-            effects.append(.restoreSize(CGRect(x: point.x - share * restoreSize.width, y: point.y - (pointer.y - window.minY),
+            let share = window.width > 0 ? min(1, max(0, grab.x / window.width)) : 0.5
+            effects.append(.restoreSize(CGRect(x: point.x - share * restoreSize.width, y: point.y - grab.y,
                                                width: restoreSize.width, height: restoreSize.height)))
         }
         effects += overlay == nil ? track(point, time: time, displays: displays) : trackOverlay(point, displays: displays)
@@ -249,14 +259,18 @@ public struct SnapDragSession: Sendable {
         return candidate
     }
 
-    /// The window's origin moved as far as the pointer did, at one of the pointer positions
-    /// since the frame was last read.
-    private func follows(_ frame: CGRect) -> Bool {
+    /// Where the pointer holds the window, when its origin moved as far as the pointer did: from
+    /// one of the positions the first frame was read at to one of those since the frame was last
+    /// read. Nil when the window did not follow the pointer.
+    private func grab(followedTo frame: CGRect) -> CGPoint? {
         let dx = frame.minX - window.minX, dy = frame.minY - window.minY
-        guard abs(dx) > 1 || abs(dy) > 1 else { return false }
-        return path.contains { point in
-            abs(point.x - pointer.x - dx) <= Self.followTolerance && abs(point.y - pointer.y - dy) <= Self.followTolerance
+        guard abs(dx) > 1 || abs(dy) > 1 else { return nil }
+        for point in path.reversed() where origins.contains(where: { origin in
+            abs(point.x - origin.x - dx) <= Self.followTolerance && abs(point.y - origin.y - dy) <= Self.followTolerance
+        }) {
+            return CGPoint(x: point.x - frame.minX, y: point.y - frame.minY)
         }
+        return nil
     }
 
     /// The zone of the overlay under the point, on the display under it; the point is kept to

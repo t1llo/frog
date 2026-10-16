@@ -23,6 +23,8 @@ import FrogCore
         var edgeTiling = false
         var probedKey: WindowKey?
         var slowReads = false
+        /// The lookup takes this long, and reads the window's frame at its end.
+        var probeDelay: UInt64 = 0
         var time: TimeInterval = 0
         var shift = false
         var zones: [SnapZoneLayout?] = []
@@ -33,6 +35,7 @@ import FrogCore
         return WindowDragTracker(
             probe: { point in
                 probe.probes.append(point)
+                if probe.probeDelay > 0 { try? await Task.sleep(nanoseconds: probe.probeDelay) }
                 let key = probe.probedKey ?? dragged
                 let handle = WindowHandle(key: key, element: nil)
                 return access.frame(of: handle).map { (handle, $0) }
@@ -100,9 +103,56 @@ import FrogCore
         XCTAssertEqual(access.windows[focused]?.frame, CGRect(x: 50, y: 50, width: 500, height: 400))
         let history = await manager.lastMove(of: dragged)
         XCTAssertEqual(history?.action, .leftHalf, "Restore previous size can undo the snap")
-        XCTAssertEqual(probe.probes, [grab])
+        XCTAssertEqual(probe.probes, [CGPoint(x: 410, y: 210)])
         XCTAssertLessThanOrEqual(probe.reads, 2)
         XCTAssertFalse(tracker.wantsRelease)
+    }
+
+    func testAWindowThatMovesOnWhileItIsLookedUpStillSnaps() async {
+        let access = fixture(), manager = WindowManager(access: access), probe = Probe()
+        probe.probeDelay = 30_000_000
+        let tracker = makeTracker(access, manager, probe)
+        tracker.mouseDown(at: grab, time: 0)
+        // A quick drag: the pointer goes on 30 pt while the window under it is looked up.
+        for (index, x) in [410, 420, 430, 440].enumerated() {
+            let point = CGPoint(x: CGFloat(x), y: 210)
+            access.windows[dragged]?.frame = original.offsetBy(dx: point.x - grab.x, dy: 0)
+            tracker.dragged(to: point, time: 0.01 * Double(index + 1))
+        }
+        await tracker.settle()
+        await drag(tracker, access, to: CGPoint(x: 460, y: 212), time: 0.06)
+        XCTAssertTrue(tracker.wantsEscape, "The window moves with the pointer")
+        await drag(tracker, access, to: CGPoint(x: 0, y: 400), time: 0.2)
+        tracker.mouseUp(at: CGPoint(x: 0, y: 400), time: 0.3)
+        await tracker.settle()
+        XCTAssertEqual(access.windows[dragged]?.frame, CGRect(x: 0, y: 25, width: 720, height: 875))
+    }
+
+    func testAThrowReleasedBeforeAnyReadStillSnaps() async {
+        let access = fixture(), manager = WindowManager(access: access), probe = Probe()
+        let tracker = makeTracker(access, manager, probe)
+        tracker.mouseDown(at: grab, time: 0)
+        await drag(tracker, access, to: CGPoint(x: 410, y: 210), time: 0.01)
+        XCTAssertEqual(probe.reads, 0, "Looked up, not read again yet")
+        // The window lands at the left edge with the release, before another drag event.
+        let release = CGPoint(x: 0, y: 400)
+        access.windows[dragged]?.frame = original.offsetBy(dx: release.x - grab.x, dy: release.y - grab.y)
+        tracker.mouseUp(at: release, time: 0.05)
+        await tracker.settle()
+        XCTAssertEqual(probe.reads, 1)
+        XCTAssertEqual(access.windows[dragged]?.frame, CGRect(x: 0, y: 25, width: 720, height: 875))
+    }
+
+    func testAPressAndReleaseOnAWindowThatDidNotMoveSnapsNothing() async {
+        let access = fixture(), manager = WindowManager(access: access), probe = Probe()
+        let tracker = makeTracker(access, manager, probe)
+        tracker.mouseDown(at: grab, time: 0)
+        // Selecting text up to the left edge: the window stays.
+        await drag(tracker, access, to: CGPoint(x: 410, y: 210), time: 0.01, moving: false)
+        tracker.mouseUp(at: CGPoint(x: 0, y: 400), time: 0.05)
+        await tracker.settle()
+        XCTAssertEqual(probe.reads, 1)
+        XCTAssertEqual(access.writes, [])
     }
 
     func testEscapeBeforeTheReleaseWritesNothing() async {
@@ -178,7 +228,7 @@ import FrogCore
         XCTAssertEqual(probe.reads, 0)
         XCTAssertFalse(tracker.wantsRelease, "No release monitor for a click")
         await drag(tracker, access, to: CGPoint(x: 405, y: 210), time: 0.03)
-        XCTAssertEqual(probe.probes, [grab], "The window under the mouse-down point")
+        XCTAssertEqual(probe.probes, [CGPoint(x: 405, y: 210)], "The window under the pointer, which holds it")
         XCTAssertTrue(tracker.wantsRelease)
         await drag(tracker, access, to: CGPoint(x: 420, y: 210), time: 0.04)
         await drag(tracker, access, to: CGPoint(x: 440, y: 210), time: 0.05)

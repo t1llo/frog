@@ -50,6 +50,27 @@ final class SnapDragSessionTests: XCTestCase {
         XCTAssertEqual(effects, [.confirmDrag])
     }
 
+    func testAWindowReadWhileThePointerMovedOnConfirms() {
+        // Looked up while the pointer went on 30 pt: the frame is from the end of that.
+        var drag = SnapDragSession(window: window.offsetBy(dx: 30, dy: 0), pointer: grab, time: 0, lastMove: nil, sizeBeforeMove: nil,
+                                   restoreOnDrag: false, edgesPaused: false,
+                                   readAt: [CGPoint(x: grab.x + 15, y: grab.y), CGPoint(x: grab.x + 30, y: grab.y)])
+        let effects = drag.move(to: CGPoint(x: grab.x + 50, y: grab.y), time: 0.05, windowFrame: window.offsetBy(dx: 50, dy: 0),
+                                displays: [laptop])
+        XCTAssertEqual(effects, [.confirmDrag])
+    }
+
+    func testTheEarlierSizeComesBackUnderThePointerAfterALateRead() {
+        let snapped = CGRect(x: 0, y: 25, width: 720, height: 875)
+        // Grabbed at (360, 35); the frame was read once the pointer had reached (380, 35).
+        var drag = SnapDragSession(window: snapped.offsetBy(dx: 20, dy: 0), pointer: CGPoint(x: 365, y: 35), time: 0,
+                                   lastMove: snapped, sizeBeforeMove: CGSize(width: 800, height: 600), restoreOnDrag: true,
+                                   edgesPaused: false, travel: 20, readAt: [CGPoint(x: 372, y: 35), CGPoint(x: 380, y: 35)])
+        let effects = drag.move(to: CGPoint(x: 390, y: 35), time: 0.05, windowFrame: snapped.offsetBy(dx: 30, dy: 0), displays: [laptop])
+        // Held halfway across: half of the earlier 800 pt on each side of the pointer, 10 pt below the top as before.
+        XCTAssertEqual(effects, [.confirmDrag, .restoreSize(CGRect(x: 390 - 400, y: 35 - 10, width: 800, height: 600))])
+    }
+
     func testResizeOnlyDragsNeverPreview() {
         var drag = session()
         // A resize from the bottom-right corner: the origin stays, the size grows.

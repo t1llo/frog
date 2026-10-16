@@ -81,9 +81,9 @@ final class MouseReleaseWatcher {
 
 /// Follows one mouse drag at a time and snaps the window it moves. Every click on the Mac
 /// reaches it, so a mouse-down only records where and when. Once the pointer has moved 4 pt it
-/// looks up the window under the mouse-down point once, then reads its frame again, one read
-/// at a time and at most 10 times, until the window is seen moving with the pointer. A drag
-/// that never moves a window (a text selection, a slider, a resize) is dropped. After that,
+/// looks up the window under the pointer once, then reads its frame again, one read at a time
+/// and at most 10 times, until the window is seen moving with the pointer. A drag that never
+/// moves a window (a text selection, a slider, a resize) is dropped. After that,
 /// drag events only test the pointer against the zones. While the zone overlay is on, holding
 /// Shift during the drag shows Frog's zones instead of the edges.
 @MainActor
@@ -120,6 +120,8 @@ final class WindowDragTracker {
     /// Advanced by every press and release, so a late answer about an earlier drag is dropped.
     private var generation = 0
     private var window: WindowHandle?
+    /// The pointer positions while the window is looked up; its frame is read at one of them.
+    private var probePath: [CGPoint] = []
     private var session: SnapDragSession?
     private var dragDisplays: [WindowDisplay] = []
     private var dragOptions = WindowLayoutOptions.legacy
@@ -179,14 +181,17 @@ final class WindowDragTracker {
             let travel = hypot(point.x - down.point.x, point.y - down.point.y)
             guard travel > Self.dragThreshold else { return }
             phase = .probing
-            startProbe(at: down.point, pointer: point, time: time, travel: travel)
+            startProbe(pointer: point, time: time, travel: travel)
             onChange?()
+        case .probing:
+            probePath.append(point)
+            if probePath.count > 64 { probePath.removeFirst(probePath.count - 64) }
         case .reading:
             feed(frame: nil)
             if !readInFlight, reads < Self.readLimit, phase == .reading { startRead() }
         case .confirmed:
             feed(frame: nil)
-        case .idle, .probing, .abandoned:
+        case .idle, .abandoned:
             break
         }
     }
@@ -199,6 +204,19 @@ final class WindowDragTracker {
             let previous = writeTask
             writeTask = Task { [apply] in
                 await previous?.value
+                await apply(candidate.action, window, display)
+            }
+        } else if phase == .reading, let session, let window {
+            // Released before a read showed the window following, as after a quick throw to an
+            // edge: one read where the window came to rest decides.
+            let displays = dragDisplays, previous = writeTask
+            writeTask = Task { [frame, apply] in
+                await previous?.value
+                var session = session
+                guard let read = await frame(window) else { return }
+                _ = session.move(to: point, time: time, windowFrame: read, displays: displays)
+                guard let candidate = session.end(at: point, time: time, displays: displays),
+                      let display = displays.first(where: { $0.id == candidate.displayID }) else { return }
                 await apply(candidate.action, window, display)
             }
         }
@@ -234,6 +252,7 @@ final class WindowDragTracker {
         phase = .idle
         down = nil
         window = nil
+        probePath = []
         session = nil
         reads = 0
         readInFlight = false
@@ -258,23 +277,29 @@ final class WindowDragTracker {
 
     // MARK: Steps
 
-    private func startProbe(at origin: CGPoint, pointer: CGPoint, time: TimeInterval, travel: CGFloat) {
+    /// Looks up the window under the pointer: a dragged window moves with the pointer, so the
+    /// point it was grabbed at stays under it while the mouse-down point is left behind.
+    private func startProbe(pointer: CGPoint, time: TimeInterval, travel: CGFloat) {
         let generation = generation
+        probePath = []
         probeTask = Task { [weak self, probe] in
-            let result = await probe(origin)
+            let result = await probe(pointer)
             guard let self else { return }
             defer { if self.generation == generation { self.probeTask = nil } }
             guard self.generation == generation, self.phase == .probing else { return }
             guard let (window, frame) = result, !self.shouldIgnore(window) else { self.abandon(); return }
             let move = self.restoreOnDrag() ? await self.lastMove(window.key) : nil
-            guard self.generation == generation, self.phase == .probing else { return }
+            guard self.generation == generation, self.phase == .probing, let down = self.down?.point else { return }
+            // The window was read at one of the positions the pointer passed meanwhile.
+            let readAt = self.probePath
+            let farthest = readAt.map { hypot($0.x - down.x, $0.y - down.y) }.max() ?? 0
             self.window = window
             self.dragDisplays = self.displays()
             self.dragOptions = self.options()
             self.dragGrid = self.zoneGrid()
             self.session = SnapDragSession(window: frame, pointer: pointer, time: time, lastMove: move?.0, sizeBeforeMove: move?.1,
                                            restoreOnDrag: move != nil, edgesPaused: !self.dragToSnap() || self.macOS().edgeTiling,
-                                           travel: travel)
+                                           travel: max(travel, farthest), readAt: readAt)
             self.phase = .reading
             // Shift held from before the drag shows the zones once the window follows.
             let held = self.modifiers()
