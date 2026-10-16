@@ -31,6 +31,8 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
     let model = AppModel()
     var power: StayAwakeController { model.power }
     private var window: NSWindow?
+    /// The key in Frog's defaults under which AppKit keeps the main window's frame.
+    private static let windowFrameName = "FrogMainWindow"
     private var termination: Task<Void, Never>?
     private var observer: NSObjectProtocol?
     private var finishedLaunching = false
@@ -77,6 +79,10 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
             created.isRestorable = false
             created.delegate = self
             created.center()
+            // The size and place the window last had come back after Frog restarts, such as after an update or a
+            // login; the first time it opens centered.
+            created.setFrameAutosaveName(Self.windowFrameName)
+            created.setFrameUsingName(Self.windowFrameName)
             window = created
         }
         NSApplication.shared.activate(ignoringOtherApps: true)
