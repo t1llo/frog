@@ -290,12 +290,21 @@ final class WindowDragTracker {
     // MARK: Steps
 
     /// Looks up the window under the pointer: a dragged window moves with the pointer, so the
-    /// point it was grabbed at stays under it while the mouse-down point is left behind.
+    /// point it was grabbed at stays under it while the mouse-down point is left behind. Where
+    /// no window is, it looks where the button went down: a window at the top of the screen,
+    /// held near its top and dragged up, stays below the menu bar while the pointer goes on
+    /// into it.
     private func startProbe(pointer: CGPoint, time: TimeInterval, travel: CGFloat) {
         let generation = generation
+        let pressed = down?.point
         probePath = []
         probeTask = Task { [weak self, probe] in
-            let result = await probe(pointer)
+            var result = await probe(pointer)
+            var pinned = false
+            if result == nil, let pressed {
+                result = await probe(pressed)
+                pinned = result != nil
+            }
             guard let self else { return }
             defer { if self.generation == generation { self.probeTask = nil } }
             guard self.generation == generation, self.phase == .probing else { return }
@@ -304,8 +313,9 @@ final class WindowDragTracker {
             // that, and a drag away gives the size back.
             let move = await self.lastMove(window.key)
             guard self.generation == generation, self.phase == .probing, let down = self.down?.point else { return }
-            // The window was read at one of the positions the pointer passed meanwhile.
-            let readAt = self.probePath
+            // The window was read at one of the positions the pointer passed meanwhile; found at
+            // the mouse-down point, it may still sit where the press left it.
+            let readAt = self.probePath + (pinned ? [down] : [])
             let farthest = readAt.map { hypot($0.x - down.x, $0.y - down.y) }.max() ?? 0
             self.window = window
             self.dragDisplays = self.displays()

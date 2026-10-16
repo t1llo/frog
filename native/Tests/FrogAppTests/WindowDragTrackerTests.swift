@@ -29,6 +29,8 @@ import FrogCore
         var time: TimeInterval = 0
         var shift = false
         var zones: [SnapZoneLayout?] = []
+        /// Points above this are in the menu bar, where no window is found.
+        var menuBar: CGFloat = 0
     }
 
     private func makeTracker(_ access: FixtureWindowAccess, _ manager: WindowManager, _ probe: Probe) -> WindowDragTracker {
@@ -37,6 +39,7 @@ import FrogCore
             probe: { point in
                 probe.probes.append(point)
                 if probe.probeDelay > 0 { try? await Task.sleep(nanoseconds: probe.probeDelay) }
+                guard point.y >= probe.menuBar else { return nil }
                 let key = probe.probedKey ?? dragged
                 let handle = WindowHandle(key: key, element: nil)
                 return access.frame(of: handle).map { (handle, $0) }
@@ -186,6 +189,33 @@ import FrogCore
                 XCTAssertEqual(history?.frame, original, "Restore returns to the frame before the first snap")
             }
         }
+    }
+
+    func testAWindowHeldBelowTheMenuBarIsFoundWhereTheButtonWentDown() async {
+        let access = FixtureWindowAccess(), manager = WindowManager(access: access), probe = Probe()
+        probe.menuBar = 25
+        let top = CGRect(x: 300, y: 25, width: 800, height: 600)
+        access.add(dragged, frame: top)
+        let tracker = makeTracker(access, manager, probe)
+        // Pressed 2 pt below the window's top, then dragged up into the menu bar and on.
+        let pressed = CGPoint(x: 400, y: 27)
+        tracker.mouseDown(at: pressed, time: 0)
+        func move(to point: CGPoint, time: TimeInterval) async {
+            // macOS keeps the window below the menu bar.
+            access.windows[dragged]?.frame = top.offsetBy(dx: point.x - pressed.x, dy: max(0, point.y - pressed.y))
+            tracker.dragged(to: point, time: time)
+            await tracker.settle()
+        }
+        await move(to: CGPoint(x: 401, y: 22), time: 0.01)
+        XCTAssertEqual(probe.probes, [CGPoint(x: 401, y: 22), pressed])
+        await move(to: CGPoint(x: 380, y: 300), time: 0.05)
+        XCTAssertTrue(tracker.wantsEscape, "The window moves with the pointer")
+        await move(to: CGPoint(x: 0, y: 400), time: 0.2)
+        tracker.mouseUp(at: CGPoint(x: 0, y: 400), time: 0.3)
+        await tracker.settle()
+        XCTAssertEqual(access.windows[dragged]?.frame, CGRect(x: 0, y: 25, width: 720, height: 875))
+        let history = await manager.lastMove(of: dragged)
+        XCTAssertEqual(history?.frame, top)
     }
 
     func testAPressAndReleaseOnAWindowThatDidNotMoveSnapsNothing() async {
