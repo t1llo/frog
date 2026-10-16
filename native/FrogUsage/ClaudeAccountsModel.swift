@@ -26,6 +26,8 @@ final class ClaudeAccountsModel: ObservableObject {
     @Published private(set) var noticeDismissed: Bool
     /// Claude Code, when installed, as of the last detection.
     @Published private(set) var claudeExecutable: URL?
+    /// A detection is under way, so an empty list means "still looking", not "none found".
+    @Published private(set) var searching = false
 
     let home: URL
     let labels: ClaudeAccountLabels
@@ -71,7 +73,7 @@ final class ClaudeAccountsModel: ObservableObject {
 
     func stop() {
         running = false
-        detection?.cancel(); detection = nil; generation += 1
+        detection?.cancel(); detection = nil; generation += 1; searching = false
         for store in stores.values { store.stop() }
     }
 
@@ -84,7 +86,7 @@ final class ClaudeAccountsModel: ObservableObject {
         if on {
             if running { detect() }
         } else {
-            detection?.cancel(); detection = nil; generation += 1
+            detection?.cancel(); detection = nil; generation += 1; searching = false
             for store in stores.values { store.stop() }
             stores = [:]; observations = [:]; accounts = []
             // The count shown in the notice is made without opening files again.
@@ -95,11 +97,11 @@ final class ClaudeAccountsModel: ObservableObject {
     /// In the background. While the switch is off only names and files' existence are looked at;
     /// while it is on, each folder's newest organization decides which folders are one account.
     func detect() {
-        detection?.cancel(); generation += 1
+        detection?.cancel(); generation += 1; searching = true
         let generation = generation, enabled = enabled, home = home, extras = extraFolders, environment = environment
         let discover = discover, readOrganization = readOrganization
         detection = Task {
-            guard let found = try? await usageWork({ () -> Detection in
+            let found = try? await usageWork({ () -> Detection in
                 let sources = Self.sources(discover(home, extras), adding: extras)
                 let executable = ClaudeCodeCLI.executable(home: home, environment: environment)
                 guard enabled else { return Detection(sources: sources, accounts: nil, executable: executable) }
@@ -112,9 +114,10 @@ final class ClaudeAccountsModel: ObservableObject {
                 }
                 return Detection(sources: sources, accounts: ClaudeAccountMatching.accounts(apps: apps, profiles: profiles),
                                  executable: executable)
-            }), !Task.isCancelled, generation == self.generation else { return }
-            detection = nil
-            apply(found)
+            })
+            guard !Task.isCancelled, generation == self.generation else { return }
+            detection = nil; searching = false
+            if let found { apply(found) }
         }
     }
 

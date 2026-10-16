@@ -194,6 +194,9 @@ public struct UsageAccountSummary: Identifiable {
     public let needsLiveSetup: Bool
     /// "Claude and Claude-2 are signed in to the same account".
     public let mergedNote: String?
+    /// What is wrong with the reading on display, nil while it is current: "Saved by the Claude
+    /// app at 07:53. …" for an old app reading, or why the account could not be checked.
+    public var warning: String? = nil
 }
 
 /// One kind of limit, such as the session, over every included Claude account.
@@ -503,7 +506,9 @@ extension UsageDashboardModel {
                 readingSource: reading.map { $0.source == .desktop ? "Claude app" : "Anthropic account" },
                 stale: reading.map { now.timeIntervalSince($0.at) > ClaudeDesktopUsage.freshness } ?? true,
                 status: store?.status, included: model.isIncluded(account),
-                needsLiveSetup: model.needsLiveSetup(account, now: now), mergedNote: account.mergedDescription)
+                needsLiveSetup: model.needsLiveSetup(account, now: now), mergedNote: account.mergedDescription,
+                // A login that is gone is worth saying also before the first reading.
+                warning: store.flatMap { $0.warning ?? ($0.needsClaudeCodeLogin ? $0.status : nil) })
         }
     }
 
@@ -514,6 +519,9 @@ extension UsageDashboardModel {
         let kinds = Self.accountWindowIDs.filter { id in accounts.contains { $0.included && $0.windows.contains { $0.id == id } } }
         return kinds.map { ClaudeAccountsCombination.combine(inputs, window: $0, now: now) }
     }
+
+    /// Frog is looking for Claude accounts, after the switch was turned on or on Refresh.
+    public var searchingClaudeAccounts: Bool { claudeAccountsModel.searching }
 
     /// Accounts the last search found, also while the switch is off.
     public var detectedAccountCount: Int { claudeAccountsModel.detectedCount }

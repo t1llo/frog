@@ -296,6 +296,13 @@ private struct UsageAccountLimits: View {
                 if let age = account.age {
                     Text([account.readingSource, UsageStatusPopover.age(of: age, at: now)].compactMap { $0 }.joined(separator: " · "))
                         .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                        .help(age.formatted(date: .abbreviated, time: .shortened))
+                }
+                // The dimmed limits below say why on hover; the Accounts list says it in full.
+                if account.stale, !account.windows.isEmpty {
+                    let reason = account.warning ?? account.status ?? "No current reading"
+                    Image(systemName: "exclamationmark.circle").font(FrogType.caption).foregroundStyle(FrogStyle.warning)
+                        .help(reason).accessibilityLabel(reason)
                 }
             }
             if account.windows.isEmpty {
@@ -347,12 +354,19 @@ private struct UsageAccountsSection: View {
                 })).labelsHidden().toggleStyle(.switch)
             }
             if usage.claudeAccountsEnabled {
-                SectionCaption(text: "Accounts")
+                HStack(spacing: 8) {
+                    SectionCaption(text: "Accounts")
+                    Spacer(minLength: 0)
+                    Button("Add folder…") { addFolder() }.buttonStyle(FrogButtonStyle())
+                        .help("A Claude app data folder or a Claude Code folder Frog did not find")
+                }
                 FrogCard(padding: 0) {
                     VStack(alignment: .leading, spacing: 0) {
                         if accounts.isEmpty {
-                            Text("No Claude account found yet. Add the folder of a Claude app profile or a Claude Code folder.")
+                            Text(usage.searchingClaudeAccounts ? "Looking for Claude accounts…"
+                                 : "No Claude account found. Add the folder of a Claude app profile or a Claude Code folder.")
                                 .font(FrogType.caption).foregroundStyle(FrogStyle.muted).padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         ForEach(accounts) { account in
                             UsageAccountSettingsRow(usage: usage, account: account) { liveSetup = account }.padding(12)
@@ -360,20 +374,24 @@ private struct UsageAccountsSection: View {
                         }
                     }
                 }
-                HStack(spacing: 12) {
-                    CompactSegments(values: UsageDashboardPreferences.claudeAccountsViews, selected: preferences.claudeAccountsView,
-                                    width: 200, title: { $0 == "combined" ? "Combined" : "Each account" }) { view in
-                        var next = usage.preferences; next.claudeAccountsView = view; usage.updatePreferences(next)
-                    }.accessibilityLabel("Claude accounts view")
-                    if preferences.claudeAccountsView == "each", accounts.filter(\.included).count >= 2 {
-                        CompactSegments(values: UsageDashboardPreferences.claudeAccountsMenuBarWindows, selected: preferences.claudeAccountsMenuBar,
-                                        width: 140, title: { $0 == "week" ? "Week" : "Session" }) { window in
-                            var next = usage.preferences; next.claudeAccountsMenuBar = window; usage.updatePreferences(next)
-                        }.accessibilityLabel("Limit shown in the menu bar").help("The limit the menu bar shows for each account")
+                // One account is shown as always, so the choices only matter from two on.
+                if accounts.count >= 2 {
+                    CompactRow(title: "Show limits", detail: preferences.claudeAccountsView == "combined"
+                               ? "One value per limit over the included accounts, weighted by plan size when every plan is known."
+                               : "Each included account on its own.") {
+                        CompactSegments(values: UsageDashboardPreferences.claudeAccountsViews, selected: preferences.claudeAccountsView,
+                                        width: 200, title: { $0 == "combined" ? "Combined" : "Each account" }) { view in
+                            var next = usage.preferences; next.claudeAccountsView = view; usage.updatePreferences(next)
+                        }.accessibilityLabel("Show limits")
                     }
-                    Spacer(minLength: 0)
-                    Button("Add folder…") { addFolder() }.buttonStyle(FrogButtonStyle())
-                        .help("A Claude app data folder or a Claude Code folder Frog did not find")
+                    if preferences.claudeAccountsView == "each", accounts.filter(\.included).count >= 2 {
+                        CompactRow(title: "Menu bar shows", detail: "The limit shown for each included account, such as “A 37%  B 81%”.") {
+                            CompactSegments(values: UsageDashboardPreferences.claudeAccountsMenuBarWindows, selected: preferences.claudeAccountsMenuBar,
+                                            width: 140, title: { $0 == "week" ? "Week" : "Session" }) { window in
+                                var next = usage.preferences; next.claudeAccountsMenuBar = window; usage.updatePreferences(next)
+                            }.accessibilityLabel("Menu bar shows")
+                        }
+                    }
                 }
             }
         }
@@ -409,17 +427,29 @@ private struct UsageAccountSettingsRow: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
                 UsageAccountLabelField(label: account.label) { usage.renameAccount(account.id, to: $0) }
-                ForEach(account.sources, id: \.self) { source in
-                    Text(source).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
-                        .padding(.horizontal, 6).padding(.vertical, 3)
-                        .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.innerRadius))
-                }
+                if let plan = account.plan { UsagePlanBadge(plan: plan) }
                 Spacer(minLength: 8)
                 Toggle("Include", isOn: Binding(get: { account.included }, set: { usage.setAccountIncluded(account.id, $0) }))
                     .toggleStyle(.switch).controlSize(.mini).font(FrogType.caption)
                     .help("Counts in the menu bar and in combined limits")
             }
-            Text(details).font(FrogType.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+            // A line of their own, so a long folder name is not cut short beside the label.
+            HStack(spacing: 6) {
+                ForEach(account.sources, id: \.self) { source in
+                    Text(source).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.innerRadius))
+                        .help(source)
+                }
+            }
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                Text(reading(at: context.date)).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                    .help(account.age?.formatted(date: .abbreviated, time: .shortened) ?? "")
+            }
+            if let warning = account.warning {
+                Label { Text(warning) } icon: { Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning) }
+                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+            }
             if let note = account.mergedNote {
                 Label(note, systemImage: "link").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
             }
@@ -430,14 +460,11 @@ private struct UsageAccountSettingsRow: View {
         }.help(usage.accountLogin(for: account.id) ?? "")
     }
 
-    /// "Max plan · Last reading 15:40 (3m ago), Claude app · Newest available plan limits".
-    private var details: String {
-        let now = Date()
-        let reading = account.age.map { age in
-            "Last reading \(age.formatted(date: .omitted, time: .shortened)) (\(UsageStatusPopover.age(of: age, at: now)))"
-                + (account.readingSource.map { ", \($0)" } ?? "")
-        } ?? "No reading yet"
-        return [account.plan.map { "\($0) plan" }, reading, account.status].compactMap { $0 }.joined(separator: " · ")
+    /// "Last reading 3m ago, from the Claude app", "No reading yet".
+    private func reading(at now: Date) -> String {
+        guard let age = account.age else { return "No reading yet" }
+        let source = account.readingSource.map { $0 == "Claude app" ? ", from the Claude app" : ", from the \($0)" } ?? ""
+        return "Last reading \(UsageStatusPopover.age(of: age, at: now))" + source
     }
 }
 
@@ -458,7 +485,7 @@ private struct UsageAccountLabelField: View {
             .onChange(of: focused) { _, focused in if !focused { commit() } }
             .onChange(of: label) { _, label in text = label }
             .onAppear { text = label }
-            .accessibilityLabel("Account label")
+            .accessibilityLabel("Account label").help("Rename this account; an empty label returns to the default")
     }
     private func commit() {
         guard text != label else { return }
