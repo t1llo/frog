@@ -308,6 +308,7 @@ struct AnswerCapture: Sendable {
 
     private func finishTurn() {
         task = nil
+        clearWaitMessage()
         guard var session else { return }
         let held = filter.finish()
         if !held.isEmpty { session.apply(.text(held)) }
@@ -331,6 +332,7 @@ struct AnswerCapture: Sendable {
     /// A provider error: shown in the panel with Retry, and logged.
     private func fail(_ error: Error) {
         task = nil
+        clearWaitMessage()
         guard var session else { return }
         session.fail(error.localizedDescription)
         self.session = session
@@ -342,11 +344,18 @@ struct AnswerCapture: Sendable {
     /// Retry runs the turn again, for a stop pressed too early or a stream cut off.
     private func endStopped() {
         task = nil
+        clearWaitMessage()
         guard var session else { return }
         session.stop()
         self.session = session
         recovery = .retry
         publish(immediately: true)
+    }
+
+    /// A question asked while the answer ran was kept in the field with a request to wait; once the turn ends
+    /// that request no longer applies.
+    private func clearWaitMessage() {
+        if followUpMessage == AnswerSession.waitForAnswer { followUpMessage = nil }
     }
 
     private static func isCancellation(_ error: Error) -> Bool {

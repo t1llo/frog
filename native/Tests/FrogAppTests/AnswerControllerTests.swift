@@ -190,6 +190,20 @@ final class AnswerControllerTests: XCTestCase {
         XCTAssertTrue(waiting.calls.copies.isEmpty)
     }
 
+    func testAQuestionAskedWhileTheAnswerRunsWaitsAndTheRequestToWaitEndsWithTheTurn() async throws {
+        let fixture = Fixture(provider: cloud)
+        fixture.streams.scripts = [[.event(.text("A ")), .hang]]
+        fixture.controller.start(rule: .explainPreset, capture: AnswerCapture(text: "bank"))
+        try await waitUntil { fixture.controller.session?.partial == "A " }
+        XCTAssertEqual(fixture.controller.ask("And a levee?"), AnswerSession.waitForAnswer)
+        XCTAssertEqual(fixture.streams.requests.count, 1)
+        fixture.controller.stop()
+        XCTAssertNil(fixture.controller.followUpMessage)
+        XCTAssertNil(fixture.controller.ask("And a levee?"), "A stopped answer with text can be asked about")
+        try await waitUntilSettled(fixture.controller)
+        XCTAssertEqual(fixture.streams.requests.last?.messages.last?.text, "And a levee?")
+    }
+
     func testTheSourceIsNeverSent() async throws {
         let fixture = Fixture(provider: cloud)
         let source = "https://example.com/private/page"

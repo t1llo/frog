@@ -25,14 +25,21 @@ struct AnswerPanelView: View {
             .background(WindowDragRegion())
             .overlay(alignment: .bottom) { Divider().opacity(0.6) }
             .measured(ChromeHeightKey.self)
-            ScrollView {
-                answer.padding(.horizontal, 14).padding(.vertical, 10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .measured(ContentHeightKey.self)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    answer.padding(.horizontal, 14).padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .measured(ContentHeightKey.self)
+                }
+                .minimalScrollbars()
+                .frame(height: scrollHeight)
+                .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
+                // A follow-up's answer starts below the earlier ones, often out of sight in a full panel.
+                .onChange(of: model.session?.pendingQuestion) { _, question in
+                    guard question != nil else { return }
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.followUpID, anchor: .top) }
+                }
             }
-            .minimalScrollbars()
-            .frame(height: scrollHeight)
-            .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
             VStack(alignment: .leading, spacing: 0) {
                 statusLine
                 footer
@@ -84,13 +91,15 @@ struct AnswerPanelView: View {
                     if index > 0 { question(turn.question) }
                     AnswerMarkdown(text: turn.answer)
                 }
-                if let pending = session.pendingQuestion, !session.turns.isEmpty { question(pending) }
+                if let pending = session.pendingQuestion, !session.turns.isEmpty { question(pending).id(Self.followUpID) }
                 if !session.partial.isEmpty { AnswerMarkdown(text: session.partial) }
             }
             .font(FrogType.body)
             .textSelection(.enabled)
         }
     }
+
+    private static let followUpID = "follow-up"
 
     private func question(_ text: String) -> some View {
         Text(text).font(FrogType.label).foregroundStyle(FrogStyle.ink)
@@ -129,6 +138,7 @@ struct AnswerPanelView: View {
                     .padding(.horizontal, 8).frame(height: 26)
                     .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
                     .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius).strokeBorder(FrogStyle.border.opacity(0.6)))
+                    // It stays enabled while the answer runs, so it keeps focus and the next question can be typed.
                     .disabled(followUpBlocked)
                     .onSubmit { model.ask(model.question) }
                     .accessibilityLabel(L10n.text("Ask a follow-up"))
@@ -172,11 +182,16 @@ struct AnswerPanelView: View {
         if case .failed = model.session?.phase { true } else { false }
     }
 
-    private var followUpBlocked: Bool { model.session?.followUpBlock != nil }
+    /// Blocked once the conversation is full, or after a failure until Retry. A question typed while the answer
+    /// runs is asked with Return once it is done.
+    private var followUpBlocked: Bool {
+        guard let session = model.session else { return true }
+        return session.followUpBlock != nil && !session.phase.isRunning
+    }
 
-    /// After a failure the reason is in the status line; the field only waits.
+    /// After a failure the reason is in the status line; a full conversation says so in the field.
     private var followUpPlaceholder: String {
-        guard let session = model.session, !failed, let block = session.followUpBlock else { return "Ask a follow-up" }
+        guard let session = model.session, !failed, !session.phase.isRunning, let block = session.followUpBlock else { return "Ask a follow-up" }
         return block
     }
 
