@@ -619,7 +619,9 @@ final class CleanerModel: ObservableObject {
     }
 
     private func finish(_ pending: PendingRemoval, _ result: RemovalOutcome) {
-        outcome = result
+        // Declining the force quit is a Cancel: back to the review, with no card saying nothing moved.
+        let declined = result.cancelled && result.moved.isEmpty && result.failures.isEmpty
+        outcome = declined ? nil : result
         self.pending = nil
         phase = .idle
         let moved = result.moved.map(\.original)

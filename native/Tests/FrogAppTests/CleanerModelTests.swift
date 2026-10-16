@@ -316,8 +316,9 @@ final class CleanerModelTests: XCTestCase {
         model.answerForceQuit(false)
         await confirming.value
 
-        XCTAssertEqual(model.outcome?.cancelled, true)
-        XCTAssertEqual(model.outcome?.moved, [])
+        XCTAssertNil(model.outcome, "No is a Cancel: the review comes back without a card")
+        XCTAssertNil(model.pending)
+        XCTAssertEqual(model.review?.items.count, 2)
         XCTAssertNil(model.forceQuit)
         XCTAssertFalse(log.entries.contains { $0.hasPrefix("forceQuit") || $0.hasPrefix("trash") || $0.hasPrefix("finder") })
         XCTAssertTrue(FileManager.default.fileExists(atPath: chatter.path))
