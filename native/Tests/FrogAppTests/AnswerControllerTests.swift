@@ -176,12 +176,18 @@ final class AnswerControllerTests: XCTestCase {
         fixture.streams.scripts = [[.event(.text("Partial ")), .hang], [.event(.text("Full answer"))]]
         fixture.controller.start(rule: .explainPreset, capture: AnswerCapture(text: "bank"))
         try await waitUntil { fixture.controller.session?.partial == "Partial " }
-        fixture.controller.copyLatest()
+        XCTAssertTrue(fixture.controller.copyLatest())
         fixture.controller.stop()
         fixture.controller.retry()
         try await waitUntilSettled(fixture.controller)
-        fixture.controller.copyLatest()
+        XCTAssertTrue(fixture.controller.copyLatest())
         XCTAssertEqual(fixture.calls.copies, ["Partial", "Full answer"])
+
+        let waiting = Fixture(provider: cloud)
+        waiting.streams.scripts = [[.hang]]
+        waiting.controller.start(rule: .explainPreset, capture: AnswerCapture(text: "bank"))
+        XCTAssertFalse(waiting.controller.copyLatest(), "Nothing to copy, so the panel confirms nothing")
+        XCTAssertTrue(waiting.calls.copies.isEmpty)
     }
 
     func testTheSourceIsNeverSent() async throws {

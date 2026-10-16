@@ -12,6 +12,8 @@ import FrogCore
     @Published var canSaveNote = false
     @Published var noteState: AnswerController.NoteState?
     @Published var pinned = false
+    /// Shows "Copied" in place of Copy for a moment after the answer was copied.
+    @Published var copied = false
     @Published var question = ""
     /// The tallest the panel grows before its answer scrolls.
     @Published var maxHeight: CGFloat = 560
@@ -43,6 +45,7 @@ import FrogCore
     private var globalKeyMonitor: Any?
     private var globalMouseMonitor: Any?
     private var activationObserver: NSObjectProtocol?
+    private var copiedReset: Task<Void, Never>?
 
     init() {
         model.ask = { [weak self] question in
@@ -51,7 +54,7 @@ import FrogCore
         }
         model.stop = { [weak self] in self?.controller?.stop() }
         model.retry = { [weak self] in self?.controller?.retry() }
-        model.copy = { [weak self] in self?.controller?.copyLatest() }
+        model.copy = { [weak self] in self?.copyLatest() }
         model.editRule = { [weak self] in self?.controller?.editRule() }
         model.saveNote = { [weak self] in self?.controller?.saveToNote() }
         model.close = { [weak self] in self?.dismiss(.closeButton) }
@@ -67,6 +70,8 @@ import FrogCore
         sourcePID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         openedAt = ProcessInfo.processInfo.systemUptime
         model.question = ""
+        copiedReset?.cancel(); copiedReset = nil
+        model.copied = false
         apply(session)
         installMonitors()
         if panel.isVisible, model.pinned { return }
@@ -100,6 +105,20 @@ import FrogCore
         model.noteState = nil
         model.question = ""
         model.pinned = false
+        copiedReset?.cancel(); copiedReset = nil
+        model.copied = false
+    }
+
+    /// The button and ⌘↩ both confirm the copy, since nothing else on screen changes.
+    private func copyLatest() {
+        guard controller?.copyLatest() == true else { return }
+        model.copied = true
+        copiedReset?.cancel()
+        copiedReset = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            self?.model.copied = false
+        }
     }
 
     // MARK: Layout
@@ -223,7 +242,7 @@ import FrogCore
             dismiss(event.keyCode == 53 ? .escapeInPanel : .closeButton)
             return nil
         case .runSecondary:
-            controller?.copyLatest()
+            copyLatest()
             return nil
         default:
             return event

@@ -135,7 +135,10 @@ struct AnswerPanelView: View {
                 if model.session?.phase.isRunning == true {
                     Button(L10n.text("Stop")) { model.stop() }.help(L10n.text("Stop (⌘.)"))
                 }
-                Button(L10n.text("Copy")) { model.copy() }.help(L10n.text("Copy (⌘↩)")).disabled(!hasAnswer)
+                Button { model.copy() } label: {
+                    if model.copied { Label(L10n.text("Copied"), systemImage: "checkmark") } else { Text(L10n.text("Copy")) }
+                }
+                .help(L10n.text("Copy (⌘↩)")).disabled(!hasAnswer)
                 if model.offersNotes { saveNoteButton }
             }
             if let message = model.followUpMessage {

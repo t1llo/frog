@@ -207,13 +207,15 @@ struct AnswerCapture: Sendable {
         presenter.close()
     }
 
-    /// Copies the latest answer, the visible part of it while it streams.
-    func copyLatest() {
-        guard let session else { return }
+    /// Copies the latest answer, the visible part of it while it streams. False when there was nothing to copy.
+    @discardableResult
+    func copyLatest() -> Bool {
+        guard let session else { return false }
         let partial = session.partial.trimmingCharacters(in: .whitespacesAndNewlines)
         let text = partial.isEmpty ? session.turns.last?.answer ?? "" : partial
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty else { return false }
         copy(text)
+        return true
     }
 
     func editRule() {
