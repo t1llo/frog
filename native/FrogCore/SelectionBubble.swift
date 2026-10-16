@@ -278,7 +278,7 @@ public enum BundleIdentifiers {
 
     public static func isValid(_ id: String) -> Bool {
         (1...255).contains(id.unicodeScalars.count) && id.contains(".")
-            && id.unicodeScalars.allSatisfy(allowed.contains)
+            && id.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 
     public static func validate(_ ids: [String]) throws {
