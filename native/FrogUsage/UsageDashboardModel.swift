@@ -282,6 +282,11 @@ extension ClaudeAccountsCombination.Combined: Identifiable {
         preferences = Self.validated(saved)
         claude.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         claudeAccountsModel.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
+        // While each account is shown, the activity also counts the calls in their Claude Code
+        // folders, such as `~/.claude-work`, which the usual folders leave out.
+        claudeAccountsModel.$accounts.sink { [weak self] accounts in
+            self?.tokens.setClaudeAccountFolders(accounts.flatMap(\.codeFolders))
+        }.store(in: &observations)
         tokens.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
     }
     public func setActive(_ active: Bool) {
@@ -596,9 +601,7 @@ extension UsageDashboardModel {
         var sources = account.appFolder.map { ["Claude app · \(shown($0))"] } ?? []
         sources += account.mergedFolders.filter { ClaudeAccountDiscovery.isAppFolderName($0.lastPathComponent) }
             .map { "Claude app · \(shown($0))" }
-        if let code = account.codeFolder { sources.append("Claude Code · \(shown(code))") }
-        sources += account.mergedFolders.filter { !ClaudeAccountDiscovery.isAppFolderName($0.lastPathComponent) }
-            .map { "Claude Code · \(shown($0))" }
+        sources += account.codeFolders.map { "Claude Code · \(shown($0))" }
         return sources
     }
 }

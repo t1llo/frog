@@ -465,6 +465,11 @@ and isolated defaults.
   and renews that folder's login first, as the single account's sign-in does, and only
   then opens Terminal with `CLAUDE_CONFIG_DIR=… claude auth login` for that folder.
   While each account is shown, the popup and the page offer no unnamed sign-in.
+- **Activity of every account.** While the switch is on, the token activity and its API
+  cost also read each account's Claude Code folders that the usual ones leave out, such
+  as `~/.claude-account-b`, so "Each account" and "Combined" count every account's calls;
+  a folder reached through a symbolic link is read once. Turning the switch off, or an
+  account going away, starts the reading over without those folders.
 - **A folder signed in to another account.** When the newest organization in an
   account's Claude app history changes, that account's endpoint reading and borrowed
   renewal times are dropped, Frog looks for accounts again, and the label stays.
@@ -480,7 +485,7 @@ and isolated defaults.
 **Verified:** `ClaudeAccountsStoreTests` (separate gates, the 30 s start, the default
 account's saved gate, nothing opened while the switch is off, the notice, an app-only
 account sending nothing, the live-reading command with a space in the home folder, an
-organization change, no e-mail address), with `UsageParityTests`,
+organization change, every account's Claude Code calls in the activity, no e-mail address), with `UsageParityTests`,
 `UsageLifecycleTests` and `ClaudeLoginRenewalTests` unchanged.
 
 ### Showing each account

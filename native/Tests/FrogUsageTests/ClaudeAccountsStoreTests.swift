@@ -324,6 +324,43 @@ import XCTest
         XCTAssertEqual(first.sources, ["Claude app · Claude"], "The profile no longer belongs to the folder")
     }
 
+    /// B's Claude Code works in `~/.claude-account-b`, which the usual folders leave out. While each
+    /// account is shown, the activity and its API cost count both accounts' calls.
+    func testTheActivityCountsTheClaudeCodeCallsOfEveryAccountShown() async throws {
+        try twoAccounts()
+        func call(_ path: String, id: String, input: Int) throws {
+            let url = home.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let line: [String: Any] = ["type": "assistant", "timestamp": ISO8601DateFormatter().string(from: Date()),
+                                       "message": ["id": id, "model": "claude-sonnet-4-6", "usage": ["input_tokens": input]]]
+            try (JSONSerialization.data(withJSONObject: line) + Data([10])).write(to: url)
+        }
+        // The fixture's usual folder, then A's and B's own.
+        try call("claude/session.jsonl", id: "usual", input: 3)
+        try call(".claude/projects/app/a.jsonl", id: "a", input: 100)
+        try call(".claude-account-b/projects/app/b.jsonl", id: "b", input: 20)
+        let world = world()
+        let model = accountsModel(world)
+        let usage = UsageDashboardModel(defaults: defaults, fixtureRoot: home, claudeAccounts: model)
+        usage.setAvailable(true)
+        defer { usage.setAvailable(false) }
+        func input() -> Double? { usage.chart(provider: "Claude", range: "7d", metric: "Input").totals.first { $0.name == "Input" }?.value }
+        try await until { usage.loaded && input() == 3 }
+        XCTAssertEqual(input(), 3, "One account shown reads the usual folders as before")
+
+        usage.showAllAccounts()
+        try await until { input() == 123 }
+        XCTAssertEqual(usage.accounts(now: world.now).count, 2)
+        XCTAssertEqual(input(), 123, "Both accounts' calls")
+        let cost = try XCTUnwrap(usage.chart(provider: "Claude", range: "7d", metric: "API cost").totals.first { $0.name == "API cost" }?.value)
+        let price = try XCTUnwrap(apiCost(model: "claude-sonnet-4-6", input: 123, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0, fast: false))
+        XCTAssertEqual(cost, price, accuracy: 1e-12)
+
+        var off = usage.preferences; off.claudeAccounts = false; usage.updatePreferences(off)
+        try await until { input() == 3 }
+        XCTAssertEqual(input(), 3, "Turned off, the accounts' own folders are left out again")
+    }
+
     func testSummariesNeverShowAnEmailAddress() async throws {
         try twoAccounts()
         let world = world()

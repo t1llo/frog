@@ -121,6 +121,11 @@ struct ClaudeAccount: Equatable, Identifiable {
 
     var id: String { slotPath }
 
+    /// Its own Claude Code folder, then those of profiles signed in to the same organization.
+    var codeFolders: [URL] {
+        [codeFolder].compactMap { $0 } + mergedFolders.filter { !ClaudeAccountDiscovery.isAppFolderName($0.lastPathComponent) }
+    }
+
     /// "Claude and Claude-2 are signed in to the same account", or nil with nothing merged.
     var mergedDescription: String? {
         guard let first = appFolder, !mergedFolders.isEmpty else { return nil }

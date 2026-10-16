@@ -48,17 +48,15 @@ actor TokenScanner {
     /// Counts every change to what `scan()` returns, so that a pass that brought nothing new is
     /// told from one that did without comparing thousands of records.
     private var revision = 0
-    private let root: URL?
-    private let roots: [URL]?
+    private var roots: [URL]?
     init(root: URL? = nil, roots: [URL]? = nil) {
-        self.root = root
-        self.roots = roots
+        self.roots = root.map { [$0] } ?? roots
     }
 
     func scan() -> [TokenRecord] {
         let cutoff = Date().addingTimeInterval(-Self.horizon)
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
-        for root in root.map({ [$0] }) ?? roots ?? ClaudePaths.transcriptRoots {
+        for root in roots ?? ClaudePaths.transcriptRoots {
             if let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys) {
                 for case let url as URL in files where url.pathExtension == "jsonl" {
                     if Task.isCancelled { return [] }
@@ -81,6 +79,18 @@ actor TokenScanner {
     /// A scan with the revision it left behind. Both come from one turn of the actor, so no
     /// other scan can make the revision newer than the records.
     func revisedScan() -> (result: [TokenRecord], revision: Int) { (scan(), revision) }
+
+    /// The same, over `next` from now on: the Claude Code folders of the accounts shown one by one
+    /// come and go. Records do not say which folder they came from, so a folder no longer read
+    /// starts the reading over; an added one only adds its own files.
+    func revisedScan(roots next: [URL]) -> (result: [TokenRecord], revision: Int) {
+        let current = roots ?? ClaudePaths.transcriptRoots
+        if next != current {
+            if !Set(current).isSubset(of: next) { offsets = [:]; records = [:]; fastResponses = []; revision += 1 }
+            roots = next
+        }
+        return revisedScan()
+    }
 
     /// Parses complete lines from `offset` on and returns how many bytes it consumed. A final
     /// line without a newline may still be being written, so it is left for the next pass.
@@ -194,6 +204,10 @@ final class TokenStore: ObservableObject {
     private var pendingScan = false
     private var claude: TokenScanner
     private var claudeDirectory: URL
+    /// The Claude Code folders of the accounts shown one by one.
+    private var accountFolders: [URL] = []
+    /// Where Claude Code's transcripts are read: the usual folders, then each shown account's.
+    private var claudeRoots: [URL]
     private let codex: CodexScanner
     private let opencode: OpenCodeReader
     private let pi: PiScanner
@@ -210,8 +224,8 @@ final class TokenStore: ObservableObject {
         self.fixtureRoot = fixtureRoot
         self.clock = clock
         self.claudeDirectory = fixtureRoot?.appendingPathComponent("claude") ?? claudeDirectory
-        claude = TokenScanner(root: fixtureRoot?.appendingPathComponent("claude"), roots: fixtureRoot == nil ? ClaudePaths.transcriptRoots(
-            home: FileManager.default.homeDirectoryForCurrentUser, configured: claudeDirectory) : nil)
+        claudeRoots = Self.claudeRoots(fixtureRoot: fixtureRoot, directory: claudeDirectory, accountFolders: [])
+        claude = TokenScanner(roots: claudeRoots)
         codex = CodexScanner(root: fixtureRoot?.appendingPathComponent("codex"))
         opencode = OpenCodeReader(root: fixtureRoot?.appendingPathComponent("opencode"))
         pi = PiScanner(root: fixtureRoot?.appendingPathComponent("pi"))
@@ -222,11 +236,32 @@ final class TokenStore: ObservableObject {
         let wasActive = active
         stop()
         claudeDirectory = directory
-        claude = TokenScanner(roots: ClaudePaths.transcriptRoots(home: FileManager.default.homeDirectoryForCurrentUser, configured: directory))
+        claudeRoots = Self.claudeRoots(fixtureRoot: nil, directory: directory, accountFolders: accountFolders)
+        claude = TokenScanner(roots: claudeRoots)
         appliedRevisions = nil
         claudeActivity = nil
         nextScanAt = .distantPast
         if wasActive { start() }
+    }
+
+    /// The Claude Code folders of the accounts shown one by one, such as `~/.claude-work`, whose
+    /// calls count beside those of the usual folders: the estimate is for every account shown.
+    func setClaudeAccountFolders(_ folders: [URL]) {
+        let folders = folders.map(\.standardizedFileURL)
+        guard folders != accountFolders else { return }
+        accountFolders = folders
+        claudeRoots = Self.claudeRoots(fixtureRoot: fixtureRoot, directory: claudeDirectory, accountFolders: folders)
+        refresh(forceLocal: true)
+    }
+
+    /// The usual folders' `projects`, then each account folder's that is not one of them, also
+    /// through a symbolic link, so no transcript is read twice.
+    private static func claudeRoots(fixtureRoot: URL?, directory: URL, accountFolders: [URL]) -> [URL] {
+        let usual = fixtureRoot.map { [$0.appendingPathComponent("claude")] }
+            ?? ClaudePaths.transcriptRoots(home: FileManager.default.homeDirectoryForCurrentUser, configured: directory)
+        var seen = Set(usual.map { $0.resolvingSymlinksInPath().path })
+        return usual + accountFolders.map { $0.appendingPathComponent("projects").standardizedFileURL }
+            .filter { seen.insert($0.resolvingSymlinksInPath().path).inserted }
     }
 
     func start() {
@@ -258,11 +293,11 @@ final class TokenStore: ObservableObject {
         guard forceLocal || Date() >= nextScanAt else { return }
         scanning = true
         nextScanAt = Date().addingTimeInterval(60)
-        let generation = lifecycle
+        let generation = lifecycle, roots = claudeRoots
         // Started from the main actor, this would read every log at the priority of the person's
         // own input. Nothing waits for it, so nothing raises it again.
         scanTask = Task(priority: .utility) {
-            async let a = claude.revisedScan()
+            async let a = claude.revisedScan(roots: roots)
             async let b = codex.revisedScan()
             async let c = opencode.revisedScan()
             async let d = pi.revisedScan()
