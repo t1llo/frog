@@ -1369,8 +1369,12 @@ final class AppModel: ObservableObject {
         panel.allowsMultipleSelection = false
         panel.prompt = L10n.text("Choose")
         panel.message = L10n.text("Choose the folder for notes, such as an Obsidian vault.")
+        let previous = NSWorkspace.shared.frontmostApplication
         NSApp.activate(ignoringOtherApps: true)
-        return panel.runModal() == .OK ? panel.url : nil
+        let url = panel.runModal() == .OK ? panel.url : nil
+        // Saving from the answer panel: the app the selection came from gets its focus back.
+        if let previous, previous.processIdentifier != ProcessInfo.processInfo.processIdentifier { previous.activate(options: []) }
+        return url
     }
 
     func processManual(text: String, ruleID: UUID, providerID: UUID? = nil, modelID: String? = nil) {
