@@ -97,6 +97,12 @@ actor WindowManager {
     /// What Restore would return the window to, and the action that moved it last.
     func lastMove(of key: WindowKey) -> WindowFrameHistory.Entry? { history.entry(for: key) }
 
+    /// Where Frog last put a window, and the size it had before, which dragging it away gives
+    /// back. No size after Restore: the window has its earlier size already.
+    func placement(of key: WindowKey) -> (frame: CGRect, sizeBefore: CGSize?)? {
+        history.entry(for: key).map { ($0.move.applied, $0.action == .restore ? nil : $0.frame.size) }
+    }
+
     /// Forgets what Restore would return the window to.
     func forget(_ key: WindowKey) { history.remove(key) }
 

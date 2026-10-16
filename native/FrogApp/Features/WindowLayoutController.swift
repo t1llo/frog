@@ -133,7 +133,7 @@ final class WindowLayoutController: ObservableObject {
             displays: { [weak self] in self?.displays() ?? [] },
             options: { [weak self] in self?.snapOptions() ?? .legacy },
             macOS: { [weak self] in self?.readMacOS() ?? MacWindowManagerSettings() },
-            lastMove: { key in await manager.lastMove(of: key).map { ($0.move.applied, $0.frame.size) } },
+            lastMove: { await manager.placement(of: $0) },
             shouldIgnore: { $0.key.pid == own },
             restoreOnDrag: { [weak self] in self.map { WindowSwitches($0.configuration.preferences).restoreOnDrag } ?? false },
             dragToSnap: { [weak self] in self?.dragToSnapActive ?? false },

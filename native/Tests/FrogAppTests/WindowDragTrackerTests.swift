@@ -57,7 +57,7 @@ import FrogCore
             displays: { [laptop] },
             options: { .legacy },
             macOS: { MacWindowManagerSettings(edgeTiling: probe.edgeTiling) },
-            lastMove: { key in await manager.lastMove(of: key).map { ($0.move.applied, $0.frame.size) } },
+            lastMove: { await manager.placement(of: $0) },
             shouldIgnore: { $0.key.pid == ProcessInfo.processInfo.processIdentifier },
             zoneGrid: { .thirds },
             modifiers: { (probe.shift, false) },
@@ -294,6 +294,24 @@ import FrogCore
         await tracker.settle()
         let history = await manager.lastMove(of: dragged)
         XCTAssertNil(history, "Dropped with its own size back, the window has nothing left to restore")
+    }
+
+    func testARestoredWindowKeepsItsSizeWhenDragged() async throws {
+        let access = fixture(), manager = WindowManager(access: access), probe = Probe()
+        let handle = WindowHandle(key: dragged, element: nil)
+        try await manager.apply(.leftHalf, to: handle, displays: [laptop])
+        try await manager.apply(.restore, to: handle, displays: [laptop])
+        XCTAssertEqual(access.windows[dragged]?.frame, original)
+        access.writes = []
+        let tracker = makeTracker(access, manager, probe)
+        tracker.mouseDown(at: grab, time: 0)
+        await drag(tracker, access, to: CGPoint(x: 410, y: 210), time: 0.01)
+        await drag(tracker, access, to: CGPoint(x: 440, y: 230), time: 0.02)
+        await drag(tracker, access, to: CGPoint(x: 600, y: 400), time: 0.1)
+        XCTAssertTrue(tracker.wantsEscape, "The window moves with the pointer")
+        tracker.mouseUp(at: CGPoint(x: 600, y: 400), time: 0.2)
+        await tracker.settle()
+        XCTAssertEqual(access.writes, [], "Not shrunk back to the half it came from")
     }
 
     func testASnappedWindowDraggedAwayAndSnappedAgainRestoresItsFrameFromBeforeTheFirstSnap() async throws {

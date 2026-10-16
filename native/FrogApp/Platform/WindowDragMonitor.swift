@@ -104,7 +104,8 @@ final class WindowDragTracker {
     private let displays: () -> [WindowDisplay]
     private let options: () -> WindowLayoutOptions
     private let macOS: () -> MacWindowManagerSettings
-    private let lastMove: (WindowKey) async -> (CGRect, CGSize)?
+    /// Where Frog last put the window, and the size a drag away gives back, if any.
+    private let lastMove: (WindowKey) async -> (CGRect, CGSize?)?
     private let shouldIgnore: (WindowHandle) -> Bool
     private let restoreOnDrag: () -> Bool
     private let dragToSnap: () -> Bool
@@ -151,7 +152,7 @@ final class WindowDragTracker {
          displays: @escaping () -> [WindowDisplay],
          options: @escaping () -> WindowLayoutOptions,
          macOS: @escaping () -> MacWindowManagerSettings,
-         lastMove: @escaping (WindowKey) async -> (CGRect, CGSize)?,
+         lastMove: @escaping (WindowKey) async -> (CGRect, CGSize?)?,
          shouldIgnore: @escaping (WindowHandle) -> Bool,
          restoreOnDrag: @escaping () -> Bool = { true },
          dragToSnap: @escaping () -> Bool = { true },
