@@ -214,7 +214,7 @@ final class CleanerModelTests: XCTestCase {
         XCTAssertEqual(Set(try FileManager.default.contentsOfDirectory(atPath: fixture.root.appendingPathComponent("Trash").path)),
                        ["Chatter.app", "Chatter", "com.example.chatter"])
         XCTAssertEqual(log.entries.filter { $0.hasPrefix("trash") || $0.hasPrefix("finder") },
-                       ["trash Chatter", "trash com.example.chatter", "finder Chatter.app"])
+                       ["finder Chatter.app", "trash Chatter", "trash com.example.chatter"])
         XCTAssertEqual(try model.dependencies.store.records().map(\.title), ["Chatter"])
         XCTAssertEqual(model.apps, [])
         XCTAssertNil(model.review)

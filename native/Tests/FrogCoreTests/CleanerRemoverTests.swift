@@ -56,7 +56,7 @@ final class CleanerRemoverTests: XCTestCase {
                         bundlePath: app.path + "/Contents/Library/LoginItems/Example Helper.app")]
     }
 
-    func testStepsRunInOrderQuitStopMoveRecord() async throws {
+    func testStepsRunInOrderQuitStopMoveTheAppThenTheRestRecord() async throws {
         let app = try identity()
         let bundle = item(app.url, kind: .application)
         let agent = item(try fixture.launchPlist(.launchAgents, label: "com.example.agent"), kind: .launchAgent,
@@ -68,8 +68,8 @@ final class CleanerRemoverTests: XCTestCase {
 
         XCTAssertEqual(log.entries, [
             "running", "quit Example,Example Helper", "bootOut com.example.agent",
-            "trash com.example.app", "progress 1/3", "trash com.example.agent.plist", "progress 2/3",
-            "automation", "finder Example.app", "progress 3/3"
+            "automation", "finder Example.app", "progress 1/3",
+            "trash com.example.app", "progress 2/3", "trash com.example.agent.plist", "progress 3/3"
         ])
         XCTAssertEqual(outcome.failures, [])
         XCTAssertFalse(outcome.cancelled)
@@ -190,6 +190,41 @@ final class CleanerRemoverTests: XCTestCase {
             message: "Frog may not control Finder. Allow it in System Settings → Privacy & Security → Automation.")])
         XCTAssertFalse(log.entries.contains { $0.hasPrefix("finder ") })
         XCTAssertTrue(exists(container.url))
+    }
+
+    func testAnAppThatStaysKeepsItsOtherFiles() async throws {
+        let app = try identity()
+        let cache = item(try fixture.item(.caches, "com.example.app"))
+        let container = item(try fixture.item(.containers, "com.example.app"), kind: .container)
+        await trash.failFinder(after: 0, with: NSError(domain: NSOSStatusErrorDomain, code: -128))
+
+        let outcome = await run(plan([item(app.url, kind: .application, owner: .administrator), cache, container], app: app))
+
+        XCTAssertEqual(outcome.moved, [])
+        XCTAssertEqual(outcome.failures.map(\.message), Array(repeating: "You cancelled the password prompt.", count: 2))
+        XCTAssertEqual(outcome.notes, ["Example did not move, so Frog left its other files where they are."])
+        XCTAssertFalse(log.entries.contains { $0.hasPrefix("trash ") })
+        XCTAssertTrue(exists(app.url))
+        XCTAssertTrue(exists(cache.url))
+        XCTAssertEqual(try store.records(), [])
+
+        // Without Automation, nothing of the app moves either.
+        await trash.setAutomation(.denied)
+        let denied = await run(plan([item(app.url, kind: .application), cache], app: app))
+        XCTAssertEqual(denied.moved, [])
+        XCTAssertEqual(denied.notes, ["Example did not move, so Frog left its other files where they are."])
+        XCTAssertTrue(exists(cache.url))
+    }
+
+    func testDontAllowAtTheFinderPromptSaysHowToAllowIt() async throws {
+        let container = item(try fixture.item(.containers, "com.example.app"), kind: .container)
+        await trash.failFinder(after: 0, with: NSError(domain: NSOSStatusErrorDomain, code: -1743))
+
+        let outcome = await run(plan([container]))
+
+        XCTAssertEqual(outcome.failures, [RemovalFailure(
+            path: container.id,
+            message: "Frog may not control Finder. Allow it in System Settings → Privacy & Security → Automation.")])
     }
 
     func testCancelledPasswordPromptIsReported() async throws {

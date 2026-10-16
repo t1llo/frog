@@ -49,7 +49,8 @@ Whatever found an item, Frog refuses to offer or move:
 **Move to Trash…** opens a confirmation that lists every item with its path and size, says what Frog quits or stops first, and names what macOS will ask. Nothing moves until you choose **Move to Trash** there; Return alone does not confirm it.
 
 - Your own files move with the Mac's normal Move to Trash.
-- Apps, containers and items that belong to the system move through Finder in one request. macOS asks once whether Frog may control Finder. For items that belong to the system, Finder asks for your administrator password; Frog never sees it.
+- Apps, containers and items that belong to the system move through Finder in one request, before your own files. macOS asks once whether Frog may control Finder. For items that belong to the system, Finder asks for your administrator password; Frog never sees it.
+- If the app itself does not move, for example because you cancel the password prompt or do not allow Frog to control Finder, Frog leaves the app's other files where they are.
 - Background services whose files move are stopped first. System services stop after you restart your Mac.
 - If an app does not quit, Frog asks before it force quits it; unsaved changes may be lost.
 

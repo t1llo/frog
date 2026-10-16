@@ -74,7 +74,8 @@ public struct RemovalOutcome: Sendable, Equatable {
 }
 
 /// Carries out a `RemovalPlan` in a fixed order: check every item again, quit the app, stop its launch agents,
-/// move the user's items one by one and Finder's in one batch, then save what moved for Put Back.
+/// move Finder's items (the app among them) in one batch and the user's items one by one, then save what moved
+/// for Put Back.
 public struct CleanerRemover: Sendable {
     private let trash: any CleanerTrash
     private let system: any CleanerSystemControl
@@ -125,9 +126,20 @@ public struct CleanerRemover: Sendable {
     static let couldNotPutBack = "Frog could not put this item back."
     static func stillRunning(_ name: String) -> String { "\(name) is still running. Nothing was moved." }
     static func notStopped(_ label: String) -> String { "Frog could not stop \(label). It stops after you log out or restart." }
+    static func appStayed(_ name: String) -> String { "\(name) did not move, so Frog left its other files where they are." }
 
     /// The AppleScript error Finder returns when the user cancels its password prompt.
     private static let userCancelled = -128
+    /// errAEEventNotPermitted: the user answered "Don't Allow" when macOS asked whether Frog may control Finder.
+    private static let eventNotPermitted = -1743
+
+    private static func finderSentence(for error: Error) -> String {
+        switch (error as NSError).code {
+        case userCancelled: passwordCancelled
+        case eventNotPermitted: automationDenied
+        default: finderCouldNotMove
+        }
+    }
 
     public func perform(_ plan: RemovalPlan, title: String,
                         confirmForceQuit: @escaping @Sendable ([RunningAppInfo]) async -> Bool,
@@ -177,25 +189,8 @@ public struct CleanerRemover: Sendable {
         var done = 0
         var askedFullDiskAccess = false, fullDiskAccess: Bool?
 
-        // 4. The user's own items, one at a time, so one failure leaves the rest moving.
-        for removal in remaining where removal.route == .fileManager {
-            let item = removal.item
-            do {
-                let trashed = try await trash.trash(item.url)
-                outcome.moved.append(entry(removal, trashed: trashed.path))
-            } catch {
-                if !askedFullDiskAccess, Self.isPermissionError(error) {
-                    askedFullDiskAccess = true
-                    fullDiskAccess = await system.hasFullDiskAccess()
-                }
-                outcome.failures.append(RemovalFailure(path: item.id, message: sentence(for: error, item: item,
-                                                                                         fullDiskAccess: fullDiskAccess)))
-            }
-            done += 1
-            progress(done, total)
-        }
-
-        // 5. Finder's items in one Apple Event, so Finder asks for the password at most once.
+        // 4. Finder's items in one Apple Event, so Finder asks for the password at most once. They go first: the
+        //    app bundle is one of them, and whether it moves decides whether the rest may.
         let finderItems = remaining.filter { $0.route == .finder }
         if !finderItems.isEmpty {
             if await trash.finderAutomation() == .denied {
@@ -205,7 +200,7 @@ public struct CleanerRemover: Sendable {
                 do {
                     reported = try await trash.trashWithFinder(finderItems.map(\.item.url))
                 } catch {
-                    failure = (error as NSError).code == Self.userCancelled ? Self.passwordCancelled : Self.finderCouldNotMove
+                    failure = Self.finderSentence(for: error)
                     reported = []
                 }
                 // Finder can move some items of one event and then stop, so the disk says what moved.
@@ -220,6 +215,30 @@ public struct CleanerRemover: Sendable {
             }
             done += finderItems.count
             progress(done, total)
+        }
+
+        // 5. The user's own items, one at a time, so one failure leaves the rest moving. An app that stayed keeps
+        //    its settings and caches too, so a cancelled password prompt never leaves it installed but reset.
+        let userItems = remaining.filter { $0.route == .fileManager }
+        if let app = plan.removals.first(where: { $0.item.kind == .application }), exists(app.item.url), !userItems.isEmpty {
+            outcome.notes.append(Self.appStayed(plan.app?.name ?? app.item.url.deletingPathExtension().lastPathComponent))
+        } else {
+            for removal in userItems {
+                let item = removal.item
+                do {
+                    let trashed = try await trash.trash(item.url)
+                    outcome.moved.append(entry(removal, trashed: trashed.path))
+                } catch {
+                    if !askedFullDiskAccess, Self.isPermissionError(error) {
+                        askedFullDiskAccess = true
+                        fullDiskAccess = await system.hasFullDiskAccess()
+                    }
+                    outcome.failures.append(RemovalFailure(path: item.id, message: sentence(for: error, item: item,
+                                                                                             fullDiskAccess: fullDiskAccess)))
+                }
+                done += 1
+                progress(done, total)
+            }
         }
 
         // 6. Remember what moved, for Put Back.
