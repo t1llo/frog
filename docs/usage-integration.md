@@ -148,6 +148,9 @@ Implemented:
   counters every ten seconds; hidden collection keeps its one-minute cadence. A
   dashboard whose window is closed, minimised or fully covered counts as hidden.
   Anthropic/OpenAI remote request gates and credential ownership are unchanged.
+  A chart summary that ends after newer lines arrived is shown and then worked out once
+  more; discarding it kept the charts at "Reading token activity…" while Claude Code
+  wrote faster than a summary of the month took (`TokenStoreRescanTests`).
 - **OpenCode reliability:** unchanged database/WAL metadata reuse parsed counters.
   Changes reread the bounded horizon, preserving mutable-row/revert/fork semantics.
   Temporary query failures retain the last readable counters with a visible warning;

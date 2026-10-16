@@ -278,8 +278,10 @@ final class TokenStore: ObservableObject {
                 appliedRevisions = revisions
                 records = cl + cx.records + oc.records + piRecords
                 loggedLimits = cx.limits
-            } else if bucketStarts(clock()) != summarizedBuckets {
-                // The same records belong to other hours and days once the clock has moved on.
+            } else if !aggregating, bucketStarts(clock()) != summarizedBuckets {
+                // The same records belong to other hours and days once the clock has moved on. A
+                // pass under way is left alone: until the first one ends there are no buckets to
+                // compare, and each scan found the clock "moved" and asked for the pass again.
                 rebuildAccount()
             }
             if activityWarning != oc.warning { activityWarning = oc.warning }
@@ -346,7 +348,10 @@ extension TokenStore {
         let life = lifecycle
         // Waiting at the main actor's priority would raise the summarising it waits for to it.
         aggregationTask = Task(priority: .utility) {
-            // Coalesce scans and account responses arriving during an aggregation.
+            // Scans and account responses arriving during a pass are coalesced into one more pass,
+            // and every finished pass is shown first. Thrown away for newer records, passes left
+            // the charts "Reading token activity…" for good once new lines kept arriving faster
+            // than a pass over a month of busy logs takes, as with Claude Code busy in two accounts.
             while !Task.isCancelled, active, life == lifecycle {
                 let generation = aggregationGeneration
                 let records = records, activity = activity, now = clock()
@@ -371,13 +376,11 @@ extension TokenStore {
                     return (summaries: summaries, mixFromLogs: local != nil)
                 }
                 guard let result, active, life == lifecycle, !Task.isCancelled else { return }
-                guard generation == aggregationGeneration else { continue }
                 mixFromLogs = result.mixFromLogs
-                aggregating = false
                 summarizedBuckets = bucketStarts(now)
                 if loaded != scanned { loaded = scanned }
                 summaries = result.summaries
-                break
+                if generation == aggregationGeneration { aggregating = false; break }
             }
         }
     }

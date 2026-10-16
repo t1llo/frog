@@ -62,6 +62,31 @@ import XCTest
         XCTAssertEqual(totals, [3049, 7110])
     }
 
+    /// Claude Code busy in two accounts writes new lines faster than the store sums up a month of
+    /// them, and the open page or popup scans every ten seconds. Each scan here brings a line.
+    func testTheChartsAreShownWhileNewLinesKeepArrivingDuringTheirSummary() async throws {
+        let logs = try Logs()
+        defer { logs.remove() }
+        // Enough calls that many scans land while one summary is worked out.
+        try logs.addClaude(input: 1, count: 20_000)
+        let store = TokenStore(fixtureRoot: logs.root)
+        store.start()
+        defer { store.stop() }
+        // A Mac busy elsewhere takes many seconds for one summary; without the fix none is ever shown.
+        let deadline = Date().addingTimeInterval(60)
+        var added = 0
+        while !store.loaded, Date() < deadline {
+            try logs.addClaude(input: 1000)
+            added += 1
+            store.refresh(forceLocal: true)
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertTrue(store.loaded, "Still “Reading token activity…” after \(added) scans with new lines")
+        await settled(store)
+        XCTAssertEqual(store.summary(.claude, account: false, range: .week, metric: .input).totals[.input],
+                       Double(42 + 7 + 20_000 + 1000 * added), "The last summary has every line")
+    }
+
     func testChartsRollOverWithTheClockWhileTheLogsStayAsTheyWere() async throws {
         let logs = try Logs()
         defer { logs.remove() }
@@ -159,8 +184,15 @@ import XCTest
     }
 
     func addClaude(input: Int) throws {
-        try append("claude/session.jsonl", ["type": "assistant", "timestamp": stamp(),
-            "message": ["id": name(), "model": "claude-sonnet-4-6", "usage": ["input_tokens": input]]])
+        try append("claude/session.jsonl", claudeCall(input: input))
+    }
+    /// `count` calls written at once, for a month of busy logs.
+    func addClaude(input: Int, count: Int) throws {
+        try append("claude/session.jsonl", (0..<count).map { _ in claudeCall(input: input) })
+    }
+    private func claudeCall(input: Int) -> [String: Any] {
+        ["type": "assistant", "timestamp": stamp(),
+         "message": ["id": name(), "model": "claude-sonnet-4-6", "usage": ["input_tokens": input]]]
     }
     func addPi(input: Int) throws {
         try append("pi/session.jsonl", ["type": "message", "id": name(), "timestamp": stamp(),
@@ -188,8 +220,10 @@ import XCTest
     private func sql(_ statement: String) throws {
         guard sqlite3_exec(database, statement, nil, nil, nil) == SQLITE_OK else { throw NSError(domain: "SQLiteFixture", code: 2) }
     }
-    private func append(_ path: String, _ line: [String: Any]) throws {
-        let url = root.appendingPathComponent(path), data = try JSONSerialization.data(withJSONObject: line) + Data([10])
+    private func append(_ path: String, _ line: [String: Any]) throws { try append(path, [line]) }
+    private func append(_ path: String, _ lines: [[String: Any]]) throws {
+        let url = root.appendingPathComponent(path)
+        let data = try lines.reduce(into: Data()) { $0 += try JSONSerialization.data(withJSONObject: $1) + Data([10]) }
         guard let handle = try? FileHandle(forWritingTo: url) else { return try data.write(to: url) }
         defer { try? handle.close() }
         try handle.seekToEnd()
