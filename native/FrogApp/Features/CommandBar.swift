@@ -75,6 +75,7 @@ import SwiftUI
     private var settingsIndexing: Task<Void, Never>?
     private var settingsLoaded = false
     private var cachedSettings = SystemSettingsCatalog.defaults
+    private var settingIconKeys: [String: String] = [:]
     private var cachedApplications: [Rule] = []
     private var applicationRecords: [String: SearchRecord] = [:]
     private var cachedWindows: [SwitcherWindow] = []
@@ -111,7 +112,7 @@ import SwiftUI
     init(model: AppModel, pasteboard: NSPasteboard = .general, fileScopes: [Any]? = nil,
          captureTarget: @escaping @MainActor () -> (any ClipboardHistoryPasteTarget)? = { NativeClipboardHistoryPasteTarget.capture() },
          waitForRelease: @escaping () async throws -> Void = { try await ClipboardSelection.waitForShortcutRelease() },
-         loadIcon: @escaping @Sendable (String) -> NSImage = { NSWorkspace.shared.icon(forFile: $0) },
+         loadIcon: @escaping @Sendable (String) -> NSImage = { MacSettingsDiscovery.image(forIconKey: $0) },
          fileSearch: (any CommandFileSearching)? = nil,
          openFile: @escaping @MainActor (URL) -> Bool = { NSWorkspace.shared.open($0) },
          loadSettings: @escaping @Sendable () async -> [SystemSetting] = { await MacSettingsIndex.shared.load() },
@@ -148,7 +149,7 @@ import SwiftUI
     func stop() {
         hide(); warming?.cancel(); warming = nil
         settingsIndexing?.cancel(); settingsIndexing = nil; settingsLoaded = false
-        cachedSettings = SystemSettingsCatalog.defaults
+        cachedSettings = SystemSettingsCatalog.defaults; settingIconKeys = [:]
         cachedApplications = []; applicationRecords = [:]; cachedWindows = []; icons.removeAllObjects()
         windowIconPaths = [:]
         recentSelections = []; recentFiles = []; selectedFiles = []
@@ -177,6 +178,8 @@ import SwiftUI
             let settings = await self.loadSettings()
             guard !Task.isCancelled else { return }
             self.cachedSettings = settings; self.settingsLoaded = true; self.settingsIndexing = nil
+            self.settingIconKeys = Dictionary(settings.compactMap { setting in setting.icon.map { (setting.record.id, $0.key) } },
+                                              uniquingKeysWith: { first, _ in first })
             guard self.panel?.isVisible == true else { return }
             for record in self.records where record.id.hasPrefix("mac-setting:") {
                 self.recordsByID[record.id] = nil; self.actions[record.id] = nil
@@ -194,7 +197,8 @@ import SwiftUI
         if result.id.hasPrefix("app:") { return String(result.id.dropFirst(4)) }
         if let path = CleanerCommand.path(fromRowID: result.id) { return path }
         if let windowPath = windowIconPaths[result.id] { return windowPath }
-        if result.id.hasPrefix("mac-setting:") { return "/System/Applications/System Settings.app" }
+        // A pane shows its own icon once discovery found it, and the System Settings icon until then.
+        if result.id.hasPrefix("mac-setting:") { return settingIconKeys[result.id] ?? "/System/Applications/System Settings.app" }
         return nil
     }
     /// What a row draws first. It only looks in the cache, so it never waits for a read.

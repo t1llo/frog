@@ -6,6 +6,8 @@ public struct SystemSetting: Equatable, Sendable {
     public let anchor: String?
     public private(set) var record: SearchRecord
     public let destinations: [URL]
+    /// The pane's own icon on this Mac. Without one a result shows the System Settings app icon.
+    public private(set) var icon: SystemSettingIcon?
     private let aliases: [String]
 
     public init(paneID: String, title: String, keywords: String = "", aliases: [String] = [], symbol: String = "gearshape", anchor: String? = nil, legacyPaneID: String? = nil) {
@@ -28,6 +30,62 @@ public struct SystemSetting: Equatable, Sendable {
             keywords: record.keywords + " " + words, symbol: record.symbol,
             aliases: aliases + [localizedTitle], queryStyle: .command)
         return enriched
+    }
+
+    public func withIcon(_ icon: SystemSettingIcon?) -> Self {
+        var drawn = self
+        drawn.icon = icon
+        return drawn
+    }
+}
+
+/// Where System Settings takes a pane's sidebar icon from.
+public enum SystemSettingIcon: Hashable, Sendable {
+    /// The extension's own icon, which Finder draws from its `CFBundleIcons` or icon file.
+    case bundle(path: String)
+    /// A system icon type, for panes whose icon depends on the Mac, such as Battery or Energy.
+    case type(identifier: String)
+
+    private static let typePrefix = "uttype:"
+
+    /// One string per icon, for the command bar's icon cache and loader.
+    public var key: String {
+        switch self {
+        case .bundle(let path): return path
+        case .type(let identifier): return Self.typePrefix + identifier
+        }
+    }
+
+    /// The icon type a key names, or nil for a file path.
+    public static func typeIdentifier(fromKey key: String) -> String? {
+        key.hasPrefix(typePrefix) ? String(key.dropFirst(typePrefix.count)) : nil
+    }
+
+    /// Reads a settings extension's Info.plist. `facts` answers the conditions a pane's alternative icons depend on,
+    /// such as `powersource.battery`. Nil when the extension only carries the shared placeholder named `icon`,
+    /// which Finder draws as a generic plug-in brick.
+    public static func resolve(info: [String: Any], bundlePath: String, facts: [String: Bool]) -> SystemSettingIcon? {
+        let attributes = (info["EXAppExtensionAttributes"] as? [String: Any])?["SettingsExtensionAttributes"] as? [String: Any]
+        for representation in attributes?["representations"] as? [[String: Any]] ?? [] {
+            guard let identifier = representation["sidebar-iconUTTypeIdentifier"] as? String, !identifier.isEmpty,
+                  let predicate = representation["predicate"] as? String, holds(predicate, facts: facts) == true else { continue }
+            return .type(identifier: identifier)
+        }
+        if info["CFBundleIcons"] != nil || (info["CFBundleIconName"] as? String)?.isEmpty == false { return .bundle(path: bundlePath) }
+        if let file = info["CFBundleIconFile"] as? String, !file.isEmpty, file != "icon" { return .bundle(path: bundlePath) }
+        return nil
+    }
+
+    /// Only the `name == YES` and `name != YES` forms Apple uses; nil for anything else or an unknown name.
+    static func holds(_ predicate: String, facts: [String: Bool]) -> Bool? {
+        let parts = predicate.split(separator: " ").map(String.init)
+        guard parts.count == 3, let fact = facts[parts[0]], ["YES", "NO"].contains(parts[2]) else { return nil }
+        let expected = parts[2] == "YES"
+        switch parts[1] {
+        case "==": return fact == expected
+        case "!=": return fact != expected
+        default: return nil
+        }
     }
 }
 

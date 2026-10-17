@@ -1,5 +1,6 @@
 import AppKit
 import FrogCore
+import UniformTypeIdentifiers
 
 /// A single process-lifetime background scan, shared by warming and visible presentations.
 actor MacSettingsIndex {
@@ -23,7 +24,8 @@ actor MacSettingsIndex {
 enum MacSettingsDiscovery {
     static func scan(root: URL = URL(fileURLWithPath: "/System/Library/ExtensionKit/Extensions"),
                      legacyRoot: URL = URL(fileURLWithPath: "/System/Library/PreferencePanes"),
-                     languages: [String] = Locale.preferredLanguages) -> [SystemSetting] {
+                     languages: [String] = Locale.preferredLanguages,
+                     facts: [String: Bool] = deviceFacts()) -> [SystemSetting] {
         var destinations = SystemSettingsCatalog.defaults
         var positions: [String: Int] = [:]
         for (index, entry) in destinations.enumerated() where entry.anchor == nil { positions[entry.paneID] = index }
@@ -42,14 +44,32 @@ enum MacSettingsDiscovery {
                let legacyBundle = Bundle(url: legacyRoot.appendingPathComponent(legacy)) {
                 terms += " " + searchTerms(bundle: legacyBundle, languages: languages)
             }
+            let icon = SystemSettingIcon.resolve(info: info, bundlePath: url.path, facts: facts)
             if let index = positions[identifier] {
                 destinations[index] = destinations[index].includingSearchTerms(terms, localizedTitle: title)
             } else {
                 positions[identifier] = destinations.count
                 destinations.append(SystemSetting(paneID: identifier, title: title, keywords: terms))
             }
+            // Permission rows share their pane's icon, as the privacy list in System Settings does.
+            for index in destinations.indices where destinations[index].paneID == identifier {
+                destinations[index] = destinations[index].withIcon(icon)
+            }
         }
         return destinations
+    }
+
+    /// What System Settings checks before it picks one of a pane's alternative icons.
+    static func deviceFacts() -> [String: Bool] {
+        ["powersource.battery": PowerSources.read()?.batteryPercent != nil]
+    }
+
+    /// The command bar's loader for a pane icon key and for any other file path.
+    static func image(forIconKey key: String) -> NSImage {
+        if let identifier = SystemSettingIcon.typeIdentifier(fromKey: key), let type = UTType(identifier) {
+            return NSWorkspace.shared.icon(for: type)
+        }
+        return NSWorkspace.shared.icon(forFile: key)
     }
 
     private static func searchTerms(bundle: Bundle, languages: [String]) -> String {
