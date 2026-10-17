@@ -91,6 +91,8 @@ struct BubbleState: Equatable {
     private var shown: SelectionSnapshot?
     /// Whether an app is a game, by bundle identifier.
     private var games: [String: Bool] = [:]
+    /// Apps already asked to expose their text, by process.
+    private var asked: Set<pid_t> = []
 
     init(reader: SelectionReading, presenter: SelectionBubblePresenting, hooks: Hooks, system: System = .live,
          clock: @escaping () -> Date = { Date() },
@@ -228,8 +230,7 @@ struct BubbleState: Equatable {
                                     bundleID: front.bundleID, isGame: isGame(front), busy: state.busy)
         guard SelectionBubblePolicy.mayRead(context, options: options) == nil else { return }
         let started = generation
-        let result = await reader.read(pid: front.pid, maxCharacters: options.maxCharacters, includeContext: false)
-        guard started == generation else { return }
+        guard let result = await readSelection(pid: front.pid, options: options, started: started) else { return }
         var items: (visible: [BubbleItem], more: [BubbleItem]) = ([], [])
         if case let .selection(snapshot) = result { items = hooks.items(snapshot) }
         guard SelectionBubblePolicy.mayShow(result, dismissed: core.dismissedFingerprint, shown: core.shownFingerprint,
@@ -246,6 +247,30 @@ struct BubbleState: Equatable {
         installKeyMonitor()
         startIdleCheck()
     }
+
+    /// Reads the selection, and once more when it came back without one: an app that hides its text until asked is
+    /// asked first, and other apps sometimes report a fresh selection a moment late. Nil when a later input or a stop
+    /// came in between.
+    private func readSelection(pid: pid_t, options: SelectionBubbleOptions, started: Int) async -> SelectionReadResult? {
+        var result = await reader.read(pid: pid, maxCharacters: options.maxCharacters, includeContext: false)
+        guard started == generation else { return nil }
+        switch result {
+        case .empty, .unavailable: break
+        default: return result
+        }
+        if options.exposeText, asked.insert(pid).inserted, await reader.exposeText(pid: pid) {
+            // The app builds its accessibility tree after the request.
+            do { try await sleep(Self.exposeWait) } catch { return nil }
+        } else {
+            do { try await sleep(Self.retryWait) } catch { return nil }
+        }
+        guard started == generation, !Task.isCancelled else { return nil }
+        result = await reader.read(pid: pid, maxCharacters: options.maxCharacters, includeContext: false)
+        return started == generation ? result : nil
+    }
+
+    static let exposeWait: TimeInterval = 0.35
+    static let retryWait: TimeInterval = 0.15
 
     private func isGame(_ app: BubbleApplication) -> Bool {
         guard let id = app.bundleID else { return false }

@@ -81,7 +81,7 @@ struct ExplainView: View {
     private var bubbleSection: some View {
         SettingsSection(title: "Selection bubble") {
             CompactRow(title: "Show a bubble when you select text",
-                       detail: "After you select text in another app, a small bubble offers Explain and your other answer rules, and in text fields your Writing rules. Frog reads the selection through Accessibility and never copies it.") {
+                       detail: "After you select text in another app, a small bubble offers Explain and your other answer rules, and in text fields your Writing rules. Frog reads the selection through Accessibility and never copies it; Explain's shortcut works without the bubble.") {
                 Toggle("Show a bubble when you select text", isOn: Binding(get: { settings.selectionBubble }, set: { value in
                     update { $0.selectionBubble = value }
                 })).labelsHidden().toggleStyle(.switch)
@@ -102,6 +102,14 @@ struct ExplainView: View {
                 }
             }
             if settings.selectionBubble {
+                bubbleRules
+                Divider()
+                CompactRow(title: "Chrome and Electron apps",
+                           detail: "Chrome, Arc, Helium, Slack, VS Code and similar apps hide their text from Accessibility until an app asks. Frog asks them once, so the bubble appears there too; they use a little more memory afterwards.") {
+                    Toggle("Chrome and Electron apps", isOn: Binding(get: { settings.bubbleExposeText }, set: { value in
+                        update { $0.bubbleExposeText = value }
+                    })).labelsHidden().toggleStyle(.switch)
+                }
                 Divider()
                 CompactRow(title: "Double-click selects", detail: "Also show after a double- or triple-click.") {
                     Toggle("Double-click selects", isOn: Binding(get: { settings.bubbleDoubleClick }, set: { value in
@@ -152,6 +160,43 @@ struct ExplainView: View {
                     }.padding(.leading, 4)
                 }
             }
+        }
+    }
+
+    /// The rules the bubble can offer, each with a switch; the first four show in the bar, the rest under More.
+    @ViewBuilder private var bubbleRules: some View {
+        let preferences = model.configuration.preferences
+        let rules = SelectionBubbleItems.candidates(rules: model.configuration.rules, explainEnabled: preferences.featureEnabled(.explain),
+                                                    writingEnabled: preferences.featureEnabled(.writing))
+        let hidden = Set(settings.bubbleHiddenRules)
+        Divider()
+        CompactRow(title: "Rules in the bubble",
+                   detail: "Answer rules show everywhere, Writing rules only in text fields, in this order. Past four, the rest open from the arrow at the end.") {
+            EmptyView()
+        }
+        ForEach(rules) { rule in
+            HStack(spacing: 8) {
+                Image(systemName: rule.answersInPanel ? SelectionBubbleItems.answerSymbol : SelectionBubbleItems.writingSymbol)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(rule.answersInPanel ? FrogStyle.accent : FrogStyle.muted)
+                    .frame(width: 18).accessibilityHidden(true)
+                Text(rule.name).font(.system(size: 12)).lineLimit(1)
+                Text(L10n.text(rule.answersInPanel ? "Answer" : "Replace selection")).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                Spacer(minLength: 8)
+                if let hotkey = rule.hotkey {
+                    Text(HotkeyManager.display(hotkey)).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                }
+                Toggle(rule.name, isOn: Binding(get: { !hidden.contains(rule.id) }, set: { shown in
+                    update { settings in
+                        settings.bubbleHiddenRules.removeAll { $0 == rule.id }
+                        if !shown { settings.bubbleHiddenRules.append(rule.id) }
+                    }
+                })).labelsHidden().toggleStyle(.switch).controlSize(.mini)
+            }.padding(.leading, 4)
+        }
+        if rules.isEmpty {
+            Text(L10n.text("Turn on a rule on this page or in Writing to offer it in the bubble.")).font(FrogType.caption)
+                .foregroundStyle(FrogStyle.muted).padding(.leading, 4)
         }
     }
 

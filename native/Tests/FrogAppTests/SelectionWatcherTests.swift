@@ -61,9 +61,12 @@ final class SelectionWatcherTests: XCTestCase {
             let fixture = Fixture()
             fixture.reader.result = result
             fixture.drag()
-            try await waitUntil { fixture.reader.calls.count == 1 }
+            // Nothing selected is read once more, in case the app reported the selection late.
+            let reads = result == .empty || result == .unavailable ? 2 : 1
+            try await waitUntil { fixture.reader.calls.count == reads }
             try await Task.sleep(for: .milliseconds(10))
             XCTAssertTrue(fixture.presenter.shows.isEmpty, "\(result)")
+            XCTAssertEqual(fixture.reader.calls.count, reads, "\(result)")
         }
     }
 
@@ -153,6 +156,35 @@ final class SelectionWatcherTests: XCTestCase {
         try await waitUntil { scheduled.presenter.shows.count == 1 }
     }
 
+    func testAnAppThatHidesItsTextIsAskedOnceAndThenShowsTheBubble() async throws {
+        let fixture = Fixture()
+        fixture.reader.result = .unavailable
+        fixture.reader.exposes = .selection(Self.snapshot())
+        fixture.drag()
+        try await waitUntil { fixture.presenter.shows.count == 1 }
+        XCTAssertEqual(fixture.reader.exposeRequests, [Fixture.pid])
+        XCTAssertEqual(fixture.reader.calls.count, 2, "Read again after asking")
+
+        // Asked once per app: a later selection there reads without asking again.
+        fixture.watcher.handle(.mouseDown(CGPoint(x: 300, y: 300), clickCount: 1, right: false), now: fixture.now)
+        fixture.reader.result = .selection(Self.snapshot("other", element: 2))
+        fixture.drag()
+        try await waitUntil { fixture.presenter.shows.count == 2 }
+        XCTAssertEqual(fixture.reader.exposeRequests, [Fixture.pid])
+    }
+
+    func testWithTheSettingOffNoAppIsAskedButASlowSelectionIsReadAgain() async throws {
+        let fixture = Fixture()
+        fixture.options.exposeText = false
+        fixture.reader.result = .empty
+        fixture.reader.exposes = .selection(Self.snapshot())
+        fixture.drag()
+        try await waitUntil { fixture.reader.calls.count == 2 }
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertTrue(fixture.reader.exposeRequests.isEmpty)
+        XCTAssertTrue(fixture.presenter.shows.isEmpty)
+    }
+
     static func snapshot(_ text: String = "levee", element: Int = 1, end: CGRect? = SelectionWatcherTests.end) -> SelectionSnapshot {
         SelectionSnapshot(text: text, bounds: end, endBounds: end, context: nil, source: nil, isEditable: false,
                           pid: Fixture.pid, bundleID: "com.apple.Safari", applicationName: "Safari",
@@ -180,6 +212,7 @@ private final class Fixture {
     var frontmost = BubbleApplication(pid: Fixture.pid, bundleID: "com.apple.Safari", bundleURL: URL(fileURLWithPath: "/Applications/Safari.app"))
     var secure = false
     var category: String?
+    var options = SelectionBubbleOptions()
     let items = [BubbleItem(id: UUID(), title: "Explain", symbol: SelectionBubbleItems.answerSymbol, answers: true)]
     var ran: [(BubbleItem, SelectionSnapshot)] = []
     private(set) var watcher: SelectionWatcher!
@@ -190,7 +223,7 @@ private final class Fixture {
                                              category: { [unowned self] _ in self.category })
         watcher = SelectionWatcher(
             reader: reader, presenter: presenter,
-            hooks: .init(options: { SelectionBubbleOptions() }, state: { [unowned self] in self.state },
+            hooks: .init(options: { [unowned self] in self.options }, state: { [unowned self] in self.state },
                          items: { [unowned self] _ in (self.items, []) }, run: { [unowned self] in self.ran.append(($0, $1)) }),
             system: system, clock: { [unowned self] in self.now },
             // The settle passes at once; the idle check waits for the test to call it.
@@ -214,6 +247,22 @@ private final class Reader: SelectionReading, @unchecked Sendable {
         set { lock.withLock { current = newValue } }
     }
     var calls: [Call] { lock.withLock { recorded } }
+    private var asked: [pid_t] = []
+    /// What the app exposes once it is asked to; nil for an app that does not take the request.
+    private var exposed: SelectionReadResult?
+    var exposes: SelectionReadResult? {
+        get { lock.withLock { exposed } }
+        set { lock.withLock { exposed = newValue } }
+    }
+    var exposeRequests: [pid_t] { lock.withLock { asked } }
+    func exposeText(pid: pid_t) async -> Bool {
+        lock.withLock {
+            asked.append(pid)
+            guard let exposed else { return false }
+            current = exposed
+            return true
+        }
+    }
     func read(pid: pid_t, maxCharacters: Int, includeContext: Bool) async -> SelectionReadResult {
         lock.withLock {
             recorded.append(Call(pid: pid, maxCharacters: maxCharacters, includeContext: includeContext))

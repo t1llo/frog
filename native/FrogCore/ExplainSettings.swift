@@ -34,6 +34,10 @@ public struct ExplainSettings: Codable, Equatable, Sendable {
     public var bubbleMaxCharacters = 4_000
     /// Apps the bubble never shows in, by bundle identifier.
     public var bubbleExcludedApps: [String] = SelectionBubbleOptions.defaultExcludedApps.sorted()
+    /// Asks Chrome, Electron and similar apps once to expose their text, so the bubble works there too.
+    public var bubbleExposeText = true
+    /// Rules the person took out of the bubble; their shortcuts still work.
+    public var bubbleHiddenRules: [UUID] = []
 
     public init() {}
 
@@ -46,7 +50,7 @@ public struct ExplainSettings: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case includeContext, notes, notesFolder, notesMode, notesFile, notesOpen
-        case selectionBubble, bubbleDoubleClick, bubbleKeyboard, bubbleMaxCharacters, bubbleExcludedApps
+        case selectionBubble, bubbleDoubleClick, bubbleKeyboard, bubbleMaxCharacters, bubbleExcludedApps, bubbleHiddenRules, bubbleExposeText
     }
 
     public init(from decoder: Decoder) throws {
@@ -63,6 +67,8 @@ public struct ExplainSettings: Codable, Equatable, Sendable {
         bubbleMaxCharacters = try values.decodeIfPresent(Int.self, forKey: .bubbleMaxCharacters) ?? 4_000
         bubbleExcludedApps = try values.decodeIfPresent([String].self, forKey: .bubbleExcludedApps)
             ?? SelectionBubbleOptions.defaultExcludedApps.sorted()
+        bubbleHiddenRules = try values.decodeIfPresent([UUID].self, forKey: .bubbleHiddenRules) ?? []
+        bubbleExposeText = try values.decodeIfPresent(Bool.self, forKey: .bubbleExposeText) ?? true
         self = normalized
     }
 
@@ -83,6 +89,7 @@ public struct ExplainSettings: Codable, Equatable, Sendable {
         options.keyboard = bubbleKeyboard
         options.maxCharacters = normalized.bubbleMaxCharacters
         options.excludedApps = Set(bubbleExcludedApps)
+        options.exposeText = bubbleExposeText
         return options
     }
 

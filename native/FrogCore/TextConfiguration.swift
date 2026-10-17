@@ -80,6 +80,7 @@ enum TextConfiguration {
             .init("explain.bubble-keyboard", "toolkit.explain.bubbleKeyboard", .bool),
             .init("explain.bubble-max-characters", "toolkit.explain.bubbleMaxCharacters", .integer(100...20_000)),
             .init("explain.bubble-excluded-apps", "toolkit.explain.bubbleExcludedApps", .identifiers),
+            .init("explain.bubble-expose-text", "toolkit.explain.bubbleExposeText", .bool),
             // slot: windows
             .init("windows.gap", "toolkit.windows.gap", .integer(0...40)),
             .init("windows.cycle-sizes", "toolkit.windows.cycleSizes", .bool),

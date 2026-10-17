@@ -8,6 +8,18 @@ final class ExplainSettingsTests: XCTestCase {
         XCTAssertTrue(settings.includeContext)
         XCTAssertTrue(Preferences().explainSettings.includeContext)
         XCTAssertFalse(Preferences().featureEnabled(.explain))
+        XCTAssertTrue(settings.bubbleExposeText)
+        XCTAssertTrue(settings.bubbleOptions.exposeText)
+        XCTAssertEqual(settings.bubbleHiddenRules, [])
+    }
+
+    func testHiddenRulesAndTheChromeSettingRoundTrip() throws {
+        var settings = ExplainSettings()
+        settings.bubbleHiddenRules = [UUID()]
+        settings.bubbleExposeText = false
+        let decoded = try JSONDecoder().decode(ExplainSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(decoded, settings)
+        XCTAssertFalse(decoded.bubbleOptions.exposeText)
     }
 
     func testIncludeContextRoundTripsThroughTheTextFile() throws {

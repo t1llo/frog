@@ -223,6 +223,7 @@ The selection bubble offers Explain, the other answer rules and, in text fields,
 - `explain.bubble-keyboard`: boolean, default `true`. Also shows it when Shift is released after selecting with Shift and the arrow keys.
 - `explain.bubble-max-characters`: integer from `100` to `20000`, default `4000`. Longer selections show no bubble.
 - `explain.bubble-excluded-apps`: a JSON list of app bundle identifiers the bubble never shows in, such as `["com.apple.Terminal", "com.apple.TextEdit"]`; at most 200, written sorted. Default: 1Password (`com.1password.1password`, `com.agilebits.onepassword7`), Bitwarden (`com.bitwarden.desktop`), Keychain Access (`com.apple.keychainaccess`) and Passwords (`com.apple.Passwords`). `[]` shows it in every app.
+- `explain.bubble-expose-text`: `true` (default) asks Chrome, Chromium browsers such as Arc and Helium, and Electron apps such as Slack and VS Code once to expose their text to Accessibility, which they keep hidden until an assistive app asks; without it the bubble never appears in those apps. They use a little more memory afterwards. `false` leaves them as they are; Explain's shortcut still works there.
 
 <!-- slot: windows -->
 ### Windows

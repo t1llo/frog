@@ -2,10 +2,18 @@ import AppKit
 import ApplicationServices
 import FrogCore
 
-/// Reads another app's selection through Accessibility only. It never copies, never touches the clipboard, never sends
-/// key events and never asks an app to turn on its accessibility, so it can run without the person asking.
+/// Reads another app's selection through Accessibility only. It never copies, never touches the clipboard and never
+/// sends key events, so it can run without the person asking.
 protocol SelectionReading: Sendable {
     func read(pid: pid_t, maxCharacters: Int, includeContext: Bool) async -> SelectionReadResult
+    /// Asks the app to expose its text to Accessibility. Chrome, Chromium browsers such as Helium and Arc, and
+    /// Electron apps such as Slack and VS Code keep their text hidden until an assistive app asks, so the bubble
+    /// found no selection there. True when the app took the request.
+    func exposeText(pid: pid_t) async -> Bool
+}
+
+extension SelectionReading {
+    func exposeText(pid: pid_t) async -> Bool { false }
 }
 
 /// The Accessibility calls a selection read makes. The live source hands out `AXUIElement`s; tests hand out their own
@@ -91,6 +99,21 @@ final class SelectionReader: SelectionReading {
          queue: DispatchQueue = DispatchQueue(label: "frog.selection-reader", qos: .userInitiated)) {
         self.source = source
         self.queue = queue
+    }
+
+    /// The attribute Chromium and Electron read as "an assistive app is here", without the window side effects of
+    /// the enhanced-interface attribute that VoiceOver sets.
+    static let manualAccessibility = "AXManualAccessibility"
+
+    func exposeText(pid: pid_t) async -> Bool {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                let application = AXUIElementCreateApplication(pid)
+                AXUIElementSetMessagingTimeout(application, SelectionAXSource.timeout)
+                let result = AXUIElementSetAttributeValue(application, Self.manualAccessibility as CFString, kCFBooleanTrue)
+                continuation.resume(returning: result == .success)
+            }
+        }
     }
 
     func read(pid: pid_t, maxCharacters: Int, includeContext: Bool) async -> SelectionReadResult {

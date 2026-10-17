@@ -1282,6 +1282,7 @@ final class AppModel: ObservableObject {
         let preferences = configuration.preferences
         return SelectionBubbleItems.items(rules: configuration.rules, explainEnabled: preferences.featureEnabled(.explain),
                                           writingEnabled: preferences.featureEnabled(.writing), editable: snapshot.isEditable,
+                                          hidden: Set(preferences.explainSettings.bubbleHiddenRules),
                                           configured: { (try? self.resolved($0)) != nil })
     }
 

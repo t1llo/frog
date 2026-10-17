@@ -30,6 +30,8 @@ public struct SelectionBubbleOptions: Equatable, Sendable {
     public var doubleClick = true
     public var keyboard = true
     public var maxCharacters = 4_000
+    /// Asks Chrome, Electron and similar apps to expose their text, which they hide until an assistive app asks.
+    public var exposeText = true
     public var excludedApps: Set<String> = SelectionBubbleOptions.defaultExcludedApps
     public static let defaultExcludedApps: Set<String> = [
         "com.1password.1password", "com.agilebits.onepassword7", "com.bitwarden.desktop",
@@ -247,31 +249,43 @@ public struct BubbleItem: Equatable, Identifiable, Sendable {
     public var symbol: String
     /// An answer rule, shown in the answer panel; otherwise a Writing rule that replaces the selection.
     public var answers: Bool
+    /// The rule's own shortcut, shown beside it in the full list.
+    public var hotkey: Hotkey?
 
-    public init(id: UUID, title: String, symbol: String, answers: Bool) {
-        self.id = id; self.title = title; self.symbol = symbol; self.answers = answers
+    public init(id: UUID, title: String, symbol: String, answers: Bool, hotkey: Hotkey? = nil) {
+        self.id = id; self.title = title; self.symbol = symbol; self.answers = answers; self.hotkey = hotkey
     }
 }
 
 public enum SelectionBubbleItems {
     public static let answerSymbol = "questionmark.bubble"
-    public static let writingSymbol = "pencil.line"
+    public static let writingSymbol = "text.alignleft"
 
-    /// Answer rules first, Explain leading, then Writing rules in an editable field. Past `visibleLimit` items, one
-    /// slot goes to More and the rest wait behind it.
-    public static func items(rules: [Rule], explainEnabled: Bool, writingEnabled: Bool, editable: Bool,
-                             configured: (Rule) -> Bool, visibleLimit: Int = 4) -> (visible: [BubbleItem], more: [BubbleItem]) {
-        var all: [BubbleItem] = []
+    /// Every rule the bubble can offer, in its order: answer rules with Explain leading, then Writing rules. The
+    /// Explain page lists these to choose which ones the bubble shows.
+    public static func candidates(rules: [Rule], explainEnabled: Bool, writingEnabled: Bool) -> [Rule] {
+        var all: [Rule] = []
         if explainEnabled {
-            let answers = rules.filter { $0.enabled && $0.answersInPanel && configured($0) }
-            let explain = answers.filter { $0.preset && $0.name == "Explain" }
-            let others = answers.filter { !($0.preset && $0.name == "Explain") }
-            all += (explain + others).map { BubbleItem(id: $0.id, title: $0.name, symbol: answerSymbol, answers: true) }
+            let answers = rules.filter { $0.enabled && $0.answersInPanel }
+            all += answers.filter(isExplain) + answers.filter { !isExplain($0) }
         }
-        if writingEnabled, editable {
-            all += rules.filter { $0.enabled && $0.category == .text && !$0.answersInPanel && configured($0) }
-                .map { BubbleItem(id: $0.id, title: $0.name, symbol: writingSymbol, answers: false) }
+        if writingEnabled {
+            all += rules.filter { $0.enabled && $0.category == .text && !$0.answersInPanel }
         }
+        return all
+    }
+
+    private static func isExplain(_ rule: Rule) -> Bool { rule.preset && rule.name == "Explain" }
+
+    /// The candidates the person did not hide, Writing rules only in an editable field. Past `visibleLimit` items,
+    /// one slot goes to More and the rest wait behind it.
+    public static func items(rules: [Rule], explainEnabled: Bool, writingEnabled: Bool, editable: Bool,
+                             hidden: Set<UUID> = [], configured: (Rule) -> Bool,
+                             visibleLimit: Int = 4) -> (visible: [BubbleItem], more: [BubbleItem]) {
+        let all = candidates(rules: rules, explainEnabled: explainEnabled, writingEnabled: writingEnabled)
+            .filter { !hidden.contains($0.id) && ($0.answersInPanel || editable) && configured($0) }
+            .map { BubbleItem(id: $0.id, title: $0.name, symbol: $0.answersInPanel ? answerSymbol : writingSymbol,
+                              answers: $0.answersInPanel, hotkey: $0.hotkey) }
         guard all.count > visibleLimit else { return (all, []) }
         let shown = max(visibleLimit - 1, 0)
         return (Array(all.prefix(shown)), Array(all.dropFirst(shown)))
