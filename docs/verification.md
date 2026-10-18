@@ -698,9 +698,10 @@ settle and shows the rules at the end of the selection; a later input cancels th
 busy, secure input, excluded apps, games, Frog frontmost and missing Accessibility never
 read; empty, secure and whitespace selections show nothing; Escape keeps the same selection
 away and another key does not; the selection shown last comes back only when a gesture
-selects it again, not after a window drag or a Shift release; a keyboard selection without
-a position shows nothing; idle
-dismissal after six seconds unless hovered; a choice runs for the bubble's selection),
+selects it again, with Shift and the arrow keys too, or after a plain click or a key took
+it away, not after a window drag or a Shift release with Command or Control; a keyboard
+selection without a position shows nothing; idle dismissal after six seconds unless
+hovered; a choice runs for the bubble's selection),
 `ExplainRoutingTests` (the watcher runs only with Explain, the bubble and Accessibility on
 and follows a change of Accessibility; an answer from the bubble reads again with context and
 never copies; a Writing rule from the bubble runs like its shortcut) and
@@ -724,7 +725,8 @@ Device checks, with isolated data, still to run:
 - [ ] Keyboard selection (Shift and the arrow keys) shows it after Shift is released; typing
       capital letters shows nothing.
 - [ ] After the bubble went away, dragging the window by its title bar or its scroll bar,
-      and pressing ⇧⌘T, bring nothing back; double-clicking the same word again does.
+      and pressing ⇧⌘T, bring nothing back; double-clicking the same word again does, and
+      so does selecting the same word again with Shift-Option-Right after Left.
 - [ ] More expands the bubble inline; a Writing rule from it replaces the selection.
 - [ ] Activity Monitor Energy Impact over 10 minutes of normal work, bubble on and off:
       ___ / ___.

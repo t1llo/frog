@@ -42,7 +42,7 @@ struct BubbleState: Equatable {
 /// Watches for the end of a selection gesture in another app and offers the bubble. A thin shell around
 /// `SelectionWatcherCore`: it turns events into `SelectionInput`s, runs one settle task, reads the selection through
 /// Accessibility only and hands the result to the presenter. It never copies and never sees typed characters: key
-/// presses are watched only while the bubble shows, and then only their key code.
+/// presses are watched only while the bubble shows, and then only their key code and modifier keys.
 @MainActor final class SelectionWatcher: SelectionWatching {
     struct Hooks {
         var options: @MainActor () -> SelectionBubbleOptions
@@ -84,6 +84,9 @@ struct BubbleState: Equatable {
     private var keyMonitor: Any?
     private var activationObserver: NSObjectProtocol?
     private var shiftDown = false
+    /// Command or Control went down while Shift was held, so releasing Shift may end a shortcut such as ⇧⌘T, which
+    /// leaves the selection as it was, rather than a selection made with Shift and the arrow keys.
+    private var shortcutWithShift = false
     private var lastMouseUp: CGPoint?
     private var pending: Task<Void, Never>?
     private var idleCheck: Task<Void, Never>?
@@ -177,12 +180,20 @@ struct BubbleState: Equatable {
         case .leftMouseUp: handle(.mouseUp(event.location, clickCount: event.clickCount, modifiers: Self.modifiers(event.flags)), now: now)
         case .scrollWheel: handle(.scroll, now: now)
         case .flagsChanged:
-            let shift = event.flags.contains(.shift)
-            let released = shiftDown && !shift && NSEvent.pressedMouseButtons == 0
-            shiftDown = shift
-            if released { handle(.shiftReleased, now: now) }
+            modifiersChanged(Self.modifiers(event.flags), mouseButtonDown: NSEvent.pressedMouseButtons != 0, now: now)
         default: break
         }
+    }
+
+    /// Shift going up while no mouse button is down ends a keyboard selection, or a shortcut when Command or Control
+    /// went down while it was held.
+    func modifiersChanged(_ modifiers: BubbleModifiers, mouseButtonDown: Bool, now: Date) {
+        let shift = modifiers.contains(.shift)
+        if shift, !shiftDown { shortcutWithShift = false }
+        if shift, !modifiers.isDisjoint(with: [.command, .control]) { shortcutWithShift = true }
+        let released = shiftDown && !shift && !mouseButtonDown
+        shiftDown = shift
+        if released { handle(.shiftReleased, now: now) }
     }
 
     private static func modifiers(_ flags: NSEvent.ModifierFlags) -> BubbleModifiers {
@@ -205,8 +216,9 @@ struct BubbleState: Equatable {
             case .cancelPending:
                 pending?.cancel(); pending = nil
             case let .scheduleRead(token, at, gesture):
+                let keyboard = gesture == .keyboard
                 schedule(token: token, delay: max(at.timeIntervalSince(now), 0), gesture: gesture,
-                         pointer: gesture == .keyboard ? nil : lastMouseUp)
+                         pointer: keyboard ? nil : lastMouseUp, afterShortcut: keyboard && shortcutWithShift)
             case .dismiss:
                 hideBubble()
             }
@@ -215,17 +227,17 @@ struct BubbleState: Equatable {
 
     // MARK: Reading
 
-    private func schedule(token: Int, delay: TimeInterval, gesture: SelectionGesture, pointer: CGPoint?) {
+    private func schedule(token: Int, delay: TimeInterval, gesture: SelectionGesture, pointer: CGPoint?, afterShortcut: Bool) {
         pending?.cancel()
         pending = Task { [weak self, sleep] in
             do { try await sleep(delay) } catch { return }
             guard !Task.isCancelled else { return }
-            await self?.settle(token: token, gesture: gesture, pointer: pointer)
+            await self?.settle(token: token, gesture: gesture, pointer: pointer, afterShortcut: afterShortcut)
         }
     }
 
     /// After the quiet time: checks, reads without context, checks again, shows.
-    private func settle(token: Int, gesture: SelectionGesture, pointer: CGPoint?) async {
+    private func settle(token: Int, gesture: SelectionGesture, pointer: CGPoint?, afterShortcut: Bool) async {
         guard core.settleFired(token: token) else { return }
         pending = nil
         guard let front = system.frontmost() else { return }
@@ -246,8 +258,8 @@ struct BubbleState: Equatable {
         if case let .selection(snapshot) = result {
             items = hooks.items(snapshot)
             // Dragging a window or pressing a shortcut with Shift ends like a selection but leaves the old one.
-            reselected = SelectionBubblePolicy.endsOnSelection(pointer: pointer, bounds: snapshot.bounds,
-                                                               endBounds: snapshot.endBounds)
+            reselected = SelectionBubblePolicy.reselects(pointer: pointer, afterShortcut: afterShortcut,
+                                                         bounds: snapshot.bounds, endBounds: snapshot.endBounds)
         }
         guard SelectionBubblePolicy.mayShow(result, dismissed: core.dismissedFingerprint, shown: core.shownFingerprint,
                                             offered: core.offeredFingerprint, reselected: reselected,
@@ -353,14 +365,15 @@ struct BubbleState: Equatable {
         if presenter.isVisible { presenter.hide() }
     }
 
-    /// Any key hides the bubble, Escape for this selection. Only the key code is read.
+    /// Any key hides the bubble, Escape for this selection. Only the key code and the modifier keys are read.
     private func installKeyMonitor() {
         guard isRunning, keyMonitor == nil else { return }
         keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let keyCode = event.keyCode
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.handle(.keyDown(keyCode: keyCode), now: self.clock())
+                self.handle(.keyDown(keyCode: keyCode, modifiers: Self.modifiers(flags)), now: self.clock())
             }
         }
     }

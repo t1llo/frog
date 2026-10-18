@@ -83,11 +83,37 @@ final class SelectionWatcherCoreTests: XCTestCase {
         core.hidden()
         core.interrupted()
         _ = send(.keyDown(keyCode: 53))
-        XCTAssertEqual(core.offeredFingerprint, fingerprint)
+        // A drag, such as by a window's title bar.
+        _ = send(.mouseDown(.zero, clickCount: 1, right: false))
+        _ = send(.mouseUp(CGPoint(x: 200, y: 0), clickCount: 1, modifiers: []))
+        _ = send(.scroll)
+        _ = send(.applicationChanged)
+        _ = send(.shiftReleased)
+        XCTAssertEqual(core.offeredFingerprint, fingerprint, "Nothing here took the selection away")
         var other = fingerprint
         other.length = 9
         core.shown(other, now: start)
         XCTAssertEqual(core.offeredFingerprint, other, "Only the last one")
+    }
+
+    func testAPlainClickOrAKeyTakesTheOfferedSelectionAway() {
+        func offeredAfter(_ inputs: [SelectionInput]) -> SelectionFingerprint? {
+            core = SelectionWatcherCore()
+            core.shown(fingerprint, now: start)
+            for input in inputs { _ = send(input) }
+            return core.offeredFingerprint
+        }
+        let down = SelectionInput.mouseDown(.zero, clickCount: 1, right: false)
+        XCTAssertNil(offeredAfter([down, .mouseUp(.zero, clickCount: 1, modifiers: [])]), "A click collapses the selection")
+        XCTAssertNil(offeredAfter([.keyDown(keyCode: 123)]), "An arrow key")
+        XCTAssertNil(offeredAfter([.keyDown(keyCode: 124, modifiers: [.shift, .option])]))
+
+        XCTAssertEqual(offeredAfter([down, .mouseUp(.zero, clickCount: 1, modifiers: .shift)]), fingerprint, "A Shift-click")
+        XCTAssertEqual(offeredAfter([down, .mouseUp(.zero, clickCount: 1, modifiers: .command)]), fingerprint)
+        XCTAssertEqual(offeredAfter([down, .mouseUp(.zero, clickCount: 2, modifiers: [])]), fingerprint)
+        XCTAssertEqual(offeredAfter([.keyDown(keyCode: 17, modifiers: [.shift, .command])]), fingerprint, "⇧⌘T")
+        XCTAssertEqual(offeredAfter([.keyDown(keyCode: 8, modifiers: .control)]), fingerprint)
+        XCTAssertEqual(offeredAfter([.keyDown(keyCode: 53)]), fingerprint, "Escape keeps it, dismissed")
     }
 
     func testIdleDismissalAfterSixSecondsAndHoverResetsIt() {

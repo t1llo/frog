@@ -85,19 +85,22 @@ final class SelectionBubblePolicyTests: XCTestCase {
         XCTAssertEqual(show(offered: fingerprint, reselected: false, items: 0), .unchanged)
     }
 
-    func testAGestureEndsOnItsSelectionWithinAMargin() {
+    func testAGestureSelectsAgainWhenItEndsOnItsSelectionOrIsNoShortcut() {
+        func reselects(_ pointer: CGPoint?, afterShortcut: Bool = false, bounds: CGRect?, endBounds: CGRect?) -> Bool {
+            SelectionBubblePolicy.reselects(pointer: pointer, afterShortcut: afterShortcut, bounds: bounds, endBounds: endBounds)
+        }
         let word = CGRect(x: 100, y: 500, width: 40, height: 16)
         let last = CGRect(x: 132, y: 500, width: 8, height: 16)
-        XCTAssertTrue(SelectionBubblePolicy.endsOnSelection(pointer: CGPoint(x: 120, y: 508), bounds: word, endBounds: last))
-        XCTAssertTrue(SelectionBubblePolicy.endsOnSelection(pointer: CGPoint(x: 160, y: 490), bounds: word, endBounds: last),
-                      "A drag that ends just past the text")
-        XCTAssertFalse(SelectionBubblePolicy.endsOnSelection(pointer: CGPoint(x: 400, y: 880), bounds: word, endBounds: last),
-                       "The title bar of a window being dragged")
-        XCTAssertTrue(SelectionBubblePolicy.endsOnSelection(pointer: CGPoint(x: 136, y: 508), bounds: nil, endBounds: last))
-        XCTAssertTrue(SelectionBubblePolicy.endsOnSelection(pointer: CGPoint(x: 400, y: 880), bounds: nil, endBounds: nil),
-                      "Without a rectangle a mouse gesture counts")
-        XCTAssertFalse(SelectionBubblePolicy.endsOnSelection(pointer: nil, bounds: word, endBounds: last), "A keyboard gesture")
-        XCTAssertFalse(SelectionBubblePolicy.endsOnSelection(pointer: nil, bounds: nil, endBounds: nil))
+        XCTAssertTrue(reselects(CGPoint(x: 120, y: 508), bounds: word, endBounds: last))
+        XCTAssertTrue(reselects(CGPoint(x: 160, y: 490), bounds: word, endBounds: last), "A drag that ends just past the text")
+        XCTAssertFalse(reselects(CGPoint(x: 400, y: 880), bounds: word, endBounds: last), "The title bar of a window being dragged")
+        XCTAssertFalse(reselects(CGPoint(x: 400, y: 880), afterShortcut: true, bounds: word, endBounds: last))
+        XCTAssertTrue(reselects(CGPoint(x: 136, y: 508), bounds: nil, endBounds: last))
+        XCTAssertTrue(reselects(CGPoint(x: 400, y: 880), bounds: nil, endBounds: nil), "Without a rectangle a mouse gesture counts")
+        XCTAssertTrue(reselects(nil, bounds: word, endBounds: last), "Shift and the arrow keys")
+        XCTAssertTrue(reselects(nil, bounds: nil, endBounds: nil))
+        XCTAssertFalse(reselects(nil, afterShortcut: true, bounds: word, endBounds: last), "A shortcut such as ⇧⌘T")
+        XCTAssertFalse(reselects(nil, afterShortcut: true, bounds: nil, endBounds: nil))
     }
 
     func testStatus() {

@@ -71,6 +71,8 @@ final class SelectionGestureTrackerTests: XCTestCase {
         XCTAssertEqual(send(.keyDown(keyCode: 53)), .dismiss(escape: true))
         XCTAssertEqual(send(.keyDown(keyCode: 0)), .dismiss(escape: false))
         XCTAssertEqual(send(.keyDown(keyCode: 124)), .dismiss(escape: false))
+        XCTAssertEqual(send(.keyDown(keyCode: 53, modifiers: .shift)), .dismiss(escape: true))
+        XCTAssertEqual(send(.keyDown(keyCode: 17, modifiers: [.shift, .command])), .dismiss(escape: false))
         XCTAssertEqual(send(.scroll), .dismiss(escape: false))
         XCTAssertEqual(send(.applicationChanged), .dismiss(escape: false))
     }

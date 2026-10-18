@@ -11,15 +11,15 @@ public struct BubbleModifiers: OptionSet, Hashable, Sendable {
     public static let control = BubbleModifiers(rawValue: 1 << 3)
 }
 
-/// One global event, reduced to what the bubble needs. A key press carries its key code only, so no input can hold
-/// typed characters.
+/// One global event, reduced to what the bubble needs. A key press carries its key code and modifier keys only, so no
+/// input can hold typed characters.
 public enum SelectionInput: Equatable, Sendable {
     case mouseDown(CGPoint, clickCount: Int, right: Bool)
     case mouseUp(CGPoint, clickCount: Int, modifiers: BubbleModifiers)
     /// Shift went up while no mouse button was down: the end of a keyboard selection.
     case shiftReleased
     /// Delivered only while the bubble is visible.
-    case keyDown(keyCode: UInt16)
+    case keyDown(keyCode: UInt16, modifiers: BubbleModifiers = [])
     case scroll
     case applicationChanged
 }
@@ -70,7 +70,7 @@ public struct SelectionGestureTracker {
         case .shiftReleased:
             if let afterMouse { return afterMouse }
             return options.keyboard ? .schedule(.keyboard) : .none
-        case let .keyDown(keyCode):
+        case let .keyDown(keyCode, _):
             return .dismiss(escape: keyCode == Self.escapeKeyCode)
         case .scroll, .applicationChanged:
             return .dismiss(escape: false)
@@ -103,8 +103,8 @@ public struct SelectionWatcherCore {
     /// The selection last dismissed with Escape. The same selection does not bring the bubble back.
     public private(set) var dismissedFingerprint: SelectionFingerprint?
     public private(set) var shownFingerprint: SelectionFingerprint?
-    /// The selection the bubble showed last, kept after it went away. A gesture that did not select it again does
-    /// not bring the bubble back for it.
+    /// The selection the bubble showed last, kept after it went away until a plain click or a key takes it away. A
+    /// gesture that did not select it again does not bring the bubble back for it.
     public private(set) var offeredFingerprint: SelectionFingerprint?
     public private(set) var pendingToken: Int?
     private var tracker = SelectionGestureTracker()
@@ -119,7 +119,9 @@ public struct SelectionWatcherCore {
             pendingToken = nil
             effects.append(.cancelPending)
         }
-        switch tracker.receive(input, options: options) {
+        let decision = tracker.receive(input, options: options)
+        if Self.deselects(input, decision: decision) { offeredFingerprint = nil }
+        switch decision {
         case .none:
             break
         case let .dismiss(escape):
@@ -133,6 +135,20 @@ public struct SelectionWatcherCore {
             effects.append(.scheduleRead(token: nextToken, at: now.addingTimeInterval(Self.settle), gesture: gesture))
         }
         return effects
+    }
+
+    /// A plain click, or a key without Command or Control such as an arrow key, takes a text selection away, so the
+    /// same text selected after it is selected anew, wherever that gesture ends. A drag, a scroll, a shortcut and an
+    /// app switch may leave it as it was.
+    private static func deselects(_ input: SelectionInput, decision: SelectionGestureTracker.Decision) -> Bool {
+        switch input {
+        case let .mouseUp(_, clickCount, modifiers):
+            return decision == .none && clickCount == 1 && modifiers.isEmpty
+        case let .keyDown(keyCode, modifiers):
+            return keyCode != SelectionGestureTracker.escapeKeyCode && modifiers.isDisjoint(with: [.command, .control])
+        default:
+            return false
+        }
     }
 
     /// Whether a settle that fired may read. False when a later input cancelled it.
@@ -238,12 +254,13 @@ public enum SelectionBubblePolicy {
     /// How far from its selection a mouse gesture may end and still count as having made it.
     public static let reselectionMargin: CGFloat = 24
 
-    /// Whether a gesture ended on the selection it read, so it may have selected that text again. A drag or click
-    /// that selects ends on or next to its selection; dragging a window or a scroll bar ends away from a selection
-    /// it leaves as it was. A keyboard gesture, without a pointer, never counts; a mouse gesture whose selection
-    /// reports no rectangle always does. Cocoa coordinates.
-    public static func endsOnSelection(pointer: CGPoint?, bounds: CGRect?, endBounds: CGRect?) -> Bool {
-        guard let pointer else { return false }
+    /// Whether a gesture may have selected the text it read again. A drag or click that selects ends on or next to
+    /// its selection; dragging a window or a scroll bar ends away from a selection it leaves as it was. A mouse
+    /// gesture whose selection reports no rectangle always counts. A keyboard gesture, without a pointer, counts
+    /// unless Command or Control went down while Shift was held (`afterShortcut`), as for ⇧⌘T, which leaves the
+    /// selection as it was. Cocoa coordinates.
+    public static func reselects(pointer: CGPoint?, afterShortcut: Bool, bounds: CGRect?, endBounds: CGRect?) -> Bool {
+        guard let pointer else { return !afterShortcut }
         let rects = [bounds, endBounds].compactMap { $0 }
         guard !rects.isEmpty else { return true }
         return rects.contains { $0.insetBy(dx: -reselectionMargin, dy: -reselectionMargin).contains(pointer) }

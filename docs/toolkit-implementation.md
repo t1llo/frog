@@ -452,12 +452,15 @@ shortcut recording or a focused answer panel. `mayShow` runs after the read: a p
 field, an empty, unavailable or whitespace-only selection, one too long, the selection
 dismissed with Escape, and a rule list with nothing to offer show nothing; the selection
 already showing keeps the bubble as it is. The selection the bubble showed last comes back
-only after a mouse gesture that ends on it or within 24 points of it
-(`endsOnSelection`): dragging a window or a scroll bar, a Shift-click away from the text, or
-a shortcut with Shift such as ⇧⌘T leaves the old selection in place and shows nothing, while
-selecting it again with a double-click or a drag does show it. A mouse gesture whose
-selection reports no rectangle always counts; a keyboard gesture never does, and needs
-another selection.
+only after a gesture that may have selected it again (`reselects`): a mouse gesture that
+ends on it or within 24 points of it, or one whose selection reports no rectangle, and a
+Shift release with neither Command nor Control having gone down while Shift was held.
+Dragging a window or a scroll bar, a Shift-click away from the text, or a shortcut such as
+⇧⌘T leaves the old selection in place and shows nothing, while selecting it again with a
+double-click, a drag or Shift and the arrow keys does show it. A plain click (click count
+1, no drag, no modifier) and a key other than Escape without Command or Control take a text
+selection away, so they forget the selection shown last; a drag, a scroll and an app
+switch do not.
 
 `SelectionBubbleItems` offers enabled answer rules whose model is set up while Explain is
 on, the Explain rule first and the others in configuration order, then enabled, set-up
@@ -478,12 +481,14 @@ restart. Turning Explain off and `shutdown()` stop it.
 
 - `start()` installs one global monitor for left mouse down and up, right mouse down,
   scrolling and modifier changes, and observes which app becomes active. A global key-down
-  monitor exists only while the bubble is visible and reads the key code only. No
-  mouse-moved or dragged monitor is installed. `stop()` removes all of them and hides the
-  bubble.
+  monitor exists only while the bubble is visible and reads the key code and the modifier
+  keys only. No mouse-moved or dragged monitor is installed. `stop()` removes all of them
+  and hides the bubble.
 - Events become `SelectionInput`s: the pointer from `NSEvent.mouseLocation`, the click count
   of mouse events, the modifiers; Shift going up while no mouse button is down is
-  `shiftReleased`. Scrolling with nothing pending, being read or shown is ignored.
+  `shiftReleased`, and Command or Control going down while Shift was held makes the read
+  after it a possible shortcut. Scrolling with nothing pending, being read or shown is
+  ignored.
 - A scheduled read is one task that sleeps until the settle time, checks
   `settleFired(token)`, builds `BubbleContext` (secure input from
   `IsSecureEventInputEnabled()`, the frontmost app, a game category cached per bundle ID from
@@ -498,7 +503,7 @@ restart. Turning Explain off and `shutdown()` stop it.
   an action, and six seconds after it appeared or the pointer last left it (checked once a
   second while it shows). Escape also remembers the selection so it does not come back.
   `SelectionWatcherCore.offeredFingerprint` keeps the selection shown last after the bubble
-  hid, for `mayShow`.
+  hid, until a plain click or a key takes it away, for `mayShow`.
 
 `SelectionBubbleController` (`Platform/SelectionBubbleController.swift`) is a
 `FrogFloatingPanel` that cannot become key, with `.ignoresCycle` added; its content is a

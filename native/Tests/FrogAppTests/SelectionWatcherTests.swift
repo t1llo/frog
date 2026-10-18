@@ -141,7 +141,8 @@ final class SelectionWatcherTests: XCTestCase {
 
     func testTheSameSelectionComesBackOnlyWhenItIsSelectedAgain() async throws {
         let fixture = Fixture()
-        fixture.drag()
+        // A first selection shows wherever its drag ends.
+        fixture.drag(to: CGPoint(x: 80, y: 10))
         try await waitUntil { fixture.presenter.shows.count == 1 }
 
         // Dragging the window by its title bar hides the bubble and leaves the selection as it was.
@@ -151,9 +152,11 @@ final class SelectionWatcherTests: XCTestCase {
         XCTAssertFalse(fixture.presenter.isVisible)
         XCTAssertEqual(fixture.presenter.shows.count, 1)
 
-        // A shortcut with Shift, such as ⇧⌘T, ends like a keyboard selection.
-        fixture.watcher.handle(.shiftReleased, now: fixture.now)
+        // A shortcut with Shift, such as ⇧⌘T, ends like a keyboard selection, whichever key goes up first.
+        fixture.pressShift(with: .command)
         try await waitUntil { fixture.reader.calls.count == 3 }
+        fixture.pressShift(with: .control, releasingShiftFirst: true)
+        try await waitUntil { fixture.reader.calls.count == 4 }
         try await Task.sleep(for: .milliseconds(10))
         XCTAssertEqual(fixture.presenter.shows.count, 1)
 
@@ -164,10 +167,56 @@ final class SelectionWatcherTests: XCTestCase {
         try await waitUntil { fixture.presenter.shows.count == 2 }
 
         // So does another selection, wherever the gesture ends.
-        fixture.watcher.handle(.keyDown(keyCode: 124), now: fixture.now)
+        fixture.watcher.handle(.keyDown(keyCode: 124, modifiers: [.shift, .command]), now: fixture.now)
         fixture.reader.result = .selection(Self.snapshot("levee bank", element: 1))
-        fixture.watcher.handle(.shiftReleased, now: fixture.now)
+        fixture.pressShift(with: .command)
         try await waitUntil { fixture.presenter.shows.count == 3 }
+    }
+
+    func testTheSameKeyboardSelectionComesBackWhenSelectedAgain() async throws {
+        let fixture = Fixture()
+        // Shift going up while a mouse button is down ends a Shift-drag, not a keyboard selection.
+        fixture.watcher.modifiersChanged(.shift, mouseButtonDown: false, now: fixture.now)
+        fixture.watcher.modifiersChanged([], mouseButtonDown: true, now: fixture.now)
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertTrue(fixture.reader.calls.isEmpty)
+
+        fixture.pressShift(with: .option)
+        try await waitUntil { fixture.presenter.shows.count == 1 }
+
+        // Left takes the selection away; Shift-Option-Right selects the same word again.
+        fixture.watcher.handle(.keyDown(keyCode: 123), now: fixture.now)
+        XCTAssertFalse(fixture.presenter.isVisible)
+        fixture.pressShift(with: .option)
+        try await waitUntil { fixture.presenter.shows.count == 2 }
+
+        // After the bubble went away by itself the key that took the selection away goes unseen, and Shift and the
+        // arrow keys still select it again.
+        fixture.now.addTimeInterval(SelectionWatcherCore.idleDismiss)
+        fixture.watcher.checkIdle()
+        XCTAssertFalse(fixture.presenter.isVisible)
+        fixture.pressShift()
+        try await waitUntil { fixture.presenter.shows.count == 3 }
+    }
+
+    func testADragEndingPastTheTextShowsTheSameSelectionAgainAfterAClick() async throws {
+        let fixture = Fixture()
+        // Released in the empty margin, 100 points right of the text it selected.
+        let margin = CGPoint(x: 208, y: 508)
+        fixture.drag(to: margin)
+        try await waitUntil { fixture.presenter.shows.count == 1 }
+
+        // A plain click elsewhere takes the selection away, so the same drag selects it anew.
+        fixture.click(at: CGPoint(x: 300, y: 300))
+        XCTAssertFalse(fixture.presenter.isVisible)
+        fixture.drag(to: margin)
+        try await waitUntil { fixture.presenter.shows.count == 2 }
+
+        // Without one, a drag that ends away from the text may have moved the window instead.
+        fixture.drag(to: margin)
+        try await waitUntil { fixture.reader.calls.count == 3 }
+        try await Task.sleep(for: .milliseconds(10))
+        XCTAssertEqual(fixture.presenter.shows.count, 2)
     }
 
     func testTheBubbleGoesAwayAfterSixIdleSecondsAndHoveringKeepsIt() async throws {
@@ -353,6 +402,19 @@ private final class Fixture {
     func drag(from start: CGPoint = CGPoint(x: 10, y: 10), to end: CGPoint = CGPoint(x: 104, y: 508)) {
         watcher.handle(.mouseDown(start, clickCount: 1, right: false), now: now)
         watcher.handle(.mouseUp(end, clickCount: 1, modifiers: []), now: now)
+    }
+
+    func click(at point: CGPoint) {
+        watcher.handle(.mouseDown(point, clickCount: 1, right: false), now: now)
+        watcher.handle(.mouseUp(point, clickCount: 1, modifiers: []), now: now)
+    }
+
+    /// Shift goes down and up, as around Shift and the arrow keys or a shortcut such as ⇧⌘T. `others` go down
+    /// before Shift and up after it, or before it.
+    func pressShift(with others: BubbleModifiers = [], releasingShiftFirst: Bool = false) {
+        for modifiers in [others, others.union(.shift), releasingShiftFirst ? others : .shift, []] {
+            watcher.modifiersChanged(modifiers, mouseButtonDown: false, now: now)
+        }
     }
 }
 
