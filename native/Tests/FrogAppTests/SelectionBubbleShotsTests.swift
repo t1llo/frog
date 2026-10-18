@@ -126,25 +126,7 @@ final class SelectionBubbleShotsTests: XCTestCase {
         let folder = try Self.folder()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil }, readAccessibility: { true },
-                             selectionWatcher: StubSelectionWatcher(), systemStatusTick: { try await Task.sleep(for: .seconds(3_600)) })
-        try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
-        try await model.setFeature(.explain, enabled: true)
-        var explain = try XCTUnwrap(model.configuration.rules.first { $0.answersInPanel })
-        explain.providerID = model.configuration.providers[0].id
-        try model.saveRule(explain)
-        // An answer rule without a model of its own: the page says it stays out of the bubble.
-        var define = Rule(name: "Define", instructions: "Define the selected term.")
-        define.action = RuleAction(category: .text)
-        define.action?.textOutput = .panel
-        try model.saveRule(define)
-        let writing = model.configuration.rules.filter { $0.enabled && $0.category == .text && !$0.answersInPanel }
-        try model.updateToolkit { toolkit in
-            var settings = toolkit.explain ?? ExplainSettings()
-            settings.selectionBubble = true
-            settings.bubbleHiddenRules = Array(writing.prefix(1).map(\.id))
-            toolkit.explain = settings
-        }
+        let model = try await Self.explainModel(directory: directory, accessibility: true)
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             let host = NSHostingView(rootView: ExplainView().environmentObject(model).frame(width: 760, height: 2_400)
                 .background(FrogStyle.opaqueCanvas))
@@ -160,9 +142,125 @@ final class SelectionBubbleShotsTests: XCTestCase {
         }
     }
 
-    private static func folder() throws -> String {
-        guard let folder = ProcessInfo.processInfo.environment["FROG_BUBBLE_SHOTS"] else {
-            throw XCTSkip("Set FROG_BUBBLE_SHOTS to a folder to take pictures of the bubble")
+    // MARK: Explain
+
+    private static let longAnswer = """
+    **Idempotent** means that doing something more than once has the same effect as doing it once. In this context it \
+    describes an API request: if the connection drops and the app sends the same request again, the server does not \
+    create a second order or charge the card twice.
+
+    For example, setting a value to 5 is idempotent, while adding 5 to it is not. Developers make retries safe by \
+    sending a unique request ID that the server remembers.
+    """
+    private static let shortAnswer = """
+    Doing it again changes nothing: a request sent twice has the same effect as one. Here it makes retries safe, so a \
+    dropped connection never creates a second order.
+    """
+
+    /// The answer panel in each state, from fixture answers, drawn without a window in light and dark. Runs only with
+    /// `FROG_EXPLAIN_SHOTS` set to the folder for the pictures.
+    func testTheAnswerPanelInEachState() async throws {
+        let folder = try Self.folder("FROG_EXPLAIN_SHOTS")
+        func session(_ change: (inout AnswerSession) throws -> Void) rethrows -> AnswerSession {
+            var session = AnswerSession(rule: Rule.explainPreset, modelName: "gpt-5-mini", modelLabel: "gpt-5-mini · OpenAI",
+                                        selection: "Requests must be idempotent so that retries are safe.", context: nil,
+                                        application: "Safari", source: nil, replyLanguage: "English")
+            try change(&session)
+            return session
+        }
+        func answered(_ text: String) -> (inout AnswerSession) -> Void {
+            { $0.apply(.text(text)); $0.complete() }
+        }
+        let states: [(String, AnswerSession, (AnswerPanelModel) -> Void)] = [
+            ("answer", session(answered(Self.longAnswer)), { $0.offersNotes = true; $0.canSaveNote = true }),
+            ("short", session(answered(Self.shortAnswer)), { _ in }),
+            ("streaming", session { $0.apply(.text(String(Self.shortAnswer.prefix(70)))) }, { _ in }),
+            ("waiting", session { _ in }, { _ in }),
+            ("failed", session { $0.fail("Ollama is not running. Start it and try again.") }, { $0.recovery = .retry }),
+            ("follow-up", try session { session in
+                answered(Self.shortAnswer)(&session)
+                try session.beginFollowUp("Is a GET request idempotent?", instructions: Rule.explainInstructions)
+                session.apply(.text("Yes. A GET only reads, so sending it twice leaves everything as it was."))
+                session.complete()
+            }, { $0.offersNotes = true; $0.canSaveNote = true; $0.noteState = .saved; $0.copied = true; $0.pinned = true }),
+        ]
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let name = appearance == .aqua ? "light" : "dark"
+            for (state, session, configure) in states {
+                let model = AnswerPanelModel()
+                model.session = session
+                configure(model)
+                var height: CGFloat = 0
+                model.heightChanged = { height = $0 }
+                // Measured once, then drawn at the height the panel asks for.
+                _ = try await render(AnswerPanelView(model: model), width: AnswerPanelController.width, height: 700,
+                                     appearance: appearance)
+                let png = try await render(AnswerPanelView(model: model), width: AnswerPanelController.width,
+                                           height: max(height, 60), appearance: appearance)
+                try png.write(to: URL(fileURLWithPath: "\(folder)/panel-\(state)-\(name).png"))
+            }
+        }
+    }
+
+    /// The Explain page with the bubble on, with and without Accessibility, drawn without a window in light and dark.
+    /// Runs only with `FROG_EXPLAIN_SHOTS` set to the folder for the pictures.
+    func testTheExplainPage() async throws {
+        let folder = try Self.folder("FROG_EXPLAIN_SHOTS")
+        for (state, trusted) in [("page", true), ("page-no-access", false)] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let model = try await Self.explainModel(directory: directory, accessibility: trusted)
+            for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+                let name = appearance == .aqua ? "light" : "dark"
+                let png = try await render(ExplainView().environmentObject(model), width: 760, height: 1_500, appearance: appearance)
+                try png.write(to: URL(fileURLWithPath: "\(folder)/\(state)-\(name).png"))
+            }
+        }
+    }
+
+    /// An isolated model with Explain on, an Explain rule on a local server, an answer rule without a model, the bubble on
+    /// and one Writing rule left out of it.
+    private static func explainModel(directory: URL, accessibility: Bool) async throws -> AppModel {
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil }, readAccessibility: { accessibility },
+                             selectionWatcher: StubSelectionWatcher(), systemStatusTick: { try await Task.sleep(for: .seconds(3_600)) })
+        try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
+        try await model.setFeature(.explain, enabled: true)
+        var explain = try XCTUnwrap(model.configuration.rules.first { $0.answersInPanel })
+        explain.providerID = model.configuration.providers[0].id
+        try model.saveRule(explain)
+        var define = Rule(name: "Define", instructions: "Define the selected term.")
+        define.action = RuleAction(category: .text)
+        define.action?.textOutput = .panel
+        try model.saveRule(define)
+        let writing = model.configuration.rules.filter { $0.enabled && $0.category == .text && !$0.answersInPanel }
+        try model.updateToolkit { toolkit in
+            var settings = toolkit.explain ?? ExplainSettings()
+            settings.selectionBubble = true
+            settings.bubbleHiddenRules = Array(writing.prefix(1).map(\.id))
+            toolkit.explain = settings
+        }
+        return model
+    }
+
+    /// Draws a view into a bitmap without a window, on a plain backdrop so a panel's edge shows.
+    private func render<Content: View>(_ view: Content, width: CGFloat, height: CGFloat, appearance: NSAppearance.Name) async throws -> Data {
+        let margin: CGFloat = 16
+        let size = NSSize(width: width + margin * 2, height: height + margin * 2)
+        let host = NSHostingView(rootView: view.frame(width: width, height: height).padding(margin)
+            .background(appearance == .aqua ? Color(white: 0.86) : Color(white: 0.16)))
+        host.appearance = NSAppearance(named: appearance)
+        host.frame = NSRect(origin: .zero, size: size)
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(300))
+        host.layoutSubtreeIfNeeded()
+        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        return try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+    }
+
+    private static func folder(_ variable: String = "FROG_BUBBLE_SHOTS") throws -> String {
+        guard let folder = ProcessInfo.processInfo.environment[variable] else {
+            throw XCTSkip("Set \(variable) to a folder to take these pictures")
         }
         try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
         return folder
