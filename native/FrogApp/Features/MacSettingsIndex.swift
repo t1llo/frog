@@ -36,8 +36,8 @@ enum MacSettingsDiscovery {
                   attributes["allowsXAppleSystemPreferencesURLScheme"] as? Bool == true,
                   let identifier = bundle.bundleIdentifier, identifier.hasPrefix("com.apple."),
                   identifier.unicodeScalars.allSatisfy({ CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_").contains($0) }) else { continue }
-            let title = (bundle.localizedInfoDictionary?["CFBundleDisplayName"] as? String)
-                ?? (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String) ?? url.deletingPathExtension().lastPathComponent
+            let title = SystemSettingsCatalog.readableTitle((bundle.localizedInfoDictionary?["CFBundleDisplayName"] as? String)
+                ?? (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String) ?? url.deletingPathExtension().lastPathComponent)
             var terms = searchTerms(bundle: bundle, languages: languages)
             if let legacy = attributes["legacyPrefPaneBundleName"] as? String,
                legacy == (legacy as NSString).lastPathComponent,

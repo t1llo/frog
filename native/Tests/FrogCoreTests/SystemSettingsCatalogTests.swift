@@ -43,6 +43,17 @@ final class SystemSettingsCatalogTests: XCTestCase {
         XCTAssertTrue(CommandSearch.results(settings, query: "change").isEmpty)
     }
 
+    func testAPaneNamedOnlyByItsBundleGetsAReadableTitle() {
+        XCTAssertEqual(SystemSettingsCatalog.readableTitle("HeadphoneSettingsExtension"), "Headphone")
+        XCTAssertEqual(SystemSettingsCatalog.readableTitle("GameControllerSettingsExtension"), "Game Controller")
+        XCTAssertEqual(SystemSettingsCatalog.readableTitle("Classroom-Settings.extension"), "Classroom")
+        XCTAssertEqual(SystemSettingsCatalog.readableTitle("CDs & DVDs"), "CDs & DVDs")
+        XCTAssertEqual(SystemSettingsCatalog.readableTitle("FollowUps"), "FollowUps")
+        XCTAssertEqual(SystemSettingsCatalog.readableTitle("Extension"), "Extension")
+        let headphones = SystemSettingsCatalog.defaults.first { $0.paneID == "com.apple.HeadphoneSettings" }
+        XCTAssertEqual(headphones?.record.title, "Headphones")
+    }
+
     func testEachPaneTakesTheIconSystemSettingsShows() {
         func info(icons: [String: Any]? = nil, file: String? = nil, name: String? = nil, representations: [[String: Any]] = []) -> [String: Any] {
             var info: [String: Any] = ["EXAppExtensionAttributes": ["SettingsExtensionAttributes": ["representations": representations]]]

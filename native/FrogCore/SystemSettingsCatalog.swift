@@ -123,6 +123,7 @@ public enum SystemSettingsCatalog {
             pane("com.apple.Displays-Settings.extension", "Displays", "monitor resolution brightness scaling refresh rate retina hdr night shift true tone color colour arrangement mirroring airplay", ["display", "screen brightness", "screen resolution", "night shift", "external monitor"], "display", legacy: "com.apple.preference.displays"),
             pane("com.apple.Appearance-Settings.extension", "Appearance", "dark light mode automatic accent highlight color colour theme sidebar icon size", ["dark mode", "light mode", "theme", "accent color"], "circle.lefthalf.filled", legacy: "com.apple.preference.general"),
             pane("com.apple.BluetoothSettings", "Bluetooth", "pair device connect wireless headphones keyboard mouse airpods", ["bluetooth devices", "pair headphones", "pair airpods"], "antenna.radiowaves.left.and.right", legacy: "com.apple.preferences.Bluetooth"),
+            pane("com.apple.HeadphoneSettings", "Headphones", "airpods beats noise cancellation transparency spatial audio ear tips", ["airpods", "airpods settings", "headphone settings"], "headphones"),
             pane("com.apple.Network-Settings.extension", "Network", "internet ethernet connection ip address dns proxy proxies tcp dhcp firewall", ["internet", "ethernet", "dns", "ip address", "network connection"], "network", legacy: "com.apple.preference.network"),
             pane("com.apple.NetworkExtensionSettingsUI.NESettingsUIExtension", "VPN", "virtual private network tunnel configuration connection", ["vpn connection", "virtual private network"], "network"),
             pane("com.apple.Notifications-Settings.extension", "Notifications", "notification alerts banners badges sounds preview permission", ["notification", "notification sounds", "notification previews"], "bell", legacy: "com.apple.preference.notifications"),
@@ -161,4 +162,26 @@ public enum SystemSettingsCatalog {
             pane("com.apple.Coverage-Settings.extension", "AppleCare & Warranty", "coverage warranty applecare support repairs service", ["applecare", "warranty", "coverage"], "checkmark.shield")
         ]
     }()
+
+    /// The title for a pane whose bundle carries only its internal name, such as "GameControllerSettingsExtension":
+    /// "Game Controller". Any other name is kept as it is.
+    public static func readableTitle(_ name: String) -> String {
+        guard !name.contains(" "), name.range(of: "extension", options: .caseInsensitive) != nil else { return name }
+        var base = name
+        for suffix in ["Extension", "extension", "Settings", "settings"] {
+            while base.hasSuffix(suffix) && base.count > suffix.count { base.removeLast(suffix.count) }
+            while let last = base.last, "-_.".contains(last) { base.removeLast() }
+        }
+        var title = ""
+        var previous: Character?
+        for character in base {
+            if "-_.".contains(character) { title += " " }
+            else {
+                if character.isUppercase, let previous, previous.isLowercase { title += " " }
+                title.append(character)
+            }
+            previous = character
+        }
+        return title.isEmpty ? name : title
+    }
 }
