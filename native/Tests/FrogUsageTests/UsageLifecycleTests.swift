@@ -1,11 +1,10 @@
+import FrogTestSupport
 import XCTest
 @testable import FrogUsage
 
 @MainActor final class UsageLifecycleTests: XCTestCase {
     func testConstructionAndStoppedRefreshNeverReadAuthentication() async throws {
-        let suite = "frog-usage-test-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
         let calls = AuthReads()
         let store = Store(defaults: defaults, readAuth: { _, _ in calls.increment(); return nil })
         store.tick()
@@ -19,9 +18,7 @@ import XCTest
         XCTAssertEqual(calls.count, 1)
     }
     func testStopRejectsAnUncooperativeLateProviderReply() async throws {
-        let suite = "frog-usage-test-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
         let gate = UsageReplyGate()
         let store = Store(defaults: defaults, readAuth: { _, _ in
             ClaudeAuth(token: "fixture", source: .claudeCode, identity: "fixture", label: "Fixture", hasAccountMetadata: true)
@@ -45,9 +42,7 @@ import XCTest
     }
     func testPortableDisplayChoicesSynchronizeWithoutStartingDisabledCollection() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let suite = "frog-usage-preferences-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
         let model = UsageDashboardModel(defaults: defaults, fixtureRoot: root)
         var changes: [UsageDashboardPreferences] = []
         model.onPreferencesChange = { changes.append($0) }
@@ -66,9 +61,7 @@ import XCTest
     }
     func testVisibleRefreshFollowsWhoIsShowingNotHowOftenTheySaidSo() {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let suite = "frog-usage-presented-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
         let model = UsageDashboardModel(defaults: defaults, fixtureRoot: root)
         model.setAvailable(true)
         defer { model.setAvailable(false) }
@@ -96,9 +89,7 @@ import XCTest
         XCTAssertFalse(model.isVisiblePolling, "Nothing refreshes while Mr. Usage is off")
     }
     func testRepeatingRefreshesLetTheSystemGroupTheirWakeUps() throws {
-        let suite = "frog-usage-tolerance-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
         func check(_ timer: Timer?, _ name: String, file: StaticString = #filePath, line: UInt = #line) {
             guard let timer else { return XCTFail("\(name) is not running", file: file, line: line) }
             // NSTimer.h recommends at least ten percent; much more would slow the refresh visibly.

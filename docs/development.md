@@ -21,6 +21,7 @@ Open `native/Frog.xcodeproj` and choose **Frog-macOS** for Xcode development. Th
 - `native/FrogApp/Features`: toolkit routing, cached command search, documents, script ownership and the optional second usage status item.
 - `native/FrogUsage`: usage collection and shared popup/dashboard data. Collection follows feature enablement, including with the dashboard closed; Frog owns its status item and shutdown.
 - `native/Tests`: isolated protocol, persistence, configuration transfer, and processing tests.
+- `native/Tests/FrogTestSupport`: helpers shared by the test targets. A test that needs defaults calls `temporaryDefaults()`, which keeps the suite in a temporary folder and deletes it after the test; a named suite would leave an empty plist in `~/Library/Preferences` even after `removePersistentDomain(forName:)`.
 
 For isolated manual testing, launch the executable with `FROG_DATA_DIRECTORY` pointing to a temporary directory. Keys still use Keychain provider IDs; use fresh IDs for fixtures. README screenshots show the real native views with isolated example settings, not a running model request.
 

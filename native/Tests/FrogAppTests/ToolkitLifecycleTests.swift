@@ -2,15 +2,14 @@ import XCTest
 import AppKit
 import SwiftUI
 import FrogCore
+import FrogTestSupport
 import FrogUsage
 @testable import FrogApp
 
 @MainActor final class ToolkitLifecycleTests: XCTestCase {
     func testClosingDashboardKeepsEnabledStatusItemAndCollectionAlive() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let suite = "frog-toolkit-visible-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
         let usage = UsageDashboardModel(defaults: defaults, fixtureRoot: root)
         let toolkit = Toolkit(makeUsage: { usage })
         defer { toolkit.stop() }
@@ -62,9 +61,7 @@ import FrogUsage
     }
     func testFeatureDisableRemovesItsRouteAndStopsItsExistingUsageModule() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let suite = "frog-toolkit-test-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
         var constructions = 0
         let toolkit = Toolkit(makeUsage: { constructions += 1; return UsageDashboardModel(defaults: defaults, fixtureRoot: root) }, showsUsageStatusItem: false)
         defer { toolkit.stop() }

@@ -1,3 +1,4 @@
+import FrogTestSupport
 import XCTest
 @testable import FrogUsage
 
@@ -5,12 +6,10 @@ import XCTest
 final class ClaudeAccountDiscoveryTests: XCTestCase {
     private var home: URL!
     private var defaults: UserDefaults!
-    private var suite: String!
 
     override func setUpWithError() throws {
         home = FileManager.default.temporaryDirectory.appendingPathComponent("frog-accounts-\(UUID().uuidString)")
-        suite = "frog-tests-\(UUID().uuidString)"
-        defaults = UserDefaults(suiteName: suite)
+        defaults = temporaryDefaults()
         let support = home.appendingPathComponent("Library/Application Support")
         for (folder, file) in [("Claude", "plan-usage-history.json"), ("Claude-Account-B", "plan-usage-history.json"),
                                ("ClaudeUsageBar", "leaderboard.json"), ("Slack", "plan-usage-history.json"),
@@ -31,7 +30,6 @@ final class ClaudeAccountDiscoveryTests: XCTestCase {
 
     override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: home)
-        defaults.removePersistentDomain(forName: suite)
     }
 
     private func write(_ text: String, to url: URL) throws {

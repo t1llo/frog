@@ -1,3 +1,4 @@
+import FrogTestSupport
 import XCTest
 @testable import FrogUsage
 
@@ -29,8 +30,8 @@ import XCTest
         func request() { locked { _requests += 1 } }
     }
 
-    private func store(_ world: World, source: ClaudeLoginSource = .automatic, desktop: ClaudeDesktopReading? = nil) -> (Store, UserDefaults, String) {
-        let suite = "frog-usage-test-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
+    private func store(_ world: World, source: ClaudeLoginSource = .automatic, desktop: ClaudeDesktopReading? = nil) -> Store {
+        let defaults = temporaryDefaults()
         defaults.set(source.rawValue, forKey: "claudeLoginSource")
         let limits = Usage(limits: [Limit(id: "five_hour", label: "Session", pct: 12, resetsAt: base.addingTimeInterval(86_400), window: 5 * 3600)])
         let store = Store(defaults: defaults, readAuth: { source, _ in
@@ -38,7 +39,7 @@ import XCTest
                                       identity: "claudeCode|dir|account|org", label: "Fixture", hasAccountMetadata: true) : nil
         }, fetchLimits: { _ in world.request(); return limits }, readDesktop: { _ in desktop },
         renewLogin: { _, deadline in world.renew(deadline: deadline) }, currentDate: { world.now })
-        return (store, defaults, suite)
+        return store
     }
 
     private func settled(_ store: Store) async throws {
@@ -47,8 +48,8 @@ import XCTest
 
     func testLapsedLoginIsRenewedThroughClaudeCodeAndTheLimitsAreRead() async throws {
         let world = World(now: base); world.renewal = .renewed
-        let (store, defaults, suite) = store(world)
-        defer { store.stop(); defaults.removePersistentDomain(forName: suite) }
+        let store = store(world)
+        defer { store.stop() }
         store.start(); try await settled(store)
         XCTAssertEqual(world.renewals, 1)
         XCTAssertEqual(world.requests, 1)
@@ -63,8 +64,8 @@ import XCTest
 
     func testLoginThatCannotBeRenewedAsksForSignInAndIsRetriedEverMoreRarely() async throws {
         let world = World(now: base)
-        let (store, defaults, suite) = store(world)
-        defer { store.stop(); defaults.removePersistentDomain(forName: suite) }
+        let store = store(world)
+        defer { store.stop() }
         store.start(); try await settled(store)
         XCTAssertEqual(world.renewals, 1)
         XCTAssertEqual(world.requests, 0)
@@ -87,8 +88,8 @@ import XCTest
     func testOnlyClaudeCodesOwnLoginIsRenewed() async throws {
         for source in [ClaudeLoginSource.opencode, .pi, .claudeDesktop] {
             let world = World(now: base)
-            let (store, defaults, suite) = store(world, source: source)
-            defer { store.stop(); defaults.removePersistentDomain(forName: suite) }
+            let store = store(world, source: source)
+            defer { store.stop() }
             store.start(); try await settled(store)
             try await Task.sleep(for: .milliseconds(30))
             XCTAssertEqual(world.renewals, 0, source.rawValue)
@@ -99,8 +100,8 @@ import XCTest
 
     func testSignInWaitsForTheNewLoginWithoutStartingClaudeCodeMeanwhile() async throws {
         let world = World(now: base)
-        let (store, defaults, suite) = store(world)
-        defer { store.stop(); defaults.removePersistentDomain(forName: suite) }
+        let store = store(world)
+        defer { store.stop() }
         store.start(); try await settled(store)
         let needed = await store.beginSignIn()
         try await settled(store)
@@ -121,8 +122,8 @@ import XCTest
 
     func testSignInDuringARenewalWaitsForItAndSaysSoInsteadOfStartingAnother() async throws {
         let world = World(now: base); world.held = true
-        let (store, defaults, suite) = store(world)
-        defer { world.held = false; store.stop(); defaults.removePersistentDomain(forName: suite) }
+        let store = store(world)
+        defer { world.held = false; store.stop() }
         store.start()
         for _ in 0..<400 where world.renewals == 0 { try await Task.sleep(for: .milliseconds(5)) }
         async let first = store.beginSignIn()
@@ -152,8 +153,8 @@ import XCTest
         let world = World(now: base); world.login = true
         let stale = ClaudeDesktopReading(observedAt: base.addingTimeInterval(-3 * 3600), organization: "org", limits: [
             Limit(id: "five_hour", label: "Session", pct: 55, resetsAt: nil, window: 5 * 3600)], plan: "Max")
-        let (store, defaults, suite) = store(world, source: .claudeDesktop, desktop: stale)
-        defer { store.stop(); defaults.removePersistentDomain(forName: suite) }
+        let store = store(world, source: .claudeDesktop, desktop: stale)
+        defer { store.stop() }
         store.start()
         for _ in 0..<200 where store.desktop == nil { try await Task.sleep(for: .milliseconds(5)) }
         XCTAssertTrue(store.needsClaudeCodeLogin)
@@ -270,8 +271,7 @@ import XCTest
 
         var saved = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
         saved["nextRenewalAt"] = nil; saved["renewalInterval"] = nil
-        let suite = "frog-usage-test-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
         defaults.set(try JSONSerialization.data(withJSONObject: saved), forKey: ClaudePollingState.defaultsKey)
         XCTAssertNotNil(ClaudePollingState.load(from: defaults).lastGoodAt)
     }

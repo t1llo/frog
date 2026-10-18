@@ -1,3 +1,4 @@
+import FrogTestSupport
 import XCTest
 @testable import FrogUsage
 
@@ -154,8 +155,8 @@ import XCTest
     }
 
     private func store(account: Usage?, accountAge: TimeInterval = 0, identity: String = "claudeCode|dir|account|org-a",
-                       desktop: ClaudeDesktopReading?, now: Date, reads: Counter = Counter()) -> (Store, UserDefaults, String) {
-        let suite = "frog-usage-test-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
+                       desktop: ClaudeDesktopReading?, now: Date, reads: Counter = Counter()) -> (Store, UserDefaults) {
+        let defaults = temporaryDefaults()
         if let account {
             var state = ClaudePollingState()
             state.selectIdentity(ClaudeAuth(token: "fixture", source: .claudeCode, identity: identity, label: "Fixture", hasAccountMetadata: true))
@@ -164,7 +165,7 @@ import XCTest
         }
         let store = Store(defaults: defaults, readAuth: { _, _ in reads.increment(); return nil },
                           readDesktop: { _ in desktop }, currentDate: { now })
-        return (store, defaults, suite)
+        return (store, defaults)
     }
 
     private func desktopReading(age: TimeInterval, now: Date, session: Double = 55) -> ClaudeDesktopReading {
@@ -188,8 +189,8 @@ import XCTest
 
     func testAutomaticShowsTheNewerReadingAndBorrowsTheAccountsRenewalTimes() async throws {
         let now = Date(timeIntervalSince1970: base)
-        let (store, defaults, suite) = store(account: accountUsage(now: now), accountAge: 1200, desktop: desktopReading(age: 120, now: now), now: now)
-        defer { store.stop(); defaults.removePersistentDomain(forName: suite) }
+        let (store, _) = store(account: accountUsage(now: now), accountAge: 1200, desktop: desktopReading(age: 120, now: now), now: now)
+        defer { store.stop() }
         try await started(store)
         let shown = try XCTUnwrap(store.reading())
         XCTAssertEqual(shown.source, .desktop)
@@ -202,8 +203,8 @@ import XCTest
     func testAutomaticKeepsTheAccountReadingWhileItIsNewer() async throws {
         let now = Date(timeIntervalSince1970: base)
         let saved = desktopReading(age: 5400, now: now)
-        let (store, defaults, suite) = store(account: accountUsage(now: now), accountAge: 600, desktop: saved, now: now)
-        defer { store.stop(); defaults.removePersistentDomain(forName: suite) }
+        let (store, _) = store(account: accountUsage(now: now), accountAge: 600, desktop: saved, now: now)
+        defer { store.stop() }
         try await started(store)
         XCTAssertEqual(store.reading()?.source, .account)
         XCTAssertEqual(store.displayUsage()?.limits.map(\.pct), [20, 25])
@@ -219,17 +220,17 @@ import XCTest
 
     func testAnotherAccountsRenewalTimesAreNotBorrowed() async throws {
         let now = Date(timeIntervalSince1970: base)
-        let (store, defaults, suite) = store(account: accountUsage(now: now), accountAge: 1200, identity: "claudeCode|dir|account|org-b",
-                                             desktop: desktopReading(age: 120, now: now), now: now)
-        defer { store.stop(); defaults.removePersistentDomain(forName: suite) }
+        let (store, _) = store(account: accountUsage(now: now), accountAge: 1200, identity: "claudeCode|dir|account|org-b",
+                               desktop: desktopReading(age: 120, now: now), now: now)
+        defer { store.stop() }
         try await started(store)
         XCTAssertEqual(store.reading()?.usage.limits.map(\.resetsAt), [nil, nil])
     }
 
     func testClaudeDesktopSourceNeverReadsALoginAndFlagsAStaleReading() async throws {
         let now = Date(timeIntervalSince1970: base), reads = Counter()
-        let (store, defaults, suite) = store(account: nil, desktop: desktopReading(age: 3 * 3600, now: now), now: now, reads: reads)
-        defer { store.stop(); defaults.removePersistentDomain(forName: suite) }
+        let (store, defaults) = store(account: nil, desktop: desktopReading(age: 3 * 3600, now: now), now: now, reads: reads)
+        defer { store.stop() }
         store.setLoginSource(.claudeDesktop)
         try await started(store)
         try await Task.sleep(for: .milliseconds(40))
@@ -238,13 +239,13 @@ import XCTest
         XCTAssertEqual(store.displayUsage()?.limits.map(\.pct), [55, 30])
         XCTAssertEqual(store.warning?.contains("Sign in to Claude Code"), true)
         XCTAssertTrue(store.needsClaudeCodeLogin)
-        XCTAssertEqual(UserDefaults(suiteName: suite)?.string(forKey: "claudeLoginSource"), "Claude Desktop")
+        XCTAssertEqual(defaults.string(forKey: "claudeLoginSource"), "Claude Desktop")
     }
 
     func testClaudeDesktopSourceWithoutAReadingSaysHowToGetOne() async throws {
         let now = Date(timeIntervalSince1970: base)
-        let (store, defaults, suite) = store(account: accountUsage(now: now), desktop: nil, now: now)
-        defer { store.stop(); defaults.removePersistentDomain(forName: suite) }
+        let (store, _) = store(account: accountUsage(now: now), desktop: nil, now: now)
+        defer { store.stop() }
         store.setLoginSource(.claudeDesktop)
         try await started(store, expectDesktop: false)
         XCTAssertNil(store.reading(), "Limits read with another login are not shown as the Claude app's")
@@ -255,8 +256,8 @@ import XCTest
 
     func testSavedAccountLimitsStayUntilTheirWindowRenewsForADayAtMost() async throws {
         let now = Date(timeIntervalSince1970: base)
-        let (store, defaults, suite) = store(account: accountUsage(now: now), desktop: nil, now: now)
-        defer { store.stop(); defaults.removePersistentDomain(forName: suite) }
+        let (store, _) = store(account: accountUsage(now: now), desktop: nil, now: now)
+        defer { store.stop() }
         XCTAssertEqual(store.reading(now: now.addingTimeInterval(2 * 3600))?.usage.limits.map(\.id), ["five_hour", "seven_day"])
         XCTAssertEqual(store.reading(now: now.addingTimeInterval(10 * 3600))?.usage.limits.map(\.id), ["seven_day"],
                        "A renewed session is unknown, not an invented zero")
@@ -264,8 +265,7 @@ import XCTest
     }
 
     func testRenewedClaudeSessionKeepsItsRowAsUnknown() {
-        let suite = "frog-usage-test-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
         let now = Date()
         var state = ClaudePollingState()
         state.succeeded(Usage(limits: [
@@ -283,8 +283,7 @@ import XCTest
     }
 
     func testCostAxisUsesWholeDollars() {
-        let suite = "frog-usage-test-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
         let model = UsageDashboardModel(defaults: defaults, fixtureRoot: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
         XCTAssertEqual(model.axisLabel(100, metric: "API cost"), "$100")
         XCTAssertEqual(model.axisLabel(0, metric: "API cost"), "$0")

@@ -23,9 +23,11 @@ let package = Package(
         .target(name: "FrogUsage", path: "native/FrogUsage"),
         .target(name: "FrogCore", path: "native/FrogCore", swiftSettings: [.swiftLanguageMode(.v6)]),
         .executableTarget(name: "FrogApp", dependencies: ["FrogCore", "FrogUsage", .product(name: "Sparkle", package: "Sparkle"), .product(name: "WhisperKit", package: "WhisperKit"), .product(name: "FluidAudio", package: "FluidAudio"), .product(name: "MLXLLM", package: "mlx-swift-lm"), .product(name: "MLXLMCommon", package: "mlx-swift-lm"), .product(name: "Hub", package: "swift-transformers")], path: "native/FrogApp", resources: [.process("Resources")], linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
+        // Helpers shared by the test targets; nothing in the app links it.
+        .target(name: "FrogTestSupport", path: "native/Tests/FrogTestSupport"),
         .testTarget(name: "FrogCoreTests", dependencies: ["FrogCore"], path: "native/Tests/FrogCoreTests"),
-        .testTarget(name: "FrogAppTests", dependencies: ["FrogApp", "FrogCore", "FrogUsage"], path: "native/Tests/FrogAppTests"),
-        .testTarget(name: "FrogUsageTests", dependencies: ["FrogUsage"], path: "native/Tests/FrogUsageTests")
+        .testTarget(name: "FrogAppTests", dependencies: ["FrogApp", "FrogCore", "FrogUsage", "FrogTestSupport"], path: "native/Tests/FrogAppTests"),
+        .testTarget(name: "FrogUsageTests", dependencies: ["FrogUsage", "FrogTestSupport"], path: "native/Tests/FrogUsageTests")
     ],
     swiftLanguageModes: [.v5]
 )

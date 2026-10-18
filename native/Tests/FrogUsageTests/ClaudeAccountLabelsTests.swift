@@ -1,3 +1,4 @@
+import FrogTestSupport
 import XCTest
 @testable import FrogUsage
 
@@ -5,14 +6,8 @@ import XCTest
 final class ClaudeAccountLabelsTests: XCTestCase {
     private let home = URL(fileURLWithPath: "/fixture/home")
     private var defaults: UserDefaults!
-    private var suite: String!
 
-    override func setUp() {
-        suite = "frog-tests-\(UUID().uuidString)"
-        defaults = UserDefaults(suiteName: suite)
-    }
-
-    override func tearDown() { defaults.removePersistentDomain(forName: suite) }
+    override func setUp() { defaults = temporaryDefaults() }
 
     private func app(_ name: String) -> ClaudeAccountSource { .app(home.appendingPathComponent("Library/Application Support/\(name)")) }
     private func code(_ name: String) -> ClaudeAccountSource {

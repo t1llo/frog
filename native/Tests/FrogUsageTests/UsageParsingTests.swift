@@ -1,4 +1,5 @@
 import Foundation
+import FrogTestSupport
 import SQLite3
 import XCTest
 @testable import FrogUsage
@@ -285,9 +286,8 @@ final class UsageParsingTests: XCTestCase {
     }
 
     @MainActor func testLastGoodLimitsAndGlobalCooldownSurviveAccountChangeAndRestart() throws {
-        let suite = "frog-usage-gate-\(UUID().uuidString)", now = Date()
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let now = Date()
+        let defaults = temporaryDefaults()
         var state = ClaudePollingState()
         XCTAssertTrue(state.begin(at: now))
         state.succeeded(Usage(limits: [Limit(id: "session", label: "Session", pct: 34, resetsAt: now.addingTimeInterval(5000), window: 18000)]), at: now)
@@ -336,8 +336,7 @@ final class UsageParsingTests: XCTestCase {
         unasked.succeeded(Usage(), at: start.addingTimeInterval(3 * hour))
         XCTAssertEqual(unasked.interval, 75, "A step for each of the three quiet hours")
 
-        let suite = "frog-usage-pace-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
         var slowed = ClaudePollingState()
         for _ in 0..<5 { slowed.failed(FetchError.http(429, retryAfter: 7200, message: nil), at: start) }
         slowed.save(to: defaults)

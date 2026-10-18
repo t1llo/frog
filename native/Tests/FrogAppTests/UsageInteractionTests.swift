@@ -2,14 +2,15 @@ import AppKit
 import Combine
 import XCTest
 import FrogCore
+import FrogTestSupport
 import FrogUsage
 @testable import FrogApp
 
 @MainActor final class UsageInteractionTests: XCTestCase {
     func testRapidProviderChangesPersistTheLatestChoiceOnShutdown() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let suite = "frog-usage-save-order-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
-        defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
+        defer { try? FileManager.default.removeItem(at: root) }
         var configuration = Configuration(); configuration.preferences.setFeature(.usage, enabled: true)
         try ConfigurationStore(directory: root).save(configuration)
         let usage = UsageDashboardModel(defaults: defaults, fixtureRoot: root.appendingPathComponent("fixtures"))
@@ -25,8 +26,8 @@ import FrogUsage
 
     func testDisplaySaveFailurePreservesExternalEditAndRestoresSavedProvider() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let suite = "frog-usage-save-failure-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
-        defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
+        defer { try? FileManager.default.removeItem(at: root) }
         var configuration = Configuration(); configuration.preferences.setFeature(.usage, enabled: true)
         try ConfigurationStore(directory: root).save(configuration)
         let usage = UsageDashboardModel(defaults: defaults, fixtureRoot: root.appendingPathComponent("fixtures"))
@@ -45,8 +46,8 @@ import FrogUsage
 
     func testShutdownDrainsFailedDisplaySaveBeforeItsMainActorCallback() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let suite = "frog-usage-shutdown-failure-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
-        defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
+        defer { try? FileManager.default.removeItem(at: root) }
         var configuration = Configuration(); configuration.preferences.setFeature(.usage, enabled: true)
         try ConfigurationStore(directory: root).save(configuration)
         let usage = UsageDashboardModel(defaults: defaults, fixtureRoot: root.appendingPathComponent("fixtures"))
@@ -64,8 +65,8 @@ import FrogUsage
 
     func testProviderSelectionDoesNotReloadUnrelatedHistory() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let suite = "frog-usage-interaction-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
-        defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
+        defer { try? FileManager.default.removeItem(at: root) }
         var configuration = Configuration()
         configuration.preferences.setFeature(.usage, enabled: true)
         configuration.rules = (0..<200).map { Rule(name: "Sample rule \($0)", instructions: "Rewrite the selected text.") }
@@ -105,8 +106,8 @@ import FrogUsage
 
     func testOutsideClickClosesUsagePopoverAndInsideClickKeepsItOpen() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let suite = "frog-usage-popover-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
-        defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
+        defer { try? FileManager.default.removeItem(at: root) }
         let usage = UsageDashboardModel(defaults: defaults, fixtureRoot: root)
         let controller = UsageStatusItemController(usage: usage, openDashboard: {})
         defer { controller.stop() }

@@ -1,4 +1,5 @@
 import Foundation
+import FrogTestSupport
 import SQLite3
 import XCTest
 @testable import FrogUsage
@@ -8,8 +9,8 @@ import XCTest
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let directory = root.appendingPathComponent("opencode")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let suite = "frog-opencode-v2-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
-        defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
+        defer { try? FileManager.default.removeItem(at: root) }
         var db: OpaquePointer?
         XCTAssertEqual(sqlite3_open(directory.appendingPathComponent("opencode.db").path, &db), SQLITE_OK)
         defer { sqlite3_close(db) }
@@ -66,8 +67,8 @@ import XCTest
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let directory = root.appendingPathComponent("claude")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let suite = "frog-usage-parity-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
-        defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
+        defer { try? FileManager.default.removeItem(at: root) }
         let model = UsageDashboardModel(defaults: defaults, fixtureRoot: root)
         model.setActive(true)
         defer { model.setActive(false) }
@@ -89,8 +90,7 @@ import XCTest
     }
 
     func testAccountActivityOffersDailyRangesLikeStandalone() {
-        let suite = "frog-usage-parity-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
         let model = UsageDashboardModel(defaults: defaults, fixtureRoot: URL(fileURLWithPath: "/nonexistent-fixture"))
         model.applyPreferences(UsageDashboardPreferences(provider: "OpenAI", range: "24h", allDevices: false))
         XCTAssertEqual(model.ranges, ["7d", "30d"])
@@ -101,8 +101,8 @@ import XCTest
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let codex = root.appendingPathComponent("codex/sessions")
         try FileManager.default.createDirectory(at: codex, withIntermediateDirectories: true)
-        let suite = "frog-usage-parity-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
-        defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
+        defer { try? FileManager.default.removeItem(at: root) }
         // Just after this Mac's midnight, which east of Greenwich is still yesterday in UTC.
         let today = Calendar.current.startOfDay(for: Date())
         let at = min(today.addingTimeInterval(60), Date())
@@ -133,8 +133,8 @@ import XCTest
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let directory = root.appendingPathComponent("claude")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let suite = "frog-usage-parity-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
-        defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
+        defer { try? FileManager.default.removeItem(at: root) }
         try JSONSerialization.data(withJSONObject: ["modelUsage": ["fixture": ["inputTokens": 20, "outputTokens": 30,
             "cacheReadInputTokens": 40, "cacheCreationInputTokens": 10]], "totalSessions": 7,
             "lastComputedDate": "2026-10-09", "dailyActivity": [["date": "2026-10-09", "messageCount": 3]]])
@@ -175,8 +175,7 @@ import XCTest
         let roots = ClaudePaths.transcriptRoots(home: root, configured: configured)
         XCTAssertEqual(roots.map(\.path), [".claude/projects", ".config/claude/projects", "work-profile/projects"].map { root.appendingPathComponent($0).path })
         XCTAssertEqual(ClaudePaths.transcriptRoots(home: root, configured: root.appendingPathComponent(".claude")).count, 2)
-        let suite = "frog-usage-parity-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = temporaryDefaults()
         let model = UsageDashboardModel(defaults: defaults, fixtureRoot: root)
         model.selectClaudeConfigDirectory(configured)
         XCTAssertEqual(model.claudeConfigDirectory, configured)

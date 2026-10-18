@@ -1,3 +1,4 @@
+import FrogTestSupport
 import XCTest
 @testable import FrogUsage
 
@@ -6,18 +7,15 @@ import XCTest
 @MainActor final class ClaudeAccountsStoreTests: XCTestCase {
     private let base = Date(timeIntervalSince1970: 1_760_000_000)
     private var home: URL!
-    private var suite: String!
     private var defaults: UserDefaults!
 
     override func setUp() async throws {
         home = FileManager.default.temporaryDirectory.appendingPathComponent("frog tests \(UUID().uuidString)")
-        suite = "frog-tests-\(UUID().uuidString)"
-        defaults = UserDefaults(suiteName: suite)!
+        defaults = temporaryDefaults()
     }
 
     override func tearDown() async throws {
         try? FileManager.default.removeItem(at: home)
-        defaults.removePersistentDomain(forName: suite)
     }
 
     private final class World: @unchecked Sendable {
