@@ -361,14 +361,18 @@ same 0.25-second timeout: success is `exposed`, a timeout is `noAnswer`, anythin
 
 ### Answer panel
 
-`AnswerPanelController` is the app's `AnswerPresenting`: a 400-point `FrogFloatingPanel`
+`AnswerPanelController` is the app's `AnswerPresenting`: a 360-point `FrogFloatingPanel`
 that may become key, so the follow-up field takes typing, but never activates Frog. It
 places itself with `PanelPlacement` from the selection's anchor, else the pointer, and
-grows with its content up to 560 points or 60 % of the display's visible height,
+grows with its content up to 480 points or 60 % of the display's visible height,
 whichever is lower; beyond that the answer scrolls. SwiftUI reports the header, answer and
 footer heights, and the controller resizes keeping the edge next to the selection. A
 panel that was dragged or pinned keeps its top edge instead. A model built without
 shortcuts, as in tests, gets `SilentAnswerPresenter` and never opens a window.
+
+The header is one line: the rule, the model's name (with its provider on hover), Keep open
+and Close. The footer holds the follow-up field and Stop, Copy and Save to note as icons,
+each named for VoiceOver and with its shortcut in the tooltip.
 
 The monitors exist only while the panel is open and are removed when it closes: a local
 key monitor for the panel's own keys, a global key monitor that reads the key code and
@@ -395,7 +399,7 @@ builds `AnswerNoteContent` from the session (a stopped answer keeps its text) an
 to `AppModel.saveAnswerNote`, which asks for the folder with an `NSOpenPanel` when none is
 set, stores it tilde-abbreviated, and runs `AnswerNoteWriter` off the main actor. While a
 note saves the panel treats closing events as pinned, so the folder chooser does not close
-it. The footer shows "Saved" for two seconds; a failure takes the status line and goes to
+it. Its icon shows a check for two seconds; a failure takes the status line and goes to
 Logs. History's answer detail offers the same action for a saved entry.
 
 `AnswerNote` in FrogCore makes the Markdown without files: one note per answer has YAML

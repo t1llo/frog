@@ -12,11 +12,11 @@ import FrogCore
     @Published var canSaveNote = false
     @Published var noteState: AnswerController.NoteState?
     @Published var pinned = false
-    /// Shows "Copied" in place of Copy for a moment after the answer was copied.
+    /// Shows a check in place of Copy for a moment after the answer was copied.
     @Published var copied = false
     @Published var question = ""
     /// The tallest the panel grows before its answer scrolls.
-    @Published var maxHeight: CGFloat = 560
+    @Published var maxHeight = AnswerPanelController.tallest
     var ask: (String) -> Void = { _ in }
     var stop: () -> Void = {}
     var retry: () -> Void = {}
@@ -34,7 +34,8 @@ import FrogCore
 /// focused field. While it is open it watches Escape (key code only), clicks and app switches to
 /// close itself; a pinned panel stays until it is closed directly.
 @MainActor final class AnswerPanelController: AnswerPresenting {
-    static let width: CGFloat = 400
+    static let width: CGFloat = 360
+    static let tallest: CGFloat = 480
     weak var controller: AnswerController?
     let model = AnswerPanelModel()
     private var panel: FrogFloatingPanel?
@@ -125,10 +126,10 @@ import FrogCore
 
     // MARK: Layout
 
-    /// At most 560 points, and at most 60 % of the display's visible height.
+    /// At most `tallest`, and at most 60 % of the display's visible height.
     static func maxHeight(on screen: CGRect) -> CGFloat {
-        guard screen.height > 0 else { return 560 }
-        return min(560, (screen.height * 0.6).rounded(.down))
+        guard screen.height > 0 else { return tallest }
+        return min(tallest, (screen.height * 0.6).rounded(.down))
     }
 
     private static func moved(_ frame: CGRect, from placed: CGRect) -> Bool {

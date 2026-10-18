@@ -1,8 +1,8 @@
 import SwiftUI
 import FrogCore
 
-/// The answer next to a selection: which rule and model answered, the answer and its follow-ups,
-/// what is happening now, and a field for the next question.
+/// The answer next to a selection: one quiet line for the rule and its model, the answer and its follow-ups, what is
+/// happening now, and a field for the next question with the actions as icons beside it.
 struct AnswerPanelView: View {
     @ObservedObject var model: AnswerPanelModel
     @State private var contentHeight: CGFloat = 0
@@ -13,23 +13,15 @@ struct AnswerPanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                header
-                if let selection = model.session?.selection, !selection.isEmpty {
-                    Text(Self.oneLine(selection)).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                        .lineLimit(1).truncationMode(.middle)
-                        .accessibilityLabel("\(L10n.text("Selected text")): \(Self.oneLine(selection))")
-                }
-            }
-            .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 10)
-            .background(WindowDragRegion())
-            .overlay(alignment: .bottom) { Divider().opacity(0.6) }
-            .measured(ChromeHeightKey.self)
+            header
+                .padding(.leading, 12).padding(.trailing, 6).padding(.vertical, 5)
+                .background(WindowDragRegion())
+                .measured(ChromeHeightKey.self)
             // Before the first text and after a failure without any, the status line follows the header directly.
             if hasContent {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        answer.padding(.horizontal, 14).padding(.vertical, 10)
+                        answer.padding(.horizontal, 12).padding(.top, 2).padding(.bottom, 10)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .measured(ContentHeightKey.self)
                     }
@@ -64,33 +56,25 @@ struct AnswerPanelView: View {
 
     // MARK: Parts
 
+    /// The rule and the model's name; the provider shows on hover.
     private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(model.session?.ruleName ?? "").font(FrogType.section).lineLimit(1)
-                if let label = model.session?.modelLabel, !label.isEmpty {
-                    Text(label).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                }
+        HStack(spacing: 4) {
+            Text(model.session?.ruleName ?? "").foregroundStyle(FrogStyle.ink).layoutPriority(1)
+            if let session = model.session, !session.modelName.isEmpty {
+                Text("·").accessibilityHidden(true)
+                Text(session.modelName).help(session.modelLabel)
             }
             Spacer(minLength: 8)
             let pinTitle = model.pinned ? "Stop keeping open" : "Keep open"
-            Button { model.togglePin() } label: {
-                Image(systemName: model.pinned ? "pin.fill" : "pin").frame(width: 20, height: 20).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain).foregroundStyle(model.pinned ? FrogStyle.accent : FrogStyle.muted)
-            .help(L10n.text(pinTitle)).accessibilityLabel(L10n.text(pinTitle))
-            Button { model.close() } label: {
-                Image(systemName: "xmark").frame(width: 20, height: 20).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain).foregroundStyle(FrogStyle.muted)
-            .help(L10n.text("Close (Esc)")).accessibilityLabel(L10n.text("Close"))
+            PanelIcon(symbol: model.pinned ? "pin.fill" : "pin", title: pinTitle, active: model.pinned) { model.togglePin() }
+            PanelIcon(symbol: "xmark", title: "Close", help: "Close (Esc)") { model.close() }
         }
-        .font(.system(size: 12, weight: .medium))
+        .font(FrogType.label).foregroundStyle(FrogStyle.muted).lineLimit(1)
     }
 
     @ViewBuilder private var answer: some View {
         if let session = model.session {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(session.turns.enumerated()), id: \.offset) { index, turn in
                     if index > 0 { question(turn.question) }
                     AnswerMarkdown(text: turn.answer)
@@ -107,9 +91,9 @@ struct AnswerPanelView: View {
 
     /// A rule across the panel's width sets each follow-up apart from the answer before it.
     private func question(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             Divider().opacity(0.5)
-            Text(text).font(FrogType.label).foregroundStyle(FrogStyle.ink)
+            Text(text).font(FrogType.label).foregroundStyle(FrogStyle.muted)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.top, 2)
@@ -132,7 +116,7 @@ struct AnswerPanelView: View {
                 }
             }
             .buttonStyle(FrogButtonStyle()).controlSize(.small)
-            .padding(.horizontal, 14).padding(.vertical, 7)
+            .padding(.horizontal, 12).padding(.vertical, 6)
             .overlay(alignment: .top) { if hasContent { Divider().opacity(0.6) } }
             .accessibilityElement(children: .combine)
         }
@@ -140,44 +124,37 @@ struct AnswerPanelView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
+            HStack(spacing: 2) {
                 TextField(L10n.text(followUpPlaceholder), text: $model.question)
                     .textFieldStyle(.plain).font(FrogType.body)
-                    .padding(.horizontal, 8).frame(height: 26)
+                    .padding(.horizontal, 8).frame(height: 24)
                     .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
                     .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius).strokeBorder(FrogStyle.border.opacity(0.6)))
                     // It stays enabled while the answer runs, so it keeps focus and the next question can be typed.
                     .disabled(followUpBlocked)
                     .onSubmit { model.ask(model.question) }
                     .accessibilityLabel(L10n.text("Ask a follow-up"))
+                    .padding(.trailing, 4)
                 if model.session?.phase.isRunning == true {
-                    Button(L10n.text("Stop")) { model.stop() }.help(L10n.text("Stop (⌘.)"))
+                    PanelIcon(symbol: "stop.circle", title: "Stop", help: "Stop (⌘.)") { model.stop() }
                 }
-                Button { model.copy() } label: {
-                    if model.copied { Label(L10n.text("Copied"), systemImage: "checkmark") } else { Text(L10n.text("Copy")) }
+                PanelIcon(symbol: model.copied ? "checkmark" : "doc.on.doc", title: model.copied ? "Copied" : "Copy",
+                          help: "Copy (⌘↩)", active: model.copied) { model.copy() }
+                    .disabled(!hasAnswer)
+                if model.offersNotes {
+                    let saved = model.noteState == .saved
+                    PanelIcon(symbol: saved ? "checkmark" : "square.and.arrow.down", title: saved ? "Saved to note" : "Save to note",
+                              help: "Save to note (⌘S)", active: saved) { model.saveNote() }
+                        .disabled(saved || !model.canSaveNote)
                 }
-                .help(L10n.text("Copy (⌘↩)")).disabled(!hasAnswer)
-                if model.offersNotes { saveNoteButton }
             }
             if let message = model.followUpMessage {
                 Text(message).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .buttonStyle(FrogButtonStyle()).controlSize(.small)
-        .padding(10)
+        .padding(.leading, 8).padding(.trailing, 6).padding(.vertical, 6)
         .overlay(alignment: .top) { Divider().opacity(0.6) }
-    }
-
-    @ViewBuilder private var saveNoteButton: some View {
-        if model.noteState == .saved {
-            Label(L10n.text("Saved"), systemImage: "checkmark").font(FrogType.caption).foregroundStyle(FrogStyle.accent)
-                .padding(.horizontal, 4).accessibilityLabel(L10n.text("Saved to note"))
-        } else {
-            Button(L10n.text("Save to note")) { model.saveNote() }
-                .help(L10n.text("Save to note (⌘S)"))
-                .disabled(!model.canSaveNote)
-        }
     }
 
     // MARK: State
@@ -213,12 +190,29 @@ struct AnswerPanelView: View {
         guard let session = model.session else { return false }
         return !session.partial.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || session.turns.last?.answer.isEmpty == false
     }
+}
 
-    /// One line of the selection, short enough that laying it out stays cheap for a long selection.
-    static func oneLine(_ text: String) -> String {
-        let flat = text.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces)
-        guard flat.count > 400 else { return flat }
-        return String(flat.prefix(200)) + "…" + String(flat.suffix(200))
+/// One of the panel's actions as a small icon, named for VoiceOver, with its shortcut on hover. An active one, such
+/// as a pinned panel or a copied answer, takes the accent colour.
+private struct PanelIcon: View {
+    let symbol: String
+    let title: String
+    var help: String? = nil
+    var active = false
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.isEnabled) private var enabled
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 12, weight: .medium))
+                .foregroundStyle(active || (hovering && enabled) ? FrogStyle.accent : FrogStyle.muted)
+                .frame(width: 24, height: 24)
+                .contentShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+        }
+        .buttonStyle(.plain).opacity(enabled || active ? 1 : 0.4)
+        .onHover { hovering = $0 }
+        .help(L10n.text(help ?? title)).accessibilityLabel(L10n.text(title))
     }
 }
 
@@ -226,7 +220,7 @@ struct AnswerPanelView: View {
 private struct AnswerMarkdown: View {
     let text: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             ForEach(MarkdownPreview.blocks(text)) { MarkdownBlockView(block: $0) }
         }
         .fixedSize(horizontal: false, vertical: true)
