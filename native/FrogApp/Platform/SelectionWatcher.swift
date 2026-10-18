@@ -61,6 +61,9 @@ struct BubbleState: Equatable {
         var category: @MainActor (URL) -> String?
         /// Whether the app ships VS Code's product file, as every editor built on VS Code does.
         var builtOnVSCode: @MainActor (URL) -> Bool
+        /// Whether the app is built on Chromium, as Chrome, Helium, Arc and Electron apps are: its framework carries
+        /// Chromium's helper apps.
+        var builtOnChromium: @MainActor (URL) -> Bool = { _ in false }
 
         static let live = System(
             frontmost: {
@@ -70,7 +73,15 @@ struct BubbleState: Equatable {
             ownPID: ProcessInfo.processInfo.processIdentifier,
             secureInput: { IsSecureEventInputEnabled() },
             category: { Bundle(url: $0)?.object(forInfoDictionaryKey: "LSApplicationCategoryType") as? String },
-            builtOnVSCode: { FileManager.default.fileExists(atPath: $0.appendingPathComponent("Contents/Resources/app/product.json").path) })
+            builtOnVSCode: { FileManager.default.fileExists(atPath: $0.appendingPathComponent("Contents/Resources/app/product.json").path) },
+            builtOnChromium: { app in
+                let frameworks = app.appendingPathComponent("Contents/Frameworks")
+                let names = (try? FileManager.default.contentsOfDirectory(atPath: frameworks.path)) ?? []
+                return names.contains { name in
+                    name.hasSuffix(".framework")
+                        && FileManager.default.fileExists(atPath: frameworks.appendingPathComponent(name).appendingPathComponent("Versions/Current/Helpers").path)
+                }
+            })
     }
 
     private let reader: SelectionReading
@@ -102,6 +113,8 @@ struct BubbleState: Equatable {
     private var games: [String: Bool] = [:]
     /// Whether an app may be asked to expose its text, by bundle identifier.
     private var askable: [String: Bool] = [:]
+    /// Whether an app is built on Chromium, by bundle identifier.
+    private var chromium: [String: Bool] = [:]
     /// Apps already asked to expose their text, by process.
     private var asked: Set<pid_t> = []
     /// Why a gesture showed the bubble or not, at debug level for `log stream --level debug --predicate
@@ -320,8 +333,13 @@ struct BubbleState: Equatable {
         var wait = Self.retryWait
         if options.exposeText, mayAskToExposeText(app), asked.insert(pid).inserted {
             // An app that did not answer in time is asked again with its next selection.
-            let answer = await reader.exposeText(pid: pid)
+            var answer = await reader.exposeText(pid: pid)
             Self.log.debug("asked to expose text: \(String(describing: answer), privacy: .public)")
+            if answer == .refused, isBuiltOnChromium(app) {
+                // A Chromium browser knows only the screen reader's request, which Electron apps need not be asked.
+                answer = await reader.exposeTextToScreenReader(pid: pid)
+                Self.log.debug("asked to expose text as a screen reader: \(String(describing: answer), privacy: .public)")
+            }
             if answer == .noAnswer { asked.remove(pid) }
             // The app builds its accessibility tree after the request. An older Electron app takes it while
             // answering that it refused, so every answer waits as long.
@@ -355,6 +373,13 @@ struct BubbleState: Equatable {
         let game = SelectionBubblePolicy.isGame(applicationCategory: app.bundleURL.flatMap(system.category))
         games[id] = game
         return game
+    }
+
+    private func isBuiltOnChromium(_ app: BubbleApplication) -> Bool {
+        if let id = app.bundleID, let known = chromium[id] { return known }
+        let built = app.bundleURL.map(system.builtOnChromium) ?? false
+        if let id = app.bundleID { chromium[id] = built }
+        return built
     }
 
     private func mayAskToExposeText(_ app: BubbleApplication) -> Bool {

@@ -352,12 +352,15 @@ Copy restores the clipboard, so Electron apps, Chromium without accessibility an
 apps still answer. Writing rules keep `captureSelection()`, which they need to replace text.
 
 `SelectionReader.swift` never names the pasteboard, `ClipboardSelection` or
-`FreshSelectionCopy`, never posts events and never sets `AXEnhancedUserInterface`, after
-which Chromium and Electron apps animate window changes. Its one request of another app is
+`FreshSelectionCopy` and never posts events. Its requests of another app are
 `exposeText(pid:)`, which sets `AXManualAccessibility` on the application element with the
-same 0.25-second timeout: success is `exposed`, a timeout is `noAnswer`, anything else is
-`refused`. `SelectionIsolationTests` scans the file for these names and allows
-`AXManualAccessibility` there only, once.
+same 0.25-second timeout, and `exposeTextToScreenReader(pid:)`, which sets
+`AXEnhancedUserInterface` the same way: success is `exposed`, a timeout is `noAnswer`,
+anything else is `refused`. Only Electron knows the first; Chromium browsers such as Chrome,
+Helium and Arc refuse it and expose their page text only to the second, which VoiceOver sets.
+After it, Chromium animates window changes another app makes, so Frog's window actions turn
+it off while they move a window. `SelectionIsolationTests` scans the file for these names and
+allows each there only, once.
 
 ### Answer panel
 
@@ -541,7 +544,11 @@ event or accessibility-forcing attribute.
 An empty or unavailable read is read once more. Before that, while **Chrome and Electron
 apps** (`explain.bubble-expose-text`) is on, the watcher asks the app once per process to
 expose its text (`exposeText(pid:)`) and waits 0.35 s, so Chromium browsers and Electron apps
-such as Slack and Obsidian build their accessibility tree; otherwise it waits 0.15 s, for an
+such as Slack and Obsidian build their accessibility tree. An app that refuses and is built on
+Chromium, whose framework in `Contents/Frameworks` carries `Versions/Current/Helpers`, checked
+once per bundle identifier, is then asked as a screen reader (`exposeTextToScreenReader(pid:)`):
+Helium refused the first request on 2026-10-18 and showed no selection. Electron apps take the
+first request and are never asked the second. Otherwise it waits 0.15 s, for an
 app that reports a fresh selection late. An app that did not answer in time is asked again
 with its next selection; an app that refused is not, but still gets the longer wait, since
 Electron releases from before May 2023 take the request while answering that they refused.

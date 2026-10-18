@@ -351,8 +351,52 @@ final class SelectionWatcherTests: XCTestCase {
         fixture.drag()
         try await waitUntil { fixture.reader.calls.count == 2 }
         XCTAssertEqual(fixture.reader.exposeRequests, [Fixture.pid])
+        XCTAssertTrue(fixture.reader.screenReaderRequests.isEmpty, "Not built on Chromium")
         XCTAssertEqual(fixture.waits.count, 2, "The settle, then the pause before reading again")
         XCTAssertEqual(fixture.waits.last, SelectionWatcher.exposeWait)
+    }
+
+    func testAChromiumBrowserThatRefusesIsAskedAsAScreenReaderOnce() async throws {
+        // Helium, like Chrome, refuses the request Electron apps take, and shows its page text to a screen reader.
+        let fixture = Fixture()
+        fixture.frontmost.bundleID = "net.imput.helium"
+        fixture.builtOnChromium = true
+        fixture.reader.result = .unavailable
+        fixture.reader.exposesToScreenReader = .selection(Self.snapshot())
+        fixture.drag()
+        try await waitUntil { fixture.presenter.shows.count == 1 }
+        XCTAssertEqual(fixture.reader.exposeRequests, [Fixture.pid])
+        XCTAssertEqual(fixture.reader.screenReaderRequests, [Fixture.pid])
+        XCTAssertEqual(fixture.waits.last, SelectionWatcher.exposeWait)
+
+        fixture.watcher.handle(.mouseDown(CGPoint(x: 300, y: 300), clickCount: 1, right: false), now: fixture.now)
+        fixture.reader.result = .selection(Self.snapshot("other", element: 2))
+        fixture.drag()
+        try await waitUntil { fixture.presenter.shows.count == 2 }
+        XCTAssertEqual(fixture.reader.screenReaderRequests, [Fixture.pid], "Asked once per app")
+    }
+
+    func testAnElectronAppThatTakesTheRequestIsNotAskedAsAScreenReader() async throws {
+        let fixture = Fixture()
+        fixture.builtOnChromium = true
+        fixture.reader.result = .unavailable
+        fixture.reader.exposes = .selection(Self.snapshot())
+        fixture.drag()
+        try await waitUntil { fixture.presenter.shows.count == 1 }
+        XCTAssertTrue(fixture.reader.screenReaderRequests.isEmpty)
+    }
+
+    func testWithTheSettingOffAChromiumBrowserIsNotAskedAsAScreenReader() async throws {
+        let fixture = Fixture()
+        fixture.options.exposeText = false
+        fixture.builtOnChromium = true
+        fixture.reader.result = .unavailable
+        fixture.reader.exposesToScreenReader = .selection(Self.snapshot())
+        fixture.drag()
+        try await waitUntil { fixture.reader.calls.count == 2 }
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertTrue(fixture.reader.screenReaderRequests.isEmpty)
+        XCTAssertTrue(fixture.presenter.shows.isEmpty)
     }
 
     static func snapshot(_ text: String = "levee", element: Int = 1, end: CGRect? = SelectionWatcherTests.end) -> SelectionSnapshot {
@@ -383,6 +427,7 @@ private final class Fixture {
     var secure = false
     var category: String?
     var builtOnVSCode = false
+    var builtOnChromium = false
     var options = SelectionBubbleOptions()
     let items = [BubbleItem(id: UUID(), title: "Explain", symbol: SelectionBubbleItems.answerSymbol, answers: true)]
     var ran: [(BubbleItem, SelectionSnapshot)] = []
@@ -392,7 +437,8 @@ private final class Fixture {
         let system = SelectionWatcher.System(frontmost: { [unowned self] in self.frontmost }, ownPID: Self.ownPID,
                                              secureInput: { [unowned self] in self.secure },
                                              category: { [unowned self] _ in self.category },
-                                             builtOnVSCode: { [unowned self] _ in self.builtOnVSCode })
+                                             builtOnVSCode: { [unowned self] _ in self.builtOnVSCode },
+                                             builtOnChromium: { [unowned self] _ in self.builtOnChromium })
         watcher = SelectionWatcher(
             reader: reader, presenter: presenter,
             hooks: .init(options: { [unowned self] in self.options }, state: { [unowned self] in self.state },
@@ -453,6 +499,22 @@ private final class Reader: SelectionReading, @unchecked Sendable {
         set { lock.withLock { silent = newValue } }
     }
     var exposeRequests: [pid_t] { lock.withLock { asked } }
+    private var askedAsScreenReader: [pid_t] = []
+    /// What the app exposes once a screen reader asks, as a Chromium browser does; nil for one that refuses.
+    private var exposedToScreenReader: SelectionReadResult?
+    var exposesToScreenReader: SelectionReadResult? {
+        get { lock.withLock { exposedToScreenReader } }
+        set { lock.withLock { exposedToScreenReader = newValue } }
+    }
+    var screenReaderRequests: [pid_t] { lock.withLock { askedAsScreenReader } }
+    func exposeTextToScreenReader(pid: pid_t) async -> ExposeTextAnswer {
+        lock.withLock {
+            askedAsScreenReader.append(pid)
+            guard let exposedToScreenReader else { return .refused }
+            current = exposedToScreenReader
+            return .exposed
+        }
+    }
     func exposeText(pid: pid_t) async -> ExposeTextAnswer {
         lock.withLock {
             asked.append(pid)
