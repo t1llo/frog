@@ -164,11 +164,24 @@ enum ClaudeAccountMatching {
         }
     }
 
-    /// App slots by folder, then the profiles that joined none. A profile joins the app folder
-    /// when exactly one app folder names its organization, the rule the plan badge follows. App
-    /// folders naming one organization are one account, so combined totals never count it twice.
-    static func accounts(apps: [App], profiles: [Profile]) -> [ClaudeAccount] {
-        struct Slot { var app: App?; var profile: Profile?; var merged: [URL] = [] }
+    /// The Claude Code folder that is an app folder's own, the one its live readings sign in to:
+    /// `Claude` → `~/.claude`, `Claude-Account-B` → `~/.claude-account-b`, `Work` → `~/.claude-work`.
+    static func ownFolder(for appFolder: URL, home: URL) -> URL {
+        let name = appFolder.lastPathComponent.lowercased().replacingOccurrences(of: " ", with: "-")
+        return home.appendingPathComponent(name.hasPrefix("claude") ? "." + name : ".claude-" + name).standardizedFileURL
+    }
+
+    /// App slots by folder, then the profiles that joined none. App folders naming one
+    /// organization are one account, so combined totals never count it twice.
+    ///
+    /// A profile joins the app folder when exactly one app folder names its organization, the
+    /// rule the plan badge follows. An app folder's own Claude Code folder joins it first, so a
+    /// second profile naming that organization never takes its place. The default profile is
+    /// the exception among those second profiles: the Claude Code sessions of every Claude app
+    /// write `~/.claude.json`, so at times it names an account that has a folder of its own.
+    /// Then it stays with the app folder it is the own folder of, `Claude`, when that one has none.
+    static func accounts(apps: [App], profiles: [Profile], home: URL) -> [ClaudeAccount] {
+        struct Slot { var app: App?; var profile: Profile?; var merged: [URL] = []; var ownProfile = false }
         var slots: [Slot] = []
         for app in apps {
             if let organization = app.organization,
@@ -178,12 +191,30 @@ enum ClaudeAccountMatching {
                 slots.append(Slot(app: app))
             }
         }
-        for profile in profiles {
-            let owners = apps.filter { $0.organization != nil && $0.organization == profile.organization }
-            if owners.count == 1, let index = slots.firstIndex(where: { $0.app?.folder == owners[0].folder }) {
-                if slots[index].profile == nil { slots[index].profile = profile } else { slots[index].merged.append(profile.folder) }
+        /// The slot of the one app folder that names `organization`.
+        func owner(_ organization: String?) -> Int? {
+            let owners = apps.filter { $0.organization != nil && $0.organization == organization }
+            guard owners.count == 1 else { return nil }
+            return slots.firstIndex { $0.app?.folder == owners[0].folder }
+        }
+        func isOwn(_ profile: Profile, of slot: Slot) -> Bool {
+            slot.app.map { ownFolder(for: $0.folder, home: home).path == profile.folder.standardizedFileURL.path } ?? false
+        }
+        var others = profiles
+        for index in slots.indices {
+            guard let own = others.firstIndex(where: { isOwn($0, of: slots[index]) && owner($0.organization) == index }) else { continue }
+            slots[index].profile = others.remove(at: own)
+            slots[index].ownProfile = true
+        }
+        for profile in others {
+            guard let index = owner(profile.organization) else { slots.append(Slot(profile: profile)); continue }
+            if slots[index].profile == nil {
+                slots[index].profile = profile
+            } else if profile.isDefault, slots[index].ownProfile,
+                      let own = slots.firstIndex(where: { $0.profile == nil && isOwn(profile, of: $0) }) {
+                slots[own].profile = profile
             } else {
-                slots.append(Slot(profile: profile))
+                slots[index].merged.append(profile.folder)
             }
         }
         let defaultSlot = slots.firstIndex { $0.app.map { $0.folder.lastPathComponent == "Claude" } ?? false }

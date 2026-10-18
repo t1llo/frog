@@ -382,12 +382,20 @@ exactly as before.
   to a slot: a Claude app folder, or a profile that belongs to no app folder. The
   organization of a folder's newest history sample and a profile's
   `oauthAccount.organizationUuid` decide. A profile joins an app folder when exactly
-  one app folder names its organization, the rule the plan badge already follows. App
-  folders naming the same organization are one account under the first folder, so a
-  combined value never counts it twice, and the account says "Claude and Claude-2 are
-  signed in to the same account". When a folder's newest organization changes, the
-  slot keeps its label. Organization ids stay in memory; they are never shown, saved
-  or exported.
+  one app folder names its organization, the rule the plan badge already follows. An
+  app folder's own Claude Code folder, the one its live readings sign in to
+  (`Claude` has `~/.claude`, `Claude-Account-B` has `~/.claude-account-b`), joins it
+  first, so another profile naming the same organization never takes its place; that
+  one is merged into the account. The default profile is the exception: every Claude
+  app's Claude Code sessions run in `~/.claude` and write `~/.claude.json`, so while B's
+  app ran a session last, it names B although the login beside it is still A's. When
+  it names an account that already has its own folder, it stays with the app folder
+  whose own folder it is, `Claude`, if that one has none. Whichever account the
+  default profile names, A reads `~/.claude` and B `~/.claude-account-b`. App folders
+  naming the same organization are one account under the first folder, so a combined
+  value never counts it twice, and the account says "Claude and Claude-2 are signed in
+  to the same account". When a folder's newest organization changes, the slot keeps its
+  label. Organization ids stay in memory; they are never shown, saved or exported.
 - **Labels** (`ClaudeAccountLabels`). The default `Claude` folder is A; a folder named
   `Claude-Account-X`, `Claude X` or `Claude-X` is X; a profile `.claude-work` is
   "Work" (`.claude-account-x` and `.claude-x` are X); every other slot gets the next

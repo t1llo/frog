@@ -112,7 +112,7 @@ final class ClaudeAccountsModel: ObservableObject {
                     case .code(let folder, let file): profiles.append(.init(folder: folder, file: file, organization: readOrganization(source)))
                     }
                 }
-                return Detection(sources: sources, accounts: ClaudeAccountMatching.accounts(apps: apps, profiles: profiles),
+                return Detection(sources: sources, accounts: ClaudeAccountMatching.accounts(apps: apps, profiles: profiles, home: home),
                                  executable: executable)
             })
             guard !Task.isCancelled, generation == self.generation else { return }
@@ -254,10 +254,10 @@ final class ClaudeAccountsModel: ObservableObject {
         return ClaudeCodeCLI.signInCommand(executable: executable, directory: folder)
     }
 
-    /// `Claude-Account-B` → `~/.claude-account-b`, `Work` → `~/.claude-work`.
+    /// The app folder's own Claude Code folder: `Claude-Account-B` → `~/.claude-account-b`,
+    /// `Work` → `~/.claude-work`.
     nonisolated static func liveSetupFolder(for appFolder: URL, home: URL) -> URL {
-        let name = appFolder.lastPathComponent.lowercased().replacingOccurrences(of: " ", with: "-")
-        return home.appendingPathComponent(name.hasPrefix("claude") ? "." + name : ".claude-" + name)
+        ClaudeAccountMatching.ownFolder(for: appFolder, home: home)
     }
 
     // MARK: Reading organizations

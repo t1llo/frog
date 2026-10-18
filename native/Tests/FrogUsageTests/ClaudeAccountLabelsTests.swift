@@ -22,7 +22,7 @@ final class ClaudeAccountLabelsTests: XCTestCase {
     private func accounts() -> [ClaudeAccount] {
         ClaudeAccountMatching.accounts(
             apps: ["Claude", "Claude-Account-B", "Claude C"].map { .init(folder: home.appendingPathComponent("Library/Application Support/\($0)"), organization: nil) },
-            profiles: [".claude-work", ".claude-team-x"].map { .init(folder: home.appendingPathComponent($0), file: home.appendingPathComponent("\($0)/.claude.json"), organization: nil) })
+            profiles: [".claude-work", ".claude-team-x"].map { .init(folder: home.appendingPathComponent($0), file: home.appendingPathComponent("\($0)/.claude.json"), organization: nil) }, home: home)
     }
 
     func testDefaultLabels() {
@@ -79,7 +79,7 @@ final class ClaudeAccountLabelsTests: XCTestCase {
         // Without the default Claude folder, the default profile keeps it.
         let profileOnly = ClaudeAccountMatching.accounts(
             apps: [.init(folder: home.appendingPathComponent("Library/Application Support/Claude-B"), organization: "org-test-2")],
-            profiles: [.init(folder: home.appendingPathComponent(".claude"), file: home.appendingPathComponent(".claude.json"), organization: "org-test-1")])
+            profiles: [.init(folder: home.appendingPathComponent(".claude"), file: home.appendingPathComponent(".claude.json"), organization: "org-test-1")], home: home)
         XCTAssertEqual(profileOnly.map(\.pollingKey).last, ClaudePollingState.defaultsKey)
         XCTAssertNotEqual(profileOnly.first?.pollingKey, ClaudePollingState.defaultsKey)
     }
