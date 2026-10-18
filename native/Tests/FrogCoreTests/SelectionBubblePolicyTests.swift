@@ -68,6 +68,38 @@ final class SelectionBubblePolicyTests: XCTestCase {
         XCTAssertNil(show(selection(fingerprint: other), dismissed: fingerprint, shown: fingerprint))
     }
 
+    func testTheSelectionOfferedLastNeedsToBeSelectedAgain() {
+        func show(offered: SelectionFingerprint?, reselected: Bool, fingerprint: SelectionFingerprint? = nil,
+                  shown: SelectionFingerprint? = nil, items: Int = 1) -> BubbleBlock? {
+            SelectionBubblePolicy.mayShow(selection(fingerprint: fingerprint), dismissed: nil, shown: shown, offered: offered,
+                                          reselected: reselected, itemCount: items)
+        }
+        XCTAssertEqual(show(offered: fingerprint, reselected: false), .unchanged)
+        XCTAssertNil(show(offered: fingerprint, reselected: true))
+        XCTAssertNil(show(offered: nil, reselected: false), "A selection never offered shows")
+        var other = fingerprint
+        other.location = 9
+        XCTAssertNil(show(offered: fingerprint, reselected: false, fingerprint: other), "Another selection shows")
+        XCTAssertEqual(show(offered: fingerprint, reselected: false, shown: fingerprint), .alreadyShowing,
+                       "While it shows, it stays")
+        XCTAssertEqual(show(offered: fingerprint, reselected: false, items: 0), .unchanged)
+    }
+
+    func testAGestureEndsOnItsSelectionWithinAMargin() {
+        let word = CGRect(x: 100, y: 500, width: 40, height: 16)
+        let last = CGRect(x: 132, y: 500, width: 8, height: 16)
+        XCTAssertTrue(SelectionBubblePolicy.endsOnSelection(pointer: CGPoint(x: 120, y: 508), bounds: word, endBounds: last))
+        XCTAssertTrue(SelectionBubblePolicy.endsOnSelection(pointer: CGPoint(x: 160, y: 490), bounds: word, endBounds: last),
+                      "A drag that ends just past the text")
+        XCTAssertFalse(SelectionBubblePolicy.endsOnSelection(pointer: CGPoint(x: 400, y: 880), bounds: word, endBounds: last),
+                       "The title bar of a window being dragged")
+        XCTAssertTrue(SelectionBubblePolicy.endsOnSelection(pointer: CGPoint(x: 136, y: 508), bounds: nil, endBounds: last))
+        XCTAssertTrue(SelectionBubblePolicy.endsOnSelection(pointer: CGPoint(x: 400, y: 880), bounds: nil, endBounds: nil),
+                      "Without a rectangle a mouse gesture counts")
+        XCTAssertFalse(SelectionBubblePolicy.endsOnSelection(pointer: nil, bounds: word, endBounds: last), "A keyboard gesture")
+        XCTAssertFalse(SelectionBubblePolicy.endsOnSelection(pointer: nil, bounds: nil, endBounds: nil))
+    }
+
     func testStatus() {
         XCTAssertNil(SelectionBubblePolicy.status(explainEnabled: true, bubbleEnabled: false, accessibilityTrusted: true))
         XCTAssertEqual(SelectionBubblePolicy.status(explainEnabled: false, bubbleEnabled: true, accessibilityTrusted: false),

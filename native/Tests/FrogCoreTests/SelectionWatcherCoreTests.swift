@@ -74,6 +74,22 @@ final class SelectionWatcherCoreTests: XCTestCase {
         XCTAssertEqual(send(.scroll), [.dismiss(rememberShown: false)], "nothing pending to cancel")
     }
 
+    func testTheOfferedSelectionOutlastsEveryWayTheBubbleGoes() {
+        XCTAssertNil(core.offeredFingerprint)
+        core.shown(fingerprint, now: start)
+        _ = send(.mouseDown(.zero, clickCount: 1, right: false))
+        XCTAssertNil(core.shownFingerprint)
+        XCTAssertEqual(core.offeredFingerprint, fingerprint)
+        core.hidden()
+        core.interrupted()
+        _ = send(.keyDown(keyCode: 53))
+        XCTAssertEqual(core.offeredFingerprint, fingerprint)
+        var other = fingerprint
+        other.length = 9
+        core.shown(other, now: start)
+        XCTAssertEqual(core.offeredFingerprint, other, "Only the last one")
+    }
+
     func testIdleDismissalAfterSixSecondsAndHoverResetsIt() {
         XCTAssertFalse(core.shouldIdleDismiss(now: start.addingTimeInterval(60)), "nothing shown")
         core.shown(fingerprint, now: start)

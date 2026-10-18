@@ -242,8 +242,15 @@ struct BubbleState: Equatable {
         reading -= 1
         guard let result = read else { return }
         var items: (visible: [BubbleItem], more: [BubbleItem]) = ([], [])
-        if case let .selection(snapshot) = result { items = hooks.items(snapshot) }
+        var reselected = false
+        if case let .selection(snapshot) = result {
+            items = hooks.items(snapshot)
+            // Dragging a window or pressing a shortcut with Shift ends like a selection but leaves the old one.
+            reselected = SelectionBubblePolicy.endsOnSelection(pointer: pointer, bounds: snapshot.bounds,
+                                                               endBounds: snapshot.endBounds)
+        }
         guard SelectionBubblePolicy.mayShow(result, dismissed: core.dismissedFingerprint, shown: core.shownFingerprint,
+                                            offered: core.offeredFingerprint, reselected: reselected,
                                             itemCount: items.visible.count + items.more.count) == nil,
               case let .selection(snapshot) = result else { return }
         // At the end of the selection; a mouse gesture without a position uses the mouse-up point.

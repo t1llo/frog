@@ -103,6 +103,9 @@ public struct SelectionWatcherCore {
     /// The selection last dismissed with Escape. The same selection does not bring the bubble back.
     public private(set) var dismissedFingerprint: SelectionFingerprint?
     public private(set) var shownFingerprint: SelectionFingerprint?
+    /// The selection the bubble showed last, kept after it went away. A gesture that did not select it again does
+    /// not bring the bubble back for it.
+    public private(set) var offeredFingerprint: SelectionFingerprint?
     public private(set) var pendingToken: Int?
     private var tracker = SelectionGestureTracker()
     private var nextToken = 0
@@ -141,6 +144,7 @@ public struct SelectionWatcherCore {
 
     public mutating func shown(_ fingerprint: SelectionFingerprint, now: Date) {
         shownFingerprint = fingerprint
+        offeredFingerprint = fingerprint
         lastActivity = now
     }
 
@@ -194,6 +198,8 @@ public struct BubbleContext: Sendable {
 public enum BubbleBlock: Equatable, Sendable {
     case off, needsAccessibility, frogFrontmost, secureInput, excluded, game, busy
     case secureField, empty, tooLong, dismissedBefore, noItems, alreadyShowing
+    /// The selection the bubble offered last, left as it was by a gesture that did not select it again.
+    case unchanged
 }
 
 public enum SelectionBubblePolicy {
@@ -209,9 +215,11 @@ public enum SelectionBubblePolicy {
         return nil
     }
 
-    /// Checked after the read. `alreadyShowing` means the bubble stays as it is.
+    /// Checked after the read. `alreadyShowing` means the bubble stays as it is. `offered` is the selection the
+    /// bubble showed last; `reselected` tells whether the gesture may have selected the text again.
     public static func mayShow(_ result: SelectionReadResult, dismissed: SelectionFingerprint?,
-                               shown: SelectionFingerprint?, itemCount: Int) -> BubbleBlock? {
+                               shown: SelectionFingerprint?, offered: SelectionFingerprint? = nil, reselected: Bool = true,
+                               itemCount: Int) -> BubbleBlock? {
         let snapshot: SelectionSnapshot
         switch result {
         case .secure: return .secureField
@@ -222,8 +230,23 @@ public enum SelectionBubblePolicy {
         if snapshot.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .empty }
         if snapshot.fingerprint == dismissed { return .dismissedBefore }
         if snapshot.fingerprint == shown { return .alreadyShowing }
+        if snapshot.fingerprint == offered, !reselected { return .unchanged }
         if itemCount == 0 { return .noItems }
         return nil
+    }
+
+    /// How far from its selection a mouse gesture may end and still count as having made it.
+    public static let reselectionMargin: CGFloat = 24
+
+    /// Whether a gesture ended on the selection it read, so it may have selected that text again. A drag or click
+    /// that selects ends on or next to its selection; dragging a window or a scroll bar ends away from a selection
+    /// it leaves as it was. A keyboard gesture, without a pointer, never counts; a mouse gesture whose selection
+    /// reports no rectangle always does. Cocoa coordinates.
+    public static func endsOnSelection(pointer: CGPoint?, bounds: CGRect?, endBounds: CGRect?) -> Bool {
+        guard let pointer else { return false }
+        let rects = [bounds, endBounds].compactMap { $0 }
+        guard !rects.isEmpty else { return true }
+        return rects.contains { $0.insetBy(dx: -reselectionMargin, dy: -reselectionMargin).contains(pointer) }
     }
 
     /// From the app's `LSApplicationCategoryType`, such as `public.app-category.action-games`.

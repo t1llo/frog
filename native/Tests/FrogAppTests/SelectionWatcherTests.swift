@@ -139,6 +139,37 @@ final class SelectionWatcherTests: XCTestCase {
         XCTAssertEqual(fixture.presenter.shows.first?.pointer, CGPoint(x: 90, y: 40))
     }
 
+    func testTheSameSelectionComesBackOnlyWhenItIsSelectedAgain() async throws {
+        let fixture = Fixture()
+        fixture.drag()
+        try await waitUntil { fixture.presenter.shows.count == 1 }
+
+        // Dragging the window by its title bar hides the bubble and leaves the selection as it was.
+        fixture.drag(from: CGPoint(x: 400, y: 880), to: CGPoint(x: 600, y: 860))
+        try await waitUntil { fixture.reader.calls.count == 2 }
+        try await Task.sleep(for: .milliseconds(10))
+        XCTAssertFalse(fixture.presenter.isVisible)
+        XCTAssertEqual(fixture.presenter.shows.count, 1)
+
+        // A shortcut with Shift, such as ⇧⌘T, ends like a keyboard selection.
+        fixture.watcher.handle(.shiftReleased, now: fixture.now)
+        try await waitUntil { fixture.reader.calls.count == 3 }
+        try await Task.sleep(for: .milliseconds(10))
+        XCTAssertEqual(fixture.presenter.shows.count, 1)
+
+        // Double-clicking the same word again brings it back.
+        let word = CGPoint(x: 104, y: 508)
+        fixture.watcher.handle(.mouseDown(word, clickCount: 2, right: false), now: fixture.now)
+        fixture.watcher.handle(.mouseUp(word, clickCount: 2, modifiers: []), now: fixture.now)
+        try await waitUntil { fixture.presenter.shows.count == 2 }
+
+        // So does another selection, wherever the gesture ends.
+        fixture.watcher.handle(.keyDown(keyCode: 124), now: fixture.now)
+        fixture.reader.result = .selection(Self.snapshot("levee bank", element: 1))
+        fixture.watcher.handle(.shiftReleased, now: fixture.now)
+        try await waitUntil { fixture.presenter.shows.count == 3 }
+    }
+
     func testTheBubbleGoesAwayAfterSixIdleSecondsAndHoveringKeepsIt() async throws {
         let fixture = Fixture()
         fixture.drag()
@@ -318,7 +349,8 @@ private final class Fixture {
     private(set) var waits: [TimeInterval] = []
     private func waited(_ delay: TimeInterval) { waits.append(delay) }
 
-    func drag(from start: CGPoint = CGPoint(x: 10, y: 10), to end: CGPoint = CGPoint(x: 80, y: 10)) {
+    /// By default the drag ends on the end of the selection the reader reports, as a drag that selects text does.
+    func drag(from start: CGPoint = CGPoint(x: 10, y: 10), to end: CGPoint = CGPoint(x: 104, y: 508)) {
         watcher.handle(.mouseDown(start, clickCount: 1, right: false), now: now)
         watcher.handle(.mouseUp(end, clickCount: 1, modifiers: []), now: now)
     }

@@ -451,7 +451,13 @@ frontmost; secure input is on; the app is in the excluded list; the app is a gam
 shortcut recording or a focused answer panel. `mayShow` runs after the read: a password
 field, an empty, unavailable or whitespace-only selection, one too long, the selection
 dismissed with Escape, and a rule list with nothing to offer show nothing; the selection
-already showing keeps the bubble as it is.
+already showing keeps the bubble as it is. The selection the bubble showed last comes back
+only after a mouse gesture that ends on it or within 24 points of it
+(`endsOnSelection`): dragging a window or a scroll bar, a Shift-click away from the text, or
+a shortcut with Shift such as ⇧⌘T leaves the old selection in place and shows nothing, while
+selecting it again with a double-click or a drag does show it. A mouse gesture whose
+selection reports no rectangle always counts; a keyboard gesture never does, and needs
+another selection.
 
 `SelectionBubbleItems` offers enabled answer rules whose model is set up while Explain is
 on, the Explain rule first and the others in configuration order, then enabled, set-up
@@ -491,6 +497,8 @@ restart. Turning Explain off and `shutdown()` stop it.
 - The bubble hides on any mouse down elsewhere, a key press, scrolling, an app switch, after
   an action, and six seconds after it appeared or the pointer last left it (checked once a
   second while it shows). Escape also remembers the selection so it does not come back.
+  `SelectionWatcherCore.offeredFingerprint` keeps the selection shown last after the bubble
+  hid, for `mayShow`.
 
 `SelectionBubbleController` (`Platform/SelectionBubbleController.swift`) is a
 `FrogFloatingPanel` that cannot become key, with `.ignoresCycle` added; its content is a
