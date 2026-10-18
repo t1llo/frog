@@ -37,6 +37,34 @@ final class SelectionWatcherTests: XCTestCase {
         XCTAssertTrue(clicked.presenter.shows.isEmpty)
     }
 
+    func testScrollingWhileTheSelectionIsReadShowsNothing() async throws {
+        let fixture = Fixture()
+        fixture.reader.holding = true
+        fixture.drag()
+        try await waitUntil { fixture.reader.heldReads == 1 }
+        fixture.watcher.handle(.scroll, now: fixture.now)
+        fixture.reader.releaseReads()
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertTrue(fixture.presenter.shows.isEmpty, "The text moved away from where it was read")
+    }
+
+    func testAReadThatHangsHoldsUpNoLaterSelection() async throws {
+        let fixture = Fixture()
+        fixture.reader.holding = true
+        fixture.drag()
+        try await waitUntil { fixture.reader.heldReads == 1 }
+        fixture.reader.holding = false
+        fixture.watcher.handle(.applicationChanged, now: fixture.now)
+        fixture.frontmost = BubbleApplication(pid: 778, bundleID: "com.apple.TextEdit", bundleURL: nil)
+        fixture.drag()
+        try await waitUntil { fixture.presenter.shows.count == 1 }
+        XCTAssertEqual(fixture.reader.calls.map(\.pid), [Fixture.pid, 778])
+
+        fixture.reader.releaseReads()
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(fixture.presenter.shows.count, 1, "The late read of the first app shows nothing")
+    }
+
     func testBusySecureInputExcludedAppsAndGamesAreNeverRead() async throws {
         let blocks: [(Fixture) -> Void] = [
             { $0.state.busy = true },
@@ -330,11 +358,25 @@ private final class Reader: SelectionReading, @unchecked Sendable {
             return .exposed
         }
     }
+    /// While set, a read waits for `releaseReads()`, as a read of an app that does not answer does.
+    private var holds = false
+    private var held: [CheckedContinuation<Void, Never>] = []
+    var holding: Bool {
+        get { lock.withLock { holds } }
+        set { lock.withLock { holds = newValue } }
+    }
+    var heldReads: Int { lock.withLock { held.count } }
+    func releaseReads() {
+        let waiting = lock.withLock { () -> [CheckedContinuation<Void, Never>] in defer { held = [] }; return held }
+        waiting.forEach { $0.resume() }
+    }
     func read(pid: pid_t, maxCharacters: Int, includeContext: Bool) async -> SelectionReadResult {
-        lock.withLock {
+        let hold = lock.withLock {
             recorded.append(Call(pid: pid, maxCharacters: maxCharacters, includeContext: includeContext))
-            return current
+            return holds
         }
+        if hold { await withCheckedContinuation { continuation in lock.withLock { held.append(continuation) } } }
+        return result
     }
 }
 

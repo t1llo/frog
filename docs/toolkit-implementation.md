@@ -475,7 +475,7 @@ restart. Turning Explain off and `shutdown()` stop it.
   bubble.
 - Events become `SelectionInput`s: the pointer from `NSEvent.mouseLocation`, the click count
   of mouse events, the modifiers; Shift going up while no mouse button is down is
-  `shiftReleased`. Scrolling with nothing pending or shown is ignored.
+  `shiftReleased`. Scrolling with nothing pending, being read or shown is ignored.
 - A scheduled read is one task that sleeps until the settle time, checks
   `settleFired(token)`, builds `BubbleContext` (secure input from
   `IsSecureEventInputEnabled()`, the frontmost app, a game category cached per bundle ID from

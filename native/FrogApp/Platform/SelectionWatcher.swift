@@ -90,6 +90,8 @@ struct BubbleState: Equatable {
     private var hovering = false
     /// Counts inputs and stops, so a read that finishes after a later input or a stop shows nothing.
     private var generation = 0
+    /// Settles reading the selection now. Scrolling during one moves the text away from where it was read.
+    private var reading = 0
     /// The selection the bubble shows now.
     private var shown: SelectionSnapshot?
     /// Whether an app is a game, by bundle identifier.
@@ -194,8 +196,8 @@ struct BubbleState: Equatable {
 
     /// One input, already reduced to what the bubble decides on.
     func handle(_ input: SelectionInput, now: Date) {
-        // Scrolling sends many events; with nothing pending or shown there is nothing to cancel.
-        if input == .scroll, shown == nil, core.pendingToken == nil { return }
+        // Scrolling sends many events; with nothing pending, being read or shown there is nothing to cancel.
+        if input == .scroll, shown == nil, core.pendingToken == nil, reading == 0 { return }
         generation += 1
         if case let .mouseUp(point, _, _) = input { lastMouseUp = point }
         for effect in core.receive(input, now: now, options: hooks.options()) {
@@ -235,7 +237,10 @@ struct BubbleState: Equatable {
                                     bundleID: front.bundleID, isGame: isGame(front), busy: state.busy)
         guard SelectionBubblePolicy.mayRead(context, options: options) == nil else { return }
         let started = generation
-        guard let result = await readSelection(front, options: options, started: started) else { return }
+        reading += 1
+        let read = await readSelection(front, options: options, started: started)
+        reading -= 1
+        guard let result = read else { return }
         var items: (visible: [BubbleItem], more: [BubbleItem]) = ([], [])
         if case let .selection(snapshot) = result { items = hooks.items(snapshot) }
         guard SelectionBubblePolicy.mayShow(result, dismissed: core.dismissedFingerprint, shown: core.shownFingerprint,
