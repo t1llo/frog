@@ -25,22 +25,33 @@ import XCTest
         private var _now: Date
         private var _fetches: [String: Int] = [:], _authReads: [String] = [], _desktopReads: [String] = []
         private var _organizations: [String: Bool] = [:]
-        /// Logins by Claude Code folder name, with their organization.
-        let logins: [String: String]
+        /// Logins by Claude Code folder name, with their organization, and the profile beside
+        /// each, which names the login's organization unless another session rewrote it.
+        private var _logins: [String: String], _profiles: [String: String] = [:], _tokens: [String: String] = [:]
         var throttled: Set<String> = []
-        init(now: Date, logins: [String: String]) { _now = now; self.logins = logins }
+        init(now: Date, logins: [String: String]) { _now = now; _logins = logins }
         private func locked<Value>(_ body: () -> Value) -> Value { lock.lock(); defer { lock.unlock() }; return body() }
         var now: Date { get { locked { _now } } set { locked { _now = newValue } } }
         func fetches(_ folder: String) -> Int { locked { _fetches[folder] ?? 0 } }
         var authReads: [String] { locked { _authReads } }
         var desktopReads: [String] { locked { _desktopReads } }
         var organizationReads: [String] { locked { Array(_organizations.keys) } }
+        /// Every organization read, one per folder and detection.
+        var organizationReadCount: Int { locked { _organizationReadCount } }
+        private var _organizationReadCount = 0
+        /// A folder signed in again, as the account of `organization`: a new token.
+        func signIn(_ name: String, organization: String, token: String) { locked { _logins[name] = organization; _tokens[name] = token } }
+        /// Another session rewrote the folder's profile; its login stays.
+        func rewriteProfile(_ name: String, organization: String) { locked { _profiles[name] = organization } }
         func auth(_ directory: URL) -> ClaudeAuth? {
             let name = directory.lastPathComponent
-            locked { _authReads.append(name) }
-            guard let organization = logins[name] else { return nil }
-            return ClaudeAuth(token: name, source: .claudeCode, identity: "claudeCode|\(directory.path)|account-\(name)|\(organization)",
-                              label: "Fixture", hasAccountMetadata: true)
+            let login = locked { () -> (token: String, organization: String?, profile: String?) in
+                _authReads.append(name)
+                return (_tokens[name] ?? name, _logins[name], _profiles[name] ?? _logins[name])
+            }
+            guard login.organization != nil, let profile = login.profile else { return nil }
+            return ClaudeAuth(token: login.token, source: .claudeCode, identity: "claudeCode|\(directory.path)|account-\(profile)|\(profile)",
+                              label: "Fixture \(profile)", hasAccountMetadata: true, organization: profile)
         }
         func fetch(_ token: String, at now: Date) throws -> Usage {
             let throttle = locked { _fetches[token, default: 0] += 1; return throttled.contains(token) }
@@ -49,7 +60,9 @@ import XCTest
                                   Limit(id: "seven_day", label: "Week", pct: 20, resetsAt: now.addingTimeInterval(3 * 86_400), window: 7 * 86_400)])
         }
         func readDesktop(_ folder: URL) { locked { _desktopReads.append(folder.lastPathComponent) } }
-        func readOrganization(_ source: ClaudeAccountSource) { locked { _organizations[source.folder.lastPathComponent] = true } }
+        func readOrganization(_ source: ClaudeAccountSource) {
+            locked { _organizations[source.folder.lastPathComponent] = true; _organizationReadCount += 1 }
+        }
     }
 
     // MARK: Fixtures
@@ -322,6 +335,69 @@ import XCTest
         XCTAssertEqual(first.label, "A")
         XCTAssertEqual(first.windows.first?.percentage, 70)
         XCTAssertEqual(first.sources, ["Claude app · Claude"], "The profile no longer belongs to the folder")
+    }
+
+    /// The Claude app's Claude Code sessions write `~/.claude.json` too, so it may name B beside
+    /// A's unchanged login: A keeps its reading and its name, and nothing is matched again. A new
+    /// login is believed with the account its profile names.
+    func testAProfileRewrittenBesideTheSameLoginKeepsItsReadingAndName() async throws {
+        try twoAccounts()
+        let world = world()
+        let model = accountsModel(world)
+        defer { model.stop() }
+        model.setEnabled(true); model.start()
+        try await until { world.fetches(".claude") == 1 && store(model, "A")?.usage != nil }
+        try await settled(model)
+        let a = try XCTUnwrap(store(model, "A"))
+        XCTAssertEqual(a.authLabel, "Fixture org-test-1")
+        let detections = world.organizationReadCount
+
+        try profile(".claude", organization: "org-test-2")
+        world.rewriteProfile(".claude", organization: "org-test-2")
+        world.throttled = [".claude"]
+        world.now = base.addingTimeInterval(61); model.tick(); try await settled(model)
+        XCTAssertEqual(world.fetches(".claude"), 2)
+        XCTAssertEqual(a.lastError, "rate limited")
+        XCTAssertEqual(a.usage?.limits.map(\.pct), [12, 20], "The same login's reading stays")
+        XCTAssertEqual(a.authLabel, "Fixture org-test-1")
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(world.organizationReadCount, detections, "The same login is no reason to match the folders again")
+
+        world.signIn(".claude", organization: "org-test-2", token: "a-signed-in-again")
+        world.now = base.addingTimeInterval(61 + 121); model.tick(); try await settled(model)
+        XCTAssertEqual(world.fetches("a-signed-in-again"), 1)
+        XCTAssertEqual(a.authLabel, "Fixture org-test-2", "A new login comes with the account its profile names")
+        try await until { world.organizationReadCount > detections }
+        XCTAssertGreaterThan(world.organizationReadCount, detections, "and has the folders matched again")
+        try await settled(model)
+        XCTAssertEqual(model.accounts.map { $0.codeFolder?.lastPathComponent }, [".claude", ".claude-account-b"],
+                       "B keeps its own folder, so A keeps the default one")
+        XCTAssertTrue(store(model, "A") === a)
+    }
+
+    /// `~/.claude-work` signed in again as B's account belongs to B from its next reading on,
+    /// not only after a relaunch or Refresh.
+    func testAFolderSignedInAgainAsAnotherAccountIsMatchedAgain() async throws {
+        try app("Claude", organization: "org-test-1", at: base.addingTimeInterval(-300))
+        try app("Claude-Account-B", organization: "org-test-2", at: base.addingTimeInterval(-300))
+        try profile(".claude", organization: "org-test-1")
+        try profile(".claude-work", organization: "org-test-3")
+        let world = World(now: base, logins: [".claude": "org-test-1", ".claude-work": "org-test-3"])
+        let model = accountsModel(world)
+        defer { model.stop() }
+        model.setEnabled(true); model.start()
+        try await until { model.accounts.count == 3 }
+        XCTAssertEqual(model.accounts.map { model.label($0) }, ["A", "B", "Work"])
+        XCTAssertNil(model.accounts[1].codeFolder)
+        world.now = base.addingTimeInterval(61); model.tick(); try await settled(model)
+        XCTAssertEqual(world.fetches(".claude-work"), 1)
+
+        try profile(".claude-work", organization: "org-test-2")
+        world.signIn(".claude-work", organization: "org-test-2", token: "work-as-b")
+        world.now = base.addingTimeInterval(122); model.tick()
+        try await until { model.accounts.count == 2 }
+        XCTAssertEqual(model.accounts.map { model.label($0) }, ["A", "B"])
+        XCTAssertEqual(model.accounts.map { $0.codeFolder?.lastPathComponent }, [".claude", ".claude-work"])
     }
 
     /// B's Claude Code works in `~/.claude-account-b`, which the usual folders leave out. While each

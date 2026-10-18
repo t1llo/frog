@@ -113,6 +113,9 @@ struct ClaudeAccount: Equatable, Identifiable {
     let codeFolder: URL?
     let profileFile: URL?
     let organization: String?
+    /// The organization its Claude Code profile named when the folders were matched. A new login
+    /// there whose profile names another one has the folders matched again.
+    let profileOrganization: String?
     /// Further app folders signed in to the same organization, shown as this one account.
     var mergedFolders: [URL] = []
     /// Where this slot's polling state is saved. The default slot keeps the key Frog used before
@@ -227,7 +230,7 @@ enum ClaudeAccountMatching {
             return ClaudeAccount(slotPath: path, defaultLabel: labels[index], appFolder: slot.app?.folder,
                                  codeFolder: slot.profile?.folder, profileFile: slot.profile?.file,
                                  organization: slot.app?.organization ?? slot.profile?.organization,
-                                 mergedFolders: slot.merged,
+                                 profileOrganization: slot.profile?.organization, mergedFolders: slot.merged,
                                  pollingKey: ClaudeAccount.pollingKey(slotPath: path, isDefault: index == defaultSlot))
         }
     }

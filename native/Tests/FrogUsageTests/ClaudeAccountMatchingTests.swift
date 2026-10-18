@@ -66,6 +66,7 @@ final class ClaudeAccountMatchingTests: XCTestCase {
         XCTAssertEqual(accounts[0].codeFolder?.lastPathComponent, ".claude")
         XCTAssertEqual(accounts[0].profileFile, home.appendingPathComponent(".claude.json"))
         XCTAssertEqual(accounts[0].organization, "org-test-1", "The app folder's account names the slot")
+        XCTAssertEqual(accounts[0].profileOrganization, "org-test-2")
         XCTAssertEqual(accounts[1].codeFolder?.lastPathComponent, ".claude-account-b")
         XCTAssertEqual(accounts[1].mergedFolders, [])
         XCTAssertNil(accounts[1].mergedDescription)

@@ -480,7 +480,16 @@ and isolated defaults.
   account going away, starts the reading over without those folders.
 - **A folder signed in to another account.** When the newest organization in an
   account's Claude app history changes, that account's endpoint reading and borrowed
-  renewal times are dropped, Frog looks for accounts again, and the label stays.
+  renewal times are dropped, Frog looks for accounts again, and the label stays. When a
+  Claude Code folder holds a new login whose profile names another organization than
+  when the folders were matched, Frog looks for accounts again at that reading, not
+  only at the next launch or Refresh.
+- **A profile rewritten beside the same login.** An unchanged access token is the same
+  login. When the profile beside it names another account, another session sharing the
+  folder rewrote it, as the Claude app's sessions do with `~/.claude.json`: the account
+  keeps its reading, its login's name and its plan, and nothing is matched again. A new
+  token is taken with the account its profile names. The token is compared in memory
+  only, as before.
 - **For the screens**, `UsageDashboardModel` gives one summary per account (label,
   short label, Session and Week windows with the model weeks, plan, sources such as
   "Claude app · Claude-Account-B" and "Claude Code · ~/.claude", age, whether it is
@@ -493,7 +502,9 @@ and isolated defaults.
 **Verified:** `ClaudeAccountsStoreTests` (separate gates, the 30 s start, the default
 account's saved gate, nothing opened while the switch is off, the notice, an app-only
 account sending nothing, the live-reading command with a space in the home folder, an
-organization change, every account's Claude Code calls in the activity, no e-mail address), with `UsageParityTests`,
+organization change, a profile rewritten beside the same login, a folder signed in again
+as another account, every account's Claude Code calls in the activity, no e-mail
+address), with `UsageParityTests`,
 `UsageLifecycleTests` and `ClaudeLoginRenewalTests` unchanged.
 
 ### Showing each account

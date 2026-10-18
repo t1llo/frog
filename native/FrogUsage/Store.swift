@@ -27,7 +27,8 @@ final class Store: ObservableObject {
     }
     /// Stores of several accounts start a little apart, so their first requests do not arrive together.
     var startDelay: TimeInterval = 0
-    /// Told when the account the Claude app's folder is signed in to is no longer the one it was.
+    /// Told when the account the Claude app's folder is signed in to is no longer the one it was,
+    /// or the Claude Code folder holds a new login of another account than when it was matched.
     var onOrganizationChange: (() -> Void)?
 
     private let defaults: UserDefaults
@@ -64,6 +65,8 @@ final class Store: ObservableObject {
     private var delayedStart: Task<Void, Never>?
     /// The organization the Claude app's folder was last seen signed in to.
     private var knownOrganization: String?
+    /// The organization the Claude Code folder's profile named with the login last read anew.
+    private var knownProfileOrganization: String?
 
     convenience init(defaults: UserDefaults = UsagePreferences.defaults, startPolling: Bool = false,
                      readAuth: @escaping @Sendable (ClaudeLoginSource, URL) -> ClaudeAuth? = { readClaudeAuth(source: $0, directory: $1) },
@@ -107,6 +110,7 @@ final class Store: ObservableObject {
             loginSource = account.codeFolder == nil ? .claudeDesktop : .automatic
             pollingKey = account.pollingKey
             knownOrganization = account.appFolder == nil ? nil : account.organization
+            knownProfileOrganization = account.profileOrganization
         } else {
             loginSource = defaults.string(forKey: "claudeLoginSource").flatMap(ClaudeLoginSource.init(rawValue:)) ?? .automatic
             pollingKey = ClaudePollingState.defaultsKey
@@ -336,17 +340,30 @@ final class Store: ObservableObject {
                     }
                 }
                 if let auth {
-                    if !auth.hasAccountMetadata, cachedToken != auth.token {
+                    // An unchanged token is the same login. A profile beside it that names
+                    // another account was rewritten by another session sharing the folder, such
+                    // as the Claude app's Claude Code, and says nothing about this login: its
+                    // reading and its name stay. A new token comes with the account it names.
+                    let sameLogin = cachedToken == auth.token
+                    if !auth.hasAccountMetadata, !sameLogin {
                         // These tools don't report account IDs. A replaced access token could
                         // mean either refresh or account switch: don't reuse its old limits,
                         // including across launches where there is no cached token to compare.
                         polling.clearReading()
                     }
-                    polling.selectIdentity(auth)
-                    usage = polling.usage; lastGoodAt = polling.lastGoodAt
-                    authLabel = auth.label
-                    authPlan = auth.plan
+                    if !sameLogin || polling.authIdentity == auth.identity {
+                        polling.selectIdentity(auth)
+                        usage = polling.usage; lastGoodAt = polling.lastGoodAt
+                        authLabel = auth.label
+                        authPlan = auth.plan
+                    }
                     cachedToken = auth.token
+                    // Which folders are one account was decided by the account this profile
+                    // named then; a new login of another account has it decided again.
+                    if account != nil, !sameLogin, auth.organization != knownProfileOrganization {
+                        knownProfileOrganization = auth.organization
+                        onOrganizationChange?()
+                    }
                 }
                 guard let token = cachedToken else { throw FetchError.noToken }
                 let fresh = try await fetchLimits(token)

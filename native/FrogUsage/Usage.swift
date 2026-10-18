@@ -16,6 +16,8 @@ struct ClaudeAuth {
     let label: String
     var hasAccountMetadata = false
     var plan: String?
+    /// The organization the profile beside the login names; non-secret, held in memory only.
+    var organization: String?
 }
 
 enum ClaudePaths {
@@ -144,7 +146,7 @@ func readClaudeAuth(source: ClaudeLoginSource, directory: URL) -> ClaudeAuth? {
             let label = (["Claude Code (\(directory.lastPathComponent))"] + details).joined(separator: " · ")
             return ClaudeAuth(token: token, source: candidate, identity: "claudeCode|\(directory.path)|\(accountID)|\(orgID)",
                               label: label, hasAccountMetadata: !accountID.isEmpty && !orgID.isEmpty,
-                              plan: claudePlanName(account))
+                              plan: claudePlanName(account), organization: orgID.isEmpty ? nil : orgID)
         }
         let directory = candidate == .pi ? piAgentDirectory : openCodeDataDirectory()
         guard let oauth = credentialJSON(directory.appendingPathComponent("auth.json"))?["anthropic"] as? [String: Any],
