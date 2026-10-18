@@ -463,10 +463,14 @@ selection away, so they forget the selection shown last; a drag, a scroll and an
 switch do not.
 
 `SelectionBubbleItems` offers enabled answer rules whose model is set up while Explain is
-on, the Explain rule first and the others in configuration order, then enabled, set-up
-Writing rules while Writing is on and only in an editable field. Up to four show; with
-more, three show and the rest wait behind **More**, which expands the bubble inline
-instead of opening a menu, so Frog never activates. `BundleIdentifiers` checks a list of
+on, the Explain rule first under whatever name it has and the others in configuration
+order, then enabled, set-up Writing rules while Writing is on and only in an editable
+field. Rules switched off under **Rules in the bubble** stay out, and names lose
+surrounding spaces and line breaks. `AppModel` builds the list each time the bubble shows,
+so a rule renamed, hidden or deleted since appears as it is now; deleting a rule also drops
+it from the hidden list. Up to four show; with more, three show and the rest wait behind
+**More**, which expands the bubble inline instead of opening a menu, so Frog never
+activates. `BundleIdentifiers` checks a list of
 excluded apps: at most 200 identifiers of 1 to 255 letters, digits, dots and hyphens, each
 with a dot.
 
@@ -508,10 +512,16 @@ restart. Turning Explain off and `shutdown()` stop it.
 `SelectionBubbleController` (`Platform/SelectionBubbleController.swift`) is a
 `FrogFloatingPanel` that cannot become key, with `.ignoresCycle` added; its content is a
 `FirstMouseHostingView` inside a view with an always-active tracking area that reports
-hovering. It measures `SelectionBubbleView` and places it with `PanelPlacement.place` and a
-6 pt gap; expanding **More** measures and places it again. `SelectionBubbleView` is a capsule
-of rule buttons (icon and name, `.help` with the rule name, the Explain rule labelled
-"Explain selection" for VoiceOver).
+hovering and where the pointer is. It measures `SelectionBubbleView` and places it with
+`PanelPlacement.place` and a 6 pt gap. Expanding **More** turns the bar into a list grouped
+into Answer and Replace selection, as wide as its longest row from 248 to 320 pt and as tall
+as its rows up to 420 pt or `PanelPlacement.room`, the larger side beside the selection,
+whichever is less; past that it scrolls, so it stays on the selection's display and never
+covers the selection. After each placement the highlight follows `NSEvent.mouseLocation`,
+because the panel moved under a pointer that may not have. The bar is a strip of rule
+buttons and the list has the rows and corners of Frog's menus (icon and name, `.help` with
+the rule name and shortcut, the Explain rule labelled "Explain selection" for VoiceOver,
+each list row with its shortcut as the value).
 
 `AppModel.runBubbleItem(_:snapshot:)` runs a choice. An answer rule reads the selection
 again through Accessibility with its context (only while **Include surrounding text** is on);

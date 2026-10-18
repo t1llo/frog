@@ -705,7 +705,11 @@ selection without a position shows nothing; idle dismissal after six seconds unl
 hovered; a choice runs for the bubble's selection),
 `ExplainRoutingTests` (the watcher runs only with Explain, the bubble and Accessibility on
 and follows a change of Accessibility; an answer from the bubble reads again with context and
-never copies; a Writing rule from the bubble runs like its shortcut) and
+never copies; a Writing rule from the bubble runs like its shortcut; a rule renamed, hidden,
+deleted or left without a model since shows as it is now), `SelectionBubbleItemsTests` and
+`PanelPlacementTests` (Explain leads under any name, many rules keep their order behind More,
+the room beside a selection), `SelectionBubbleLayoutTests` (the list's width and height, its
+scrolling past the room, the pointer after a resize) and
 `SelectionIsolationTests` (the watcher, controller and view name no clipboard, Copy or
 posted event).
 
@@ -729,6 +733,8 @@ Device checks, with isolated data, still to run:
       and pressing ⇧⌘T, bring nothing back; double-clicking the same word again does, and
       so does selecting the same word again with Shift-Option-Right after Left.
 - [ ] More expands the bubble inline; a Writing rule from it replaces the selection.
+- [ ] Near the bottom and right edges of each display, with twenty rules, the list stays on
+      that display beside the selection and scrolls with the wheel and trackpad.
 - [ ] Activity Monitor Energy Impact over 10 minutes of normal work, bubble on and off:
       ___ / ___.
 
