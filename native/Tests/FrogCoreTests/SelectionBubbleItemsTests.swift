@@ -78,4 +78,43 @@ final class SelectionBubbleItemsTests: XCTestCase {
         XCTAssertEqual(titles(result.visible), ["Explain", "Define", "Proofread"])
         XCTAssertEqual(titles(result.more), ["Shorten", "Translate"])
     }
+
+    func testExplainLeadsUnderANewName() {
+        var explain = Rule.explainPreset
+        explain.name = "Erklären"
+        let result = items([answer("Define"), writing("Proofread"), explain])
+        XCTAssertEqual(titles(result.visible), ["Erklären", "Define", "Proofread"])
+        XCTAssertEqual(SelectionBubbleItems.candidates(rules: [answer("Define"), explain], explainEnabled: true, writingEnabled: true)
+                        .map(\.id).first, explain.id)
+    }
+
+    func testTitlesLeaveOutSurroundingSpaceAndLineBreaks() {
+        XCTAssertEqual(titles(items([writing("  Proofread\n")]).visible), ["Proofread"])
+    }
+
+    func testManyRulesKeepTheirOrderBehindMore() {
+        let answers = (1...6).map { answer("Answer \($0)") }
+        let writings = (1...20).map { writing("Writing \($0)") }
+        let result = items(writings + [Rule.explainPreset] + answers)
+        XCTAssertEqual(titles(result.visible), ["Explain", "Answer 1", "Answer 2"])
+        XCTAssertEqual(titles(result.more), (3...6).map { "Answer \($0)" } + (1...20).map { "Writing \($0)" })
+        XCTAssertEqual(result.more.filter(\.answers).count, 4, "answer rules stay together ahead of Writing rules")
+    }
+
+    func testHidingEveryRuleLeavesNothingToShow() {
+        let rules = [Rule.explainPreset, answer("Define"), writing("Proofread")]
+        let result = SelectionBubbleItems.items(rules: rules, explainEnabled: true, writingEnabled: true, editable: true,
+                                                hidden: Set(rules.map(\.id)), configured: { _ in true })
+        XCTAssertTrue(result.visible.isEmpty)
+        XCTAssertTrue(result.more.isEmpty)
+    }
+
+    func testARuleHiddenOrMissingDoesNotTakeASlotInTheBar() {
+        let rules = [Rule.explainPreset, answer("Define"), answer("Summarize"), writing("Proofread"), writing("Shorten")]
+        let gone = UUID()
+        let result = SelectionBubbleItems.items(rules: rules, explainEnabled: true, writingEnabled: true, editable: true,
+                                                hidden: [rules[1].id, gone], configured: { _ in true })
+        XCTAssertEqual(titles(result.visible), ["Explain", "Summarize", "Proofread", "Shorten"], "four fit without More")
+        XCTAssertTrue(result.more.isEmpty)
+    }
 }
