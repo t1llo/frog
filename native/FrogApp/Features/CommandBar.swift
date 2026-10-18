@@ -75,7 +75,8 @@ import SwiftUI
     private var settingsIndexing: Task<Void, Never>?
     private var settingsLoaded = false
     private var cachedSettings = SystemSettingsCatalog.defaults
-    private var settingIconKeys: [String: String] = [:]
+    /// Published so that rows already drawn switch to their pane's own icon, even when nothing else about them changed.
+    @Published private var settingIconKeys: [String: String] = [:]
     private var cachedApplications: [Rule] = []
     private var applicationRecords: [String: SearchRecord] = [:]
     private var cachedWindows: [SwitcherWindow] = []
@@ -171,20 +172,26 @@ import SwiftUI
     private var suggestedApplications: [SearchRecord] {
         cachedApplications.prefix(8).compactMap { $0.action?.applicationPath.flatMap { applicationRecords[$0] } }
     }
-    private func refreshSettings() {
+    /// Discovers the installed panes once. Rows already listed take the panes' names and icons where they are.
+    func refreshSettings() {
         guard !settingsLoaded, settingsIndexing == nil else { return }
         settingsIndexing = Task { [weak self] in
             guard let self else { return }
             let settings = await self.loadSettings()
             guard !Task.isCancelled else { return }
             self.cachedSettings = settings; self.settingsLoaded = true; self.settingsIndexing = nil
-            self.settingIconKeys = Dictionary(settings.compactMap { setting in setting.icon.map { (setting.record.id, $0.key) } },
-                                              uniquingKeysWith: { first, _ in first })
-            guard self.panel?.isVisible == true else { return }
-            for record in self.records where record.id.hasPrefix("mac-setting:") {
+            let keys = Dictionary(settings.compactMap { setting in setting.icon.map { (setting.record.id, $0.key) } },
+                                  uniquingKeysWith: { first, _ in first })
+            if keys != self.settingIconKeys { self.settingIconKeys = keys }
+            // Only while rows are listed: hiding clears the context.
+            guard self.context != nil else { return }
+            // Replaced in place, the rows keep their order among equally good matches, so the selection and the
+            // scroll position stay on the same rows.
+            let listed = Set(settings.map(\.record.id))
+            for record in self.records where record.id.hasPrefix("mac-setting:") && !listed.contains(record.id) {
                 self.recordsByID[record.id] = nil; self.actions[record.id] = nil
             }
-            self.records.removeAll { $0.id.hasPrefix("mac-setting:") }
+            self.records.removeAll { $0.id.hasPrefix("mac-setting:") && !listed.contains($0.id) }
             self.addSettings()
             self.updateResults()
         }
@@ -193,12 +200,13 @@ import SwiftUI
         let open = openSetting
         for setting in cachedSettings { add(setting.record) { try open(setting) } }
     }
-    private func iconPath(for result: SearchRecord) -> String? {
+    /// The key a row's icon is cached and read under, or nil for a row that shows its symbol.
+    func iconPath(for result: SearchRecord) -> String? {
         if result.id.hasPrefix("app:") { return String(result.id.dropFirst(4)) }
         if let path = CleanerCommand.path(fromRowID: result.id) { return path }
         if let windowPath = windowIconPaths[result.id] { return windowPath }
         // A pane shows its own icon once discovery found it, and the System Settings icon until then.
-        if result.id.hasPrefix("mac-setting:") { return settingIconKeys[result.id] ?? "/System/Applications/System Settings.app" }
+        if result.id.hasPrefix("mac-setting:") { return settingIconKeys[result.id] ?? MacSettingsDiscovery.fallbackIconPath }
         return nil
     }
     /// What a row draws first. It only looks in the cache, so it never waits for a read.
@@ -885,7 +893,7 @@ private struct CommandBarView: View {
                 ScrollView {
                     LazyVStack(spacing: 2) {
                         ForEach(Array(bar.results.enumerated()), id: \.element.id) { index, result in
-                            CommandResultRow(bar: bar, result: result, selected: index == bar.selection)
+                            CommandResultRow(bar: bar, result: result, iconKey: bar.iconPath(for: result), selected: index == bar.selection)
                                 .equatable().id(result.id)
                         }
                         if bar.results.isEmpty { Text("No matching results").foregroundStyle(FrogStyle.muted).padding(28) }
@@ -902,10 +910,11 @@ private struct CommandBarView: View {
 private struct CommandResultRow: View, Equatable {
     let bar: CommandBar
     let result: SearchRecord
+    let iconKey: String?
     let selected: Bool
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.bar === rhs.bar && lhs.result == rhs.result && lhs.selected == rhs.selected
+        lhs.bar === rhs.bar && lhs.result == rhs.result && lhs.iconKey == rhs.iconKey && lhs.selected == rhs.selected
     }
 
     var body: some View {
@@ -913,7 +922,7 @@ private struct CommandResultRow: View, Equatable {
             if let index = bar.results.firstIndex(where: { $0.id == result.id }) { bar.choose(index) }
         } label: {
             HStack(spacing: 12) {
-                CommandResultIcon(bar: bar, result: result)
+                CommandResultIcon(bar: bar, result: result, key: iconKey)
                 Text(result.title).font(.system(size: 13, weight: selected ? .medium : .regular)).lineLimit(1)
                 Spacer(minLength: 10)
                 Text(result.subtitle).font(.system(size: 10)).foregroundStyle(result.isFrogCommand ? FrogStyle.accent : FrogStyle.muted).lineLimit(1).frame(maxWidth: 160, alignment: .trailing)
@@ -928,9 +937,11 @@ private struct CommandResultRow: View, Equatable {
 private struct CommandResultIcon: View {
     let bar: CommandBar
     let result: SearchRecord
+    /// The row's icon key. A pane's own icon replaces the System Settings icon of a row that is already drawn.
+    let key: String?
     @State private var icon: NSImage?
-    init(bar: CommandBar, result: SearchRecord) {
-        self.bar = bar; self.result = result
+    init(bar: CommandBar, result: SearchRecord, key: String?) {
+        self.bar = bar; self.result = result; self.key = key
         // A cached icon is drawn at once instead of after a frame with the placeholder.
         _icon = State(initialValue: bar.cachedIcon(for: result))
     }
@@ -943,7 +954,11 @@ private struct CommandResultIcon: View {
                     .background(result.isFrogCommand ? FrogStyle.accentSoft : FrogStyle.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
             }
         }.frame(width: 24, height: 24)
-            .task(id: result.id) { icon = await bar.icon(for: result) }
+            .task(id: [result.id, key]) {
+                guard key != nil else { icon = nil; return }
+                // The icon shown stays until its replacement is read, so a changing key never flashes the symbol.
+                if let loaded = await bar.icon(for: result), !Task.isCancelled { icon = loaded }
+            }
     }
 }
 
