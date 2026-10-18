@@ -675,7 +675,8 @@ text areas and text fields, too long before any text is read, marker text),
 `SelectionReaderTests` (fake elements: a text field's text, rectangles and fingerprint; a
 password field refused without reading text; a web area read through text markers and a
 caret there unavailable; the web area found within eight parents; context only when asked
-and a long value read only around the selection), `SelectionIsolationTests` (the reader
+and a long value read only around the selection; the live source splits a real marker
+range into its first and last marker, in order), `SelectionIsolationTests` (the reader
 names no pasteboard, Copy or event posting) and `ExplainRoutingTests` (a selection read
 this way never copies; empty, secure and too long refuse without copying; unavailable
 falls back to the compatibility Copy).

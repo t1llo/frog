@@ -152,6 +152,21 @@ final class SelectionReaderTests: XCTestCase {
         XCTAssertTrue(ax.reads.contains("AXEndTextMarkerForTextMarkerRange"))
     }
 
+    func testTheLiveSourceSplitsAMarkerRangeInOrder() throws {
+        // Real markers are built in Frog's own process, so no app, window or Accessibility trust is involved.
+        let startBytes: [UInt8] = [1, 2, 3, 4]
+        let endBytes: [UInt8] = [9, 8, 7, 6, 5]
+        let start = AXTextMarkerCreate(kCFAllocatorDefault, startBytes, startBytes.count)
+        let end = AXTextMarkerCreate(kCFAllocatorDefault, endBytes, endBytes.count)
+        let range = AXTextMarkerRangeCreate(kCFAllocatorDefault, start, end)
+
+        let ends = try XCTUnwrap(SelectionAXSource.live.markerEnds(range))
+        XCTAssertEqual(try bytes(of: ends.start), startBytes)
+        XCTAssertEqual(try bytes(of: ends.end), endBytes)
+        XCTAssertNil(SelectionAXSource.live.markerEnds(start), "A single marker is no range")
+        XCTAssertNil(SelectionAXSource.live.markerEnds("river bank" as CFString))
+    }
+
     func testALongPageSelectionIsRefusedBeforeItsTextIsFetched() async {
         let ax = FakeAX()
         let page = ax.focus(FakeElement(role: "AXWebArea"))
@@ -231,6 +246,15 @@ final class SelectionReaderTests: XCTestCase {
             throw CancellationError()
         }
         return snapshot
+    }
+
+    private func bytes(of marker: CFTypeRef, file: StaticString = #filePath, line: UInt = #line) throws -> [UInt8] {
+        guard CFGetTypeID(marker) == AXTextMarkerGetTypeID() else {
+            XCTFail("Expected a text marker, got \(marker)", file: file, line: line)
+            throw CancellationError()
+        }
+        let marker = marker as! AXTextMarker
+        return Array(UnsafeBufferPointer(start: AXTextMarkerGetBytePtr(marker), count: AXTextMarkerGetLength(marker)))
     }
 }
 
