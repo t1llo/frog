@@ -106,13 +106,14 @@ extension SelectionAXSource {
     }
 }
 
-/// Reads on its own serial queue, never on the main thread: an Accessibility call waits for the other app.
+/// Reads on its own queue, never on the main thread: an Accessibility call waits for the other app. The queue is
+/// concurrent, so an app that stopped answering holds up only its own reads, not the next app's.
 final class SelectionReader: SelectionReading {
     private let source: SelectionAXSource
     private let queue: DispatchQueue
 
     init(source: SelectionAXSource = .live,
-         queue: DispatchQueue = DispatchQueue(label: "frog.selection-reader", qos: .userInitiated)) {
+         queue: DispatchQueue = DispatchQueue(label: "frog.selection-reader", qos: .userInitiated, attributes: .concurrent)) {
         self.source = source
         self.queue = queue
     }

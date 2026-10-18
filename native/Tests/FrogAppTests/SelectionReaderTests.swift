@@ -180,6 +180,27 @@ final class SelectionReaderTests: XCTestCase {
         XCTAssertEqual(result, .unavailable)
     }
 
+    func testAnAppThatDoesNotAnswerHoldsUpNoReadOfAnotherApp() async throws {
+        let ax = FakeAX()
+        let field = ax.focus(FakeElement(role: kAXTextFieldRole))
+        field.range = CFRange(location: 0, length: 10)
+        field.selectedText = "river bank"
+        let hung: pid_t = 99
+        let release = DispatchSemaphore(value: 0)
+        ax.stall(hung, until: release)
+        let reader = SelectionReader(source: ax.source)
+        let stalled = Task { await reader.read(pid: hung, maxCharacters: 100_000, includeContext: false) }
+        for _ in 0..<200 where !ax.isStalled { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertTrue(ax.isStalled)
+
+        let started = Date()
+        let other = try selection(await reader.read(pid: Self.pid, maxCharacters: 100_000, includeContext: false))
+        XCTAssertEqual(other.text, "river bank")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1, "Read while the other app still keeps Frog waiting")
+        release.signal()
+        _ = await stalled.value
+    }
+
     // MARK: Helpers
 
     private func read(_ ax: FakeAX, includeContext: Bool = false) async -> SelectionReadResult {
@@ -262,10 +283,24 @@ private final class FakeAX: @unchecked Sendable {
 
     private func record(_ name: String) { lock.withLock { recorded.append(name) } }
 
+    /// A process whose application element is handed out only once the semaphore is signalled, or after three
+    /// seconds, as an app that stopped answering keeps a call waiting.
+    private var stalls: [pid_t: DispatchSemaphore] = [:]
+    private var waiting = false
+    var isStalled: Bool { lock.withLock { waiting } }
+    func stall(_ pid: pid_t, until release: DispatchSemaphore) { lock.withLock { stalls[pid] = release } }
+
+    private func answer(_ pid: pid_t) {
+        guard let release = lock.withLock({ stalls[pid] }) else { return }
+        lock.withLock { waiting = true }
+        _ = release.wait(timeout: .now() + 3)
+        lock.withLock { waiting = false }
+    }
+
     var source: SelectionAXSource {
         @Sendable func fake(_ element: AnyObject) -> FakeElement { element as! FakeElement }
         return SelectionAXSource(
-            application: { [self] _ in application },
+            application: { [self] pid in answer(pid); return application },
             focused: { [self] _ in focused },
             window: { [self] _ in window },
             parent: { fake($0).parent },

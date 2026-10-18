@@ -311,9 +311,11 @@ the same one-second messaging timeout as the capture itself.
 An answer rule run from its shortcut or the command bar first waits for the shortcut keys
 to be released, checks that the frontmost app is not Frog, and asks `SelectionReader` for
 the selection, at most 100,000 characters, with context when **Include surrounding text**
-is on. `SelectionReader` uses Accessibility only. It runs every call on its own serial
-queue, never the main thread, on an application element with a 0.25-second messaging
-timeout that every element read from it gets as well. The screen frames are read once on
+is on. `SelectionReader` uses Accessibility only. It runs every call on its own concurrent
+queue, never the main thread, so an app that stopped answering holds up only its own reads,
+on an application element with a 0.25-second messaging timeout that every element read
+from it gets as well; an app that does not answer at all costs one timeout, since the
+focused element comes first. The screen frames are read once on
 the main actor before the read; the primary display's height comes from
 `CGDisplayBounds`, which is safe off the main thread.
 
