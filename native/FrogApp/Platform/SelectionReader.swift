@@ -232,6 +232,9 @@ private struct SelectionReadPass {
             return decided
         }
         guard let text else { return .unavailable }
+        // Where the selection starts, so the same word selected elsewhere on the page is another selection.
+        let location = start(of: markerRange, holder: holder)
+            .flatMap { source.parameterized(holder, "AXIndexForTextMarker", $0) as? NSNumber }?.intValue ?? 0
         let union = rect(markerBounds(holder, markerRange))
         // Without a last-character range, the bottom right corner of the selection.
         let last = rect(lastCharacterBounds(holder, markerRange))
@@ -239,7 +242,7 @@ private struct SelectionReadPass {
         return .selection(snapshot(text: text, union: union, last: last,
                                    context: includeContext ? markerContext(holder, range: markerRange, text: text) : nil,
                                    holder: holder, focused: focused, application: application,
-                                   location: 0, length: (text as NSString).length))
+                                   location: location, length: (text as NSString).length))
     }
 
     /// The selected marker range of the focused element, or of its nearest web area within eight parents.

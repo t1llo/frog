@@ -337,8 +337,10 @@ the main actor before the read; the primary display's height comes from
   `AXStartTextMarkerForTextMarkerRange` nor `AXEndTextMarkerForTextMarkerRange` (those
   two remain the fallback). The last character's rectangle comes from the end marker and
   the one before it when the app supports that, else the selection's bottom right corner.
-  Context is the paragraph where the selection starts, when the app gives it. No marker
-  range, or an empty one, is unavailable.
+  Context is the paragraph where the selection starts, when the app gives it. The
+  fingerprint's range starts at the first marker's `AXIndexForTextMarker`, or at 0 when
+  the app gives none, so the same word selected elsewhere on a page is another selection.
+  No marker range, or an empty one, is unavailable.
 
 The result is a `SelectionSnapshot` (text, rectangle, last character, context, source,
 whether the field is editable, the app's process, bundle identifier and name, and a

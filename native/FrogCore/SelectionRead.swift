@@ -6,7 +6,8 @@ public struct SelectionFingerprint: Hashable, Sendable {
     public var pid: Int32
     /// The hash of the element that holds the selection.
     public var element: Int
-    /// The selected range in UTF-16 units. Selections read through text markers use 0 and the text's length.
+    /// The selected range in UTF-16 units. Selections read through text markers use the index the app gives for
+    /// their first marker, or 0 without one, and the text's length.
     public var location: Int
     public var length: Int
     public var textHash: Int

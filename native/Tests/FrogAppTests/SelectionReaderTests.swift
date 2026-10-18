@@ -120,6 +120,24 @@ final class SelectionReaderTests: XCTestCase {
         XCTAssertFalse(ax.reads.contains("AXEndTextMarkerForTextMarkerRange"), "\(ax.reads)")
     }
 
+    func testTheSameWordSelectedElsewhereOnAPageIsAnotherSelection() async throws {
+        let ax = FakeAX()
+        let page = ax.focus(FakeElement(role: "AXWebArea"))
+        page.markerText = "bank"
+        page.markerStart = 14
+        let first = try selection(await read(ax))
+        let again = try selection(await read(ax))
+        page.markerStart = 120
+        let elsewhere = try selection(await read(ax))
+        XCTAssertEqual(first.fingerprint, again.fingerprint)
+        XCTAssertEqual(first.fingerprint.location, 14)
+        XCTAssertNotEqual(first.fingerprint, elsewhere.fingerprint)
+
+        page.answersMarkerIndex = false
+        let unplaced = try selection(await read(ax))
+        XCTAssertEqual(unplaced.fingerprint.location, 0, "An app without marker indexes keeps one place for all")
+    }
+
     func testARangeThatCannotBeSplitAsksTheAppForItsEnds() async throws {
         let ax = FakeAX()
         ax.splitsMarkers = false
@@ -239,6 +257,7 @@ private final class FakeElement {
     var answersMarkerLength = true
     /// Only WebKit answers the attributes for a range's first and last marker.
     var answersRangeEnds = false
+    var answersMarkerIndex = true
     var url: URL?
     var document: URL?
 
@@ -342,6 +361,8 @@ private final class FakeAX: @unchecked Sendable {
                 case "AXEndTextMarkerForTextMarkerRange": return element.answersRangeEnds ? markers?.end : nil
                 case "AXPreviousTextMarkerForTextMarker":
                     return (parameter as? FakeMarker).map { FakeMarker($0.index - 1) }
+                case "AXIndexForTextMarker":
+                    return element.answersMarkerIndex ? (parameter as? FakeMarker).map { NSNumber(value: $0.index) } : nil
                 case "AXTextMarkerRangeForUnorderedTextMarkers":
                     let pair = ((parameter as? [AnyObject]) ?? []).compactMap { $0 as? FakeMarker }.sorted { $0.index < $1.index }
                     return pair.count == 2 ? FakeMarkers(from: pair[0], to: pair[1]) : nil
