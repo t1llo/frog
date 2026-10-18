@@ -51,32 +51,48 @@ final class SystemSettingsCatalogTests: XCTestCase {
         }
         let path = "/System/Library/ExtensionKit/Extensions/Pane.appex"
         let laptop = ["powersource.battery": true], desktop = ["powersource.battery": false]
+        let declared: (String) -> Bool = { _ in true }
         // Displays, Wi-Fi and most panes describe their icon in CFBundleIcons.
         let displays = info(icons: ["ISGraphicIconConfiguration": ["ISTypeIdentifier": "com.apple.graphic-icon.display"]])
-        XCTAssertEqual(SystemSettingIcon.resolve(info: displays, bundlePath: path, facts: laptop), .bundle(path: path))
+        XCTAssertEqual(SystemSettingIcon.resolve(info: displays, bundlePath: path, facts: laptop, hasType: declared), .bundle(path: path))
         // Spotlight and Time Machine name an icon of their own.
-        XCTAssertEqual(SystemSettingIcon.resolve(info: info(file: "AppIcon"), bundlePath: path, facts: [:]), .bundle(path: path))
-        XCTAssertEqual(SystemSettingIcon.resolve(info: info(name: "TimeMachineSettingsIcon"), bundlePath: path, facts: [:]), .bundle(path: path))
+        XCTAssertEqual(SystemSettingIcon.resolve(info: info(file: "AppIcon"), bundlePath: path, facts: [:], hasType: declared), .bundle(path: path))
+        XCTAssertEqual(SystemSettingIcon.resolve(info: info(name: "TimeMachineSettingsIcon"), bundlePath: path, facts: [:], hasType: declared), .bundle(path: path))
         // Battery only has the placeholder file and picks its sidebar icon by power source.
         let battery = info(file: "icon", representations: [
             ["predicate": "powersource.battery != YES", "sidebar-iconUTTypeIdentifier": "com.apple.graphic-icon.energy"],
             ["predicate": "powersource.battery == YES", "sidebar-iconUTTypeIdentifier": "com.apple.graphic-icon.battery"]])
-        XCTAssertEqual(SystemSettingIcon.resolve(info: battery, bundlePath: path, facts: laptop), .type(identifier: "com.apple.graphic-icon.battery"))
-        XCTAssertEqual(SystemSettingIcon.resolve(info: battery, bundlePath: path, facts: desktop), .type(identifier: "com.apple.graphic-icon.energy"))
-        XCTAssertNil(SystemSettingIcon.resolve(info: battery, bundlePath: path, facts: [:]), "An unknown power source keeps the System Settings icon")
+        XCTAssertEqual(SystemSettingIcon.resolve(info: battery, bundlePath: path, facts: laptop, hasType: declared), .type(identifier: "com.apple.graphic-icon.battery"))
+        XCTAssertEqual(SystemSettingIcon.resolve(info: battery, bundlePath: path, facts: desktop, hasType: declared), .type(identifier: "com.apple.graphic-icon.energy"))
+        XCTAssertNil(SystemSettingIcon.resolve(info: battery, bundlePath: path, facts: [:], hasType: declared), "An unknown power source keeps the System Settings icon")
+        // An alternative whose type this Mac does not declare is passed over, as if its condition did not hold.
+        XCTAssertNil(SystemSettingIcon.resolve(info: battery, bundlePath: path, facts: laptop, hasType: { _ in false }))
+        let undeclared = info(icons: ["ISGraphicIconConfiguration": ["ISTypeIdentifier": "com.apple.graphic-icon.battery"]], representations: [
+            ["predicate": "powersource.battery == YES", "sidebar-iconUTTypeIdentifier": "com.apple.graphic-icon.retired"],
+            ["predicate": "powersource.battery == YES", "sidebar-iconUTTypeIdentifier": "com.apple.graphic-icon.battery"]])
+        let retired: (String) -> Bool = { $0 != "com.apple.graphic-icon.retired" }
+        XCTAssertEqual(SystemSettingIcon.resolve(info: undeclared, bundlePath: path, facts: laptop, hasType: retired), .type(identifier: "com.apple.graphic-icon.battery"))
+        XCTAssertEqual(SystemSettingIcon.resolve(info: undeclared, bundlePath: path, facts: laptop, hasType: { _ in false }), .bundle(path: path))
         // Conditions Frog cannot answer fall through to the bundle's own icon.
         let siri = info(file: "AppIconSiri", representations: [
             ["predicate": "supports.systemAssistantExperience == YES", "sidebar-iconUTTypeIdentifier": "com.apple.graphic-icon.intelligence"]])
-        XCTAssertEqual(SystemSettingIcon.resolve(info: siri, bundlePath: path, facts: laptop), .bundle(path: path))
+        XCTAssertEqual(SystemSettingIcon.resolve(info: siri, bundlePath: path, facts: laptop, hasType: declared), .bundle(path: path))
         // Headphones carries only the placeholder that Finder draws as a plug-in brick.
-        XCTAssertNil(SystemSettingIcon.resolve(info: info(file: "icon"), bundlePath: path, facts: laptop))
-        XCTAssertNil(SystemSettingIcon.resolve(info: [:], bundlePath: path, facts: laptop))
+        XCTAssertNil(SystemSettingIcon.resolve(info: info(file: "icon"), bundlePath: path, facts: laptop, hasType: declared))
+        XCTAssertNil(SystemSettingIcon.resolve(info: [:], bundlePath: path, facts: laptop, hasType: declared))
 
         XCTAssertNil(SystemSettingIcon.holds("powersource.battery = YES", facts: laptop))
         XCTAssertEqual(SystemSettingIcon.holds("powersource.battery == NO", facts: desktop), true)
         for icon in [SystemSettingIcon.bundle(path: path), .type(identifier: "com.apple.graphic-icon.battery")] {
             XCTAssertEqual(SystemSettingIcon.typeIdentifier(fromKey: icon.key), { if case .type(let id) = icon { return id }; return nil }())
         }
+        // The icon cache shares its keys with application, window and file paths, which are all absolute.
+        let keys = [SystemSettingIcon.bundle(path: "/Applications/uttype:display.app"), .bundle(path: "/uttype:display"),
+                    .type(identifier: "display"), .type(identifier: "/Applications/Safari.app")].map(\.key)
+        XCTAssertEqual(Set(keys).count, keys.count)
+        XCTAssertNil(SystemSettingIcon.typeIdentifier(fromKey: "/Applications/uttype:display.app"))
+        XCTAssertNil(SystemSettingIcon.typeIdentifier(fromKey: "/System/Applications/System Settings.app"))
+        XCTAssertEqual(SystemSettingIcon.typeIdentifier(fromKey: SystemSettingIcon.type(identifier: "/Applications/Safari.app").key), "/Applications/Safari.app")
         let privacy = SystemSettingsCatalog.defaults.first { $0.record.title == "Camera Permissions" }
         XCTAssertNil(privacy?.icon)
         XCTAssertEqual(privacy?.withIcon(.bundle(path: path)).icon, .bundle(path: path))

@@ -48,7 +48,8 @@ public enum SystemSettingIcon: Hashable, Sendable {
 
     private static let typePrefix = "uttype:"
 
-    /// One string per icon, for the command bar's icon cache and loader.
+    /// One string per icon, for the command bar's icon cache and loader. A bundle path is absolute, so it never
+    /// begins with the prefix that marks a type.
     public var key: String {
         switch self {
         case .bundle(let path): return path
@@ -62,13 +63,16 @@ public enum SystemSettingIcon: Hashable, Sendable {
     }
 
     /// Reads a settings extension's Info.plist. `facts` answers the conditions a pane's alternative icons depend on,
-    /// such as `powersource.battery`. Nil when the extension only carries the shared placeholder named `icon`,
-    /// which Finder draws as a generic plug-in brick.
-    public static func resolve(info: [String: Any], bundlePath: String, facts: [String: Bool]) -> SystemSettingIcon? {
+    /// such as `powersource.battery`, and `hasType` whether this Mac declares the icon type an alternative names;
+    /// an alternative it does not declare would draw as a blank document. Nil when the extension only carries the
+    /// shared placeholder named `icon`, which Finder draws as a generic plug-in brick.
+    public static func resolve(info: [String: Any], bundlePath: String, facts: [String: Bool],
+                               hasType: (String) -> Bool) -> SystemSettingIcon? {
         let attributes = (info["EXAppExtensionAttributes"] as? [String: Any])?["SettingsExtensionAttributes"] as? [String: Any]
         for representation in attributes?["representations"] as? [[String: Any]] ?? [] {
             guard let identifier = representation["sidebar-iconUTTypeIdentifier"] as? String, !identifier.isEmpty,
-                  let predicate = representation["predicate"] as? String, holds(predicate, facts: facts) == true else { continue }
+                  let predicate = representation["predicate"] as? String, holds(predicate, facts: facts) == true,
+                  hasType(identifier) else { continue }
             return .type(identifier: identifier)
         }
         if info["CFBundleIcons"] != nil || (info["CFBundleIconName"] as? String)?.isEmpty == false { return .bundle(path: bundlePath) }

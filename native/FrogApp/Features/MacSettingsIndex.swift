@@ -44,7 +44,7 @@ enum MacSettingsDiscovery {
                let legacyBundle = Bundle(url: legacyRoot.appendingPathComponent(legacy)) {
                 terms += " " + searchTerms(bundle: legacyBundle, languages: languages)
             }
-            let icon = SystemSettingIcon.resolve(info: info, bundlePath: url.path, facts: facts)
+            let icon = SystemSettingIcon.resolve(info: info, bundlePath: url.path, facts: facts, hasType: { UTType($0) != nil })
             if let index = positions[identifier] {
                 destinations[index] = destinations[index].includingSearchTerms(terms, localizedTitle: title)
             } else {
@@ -64,12 +64,15 @@ enum MacSettingsDiscovery {
         ["powersource.battery": PowerSources.read()?.batteryPercent != nil]
     }
 
+    /// What a pane shows without an icon of its own.
+    static let fallbackIconPath = "/System/Applications/System Settings.app"
+
     /// The command bar's loader for a pane icon key and for any other file path.
     static func image(forIconKey key: String) -> NSImage {
-        if let identifier = SystemSettingIcon.typeIdentifier(fromKey: key), let type = UTType(identifier) {
-            return NSWorkspace.shared.icon(for: type)
-        }
-        return NSWorkspace.shared.icon(forFile: key)
+        guard let identifier = SystemSettingIcon.typeIdentifier(fromKey: key) else { return NSWorkspace.shared.icon(forFile: key) }
+        // Read as a path, a type this Mac no longer declares would draw as a blank document.
+        guard let type = UTType(identifier) else { return NSWorkspace.shared.icon(forFile: fallbackIconPath) }
+        return NSWorkspace.shared.icon(for: type)
     }
 
     private static func searchTerms(bundle: Bundle, languages: [String]) -> String {
