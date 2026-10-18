@@ -469,8 +469,10 @@ switch do not.
 `SelectionBubbleItems` offers enabled answer rules whose model is set up while Explain is
 on, the Explain rule first under whatever name it has and the others in configuration
 order, then enabled, set-up Writing rules while Writing is on and only in an editable
-field. Rules switched off under **Rules in the bubble** stay out, and names lose
-surrounding spaces and line breaks. `AppModel` builds the list each time the bubble shows,
+field. Rules with **Show in selection bubble** off in their editor stay out, and names lose
+surrounding spaces and line breaks. The editor shows that switch for answer and Writing
+rules while Explain and the bubble are on; `AppModel.saveRule(_:inBubble:)` saves it with
+the rule in one write, and the rule's row says "Not in the bubble". `AppModel` builds the list each time the bubble shows,
 so a rule renamed, hidden or deleted since appears as it is now; deleting a rule also drops
 it from the hidden list. Up to four show; with more, three show and the rest wait behind
 **More**, which expands the bubble inline instead of opening a menu, so Frog never

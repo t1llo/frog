@@ -464,6 +464,39 @@ final class ExplainRoutingTests: XCTestCase {
         XCTAssertTrue(offered().isEmpty, "a rule without a model is left out")
     }
 
+    func testARuleIsLeftOutOfTheBubbleFromItsEditorAndSavedWithIt() async throws {
+        let setup = try Setup(test: self)
+        let explain = try await setup.enableExplain()
+        let proofread = try XCTUnwrap(setup.model.configuration.rules.first { $0.enabled && $0.category == .text && !$0.answersInPanel })
+        XCTAssertFalse(setup.model.offersBubbleChoice, "without the bubble the editor offers no choice")
+        try setup.model.saveRule(proofread, inBubble: false)
+        XCTAssertFalse(setup.model.ruleLeftOutOfBubble(proofread))
+
+        try setup.model.updateToolkit { toolkit in
+            var settings = toolkit.explain ?? ExplainSettings()
+            settings.selectionBubble = true
+            settings.bubbleHiddenRules = []
+            toolkit.explain = settings
+        }
+        XCTAssertTrue(setup.model.offersBubbleChoice)
+        var renamed = proofread
+        renamed.name = "Check"
+        try setup.model.saveRule(renamed, inBubble: false)
+        XCTAssertEqual(setup.model.configuration.rules.first { $0.id == proofread.id }?.name, "Check")
+        XCTAssertEqual(setup.model.configuration.preferences.explainSettings.bubbleHiddenRules, [proofread.id])
+        XCTAssertTrue(setup.model.ruleLeftOutOfBubble(renamed))
+        XCTAssertFalse(setup.model.ruleLeftOutOfBubble(explain))
+        let field = Self.snapshot("levee", context: nil, element: 1)
+        let items = setup.model.bubbleItems(for: field)
+        XCTAssertFalse((items.visible + items.more).contains { $0.id == proofread.id })
+
+        try setup.model.saveRule(renamed)
+        XCTAssertEqual(setup.model.configuration.preferences.explainSettings.bubbleHiddenRules, [proofread.id],
+                       "saving without a choice keeps the place")
+        try setup.model.saveRule(renamed, inBubble: true)
+        XCTAssertEqual(setup.model.configuration.preferences.explainSettings.bubbleHiddenRules, [])
+    }
+
     private static func snapshot(_ text: String, context: String?, element: Int) -> SelectionSnapshot {
         SelectionSnapshot(text: text, bounds: anchor, endBounds: anchor, context: context, source: nil, isEditable: true,
                           pid: FakeSelectionReader.pid, bundleID: "com.apple.Safari", applicationName: "Safari",

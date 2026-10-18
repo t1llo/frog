@@ -93,6 +93,15 @@ public struct ExplainSettings: Codable, Equatable, Sendable {
         return options
     }
 
+    /// Whether the bubble offers a rule, as the rule editor's switch shows it. Its shortcut works either way.
+    public func bubbleShows(_ ruleID: UUID) -> Bool { !bubbleHiddenRules.contains(ruleID) }
+
+    /// Leaves a rule out of the bubble or offers it again, keeping the order of the others.
+    public mutating func setBubbleShows(_ ruleID: UUID, _ shown: Bool) {
+        if shown { bubbleHiddenRules.removeAll { $0 == ruleID } }
+        else if !bubbleHiddenRules.contains(ruleID) { bubbleHiddenRules.append(ruleID) }
+    }
+
     /// The notes folder as a file URL, with the tilde expanded.
     public var notesFolderURL: URL? {
         notesFolder.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true) }

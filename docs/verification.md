@@ -706,7 +706,7 @@ hovered; a choice runs for the bubble's selection),
 `ExplainRoutingTests` (the watcher runs only with Explain, the bubble and Accessibility on
 and follows a change of Accessibility; an answer from the bubble reads again with context and
 never copies; a Writing rule from the bubble runs like its shortcut; a rule renamed, hidden,
-deleted or left without a model since shows as it is now), `SelectionBubbleItemsTests` and
+deleted or left without a model since shows as it is now; a rule left out from its editor is saved with it and stays out), `SelectionBubbleItemsTests` and
 `PanelPlacementTests` (Explain leads under any name, many rules keep their order behind More,
 the room beside a selection), `SelectionBubbleLayoutTests` (the list's width and height, its
 scrolling past the room, the pointer after a resize) and

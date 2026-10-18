@@ -145,7 +145,8 @@ struct RulesView: View {
                             Button { editing = rule } label: {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(rule.name).font(.system(size: 12, weight: .medium))
-                                    Text(model.ruleModelLabel(rule)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                                    Text(model.ruleModelLabel(rule) + (model.ruleLeftOutOfBubble(rule) ? " · " + L10n.text("Not in the bubble") : ""))
+                                        .font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
                                     if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(FrogStyle.warning) }
                                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                             }.buttonStyle(.plain)
@@ -264,6 +265,8 @@ struct RuleEditor: View {
     @State private var issue: String?
     @State private var deleting = false
     @State private var step = 0
+    /// The bubble switch once it was changed; saved with the rule.
+    @State private var inBubble: Bool?
     private let onSave: () -> Void
     private let onSaveCopy: ((Rule) -> Void)?
     init(rule: Rule, onSave: @escaping () -> Void = {}, onSaveCopy: ((Rule) -> Void)? = nil) {
@@ -310,6 +313,13 @@ struct RuleEditor: View {
                                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
                             }
                             if rule.category == .audio { audioOptions }
+                            if rule.category == .text, model.offersBubbleChoice {
+                                Divider()
+                                CompactRow(title: "Show in selection bubble", detail: rule.answersInPanel ? nil : "In text fields only.") {
+                                    Toggle("Show in selection bubble", isOn: Binding(get: { showsInBubble }, set: { inBubble = $0 }))
+                                        .labelsHidden().toggleStyle(.switch)
+                                }
+                            }
                         }.padding(13).frogTableSurface()
                         if rule.category == .text { instructions }
                     }
@@ -329,7 +339,7 @@ struct RuleEditor: View {
                 }
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Save") { do { try model.saveRule(rule); onSave(); dismiss() } catch { issue = error.localizedDescription } }
+                Button("Save") { do { try model.saveRule(rule, inBubble: inBubble); onSave(); dismiss() } catch { issue = error.localizedDescription } }
                     .buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.defaultAction).disabled(rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }.font(.system(size: 12)).padding(.horizontal, 20).padding(.vertical, 15)
                 .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border.opacity(0.5)).frame(height: 1) }
@@ -341,11 +351,14 @@ struct RuleEditor: View {
                 Button("Delete rule", role: .destructive) { do { try model.deleteRule(id: rule.id); dismiss() } catch { issue = error.localizedDescription } }
             }
     }
+    /// Whether the bubble offers this rule: the switch as changed, else as saved.
+    private var showsInBubble: Bool { inBubble ?? model.configuration.preferences.explainSettings.bubbleShows(rule.id) }
     /// Saves the draft, edits included, as a new rule and leaves the original as it was saved.
     private func saveCopy() {
         let copy = rule.copy()
         do {
-            try model.saveRule(copy)
+            // A copy starts in the bubble; one made from a rule left out stays out too.
+            try model.saveRule(copy, inBubble: showsInBubble ? nil : false)
             if let onSaveCopy { onSaveCopy(copy) } else { onSave(); dismiss() }
         } catch { issue = error.localizedDescription }
     }

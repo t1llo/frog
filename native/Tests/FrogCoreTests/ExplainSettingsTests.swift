@@ -22,6 +22,19 @@ final class ExplainSettingsTests: XCTestCase {
         XCTAssertFalse(decoded.bubbleOptions.exposeText)
     }
 
+    func testARuleLeavesTheBubbleAndComesBackInPlace() {
+        var settings = ExplainSettings()
+        let first = UUID(), second = UUID()
+        settings.setBubbleShows(first, false)
+        settings.setBubbleShows(second, false)
+        settings.setBubbleShows(first, false)
+        XCTAssertEqual(settings.bubbleHiddenRules, [first, second], "hiding twice keeps one entry")
+        XCTAssertFalse(settings.bubbleShows(first))
+        settings.setBubbleShows(first, true)
+        XCTAssertEqual(settings.bubbleHiddenRules, [second])
+        XCTAssertTrue(settings.bubbleShows(first))
+    }
+
     func testIncludeContextRoundTripsThroughTheTextFile() throws {
         let companion = try TextConfiguration.companion(Configuration())
         let loaded = try TextConfiguration.decode("explain.context = false\n", companion: companion)

@@ -676,7 +676,8 @@ final class AppModel: ObservableObject {
 
     private func configureWindowLayout() { windowLayout.configure(configuration, active: started && registerShortcuts) }
 
-    func saveRule(_ rule: Rule) throws {
+    /// `inBubble` leaves the rule out of the selection bubble or offers it again, saved with the rule; nil keeps it as it is.
+    func saveRule(_ rule: Rule, inBubble: Bool? = nil) throws {
         guard !rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               rule.category.isShortcut || !rule.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw FrogError.message("Give this rule a name and instructions.")
@@ -698,9 +699,25 @@ final class AppModel: ObservableObject {
         var candidate = configuration
         if let index = candidate.rules.firstIndex(where: { $0.id == rule.id }) { candidate.rules[index] = rule }
         else { candidate.rules.append(rule) }
+        if let inBubble, candidate.preferences.explainSettings.bubbleShows(rule.id) != inBubble {
+            var explain = candidate.preferences.explainSettings
+            explain.setBubbleShows(rule.id, inBubble)
+            candidate.preferences.ensureToolkit()
+            candidate.preferences.toolkit?.explain = explain
+        }
         try persist(candidate)
         registerHotkeys()
         configureWindowSwitcher()
+    }
+
+    /// The selection bubble is on, so a text rule's editor offers to leave the rule out of it.
+    var offersBubbleChoice: Bool {
+        configuration.preferences.featureEnabled(.explain) && configuration.preferences.explainSettings.selectionBubble
+    }
+
+    /// A text rule the selection bubble would offer but the person left out of it.
+    func ruleLeftOutOfBubble(_ rule: Rule) -> Bool {
+        offersBubbleChoice && rule.category == .text && !configuration.preferences.explainSettings.bubbleShows(rule.id)
     }
 
     func addLocalModel(_ item: LocalModelDescriptor) throws {
