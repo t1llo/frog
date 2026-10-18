@@ -22,6 +22,16 @@ final class SelectionWatcherTests: XCTestCase {
         XCTAssertTrue(fixture.presenter.isVisible)
     }
 
+    func testTheAnchorSpansEveryLineOfTheSelection() async throws {
+        let fixture = Fixture()
+        var snapshot = Self.snapshot()
+        snapshot.bounds = CGRect(x: 40, y: 500, width: 400, height: 96)
+        fixture.reader.result = .selection(snapshot)
+        fixture.drag()
+        try await waitUntil { fixture.presenter.shows.count == 1 }
+        XCTAssertEqual(fixture.presenter.shows.first?.anchor, CGRect(x: 108, y: 500, width: 0, height: 96))
+    }
+
     func testALaterInputBeforeTheSettleCancelsTheFirstRead() async throws {
         let fixture = Fixture()
         fixture.drag()

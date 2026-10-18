@@ -53,26 +53,30 @@ import FrogCore
         inside = false
     }
 
-    /// Measures the content and places the bubble below and right of the anchor, or above it near the bottom of
-    /// the display. Expanding More places it again at its new size: the list grows away from the selection, on the
-    /// side with room for it, and scrolls when neither side has room for all of it.
+    /// Measures the content and places the bubble. Expanding More places it again at its new size.
     private func place() {
         let panel = makePanel()
         var view = content()
-        var size = NSHostingView(rootView: view).fittingSize
-        if expanded {
-            let room = PanelPlacement.room(anchor: anchor, pointer: pointer, screens: panel.screensForPlacement(), gap: Self.gap)
-            let list = Self.listSize(natural: size, room: room)
-            view = content(listSize: list, scrolls: list.height < size.height)
-            size = list
-        }
+        let natural = NSHostingView(rootView: view).fittingSize
+        let frame = Self.frame(natural: natural, expanded: expanded, anchor: anchor, pointer: pointer,
+                               screens: panel.screensForPlacement())
+        if expanded { view = content(listSize: frame.size, scrolls: frame.height < natural.height) }
         hosting?.rootView = view
-        let result = PanelPlacement.place(size: size, anchor: anchor, pointer: pointer, screens: panel.screensForPlacement(),
-                                          gap: Self.gap)
-        panel.show(at: result.frame)
+        panel.show(at: frame)
         // The panel moved or changed size under a pointer that may not have moved, so no tracking event says where
         // it is now.
-        track(Self.location(of: NSEvent.mouseLocation, in: result.frame))
+        track(Self.location(of: NSEvent.mouseLocation, in: frame))
+    }
+
+    /// Below and right of the anchor, or above it near the bottom of the display. The list grows away from the
+    /// selection, on the side with room for it, and scrolls when neither side has room for all of it. The anchor
+    /// spans every line of the selection, so neither side covers an earlier line.
+    static func frame(natural: CGSize, expanded: Bool, anchor: CGRect?, pointer: CGPoint, screens: [CGRect]) -> CGRect {
+        var size = natural
+        if expanded {
+            size = listSize(natural: natural, room: PanelPlacement.room(anchor: anchor, pointer: pointer, screens: screens, gap: gap))
+        }
+        return PanelPlacement.place(size: size, anchor: anchor, pointer: pointer, screens: screens, gap: gap).frame
     }
 
     /// The list as wide as its longest row within `listWidths`, and as tall as its rows up to the room beside the

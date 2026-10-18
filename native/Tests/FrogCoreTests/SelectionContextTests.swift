@@ -16,6 +16,18 @@ final class SelectionContextTests: XCTestCase {
         XCTAssertNil(SelectionAnchor.choose(union: tall, last: nil, screenHeight: 900))
     }
 
+    func testTheBubbleOpensAtTheEndBesideEveryLine() {
+        let last = CGRect(x: 380, y: 400, width: 8, height: 18)
+        XCTAssertEqual(SelectionAnchor.end(last, selection: CGRect(x: 100, y: 400, width: 300, height: 90)),
+                       CGRect(x: 388, y: 400, width: 0, height: 90))
+        XCTAssertEqual(SelectionAnchor.end(last, selection: last), CGRect(x: 388, y: 400, width: 0, height: 18),
+                       "A selection taller than half its screen keeps only its last character")
+        XCTAssertEqual(SelectionAnchor.end(last, selection: nil), CGRect(x: 388, y: 400, width: 0, height: 18))
+        XCTAssertEqual(SelectionAnchor.end(last, selection: CGRect(x: 100, y: 410, width: 300, height: 60)),
+                       CGRect(x: 388, y: 400, width: 0, height: 70), "A last character below the reported rectangle still counts")
+        XCTAssertNil(SelectionAnchor.end(nil, selection: CGRect(x: 100, y: 400, width: 300, height: 90)))
+    }
+
     func testAnchorReadsTheLastCharacterOnlyWhenNeeded() {
         var reads = 0
         func last() -> CGRect? { reads += 1; return .zero }

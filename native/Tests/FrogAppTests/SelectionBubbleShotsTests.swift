@@ -60,7 +60,8 @@ final class SelectionBubbleShotsTests: XCTestCase {
         NSApplication.shared.appearance = nil
     }
 
-    /// Near each edge of the display the list stays on it, grows away from the selection and never covers it.
+    /// Near each edge of the display the list stays on it, grows away from the selection and never covers it, also
+    /// when the selection has several lines.
     func testTheListStaysOnScreenBesideTheSelection() async throws {
         let folder = try Self.folder()
         let screen = try XCTUnwrap(NSScreen.main?.visibleFrame)
@@ -70,6 +71,9 @@ final class SelectionBubbleShotsTests: XCTestCase {
             "top": CGRect(x: screen.midX, y: screen.maxY - 30, width: 0, height: 16),
             "right": CGRect(x: screen.maxX - 20, y: screen.midY, width: 0, height: 16),
             "middle": CGRect(x: screen.midX, y: screen.midY, width: 0, height: 16),
+            // Six lines, as `SelectionAnchor.end` spans them.
+            "lines-bottom": CGRect(x: screen.midX, y: screen.minY + 200, width: 0, height: 96),
+            "lines-top": CGRect(x: screen.midX, y: screen.maxY - 130, width: 0, height: 96),
         ]
         for (name, anchor) in anchors.sorted(by: { $0.key < $1.key }) {
             for (count, items) in [("few", Self.items), ("many", Self.many)] {

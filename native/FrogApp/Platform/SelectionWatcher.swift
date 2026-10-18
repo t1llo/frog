@@ -265,8 +265,9 @@ struct BubbleState: Equatable {
                                             offered: core.offeredFingerprint, reselected: reselected,
                                             itemCount: items.visible.count + items.more.count) == nil,
               case let .selection(snapshot) = result else { return }
-        // At the end of the selection; a mouse gesture without a position uses the mouse-up point.
-        let anchor = snapshot.endBounds.map { CGRect(x: $0.maxX, y: $0.minY, width: 0, height: $0.height) }
+        // At the end of the selection and as tall as all of it, so the list never opens over its earlier lines; a
+        // mouse gesture without a position uses the mouse-up point.
+        let anchor = SelectionAnchor.end(snapshot.endBounds, selection: snapshot.bounds)
         guard anchor != nil || pointer != nil else { return }
         shown = snapshot
         hovering = false

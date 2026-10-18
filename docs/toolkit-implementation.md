@@ -501,8 +501,9 @@ restart. Turning Explain off and `shutdown()` stop it.
   asks `AppModel` for `SelectionBubbleItems`, calls `mayShow` and shows the bubble. A read
   that finishes after a later input or a stop shows nothing.
 - Position: the anchor is a zero-width rectangle at the right edge of the selection's last
-  character; without one, a mouse gesture uses the mouse-up point and a keyboard gesture
-  shows nothing.
+  character, as tall as the whole selection (`SelectionAnchor.end`), so the bar and its list
+  open below the selection or above all of its lines; without a last character, a mouse
+  gesture uses the mouse-up point and a keyboard gesture shows nothing.
 - The bubble hides on any mouse down elsewhere, a key press, scrolling, an app switch, after
   an action, and six seconds after it appeared or the pointer last left it (checked once a
   second while it shows). Escape also remembers the selection so it does not come back.

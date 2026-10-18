@@ -28,6 +28,30 @@ final class SelectionBubbleLayoutTests: XCTestCase {
         XCTAssertEqual(SelectionBubbleController.listSize(natural: CGSize(width: 900, height: 100), room: 600).width, 320)
     }
 
+    /// Six lines whose last one is 200 pt above the bottom of the display: the list has no room below them, so it
+    /// opens above all of them, not just above the last.
+    func testTheListNeverCoversAnEarlierLineOfTheSelection() {
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 875)
+        let natural = CGSize(width: 220, height: 300)
+        let bar = CGSize(width: 180, height: 34)
+        let selection = CGRect(x: 200, y: 200, width: 500, height: 96)
+        let anchor = SelectionAnchor.end(CGRect(x: 420, y: 200, width: 8, height: 16), selection: selection)
+        let list = SelectionBubbleController.frame(natural: natural, expanded: true, anchor: anchor, pointer: .zero, screens: [screen])
+        XCTAssertEqual(list, CGRect(x: 428, y: 302, width: 248, height: 300))
+        XCTAssertEqual(SelectionBubbleController.frame(natural: bar, expanded: false, anchor: anchor, pointer: .zero, screens: [screen]),
+                       CGRect(x: 428, y: 160, width: 180, height: 34), "The bar stays below the last line")
+        for y in stride(from: CGFloat(10), through: 760, by: 25) {
+            let selection = CGRect(x: 200, y: y, width: 500, height: 96)
+            let anchor = SelectionAnchor.end(CGRect(x: 420, y: y, width: 8, height: 16), selection: selection)
+            for (size, expanded) in [(bar, false), (natural, true), (CGSize(width: 260, height: 900), true)] {
+                let frame = SelectionBubbleController.frame(natural: size, expanded: expanded, anchor: anchor, pointer: .zero,
+                                                            screens: [screen])
+                XCTAssertFalse(frame.intersects(selection), "selection at \(y): \(frame)")
+                XCTAssertTrue(screen.insetBy(dx: 8, dy: 8).contains(frame), "selection at \(y): \(frame)")
+            }
+        }
+    }
+
     func testThePointerIsCountedFromTheBubblesTopLeft() {
         let frame = CGRect(x: 400, y: 300, width: 248, height: 200)
         XCTAssertEqual(SelectionBubbleController.location(of: CGPoint(x: 410, y: 490), in: frame), CGPoint(x: 10, y: 10))

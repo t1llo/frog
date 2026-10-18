@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-/// Where an answer panel is placed next to a selection.
+/// Where the answer panel and the selection bubble are placed next to a selection.
 public enum SelectionAnchor {
     /// The selection's rectangle, or the rectangle of its last character when the selection is taller than half of
     /// its screen (a panel beside a whole page helps nobody) or reports no rectangle of its own. `last` is read only
@@ -9,6 +9,16 @@ public enum SelectionAnchor {
     public static func choose(union: CGRect?, last: @autoclosure () -> CGRect?, screenHeight: CGFloat) -> CGRect? {
         if let union, union.height <= screenHeight / 2 { return union }
         return last()
+    }
+
+    /// Where the selection bubble opens: a zero-width line at the right edge of the last character, as tall as the
+    /// whole selection, so the bar and its list open below the selection or above all of it rather than over its
+    /// earlier lines. Nil without the last character.
+    public static func end(_ last: CGRect?, selection: CGRect?) -> CGRect? {
+        guard let last else { return nil }
+        let bottom = min(last.minY, selection?.minY ?? last.minY)
+        let top = max(last.maxY, selection?.maxY ?? last.maxY)
+        return CGRect(x: last.maxX, y: bottom, width: 0, height: top - bottom)
     }
 }
 
