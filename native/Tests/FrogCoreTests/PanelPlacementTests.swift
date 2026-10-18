@@ -77,4 +77,27 @@ final class PanelPlacementTests: XCTestCase {
         // Growing past the top is clamped there too.
         XCTAssertEqual(PanelPlacement.resized(above, height: 800).frame.maxY, 867)
     }
+
+    func testTheRoomIsTheLargerSideOfTheAnchorOnItsDisplay() {
+        // 500 - 8 - 8 = 484 under the anchor, 875 - 8 - 518 - 8 = 341 over it.
+        XCTAssertEqual(PanelPlacement.room(anchor: CGRect(x: 300, y: 500, width: 120, height: 18), pointer: .zero, screens: [main]), 484)
+        // Near the bottom the room above counts.
+        XCTAssertEqual(PanelPlacement.room(anchor: CGRect(x: 300, y: 40, width: 120, height: 18), pointer: .zero, screens: [main]), 801)
+        // On the second display, not the primary.
+        let second = CGRect(x: -1920, y: 200, width: 1920, height: 400)
+        XCTAssertEqual(PanelPlacement.room(anchor: CGRect(x: -1000, y: 500, width: 100, height: 18), pointer: CGPoint(x: 700, y: 400),
+                                           screens: [main, second]), 284)
+        // Without an anchor, from the pointer as `place` puts it.
+        XCTAssertEqual(PanelPlacement.room(anchor: nil, pointer: CGPoint(x: 500, y: 600), screens: [main]), 572)
+    }
+
+    func testAPanelAsTallAsTheRoomNeverCoversItsAnchor() {
+        for y in stride(from: CGFloat(20), through: 840, by: 40) {
+            let anchor = CGRect(x: 300, y: y, width: 120, height: 18)
+            let room = PanelPlacement.room(anchor: anchor, pointer: .zero, screens: [main])
+            let result = PanelPlacement.place(size: CGSize(width: 248, height: room), anchor: anchor, pointer: .zero, screens: [main])
+            XCTAssertFalse(result.frame.intersects(anchor), "anchor at \(y)")
+            XCTAssertTrue(main.insetBy(dx: 8, dy: 8).contains(result.frame), "anchor at \(y)")
+        }
+    }
 }

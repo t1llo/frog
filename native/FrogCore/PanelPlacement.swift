@@ -20,7 +20,7 @@ public enum PanelPlacement {
     /// opens just below and to the right of the pointer. `screens` are the displays' visible frames.
     public static func place(size: CGSize, anchor: CGRect?, pointer: CGPoint, screens: [CGRect],
                              gap: CGFloat = 8, margin: CGFloat = 8) -> Result {
-        let anchor = anchor ?? CGRect(x: pointer.x + 12, y: pointer.y - 12, width: 0, height: 0)
+        let anchor = anchor ?? pointerAnchor(pointer)
         let screen = visibleFrame(for: anchor, pointer: pointer, screens: screens)
         let belowY = anchor.minY - gap - size.height
         let aboveY = anchor.maxY + gap
@@ -31,12 +31,27 @@ public enum PanelPlacement {
         return Result(frame: clamp(frame, in: screen, margin: margin), above: above, screen: screen)
     }
 
+    /// The tallest panel that fits above or below the anchor without covering it, on the display `place` picks.
+    public static func room(anchor: CGRect?, pointer: CGPoint, screens: [CGRect], gap: CGFloat = 8,
+                            margin: CGFloat = 8) -> CGFloat {
+        let anchor = anchor ?? pointerAnchor(pointer)
+        let screen = visibleFrame(for: anchor, pointer: pointer, screens: screens)
+        let below = anchor.minY - gap - (screen.minY + margin)
+        let above = (screen.maxY - margin) - (anchor.maxY + gap)
+        return max(below, above, 0)
+    }
+
     /// A panel whose content changed height: one below its anchor keeps its top edge, one above keeps its bottom edge.
     public static func resized(_ current: Result, height: CGFloat, margin: CGFloat = 8) -> Result {
         var frame = current.frame
         if !current.above { frame.origin.y = current.frame.maxY - height }
         frame.size.height = height
         return Result(frame: clamp(frame, in: current.screen, margin: margin), above: current.above, screen: current.screen)
+    }
+
+    /// Without an anchor, the panel opens just below and to the right of the pointer.
+    private static func pointerAnchor(_ pointer: CGPoint) -> CGRect {
+        CGRect(x: pointer.x + 12, y: pointer.y - 12, width: 0, height: 0)
     }
 
     /// The display containing the anchor's middle, else the nearest one, else the pointer's, else the first.
