@@ -288,11 +288,9 @@ public enum SelectionBubblePolicy {
     /// The status line on the Explain page.
     public static func status(explainEnabled: Bool, bubbleEnabled: Bool, accessibilityTrusted: Bool) -> String? {
         guard bubbleEnabled else { return nil }
-        guard explainEnabled else { return "Turn on Explain to use the selection bubble" }
-        guard accessibilityTrusted else {
-            return "Needs Accessibility: allow Frog in System Settings → Privacy & Security → Accessibility"
-        }
-        return "On: select text in another app to see Explain"
+        guard explainEnabled else { return "Turn on Explain to use the bubble" }
+        guard accessibilityTrusted else { return "Needs Accessibility to see what you select" }
+        return nil
     }
 }
 

@@ -53,7 +53,7 @@ struct RulesView: View {
     private var pageSubtitle: String {
         if applications { return "Choose your own shortcuts for apps and everyday Mac actions." }
         if category == .audio { return "Turn speech into text with your preferred model and shortcut." }
-        if answers { return "Ask about selected text and read the answer in a panel next to it. Each answer rule uses its own model." }
+        if answers { return "Ask about selected text and get a short answer next to it." }
         return "Transform selected text with reusable instructions and shortcuts."
     }
     /// The Explain page: answer rules only.

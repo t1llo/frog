@@ -78,11 +78,4 @@ final class SelectionBubbleLayoutTests: XCTestCase {
         XCTAssertEqual(many.height - few.height, 26 * (SelectionBubbleView.rowHeight + 1), accuracy: 0.5)
         XCTAssertGreaterThan(many.height, SelectionBubbleController.listMaxHeight, "so a long list scrolls")
     }
-
-    func testTheExplainPageSaysWhatEachRuleDoesFromTheBubble() {
-        var proofread = Rule(name: "Proofread")
-        proofread.hotkey = Hotkey(keyCode: 8, modifiers: 4096 | 512)
-        XCTAssertEqual(ExplainView.bubbleRuleDetail(proofread), "Replace selection, in text fields · ⌃⇧C")
-        XCTAssertEqual(ExplainView.bubbleRuleDetail(Rule.explainPreset), "Answer")
-    }
 }

@@ -120,9 +120,9 @@ final class SelectionBubbleShotsTests: XCTestCase {
         controller.hide()
     }
 
-    /// The Explain page with the bubble on, drawn without a window: its rules each with a switch, one hidden and one
-    /// without a model, in light and dark.
-    func testTheExplainPageListsTheBubbleRules() async throws {
+    /// The Explain page with the bubble on, drawn without a window: the rule left out of the bubble marked in its row,
+    /// in light and dark.
+    func testTheExplainPageWithTheBubbleOn() async throws {
         let folder = try Self.folder()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -202,19 +202,37 @@ final class SelectionBubbleShotsTests: XCTestCase {
         }
     }
 
-    /// The Explain page with the bubble on, with and without Accessibility, drawn without a window in light and dark.
-    /// Runs only with `FROG_EXPLAIN_SHOTS` set to the folder for the pictures.
+    /// The Explain page with the bubble on, with and without Accessibility and with its Options open, drawn without a
+    /// window in light and dark. Runs only with `FROG_EXPLAIN_SHOTS` set to the folder for the pictures.
     func testTheExplainPage() async throws {
         let folder = try Self.folder("FROG_EXPLAIN_SHOTS")
-        for (state, trusted) in [("page", true), ("page-no-access", false)] {
+        for (state, trusted, options) in [("page", true, false), ("page-no-access", false, false), ("page-options", true, true)] {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
             defer { try? FileManager.default.removeItem(at: directory) }
             let model = try await Self.explainModel(directory: directory, accessibility: trusted)
             for appearance in [NSAppearance.Name.aqua, .darkAqua] {
                 let name = appearance == .aqua ? "light" : "dark"
-                let png = try await render(ExplainView().environmentObject(model), width: 760, height: 1_500, appearance: appearance)
+                let page = ExplainView(showsBubbleOptions: options).environmentObject(model)
+                let png = try await render(page, width: 760, height: options ? 940 : 620, appearance: appearance)
                 try png.write(to: URL(fileURLWithPath: "\(folder)/\(state)-\(name).png"))
             }
+        }
+    }
+
+    /// The editor of a Writing rule left out of the bubble, with its switch, drawn without a window in light and dark.
+    /// Runs only with `FROG_EXPLAIN_SHOTS` set to the folder for the pictures.
+    func testTheRuleEditorChoosesItsPlaceInTheBubble() async throws {
+        let folder = try Self.folder("FROG_EXPLAIN_SHOTS")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let model = try await Self.explainModel(directory: directory, accessibility: true)
+        let hidden = try XCTUnwrap(model.configuration.preferences.explainSettings.bubbleHiddenRules.first)
+        let rule = try XCTUnwrap(model.configuration.rules.first { $0.id == hidden })
+        XCTAssertTrue(model.ruleLeftOutOfBubble(rule))
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let name = appearance == .aqua ? "light" : "dark"
+            let png = try await render(RuleEditor(rule: rule).environmentObject(model), width: 520, height: 460, appearance: appearance)
+            try png.write(to: URL(fileURLWithPath: "\(folder)/editor-\(name).png"))
         }
     }
 

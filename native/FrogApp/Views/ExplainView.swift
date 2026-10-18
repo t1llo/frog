@@ -2,12 +2,18 @@ import AppKit
 import SwiftUI
 import FrogCore
 
-/// Answer rules and how answers behave.
+/// Answer rules and how answers behave. Whether a rule shows in the selection bubble is chosen in its editor.
 struct ExplainView: View {
     @EnvironmentObject private var model: AppModel
     @State private var notesFile = ""
     @State private var notesFileIssue: String?
+    @State private var showsBubbleOptions: Bool
     @FocusState private var editingFile: Bool
+
+    /// `showsBubbleOptions` opens the bubble's Options from the start, for pictures of the page.
+    init(showsBubbleOptions: Bool = false) {
+        _showsBubbleOptions = State(initialValue: showsBubbleOptions)
+    }
 
     private var settings: ExplainSettings { model.configuration.preferences.explainSettings }
 
@@ -15,15 +21,13 @@ struct ExplainView: View {
         RulesView(fixedCategory: .text, output: .panel) {
             VStack(alignment: .leading, spacing: 14) {
                 SettingsSection(title: "Settings") {
-                    CompactRow(title: "Include surrounding text",
-                               detail: "Sends the sentence or paragraph around the selection, up to 1,000 characters, so the answer fits the context.") {
+                    CompactRow(title: "Include surrounding text", detail: "Sends the sentence or paragraph around the selection.") {
                         Toggle("Include surrounding text", isOn: Binding(get: { settings.includeContext }, set: { value in
                             update { $0.includeContext = value }
                         })).labelsHidden().toggleStyle(.switch)
                     }
                     Divider()
-                    CompactRow(title: "Save answers to notes",
-                               detail: "Adds Save to note to the answer panel and to answers in History. Notes are Markdown files in a folder you choose, such as an Obsidian vault.") {
+                    CompactRow(title: "Save answers to notes", detail: "Adds Save to note. Notes are Markdown files in a folder you choose.") {
                         Toggle("Save answers to notes", isOn: Binding(get: { settings.notes }, set: { value in
                             update { $0.notes = value }
                         })).labelsHidden().toggleStyle(.switch)
@@ -31,7 +35,6 @@ struct ExplainView: View {
                 }
                 if settings.notes { notesSection }
                 bubbleSection
-                if settings.selectionBubble { bubbleRulesSection }
             }
         }
     }
@@ -54,7 +57,7 @@ struct ExplainView: View {
             }
             if settings.notesMode == .append {
                 Divider()
-                CompactRow(title: "File", detail: notesFileIssue ?? "Inside the notes folder. YYYY, MM and DD become today's date.") {
+                CompactRow(title: "File", detail: notesFileIssue ?? "YYYY, MM and DD become today's date.") {
                     TextField("Daily/YYYY-MM-DD.md", text: $notesFile)
                         .textFieldStyle(.plain).font(.system(size: 11, design: .monospaced))
                         .frame(width: 200).padding(6)
@@ -68,8 +71,7 @@ struct ExplainView: View {
                 }
             }
             Divider()
-            CompactRow(title: "Open the note after saving",
-                       detail: "In Obsidian when the folder is inside a vault, otherwise in your Markdown app.") {
+            CompactRow(title: "Open the note after saving", detail: "In Obsidian when the folder is in a vault.") {
                 Toggle("Open the note after saving", isOn: Binding(get: { settings.notesOpen }, set: { value in
                     update { $0.notesOpen = value }
                 })).labelsHidden().toggleStyle(.switch)
@@ -81,8 +83,7 @@ struct ExplainView: View {
 
     private var bubbleSection: some View {
         SettingsSection(title: "Selection bubble") {
-            CompactRow(title: "Show a bubble when you select text",
-                       detail: "After you select text in another app, a small bubble offers Explain and your other answer rules, and in text fields your Writing rules. Frog reads the selection through Accessibility and never copies it; Explain's shortcut works without the bubble.") {
+            CompactRow(title: "Show a bubble when you select text", detail: "Offers your rules next to text you select in other apps.") {
                 Toggle("Show a bubble when you select text", isOn: Binding(get: { settings.selectionBubble }, set: { value in
                     update { $0.selectionBubble = value }
                 })).labelsHidden().toggleStyle(.switch)
@@ -104,112 +105,73 @@ struct ExplainView: View {
             }
             if settings.selectionBubble {
                 Divider()
-                CompactRow(title: "Chrome and Electron apps",
-                           detail: "Chrome, Arc, Helium, Slack and similar apps hide their text from Accessibility until an app asks. Frog asks each once, so the bubble appears there too; they use a little more memory afterwards. VS Code, Cursor and other editors built on VS Code are never asked, because they would switch to their screen reader mode.") {
-                    Toggle("Chrome and Electron apps", isOn: Binding(get: { settings.bubbleExposeText }, set: { value in
-                        update { $0.bubbleExposeText = value }
-                    })).labelsHidden().toggleStyle(.switch)
-                }
-                Divider()
-                CompactRow(title: "Double-click selects", detail: "Also show after a double- or triple-click.") {
-                    Toggle("Double-click selects", isOn: Binding(get: { settings.bubbleDoubleClick }, set: { value in
-                        update { $0.bubbleDoubleClick = value }
-                    })).labelsHidden().toggleStyle(.switch)
-                }
-                Divider()
-                CompactRow(title: "Keyboard selections", detail: "Also show after selecting with Shift and the arrow keys.") {
-                    Toggle("Keyboard selections", isOn: Binding(get: { settings.bubbleKeyboard }, set: { value in
-                        update { $0.bubbleKeyboard = value }
-                    })).labelsHidden().toggleStyle(.switch)
-                }
-                Divider()
-                CompactRow(title: "Longest selection", detail: "Longer selections show no bubble.") {
-                    CompactMenu(value: characters(settings.bubbleMaxCharacters), width: 150) {
-                        ForEach(Self.characterChoices(including: settings.bubbleMaxCharacters), id: \.self) { count in
-                            Button(characters(count)) { update { $0.bubbleMaxCharacters = count } }
-                                .accessibilityAddTraits(count == settings.bubbleMaxCharacters ? .isSelected : [])
-                        }
-                    }
-                }
-                Divider()
-                CompactRow(title: "Never show in", detail: "The bubble never appears in these apps.") {
-                    Menu {
-                        Button("Choose an App…", action: chooseExcludedApp)
-                        let running = runningApps
-                        if !running.isEmpty {
-                            Divider()
-                            ForEach(running, id: \.id) { app in
-                                Button(app.name) { addExcludedApp(app.id) }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                    .help(L10n.text("Add an app")).accessibilityLabel(L10n.text("Add an app"))
-                }
-                ForEach(settings.bubbleExcludedApps, id: \.self) { id in
-                    HStack(spacing: 8) {
-                        Image(nsImage: Self.icon(id)).resizable().frame(width: 18, height: 18).accessibilityHidden(true)
-                        Text(Self.name(id)).font(.system(size: 12))
-                        Text(id).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
-                        Spacer(minLength: 8)
-                        IconAction(title: "Remove \(Self.name(id))", symbol: "minus.circle") {
-                            update { $0.bubbleExcludedApps.removeAll { $0 == id } }
-                        }
-                    }.padding(.leading, 4)
+                DisclosureGroup(isExpanded: $showsBubbleOptions) {
+                    bubbleOptions.padding(.top, 6)
+                } label: {
+                    Text(L10n.text("Options")).font(FrogType.label).foregroundStyle(FrogStyle.muted)
                 }
             }
         }
     }
 
-    /// The rules the bubble can offer, each with a switch, listed like the rules on the Rules and Windows pages.
-    private var bubbleRulesSection: some View {
-        let preferences = model.configuration.preferences
-        let rules = SelectionBubbleItems.candidates(rules: model.configuration.rules, explainEnabled: preferences.featureEnabled(.explain),
-                                                    writingEnabled: preferences.featureEnabled(.writing))
-        let hidden = Set(settings.bubbleHiddenRules)
-        let lastID = rules.last?.id
-        return SettingsSection(title: "Rules in the bubble") {
-            Text(L10n.text(rules.isEmpty ? "Turn on a rule on this page or in Writing to offer it in the bubble."
-                    : "Answer rules show everywhere, Writing rules only in text fields, in this order. Past four, the rest open from the arrow at the end."))
-                .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-            VStack(spacing: 0) {
-                ForEach(rules) { rule in
-                    bubbleRuleRow(rule, shown: !hidden.contains(rule.id))
-                        .padding(.vertical, 8)
-                        .overlay(alignment: .bottom) {
-                            if rule.id != lastID { Divider().opacity(0.5) }
-                        }
+    /// When the bubble shows and where it never does.
+    private var bubbleOptions: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            CompactRow(title: "Also after a double-click") {
+                Toggle("Also after a double-click", isOn: Binding(get: { settings.bubbleDoubleClick }, set: { value in
+                    update { $0.bubbleDoubleClick = value }
+                })).labelsHidden().toggleStyle(.switch)
+            }
+            Divider()
+            CompactRow(title: "Also after selecting with the keyboard") {
+                Toggle("Also after selecting with the keyboard", isOn: Binding(get: { settings.bubbleKeyboard }, set: { value in
+                    update { $0.bubbleKeyboard = value }
+                })).labelsHidden().toggleStyle(.switch)
+            }
+            Divider()
+            CompactRow(title: "Chrome and Electron apps", detail: "Asks them once to show their text; they use a little more memory.") {
+                Toggle("Chrome and Electron apps", isOn: Binding(get: { settings.bubbleExposeText }, set: { value in
+                    update { $0.bubbleExposeText = value }
+                })).labelsHidden().toggleStyle(.switch)
+                    .help(L10n.text("Chrome, Arc, Slack and similar apps hide their text until an app asks. Editors built on VS Code are never asked, because they would switch to screen reader mode."))
+            }
+            Divider()
+            CompactRow(title: "Longest selection") {
+                CompactMenu(value: characters(settings.bubbleMaxCharacters), width: 150) {
+                    ForEach(Self.characterChoices(including: settings.bubbleMaxCharacters), id: \.self) { count in
+                        Button(characters(count)) { update { $0.bubbleMaxCharacters = count } }
+                            .accessibilityAddTraits(count == settings.bubbleMaxCharacters ? .isSelected : [])
+                    }
                 }
             }
-        }
-    }
-
-    private func bubbleRuleRow(_ rule: Rule, shown: Bool) -> some View {
-        let configured = (try? model.resolved(rule)) != nil
-        return HStack(spacing: 10) {
-            Image(systemName: rule.answersInPanel ? SelectionBubbleItems.answerSymbol : SelectionBubbleItems.writingSymbol)
-                .font(.system(size: 13)).foregroundStyle(FrogStyle.muted).frame(width: 24).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(rule.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                Text(configured ? Self.bubbleRuleDetail(rule) : L10n.text("Not in the bubble until it has a text model"))
-                    .font(.system(size: 10)).foregroundStyle(configured ? FrogStyle.muted : FrogStyle.warning).lineLimit(1)
-            }.frame(maxWidth: .infinity, alignment: .leading)
-            Toggle("Show \(rule.name) in the bubble", isOn: Binding(get: { shown }, set: { show in
-                update { settings in
-                    settings.bubbleHiddenRules.removeAll { $0 == rule.id }
-                    if !show { settings.bubbleHiddenRules.append(rule.id) }
+            Divider()
+            CompactRow(title: "Never show in") {
+                Menu {
+                    Button("Choose an App…", action: chooseExcludedApp)
+                    let running = runningApps
+                    if !running.isEmpty {
+                        Divider()
+                        ForEach(running, id: \.id) { app in
+                            Button(app.name) { addExcludedApp(app.id) }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "plus")
                 }
-            })).labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .help(L10n.text("Add an app")).accessibilityLabel(L10n.text("Add an app"))
+            }
+            ForEach(settings.bubbleExcludedApps, id: \.self) { id in
+                HStack(spacing: 8) {
+                    Image(nsImage: Self.icon(id)).resizable().frame(width: 16, height: 16).accessibilityHidden(true)
+                    Text(Self.name(id)).font(FrogType.body).lineLimit(1).help(id)
+                    Spacer(minLength: 8)
+                    IconAction(title: "Remove \(Self.name(id))", symbol: "minus.circle") {
+                        update { $0.bubbleExcludedApps.removeAll { $0 == id } }
+                    }
+                }.padding(.leading, 4)
+            }
         }
-    }
-
-    /// What the rule does from the bubble, and its shortcut.
-    static func bubbleRuleDetail(_ rule: Rule) -> String {
-        let kind = L10n.text(rule.answersInPanel ? "Answer" : "Replace selection, in text fields")
-        return ([kind] + [rule.hotkey.map(HotkeyManager.display)].compactMap { $0 }).joined(separator: " · ")
     }
 
     private func characters(_ count: Int) -> String {

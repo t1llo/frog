@@ -106,11 +106,11 @@ final class SelectionBubblePolicyTests: XCTestCase {
     func testStatus() {
         XCTAssertNil(SelectionBubblePolicy.status(explainEnabled: true, bubbleEnabled: false, accessibilityTrusted: true))
         XCTAssertEqual(SelectionBubblePolicy.status(explainEnabled: false, bubbleEnabled: true, accessibilityTrusted: false),
-                       "Turn on Explain to use the selection bubble")
+                       "Turn on Explain to use the bubble")
         XCTAssertEqual(SelectionBubblePolicy.status(explainEnabled: true, bubbleEnabled: true, accessibilityTrusted: false),
-                       "Needs Accessibility: allow Frog in System Settings → Privacy & Security → Accessibility")
-        XCTAssertEqual(SelectionBubblePolicy.status(explainEnabled: true, bubbleEnabled: true, accessibilityTrusted: true),
-                       "On: select text in another app to see Explain")
+                       "Needs Accessibility to see what you select")
+        XCTAssertNil(SelectionBubblePolicy.status(explainEnabled: true, bubbleEnabled: true, accessibilityTrusted: true),
+                     "the switch already says the bubble is on")
     }
 
     func testEditorsBuiltOnVSCodeAreNeverAskedToExposeTheirText() {
