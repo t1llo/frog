@@ -104,9 +104,12 @@ bar stays open. A primary action with `confirm` text asks first: the first Retur
 text in place of the subtitle, a second Return on the same row within three seconds runs it,
 and moving the selection, typing or waiting restores the row.
 
-A System Settings pane appears once, with the System Settings icon and that name beside
-it. The shortcut actions that open the same panes stay out of the results; the other
-shortcut actions say where they act: Finder, Mac or Current app.
+A System Settings pane appears once, with "System Settings" beside it and its own sidebar
+icon as System Settings shows it; the permission rows share the Privacy & Security icon.
+Until discovery finishes, and for a pane without an icon of its own or whose icon type this
+Mac does not declare, the row shows the System Settings icon. Rows already listed switch to
+their pane's icon where they are. The shortcut actions that open the same panes stay out of
+the results; the other shortcut actions say where they act: Finder, Mac or Current app.
 
 First-run setup and Command bar settings share a Spotlight replacement walkthrough:
 free ⌘Space in macOS Keyboard Shortcuts, explicitly assign it to Frog, then try it.

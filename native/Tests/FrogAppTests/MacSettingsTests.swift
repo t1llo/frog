@@ -49,7 +49,7 @@ import FrogCore
         XCTAssertTrue(bar.results.isEmpty, "Finishing discovery cannot reopen a dismissed command bar")
     }
 
-    func testEachSettingsPaneAppearsOnceWithTheSystemSettingsIconAndNoMacActionLabel() async throws {
+    func testEachSettingsPaneAppearsOnceWithNoMacActionLabelAndAPaneWithoutAnIconLooksLikeSystemSettings() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var config = Configuration()
@@ -74,7 +74,7 @@ import FrogCore
         let displays = try XCTUnwrap(bar.results.first)
         XCTAssertEqual(displays.title, "Displays")
         _ = await bar.icon(for: displays)
-        XCTAssertEqual(iconPaths.values, ["/System/Applications/System Settings.app"], "A settings result looks like System Settings")
+        XCTAssertEqual(iconPaths.values, ["/System/Applications/System Settings.app"], "A pane without an icon of its own looks like System Settings")
         bar.query = ""
         XCTAssertFalse(bar.results.contains { $0.subtitle == "Mac action" })
         for (query, title, label) in [("lock", "Lock screen", "Mac"), ("downloads", "Open Downloads folder", "Finder"), ("undo", "Undo", "Current app")] {

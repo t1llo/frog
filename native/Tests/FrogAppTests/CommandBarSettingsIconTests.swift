@@ -47,12 +47,42 @@ import FrogCore
         XCTAssertTrue(bar.cachedIcon(for: permissions[0]) === own, "Every permission row shares the Privacy & Security icon")
         XCTAssertEqual(reads.keys, [MacSettingsDiscovery.fallbackIconPath, privacyIcon.key])
 
-        // A pane whose record changed with discovery keeps its place and takes its icon as well.
+        // A pane whose record changed with discovery takes its icon as well.
         bar.query = "screen resolution"
         let displays = try XCTUnwrap(bar.results.first)
         XCTAssertEqual(displays.title, "Displays")
         XCTAssertEqual(bar.iconPath(for: displays), displaysIcon.key)
         XCTAssertNil(bar.iconPath(for: SearchRecord(id: "features", title: "Manage features")))
+    }
+
+    func testAPaneKeepsItsPlaceAboveAnEquallyGoodRowListedWhileDiscoveryRan() async throws {
+        let (model, pasteboard, cleanup) = try makeModel([.clipboard])
+        defer { cleanup() }
+        let history = model.clipboardHistoryStore
+        history.configure(enabled: true, automaticallyPoll: false)
+        let gate = PaneDiscoveryGate(discovered: discovered())
+        let bar = makeBar(model, pasteboard, gate: gate, reads: PaneIconReads())
+        defer { bar.stop() }
+        bar.prepareResults(model, frontPID: nil)
+        bar.refreshSettings()
+        await gate.started()
+        // A copy made while the bar is open is listed after the rows it opened with, and ties with the pane's title.
+        history.recordCopiedText("Displays")
+        bar.query = "displays"
+        let displays = "mac-setting:com.apple.Displays-Settings.extension"
+        func pair() -> [String] { bar.results.filter { $0.title == "Displays" }.map(\.id) }
+        let listed = pair()
+        XCTAssertEqual(listed.count, 2)
+        XCTAssertEqual(listed.first, displays)
+        let before = try XCTUnwrap(bar.results.first { $0.id == displays })
+        bar.selection = try XCTUnwrap(bar.results.firstIndex { $0.id == listed.last })
+        let chosen = bar.selection
+
+        await gate.release()
+        for _ in 0..<200 where bar.iconPath(for: before) != displaysIcon.key { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertNotEqual(bar.results.first { $0.id == displays }, before, "The row lists the discovered record")
+        XCTAssertEqual(pair(), listed, "The pane stays above the copy that ties with it")
+        XCTAssertEqual(bar.selection, chosen, "The selection stays on its row and that row on its line")
     }
 
     func testDiscoveryAfterTheBarClosedKeepsTheIconsForTheNextOpenUntilTheBarStops() async throws {
@@ -144,10 +174,10 @@ import FrogCore
         }
     }
 
-    private func makeModel() throws -> (AppModel, NSPasteboard, () -> Void) {
+    private func makeModel(_ features: [FeatureID] = []) throws -> (AppModel, NSPasteboard, () -> Void) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         var config = Configuration(); config.preferences.windowSwitcherEnabled = false
-        config.preferences.setFeature(.commandBar, enabled: true)
+        for feature in [.commandBar] + features { config.preferences.setFeature(feature, enabled: true) }
         try ConfigurationStore(directory: root).save(config)
         let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
         let model = AppModel(dataDirectory: root, registerShortcuts: false, readKey: { _ in nil },
