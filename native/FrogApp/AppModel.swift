@@ -516,10 +516,12 @@ final class AppModel: ObservableObject {
         try savePreferences(preferences)
         if feature == .explain, enabled { adoptExplainPresetIfNeeded() }
     }
-    /// Turning Explain on creates the Explain rule once, with the newest text model still available.
+    /// Turning Explain on creates the Explain rule once, with the newest text model still available. One created by an
+    /// earlier version gets newer built-in instructions at the next start, unless they were edited.
     private func adoptExplainPresetIfNeeded() {
-        guard configuration.preferences.featureEnabled(.explain),
-              configuration.preferences.workflowSettings.explainPresetVersion == nil else { return }
+        let version = configuration.preferences.workflowSettings.explainPresetVersion
+        if version == nil, !configuration.preferences.featureEnabled(.explain) { return }
+        guard (version ?? 0) < Rule.explainPresetVersion else { return }
         var candidate = configuration
         candidate.adoptExplainPreset(installed: localModels.installed)
         do { try persist(candidate) } catch { report(error) }

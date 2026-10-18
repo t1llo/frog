@@ -193,7 +193,7 @@ final class WorkflowConfigurationTests: XCTestCase {
         XCTAssertNil(explain.hotkey)
         XCTAssertEqual(explain.action?.textOutput, .panel)
         XCTAssertEqual(explain.action?.localTextModelID, "qwen-0.6b", "The newest text model that is still installed")
-        XCTAssertEqual(config.preferences.workflowSettings.explainPresetVersion, 1)
+        XCTAssertEqual(config.preferences.workflowSettings.explainPresetVersion, Rule.explainPresetVersion)
         let created = config
         config.adoptExplainPreset(installed: ["qwen-0.6b"])
         XCTAssertEqual(config, created)
@@ -246,7 +246,32 @@ final class WorkflowConfigurationTests: XCTestCase {
         config.adoptExplainPreset(installed: [])
         XCTAssertEqual(config.rules.count, count)
         XCTAssertEqual(config.rules.last?.instructions, "My own explanation.")
-        XCTAssertEqual(config.preferences.workflowSettings.explainPresetVersion, 1)
+        XCTAssertEqual(config.preferences.workflowSettings.explainPresetVersion, Rule.explainPresetVersion)
+    }
+
+    func testAnswerRulesWithTheFirstBuiltInInstructionsGetTheShorterOnesOnce() throws {
+        var config = Configuration()
+        var untouched = Rule.explainPreset
+        untouched.instructions = Rule.firstExplainInstructions
+        var edited = Rule.explainPreset
+        edited.id = UUID(); edited.name = "Define"; edited.instructions = "Define it."
+        let writing = Rule(name: "Explain in place", instructions: Rule.firstExplainInstructions)
+        config.rules = [untouched, edited, writing]
+        var workflow = WorkflowPreferences()
+        workflow.explainPresetVersion = 1
+        config.preferences.workflows = workflow
+        config = try ConfigurationFile.decode(ConfigurationFile.encode(config))
+
+        config.adoptExplainPreset(installed: [])
+        XCTAssertEqual(config.rules.map(\.instructions), [Rule.explainInstructions, "Define it.", Rule.firstExplainInstructions],
+                       "Only answer rules with the old text word for word change; nothing is added")
+        XCTAssertEqual(config.preferences.workflowSettings.explainPresetVersion, Rule.explainPresetVersion)
+        XCTAssertTrue(Rule.explainInstructions.contains("at most about 50 words"))
+
+        // Put back on purpose afterwards, the old text stays.
+        config.rules[0].instructions = Rule.firstExplainInstructions
+        config.adoptExplainPreset(installed: [])
+        XCTAssertEqual(config.rules[0].instructions, Rule.firstExplainInstructions)
     }
 
     func testPagesListTextRulesByOutputAndOtherCategoriesIgnoreIt() {
