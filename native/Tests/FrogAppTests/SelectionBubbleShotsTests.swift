@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import SwiftUI
 import FrogCore
 @testable import FrogApp
 
@@ -7,20 +8,30 @@ import FrogCore
 /// and takes that window alone, so it runs only with `FROG_BUBBLE_SHOTS` set to the folder for the pictures.
 @MainActor
 final class SelectionBubbleShotsTests: XCTestCase {
+    private static let shortcut = Hotkey(keyCode: 8, modifiers: 4096 | 512)
+    private static let items = [
+        BubbleItem(id: UUID(), title: "Explain", symbol: SelectionBubbleItems.answerSymbol, answers: true, hotkey: Hotkey(keyCode: 14, modifiers: 4096 | 2048)),
+        BubbleItem(id: UUID(), title: "Define", symbol: SelectionBubbleItems.answerSymbol, answers: true),
+        BubbleItem(id: UUID(), title: "Proofread", symbol: SelectionBubbleItems.writingSymbol, answers: false, hotkey: shortcut),
+        BubbleItem(id: UUID(), title: "Polish email", symbol: SelectionBubbleItems.writingSymbol, answers: false),
+        BubbleItem(id: UUID(), title: "Translate to German", symbol: SelectionBubbleItems.writingSymbol, answers: false,
+                   hotkey: Hotkey(keyCode: 5, modifiers: 4096 | 512)),
+    ]
+    private static let long = [
+        BubbleItem(id: UUID(), title: "Explain like I am new to this field", symbol: SelectionBubbleItems.answerSymbol, answers: true),
+        BubbleItem(id: UUID(), title: "Summarize", symbol: SelectionBubbleItems.answerSymbol, answers: true),
+        BubbleItem(id: UUID(), title: "Rewrite as a friendly but firm reply to a customer", symbol: SelectionBubbleItems.writingSymbol,
+                   answers: false, hotkey: shortcut),
+        BubbleItem(id: UUID(), title: "Shorten", symbol: SelectionBubbleItems.writingSymbol, answers: false),
+    ]
+    private static let many = items + (1...24).map {
+        BubbleItem(id: UUID(), title: "Writing rule \($0)", symbol: SelectionBubbleItems.writingSymbol, answers: false,
+                   hotkey: $0.isMultiple(of: 3) ? shortcut : nil)
+    }
+
     func testTheBubbleInEachState() async throws {
-        guard let folder = ProcessInfo.processInfo.environment["FROG_BUBBLE_SHOTS"] else {
-            throw XCTSkip("Set FROG_BUBBLE_SHOTS to a folder to take pictures of the bubble")
-        }
-        try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
-        let shortcut = Hotkey(keyCode: 8, modifiers: 4096 | 512)
-        let items = [
-            BubbleItem(id: UUID(), title: "Explain", symbol: SelectionBubbleItems.answerSymbol, answers: true, hotkey: Hotkey(keyCode: 14, modifiers: 4096 | 2048)),
-            BubbleItem(id: UUID(), title: "Define", symbol: SelectionBubbleItems.answerSymbol, answers: true),
-            BubbleItem(id: UUID(), title: "Proofread", symbol: SelectionBubbleItems.writingSymbol, answers: false, hotkey: shortcut),
-            BubbleItem(id: UUID(), title: "Polish email", symbol: SelectionBubbleItems.writingSymbol, answers: false),
-            BubbleItem(id: UUID(), title: "Translate to German", symbol: SelectionBubbleItems.writingSymbol, answers: false,
-                       hotkey: Hotkey(keyCode: 5, modifiers: 4096 | 512)),
-        ]
+        let folder = try Self.folder()
+        let items = Self.items
         let few = Array(items.prefix(3))
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             NSApplication.shared.appearance = NSAppearance(named: appearance)
@@ -36,9 +47,121 @@ final class SelectionBubbleShotsTests: XCTestCase {
             controller.expand()
             controller.hover.location = CGPoint(x: 60, y: 80)
             try await shoot(controller, "\(folder)/\(name)-list.png")
+            controller.show(visible: Array(Self.long.prefix(3)), more: Array(Self.long.dropFirst(3)), anchor: anchor, pointer: anchor.origin)
+            try await shoot(controller, "\(folder)/\(name)-long-bar.png")
+            controller.expand()
+            try await shoot(controller, "\(folder)/\(name)-long-list.png")
+            controller.show(visible: Array(Self.many.prefix(3)), more: Array(Self.many.dropFirst(3)), anchor: anchor, pointer: anchor.origin)
+            controller.expand()
+            controller.hover.location = CGPoint(x: 60, y: 200)
+            try await shoot(controller, "\(folder)/\(name)-many-list.png")
             controller.hide()
         }
         NSApplication.shared.appearance = nil
+    }
+
+    /// Near each edge of the display the list stays on it, grows away from the selection and never covers it.
+    func testTheListStaysOnScreenBesideTheSelection() async throws {
+        let folder = try Self.folder()
+        let screen = try XCTUnwrap(NSScreen.main?.visibleFrame)
+        let controller = SelectionBubbleController()
+        let anchors = [
+            "bottom": CGRect(x: screen.midX, y: screen.minY + 30, width: 0, height: 16),
+            "top": CGRect(x: screen.midX, y: screen.maxY - 30, width: 0, height: 16),
+            "right": CGRect(x: screen.maxX - 20, y: screen.midY, width: 0, height: 16),
+            "middle": CGRect(x: screen.midX, y: screen.midY, width: 0, height: 16),
+        ]
+        for (name, anchor) in anchors.sorted(by: { $0.key < $1.key }) {
+            for (count, items) in [("few", Self.items), ("many", Self.many)] {
+                controller.show(visible: Array(items.prefix(3)), more: Array(items.dropFirst(3)), anchor: anchor, pointer: anchor.origin)
+                let bar = try XCTUnwrap(controller.frame)
+                controller.expand()
+                let list = try XCTUnwrap(controller.frame)
+                XCTAssertTrue(screen.contains(list), "\(name) \(count): \(list) leaves \(screen)")
+                XCTAssertFalse(list.intersects(anchor), "\(name) \(count): \(list) covers the selection")
+                XCTAssertTrue(bar.minY >= anchor.maxY || bar.maxY <= anchor.minY, "\(name) \(count): \(bar) covers the selection")
+                XCTAssertLessThanOrEqual(list.height, SelectionBubbleController.listMaxHeight + 0.5)
+                if count == "many" { try await shoot(controller, "\(folder)/edge-\(name).png") }
+            }
+        }
+        controller.hide()
+    }
+
+    /// A click on a row reaches it while another app stays active, in a list that scrolls as in one that does not.
+    func testAClickOnAListRowChoosesIt() async throws {
+        _ = try Self.folder()
+        let controller = SelectionBubbleController()
+        var chosen: [String] = []
+        controller.onSelect = { chosen.append($0.title) }
+        let anchor = CGRect(x: 400, y: 600, width: 0, height: 16)
+        for items in [Self.items, Self.many] {
+            controller.show(visible: Array(items.prefix(3)), more: Array(items.dropFirst(3)), anchor: anchor, pointer: anchor.origin)
+            controller.expand()
+            try await Task.sleep(for: .milliseconds(300))
+            let window = try XCTUnwrap(NSApplication.shared.windows.first { $0.windowNumber == controller.windowNumber })
+            XCTAssertFalse(window.isKeyWindow)
+            let wasActive = NSApplication.shared.isActive
+            // The first row under the Answer heading, Explain.
+            let point = CGPoint(x: 60, y: window.frame.height - 44)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                             windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+                window.sendEvent(event)
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            XCTAssertFalse(window.isKeyWindow, "the bubble never becomes key")
+            XCTAssertEqual(NSApplication.shared.isActive, wasActive, "choosing a row does not activate Frog")
+        }
+        XCTAssertEqual(chosen, ["Explain", "Explain"])
+        controller.hide()
+    }
+
+    /// The Explain page with the bubble on, drawn without a window: its rules each with a switch, one hidden and one
+    /// without a model, in light and dark.
+    func testTheExplainPageListsTheBubbleRules() async throws {
+        let folder = try Self.folder()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil }, readAccessibility: { true },
+                             selectionWatcher: StubSelectionWatcher(), systemStatusTick: { try await Task.sleep(for: .seconds(3_600)) })
+        try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
+        try await model.setFeature(.explain, enabled: true)
+        var explain = try XCTUnwrap(model.configuration.rules.first { $0.answersInPanel })
+        explain.providerID = model.configuration.providers[0].id
+        try model.saveRule(explain)
+        // An answer rule without a model of its own: the page says it stays out of the bubble.
+        var define = Rule(name: "Define", instructions: "Define the selected term.")
+        define.action = RuleAction(category: .text)
+        define.action?.textOutput = .panel
+        try model.saveRule(define)
+        let writing = model.configuration.rules.filter { $0.enabled && $0.category == .text && !$0.answersInPanel }
+        try model.updateToolkit { toolkit in
+            var settings = toolkit.explain ?? ExplainSettings()
+            settings.selectionBubble = true
+            settings.bubbleHiddenRules = Array(writing.prefix(1).map(\.id))
+            toolkit.explain = settings
+        }
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let host = NSHostingView(rootView: ExplainView().environmentObject(model).frame(width: 760, height: 2_400)
+                .background(FrogStyle.opaqueCanvas))
+            host.appearance = NSAppearance(named: appearance)
+            host.frame = NSRect(x: 0, y: 0, width: 760, height: 2_400)
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(300))
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let name = appearance == .aqua ? "light" : "dark"
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                .write(to: URL(fileURLWithPath: "\(folder)/\(name)-explain-page.png"))
+        }
+    }
+
+    private static func folder() throws -> String {
+        guard let folder = ProcessInfo.processInfo.environment["FROG_BUBBLE_SHOTS"] else {
+            throw XCTSkip("Set FROG_BUBBLE_SHOTS to a folder to take pictures of the bubble")
+        }
+        try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        return folder
     }
 
     private func shoot(_ controller: SelectionBubbleController, _ path: String) async throws {
@@ -51,4 +174,12 @@ final class SelectionBubbleShotsTests: XCTestCase {
         capture.waitUntilExit()
         XCTAssertEqual(capture.terminationStatus, 0)
     }
+}
+
+@MainActor
+private final class StubSelectionWatcher: SelectionWatching {
+    private(set) var isRunning = false
+    func start() { isRunning = true }
+    func stop() { isRunning = false }
+    func dismiss() {}
 }
