@@ -327,11 +327,16 @@ the main actor before the read; the primary display's height comes from
   last character, context and source are read as for a captured selection.
 - **Path B, text markers (WebKit, and Chromium while its accessibility is on):** the
   selected marker range of the focused element or of its nearest `AXWebArea` within eight
-  parents, its string and its bounds. The last character's rectangle comes from the end
-  marker and the one before it when the app supports that, else the selection's bottom
-  right corner. Context is the paragraph where the selection starts, when the app gives
-  it. The length is checked after reading. No marker range, or an empty one, is
-  unavailable.
+  parents, its string and its bounds. A range whose reported length
+  (`AXLengthForTextMarkerRange`) is over the limit is refused before its string is
+  fetched; without a length, the string's length decides. The range is split into its
+  first and last marker in Frog with `AXTextMarkerRangeCopyStartMarker` and
+  `AXTextMarkerRangeCopyEndMarker`, since Chromium answers neither
+  `AXStartTextMarkerForTextMarkerRange` nor `AXEndTextMarkerForTextMarkerRange` (those
+  two remain the fallback). The last character's rectangle comes from the end marker and
+  the one before it when the app supports that, else the selection's bottom right corner.
+  Context is the paragraph where the selection starts, when the app gives it. No marker
+  range, or an empty one, is unavailable.
 
 The result is a `SelectionSnapshot` (text, rectangle, last character, context, source,
 whether the field is editable, the app's process, bundle identifier and name, and a

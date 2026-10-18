@@ -70,7 +70,8 @@ final class SelectionReaderTests: XCTestCase {
         let snapshot = try selection(await read(ax))
         XCTAssertEqual(snapshot.text, "river bank")
         XCTAssertEqual(snapshot.bounds, CGRect(x: 50, y: 780, width: 70, height: 20))
-        XCTAssertEqual(snapshot.endBounds, CGRect(x: 120, y: 780, width: 0, height: 0), "The bottom right corner without an end marker")
+        XCTAssertEqual(snapshot.endBounds, CGRect(x: 120, y: 780, width: 0, height: 0),
+                       "The bottom right corner without the last character's rectangle")
         XCTAssertEqual(snapshot.source, "https://example.com/page")
         XCTAssertEqual(snapshot.fingerprint.location, 0)
         XCTAssertEqual(snapshot.fingerprint.length, 10)
@@ -95,6 +96,57 @@ final class SelectionReaderTests: XCTestCase {
         XCTAssertEqual(found.text, "river bank")
         let tooDeep = await read(nested(9))
         XCTAssertEqual(tooDeep, .unavailable)
+    }
+
+    func testPageTextInChromiumGetsItsLastCharacterAndParagraph() async throws {
+        // A Chromium page reports no text through the range attributes and answers neither range-end attribute.
+        let ax = FakeAX()
+        let page = ax.focus(FakeElement(role: "AXWebArea"))
+        page.range = CFRange(location: 0, length: 0)
+        page.selectedText = ""
+        let sentence = "We sat on the river bank until the light went."
+        page.paragraph = sentence
+        page.markerText = "river bank"
+        page.markerStart = ("We sat on the " as NSString).length
+        page.markerBounds = CGRect(x: 50, y: 100, width: 70, height: 20)
+        page.characterBounds = [page.markerStart + 9: CGRect(x: 112, y: 100, width: 8, height: 20)]
+
+        let snapshot = try selection(await read(ax, includeContext: true))
+        XCTAssertEqual(snapshot.text, "river bank")
+        XCTAssertEqual(snapshot.bounds, CGRect(x: 50, y: 780, width: 70, height: 20))
+        XCTAssertEqual(snapshot.endBounds, CGRect(x: 112, y: 780, width: 8, height: 20), "The last character")
+        XCTAssertEqual(snapshot.context, sentence)
+        XCTAssertFalse(ax.reads.contains("AXStartTextMarkerForTextMarkerRange"), "\(ax.reads)")
+        XCTAssertFalse(ax.reads.contains("AXEndTextMarkerForTextMarkerRange"), "\(ax.reads)")
+    }
+
+    func testARangeThatCannotBeSplitAsksTheAppForItsEnds() async throws {
+        let ax = FakeAX()
+        ax.splitsMarkers = false
+        let page = ax.focus(FakeElement(role: "AXWebArea"))
+        page.answersRangeEnds = true
+        page.markerText = "river bank"
+        page.markerBounds = CGRect(x: 50, y: 100, width: 70, height: 20)
+        page.characterBounds = [9: CGRect(x: 112, y: 100, width: 8, height: 20)]
+
+        let snapshot = try selection(await read(ax))
+        XCTAssertEqual(snapshot.endBounds, CGRect(x: 112, y: 780, width: 8, height: 20))
+        XCTAssertTrue(ax.reads.contains("AXEndTextMarkerForTextMarkerRange"))
+    }
+
+    func testALongPageSelectionIsRefusedBeforeItsTextIsFetched() async {
+        let ax = FakeAX()
+        let page = ax.focus(FakeElement(role: "AXWebArea"))
+        page.markerText = String(repeating: "x", count: 100_001)
+        let refused = await read(ax)
+        XCTAssertEqual(refused, .tooLong(100_001))
+        XCTAssertFalse(ax.reads.contains("AXStringForTextMarkerRange"), "\(ax.reads)")
+
+        // An app that reports no length has its text fetched, and the text decides.
+        page.answersMarkerLength = false
+        let fetched = await read(ax)
+        XCTAssertEqual(fetched, .tooLong(100_001))
+        XCTAssertTrue(ax.reads.contains("AXStringForTextMarkerRange"))
     }
 
     func testContextIsReadOnlyWhenAskedAndALongValueIsNeverReadWhole() async throws {
@@ -155,23 +207,52 @@ private final class FakeElement {
     var bounds: [String: CGRect] = [:]
     /// The element answers a selected marker range while this is set, an empty string for a caret.
     var markerText: String?
+    /// Where the selected markers start in the page's text.
+    var markerStart = 0
     var markerBounds: CGRect?
+    /// The rectangle of the one character starting at each index, as a one-character marker range reports it.
+    var characterBounds: [Int: CGRect] = [:]
+    /// The paragraph the selection starts in, which starts at index 0.
+    var paragraph: String?
+    /// Safari and Chromium both report a range's length; an app that does not gets its text fetched.
+    var answersMarkerLength = true
+    /// Only WebKit answers the attributes for a range's first and last marker.
+    var answersRangeEnds = false
     var url: URL?
     var document: URL?
 
     init(role: String?) { self.role = role }
 }
 
-/// An opaque marker range that carries its text.
+/// An opaque marker range that carries its text and its ends.
 private final class FakeMarkers: NSObject {
     let text: String
-    init(text: String) { self.text = text }
+    let start: FakeMarker
+    let end: FakeMarker
+    init(text: String, start: Int = 0) {
+        self.text = text
+        self.start = FakeMarker(start)
+        end = FakeMarker(start + (text as NSString).length)
+    }
+    init(from start: FakeMarker, to end: FakeMarker) {
+        text = ""
+        self.start = start
+        self.end = end
+    }
+}
+
+/// An opaque marker: a position in the page's text.
+private final class FakeMarker: NSObject {
+    let index: Int
+    init(_ index: Int) { self.index = index }
 }
 
 private final class FakeAX: @unchecked Sendable {
     let application = FakeElement(role: kAXApplicationRole)
     var focused: FakeElement?
     var window: FakeElement?
+    /// Whether Frog can split a marker range into its ends itself, as it can every real one.
+    var splitsMarkers = true
     private let lock = NSLock()
     private var recorded: [String] = []
     var reads: [String] { lock.withLock { recorded } }
@@ -200,7 +281,7 @@ private final class FakeAX: @unchecked Sendable {
             },
             attribute: { element, name in
                 guard name == "AXSelectedTextMarkerRange", let text = fake(element).markerText else { return nil }
-                return FakeMarkers(text: text)
+                return FakeMarkers(text: text, start: fake(element).markerStart)
             },
             range: { fake($0).range },
             count: { fake($0).value.map { ($0 as NSString).length } },
@@ -211,13 +292,32 @@ private final class FakeAX: @unchecked Sendable {
             bounds: { fake($0).bounds["\($1.location),\($1.length)"] },
             parameterized: { [self] element, name, parameter in
                 record(name)
+                let element = fake(element), markers = parameter as? FakeMarkers
                 switch name {
-                case "AXStringForTextMarkerRange": return (parameter as? FakeMarkers)?.text as NSString?
+                case "AXStringForTextMarkerRange": return markers?.text as NSString?
+                case "AXLengthForTextMarkerRange":
+                    guard element.answersMarkerLength, let markers else { return nil }
+                    return NSNumber(value: markers.end.index - markers.start.index)
                 case "AXBoundsForTextMarkerRange":
-                    guard var rect = fake(element).markerBounds else { return nil }
+                    guard let markers else { return nil }
+                    let one = markers.end.index - markers.start.index == 1
+                    guard var rect = one ? element.characterBounds[markers.start.index] : element.markerBounds else { return nil }
                     return AXValueCreate(.cgRect, &rect)
+                case "AXStartTextMarkerForTextMarkerRange": return element.answersRangeEnds ? markers?.start : nil
+                case "AXEndTextMarkerForTextMarkerRange": return element.answersRangeEnds ? markers?.end : nil
+                case "AXPreviousTextMarkerForTextMarker":
+                    return (parameter as? FakeMarker).map { FakeMarker($0.index - 1) }
+                case "AXTextMarkerRangeForUnorderedTextMarkers":
+                    let pair = ((parameter as? [AnyObject]) ?? []).compactMap { $0 as? FakeMarker }.sorted { $0.index < $1.index }
+                    return pair.count == 2 ? FakeMarkers(from: pair[0], to: pair[1]) : nil
+                case "AXParagraphTextMarkerRangeForTextMarker":
+                    return parameter is FakeMarker ? element.paragraph.map { FakeMarkers(text: $0) } : nil
                 default: return nil
                 }
+            },
+            markerEnds: { [self] range in
+                guard splitsMarkers, let markers = range as? FakeMarkers else { return nil }
+                return (markers.start, markers.end)
             },
             url: { element, name in name == kAXDocumentAttribute ? fake(element).document : fake(element).url },
             hash: { ObjectIdentifier($0).hashValue },

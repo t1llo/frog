@@ -36,6 +36,8 @@ struct SelectionAXSource: @unchecked Sendable {
     /// Accessibility coordinates: origin at the top left of the primary display.
     var bounds: @Sendable (Element, CFRange) -> CGRect?
     var parameterized: @Sendable (Element, String, CFTypeRef) -> CFTypeRef?
+    /// The first and last marker of a marker range, split in Frog without asking the app.
+    var markerEnds: @Sendable (CFTypeRef) -> (start: CFTypeRef, end: CFTypeRef)?
     var url: @Sendable (Element, String) -> URL?
     var hash: @Sendable (Element) -> Int
     var isEditable: @Sendable (Element) -> Bool
@@ -74,6 +76,11 @@ extension SelectionAXSource {
             guard AXUIElementCopyParameterizedAttributeValue(ax(element), name as CFString, parameter, &result) == .success
             else { return nil }
             return result
+        },
+        markerEnds: { range in
+            guard CFGetTypeID(range) == AXTextMarkerRangeGetTypeID() else { return nil }
+            let markers = range as! AXTextMarkerRange
+            return (AXTextMarkerRangeCopyStartMarker(markers), AXTextMarkerRangeCopyEndMarker(markers))
         },
         url: { AXRead.url(ax($0), $1) },
         hash: { Int(bitPattern: CFHash(ax($0))) },
@@ -201,6 +208,11 @@ private struct SelectionReadPass {
 
     private func markers(focused: Element, application: Element, maxCharacters: Int, includeContext: Bool) -> SelectionReadResult {
         guard let (holder, markerRange) = selectedMarkers(from: focused) else { return .unavailable }
+        // A long selection, such as a whole page, is not fetched just to be refused.
+        if let length = (source.parameterized(holder, "AXLengthForTextMarkerRange", markerRange) as? NSNumber)?.intValue,
+           length > maxCharacters {
+            return .tooLong(length)
+        }
         let text = source.parameterized(holder, "AXStringForTextMarkerRange", markerRange) as? String
         if let decided = SelectionReadDecision.markers(textLength: text.map { ($0 as NSString).length },
                                                        maxCharacters: maxCharacters) {
@@ -236,7 +248,7 @@ private struct SelectionReadPass {
     }
 
     private func lastCharacterBounds(_ holder: Element, _ range: CFTypeRef) -> CGRect? {
-        guard let end = source.parameterized(holder, "AXEndTextMarkerForTextMarkerRange", range),
+        guard let end = end(of: range, holder: holder),
               let previous = source.parameterized(holder, "AXPreviousTextMarkerForTextMarker", end),
               let last = source.parameterized(holder, "AXTextMarkerRangeForUnorderedTextMarkers", [previous, end] as CFArray)
         else { return nil }
@@ -245,13 +257,22 @@ private struct SelectionReadPass {
 
     /// The paragraph where the selection starts, when the app can give it.
     private func markerContext(_ holder: Element, range: CFTypeRef, text: String) -> String? {
-        guard let start = source.parameterized(holder, "AXStartTextMarkerForTextMarkerRange", range),
+        guard let start = start(of: range, holder: holder),
               let paragraphRange = source.parameterized(holder, "AXParagraphTextMarkerRangeForTextMarker", start),
               let paragraph = source.parameterized(holder, "AXStringForTextMarkerRange", paragraphRange) as? String,
               (paragraph as NSString).length <= Self.valueReadLimit else { return nil }
         let found = (paragraph as NSString).range(of: text)
         guard found.location != NSNotFound else { return nil }
         return SurroundingText.around(selection: found, in: paragraph)
+    }
+
+    // Chromium answers neither range-end attribute, so the range is split in Frog first; WebKit answers both.
+    private func start(of range: CFTypeRef, holder: Element) -> CFTypeRef? {
+        source.markerEnds(range)?.start ?? source.parameterized(holder, "AXStartTextMarkerForTextMarkerRange", range)
+    }
+
+    private func end(of range: CFTypeRef, holder: Element) -> CFTypeRef? {
+        source.markerEnds(range)?.end ?? source.parameterized(holder, "AXEndTextMarkerForTextMarkerRange", range)
     }
 
     // MARK: Snapshot
