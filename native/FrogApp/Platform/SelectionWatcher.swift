@@ -1,6 +1,7 @@
 import AppKit
 import Carbon
 import FrogCore
+import os
 
 /// The selection bubble as `AppModel` starts and stops it.
 @MainActor protocol SelectionWatching: AnyObject {
@@ -103,6 +104,9 @@ struct BubbleState: Equatable {
     private var askable: [String: Bool] = [:]
     /// Apps already asked to expose their text, by process.
     private var asked: Set<pid_t> = []
+    /// Why a gesture showed the bubble or not, at debug level for `log stream --level debug --predicate
+    /// 'subsystem == "frog" && category == "selection-bubble"'`. Never the selected text.
+    private static let log = Logger(subsystem: "frog", category: "selection-bubble")
 
     init(reader: SelectionReading, presenter: SelectionBubblePresenting, hooks: Hooks, system: System = .live,
          clock: @escaping () -> Date = { Date() },
@@ -120,6 +124,7 @@ struct BubbleState: Equatable {
     func start() {
         guard !isRunning else { return }
         isRunning = true
+        Self.log.debug("watching selections")
         shiftDown = NSEvent.modifierFlags.contains(.shift)
         monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .rightMouseDown, .scrollWheel, .flagsChanged]) { [weak self] event in
             let raw = RawEvent(event)
@@ -144,6 +149,7 @@ struct BubbleState: Equatable {
         hideBubble()
         core = SelectionWatcherCore()
         isRunning = false
+        Self.log.debug("stopped watching selections")
     }
 
     /// A rule's shortcut is a Carbon hot key, which the key monitor never sees, so the rule tells the watcher
@@ -211,7 +217,15 @@ struct BubbleState: Equatable {
         if input == .scroll, shown == nil, core.pendingToken == nil, reading == 0 { return }
         generation += 1
         if case let .mouseUp(point, _, _) = input { lastMouseUp = point }
-        for effect in core.receive(input, now: now, options: hooks.options()) {
+        let effects = core.receive(input, now: now, options: hooks.options())
+        switch input {
+        case .mouseDown, .mouseUp, .shiftReleased, .applicationChanged:
+            Self.log.debug("\(String(describing: input), privacy: .public) → \(String(describing: effects), privacy: .public)")
+        case .scroll, .keyDown:
+            if !effects.isEmpty { Self.log.debug("\(input == .scroll ? "scroll" : "key", privacy: .public) → \(String(describing: effects), privacy: .public)") }
+        }
+        for effect in effects {
+            if case let .scheduleRead(_, _, gesture) = effect { Self.log.debug("read scheduled after \(String(describing: gesture), privacy: .public)") }
             switch effect {
             case .cancelPending:
                 pending?.cancel(); pending = nil
@@ -247,12 +261,18 @@ struct BubbleState: Equatable {
                                     writingEnabled: state.writingEnabled, accessibilityTrusted: state.accessibilityTrusted,
                                     frogFrontmost: front.pid == system.ownPID, secureInput: system.secureInput(),
                                     bundleID: front.bundleID, isGame: isGame(front), busy: state.busy)
-        guard SelectionBubblePolicy.mayRead(context, options: options) == nil else { return }
+        if let block = SelectionBubblePolicy.mayRead(context, options: options) {
+            Self.log.debug("not read in \(front.bundleID ?? "?", privacy: .public): \(String(describing: block), privacy: .public)")
+            return
+        }
         let started = generation
         reading += 1
         let read = await readSelection(front, options: options, started: started)
         reading -= 1
-        guard let result = read else { return }
+        guard let result = read else {
+            Self.log.debug("read in \(front.bundleID ?? "?", privacy: .public) dropped by a later input")
+            return
+        }
         var items: (visible: [BubbleItem], more: [BubbleItem]) = ([], [])
         var reselected = false
         if case let .selection(snapshot) = result {
@@ -261,14 +281,21 @@ struct BubbleState: Equatable {
             reselected = SelectionBubblePolicy.reselects(pointer: pointer, afterShortcut: afterShortcut,
                                                          bounds: snapshot.bounds, endBounds: snapshot.endBounds)
         }
-        guard SelectionBubblePolicy.mayShow(result, dismissed: core.dismissedFingerprint, shown: core.shownFingerprint,
-                                            offered: core.offeredFingerprint, reselected: reselected,
-                                            itemCount: items.visible.count + items.more.count) == nil,
-              case let .selection(snapshot) = result else { return }
+        if let block = SelectionBubblePolicy.mayShow(result, dismissed: core.dismissedFingerprint, shown: core.shownFingerprint,
+                                                     offered: core.offeredFingerprint, reselected: reselected,
+                                                     itemCount: items.visible.count + items.more.count) {
+            Self.log.debug("not shown in \(front.bundleID ?? "?", privacy: .public): \(String(describing: block), privacy: .public) after \(Self.kind(result), privacy: .public)")
+            return
+        }
+        guard case let .selection(snapshot) = result else { return }
         // At the end of the selection and as tall as all of it, so the list never opens over its earlier lines; a
         // mouse gesture without a position uses the mouse-up point.
         let anchor = SelectionAnchor.end(snapshot.endBounds, selection: snapshot.bounds)
-        guard anchor != nil || pointer != nil else { return }
+        guard anchor != nil || pointer != nil else {
+            Self.log.debug("not shown in \(front.bundleID ?? "?", privacy: .public): no position")
+            return
+        }
+        Self.log.debug("shown in \(front.bundleID ?? "?", privacy: .public) with \(items.visible.count + items.more.count) rules at \(String(describing: anchor), privacy: .public), pointer \(String(describing: pointer), privacy: .public)")
         shown = snapshot
         hovering = false
         core.shown(snapshot.fingerprint, now: clock())
@@ -284,6 +311,7 @@ struct BubbleState: Equatable {
     private func readSelection(_ app: BubbleApplication, options: SelectionBubbleOptions, started: Int) async -> SelectionReadResult? {
         let pid = app.pid
         var result = await reader.read(pid: pid, maxCharacters: options.maxCharacters, includeContext: false)
+        Self.log.debug("first read: \(Self.kind(result), privacy: .public)")
         guard started == generation else { return nil }
         switch result {
         case .empty, .unavailable: break
@@ -292,7 +320,9 @@ struct BubbleState: Equatable {
         var wait = Self.retryWait
         if options.exposeText, mayAskToExposeText(app), asked.insert(pid).inserted {
             // An app that did not answer in time is asked again with its next selection.
-            if await reader.exposeText(pid: pid) == .noAnswer { asked.remove(pid) }
+            let answer = await reader.exposeText(pid: pid)
+            Self.log.debug("asked to expose text: \(String(describing: answer), privacy: .public)")
+            if answer == .noAnswer { asked.remove(pid) }
             // The app builds its accessibility tree after the request. An older Electron app takes it while
             // answering that it refused, so every answer waits as long.
             wait = Self.exposeWait
@@ -300,7 +330,20 @@ struct BubbleState: Equatable {
         do { try await sleep(wait) } catch { return nil }
         guard started == generation, !Task.isCancelled else { return nil }
         result = await reader.read(pid: pid, maxCharacters: options.maxCharacters, includeContext: false)
+        Self.log.debug("second read: \(Self.kind(result), privacy: .public)")
         return started == generation ? result : nil
+    }
+
+    /// A read's outcome without its text.
+    private static func kind(_ result: SelectionReadResult) -> String {
+        switch result {
+        case let .selection(snapshot):
+            "selection of \((snapshot.text as NSString).length) characters, editable \(snapshot.isEditable), bounds \(snapshot.bounds.map { "\($0)" } ?? "none")"
+        case .empty: "empty"
+        case .secure: "secure"
+        case let .tooLong(length): "too long (\(length))"
+        case .unavailable: "unavailable"
+        }
     }
 
     static let exposeWait: TimeInterval = 0.35

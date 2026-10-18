@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import FrogCore
+import os
 
 /// Reads another app's selection through Accessibility only. It never copies, never touches the clipboard and never
 /// sends key events, so it can run without the person asking.
@@ -158,9 +159,14 @@ private struct SelectionReadPass {
 
     /// The most text read whole to find the context, in UTF-16 units.
     static let valueReadLimit = 200_000
+    /// Why a read found no selection, beside the watcher's lines. Roles only, never the text.
+    static let log = Logger(subsystem: "frog", category: "selection-bubble")
 
     func run(maxCharacters: Int, includeContext: Bool) -> SelectionReadResult {
-        guard let application = source.application(pid), let focused = source.focused(application) else { return .unavailable }
+        guard let application = source.application(pid), let focused = source.focused(application) else {
+            Self.log.debug("unavailable: no focused element")
+            return .unavailable
+        }
         let range = source.range(focused)
         let step = SelectionReadDecision.attributes(role: source.role(focused), subrole: source.subrole(focused),
                                                     range: range.map { (location: $0.location, length: $0.length) },
@@ -220,7 +226,10 @@ private struct SelectionReadPass {
     // MARK: Path B: text markers (WebKit, and Chromium while its accessibility is on)
 
     private func markers(focused: Element, application: Element, maxCharacters: Int, includeContext: Bool) -> SelectionReadResult {
-        guard let (holder, markerRange) = selectedMarkers(from: focused) else { return .unavailable }
+        guard let (holder, markerRange) = selectedMarkers(from: focused) else {
+            Self.log.debug("unavailable: no selected text markers near \(source.role(focused) ?? "no role", privacy: .public)")
+            return .unavailable
+        }
         // A long selection, such as a whole page, is not fetched just to be refused.
         if let length = (source.parameterized(holder, "AXLengthForTextMarkerRange", markerRange) as? NSNumber)?.intValue,
            length > maxCharacters {
@@ -231,7 +240,10 @@ private struct SelectionReadPass {
                                                        maxCharacters: maxCharacters) {
             return decided
         }
-        guard let text else { return .unavailable }
+        guard let text else {
+            Self.log.debug("unavailable: text markers without text in \(source.role(holder) ?? "no role", privacy: .public)")
+            return .unavailable
+        }
         // Where the selection starts, so the same word selected elsewhere on the page is another selection.
         let location = start(of: markerRange, holder: holder)
             .flatMap { source.parameterized(holder, "AXIndexForTextMarker", $0) as? NSNumber }?.intValue ?? 0

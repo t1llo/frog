@@ -713,6 +713,13 @@ scrolling past the room, the pointer after a resize) and
 `SelectionIsolationTests` (the watcher, controller and view name no clipboard, Copy or
 posted event).
 
+Where a gesture stops is logged at debug level, without the selected text:
+`/usr/bin/log stream --level debug --style compact --predicate 'subsystem == "frog" && category == "selection-bubble"'`
+shows each mouse press and release with its decision, the reads and their outcome (a read
+that found nothing says why, by Accessibility role), the answer to the request to expose
+text, and why the bubble did not show. On 2026-10-18 Helium refused `AXManualAccessibility`
+and every read there came back without a selection.
+
 Device checks, with isolated data, still to run:
 
 - [ ] With the bubble off, no global monitor exists.
