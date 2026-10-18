@@ -58,6 +58,8 @@ struct BubbleState: Equatable {
         var secureInput: @MainActor () -> Bool
         /// The app's `LSApplicationCategoryType`.
         var category: @MainActor (URL) -> String?
+        /// Whether the app ships VS Code's product file, as every editor built on VS Code does.
+        var builtOnVSCode: @MainActor (URL) -> Bool
 
         static let live = System(
             frontmost: {
@@ -66,7 +68,8 @@ struct BubbleState: Equatable {
             },
             ownPID: ProcessInfo.processInfo.processIdentifier,
             secureInput: { IsSecureEventInputEnabled() },
-            category: { Bundle(url: $0)?.object(forInfoDictionaryKey: "LSApplicationCategoryType") as? String })
+            category: { Bundle(url: $0)?.object(forInfoDictionaryKey: "LSApplicationCategoryType") as? String },
+            builtOnVSCode: { FileManager.default.fileExists(atPath: $0.appendingPathComponent("Contents/Resources/app/product.json").path) })
     }
 
     private let reader: SelectionReading
@@ -91,6 +94,8 @@ struct BubbleState: Equatable {
     private var shown: SelectionSnapshot?
     /// Whether an app is a game, by bundle identifier.
     private var games: [String: Bool] = [:]
+    /// Whether an app may be asked to expose its text, by bundle identifier.
+    private var askable: [String: Bool] = [:]
     /// Apps already asked to expose their text, by process.
     private var asked: Set<pid_t> = []
 
@@ -230,7 +235,7 @@ struct BubbleState: Equatable {
                                     bundleID: front.bundleID, isGame: isGame(front), busy: state.busy)
         guard SelectionBubblePolicy.mayRead(context, options: options) == nil else { return }
         let started = generation
-        guard let result = await readSelection(pid: front.pid, options: options, started: started) else { return }
+        guard let result = await readSelection(front, options: options, started: started) else { return }
         var items: (visible: [BubbleItem], more: [BubbleItem]) = ([], [])
         if case let .selection(snapshot) = result { items = hooks.items(snapshot) }
         guard SelectionBubblePolicy.mayShow(result, dismissed: core.dismissedFingerprint, shown: core.shownFingerprint,
@@ -251,19 +256,23 @@ struct BubbleState: Equatable {
     /// Reads the selection, and once more when it came back without one: an app that hides its text until asked is
     /// asked first, and other apps sometimes report a fresh selection a moment late. Nil when a later input or a stop
     /// came in between.
-    private func readSelection(pid: pid_t, options: SelectionBubbleOptions, started: Int) async -> SelectionReadResult? {
+    private func readSelection(_ app: BubbleApplication, options: SelectionBubbleOptions, started: Int) async -> SelectionReadResult? {
+        let pid = app.pid
         var result = await reader.read(pid: pid, maxCharacters: options.maxCharacters, includeContext: false)
         guard started == generation else { return nil }
         switch result {
         case .empty, .unavailable: break
         default: return result
         }
-        if options.exposeText, asked.insert(pid).inserted, await reader.exposeText(pid: pid) {
-            // The app builds its accessibility tree after the request.
-            do { try await sleep(Self.exposeWait) } catch { return nil }
-        } else {
-            do { try await sleep(Self.retryWait) } catch { return nil }
+        var wait = Self.retryWait
+        if options.exposeText, mayAskToExposeText(app), asked.insert(pid).inserted {
+            // An app that did not answer in time is asked again with its next selection.
+            if await reader.exposeText(pid: pid) == .noAnswer { asked.remove(pid) }
+            // The app builds its accessibility tree after the request. An older Electron app takes it while
+            // answering that it refused, so every answer waits as long.
+            wait = Self.exposeWait
         }
+        do { try await sleep(wait) } catch { return nil }
         guard started == generation, !Task.isCancelled else { return nil }
         result = await reader.read(pid: pid, maxCharacters: options.maxCharacters, includeContext: false)
         return started == generation ? result : nil
@@ -278,6 +287,14 @@ struct BubbleState: Equatable {
         let game = SelectionBubblePolicy.isGame(applicationCategory: app.bundleURL.flatMap(system.category))
         games[id] = game
         return game
+    }
+
+    private func mayAskToExposeText(_ app: BubbleApplication) -> Bool {
+        if let id = app.bundleID, let known = askable[id] { return known }
+        let may = SelectionBubblePolicy.mayAskToExposeText(bundleID: app.bundleID,
+                                                           builtOnVSCode: app.bundleURL.map(system.builtOnVSCode) ?? false)
+        if let id = app.bundleID { askable[id] = may }
+        return may
     }
 
     // MARK: The bubble

@@ -185,6 +185,58 @@ final class SelectionWatcherTests: XCTestCase {
         XCTAssertTrue(fixture.presenter.shows.isEmpty)
     }
 
+    func testCodeEditorsAreNeverAskedToExposeTheirText() async throws {
+        let editors: [(Fixture) -> Void] = [
+            { $0.frontmost.bundleID = "com.microsoft.VSCode" },
+            { $0.frontmost.bundleID = "com.example.fork"; $0.builtOnVSCode = true },
+        ]
+        for editor in editors {
+            let fixture = Fixture()
+            editor(fixture)
+            fixture.reader.result = .unavailable
+            fixture.reader.exposes = .selection(Self.snapshot())
+            fixture.drag()
+            try await waitUntil { fixture.reader.calls.count == 2 }
+            try await Task.sleep(for: .milliseconds(20))
+            XCTAssertTrue(fixture.reader.exposeRequests.isEmpty, "Its screen reader mode would turn on")
+            XCTAssertTrue(fixture.presenter.shows.isEmpty)
+            XCTAssertEqual(fixture.waits.last, SelectionWatcher.retryWait, "Read again as any other app")
+        }
+    }
+
+    func testAnAppThatDidNotAnswerInTimeIsAskedAgainWithItsNextSelection() async throws {
+        let fixture = Fixture()
+        fixture.reader.result = .unavailable
+        fixture.reader.exposes = .selection(Self.snapshot())
+        fixture.reader.unansweredRequests = 1
+        fixture.drag()
+        try await waitUntil { fixture.reader.calls.count == 2 }
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertTrue(fixture.presenter.shows.isEmpty)
+        XCTAssertEqual(fixture.reader.exposeRequests, [Fixture.pid])
+
+        fixture.drag()
+        try await waitUntil { fixture.presenter.shows.count == 1 }
+        XCTAssertEqual(fixture.reader.exposeRequests, [Fixture.pid, Fixture.pid])
+
+        // It answered, so a later empty read asks no more.
+        fixture.reader.result = .unavailable
+        fixture.drag()
+        try await waitUntil { fixture.reader.calls.count == 6 }
+        XCTAssertEqual(fixture.reader.exposeRequests.count, 2)
+    }
+
+    func testAnAppThatRefusesIsGivenAsLongToBuildItsTree() async throws {
+        // An Electron app from before mid-2023 takes the request while answering that it refused.
+        let fixture = Fixture()
+        fixture.reader.result = .unavailable
+        fixture.drag()
+        try await waitUntil { fixture.reader.calls.count == 2 }
+        XCTAssertEqual(fixture.reader.exposeRequests, [Fixture.pid])
+        XCTAssertEqual(fixture.waits.count, 2, "The settle, then the pause before reading again")
+        XCTAssertEqual(fixture.waits.last, SelectionWatcher.exposeWait)
+    }
+
     static func snapshot(_ text: String = "levee", element: Int = 1, end: CGRect? = SelectionWatcherTests.end) -> SelectionSnapshot {
         SelectionSnapshot(text: text, bounds: end, endBounds: end, context: nil, source: nil, isEditable: false,
                           pid: Fixture.pid, bundleID: "com.apple.Safari", applicationName: "Safari",
@@ -212,6 +264,7 @@ private final class Fixture {
     var frontmost = BubbleApplication(pid: Fixture.pid, bundleID: "com.apple.Safari", bundleURL: URL(fileURLWithPath: "/Applications/Safari.app"))
     var secure = false
     var category: String?
+    var builtOnVSCode = false
     var options = SelectionBubbleOptions()
     let items = [BubbleItem(id: UUID(), title: "Explain", symbol: SelectionBubbleItems.answerSymbol, answers: true)]
     var ran: [(BubbleItem, SelectionSnapshot)] = []
@@ -220,15 +273,22 @@ private final class Fixture {
     init() {
         let system = SelectionWatcher.System(frontmost: { [unowned self] in self.frontmost }, ownPID: Self.ownPID,
                                              secureInput: { [unowned self] in self.secure },
-                                             category: { [unowned self] _ in self.category })
+                                             category: { [unowned self] _ in self.category },
+                                             builtOnVSCode: { [unowned self] _ in self.builtOnVSCode })
         watcher = SelectionWatcher(
             reader: reader, presenter: presenter,
             hooks: .init(options: { [unowned self] in self.options }, state: { [unowned self] in self.state },
                          items: { [unowned self] _ in (self.items, []) }, run: { [unowned self] in self.ran.append(($0, $1)) }),
             system: system, clock: { [unowned self] in self.now },
             // The settle passes at once; the idle check waits for the test to call it.
-            sleep: { delay in if delay >= 1 { try await Task.sleep(for: .seconds(3_600)) } else { await Task.yield() } })
+            sleep: { [unowned self] delay in
+                if delay >= 1 { try await Task.sleep(for: .seconds(3_600)) } else { await self.waited(delay); await Task.yield() }
+            })
     }
+
+    /// The waits shorter than the idle check's, in order: settles and the pause before a read again.
+    private(set) var waits: [TimeInterval] = []
+    private func waited(_ delay: TimeInterval) { waits.append(delay) }
 
     func drag(from start: CGPoint = CGPoint(x: 10, y: 10), to end: CGPoint = CGPoint(x: 80, y: 10)) {
         watcher.handle(.mouseDown(start, clickCount: 1, right: false), now: now)
@@ -254,13 +314,20 @@ private final class Reader: SelectionReading, @unchecked Sendable {
         get { lock.withLock { exposed } }
         set { lock.withLock { exposed = newValue } }
     }
+    /// The app is too busy to answer the next requests, one per entry.
+    private var silent = 0
+    var unansweredRequests: Int {
+        get { lock.withLock { silent } }
+        set { lock.withLock { silent = newValue } }
+    }
     var exposeRequests: [pid_t] { lock.withLock { asked } }
-    func exposeText(pid: pid_t) async -> Bool {
+    func exposeText(pid: pid_t) async -> ExposeTextAnswer {
         lock.withLock {
             asked.append(pid)
-            guard let exposed else { return false }
+            if silent > 0 { silent -= 1; return .noAnswer }
+            guard let exposed else { return .refused }
             current = exposed
-            return true
+            return .exposed
         }
     }
     func read(pid: pid_t, maxCharacters: Int, includeContext: Bool) async -> SelectionReadResult {

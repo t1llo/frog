@@ -231,6 +231,20 @@ public enum SelectionBubblePolicy {
         applicationCategory?.lowercased().contains("games") ?? false
     }
 
+    /// VS Code and the editors built on it take an app that asks for their text for a screen reader: with
+    /// `editor.accessibilitySupport` on `auto`, its default, they switch to their screen reader mode, which changes
+    /// how the editor behaves and plays sounds. So they are never asked.
+    public static let codeEditors: Set<String> = [
+        "com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.vscodium",
+        "com.todesktop.230313mzl4w4u92", "com.exafunction.windsurf",
+    ]
+
+    /// Whether the bubble may ask an app to expose its text. `builtOnVSCode` is true for an app that ships VS
+    /// Code's product file, which catches the editors not listed by name.
+    public static func mayAskToExposeText(bundleID: String?, builtOnVSCode: Bool) -> Bool {
+        !builtOnVSCode && !(bundleID.map(codeEditors.contains) ?? false)
+    }
+
     /// The status line on the Explain page.
     public static func status(explainEnabled: Bool, bubbleEnabled: Bool, accessibilityTrusted: Bool) -> String? {
         guard bubbleEnabled else { return nil }

@@ -710,8 +710,12 @@ Device checks, with isolated data, still to run:
 - [ ] With the bubble off, no global monitor exists.
 - [ ] The bubble appears within about 0.5 s in Safari, Notes, Mail, Xcode, TextEdit and
       Terminal.app.
-- [ ] It does not appear in a password field, `sudo` in Terminal, 1Password, a game, VS Code
-      or Obsidian.
+- [ ] It does not appear in a password field, `sudo` in Terminal, 1Password or a game.
+- [ ] With **Chrome and Electron apps** on, in Chrome, a Chromium browser such as Helium,
+      Slack and Obsidian, it appears from the first or second selection on, at the end of
+      the selected text, also on a page that is not editable.
+- [ ] In VS Code and Cursor with `editor.accessibilitySupport` on `auto`, selecting text
+      leaves the status bar without "Screen Reader Optimized"; no bubble appears there.
 - [ ] `NSPasteboard.general.changeCount` is unchanged across selecting, the bubble
       appearing, and Explain run from it.
 - [ ] The frontmost app and its focused field are unchanged; typing continues in the field.

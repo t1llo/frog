@@ -348,10 +348,12 @@ Copy restores the clipboard, so Electron apps, Chromium without accessibility an
 apps still answer. Writing rules keep `captureSelection()`, which they need to replace text.
 
 `SelectionReader.swift` never names the pasteboard, `ClipboardSelection` or
-`FreshSelectionCopy`, never posts events and never sets `AXManualAccessibility` or
-`AXEnhancedUserInterface`, which would make Chromium and Electron apps build their whole
-accessibility tree at a cost in memory and CPU. `SelectionIsolationTests` scans the file
-for these names.
+`FreshSelectionCopy`, never posts events and never sets `AXEnhancedUserInterface`, after
+which Chromium and Electron apps animate window changes. Its one request of another app is
+`exposeText(pid:)`, which sets `AXManualAccessibility` on the application element with the
+same 0.25-second timeout: success is `exposed`, a timeout is `noAnswer`, anything else is
+`refused`. `SelectionIsolationTests` scans the file for these names and allows
+`AXManualAccessibility` there only, once.
 
 ### Answer panel
 
@@ -502,10 +504,22 @@ context, with no shortcut wait and no clipboard. A Writing rule runs through
 watcher, the controller and the view as well as the reader for any clipboard, Copy, posted
 event or accessibility-forcing attribute.
 
-Apps that do not expose their selection through Accessibility show no bubble: Electron apps
-such as VS Code, Slack and Obsidian, GPU terminals, canvas web apps such as Google Docs, and
-Chromium browsers unless their accessibility is already on. Their rules still work from a
-shortcut through the compatibility Copy.
+An empty or unavailable read is read once more. Before that, while **Chrome and Electron
+apps** (`explain.bubble-expose-text`) is on, the watcher asks the app once per process to
+expose its text (`exposeText(pid:)`) and waits 0.35 s, so Chromium browsers and Electron apps
+such as Slack and Obsidian build their accessibility tree; otherwise it waits 0.15 s, for an
+app that reports a fresh selection late. An app that did not answer in time is asked again
+with its next selection; an app that refused is not, but still gets the longer wait, since
+Electron releases from before May 2023 take the request while answering that they refused.
+`SelectionBubblePolicy.mayAskToExposeText` never lets it ask VS Code or an editor built on
+it: the bundle identifiers in `codeEditors`, and any app that ships
+`Contents/Resources/app/product.json`, checked once per bundle identifier. With
+`editor.accessibilitySupport` on `auto`, its default, such an editor takes the request for a
+screen reader and switches to its screen reader mode.
+
+Apps that still do not expose their selection through Accessibility show no bubble: editors
+built on VS Code unless their screen reader mode is on, GPU terminals and canvas web apps
+such as Google Docs. Their rules still work from a shortcut through the compatibility Copy.
 
 ## Data and execution
 

@@ -7,13 +7,22 @@ import FrogCore
 protocol SelectionReading: Sendable {
     func read(pid: pid_t, maxCharacters: Int, includeContext: Bool) async -> SelectionReadResult
     /// Asks the app to expose its text to Accessibility. Chrome, Chromium browsers such as Helium and Arc, and
-    /// Electron apps such as Slack and VS Code keep their text hidden until an assistive app asks, so the bubble
-    /// found no selection there. True when the app took the request.
-    func exposeText(pid: pid_t) async -> Bool
+    /// Electron apps such as Slack keep their text hidden until an assistive app asks, so the bubble found no
+    /// selection there.
+    func exposeText(pid: pid_t) async -> ExposeTextAnswer
+}
+
+/// How an app answered the request to expose its text.
+enum ExposeTextAnswer: Equatable, Sendable {
+    case exposed
+    /// The app does not know the request. Electron releases from before May 2023 say so too, although they take it.
+    case refused
+    /// The app did not answer in time, so it may be asked again.
+    case noAnswer
 }
 
 extension SelectionReading {
-    func exposeText(pid: pid_t) async -> Bool { false }
+    func exposeText(pid: pid_t) async -> ExposeTextAnswer { .refused }
 }
 
 /// The Accessibility calls a selection read makes. The live source hands out `AXUIElement`s; tests hand out their own
@@ -112,13 +121,16 @@ final class SelectionReader: SelectionReading {
     /// the enhanced-interface attribute that VoiceOver sets.
     static let manualAccessibility = "AXManualAccessibility"
 
-    func exposeText(pid: pid_t) async -> Bool {
+    func exposeText(pid: pid_t) async -> ExposeTextAnswer {
         await withCheckedContinuation { continuation in
             queue.async {
                 let application = AXUIElementCreateApplication(pid)
                 AXUIElementSetMessagingTimeout(application, SelectionAXSource.timeout)
-                let result = AXUIElementSetAttributeValue(application, Self.manualAccessibility as CFString, kCFBooleanTrue)
-                continuation.resume(returning: result == .success)
+                switch AXUIElementSetAttributeValue(application, Self.manualAccessibility as CFString, kCFBooleanTrue) {
+                case .success: continuation.resume(returning: .exposed)
+                case .cannotComplete: continuation.resume(returning: .noAnswer)
+                default: continuation.resume(returning: .refused)
+                }
             }
         }
     }

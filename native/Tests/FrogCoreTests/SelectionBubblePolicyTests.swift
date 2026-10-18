@@ -78,6 +78,18 @@ final class SelectionBubblePolicyTests: XCTestCase {
                        "On: select text in another app to see Explain")
     }
 
+    func testEditorsBuiltOnVSCodeAreNeverAskedToExposeTheirText() {
+        for id in ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.todesktop.230313mzl4w4u92",
+                   "com.exafunction.windsurf", "com.vscodium"] {
+            XCTAssertFalse(SelectionBubblePolicy.mayAskToExposeText(bundleID: id, builtOnVSCode: false), id)
+        }
+        XCTAssertFalse(SelectionBubblePolicy.mayAskToExposeText(bundleID: "com.example.fork", builtOnVSCode: true))
+        XCTAssertFalse(SelectionBubblePolicy.mayAskToExposeText(bundleID: nil, builtOnVSCode: true))
+        XCTAssertTrue(SelectionBubblePolicy.mayAskToExposeText(bundleID: "com.tinyspeck.slackmacgap", builtOnVSCode: false))
+        XCTAssertTrue(SelectionBubblePolicy.mayAskToExposeText(bundleID: "com.google.Chrome", builtOnVSCode: false))
+        XCTAssertTrue(SelectionBubblePolicy.mayAskToExposeText(bundleID: nil, builtOnVSCode: false))
+    }
+
     func testIsGame() {
         XCTAssertTrue(SelectionBubblePolicy.isGame(applicationCategory: "public.app-category.games"))
         XCTAssertTrue(SelectionBubblePolicy.isGame(applicationCategory: "public.app-category.action-games"))

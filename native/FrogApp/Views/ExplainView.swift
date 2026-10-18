@@ -105,7 +105,7 @@ struct ExplainView: View {
                 bubbleRules
                 Divider()
                 CompactRow(title: "Chrome and Electron apps",
-                           detail: "Chrome, Arc, Helium, Slack, VS Code and similar apps hide their text from Accessibility until an app asks. Frog asks them once, so the bubble appears there too; they use a little more memory afterwards.") {
+                           detail: "Chrome, Arc, Helium, Slack and similar apps hide their text from Accessibility until an app asks. Frog asks each once, so the bubble appears there too; they use a little more memory afterwards. VS Code, Cursor and other editors built on VS Code are never asked, because they would switch to their screen reader mode.") {
                     Toggle("Chrome and Electron apps", isOn: Binding(get: { settings.bubbleExposeText }, set: { value in
                         update { $0.bubbleExposeText = value }
                     })).labelsHidden().toggleStyle(.switch)
