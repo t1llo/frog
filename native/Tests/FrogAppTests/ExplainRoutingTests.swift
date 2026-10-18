@@ -432,6 +432,38 @@ final class ExplainRoutingTests: XCTestCase {
         XCTAssertTrue(setup.streams.requests.isEmpty)
     }
 
+    func testTheBubbleOffersTheRulesAsTheyAreWhenItShows() async throws {
+        let setup = try Setup(test: self)
+        var explain = try await setup.enableExplain()
+        let field = Self.snapshot("levee", context: nil, element: 1)
+        func offered() -> [BubbleItem] { let items = setup.model.bubbleItems(for: field); return items.visible + items.more }
+        let writing = setup.model.configuration.rules.filter { $0.enabled && $0.category == .text && !$0.answersInPanel }
+        XCTAssertEqual(offered().map(\.id), [explain.id] + writing.map(\.id))
+        XCTAssertEqual(setup.model.bubbleItems(for: field).visible.count, 3, "past four, More holds the rest")
+
+        // Renamed since the last bubble: the next one shows the new name, without a restart.
+        explain.name = "Erklären"
+        try setup.model.saveRule(explain)
+        XCTAssertEqual(offered().first?.title, "Erklären")
+
+        let proofread = try XCTUnwrap(writing.first)
+        try setup.model.updateToolkit { toolkit in
+            var settings = toolkit.explain ?? ExplainSettings()
+            settings.bubbleHiddenRules = [proofread.id]
+            toolkit.explain = settings
+        }
+        XCTAssertFalse(offered().contains { $0.id == proofread.id })
+        try setup.model.deleteRule(id: proofread.id)
+        XCTAssertEqual(setup.model.configuration.preferences.explainSettings.bubbleHiddenRules, [],
+                       "a deleted rule leaves the hidden list too")
+
+        try await setup.model.setFeature(.writing, enabled: false)
+        XCTAssertEqual(offered().map(\.id), [explain.id])
+        explain.providerID = nil
+        try setup.model.saveRule(explain)
+        XCTAssertTrue(offered().isEmpty, "a rule without a model is left out")
+    }
+
     private static func snapshot(_ text: String, context: String?, element: Int) -> SelectionSnapshot {
         SelectionSnapshot(text: text, bounds: anchor, endBounds: anchor, context: context, source: nil, isEditable: true,
                           pid: FakeSelectionReader.pid, bundleID: "com.apple.Safari", applicationName: "Safari",

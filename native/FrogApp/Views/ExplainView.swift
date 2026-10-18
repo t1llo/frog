@@ -31,6 +31,7 @@ struct ExplainView: View {
                 }
                 if settings.notes { notesSection }
                 bubbleSection
+                if settings.selectionBubble { bubbleRulesSection }
             }
         }
     }
@@ -102,7 +103,6 @@ struct ExplainView: View {
                 }
             }
             if settings.selectionBubble {
-                bubbleRules
                 Divider()
                 CompactRow(title: "Chrome and Electron apps",
                            detail: "Chrome, Arc, Helium, Slack and similar apps hide their text from Accessibility until an app asks. Frog asks each once, so the bubble appears there too; they use a little more memory afterwards. VS Code, Cursor and other editors built on VS Code are never asked, because they would switch to their screen reader mode.") {
@@ -163,41 +163,53 @@ struct ExplainView: View {
         }
     }
 
-    /// The rules the bubble can offer, each with a switch; the first four show in the bar, the rest under More.
-    @ViewBuilder private var bubbleRules: some View {
+    /// The rules the bubble can offer, each with a switch, listed like the rules on the Rules and Windows pages.
+    private var bubbleRulesSection: some View {
         let preferences = model.configuration.preferences
         let rules = SelectionBubbleItems.candidates(rules: model.configuration.rules, explainEnabled: preferences.featureEnabled(.explain),
                                                     writingEnabled: preferences.featureEnabled(.writing))
         let hidden = Set(settings.bubbleHiddenRules)
-        Divider()
-        CompactRow(title: "Rules in the bubble",
-                   detail: "Answer rules show everywhere, Writing rules only in text fields, in this order. Past four, the rest open from the arrow at the end.") {
-            EmptyView()
-        }
-        ForEach(rules) { rule in
-            HStack(spacing: 8) {
-                Image(systemName: rule.answersInPanel ? SelectionBubbleItems.answerSymbol : SelectionBubbleItems.writingSymbol)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(rule.answersInPanel ? FrogStyle.accent : FrogStyle.muted)
-                    .frame(width: 18).accessibilityHidden(true)
-                Text(rule.name).font(.system(size: 12)).lineLimit(1)
-                Text(L10n.text(rule.answersInPanel ? "Answer" : "Replace selection")).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                Spacer(minLength: 8)
-                if let hotkey = rule.hotkey {
-                    Text(HotkeyManager.display(hotkey)).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+        let lastID = rules.last?.id
+        return SettingsSection(title: "Rules in the bubble") {
+            Text(L10n.text(rules.isEmpty ? "Turn on a rule on this page or in Writing to offer it in the bubble."
+                    : "Answer rules show everywhere, Writing rules only in text fields, in this order. Past four, the rest open from the arrow at the end."))
+                .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+            VStack(spacing: 0) {
+                ForEach(rules) { rule in
+                    bubbleRuleRow(rule, shown: !hidden.contains(rule.id))
+                        .padding(.vertical, 8)
+                        .overlay(alignment: .bottom) {
+                            if rule.id != lastID { Divider().opacity(0.5) }
+                        }
                 }
-                Toggle(rule.name, isOn: Binding(get: { !hidden.contains(rule.id) }, set: { shown in
-                    update { settings in
-                        settings.bubbleHiddenRules.removeAll { $0 == rule.id }
-                        if !shown { settings.bubbleHiddenRules.append(rule.id) }
-                    }
-                })).labelsHidden().toggleStyle(.switch).controlSize(.mini)
-            }.padding(.leading, 4)
+            }
         }
-        if rules.isEmpty {
-            Text(L10n.text("Turn on a rule on this page or in Writing to offer it in the bubble.")).font(FrogType.caption)
-                .foregroundStyle(FrogStyle.muted).padding(.leading, 4)
+    }
+
+    private func bubbleRuleRow(_ rule: Rule, shown: Bool) -> some View {
+        let configured = (try? model.resolved(rule)) != nil
+        return HStack(spacing: 10) {
+            Image(systemName: rule.answersInPanel ? SelectionBubbleItems.answerSymbol : SelectionBubbleItems.writingSymbol)
+                .font(.system(size: 13)).foregroundStyle(FrogStyle.muted).frame(width: 24).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(rule.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                Text(configured ? Self.bubbleRuleDetail(rule) : L10n.text("Not in the bubble until it has a text model"))
+                    .font(.system(size: 10)).foregroundStyle(configured ? FrogStyle.muted : FrogStyle.warning).lineLimit(1)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            Toggle("Show \(rule.name) in the bubble", isOn: Binding(get: { shown }, set: { show in
+                update { settings in
+                    settings.bubbleHiddenRules.removeAll { $0 == rule.id }
+                    if !show { settings.bubbleHiddenRules.append(rule.id) }
+                }
+            })).labelsHidden().toggleStyle(.switch).controlSize(.mini)
         }
+    }
+
+    /// What the rule does from the bubble, and its shortcut.
+    static func bubbleRuleDetail(_ rule: Rule) -> String {
+        let kind = L10n.text(rule.answersInPanel ? "Answer" : "Replace selection, in text fields")
+        return ([kind] + [rule.hotkey.map(HotkeyManager.display)].compactMap { $0 }).joined(separator: " · ")
     }
 
     private func characters(_ count: Int) -> String {

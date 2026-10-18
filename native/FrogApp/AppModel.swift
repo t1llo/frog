@@ -727,6 +727,11 @@ final class AppModel: ObservableObject {
     func deleteRule(id: UUID) throws {
         var candidate = configuration
         candidate.rules.removeAll { $0.id == id }
+        // The bubble's list of hidden rules forgets it too.
+        if var explain = candidate.preferences.toolkit?.explain, explain.bubbleHiddenRules.contains(id) {
+            explain.bubbleHiddenRules.removeAll { $0 == id }
+            candidate.preferences.toolkit?.explain = explain
+        }
         try persist(candidate)
         registerHotkeys()
         configureWindowSwitcher()
@@ -1278,7 +1283,8 @@ final class AppModel: ObservableObject {
                            busy: isProcessing || dictation.active || isRecordingShortcut || answerPresenter.isKey)
     }
 
-    private func bubbleItems(for snapshot: SelectionSnapshot) -> (visible: [BubbleItem], more: [BubbleItem]) {
+    /// Built from the rules as they are when the bubble shows, so a rule changed since appears as it is now.
+    func bubbleItems(for snapshot: SelectionSnapshot) -> (visible: [BubbleItem], more: [BubbleItem]) {
         let preferences = configuration.preferences
         return SelectionBubbleItems.items(rules: configuration.rules, explainEnabled: preferences.featureEnabled(.explain),
                                           writingEnabled: preferences.featureEnabled(.writing), editable: snapshot.isEditable,
