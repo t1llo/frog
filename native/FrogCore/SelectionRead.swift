@@ -17,7 +17,9 @@ public struct SelectionFingerprint: Hashable, Sendable {
     }
 }
 
-/// A selection read through Accessibility only, never through the clipboard.
+/// A selection read through Accessibility only, never through the clipboard. In an app that keeps its text from
+/// Accessibility, a gesture there is offered without text (`textHidden`), and a rule picked for it copies the
+/// selection as the rule's shortcut does.
 public struct SelectionSnapshot: Equatable, Sendable {
     public var text: String
     /// Cocoa coordinates: the union of the selection, or its last character when the union is very tall.
@@ -33,12 +35,24 @@ public struct SelectionSnapshot: Equatable, Sendable {
     public var bundleID: String?
     public var applicationName: String?
     public var fingerprint: SelectionFingerprint
+    /// The app keeps its text from Accessibility, so `text` is empty and nothing about the selection is known.
+    public var textHidden: Bool
 
     public init(text: String, bounds: CGRect?, endBounds: CGRect?, context: String?, source: String?, isEditable: Bool,
-                pid: Int32, bundleID: String?, applicationName: String?, fingerprint: SelectionFingerprint) {
+                pid: Int32, bundleID: String?, applicationName: String?, fingerprint: SelectionFingerprint,
+                textHidden: Bool = false) {
         self.text = text; self.bounds = bounds; self.endBounds = endBounds; self.context = context; self.source = source
         self.isEditable = isEditable; self.pid = pid; self.bundleID = bundleID; self.applicationName = applicationName
-        self.fingerprint = fingerprint
+        self.fingerprint = fingerprint; self.textHidden = textHidden
+    }
+
+    /// A gesture in an app that keeps its text hidden. Each gesture is its own selection, told apart by `gesture`,
+    /// and counts as outside a text field, so the bubble offers answer rules only.
+    public static func hidden(pid: Int32, bundleID: String?, gesture: Int) -> SelectionSnapshot {
+        SelectionSnapshot(text: "", bounds: nil, endBounds: nil, context: nil, source: nil, isEditable: false, pid: pid,
+                          bundleID: bundleID, applicationName: nil,
+                          fingerprint: SelectionFingerprint(pid: pid, element: 0, location: gesture, length: 0, textHash: 0),
+                          textHidden: true)
     }
 }
 

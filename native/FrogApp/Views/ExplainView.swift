@@ -129,11 +129,11 @@ struct ExplainView: View {
                 })).labelsHidden().toggleStyle(.switch)
             }
             Divider()
-            CompactRow(title: "Chrome and Electron apps", detail: "Asks them once to show their text; they use a little more memory.") {
+            CompactRow(title: "Chrome and Electron apps", detail: "Shows the bubble where you select with the mouse; the text is copied when you pick a rule.") {
                 Toggle("Chrome and Electron apps", isOn: Binding(get: { settings.bubbleExposeText }, set: { value in
                     update { $0.bubbleExposeText = value }
                 })).labelsHidden().toggleStyle(.switch)
-                    .help(L10n.text("Chrome, Arc, Slack and similar apps hide their text until an app asks. Editors built on VS Code are never asked, because they would switch to screen reader mode."))
+                    .help(L10n.text("Chrome, Arc, Helium, Slack and similar apps hide their text from other apps, so the bubble offers your answer rules without reading it. Editors built on VS Code show no bubble."))
             }
             Divider()
             CompactRow(title: "Longest selection") {

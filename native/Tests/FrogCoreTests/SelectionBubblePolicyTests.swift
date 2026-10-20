@@ -113,16 +113,28 @@ final class SelectionBubblePolicyTests: XCTestCase {
                      "the switch already says the bubble is on")
     }
 
-    func testEditorsBuiltOnVSCodeAreNeverAskedToExposeTheirText() {
+    func testEditorsBuiltOnVSCodeAreNeverOfferedWithoutText() {
         for id in ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.todesktop.230313mzl4w4u92",
                    "com.exafunction.windsurf", "com.vscodium"] {
-            XCTAssertFalse(SelectionBubblePolicy.mayAskToExposeText(bundleID: id, builtOnVSCode: false), id)
+            XCTAssertFalse(SelectionBubblePolicy.offersWithoutText(bundleID: id, builtOnVSCode: false), id)
         }
-        XCTAssertFalse(SelectionBubblePolicy.mayAskToExposeText(bundleID: "com.example.fork", builtOnVSCode: true))
-        XCTAssertFalse(SelectionBubblePolicy.mayAskToExposeText(bundleID: nil, builtOnVSCode: true))
-        XCTAssertTrue(SelectionBubblePolicy.mayAskToExposeText(bundleID: "com.tinyspeck.slackmacgap", builtOnVSCode: false))
-        XCTAssertTrue(SelectionBubblePolicy.mayAskToExposeText(bundleID: "com.google.Chrome", builtOnVSCode: false))
-        XCTAssertTrue(SelectionBubblePolicy.mayAskToExposeText(bundleID: nil, builtOnVSCode: false))
+        XCTAssertFalse(SelectionBubblePolicy.offersWithoutText(bundleID: "com.example.fork", builtOnVSCode: true))
+        XCTAssertFalse(SelectionBubblePolicy.offersWithoutText(bundleID: nil, builtOnVSCode: true))
+        XCTAssertTrue(SelectionBubblePolicy.offersWithoutText(bundleID: "com.tinyspeck.slackmacgap", builtOnVSCode: false))
+        XCTAssertTrue(SelectionBubblePolicy.offersWithoutText(bundleID: "com.google.Chrome", builtOnVSCode: false))
+        XCTAssertTrue(SelectionBubblePolicy.offersWithoutText(bundleID: nil, builtOnVSCode: false))
+    }
+
+    func testWithoutTextTheGestureMustEndInsideAWindowBelowItsTitleBarAndLeftOfItsScrollBar() {
+        let window = CGRect(x: 100, y: 100, width: 800, height: 600)
+        XCTAssertNil(SelectionBubblePolicy.mayOfferWithoutText(pointer: CGPoint(x: 400, y: 400), window: window))
+        XCTAssertEqual(SelectionBubblePolicy.mayOfferWithoutText(pointer: CGPoint(x: 400, y: 680), window: window),
+                       .windowChrome, "The tabs of a window being dragged")
+        XCTAssertEqual(SelectionBubblePolicy.mayOfferWithoutText(pointer: CGPoint(x: 890, y: 400), window: window),
+                       .windowChrome, "The scroll bar")
+        XCTAssertEqual(SelectionBubblePolicy.mayOfferWithoutText(pointer: CGPoint(x: 50, y: 400), window: window), .noPosition)
+        XCTAssertEqual(SelectionBubblePolicy.mayOfferWithoutText(pointer: CGPoint(x: 400, y: 400), window: nil), .noPosition)
+        XCTAssertEqual(SelectionBubblePolicy.mayOfferWithoutText(pointer: nil, window: window), .noPosition, "Shift and the arrow keys")
     }
 
     func testIsGame() {

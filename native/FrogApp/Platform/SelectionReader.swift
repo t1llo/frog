@@ -4,30 +4,11 @@ import FrogCore
 import os
 
 /// Reads another app's selection through Accessibility only. It never copies, never touches the clipboard and never
-/// sends key events, so it can run without the person asking.
+/// sends key events, so it can run without the person asking. It never asks an app to change how much it exposes:
+/// Chrome and Electron apps would then build their whole accessibility tree, as for a screen reader, and stay
+/// slower for as long as they run.
 protocol SelectionReading: Sendable {
     func read(pid: pid_t, maxCharacters: Int, includeContext: Bool) async -> SelectionReadResult
-    /// Asks the app to expose its text to Accessibility. Chrome, Chromium browsers such as Helium and Arc, and
-    /// Electron apps such as Slack keep their text hidden until an assistive app asks, so the bubble found no
-    /// selection there.
-    func exposeText(pid: pid_t) async -> ExposeTextAnswer
-    /// Asks the app to expose its text as VoiceOver does. Chromium browsers such as Chrome, Helium and Arc refuse
-    /// `exposeText`, which only Electron knows, and keep their page text hidden until a screen reader is here.
-    func exposeTextToScreenReader(pid: pid_t) async -> ExposeTextAnswer
-}
-
-/// How an app answered the request to expose its text.
-enum ExposeTextAnswer: Equatable, Sendable {
-    case exposed
-    /// The app does not know the request. Electron releases from before May 2023 say so too, although they take it.
-    case refused
-    /// The app did not answer in time, so it may be asked again.
-    case noAnswer
-}
-
-extension SelectionReading {
-    func exposeText(pid: pid_t) async -> ExposeTextAnswer { .refused }
-    func exposeTextToScreenReader(pid: pid_t) async -> ExposeTextAnswer { .refused }
 }
 
 /// The Accessibility calls a selection read makes. The live source hands out `AXUIElement`s; tests hand out their own
@@ -123,36 +104,6 @@ final class SelectionReader: SelectionReading {
         self.queue = queue
     }
 
-    /// The attribute Chromium and Electron read as "an assistive app is here", without the window side effects of
-    /// the enhanced-interface attribute that VoiceOver sets.
-    static let manualAccessibility = "AXManualAccessibility"
-
-    /// The attribute VoiceOver sets. Chromium then builds its whole accessibility tree, and animates window changes
-    /// that another app makes, which Frog's own window actions turn it off for.
-    static let screenReader = "AXEnhancedUserInterface"
-
-    func exposeText(pid: pid_t) async -> ExposeTextAnswer {
-        await set(Self.manualAccessibility, pid: pid)
-    }
-
-    func exposeTextToScreenReader(pid: pid_t) async -> ExposeTextAnswer {
-        await set(Self.screenReader, pid: pid)
-    }
-
-    private func set(_ attribute: String, pid: pid_t) async -> ExposeTextAnswer {
-        await withCheckedContinuation { continuation in
-            queue.async {
-                let application = AXUIElementCreateApplication(pid)
-                AXUIElementSetMessagingTimeout(application, SelectionAXSource.timeout)
-                switch AXUIElementSetAttributeValue(application, attribute as CFString, kCFBooleanTrue) {
-                case .success: continuation.resume(returning: .exposed)
-                case .cannotComplete: continuation.resume(returning: .noAnswer)
-                default: continuation.resume(returning: .refused)
-                }
-            }
-        }
-    }
-
     func read(pid: pid_t, maxCharacters: Int, includeContext: Bool) async -> SelectionReadResult {
         let source = source
         let screens = await MainActor.run { source.screens() }
@@ -239,7 +190,7 @@ private struct SelectionReadPass {
         return SurroundingText.around(selection: NSRange(location: range.location - start, length: range.length), in: window)
     }
 
-    // MARK: Path B: text markers (WebKit, and Chromium while its accessibility is on)
+    // MARK: Path B: text markers (WebKit, and Chromium while a screen reader or another app turned its accessibility on)
 
     private func markers(focused: Element, application: Element, maxCharacters: Int, includeContext: Bool) -> SelectionReadResult {
         guard let (holder, markerRange) = selectedMarkers(from: focused) else {

@@ -34,7 +34,8 @@ public struct ExplainSettings: Codable, Equatable, Sendable {
     public var bubbleMaxCharacters = 4_000
     /// Apps the bubble never shows in, by bundle identifier.
     public var bubbleExcludedApps: [String] = SelectionBubbleOptions.defaultExcludedApps.sorted()
-    /// Asks Chrome, Electron and similar apps once to expose their text, so the bubble works there too.
+    /// Offers the bubble in Chrome, Electron and similar apps too, which keep their text hidden. The name stays from
+    /// when Frog asked them to expose it.
     public var bubbleExposeText = true
     /// Rules the person took out of the bubble; their shortcuts still work.
     public var bubbleHiddenRules: [UUID] = []
@@ -89,7 +90,7 @@ public struct ExplainSettings: Codable, Equatable, Sendable {
         options.keyboard = bubbleKeyboard
         options.maxCharacters = normalized.bubbleMaxCharacters
         options.excludedApps = Set(bubbleExcludedApps)
-        options.exposeText = bubbleExposeText
+        options.chromiumApps = bubbleExposeText
         return options
     }
 

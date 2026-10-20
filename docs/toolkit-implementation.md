@@ -352,15 +352,16 @@ Copy restores the clipboard, so Electron apps, Chromium without accessibility an
 apps still answer. Writing rules keep `captureSelection()`, which they need to replace text.
 
 `SelectionReader.swift` never names the pasteboard, `ClipboardSelection` or
-`FreshSelectionCopy` and never posts events. Its requests of another app are
-`exposeText(pid:)`, which sets `AXManualAccessibility` on the application element with the
-same 0.25-second timeout, and `exposeTextToScreenReader(pid:)`, which sets
-`AXEnhancedUserInterface` the same way: success is `exposed`, a timeout is `noAnswer`,
-anything else is `refused`. Only Electron knows the first; Chromium browsers such as Chrome,
-Helium and Arc refuse it and expose their page text only to the second, which VoiceOver sets.
-After it, Chromium animates window changes another app makes, so Frog's window actions turn
-it off while they move a window. `SelectionIsolationTests` scans the file for these names and
-allows each there only, once.
+`FreshSelectionCopy` and never posts events. It only reads: it never
+sets `AXManualAccessibility` or `AXEnhancedUserInterface`, and `SelectionIsolationTests`
+checks that neither name appears in the selection files. Versions 1.0.31 to 1.0.33 set them
+on Chromium browsers and Electron apps so the bubble could read their text; the apps then
+stayed in the full accessibility mode a screen reader gets, which made them, and with several
+open the whole Mac, noticeably slower. `ChromiumAccessibilityReset.runOnce()`, called from
+`AppModel.start()` on the first start of a newer version with Accessibility granted and
+VoiceOver off, sets both back to false once on the running Chromium-built apps that are not
+code editors, off the main thread with the 0.25-second timeout, and records
+`chromiumAccessibilityResetDone` in the user defaults.
 
 ### Answer panel
 
@@ -541,24 +542,24 @@ context, with no shortcut wait and no clipboard. A Writing rule runs through
 watcher, the controller and the view as well as the reader for any clipboard, Copy, posted
 event or accessibility-forcing attribute.
 
-An empty or unavailable read is read once more. Before that, while **Chrome and Electron
-apps** (`explain.bubble-expose-text`) is on, the watcher asks the app once per process to
-expose its text (`exposeText(pid:)`) and waits 0.35 s, so Chromium browsers and Electron apps
-such as Slack and Obsidian build their accessibility tree. An app that refuses and is built on
-Chromium, whose framework in `Contents/Frameworks` carries `Versions/Current/Helpers`, checked
-once per bundle identifier, is then asked as a screen reader (`exposeTextToScreenReader(pid:)`):
-Helium refused the first request on 2026-10-18 and showed no selection. Electron apps take the
-first request and are never asked the second. Otherwise it waits 0.15 s, for an
-app that reports a fresh selection late. An app that did not answer in time is asked again
-with its next selection; an app that refused is not, but still gets the longer wait, since
-Electron releases from before May 2023 take the request while answering that they refused.
-`SelectionBubblePolicy.mayAskToExposeText` never lets it ask VS Code or an editor built on
-it: the bundle identifiers in `codeEditors`, and any app that ships
-`Contents/Resources/app/product.json`, checked once per bundle identifier. With
-`editor.accessibilitySupport` on `auto`, its default, such an editor takes the request for a
-screen reader and switches to its screen reader mode.
+An empty or unavailable read is read once more after 0.15 s, for an app that reports a
+fresh selection late. When the read stays unavailable after a mouse gesture, **Chrome and
+Electron apps** (`explain.bubble-expose-text`, `SelectionBubbleOptions.chromiumApps`) is on,
+and the app is built on Chromium, whose framework in `Contents/Frameworks` carries
+`Versions/Current/Helpers`, the watcher offers the bubble without text. It asks
+`SelectionBubblePolicy.offersWithoutText` once per bundle identifier, which leaves out VS Code
+and the editors built on it: the bundle identifiers in `codeEditors`, and any app that ships
+`Contents/Resources/app/product.json`. `System.windowFrame` finds the app's window under the
+pointer through `CGWindowListCopyWindowInfo`, without Accessibility, and
+`mayOfferWithoutText` lets the bubble show only when the gesture ended inside it, below the
+top 44 points (the title bar and tabs) and left of the right 16 points (the scroll bar). A
+keyboard selection and an empty read show nothing. The snapshot is
+`SelectionSnapshot.hidden`: no text, not editable, so the bubble lists answer rules only, at
+the pointer. Picking one runs `startAnswer(rule, from: nil)`, which reads again through
+Accessibility and otherwise copies the selection with `captureSelection()`, exactly like the
+shortcut.
 
-Apps that still do not expose their selection through Accessibility show no bubble: editors
+Other apps that do not expose their selection through Accessibility show no bubble: editors
 built on VS Code unless their screen reader mode is on, GPU terminals and canvas web apps
 such as Google Docs. Their rules still work from a shortcut through the compatibility Copy.
 

@@ -274,129 +274,74 @@ final class SelectionWatcherTests: XCTestCase {
         try await waitUntil { scheduled.presenter.shows.count == 1 }
     }
 
-    func testAnAppThatHidesItsTextIsAskedOnceAndThenShowsTheBubble() async throws {
-        let fixture = Fixture()
-        fixture.reader.result = .unavailable
-        fixture.reader.exposes = .selection(Self.snapshot())
+    func testAChromiumAppThatHidesItsTextOffersAnswerRulesAtThePointer() async throws {
+        // Helium, Chrome and Electron apps keep their text hidden, and Frog never switches on their screen reader mode.
+        let fixture = Fixture.chromium()
         fixture.drag()
         try await waitUntil { fixture.presenter.shows.count == 1 }
-        XCTAssertEqual(fixture.reader.exposeRequests, [Fixture.pid])
-        XCTAssertEqual(fixture.reader.calls.count, 2, "Read again after asking")
+        XCTAssertEqual(fixture.reader.calls.count, 2, "Read again once, as for any app")
+        XCTAssertEqual(fixture.waits.last, SelectionWatcher.retryWait)
+        let shown = try XCTUnwrap(fixture.presenter.shows.first)
+        XCTAssertNil(shown.anchor)
+        XCTAssertEqual(shown.pointer, CGPoint(x: 104, y: 508), "At the end of the gesture")
+        let offered = try XCTUnwrap(fixture.offered.first)
+        XCTAssertTrue(offered.textHidden)
+        XCTAssertFalse(offered.isEditable, "Answer rules only")
+        XCTAssertEqual(offered.text, "")
 
-        // Asked once per app: a later selection there reads without asking again.
-        fixture.watcher.handle(.mouseDown(CGPoint(x: 300, y: 300), clickCount: 1, right: false), now: fixture.now)
-        fixture.reader.result = .selection(Self.snapshot("other", element: 2))
+        fixture.presenter.onSelect?(fixture.items[0])
+        XCTAssertEqual(fixture.ran.first?.1.textHidden, true, "The rule copies the selection as its shortcut does")
+
+        // Each gesture is a selection of its own.
         fixture.drag()
         try await waitUntil { fixture.presenter.shows.count == 2 }
-        XCTAssertEqual(fixture.reader.exposeRequests, [Fixture.pid])
+        XCTAssertNotEqual(fixture.offered[0].fingerprint, fixture.offered[1].fingerprint)
     }
 
-    func testWithTheSettingOffNoAppIsAskedButASlowSelectionIsReadAgain() async throws {
-        let fixture = Fixture()
-        fixture.options.exposeText = false
-        fixture.reader.result = .empty
-        fixture.reader.exposes = .selection(Self.snapshot())
-        fixture.drag()
-        try await waitUntil { fixture.reader.calls.count == 2 }
-        try await Task.sleep(for: .milliseconds(20))
-        XCTAssertTrue(fixture.reader.exposeRequests.isEmpty)
-        XCTAssertTrue(fixture.presenter.shows.isEmpty)
-    }
-
-    func testCodeEditorsAreNeverAskedToExposeTheirText() async throws {
-        let editors: [(Fixture) -> Void] = [
-            { $0.frontmost.bundleID = "com.microsoft.VSCode" },
-            { $0.frontmost.bundleID = "com.example.fork"; $0.builtOnVSCode = true },
-        ]
-        for editor in editors {
-            let fixture = Fixture()
-            editor(fixture)
-            fixture.reader.result = .unavailable
-            fixture.reader.exposes = .selection(Self.snapshot())
-            fixture.drag()
+    func testWithoutTextAGestureOnTheTitleBarTheScrollBarOrOutsideAWindowShowsNothing() async throws {
+        let ends = [CGPoint(x: 104, y: 790), CGPoint(x: 995, y: 400), CGPoint(x: 1_200, y: 400)]
+        for end in ends {
+            let fixture = Fixture.chromium()
+            fixture.drag(to: end)
             try await waitUntil { fixture.reader.calls.count == 2 }
             try await Task.sleep(for: .milliseconds(20))
-            XCTAssertTrue(fixture.reader.exposeRequests.isEmpty, "Its screen reader mode would turn on")
-            XCTAssertTrue(fixture.presenter.shows.isEmpty)
-            XCTAssertEqual(fixture.waits.last, SelectionWatcher.retryWait, "Read again as any other app")
+            XCTAssertTrue(fixture.presenter.shows.isEmpty, "\(end)")
         }
     }
 
-    func testAnAppThatDidNotAnswerInTimeIsAskedAgainWithItsNextSelection() async throws {
-        let fixture = Fixture()
-        fixture.reader.result = .unavailable
-        fixture.reader.exposes = .selection(Self.snapshot())
-        fixture.reader.unansweredRequests = 1
+    func testAKeyboardSelectionInAnAppThatHidesItsTextShowsNothing() async throws {
+        let fixture = Fixture.chromium()
+        fixture.pressShift()
+        try await waitUntil { fixture.reader.calls.count == 2 }
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertTrue(fixture.presenter.shows.isEmpty, "Without a pointer there is nowhere to show it")
+    }
+
+    func testAnEmptyReadInAChromiumAppShowsNothing() async throws {
+        // A caret in a text field, or an app a screen reader made expose its text.
+        let fixture = Fixture.chromium()
+        fixture.reader.result = .empty
         fixture.drag()
         try await waitUntil { fixture.reader.calls.count == 2 }
         try await Task.sleep(for: .milliseconds(20))
         XCTAssertTrue(fixture.presenter.shows.isEmpty)
-        XCTAssertEqual(fixture.reader.exposeRequests, [Fixture.pid])
-
-        fixture.drag()
-        try await waitUntil { fixture.presenter.shows.count == 1 }
-        XCTAssertEqual(fixture.reader.exposeRequests, [Fixture.pid, Fixture.pid])
-
-        // It answered, so a later empty read asks no more.
-        fixture.reader.result = .unavailable
-        fixture.drag()
-        try await waitUntil { fixture.reader.calls.count == 6 }
-        XCTAssertEqual(fixture.reader.exposeRequests.count, 2)
     }
 
-    func testAnAppThatRefusesIsGivenAsLongToBuildItsTree() async throws {
-        // An Electron app from before mid-2023 takes the request while answering that it refused.
-        let fixture = Fixture()
-        fixture.reader.result = .unavailable
-        fixture.drag()
-        try await waitUntil { fixture.reader.calls.count == 2 }
-        XCTAssertEqual(fixture.reader.exposeRequests, [Fixture.pid])
-        XCTAssertTrue(fixture.reader.screenReaderRequests.isEmpty, "Not built on Chromium")
-        XCTAssertEqual(fixture.waits.count, 2, "The settle, then the pause before reading again")
-        XCTAssertEqual(fixture.waits.last, SelectionWatcher.exposeWait)
-    }
-
-    func testAChromiumBrowserThatRefusesIsAskedAsAScreenReaderOnce() async throws {
-        // Helium, like Chrome, refuses the request Electron apps take, and shows its page text to a screen reader.
-        let fixture = Fixture()
-        fixture.frontmost.bundleID = "net.imput.helium"
-        fixture.builtOnChromium = true
-        fixture.reader.result = .unavailable
-        fixture.reader.exposesToScreenReader = .selection(Self.snapshot())
-        fixture.drag()
-        try await waitUntil { fixture.presenter.shows.count == 1 }
-        XCTAssertEqual(fixture.reader.exposeRequests, [Fixture.pid])
-        XCTAssertEqual(fixture.reader.screenReaderRequests, [Fixture.pid])
-        XCTAssertEqual(fixture.waits.last, SelectionWatcher.exposeWait)
-
-        fixture.watcher.handle(.mouseDown(CGPoint(x: 300, y: 300), clickCount: 1, right: false), now: fixture.now)
-        fixture.reader.result = .selection(Self.snapshot("other", element: 2))
-        fixture.drag()
-        try await waitUntil { fixture.presenter.shows.count == 2 }
-        XCTAssertEqual(fixture.reader.screenReaderRequests, [Fixture.pid], "Asked once per app")
-    }
-
-    func testAnElectronAppThatTakesTheRequestIsNotAskedAsAScreenReader() async throws {
-        let fixture = Fixture()
-        fixture.builtOnChromium = true
-        fixture.reader.result = .unavailable
-        fixture.reader.exposes = .selection(Self.snapshot())
-        fixture.drag()
-        try await waitUntil { fixture.presenter.shows.count == 1 }
-        XCTAssertTrue(fixture.reader.screenReaderRequests.isEmpty)
-    }
-
-    func testWithTheSettingOffAChromiumBrowserIsNotAskedAsAScreenReader() async throws {
-        let fixture = Fixture()
-        fixture.options.exposeText = false
-        fixture.builtOnChromium = true
-        fixture.reader.result = .unavailable
-        fixture.reader.exposesToScreenReader = .selection(Self.snapshot())
-        fixture.drag()
-        try await waitUntil { fixture.reader.calls.count == 2 }
-        try await Task.sleep(for: .milliseconds(20))
-        XCTAssertTrue(fixture.reader.screenReaderRequests.isEmpty)
-        XCTAssertTrue(fixture.presenter.shows.isEmpty)
+    func testOnlyChromiumAppsAndNotCodeEditorsOrWithTheSettingOffShowTheBubbleWithoutText() async throws {
+        let cases: [(String, (Fixture) -> Void)] = [
+            ("not built on Chromium", { $0.builtOnChromium = false }),
+            ("setting off", { $0.options.chromiumApps = false }),
+            ("VS Code", { $0.frontmost.bundleID = "com.microsoft.VSCode" }),
+            ("built on VS Code", { $0.frontmost.bundleID = "com.example.fork"; $0.builtOnVSCode = true }),
+        ]
+        for (name, change) in cases {
+            let fixture = Fixture.chromium()
+            change(fixture)
+            fixture.drag()
+            try await waitUntil { fixture.reader.calls.count == 2 }
+            try await Task.sleep(for: .milliseconds(20))
+            XCTAssertTrue(fixture.presenter.shows.isEmpty, name)
+        }
     }
 
     static func snapshot(_ text: String = "levee", element: Int = 1, end: CGRect? = SelectionWatcherTests.end) -> SelectionSnapshot {
@@ -428,21 +373,37 @@ private final class Fixture {
     var category: String?
     var builtOnVSCode = false
     var builtOnChromium = false
+    var window: CGRect?
     var options = SelectionBubbleOptions()
     let items = [BubbleItem(id: UUID(), title: "Explain", symbol: SelectionBubbleItems.answerSymbol, answers: true)]
     var ran: [(BubbleItem, SelectionSnapshot)] = []
+    /// The selections the bubble offered items for.
+    var offered: [SelectionSnapshot] = []
     private(set) var watcher: SelectionWatcher!
+
+    /// Helium in front, keeping its text hidden, with a window under the end of the default drag.
+    static func chromium() -> Fixture {
+        let fixture = Fixture()
+        fixture.frontmost = BubbleApplication(pid: pid, bundleID: "net.imput.helium", bundleURL: URL(fileURLWithPath: "/Applications/Helium.app"))
+        fixture.builtOnChromium = true
+        fixture.window = CGRect(x: 0, y: 0, width: 1_000, height: 800)
+        fixture.reader.result = .unavailable
+        return fixture
+    }
 
     init() {
         let system = SelectionWatcher.System(frontmost: { [unowned self] in self.frontmost }, ownPID: Self.ownPID,
                                              secureInput: { [unowned self] in self.secure },
                                              category: { [unowned self] _ in self.category },
                                              builtOnVSCode: { [unowned self] _ in self.builtOnVSCode },
-                                             builtOnChromium: { [unowned self] _ in self.builtOnChromium })
+                                             builtOnChromium: { [unowned self] _ in self.builtOnChromium },
+                                             windowFrame: { [unowned self] _, point in
+                                                 self.window.flatMap { $0.contains(point) ? $0 : nil }
+                                             })
         watcher = SelectionWatcher(
             reader: reader, presenter: presenter,
             hooks: .init(options: { [unowned self] in self.options }, state: { [unowned self] in self.state },
-                         items: { [unowned self] _ in (self.items, []) }, run: { [unowned self] in self.ran.append(($0, $1)) }),
+                         items: { [unowned self] in self.offered.append($0); return (self.items, []) }, run: { [unowned self] in self.ran.append(($0, $1)) }),
             system: system, clock: { [unowned self] in self.now },
             // The settle passes at once; the idle check waits for the test to call it.
             sleep: { [unowned self] delay in
@@ -485,45 +446,6 @@ private final class Reader: SelectionReading, @unchecked Sendable {
         set { lock.withLock { current = newValue } }
     }
     var calls: [Call] { lock.withLock { recorded } }
-    private var asked: [pid_t] = []
-    /// What the app exposes once it is asked to; nil for an app that does not take the request.
-    private var exposed: SelectionReadResult?
-    var exposes: SelectionReadResult? {
-        get { lock.withLock { exposed } }
-        set { lock.withLock { exposed = newValue } }
-    }
-    /// The app is too busy to answer the next requests, one per entry.
-    private var silent = 0
-    var unansweredRequests: Int {
-        get { lock.withLock { silent } }
-        set { lock.withLock { silent = newValue } }
-    }
-    var exposeRequests: [pid_t] { lock.withLock { asked } }
-    private var askedAsScreenReader: [pid_t] = []
-    /// What the app exposes once a screen reader asks, as a Chromium browser does; nil for one that refuses.
-    private var exposedToScreenReader: SelectionReadResult?
-    var exposesToScreenReader: SelectionReadResult? {
-        get { lock.withLock { exposedToScreenReader } }
-        set { lock.withLock { exposedToScreenReader = newValue } }
-    }
-    var screenReaderRequests: [pid_t] { lock.withLock { askedAsScreenReader } }
-    func exposeTextToScreenReader(pid: pid_t) async -> ExposeTextAnswer {
-        lock.withLock {
-            askedAsScreenReader.append(pid)
-            guard let exposedToScreenReader else { return .refused }
-            current = exposedToScreenReader
-            return .exposed
-        }
-    }
-    func exposeText(pid: pid_t) async -> ExposeTextAnswer {
-        lock.withLock {
-            asked.append(pid)
-            if silent > 0 { silent -= 1; return .noAnswer }
-            guard let exposed else { return .refused }
-            current = exposed
-            return .exposed
-        }
-    }
     /// While set, a read waits for `releaseReads()`, as a read of an app that does not answer does.
     private var holds = false
     private var held: [CheckedContinuation<Void, Never>] = []

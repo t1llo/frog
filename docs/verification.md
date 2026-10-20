@@ -716,9 +716,10 @@ posted event).
 Where a gesture stops is logged at debug level, without the selected text:
 `/usr/bin/log stream --level debug --style compact --predicate 'subsystem == "frog" && category == "selection-bubble"'`
 shows each mouse press and release with its decision, the reads and their outcome (a read
-that found nothing says why, by Accessibility role), the answer to the request to expose
-text, and why the bubble did not show. On 2026-10-18 Helium refused `AXManualAccessibility`
-and every read there came back without a selection.
+that found nothing says why, by Accessibility role), a bubble shown without text, and why
+the bubble did not show. On 2026-10-18 Helium refused `AXManualAccessibility` and every read
+there came back without a selection; on 2026-10-20 the Mac lagged with Helium, Claude and
+Slack left in full accessibility mode by 1.0.31 to 1.0.33, which no longer set it.
 
 Device checks, with isolated data, still to run:
 
@@ -727,8 +728,11 @@ Device checks, with isolated data, still to run:
       Terminal.app.
 - [ ] It does not appear in a password field, `sudo` in Terminal, 1Password or a game.
 - [ ] With **Chrome and Electron apps** on, in Chrome, a Chromium browser such as Helium,
-      Slack and Obsidian, it appears from the first or second selection on, at the end of
-      the selected text, also on a page that is not editable.
+      Slack and Obsidian, a mouse selection shows the bubble at the pointer with answer rules
+      only; picking one answers the selected text, with the clipboard restored afterwards.
+      Clicking a tab, the title bar or the scroll bar shows nothing.
+- [ ] After updating from 1.0.31 to 1.0.33, Helium, Claude and Slack are as quick as with
+      Frog quit; Activity Monitor shows their renderers idle while nothing changes.
 - [ ] In VS Code and Cursor with `editor.accessibilitySupport` on `auto`, selecting text
       leaves the status bar without "Screen Reader Optimized"; no bubble appears there.
 - [ ] `NSPasteboard.general.changeCount` is unchanged across selecting, the bubble

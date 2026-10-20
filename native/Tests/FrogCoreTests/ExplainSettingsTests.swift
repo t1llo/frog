@@ -9,7 +9,7 @@ final class ExplainSettingsTests: XCTestCase {
         XCTAssertTrue(Preferences().explainSettings.includeContext)
         XCTAssertFalse(Preferences().featureEnabled(.explain))
         XCTAssertTrue(settings.bubbleExposeText)
-        XCTAssertTrue(settings.bubbleOptions.exposeText)
+        XCTAssertTrue(settings.bubbleOptions.chromiumApps)
         XCTAssertEqual(settings.bubbleHiddenRules, [])
     }
 
@@ -19,7 +19,7 @@ final class ExplainSettingsTests: XCTestCase {
         settings.bubbleExposeText = false
         let decoded = try JSONDecoder().decode(ExplainSettings.self, from: JSONEncoder().encode(settings))
         XCTAssertEqual(decoded, settings)
-        XCTAssertFalse(decoded.bubbleOptions.exposeText)
+        XCTAssertFalse(decoded.bubbleOptions.chromiumApps)
     }
 
     func testARuleLeavesTheBubbleAndComesBackInPlace() {

@@ -42,8 +42,9 @@ struct BubbleState: Equatable {
 
 /// Watches for the end of a selection gesture in another app and offers the bubble. A thin shell around
 /// `SelectionWatcherCore`: it turns events into `SelectionInput`s, runs one settle task, reads the selection through
-/// Accessibility only and hands the result to the presenter. It never copies and never sees typed characters: key
-/// presses are watched only while the bubble shows, and then only their key code and modifier keys.
+/// Accessibility only and hands the result to the presenter. Apps built on Chromium keep their text hidden, so a
+/// mouse gesture there offers the bubble at the pointer without any text. It never copies and never sees typed
+/// characters: key presses are watched only while the bubble shows, and then only their key code and modifier keys.
 @MainActor final class SelectionWatcher: SelectionWatching {
     struct Hooks {
         var options: @MainActor () -> SelectionBubbleOptions
@@ -64,6 +65,8 @@ struct BubbleState: Equatable {
         /// Whether the app is built on Chromium, as Chrome, Helium, Arc and Electron apps are: its framework carries
         /// Chromium's helper apps.
         var builtOnChromium: @MainActor (URL) -> Bool = { _ in false }
+        /// The frame of the app's frontmost window under the point, in Cocoa coordinates.
+        var windowFrame: @MainActor (pid_t, CGPoint) -> CGRect? = { _, _ in nil }
 
         static let live = System(
             frontmost: {
@@ -81,6 +84,20 @@ struct BubbleState: Equatable {
                     name.hasSuffix(".framework")
                         && FileManager.default.fileExists(atPath: frameworks.appendingPathComponent(name).appendingPathComponent("Versions/Current/Helpers").path)
                 }
+            },
+            windowFrame: { pid, point in
+                // From the window server, so the app itself is not asked anything.
+                guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                        as? [[String: Any]] else { return nil }
+                let primaryHeight = CGDisplayBounds(CGMainDisplayID()).height
+                for window in windows where (window[kCGWindowOwnerPID as String] as? pid_t) == pid
+                    && (window[kCGWindowLayer as String] as? Int) == 0 {
+                    guard let raw = window[kCGWindowBounds as String] as? NSDictionary,
+                          let bounds = CGRect(dictionaryRepresentation: raw as CFDictionary) else { continue }
+                    let frame = CGRect(x: bounds.minX, y: primaryHeight - bounds.maxY, width: bounds.width, height: bounds.height)
+                    if frame.contains(point) { return frame }
+                }
+                return nil
             })
     }
 
@@ -111,12 +128,8 @@ struct BubbleState: Equatable {
     private var shown: SelectionSnapshot?
     /// Whether an app is a game, by bundle identifier.
     private var games: [String: Bool] = [:]
-    /// Whether an app may be asked to expose its text, by bundle identifier.
-    private var askable: [String: Bool] = [:]
-    /// Whether an app is built on Chromium, by bundle identifier.
-    private var chromium: [String: Bool] = [:]
-    /// Apps already asked to expose their text, by process.
-    private var asked: Set<pid_t> = []
+    /// Whether the bubble may appear without the text in an app, by bundle identifier.
+    private var withoutText: [String: Bool] = [:]
     /// Why a gesture showed the bubble or not, at debug level for `log stream --level debug --predicate
     /// 'subsystem == "frog" && category == "selection-bubble"'`. Never the selected text.
     private static let log = Logger(subsystem: "frog", category: "selection-bubble")
@@ -286,6 +299,10 @@ struct BubbleState: Equatable {
             Self.log.debug("read in \(front.bundleID ?? "?", privacy: .public) dropped by a later input")
             return
         }
+        if result == .unavailable, options.chromiumApps, offersWithoutText(front) {
+            offerWithoutText(in: front, token: token, pointer: pointer)
+            return
+        }
         var items: (visible: [BubbleItem], more: [BubbleItem]) = ([], [])
         var reselected = false
         if case let .selection(snapshot) = result {
@@ -308,48 +325,54 @@ struct BubbleState: Equatable {
             Self.log.debug("not shown in \(front.bundleID ?? "?", privacy: .public): no position")
             return
         }
-        Self.log.debug("shown in \(front.bundleID ?? "?", privacy: .public) with \(items.visible.count + items.more.count) rules at \(String(describing: anchor), privacy: .public), pointer \(String(describing: pointer), privacy: .public)")
+        show(snapshot, items: items, anchor: anchor, pointer: pointer ?? anchor.map { CGPoint(x: $0.minX, y: $0.minY) } ?? .zero)
+    }
+
+    /// An app built on Chromium keeps its text hidden, so a mouse gesture that ended in its content may have selected
+    /// text. The bubble offers answer rules at the pointer; the rule picked copies the selection as its shortcut does.
+    private func offerWithoutText(in app: BubbleApplication, token: Int, pointer: CGPoint?) {
+        let window = pointer.flatMap { system.windowFrame(app.pid, $0) }
+        if let block = SelectionBubblePolicy.mayOfferWithoutText(pointer: pointer, window: window) {
+            Self.log.debug("not shown in \(app.bundleID ?? "?", privacy: .public) without text: \(String(describing: block), privacy: .public)")
+            return
+        }
+        guard let pointer else { return }
+        let snapshot = SelectionSnapshot.hidden(pid: app.pid, bundleID: app.bundleID, gesture: token)
+        let items = hooks.items(snapshot)
+        guard items.visible.count + items.more.count > 0 else {
+            Self.log.debug("not shown in \(app.bundleID ?? "?", privacy: .public) without text: noItems")
+            return
+        }
+        show(snapshot, items: items, anchor: nil, pointer: pointer)
+    }
+
+    private func show(_ snapshot: SelectionSnapshot, items: (visible: [BubbleItem], more: [BubbleItem]), anchor: CGRect?,
+                      pointer: CGPoint) {
+        Self.log.debug("shown in \(snapshot.bundleID ?? "?", privacy: .public) with \(items.visible.count + items.more.count) rules\(snapshot.textHidden ? " without text" : "", privacy: .public) at \(String(describing: anchor), privacy: .public), pointer \(String(describing: pointer), privacy: .public)")
         shown = snapshot
         hovering = false
         core.shown(snapshot.fingerprint, now: clock())
-        presenter.show(visible: items.visible, more: items.more, anchor: anchor,
-                       pointer: pointer ?? anchor.map { CGPoint(x: $0.minX, y: $0.minY) } ?? .zero)
+        presenter.show(visible: items.visible, more: items.more, anchor: anchor, pointer: pointer)
         installKeyMonitor()
         startIdleCheck()
     }
 
-    /// Reads the selection, and once more when it came back without one: an app that hides its text until asked is
-    /// asked first, and other apps sometimes report a fresh selection a moment late. Nil when a later input or a stop
-    /// came in between.
+    /// Reads the selection, and once more when it came back without one: apps sometimes report a fresh selection a
+    /// moment late. Nil when a later input or a stop came in between.
     private func readSelection(_ app: BubbleApplication, options: SelectionBubbleOptions, started: Int) async -> SelectionReadResult? {
         let pid = app.pid
-        var result = await reader.read(pid: pid, maxCharacters: options.maxCharacters, includeContext: false)
+        let result = await reader.read(pid: pid, maxCharacters: options.maxCharacters, includeContext: false)
         Self.log.debug("first read: \(Self.kind(result), privacy: .public)")
         guard started == generation else { return nil }
         switch result {
         case .empty, .unavailable: break
         default: return result
         }
-        var wait = Self.retryWait
-        if options.exposeText, mayAskToExposeText(app), asked.insert(pid).inserted {
-            // An app that did not answer in time is asked again with its next selection.
-            var answer = await reader.exposeText(pid: pid)
-            Self.log.debug("asked to expose text: \(String(describing: answer), privacy: .public)")
-            if answer == .refused, isBuiltOnChromium(app) {
-                // A Chromium browser knows only the screen reader's request, which Electron apps need not be asked.
-                answer = await reader.exposeTextToScreenReader(pid: pid)
-                Self.log.debug("asked to expose text as a screen reader: \(String(describing: answer), privacy: .public)")
-            }
-            if answer == .noAnswer { asked.remove(pid) }
-            // The app builds its accessibility tree after the request. An older Electron app takes it while
-            // answering that it refused, so every answer waits as long.
-            wait = Self.exposeWait
-        }
-        do { try await sleep(wait) } catch { return nil }
+        do { try await sleep(Self.retryWait) } catch { return nil }
         guard started == generation, !Task.isCancelled else { return nil }
-        result = await reader.read(pid: pid, maxCharacters: options.maxCharacters, includeContext: false)
-        Self.log.debug("second read: \(Self.kind(result), privacy: .public)")
-        return started == generation ? result : nil
+        let again = await reader.read(pid: pid, maxCharacters: options.maxCharacters, includeContext: false)
+        Self.log.debug("second read: \(Self.kind(again), privacy: .public)")
+        return started == generation ? again : nil
     }
 
     /// A read's outcome without its text.
@@ -364,7 +387,6 @@ struct BubbleState: Equatable {
         }
     }
 
-    static let exposeWait: TimeInterval = 0.35
     static let retryWait: TimeInterval = 0.15
 
     private func isGame(_ app: BubbleApplication) -> Bool {
@@ -375,19 +397,13 @@ struct BubbleState: Equatable {
         return game
     }
 
-    private func isBuiltOnChromium(_ app: BubbleApplication) -> Bool {
-        if let id = app.bundleID, let known = chromium[id] { return known }
-        let built = app.bundleURL.map(system.builtOnChromium) ?? false
-        if let id = app.bundleID { chromium[id] = built }
-        return built
-    }
-
-    private func mayAskToExposeText(_ app: BubbleApplication) -> Bool {
-        if let id = app.bundleID, let known = askable[id] { return known }
-        let may = SelectionBubblePolicy.mayAskToExposeText(bundleID: app.bundleID,
-                                                           builtOnVSCode: app.bundleURL.map(system.builtOnVSCode) ?? false)
-        if let id = app.bundleID { askable[id] = may }
-        return may
+    private func offersWithoutText(_ app: BubbleApplication) -> Bool {
+        if let id = app.bundleID, let known = withoutText[id] { return known }
+        let offers = app.bundleURL.map(system.builtOnChromium) ?? false
+            && SelectionBubblePolicy.offersWithoutText(bundleID: app.bundleID,
+                                                       builtOnVSCode: app.bundleURL.map(system.builtOnVSCode) ?? false)
+        if let id = app.bundleID { withoutText[id] = offers }
+        return offers
     }
 
     // MARK: The bubble

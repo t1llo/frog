@@ -454,6 +454,7 @@ final class AppModel: ObservableObject {
             do { try persist(candidate) } catch { report(error) }
         }
         if registerShortcuts, configurationLoadError == nil { adoptExplainPresetIfNeeded() }
+        if registerShortcuts { ChromiumAccessibilityReset.runOnce() }
         registerHotkeys()
         configureWindowSwitcher()
         configureSelectionWatcher()
@@ -1270,10 +1271,11 @@ final class AppModel: ObservableObject {
     // MARK: Selection bubble
 
     /// A rule chosen in the selection bubble: an answer rule answers the bubble's selection without the clipboard
-    /// or a shortcut wait; a Writing rule runs exactly as from its shortcut.
+    /// or a shortcut wait; a Writing rule runs exactly as from its shortcut. In an app that keeps its text hidden the
+    /// bubble has no selection, so the answer rule reads it as from its shortcut, with the compatibility Copy.
     func runBubbleItem(_ item: BubbleItem, snapshot: SelectionSnapshot) {
         guard let rule = configuration.rules.first(where: { $0.id == item.id }), rule.enabled, ruleFeatureEnabled(rule) else { return }
-        if rule.answersInPanel { startAnswer(rule, from: snapshot) }
+        if rule.answersInPanel { startAnswer(rule, from: snapshot.textHidden ? nil : snapshot) }
         else { processSelection(ruleID: rule.id) }
     }
 

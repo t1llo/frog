@@ -30,8 +30,9 @@ public struct SelectionBubbleOptions: Equatable, Sendable {
     public var doubleClick = true
     public var keyboard = true
     public var maxCharacters = 4_000
-    /// Asks Chrome, Electron and similar apps to expose their text, which they hide until an assistive app asks.
-    public var exposeText = true
+    /// Offers the bubble in Chrome, Electron and other apps built on Chromium, which keep their text from
+    /// Accessibility, after a mouse gesture and without reading the text.
+    public var chromiumApps = true
     public var excludedApps: Set<String> = SelectionBubbleOptions.defaultExcludedApps
     public static let defaultExcludedApps: Set<String> = [
         "com.1password.1password", "com.agilebits.onepassword7", "com.bitwarden.desktop",
@@ -216,6 +217,10 @@ public enum BubbleBlock: Equatable, Sendable {
     case secureField, empty, tooLong, dismissedBefore, noItems, alreadyShowing
     /// The selection the bubble offered last, left as it was by a gesture that did not select it again.
     case unchanged
+    /// An app that keeps its text hidden, and the pointer is not over one of its windows.
+    case noPosition
+    /// An app that keeps its text hidden, and the gesture ended on a window's title bar, tabs or scroll bar.
+    case windowChrome
 }
 
 public enum SelectionBubblePolicy {
@@ -271,18 +276,32 @@ public enum SelectionBubblePolicy {
         applicationCategory?.lowercased().contains("games") ?? false
     }
 
-    /// VS Code and the editors built on it take an app that asks for their text for a screen reader: with
-    /// `editor.accessibilitySupport` on `auto`, its default, they switch to their screen reader mode, which changes
-    /// how the editor behaves and plays sounds. So they are never asked.
+    /// VS Code and the editors built on it, where selecting text is most of the work and a bubble after each
+    /// selection would be in the way.
     public static let codeEditors: Set<String> = [
         "com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.vscodium",
         "com.todesktop.230313mzl4w4u92", "com.exafunction.windsurf",
     ]
 
-    /// Whether the bubble may ask an app to expose its text. `builtOnVSCode` is true for an app that ships VS
-    /// Code's product file, which catches the editors not listed by name.
-    public static func mayAskToExposeText(bundleID: String?, builtOnVSCode: Bool) -> Bool {
+    /// Whether the bubble may appear without the text in an app built on Chromium. Chromium and Electron apps
+    /// keep their text from Accessibility unless switched to the mode a screen reader uses, which slows them down
+    /// for as long as they run, so Frog never asks for it. `builtOnVSCode` is true for an app that ships VS Code's
+    /// product file, which catches the editors not listed by name.
+    public static func offersWithoutText(bundleID: String?, builtOnVSCode: Bool) -> Bool {
         !builtOnVSCode && !(bundleID.map(codeEditors.contains) ?? false)
+    }
+
+    /// The top of a window, where its title bar, tabs and toolbar are: a drag there moves the window or a tab.
+    public static let windowTopStrip: CGFloat = 44
+    /// The right edge of a window, where a drag moves its scroll bar.
+    public static let scrollBarWidth: CGFloat = 16
+
+    /// Checked for a mouse gesture in an app that keeps its text hidden, where only where the gesture ended tells
+    /// whether it may have selected text. `window` is the app's window under the pointer. Cocoa coordinates.
+    public static func mayOfferWithoutText(pointer: CGPoint?, window: CGRect?) -> BubbleBlock? {
+        guard let pointer, let window, window.contains(pointer) else { return .noPosition }
+        if pointer.y > window.maxY - windowTopStrip || pointer.x > window.maxX - scrollBarWidth { return .windowChrome }
+        return nil
     }
 
     /// The status line on the Explain page.
