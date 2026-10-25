@@ -8,6 +8,7 @@ struct FeatureCardSettings: View {
         switch feature {
         case .windowSwitcher: true
         case .clipboard: true
+        case .systemMonitor: true
         // slot: explain
         // slot: windows
         // slot: cleaner
@@ -22,6 +23,7 @@ struct FeatureCardSettings: View {
         switch feature {
         case .windowSwitcher: WindowSwitcherFeatureView()
         case .clipboard: ClipboardFeatureView()
+        case .systemMonitor: SystemMonitorFeatureView()
         // slot: explain
         // slot: windows
         // slot: cleaner

@@ -7,7 +7,7 @@ struct FrogMenuLabel: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(nsImage: FrogMenuIcon.image).renderingMode(.template)
-            if power.isEnabled { Image(systemName: "cup.and.saucer.fill").font(.system(size: 11)) }
+            if power.isEnabled && !power.hasOwnMenuBarIcon { Image(systemName: "cup.and.saucer.fill").font(.system(size: 11)) }
         }.accessibilityLabel(power.isEnabled ? "Frog, stay awake on" : "Frog")
     }
 }

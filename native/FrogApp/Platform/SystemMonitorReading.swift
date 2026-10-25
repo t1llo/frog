@@ -20,6 +20,12 @@ struct SystemMonitorSnapshot: Equatable, Sendable {
     var power = SystemMonitorPower()
 }
 
+/// The newest CPU and GPU load, as the menu-bar item shows it.
+struct SystemMonitorReading: Equatable, Sendable {
+    let cpu: SystemMonitorMetric
+    let gpu: SystemMonitorMetric
+}
+
 /// One recorded moment of the CPU/GPU graph. A missing reading stays a gap.
 struct SystemMonitorSample: Equatable, Sendable {
     let time: Date

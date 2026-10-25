@@ -71,6 +71,10 @@ final class AppModel: ObservableObject {
     let power: StayAwakeController
     let toolkit: Toolkit
     let systemMonitor = SystemMonitor()
+    /// CPU and GPU in the menu bar, while System monitor and its menu-bar item are on.
+    private(set) var systemMonitorItem: SystemMonitorStatusItemController?
+    /// The cup in the menu bar while Stay awake is on, when its icon is chosen.
+    private(set) var stayAwakeItem: StayAwakeStatusItemController?
     let statistics: ActivityStatisticsStore
     let commandChoices: CommandChoiceStore
     let localTools: LocalToolClient
@@ -352,7 +356,8 @@ final class AppModel: ObservableObject {
             var preferences = self.configuration.preferences
             var toolkit = preferences.toolkitSettings
             toolkit.usage = UsageDisplayPreferences(provider: value.provider, range: value.range, metric: value.metric, allDevices: value.allDevices, loginSource: value.loginSource,
-                                                    claudeAccounts: value.claudeAccounts, claudeAccountsView: value.claudeAccountsView, claudeAccountsMenuBar: value.claudeAccountsMenuBar)
+                                                    claudeAccounts: value.claudeAccounts, claudeAccountsView: value.claudeAccountsView, claudeAccountsMenuBar: value.claudeAccountsMenuBar,
+                                                    menuBarStyle: value.menuBarStyle, menuBarPalette: value.menuBarPalette)
             preferences.toolkit = toolkit
             // Display choices do not change collectors, shortcuts, appearance or history.
             do {
@@ -455,6 +460,7 @@ final class AppModel: ObservableObject {
         }
         if registerShortcuts, configurationLoadError == nil { adoptExplainPresetIfNeeded() }
         if registerShortcuts { ChromiumAccessibilityReset.runOnce() }
+        configureStatusItems()
         registerHotkeys()
         configureWindowSwitcher()
         configureSelectionWatcher()
@@ -467,6 +473,8 @@ final class AppModel: ObservableObject {
         drainUsagePreferences()
         statistics.waitForWrites()
         commandChoices.waitForWrites()
+        systemMonitorItem?.stop(); systemMonitorItem = nil
+        stayAwakeItem?.stop(); stayAwakeItem = nil
         systemMonitor.stop()
         commandBar.stop()
         toolkit.stop()
@@ -495,7 +503,8 @@ final class AppModel: ObservableObject {
     private func applyUsagePreferences(_ preferences: Preferences) {
         guard let value = preferences.toolkitSettings.usage else { return }
         toolkit.applyUsagePreferences(UsageDashboardPreferences(provider: value.provider, range: value.range, metric: value.metric, allDevices: value.allDevices, loginSource: value.loginSource,
-                                                                claudeAccounts: value.claudeAccounts, claudeAccountsView: value.claudeAccountsView, claudeAccountsMenuBar: value.claudeAccountsMenuBar))
+                                                                claudeAccounts: value.claudeAccounts, claudeAccountsView: value.claudeAccountsView, claudeAccountsMenuBar: value.claudeAccountsMenuBar,
+                                                                menuBarStyle: value.menuBarStyle, menuBarPalette: value.menuBarPalette))
     }
 
     func openFeature(_ feature: FeatureID) { toolkit.select(.feature(feature)); showSettings() }
@@ -670,12 +679,41 @@ final class AppModel: ObservableObject {
         // Turning the switch or the Command bar off, here or in the configuration file, forgets what was learned.
         commandChoices.configure(enabled: Self.learnsCommandChoices(candidate.preferences))
         power.configureFeature(enabled: candidate.preferences.featureEnabled(.stayAwake))
+        configureStatusItems()
         localModels.updateCatalog(candidate.modelCatalog)
         if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
         configureWindowLayout()
     }
 
     private func configureWindowLayout() { windowLayout.configure(configuration, active: started && registerShortcuts) }
+
+    /// The optional System monitor and Stay awake items, each only while its feature and its
+    /// menu-bar choice are on. Created once Frog has started, never by tests that register nothing.
+    private func configureStatusItems() {
+        let preferences = configuration.preferences
+        let active = started && registerShortcuts
+        let monitor = preferences.toolkitSettings.systemMonitor ?? SystemMonitorPreferences()
+        if active, preferences.featureEnabled(.systemMonitor), monitor.menuBarItem {
+            if let item = systemMonitorItem { item.apply(monitor) }
+            else {
+                systemMonitorItem = SystemMonitorStatusItemController(monitor: systemMonitor, preferences: monitor) { [weak self] in
+                    self?.openFeature(.systemMonitor)
+                }
+            }
+        } else { systemMonitorItem?.stop(); systemMonitorItem = nil }
+        let awake = preferences.toolkitSettings.stayAwake ?? StayAwakePreferences()
+        let showsAwake = preferences.featureEnabled(.stayAwake) && awake.menuBarItem
+        if active, showsAwake {
+            if let item = stayAwakeItem { item.apply(style: awake.menuBarStyle) }
+            else {
+                stayAwakeItem = StayAwakeStatusItemController(power: power, style: awake.menuBarStyle) { [weak self] in
+                    self?.openFeature(.stayAwake)
+                }
+            }
+        } else { stayAwakeItem?.stop(); stayAwakeItem = nil }
+        // Frog's own icon leaves out its small cup while the cup has an item of its own.
+        if power.hasOwnMenuBarIcon != (active && showsAwake) { power.hasOwnMenuBarIcon = active && showsAwake }
+    }
 
     /// `inBubble` leaves the rule out of the selection bubble or offers it again, saved with the rule; nil keeps it as it is.
     func saveRule(_ rule: Rule, inBubble: Bool? = nil) throws {

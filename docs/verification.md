@@ -749,6 +749,30 @@ Device checks, with isolated data, still to run:
 - [ ] Activity Monitor Energy Impact over 10 minutes of normal work, bubble on and off:
       ___ / ___.
 
+## Menu-bar designs, CPU and GPU item, Stay awake icon — October 25
+
+Automated: `MenuBarItemPreferencesTests` (both files round-trip the looks; an unknown look in
+`config.json` falls back to its default, in `config` it is refused with its line),
+`MenuBarMeterTests` (faces only change in whole percents, only *Clean* is a template, the width
+stays the same while readings change, a GPU without a load reading leaves CPU alone, the Stay
+awake countdown) and `SystemMonitorTests` (the item gets CPU and GPU at the shown pace while the
+overview stays closed and untouched, and nothing once switched off). With
+`FROG_MENU_BAR_EVIDENCE=<folder>`, `MenuBarMeterTests` draws every design in light and dark into
+`menu-bar-designs.png`.
+
+On this Mac (macOS 26) a second Frog with an isolated `FROG_DATA_DIRECTORY` added the CPU and
+GPU item and its own icon to the menu bar; Control Center hosts status items, and the
+organizer of the running Frog had moved both into its hidden part, so they were not captured
+on screen. Manual checks on the installed app:
+
+- [ ] Mr. Usage → Menu bar: each tile changes the item at once; *Steps* with A and B accounts
+      shows one row per account; *Numbers* · *Clean* looks exactly as before.
+- [ ] Features → System monitor → Show CPU and GPU in the menu bar adds the item; it moves
+      about every two seconds, opens the System overview, and closing it keeps the item.
+- [ ] Stay awake → Show a cup in the menu bar: the cup appears only while Stay awake is on, the
+      small cup beside Frog's icon goes away, the ring drains for a timed session, and its menu
+      turns Stay awake off.
+
 ## App cleaner
 
 Automated: `CleanerPreferencesTests`, `CleanerFeatureTests`, `CleanerModelTests`, `CleanerCommandTests` and

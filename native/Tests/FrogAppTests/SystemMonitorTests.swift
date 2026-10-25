@@ -55,6 +55,23 @@ import XCTest
         XCTAssertEqual(calls[disabled], .init(reset: true, full: true), "Switching back on must not average load over the time spent off")
     }
 
+    func testTheMenuBarItemGetsLiveReadingsWithoutRedrawingTheClosedMenu() async throws {
+        let sampler = MonitorFixture(snapshot: .init(cpu: .value(0.25), gpu: .value(0.5)))
+        // Out of sight the monitor would wait a minute; the menu-bar item asks for the shown pace.
+        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5), backgroundInterval: .seconds(60))
+        monitor.configure(enabled: true)
+        defer { monitor.stop() }
+        try await waitUntil { await sampler.calls.count >= 1 }
+        monitor.setLiveReadout(true)
+        try await waitUntil { await sampler.calls.count >= 4 }
+        XCTAssertEqual(monitor.readings.value, SystemMonitorReading(cpu: .value(0.25), gpu: .value(0.5)))
+        XCTAssertTrue(monitor.history.isEmpty, "The item reads its own subject; the overview stays untouched")
+        let full = await sampler.calls.contains { $0.full }
+        XCTAssertFalse(full, "The item needs only CPU and GPU")
+        monitor.configure(enabled: false)
+        XCTAssertNil(monitor.readings.value, "Switched off, the item shows no stale load")
+    }
+
     func testHidingTheViewPublishesNothing() async throws {
         let sampler = MonitorFixture()
         let monitor = SystemMonitor(sampler: sampler, interval: .seconds(60), backgroundInterval: .seconds(60))

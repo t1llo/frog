@@ -32,6 +32,8 @@ final class StayAwakeController: ObservableObject {
     @Published private(set) var deadline: Date?
     @Published private(set) var notice: String?
     @Published var duration: DurationChoice = .fourHours
+    /// The cup has a menu-bar item of its own, so Frog's icon leaves out its small one.
+    @Published var hasOwnMenuBarIcon = false
     private(set) var ownsSession = false
     private let system: any StayAwakeSystem
     private let sessionFile: URL

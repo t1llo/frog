@@ -25,6 +25,7 @@ struct UsageDashboardView: View {
             }
             if UsageStatusPopover.shownAccounts(usage).isEmpty { UsageLimitsView(usage: usage) }
             else { UsageAccountsLimits(usage: usage) }
+            UsageMenuBarDesign(usage: usage)
             Divider().overlay(FrogStyle.border.opacity(0.4))
             UsageActivityView(usage: usage)
             UsageAccountDetails(usage: usage)
@@ -315,6 +316,38 @@ private struct UsageAccountLimits: View {
                           alignment: .leading, spacing: 18) {
                     ForEach(account.windows) { UsageLimitView(window: $0, now: now) }
                 }.opacity(account.stale ? 0.55 : 1).help(account.status ?? "")
+            }
+        }
+    }
+}
+
+/// How the menu-bar item draws the limits, previewed with the current readings.
+private struct UsageMenuBarDesign: View {
+    @ObservedObject var usage: UsageDashboardModel
+    /// Shown while there is no plan reading, so that the designs can still be compared.
+    private static let sample = UsageStatusReadout.Face(provider: "Claude", windows: [
+        UsageWindow(id: "five_hour", title: "Session", percentage: 37, resetsAt: nil, duration: 5 * 3600),
+        UsageWindow(id: "seven_day", title: "Week", percentage: 81, resetsAt: nil, duration: 7 * 86_400)
+    ])
+    var body: some View {
+        let preferences = usage.preferences
+        VStack(alignment: .leading, spacing: 10) {
+            SectionCaption(text: "Menu bar")
+            MenuBarDesignTiles(choices: MenuBarMeterStyle.allCases, selected: MenuBarMeterStyle(choice: preferences.menuBarStyle),
+                               title: { $0.title }, image: { style, dark in
+                var (face, _) = UsageStatusReadout.readout(usage, dark: dark)
+                if face.fractions.isEmpty {
+                    face = Self.sample
+                    face.palette = MenuBarMeterPalette(choice: preferences.menuBarPalette)
+                }
+                face.style = style
+                face.dark = face.palette != .clean && dark
+                return UsageStatusReadout.image(face)
+            }) { style in
+                var next = usage.preferences; next.menuBarStyle = style.rawValue; usage.updatePreferences(next)
+            }
+            MenuBarPaletteRow(selected: MenuBarMeterPalette(choice: preferences.menuBarPalette)) { palette in
+                var next = usage.preferences; next.menuBarPalette = palette.rawValue; usage.updatePreferences(next)
             }
         }
     }

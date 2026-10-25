@@ -35,6 +35,7 @@ struct StayAwakeView: View {
             }
             Text("The display can turn off and the screen can lock while background work continues. Tasks that control on-screen apps still need an unlocked session.")
                 .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+            StayAwakeMenuBarSettings()
             StayAwakeSettingsView(power: power)
         }.task { await power.refresh() }
     }

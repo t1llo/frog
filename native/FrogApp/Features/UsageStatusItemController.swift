@@ -10,19 +10,17 @@ import FrogUsage
     private let openDashboard: () -> Void
     private var item: NSStatusItem?
     private var observation: AnyCancellable?
+    private var appearance: NSKeyValueObservation?
     private var timer: Timer?
     private var updateTask: Task<Void, Never>?
     /// What the item shows, so that a check finding the readout unchanged draws nothing.
     private var shownFace: UsageStatusReadout.Face?
     private var shownDescription: String?
     /// Borderless like Frog's own menu-bar popup: the same panel surface, no popover arrow.
-    private(set) var popup: NSPanel?
-    private var localClick: Any?
-    private var outsideClick: Any?
-    private var deactivation: NSObjectProtocol?
-    private var otherPopup: NSObjectProtocol?
+    private let presenter = StatusItemPopup(name: UsageStatusPopover.popupName)
+    var popup: NSPanel? { presenter.panel }
     var isInstalled: Bool { item != nil }
-    var isPopupShown: Bool { popup?.isVisible == true }
+    var isPopupShown: Bool { presenter.isShown }
 
     init(usage: UsageDashboardModel, openDashboard: @escaping () -> Void) {
         self.usage = usage; self.openDashboard = openDashboard
@@ -40,6 +38,10 @@ import FrogUsage
                 self?.updateReadout()
             }
         }
+        // A coloured design draws its text for the menu bar's light or dark look.
+        appearance = item.button?.observe(\.effectiveAppearance) { [weak self] _, _ in
+            Task { @MainActor in self?.updateReadout() }
+        }
         // Also expire server windows when no new request has completed.
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.updateReadout() }
@@ -51,6 +53,7 @@ import FrogUsage
     func stop() {
         timer?.invalidate(); timer = nil
         observation?.cancel(); observation = nil
+        appearance?.invalidate(); appearance = nil
         updateTask?.cancel(); updateTask = nil
         closePopup()
         if let item { NSStatusBar.system.removeStatusItem(item) }
@@ -59,7 +62,7 @@ import FrogUsage
 
     private func updateReadout() {
         guard let button = item?.button else { return }
-        let (face, description) = readout()
+        let (face, description) = UsageStatusReadout.readout(usage, dark: button.effectiveAppearance.isDark)
         // Most checks find the readout as it was; only what changed is drawn or set again.
         if face != shownFace { button.image = UsageStatusReadout.image(face); shownFace = face }
         guard description != shownDescription else { return }
@@ -68,43 +71,12 @@ import FrogUsage
         button.setAccessibilityLabel(description)
     }
 
-    /// Each Claude account side by side or combined, when Frog shows several; otherwise the one
-    /// account or provider as always.
-    private func readout() -> (UsageStatusReadout.Face, String) {
-        let provider = usage.preferences.provider
-        let accounts = provider == "Claude" && usage.claudeAccountsEnabled ? usage.accounts() : []
-        if accounts.count >= 2 {
-            let preferences = usage.preferences
-            guard preferences.claudeAccountsView == "combined" else {
-                return (UsageStatusReadout.Face(accounts: accounts, window: preferences.claudeAccountsMenuBar),
-                        UsageStatusReadout.description(accounts: accounts))
-            }
-            let combined = usage.combinedWindows()
-            let counted = combined.prefix(2)
-            return (UsageStatusReadout.Face(provider: provider, windows: counted.map(\.window),
-                                            dimmed: counted.contains { !$0.missing.isEmpty }),
-                    UsageStatusReadout.description(accounts: accounts, combined: combined))
-        }
-        let windows = usage.windows(provider: provider)
-        // Without a plan reading the item still says something: the period's API estimate.
-        let estimate = windows.isEmpty ? UsageStatusReadout.estimate(usage, provider: provider) : nil
-        let face = UsageStatusReadout.Face(provider: provider, windows: windows, estimate: estimate,
-                                           dimmed: usage.planWarning(provider: provider) != nil)
-        let description = ([UsageStatusReadout.description(provider: provider, windows: windows, estimate: estimate),
-                            usage.planName(provider: provider).map { "\($0) plan" },
-                            usage.status(provider: provider)]).compactMap { $0 }.joined(separator: "\n")
-        return (face, description)
-    }
-
     @objc private func togglePopup() {
         guard let button = item?.button else { return }
         if isPopupShown { closePopup() } else { showPopup(relativeTo: button) }
     }
 
     func showPopup(relativeTo anchor: NSView) {
-        closePopup()
-        // Frog's own menu-bar popup closes itself when this one opens, and the reverse.
-        NotificationCenter.default.post(name: .frogMenuPopupWillOpen, object: UsageStatusPopover.popupName)
         let host = NSHostingView(rootView: UsageStatusPopover(usage: usage, openDashboard: { [weak self] in
             self?.closePopup(); self?.openDashboard()
         }, signIn: { [weak self] in
@@ -118,38 +90,7 @@ import FrogUsage
             self?.closePopup()
             if let usage = self?.usage { ClaudeSignIn.start(usage, account: account.id) }
         }).background(MenuWindowSizing()))
-        let size = host.fittingSize
-        let panel = UsagePopupPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
-                                    backing: .buffered, defer: false)
-        panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = true
-        panel.level = .popUpMenu; panel.isReleasedWhenClosed = false
-        panel.collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary]
-        panel.onCancel = { [weak self] in self?.closePopup() }
-        panel.contentView = host
-        panel.setFrameOrigin(Self.popupOrigin(size: size, anchor: anchor))
-        popup = panel
-        panel.makeKeyAndOrderFront(nil)
-        localClick = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self, weak anchor] event in
-            guard let self, let popup = self.popup else { return event }
-            // The popup and the menus it opens are inside; everything else in Frog dismisses it.
-            var window = event.window
-            while let current = window { if current === popup { return event }; window = current.parent }
-            // Let the status button's own action toggle once, rather than close/reopen.
-            if let anchor, event.window === anchor.window,
-               anchor.bounds.contains(anchor.convert(event.locationInWindow, from: nil)) { return event }
-            self.closePopup()
-            return event
-        }
-        outsideClick = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
-            self?.closePopup()
-        }
-        deactivation = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.closePopup() }
-        }
-        otherPopup = NotificationCenter.default.addObserver(forName: .frogMenuPopupWillOpen, object: nil, queue: .main) { [weak self] note in
-            let other = note.object as? String != UsageStatusPopover.popupName
-            MainActor.assumeIsolated { if other { self?.closePopup() } }
-        }
+        presenter.show(host, relativeTo: anchor)
     }
 
     /// The popup has closed; the explanation comes first, then Terminal opens on request.
@@ -164,44 +105,50 @@ import FrogUsage
         ClaudeSignIn.startLiveSetup(usage, account: account.id)
     }
 
-    /// Directly beneath the status item and left-aligned with it, like a MenuBarExtra window,
-    /// kept inside the item's display.
-    private static func popupOrigin(size: NSSize, anchor: NSView) -> NSPoint {
-        let button = anchor.window?.convertToScreen(anchor.convert(anchor.bounds, to: nil)) ?? .zero
-        var origin = NSPoint(x: button.minX, y: button.minY - 5 - size.height)
-        if let visible = (anchor.window?.screen ?? NSScreen.main)?.visibleFrame {
-            origin.x = max(visible.minX + 8, min(origin.x, visible.maxX - size.width - 8))
-            origin.y = max(visible.minY + 8, origin.y)
-        }
-        return origin
-    }
-
-    func closePopup() {
-        if let localClick { NSEvent.removeMonitor(localClick) }; localClick = nil
-        if let outsideClick { NSEvent.removeMonitor(outsideClick) }; outsideClick = nil
-        for observer in [deactivation, otherPopup].compactMap({ $0 }) { NotificationCenter.default.removeObserver(observer) }
-        deactivation = nil; otherPopup = nil
-        guard let popup else { return }
-        self.popup = nil
-        popup.orderOut(nil)
-        // Popup content is created when opened; releasing it ends its visible refresh.
-        popup.contentView = nil
-    }
+    func closePopup() { presenter.close() }
 
     isolated deinit { stop() }
 }
 
-/// A borderless panel takes no key focus by default; the popup's controls and Escape need it.
-private final class UsagePopupPanel: NSPanel {
-    var onCancel: (() -> Void)?
-    override var canBecomeKey: Bool { true }
-    override func cancelOperation(_ sender: Any?) { onCancel?() }
-}
-
-/// Matches standalone Mr. Usage's two-window template readout, including its tiny tracks.
+/// Matches standalone Mr. Usage's two-window template readout, including its tiny tracks, or
+/// draws the limits as one of the shared menu-bar meters.
 enum UsageStatusReadout {
     /// Shown in place of plan windows: the selected period and its API-equivalent value.
     struct Estimate { let range: String; let value: String }
+
+    /// Each Claude account side by side or combined, when Frog shows several; otherwise the one
+    /// account or provider as always. Drawn in the design chosen on the Mr. Usage page.
+    @MainActor static func readout(_ usage: UsageDashboardModel, dark: Bool) -> (Face, String) {
+        var (face, description) = readout(usage)
+        face.style = MenuBarMeterStyle(choice: usage.preferences.menuBarStyle)
+        face.palette = MenuBarMeterPalette(choice: usage.preferences.menuBarPalette)
+        // A clean design is a template, which macOS tints; only colours depend on the menu bar.
+        face.dark = face.palette != .clean && dark
+        return (face, description)
+    }
+
+    @MainActor private static func readout(_ usage: UsageDashboardModel) -> (Face, String) {
+        let provider = usage.preferences.provider
+        let accounts = provider == "Claude" && usage.claudeAccountsEnabled ? usage.accounts() : []
+        if accounts.count >= 2 {
+            let preferences = usage.preferences
+            guard preferences.claudeAccountsView == "combined" else {
+                return (Face(accounts: accounts, window: preferences.claudeAccountsMenuBar), description(accounts: accounts))
+            }
+            let combined = usage.combinedWindows()
+            let counted = combined.prefix(2)
+            return (Face(provider: provider, windows: counted.map(\.window), dimmed: counted.contains { !$0.missing.isEmpty }),
+                    description(accounts: accounts, combined: combined))
+        }
+        let windows = usage.windows(provider: provider)
+        // Without a plan reading the item still says something: the period's API estimate.
+        let estimate = windows.isEmpty ? self.estimate(usage, provider: provider) : nil
+        let face = Face(provider: provider, windows: windows, estimate: estimate, dimmed: usage.planWarning(provider: provider) != nil)
+        let description = ([description(provider: provider, windows: windows, estimate: estimate),
+                            usage.planName(provider: provider).map { "\($0) plan" },
+                            usage.status(provider: provider)]).compactMap { $0 }.joined(separator: "\n")
+        return (face, description)
+    }
 
     @MainActor static func estimate(_ usage: UsageDashboardModel, provider: String) -> Estimate? {
         let chart = usage.chart(provider: provider, range: usage.preferences.range, metric: "API cost")
@@ -220,6 +167,21 @@ enum UsageStatusReadout {
         let dimmed: Bool
         /// One per entry while each Claude account is shown: a stale account recedes on its own.
         let dimmedEntries: [Bool]
+        var style: MenuBarMeterStyle = .numbers
+        var palette: MenuBarMeterPalette = .clean
+        /// Whether the menu bar is dark; only a coloured design depends on it.
+        var dark = false
+
+        /// The limits as a shared meter, for every design but numbers. Without a plan reading
+        /// (a name or an estimate) the readout stays text.
+        var meter: MenuBarMeterFace? {
+            guard style != .numbers, !fractions.isEmpty else { return nil }
+            let rows = labels.indices.map { index in
+                MenuBarMeterRow(label: labels[index], fraction: values[index] == "—" ? nil : fractions[index], value: values[index],
+                                dimmed: dimmedEntries.indices.contains(index) && dimmedEntries[index])
+            }
+            return MenuBarMeterFace(rows: rows, style: style, palette: palette, dimmed: dimmed, dark: dark)
+        }
 
         init(provider: String, windows: [UsageWindow], estimate: Estimate? = nil, dimmed: Bool = false) {
             let windows = Array(windows.prefix(2))
@@ -262,6 +224,8 @@ enum UsageStatusReadout {
     }
 
     static func image(_ face: Face) -> NSImage {
+        if let meter = face.meter { return MenuBarMeter.image(meter) }
+        let ink = MenuBarMeter.Ink(palette: face.palette, dark: face.dark)
         let labelFont = NSFont.systemFont(ofSize: 9, weight: .semibold)
         let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
         let (labels, values, fractions) = (face.labels, face.values, face.fractions)
@@ -270,20 +234,20 @@ enum UsageStatusReadout {
         // A reading that could not be refreshed stays readable but recedes.
         let strength = face.dimmed ? 0.55 : 1
         let image = NSImage(size: NSSize(width: total, height: 22), flipped: false) { _ in
-            if widths.isEmpty { draw(face.provider, at: NSPoint(x: 0, y: 4), font: valueFont) }
+            if widths.isEmpty { draw(face.provider, at: NSPoint(x: 0, y: 4), font: valueFont, color: ink.text(1)) }
             else {
                 var x: CGFloat = 0
                 for index in widths.indices {
                     let strength = face.dimmedEntries.indices.contains(index) && face.dimmedEntries[index] ? strength * 0.55 : strength
-                    draw(labels[index], at: NSPoint(x: x, y: fractions.isEmpty ? 6 : 7), font: labelFont, opacity: 0.7 * strength)
-                    draw(values[index], at: NSPoint(x: x + width(labels[index], font: labelFont) + 4, y: fractions.isEmpty ? 4 : 5), font: valueFont, opacity: strength)
+                    draw(labels[index], at: NSPoint(x: x, y: fractions.isEmpty ? 6 : 7), font: labelFont, color: ink.text(0.7 * strength))
+                    draw(values[index], at: NSPoint(x: x + width(labels[index], font: labelFont) + 4, y: fractions.isEmpty ? 4 : 5), font: valueFont, color: ink.text(strength))
                     guard fractions.indices.contains(index) else { continue }
                     let track = NSRect(x: x, y: 2, width: widths[index], height: 2)
-                    NSColor.black.withAlphaComponent(0.18).setFill()
+                    ink.track(face.palette == .clean ? 1 : strength).setFill()
                     NSBezierPath(roundedRect: track, xRadius: 1, yRadius: 1).fill()
                     let fraction = fractions[index]
                     if fraction > 0 {
-                        NSColor.black.withAlphaComponent(0.85 * strength).setFill()
+                        ink.fill(fraction: fraction, position: fraction, strength: face.palette == .clean ? 0.85 / 0.88 * strength : strength).setFill()
                         NSBezierPath(roundedRect: NSRect(x: x, y: 2, width: max(2, widths[index] * fraction), height: 2), xRadius: 1, yRadius: 1).fill()
                     }
                     x += widths[index] + 10
@@ -291,7 +255,7 @@ enum UsageStatusReadout {
             }
             return true
         }
-        image.isTemplate = true
+        image.isTemplate = face.palette == .clean
         return image
     }
     static func description(provider: String, windows: [UsageWindow], estimate: Estimate? = nil) -> String {
@@ -341,7 +305,7 @@ enum UsageStatusReadout {
         return (value == value.rounded() ? String(format: "%.0f", value) : String(format: "%.1f", value)) + unit
     }
     private static func width(_ text: String, font: NSFont) -> CGFloat { (text as NSString).size(withAttributes: [.font: font]).width }
-    private static func draw(_ text: String, at point: NSPoint, font: NSFont, opacity: Double = 1) {
-        (text as NSString).draw(at: point, withAttributes: [.font: font, .foregroundColor: NSColor.black.withAlphaComponent(opacity)])
+    private static func draw(_ text: String, at point: NSPoint, font: NSFont, color: NSColor) {
+        (text as NSString).draw(at: point, withAttributes: [.font: font, .foregroundColor: color])
     }
 }

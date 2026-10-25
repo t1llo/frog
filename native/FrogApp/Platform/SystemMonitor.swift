@@ -15,6 +15,10 @@ final class SystemMonitor: ObservableObject {
     @Published private(set) var history: [SystemMonitorSample] = []
     /// Not published: no view reads it, and hiding the view must not publish while it is taken down.
     var isSampling: Bool { task != nil }
+    /// The newest CPU and GPU reading, also while the overview is out of sight, for the menu-bar
+    /// item. A subject rather than `@Published`, so the mounted menu does not redraw with every
+    /// background sample. Nil while monitoring is off.
+    let readings = CurrentValueSubject<SystemMonitorReading?, Never>(nil)
 
     private let sampler: any SystemMonitorSampling
     private let interval: Duration
@@ -24,6 +28,8 @@ final class SystemMonitor: ObservableObject {
     private var latest: (cpu: SystemMonitorMetric, gpu: SystemMonitorMetric)?
     private var enabled = false
     private var presented = false
+    /// A menu-bar item shows the readings, so they are taken as often as for the open overview.
+    private var liveReadout = false
     private var generation = UUID()
     private var task: Task<Void, Never>?
     /// The stretch of time the graph covers.
@@ -59,6 +65,13 @@ final class SystemMonitor: ObservableObject {
         run(reset: false)
     }
 
+    /// While a menu-bar item shows CPU and GPU, out-of-sight readings come as often as shown ones.
+    func setLiveReadout(_ live: Bool) {
+        guard liveReadout != live else { return }
+        liveReadout = live
+        if enabled, !presented { run(reset: false) }
+    }
+
     func stop() {
         enabled = false
         presented = false
@@ -71,7 +84,7 @@ final class SystemMonitor: ObservableObject {
         let token = generation
         let sampler = sampler
         let full = presented
-        let pause = full ? interval : backgroundInterval
+        let pause = full || liveReadout ? interval : backgroundInterval
         // Closing the view follows a sample taken a moment ago; opening it wants one now.
         let startsPaused = !full && !reset
         // No synchronous OS reads occur here or during menu construction.
@@ -98,6 +111,8 @@ final class SystemMonitor: ObservableObject {
         recorded.append(.init(time: time, cpu: reading.cpu.value, gpu: reading.gpu.value))
         if recorded.count > Self.historyLimit { recorded.removeFirst(recorded.count - Self.historyLimit) }
         latest = (reading.cpu, reading.gpu)
+        let live = SystemMonitorReading(cpu: reading.cpu, gpu: reading.gpu)
+        if readings.value != live { readings.send(live) }
         guard full else { return }
         snapshot = reading
         history = recorded
@@ -111,6 +126,7 @@ final class SystemMonitor: ObservableObject {
         history = []
         recorded = []
         latest = nil
+        if readings.value != nil { readings.send(nil) }
     }
 
     deinit { task?.cancel() }
