@@ -202,6 +202,26 @@ Several Claude accounts on one Mac, such as two Claude app profiles:
 
 Accounts, folders and labels stay on this Mac and are not part of the configuration.
 
+The look of the Mr. Usage menu bar item:
+
+- `usage.menu-bar-style`: `numbers` (default) shows each limit as a percentage with a thin
+  track; `segments` stacks a five-step meter per limit or account, one step per 20%;
+  `bars` stacks smooth bars; `columns` stands the bars side by side.
+- `usage.menu-bar-palette`: `clean` (default) follows the menu bar's own colour; `level`
+  turns each meter green, amber or red as it fills; `spectrum` runs from green to red along
+  the meter.
+
+### Menu bar items for System monitor and Stay awake
+
+- `system-monitor.menu-bar`: boolean, default `false`. Shows CPU and GPU load as its own
+  menu bar item while System monitor is on; clicking it opens the system overview.
+- `system-monitor.menu-bar-style`: a `usage.menu-bar-style` value, default `segments`.
+- `system-monitor.menu-bar-palette`: a `usage.menu-bar-palette` value, default `spectrum`.
+- `stay-awake.menu-bar`: boolean, default `false`. Shows a cup in the menu bar while Stay
+  awake is on, instead of the small cup next to Frog's icon.
+- `stay-awake.menu-bar-style`: `icon` shows the cup alone; `ring` (default) drains a ring
+  around it as a timed session runs out; `time` adds the time that is left.
+
 <!-- slot: explain -->
 ### Explain
 

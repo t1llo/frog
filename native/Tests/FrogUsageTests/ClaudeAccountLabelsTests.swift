@@ -60,7 +60,8 @@ final class ClaudeAccountLabelsTests: XCTestCase {
         XCTAssertFalse(text.contains("fixture"))
         let keys = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(preferences)) as? [String: Any]).keys
         XCTAssertEqual(Set(keys), ["provider", "range", "metric", "allDevices", "loginSource",
-                                   "claudeAccounts", "claudeAccountsView", "claudeAccountsMenuBar"])
+                                   "claudeAccounts", "claudeAccountsView", "claudeAccountsMenuBar",
+                                   "menuBarStyle", "menuBarPalette"])
     }
 
     func testPollingKeys() {

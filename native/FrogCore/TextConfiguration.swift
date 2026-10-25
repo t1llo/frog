@@ -56,6 +56,13 @@ enum TextConfiguration {
             .init("usage.claude-accounts", "toolkit.usage.claudeAccounts", .bool),
             .init("usage.claude-accounts-view", "toolkit.usage.claudeAccountsView", .choice(["each", "combined"])),
             .init("usage.claude-accounts-menu-bar", "toolkit.usage.claudeAccountsMenuBar", .choice(["session", "week"])),
+            .init("usage.menu-bar-style", "toolkit.usage.menuBarStyle", .choice(MenuBarMeterChoices.styles)),
+            .init("usage.menu-bar-palette", "toolkit.usage.menuBarPalette", .choice(MenuBarMeterChoices.palettes)),
+            .init("system-monitor.menu-bar", "toolkit.systemMonitor.menuBarItem", .bool),
+            .init("system-monitor.menu-bar-style", "toolkit.systemMonitor.menuBarStyle", .choice(MenuBarMeterChoices.styles)),
+            .init("system-monitor.menu-bar-palette", "toolkit.systemMonitor.menuBarPalette", .choice(MenuBarMeterChoices.palettes)),
+            .init("stay-awake.menu-bar", "toolkit.stayAwake.menuBarItem", .bool),
+            .init("stay-awake.menu-bar-style", "toolkit.stayAwake.menuBarStyle", .choice(StayAwakePreferences.menuBarStyles)),
             .init("menubar.auto-hide", "toolkit.menuBar.autoHide", .bool),
             .init("menubar.auto-hide-seconds", "toolkit.menuBar.autoHideSeconds", .number(1...3600)),
             .init("menubar.start-collapsed", "toolkit.menuBar.startCollapsed", .bool),
@@ -243,6 +250,8 @@ enum TextConfiguration {
             for (key, data) in [
                 ("usage", try JSONEncoder().encode(UsageDisplayPreferences())),
                 ("menuBar", try JSONEncoder().encode(MenuBarPreferences())),
+                ("systemMonitor", try JSONEncoder().encode(SystemMonitorPreferences())),
+                ("stayAwake", try JSONEncoder().encode(StayAwakePreferences())),
                 // slot: explain
                 ("explain", try JSONEncoder().encode(ExplainSettings())),
                 // slot: windows

@@ -13,6 +13,10 @@ public struct UsageWindow: Identifiable {
     public let resetsAt: Date?
     public let duration: TimeInterval?
 
+    public init(id: String, title: String, percentage: Double, resetsAt: Date?, duration: TimeInterval?) {
+        self.id = id; self.title = title; self.percentage = percentage; self.resetsAt = resetsAt; self.duration = duration
+    }
+
     public func pace(at now: Date) -> String? {
         guard percentage.isFinite, let resetsAt, resetsAt > now,
               let duration, duration.isFinite, duration > 0,
@@ -46,21 +50,28 @@ public struct UsageDashboardPreferences: Codable, Equatable {
     public var claudeAccountsView: String
     /// The window the menu bar shows per account: "session" or "week".
     public var claudeAccountsMenuBar: String
+    /// How the menu-bar item draws its limits: "numbers", "segments", "bars" or "columns".
+    public var menuBarStyle: String
+    /// Its colours: "clean", "level" or "spectrum".
+    public var menuBarPalette: String
 
     public static let claudeAccountsViews = ["each", "combined"]
     public static let claudeAccountsMenuBarWindows = ["session", "week"]
 
     public init(provider: String = "Claude", range: String = "7d", metric: String = "API cost",
                 allDevices: Bool = false, loginSource: String = "Automatic", claudeAccounts: Bool = false,
-                claudeAccountsView: String = "each", claudeAccountsMenuBar: String = "session") {
+                claudeAccountsView: String = "each", claudeAccountsMenuBar: String = "session",
+                menuBarStyle: String = "numbers", menuBarPalette: String = "clean") {
         self.provider = provider; self.range = range; self.metric = metric
         self.allDevices = allDevices; self.loginSource = loginSource
         self.claudeAccounts = claudeAccounts; self.claudeAccountsView = claudeAccountsView
         self.claudeAccountsMenuBar = claudeAccountsMenuBar
+        self.menuBarStyle = menuBarStyle; self.menuBarPalette = menuBarPalette
     }
 
     private enum CodingKeys: String, CodingKey {
         case provider, range, metric, allDevices, loginSource, claudeAccounts, claudeAccountsView, claudeAccountsMenuBar
+        case menuBarStyle, menuBarPalette
     }
 
     /// Choices saved before a field existed load with that field's default.
@@ -75,6 +86,8 @@ public struct UsageDashboardPreferences: Codable, Equatable {
         claudeAccounts = try values.decodeIfPresent(Bool.self, forKey: .claudeAccounts) ?? defaults.claudeAccounts
         claudeAccountsView = try values.decodeIfPresent(String.self, forKey: .claudeAccountsView) ?? defaults.claudeAccountsView
         claudeAccountsMenuBar = try values.decodeIfPresent(String.self, forKey: .claudeAccountsMenuBar) ?? defaults.claudeAccountsMenuBar
+        menuBarStyle = try values.decodeIfPresent(String.self, forKey: .menuBarStyle) ?? defaults.menuBarStyle
+        menuBarPalette = try values.decodeIfPresent(String.self, forKey: .menuBarPalette) ?? defaults.menuBarPalette
     }
 }
 public struct UsageChartPoint: Identifiable {

@@ -145,6 +145,10 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
     public var windowSwitcherHotkey: Hotkey?
     public var usage: UsageDisplayPreferences?
     public var menuBar: MenuBarPreferences?
+    /// The CPU and GPU item in the menu bar.
+    public var systemMonitor: SystemMonitorPreferences?
+    /// The icon that says Stay awake is on.
+    public var stayAwake: StayAwakePreferences?
     // slot: explain
     public var explain: ExplainSettings?
     // slot: windows
@@ -171,6 +175,8 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         case windowSwitcherHotkey
         case usage
         case menuBar
+        case systemMonitor
+        case stayAwake
         // slot: explain
         case explain
         // slot: windows
@@ -195,6 +201,8 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         windowSwitcherHotkey = try values.decodeIfPresent(Hotkey.self, forKey: .windowSwitcherHotkey)
         usage = try values.decodeIfPresent(UsageDisplayPreferences.self, forKey: .usage)
         menuBar = try values.decodeIfPresent(MenuBarPreferences.self, forKey: .menuBar)
+        systemMonitor = try values.decodeIfPresent(SystemMonitorPreferences.self, forKey: .systemMonitor)
+        stayAwake = try values.decodeIfPresent(StayAwakePreferences.self, forKey: .stayAwake)
         // slot: explain
         explain = try values.decodeIfPresent(ExplainSettings.self, forKey: .explain)
         // slot: windows
@@ -224,16 +232,23 @@ public struct UsageDisplayPreferences: Codable, Equatable, Sendable {
     public var claudeAccountsView: String
     /// The window the menu bar shows per account: "session" or "week".
     public var claudeAccountsMenuBar: String
+    /// How the menu-bar item draws its limits, one of `MenuBarMeterChoices.styles`.
+    public var menuBarStyle: String
+    /// Its colours, one of `MenuBarMeterChoices.palettes`.
+    public var menuBarPalette: String
     public init(provider: String = "Claude", range: String = "7d", metric: String = "API cost", allDevices: Bool = false, loginSource: String = "Automatic",
-                claudeAccounts: Bool = false, claudeAccountsView: String = "each", claudeAccountsMenuBar: String = "session") {
+                claudeAccounts: Bool = false, claudeAccountsView: String = "each", claudeAccountsMenuBar: String = "session",
+                menuBarStyle: String = "numbers", menuBarPalette: String = "clean") {
         self.provider = provider; self.range = range; self.metric = metric
         self.allDevices = allDevices; self.loginSource = loginSource
         self.claudeAccounts = claudeAccounts; self.claudeAccountsView = claudeAccountsView
         self.claudeAccountsMenuBar = claudeAccountsMenuBar
+        self.menuBarStyle = menuBarStyle; self.menuBarPalette = menuBarPalette
     }
 
     private enum CodingKeys: String, CodingKey {
         case provider, range, metric, allDevices, loginSource, claudeAccounts, claudeAccountsView, claudeAccountsMenuBar
+        case menuBarStyle, menuBarPalette
     }
 
     /// Files written before a field existed load with that field's default.
@@ -248,6 +263,8 @@ public struct UsageDisplayPreferences: Codable, Equatable, Sendable {
         claudeAccounts = try values.decodeIfPresent(Bool.self, forKey: .claudeAccounts) ?? defaults.claudeAccounts
         claudeAccountsView = try values.decodeIfPresent(String.self, forKey: .claudeAccountsView) ?? defaults.claudeAccountsView
         claudeAccountsMenuBar = try values.decodeIfPresent(String.self, forKey: .claudeAccountsMenuBar) ?? defaults.claudeAccountsMenuBar
+        menuBarStyle = try values.decodeIfPresent(String.self, forKey: .menuBarStyle) ?? defaults.menuBarStyle
+        menuBarPalette = try values.decodeIfPresent(String.self, forKey: .menuBarPalette) ?? defaults.menuBarPalette
     }
 
     public func validate() throws {
@@ -256,6 +273,9 @@ public struct UsageDisplayPreferences: Codable, Equatable, Sendable {
         }
         guard ["session", "week"].contains(claudeAccountsMenuBar) else {
             throw FrogError.message("Choose session or week for the Claude accounts menu bar item.")
+        }
+        guard MenuBarMeterChoices.styles.contains(menuBarStyle), MenuBarMeterChoices.palettes.contains(menuBarPalette) else {
+            throw FrogError.message("Choose a known design for the Mr. Usage menu bar item.")
         }
     }
 }

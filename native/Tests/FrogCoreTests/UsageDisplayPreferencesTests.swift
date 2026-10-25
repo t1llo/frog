@@ -29,7 +29,8 @@ final class UsageDisplayPreferencesTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(UsageDisplayPreferences.self, from: data), preferences)
         let keys = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any]).keys
         XCTAssertEqual(Set(keys), ["provider", "range", "metric", "allDevices", "loginSource",
-                                   "claudeAccounts", "claudeAccountsView", "claudeAccountsMenuBar"],
+                                   "claudeAccounts", "claudeAccountsView", "claudeAccountsMenuBar",
+                                   "menuBarStyle", "menuBarPalette"],
                        "Account labels and folders are never part of the portable choices")
     }
 }
