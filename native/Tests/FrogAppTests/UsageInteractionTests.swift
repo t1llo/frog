@@ -24,6 +24,40 @@ import FrogUsage
         XCTAssertEqual(try ConfigurationStore(directory: root).load().preferences.toolkit?.usage?.provider, "OpenAI")
     }
 
+    /// What a click on a design tile does: Mr. Usage's goes through the usage model, the CPU and
+    /// GPU and Stay awake ones save the preferences. Each must reach the file and stay chosen.
+    func testChosenMenuBarDesignsReachTheConfigurationAndStayChosen() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let defaults = temporaryDefaults()
+        defer { try? FileManager.default.removeItem(at: root) }
+        var configuration = Configuration(); configuration.preferences.setFeature(.usage, enabled: true)
+        try ConfigurationStore(directory: root).save(configuration)
+        let usage = UsageDashboardModel(defaults: defaults, fixtureRoot: root.appendingPathComponent("fixtures"))
+        let toolkit = Toolkit(makeUsage: { usage }, showsUsageStatusItem: false)
+        let model = AppModel(dataDirectory: root, registerShortcuts: false, toolkit: toolkit)
+        defer { model.shutdown() }
+
+        var next = usage.preferences; next.menuBarStyle = "bars"; next.menuBarPalette = "level"
+        usage.updatePreferences(next)
+        var preferences = model.configuration.preferences
+        preferences.ensureToolkit()
+        preferences.toolkit?.systemMonitor = SystemMonitorPreferences(menuBarItem: true, menuBarStyle: "columns")
+        preferences.toolkit?.stayAwake = StayAwakePreferences(menuBarItem: true, menuBarStyle: "time")
+        try model.savePreferences(preferences)
+
+        XCTAssertEqual(usage.preferences.menuBarStyle, "bars", "Saving the other choices must not undo Mr. Usage's")
+        XCTAssertEqual(usage.preferences.menuBarPalette, "level")
+        let text = try String(contentsOf: root.appendingPathComponent("config"), encoding: .utf8)
+        for line in ["usage.menu-bar-style = bars", "usage.menu-bar-palette = level", "system-monitor.menu-bar = true",
+                     "system-monitor.menu-bar-style = columns", "stay-awake.menu-bar = true", "stay-awake.menu-bar-style = time"] {
+            XCTAssertTrue(text.contains(line), line)
+        }
+        try model.reloadConfiguration()
+        XCTAssertEqual(usage.preferences.menuBarStyle, "bars")
+        XCTAssertEqual(model.configuration.preferences.toolkitSettings.systemMonitor?.menuBarStyle, "columns")
+        XCTAssertEqual(model.configuration.preferences.toolkitSettings.stayAwake?.menuBarStyle, "time")
+    }
+
     func testDisplaySaveFailurePreservesExternalEditAndRestoresSavedProvider() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let defaults = temporaryDefaults()

@@ -57,6 +57,9 @@ public struct UsageDashboardPreferences: Codable, Equatable {
 
     public static let claudeAccountsViews = ["each", "combined"]
     public static let claudeAccountsMenuBarWindows = ["session", "week"]
+    /// The same lists as FrogCore's `MenuBarMeterChoices`, which this module cannot import.
+    public static let menuBarStyles = ["numbers", "segments", "bars", "columns"]
+    public static let menuBarPalettes = ["clean", "level", "spectrum"]
 
     public init(provider: String = "Claude", range: String = "7d", metric: String = "API cost",
                 allDevices: Bool = false, loginSource: String = "Automatic", claudeAccounts: Bool = false,
@@ -418,7 +421,9 @@ extension ClaudeAccountsCombination.Combined: Identifiable {
             claudeAccounts: value.claudeAccounts,
             claudeAccountsView: UsageDashboardPreferences.claudeAccountsViews.contains(value.claudeAccountsView) ? value.claudeAccountsView : "each",
             claudeAccountsMenuBar: UsageDashboardPreferences.claudeAccountsMenuBarWindows.contains(value.claudeAccountsMenuBar)
-                ? value.claudeAccountsMenuBar : "session")
+                ? value.claudeAccountsMenuBar : "session",
+            menuBarStyle: UsageDashboardPreferences.menuBarStyles.contains(value.menuBarStyle) ? value.menuBarStyle : "numbers",
+            menuBarPalette: UsageDashboardPreferences.menuBarPalettes.contains(value.menuBarPalette) ? value.menuBarPalette : "clean")
     }
     public func windows(provider: String, now: Date = Date()) -> [UsageWindow] {
         let claude = provider == Provider.claude.rawValue

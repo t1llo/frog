@@ -756,7 +756,10 @@ Automated: `MenuBarItemPreferencesTests` (both files round-trip the looks; an un
 `MenuBarMeterTests` (faces only change in whole percents, only *Clean* is a template, the width
 stays the same while readings change, a GPU without a load reading leaves CPU alone, the Stay
 awake countdown) and `SystemMonitorTests` (the item gets CPU and GPU at the shown pace while the
-overview stays closed and untouched, and nothing once switched off). With
+overview stays closed and untouched, and nothing once switched off). `UsageMenuBarDesignTests`
+and `UsageInteractionTests` cover a click on a tile: in 1.0.35 the usage model's checks dropped
+Mr. Usage's design, so every choice snapped back to Numbers; now each choice reaches `config`
+and survives a reload. With
 `FROG_MENU_BAR_EVIDENCE=<folder>`, `MenuBarMeterTests` draws every design in light and dark into
 `menu-bar-designs.png`.
 
