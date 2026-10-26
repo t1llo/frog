@@ -145,9 +145,13 @@ public final class PluginStore: @unchecked Sendable {
         return result
     }
 
-    /// Records the user's approval of what the installed copy asks for, and turns it on.
-    public func approve(_ id: String) throws {
+    /// Records the user's approval of what the installed copy asks for, and turns it on. `expecting` is what the
+    /// user reviewed; a plugin that asks for anything else by now is refused, so an approval never covers more
+    /// than was shown.
+    public func approve(_ id: String, expecting reviewed: PluginGrant? = nil) throws {
+        lock.lock(); defer { lock.unlock() }
         let grant = try package(id).grant
+        if let reviewed, grant != reviewed { throw PluginError.invalid("The plugin changed while you reviewed it. Review it again.") }
         try change { registry in
             guard let index = registry.plugins.firstIndex(where: { $0.id == id }) else { throw PluginError.invalid("No plugin “\(id)” is installed.") }
             registry.plugins[index].approved = grant

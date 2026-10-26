@@ -29,7 +29,7 @@ public enum PluginPermission: String, Codable, CaseIterable, Comparable, Sendabl
         case .clipboardRead: "Reads the text you copied. Text a password manager marks as concealed is never given."
         case .clipboardWrite: "Replaces what is on the clipboard with text of its own."
         case .notifications: "Shows notifications from Frog."
-        case .links: "Opens https links in your default browser, which can send what is in the link to that site."
+        case .links: "Opens web links in your default browser, which can send what is in the link to that site."
         case .network: "Sends requests to the sites listed below, and only those. It can send them anything the plugin can read."
         case .ai: "Sends text to the model your Writing rules use by default. A cloud model's provider bills you for it."
         case .scripts: "Runs the scripts shown below with your full access to this Mac: your files, apps and accounts. Install it only if you trust the author and have read the scripts."
@@ -215,7 +215,7 @@ public struct PluginManifest: Codable, Equatable, Sendable {
         return current >= needed
     }
 
-    static func isValidID(_ id: String) -> Bool {
+    public static func isValidID(_ id: String) -> Bool {
         guard (3...64).contains(id.count), id.allSatisfy({ $0.isASCII && ($0.isLowercase || $0.isNumber || $0 == "." || $0 == "-") }) else { return false }
         // Every dot-separated part is a host name label: it neither starts nor ends with a hyphen.
         return id.split(separator: ".", omittingEmptySubsequences: false).allSatisfy { label in
@@ -223,7 +223,7 @@ public struct PluginManifest: Codable, Equatable, Sendable {
         }
     }
 
-    static func isValidName(_ name: String) -> Bool {
+    public static func isValidName(_ name: String) -> Bool {
         (1...32).contains(name.count) && name.first != "-" && name.allSatisfy { $0.isASCII && ($0.isLowercase || $0.isNumber || $0 == "-") }
     }
 
