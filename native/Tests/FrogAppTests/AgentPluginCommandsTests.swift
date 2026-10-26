@@ -15,6 +15,7 @@ import XCTest
         model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil }, writeClipboard: { _ in },
                          toolkit: Toolkit(showsUsageStatusItem: false, showsMenuBarOrganizer: false))
         model.plugins.directoryURL = nil
+        model.plugins.trash = { try FileManager.default.removeItem(at: $0) }
     }
 
     override func tearDown() async throws {

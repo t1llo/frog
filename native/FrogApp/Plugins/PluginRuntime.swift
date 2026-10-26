@@ -73,6 +73,8 @@ struct PluginListing: Decodable, Identifiable, Equatable {
 @MainActor final class PluginRuntime: NSObject, ObservableObject {
     /// The plugin directory's index; nil reads none, as in tests.
     var directoryURL: URL? = URL(string: "https://frog.beffa.xyz/plugins/index.json")
+    /// Where removed plugins go; tests delete them instead of filling the user's Trash.
+    var trash: (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
     static let maximumLogLines = 500
 
     @Published private(set) var items: [PluginItem] = []
@@ -327,7 +329,7 @@ struct PluginListing: Decodable, Identifiable, Equatable {
     func remove(_ id: String) {
         unload(id)
         do {
-            try store.remove(id)
+            try store.remove(id, trash: trash)
             storages[id] = nil
             logs[id] = nil
             removeNotifications(of: id)
