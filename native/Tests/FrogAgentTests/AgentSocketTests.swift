@@ -33,6 +33,34 @@ final class AgentSocketTests: XCTestCase {
         XCTAssertEqual(try AgentClient.send(AgentRequest(arguments: ["help"]), to: socket, timeout: 5).output, text)
     }
 
+    func testAToolThatGoesAwayCancelsItsCommand() throws {
+        let socket = folder.appendingPathComponent("agent.sock")
+        let started = expectation(description: "started"), cancelled = expectation(description: "cancelled")
+        let listener = try AgentListener(socket: socket) { _ in
+            started.fulfill()
+            try? await Task.sleep(for: .seconds(30))
+            if Task.isCancelled { cancelled.fulfill() }
+            return .success("too late")
+        }
+        defer { listener.stop() }
+        let client = try UnixSocket.make()
+        try UnixSocket.connect(client, to: socket.path)
+        try UnixSocket.writeAll(client, AgentWire.encode(AgentRequest(arguments: ["scripts", "run", "Slow"])))
+        wait(for: [started], timeout: 5)
+        close(client)
+        wait(for: [cancelled], timeout: 5)
+    }
+
+    func testAToolThatWaitsIsAnsweredAfterALongCommand() throws {
+        let socket = folder.appendingPathComponent("agent.sock")
+        let listener = try AgentListener(socket: socket) { _ in
+            try? await Task.sleep(for: .milliseconds(300))
+            return .success(Task.isCancelled ? "cancelled" : "finished")
+        }
+        defer { listener.stop() }
+        XCTAssertEqual(try AgentClient.send(AgentRequest(arguments: ["rules", "run"]), to: socket, timeout: 5).output, "finished")
+    }
+
     func testNothingListeningIsUnavailable() {
         XCTAssertThrowsError(try AgentClient.send(AgentRequest(arguments: ["help"]), to: folder.appendingPathComponent("agent.sock"))) {
             XCTAssertEqual($0 as? AgentSocketError, .unavailable)

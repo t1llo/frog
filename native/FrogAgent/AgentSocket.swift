@@ -89,6 +89,14 @@ enum UnixSocket {
         }
     }
 
+    /// Whether the other end closed the connection. Bytes it sent after its message are read and dropped.
+    static func peerClosed(_ socket: Int32) -> Bool {
+        var byte: UInt8 = 0
+        let count = recv(socket, &byte, 1, MSG_PEEK | MSG_DONTWAIT)
+        if count > 0 { _ = recv(socket, &byte, 1, MSG_DONTWAIT); return false }
+        return count == 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+    }
+
     /// Everything up to the first newline; one message per connection.
     static func readLine(_ socket: Int32, limit: Int) throws -> Data {
         var line = Data()
@@ -218,9 +226,23 @@ public final class AgentListener: @unchecked Sendable {
             return
         }
         let handler = handler
+        let work = Task { await handler(request) }
+        // The tool sends nothing after its request, so the socket turns readable only when it closes: killed, or
+        // out of time. The command is cancelled then, which stops a script it started.
+        let hangUp = DispatchSource.makeReadSource(fileDescriptor: client, queue: clientQueue)
+        let watching = DispatchGroup()
+        watching.enter()
+        hangUp.setEventHandler {
+            guard UnixSocket.peerClosed(client) else { return }
+            work.cancel(); hangUp.cancel()
+        }
+        hangUp.setCancelHandler { watching.leave() }
+        hangUp.resume()
         Task { [self] in
-            let response = await handler(request)
-            clientQueue.async { [self] in respond(client, response) }
+            let response = await work.value
+            hangUp.cancel()
+            // The socket is closed only once the watch on it has ended.
+            watching.notify(queue: clientQueue) { [self] in respond(client, response) }
         }
     }
 
