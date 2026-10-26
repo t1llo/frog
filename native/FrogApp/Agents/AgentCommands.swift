@@ -10,7 +10,7 @@ import FrogCore
 
     /// The heading each command's first word is listed under in `frog help`.
     static let groups: [String: String] = [
-        "status": "Frog", "version": "Frog", "features": "Frog", "open": "Frog", "notify": "Frog",
+        "status": "Frog", "version": "Frog", "features": "Frog", "open": "Frog",
         "windows": "Windows", "apps": "Windows",
         "scripts": "Scripts", "snippets": "Snippets", "notes": "Notes", "shelf": "Shelf",
         "clipboard": "Clipboard", "rules": "Writing rules", "awake": "Stay awake",
