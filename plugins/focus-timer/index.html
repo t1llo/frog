@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <title>Focus timer</title>
+  <link rel="stylesheet" href="/_frog/frog.css">
+  <style>
+    .timer { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 28px 20px; text-align: center; }
+    .time { font-size: 64px; font-weight: 300; line-height: 1; letter-spacing: -1.5px; font-variant-numeric: tabular-nums; }
+    .bar { width: min(320px, 100%); height: 4px; border-radius: 2px; background: var(--frog-inset); overflow: hidden; }
+    .bar > div { height: 100%; width: 0; background: var(--frog-accent); transition: width 0.4s linear; }
+    #custom { width: 72px; }
+  </style>
+</head>
+<body>
+  <main class="frog-page">
+    <header class="frog-header">
+      <div>
+        <h1>Focus timer</h1>
+        <p class="frog-subtitle">Work in focused blocks; Frog tells you when one ends.</p>
+      </div>
+    </header>
+
+    <p id="outside" class="frog-notice" hidden>This plugin runs inside Frog. Install its folder in Frog to use it.</p>
+    <p id="error" class="frog-error" role="alert" hidden></p>
+
+    <section class="frog-card timer">
+      <div class="frog-segmented" role="group" aria-label="Session length">
+        <button data-choice="25" aria-pressed="true">25 min</button>
+        <button data-choice="50" aria-pressed="false">50 min</button>
+        <button data-choice="custom" aria-pressed="false">Custom</button>
+      </div>
+      <label class="frog-row" id="custom-field" hidden>
+        Minutes <input id="custom" type="number" min="1" max="240" step="1" value="15">
+      </label>
+      <div id="time" class="time" role="timer">25:00</div>
+      <div class="bar" aria-hidden="true"><div id="progress"></div></div>
+      <p id="status" class="frog-muted">Ready</p>
+      <div class="frog-row">
+        <button id="reset">Reset</button>
+        <button id="toggle" class="frog-primary">Start</button>
+      </div>
+    </section>
+
+    <section class="frog-card">
+      <div class="frog-stat"><strong id="today">0</strong><span>Sessions finished today</span></div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

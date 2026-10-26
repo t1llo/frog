@@ -1,0 +1,12 @@
+{
+  "id": "xyz.beffa.frog.hacker-news",
+  "name": "Hacker News",
+  "version": "1.0.0",
+  "description": "The top 20 stories on Hacker News with their points, comments and age; a click opens the story in your browser.",
+  "author": "Frog",
+  "homepage": "https://github.com/t1llo/frog/tree/main/plugins/hacker-news",
+  "symbol": "newspaper",
+  "frog": "1.0.40",
+  "permissions": ["network", "links"],
+  "hosts": ["hacker-news.firebaseio.com"]
+}

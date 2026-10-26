@@ -1,0 +1,14 @@
+{
+  "id": "xyz.beffa.frog.word-counter",
+  "name": "Word counter",
+  "version": "1.0.0",
+  "description": "Counts the words, characters, sentences and paragraphs of any text, and how long it takes to read.",
+  "author": "Frog",
+  "homepage": "https://github.com/t1llo/frog/tree/main/plugins/word-counter",
+  "symbol": "textformat.123",
+  "frog": "1.0.40",
+  "permissions": ["clipboard-read"],
+  "commands": [
+    { "id": "count", "title": "Count words on the clipboard", "keywords": "words characters length reading time" }
+  ]
+}

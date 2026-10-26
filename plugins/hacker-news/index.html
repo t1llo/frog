@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <title>Hacker News</title>
+  <link rel="stylesheet" href="/_frog/frog.css">
+  <style>
+    #stories:empty { display: none; }
+    .story { display: flex; align-items: center; }
+    .story .frog-item { flex: 1; min-width: 0; display: grid; grid-template-columns: 20px 1fr; column-gap: 8px; }
+    .rank { padding-top: 1px; text-align: right; font-size: 12px; color: var(--frog-muted); font-variant-numeric: tabular-nums; }
+    .title { display: block; font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; }
+    .meta { display: block; margin-top: 3px; font-size: 11px; color: var(--frog-muted); }
+    .comments { margin-right: 8px; font-size: 11px; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <main class="frog-page">
+    <header class="frog-header">
+      <div>
+        <h1>Hacker News</h1>
+        <p class="frog-subtitle" id="updated">Top stories</p>
+      </div>
+      <button id="refresh"><span class="frog-spinner" id="spinner" hidden></span>Refresh</button>
+    </header>
+
+    <p id="outside" class="frog-notice" hidden>This plugin runs inside Frog. Install its folder in Frog to use it.</p>
+    <p id="error" class="frog-error" role="alert" hidden></p>
+    <p id="loading" class="frog-empty" hidden><span class="frog-spinner"></span>&nbsp; Loading the top stories…</p>
+
+    <ol id="stories" class="frog-list" aria-label="Top stories"></ol>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

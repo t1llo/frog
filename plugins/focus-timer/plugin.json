@@ -1,0 +1,15 @@
+{
+  "id": "xyz.beffa.frog.focus-timer",
+  "name": "Focus timer",
+  "version": "1.0.0",
+  "description": "A Pomodoro-style focus timer that notifies you when a session ends and counts the sessions you finish each day.",
+  "author": "Frog",
+  "homepage": "https://github.com/t1llo/frog/tree/main/plugins/focus-timer",
+  "symbol": "timer",
+  "frog": "1.0.40",
+  "permissions": ["notifications"],
+  "commands": [
+    { "id": "start", "title": "Start a focus session", "keywords": "pomodoro timer focus work", "show": false },
+    { "id": "stop", "title": "Stop the focus timer", "keywords": "pomodoro timer focus cancel", "show": false }
+  ]
+}

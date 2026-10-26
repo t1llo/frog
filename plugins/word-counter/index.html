@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <title>Word counter</title>
+  <link rel="stylesheet" href="/_frog/frog.css">
+  <style>
+    .frog-page { min-height: 100vh; }
+    #text { flex: 1; min-height: 160px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <main class="frog-page">
+    <header class="frog-header">
+      <div>
+        <h1>Word counter</h1>
+        <p class="frog-subtitle">Type or paste text, or count what is on the clipboard.</p>
+      </div>
+      <div class="frog-row">
+        <button id="clear">Clear</button>
+        <button id="paste" class="frog-primary">Use clipboard</button>
+      </div>
+    </header>
+
+    <p id="outside" class="frog-notice" hidden>This plugin runs inside Frog. Install its folder in Frog to use it.</p>
+    <p id="error" class="frog-error" role="alert" hidden></p>
+
+    <textarea id="text" placeholder="Start typing or paste text here" aria-label="Text to count" spellcheck="false"></textarea>
+
+    <section class="frog-card frog-grid" style="--min: 88px" aria-live="polite">
+      <div class="frog-stat"><strong id="words">0</strong><span>Words</span></div>
+      <div class="frog-stat"><strong id="characters">0</strong><span>Characters</span></div>
+      <div class="frog-stat"><strong id="sentences">0</strong><span>Sentences</span></div>
+      <div class="frog-stat"><strong id="paragraphs">0</strong><span>Paragraphs</span></div>
+      <div class="frog-stat"><strong id="reading">0 min</strong><span>Reading time</span></div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
