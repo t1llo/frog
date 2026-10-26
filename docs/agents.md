@@ -1,10 +1,10 @@
 # Agents
 
-The `frog` command lets you and your AI agents use Frog from a terminal: arrange windows, open apps, run your scripts, read and add notes and snippets, use the clipboard history and the shelf, run writing rules, keep the Mac awake, read the system monitor and Mr. Usage, and switch Frog's features on and off. A skill tells Claude Code, Codex, Gemini CLI, pi and OpenCode when and how to use it.
+The `frog` command lets you and your AI agents use Frog from a terminal: arrange windows, open apps, run your scripts, read and add notes, read snippets, use the clipboard history and the shelf, run writing rules, keep the Mac awake, read the system monitor and Mr. Usage, and switch Frog's features on and off. A skill tells Claude Code, Codex, Gemini CLI, pi and OpenCode when and how to use it.
 
 ## Turn it on
 
-Open **Settings → Agents** and switch on **Let AI agents use Frog**. It is off by default; while it is off, `frog` answers that agent access is off and does nothing. The setup assistant offers the same in its **AI agents** step, and changes nothing unless you press its button. In the configuration file the setting is `agents.access` (see [configuration](configuration.md#agents)).
+Open **Settings → Agents** and switch on **Let AI agents use Frog**. It is off by default; while it is off, `frog` answers that agent access is off and does nothing. The setup assistant's **AI agents** step offers the same: nothing changes until you press its **Turn on and install** button, and **Not now** moves on with agents left off. In the configuration file the setting is `agents.access` (see [configuration](configuration.md#agents)).
 
 ## Install the command
 
@@ -27,9 +27,9 @@ The skill is a `SKILL.md` in the [Agent Skills](https://agentskills.io) format, 
 | `~/.claude/skills/frog` | [Claude Code](https://code.claude.com/docs/en/skills) |
 | `~/.agents/skills/frog` | [Codex](https://developers.openai.com/codex/skills), [Gemini CLI](https://geminicli.com/docs/cli/skills/), [pi](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/skills.md), [OpenCode](https://opencode.ai/docs/skills/) |
 
-OpenCode also reads `~/.claude/skills`; when both are installed it sees the same skill twice and uses one of them. Each row says whether its agents were found on this Mac, by their settings folder (such as `~/.codex`) or their command. You can install a skill for an agent you have not set up yet.
+OpenCode also reads `~/.claude/skills`; when both are installed it sees the same skill twice and uses one of them. Settings has one row per folder. To show which agents are on this Mac, Frog looks for their settings (such as `~/.codex` or `~/.claude.json`) and their commands: a row whose agents it did not find says **Not found**, and the setup assistant ticks only the rows it found. You can still install a skill for an agent you set up later.
 
-**Update** appears when a newer Frog brings a newer skill. **Remove** deletes only the `SKILL.md` Frog wrote, then the `frog` folder if nothing else is left in it. A `frog` skill Frog did not write is never replaced or removed.
+**Update** appears when a newer Frog brings a newer skill. **Remove** deletes only the `SKILL.md` Frog wrote, then the `frog` folder if nothing else is left in it. A `frog` skill Frog did not write, or a link in place of the `frog` folder or its `SKILL.md`, is never replaced or removed.
 
 ## Use it
 
@@ -39,10 +39,10 @@ frog help                        # every command, by group
 frog help windows layout         # one command, with its options
 frog windows list --json
 frog features enable scripts
-pbpaste | frog notes add --stdin
+pbpaste | frog notes add "Title" --stdin
 ```
 
-`frog help` is the reference: the running app answers it, so it always lists exactly the commands that version of Frog has. The groups are Frog (status, features, open, notify), Windows (windows and apps), Scripts, Snippets, Notes, Shelf, Clipboard, Writing rules, Stay awake, System monitor and Mr. Usage. A group marked "(off)" belongs to a feature that is switched off; `frog features enable <feature>` turns it on.
+`frog help` is the reference: the running app answers it, so it always lists exactly the commands that version of Frog has. The groups are Frog (status, version, features, open), Windows (windows and apps), Scripts, Snippets, Notes, Shelf, Clipboard, Writing rules, Stay awake, System monitor and Mr. Usage. A group marked "(off)" belongs to a feature that is switched off; `frog features enable <feature>` turns it on.
 
 - `--json` prints machine-readable output.
 - `--stdin` passes standard input as the command's text.
