@@ -544,7 +544,7 @@ final class AppModel: ObservableObject {
         configuration.preferences.ruleFeatureEnabled(rule)
     }
     func openDocument(_ document: UtilityDocument) {
-        let feature: FeatureID = switch document.kind { case .note: .scratchpad; case .snippet: .snippets; case .shelf: .shelf; case .script: .scripts }
+        let feature: FeatureID = switch document.kind { case .note: .scratchpad; case .script: .scripts }
         guard configuration.preferences.featureEnabled(feature) else { return }
         documents.selection[document.kind] = document.id
         openFeature(feature)

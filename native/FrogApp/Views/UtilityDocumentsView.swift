@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 import FrogCore
 
 struct UtilityDocumentsView: View {
@@ -13,22 +12,13 @@ struct UtilityDocumentsView: View {
     }
     @State private var preview = false
     @State private var search = ""
-    @State private var dropTask: Task<Void, Never>?
     @State private var deleting: UUID?
-    private var title: String { switch kind { case .note: "Notes"; case .snippet: "Snippets"; case .shelf: "Shelf"; case .script: "Scripts" } }
-    private var deleteQuestion: String {
-        switch kind {
-        case .note: "Delete this note?"
-        case .snippet: "Delete this snippet?"
-        case .shelf: "Delete this shelf item?"
-        case .script: "Delete this script?"
-        }
-    }
+    private var title: String { switch kind { case .note: "Notes"; case .script: "Scripts" } }
+    private var deleteQuestion: String { switch kind { case .note: "Delete this note?"; case .script: "Delete this script?" } }
     private var items: [UtilityDocument] { documents.items.filter { $0.kind == kind && (search.isEmpty || ($0.title + " " + $0.text).localizedStandardContains(search)) } }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             PageHeader(title: title) {
-                if kind == .shelf { Button("Paste", systemImage: "clipboard") { pasteToShelf() }.disabled(!documents.loaded) }
                 Button("New", systemImage: "plus") {
                     selected = documents.add(UtilityDocument(kind: kind, title: kind.newItemTitle))
                 }.disabled(!documents.loaded)
@@ -45,8 +35,14 @@ struct UtilityDocumentsView: View {
                         LazyVStack(spacing: 3) {
                             ForEach(items) { item in
                                 Button { selected = item.id } label: {
-                                    Text(item.title.isEmpty ? "Untitled" : item.title).font(.system(size: 12)).lineLimit(2)
-                                        .frame(maxWidth: .infinity, alignment: .leading).padding(9)
+                                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                        Text(item.title.isEmpty ? "Untitled" : item.title).font(.system(size: 12)).lineLimit(2)
+                                        Spacer(minLength: 0)
+                                        if item.pastes {
+                                            Image(systemName: "text.badge.plus").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                                                .help("Pastes from the command bar")
+                                        }
+                                    }.frame(maxWidth: .infinity, alignment: .leading).padding(9)
                                         .background(item.id == selected ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: 6))
                                 }.buttonStyle(.plain).onDrag { provider(item) }
                             }
@@ -58,7 +54,7 @@ struct UtilityDocumentsView: View {
                     editor(item)
                 } else {
                     VStack(spacing: 10) {
-                        Image(systemName: kind == .shelf ? "tray" : "note.text").font(.system(size: 28))
+                        Image(systemName: kind == .script ? "terminal" : "note.text").font(.system(size: 28))
                         Text(items.isEmpty ? "Create your first item" : "Select an item")
                     }.foregroundStyle(FrogStyle.muted).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -66,26 +62,14 @@ struct UtilityDocumentsView: View {
         }.padding(20).frame(maxWidth: 1080).frame(maxWidth: .infinity, alignment: .top)
             .buttonStyle(FrogButtonStyle())
             .task { await documents.load(); if selected == nil { selected = items.first?.id } }
-            .onDrop(of: [.fileURL, .url, .utf8PlainText], isTargeted: nil) { providers in
-                guard kind == .shelf, documents.loaded else { return false }
-                dropTask?.cancel()
-                dropTask = Task {
-                    for provider in providers.prefix(100) {
-                        let item = await ShelfDrop.document(from: provider)
-                        guard !Task.isCancelled, model.configuration.preferences.featureEnabled(.shelf) else { return }
-                        if let item { selected = documents.add(item) }
-                    }
-                }
-                return true
-            }
-            .onDisappear { dropTask?.cancel(); dropTask = nil }
             .confirmationDialog(L10n.text(deleteQuestion), isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
                 Button("Delete", role: .destructive) {
                     if let deleting { remove(deleting) }
                     deleting = nil
                 }
             } message: {
-                Text(kind == .shelf ? "It will be removed from the shelf for good. Files it holds stay where they are."
+                Text(documents.items.first { $0.id == deleting }?.files.isEmpty == false
+                    ? "It will be permanently deleted from this Mac. Files it holds stay where they are."
                     : "It will be permanently deleted from this Mac.")
             }
     }
@@ -108,6 +92,11 @@ struct UtilityDocumentsView: View {
                     CompactSegments(values: [false, true], selected: preview, title: { $0 ? "Preview" : "Edit" }) { preview = $0 }
                 }
                 Spacer()
+                if kind == .note {
+                    Toggle("Paste from command bar", isOn: pastesBinding(item)).toggleStyle(.switch).controlSize(.mini)
+                        .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                        .help("Choosing the note in the command bar pastes its text instead of opening it")
+                }
                 Menu {
                     Button("Export…", systemImage: "square.and.arrow.up") { export(item) }
                     if item.files.isEmpty { ShareLink(item: item.text) { Label("Share text…", systemImage: "square.and.arrow.up.on.square") } }
@@ -118,7 +107,7 @@ struct UtilityDocumentsView: View {
                 } label: { Image(systemName: "ellipsis").frame(width: 26).modifier(CompactActionSurface()) }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Item actions")
             }.controlSize(.small)
-            if kind == .snippet { Text("Variables: {{date}}, {{time}}, {{clipboard}}").font(.system(size: 10)).foregroundStyle(FrogStyle.muted) }
+            if item.pastes { Text("Variables: {{date}}, {{time}}, {{clipboard}}").font(.system(size: 10)).foregroundStyle(FrogStyle.muted) }
             if !item.files.isEmpty {
                 ForEach(item.files, id: \.self) { url in
                     HStack {
@@ -145,6 +134,12 @@ struct UtilityDocumentsView: View {
             current[keyPath: key] = text; documents.update(current)
         })
     }
+    private func pastesBinding(_ item: UtilityDocument) -> Binding<Bool> {
+        Binding(get: { documents.items.first { $0.id == item.id }?.pastes ?? false }, set: { pastes in
+            guard var current = documents.items.first(where: { $0.id == item.id }) else { return }
+            current.pastes = pastes; documents.update(current)
+        })
+    }
     private func provider(_ item: UtilityDocument) -> NSItemProvider {
         if let url = item.files.first { return NSItemProvider(object: url as NSURL) }
         return NSItemProvider(object: item.text as NSString)
@@ -152,12 +147,12 @@ struct UtilityDocumentsView: View {
     private func copy(_ item: UtilityDocument) {
         let board = model.clipboardHistoryStore.pasteboard
         if !item.files.isEmpty { board.clearContents(); board.writeObjects(item.files as [NSURL]); return }
-        let text = kind == .snippet ? SnippetExpansion.expand(item.text, clipboard: board.string(forType: .string) ?? "") : item.text
-        let sensitive = kind == .snippet && item.text.contains("{{clipboard}}") && board.holdsSensitiveText
+        let text = item.pastes ? SnippetExpansion.expand(item.text, clipboard: board.string(forType: .string) ?? "") : item.text
+        let sensitive = item.pastes && item.text.contains("{{clipboard}}") && board.holdsSensitiveText
         guard ClipboardHistoryEntry(text: text, isSensitive: sensitive).write(to: board, plainText: true) else {
             model.report(FrogError.message("Could not copy the item.")); return
         }
-        if kind == .snippet { model.statistics.recordToolUse(.snippetCopy) }
+        if item.pastes { model.statistics.recordToolUse(.snippetCopy) }
     }
     private func export(_ item: UtilityDocument) {
         let panel = NSSavePanel(); panel.nameFieldStringValue = (item.title.isEmpty ? "Untitled" : item.title) + (kind == .note ? ".md" : kind == .script ? ".sh" : ".txt")
@@ -165,18 +160,12 @@ struct UtilityDocumentsView: View {
         do { try item.text.write(to: url, atomically: true, encoding: .utf8) }
         catch { let alert = NSAlert(error: error); alert.runModal() }
     }
-    private func pasteToShelf() {
-        let board = model.clipboardHistoryStore.pasteboard
-        if let urls = board.readObjects(forClasses: [NSURL.self]) as? [URL], !urls.isEmpty {
-            for url in urls.prefix(100) { selected = documents.add(ShelfDrop.document(url: url)) }
-        } else if let text = board.string(forType: .string), let item = ShelfDrop.document(text: text) { selected = documents.add(item) }
-    }
 }
 
 extension UtilityDocument.Kind {
     /// The title of an item that New creates.
     var newItemTitle: String {
-        switch self { case .note: "Untitled note"; case .snippet: "New snippet"; case .shelf: "Shelf item"; case .script: "New script" }
+        switch self { case .note: "Untitled note"; case .script: "New script" }
     }
 }
 
@@ -207,91 +196,6 @@ struct ScriptOutputView: View {
             Text("Runs with zsh in your home folder, up to 60 seconds. Output stays in memory.").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
             if showsResult, !runner.output.isEmpty {
                 ScrollView { Text(runner.output).font(.system(size: 11, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(height: 120)
-            }
-        }.buttonStyle(FrogButtonStyle())
-    }
-}
-
-enum ShelfDrop {
-    static func document(url: URL) -> UtilityDocument {
-        UtilityDocument(kind: .shelf, title: url.lastPathComponent.isEmpty ? url.host ?? url.absoluteString : url.lastPathComponent,
-                        text: url.isFileURL ? "" : url.absoluteString, files: url.isFileURL ? [url] : [])
-    }
-    static func document(text: String) -> UtilityDocument? {
-        guard !text.isEmpty, text.utf8.count <= 1_000_000 else { return nil }
-        return UtilityDocument(kind: .shelf, title: String(text.prefix(60)).replacingOccurrences(of: "\n", with: " "), text: text)
-    }
-    static func document(from provider: NSItemProvider) async -> UtilityDocument? {
-        if provider.canLoadObject(ofClass: NSURL.self) {
-            let url: URL? = await withCheckedContinuation { continuation in
-                _ = provider.loadObject(ofClass: NSURL.self) { value, _ in continuation.resume(returning: value as? URL) }
-            }
-            if let url { return document(url: url) }
-        }
-        if provider.canLoadObject(ofClass: NSString.self) {
-            let text: String? = await withCheckedContinuation { continuation in
-                _ = provider.loadObject(ofClass: NSString.self) { value, _ in continuation.resume(returning: value as? String) }
-            }
-            if let text { return document(text: text) }
-        }
-        return nil
-    }
-}
-
-extension AppearancePreferences.Mode {
-    /// "Switch appearance" turns what is on screen to the other one. While the mode follows the
-    /// system, that is the appearance macOS shows now, so a dark Mac turns light.
-    static func switched(from mode: Self?, systemIsDark: Bool) -> Self {
-        let showsDark = switch mode ?? .system {
-        case .system: systemIsDark
-        case .light: false
-        case .dark: true
-        }
-        return showsDark ? .light : .dark
-    }
-}
-
-enum QuickTextTools {
-    /// Base64 that was pasted is often wrapped or ends in a line break. Spaces and line breaks
-    /// are dropped; any other character outside the alphabet still makes the input invalid,
-    /// rather than being skipped into different bytes.
-    static func base64Decoded(_ input: String) -> String? {
-        Data(base64Encoded: String(input.filter { !$0.isWhitespace })).flatMap { String(data: $0, encoding: .utf8) }
-    }
-}
-
-struct QuickActionsView: View {
-    @EnvironmentObject private var model: AppModel
-    @State private var input = ""
-    @State private var result = ""
-    var body: some View {
-        PageScroll {
-            PageHeader(title: "Quick actions")
-            HStack {
-                Button("Switch appearance", systemImage: "circle.lefthalf.filled") {
-                    var prefs = model.configuration.preferences
-                    var appearance = prefs.appearance ?? AppearancePreferences()
-                    let systemIsDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                    appearance.mode = .switched(from: appearance.mode, systemIsDark: systemIsDark); prefs.appearance = appearance
-                    do { try model.savePreferences(prefs) } catch { model.report(error) }
-                }
-                Button("Lock screen", systemImage: "lock") {
-                    let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? ProcessInfo.processInfo.processIdentifier
-                    Task { do { try await SystemActionController.shared.perform(.lockScreen, pid: pid) } catch { model.report(error) } }
-                }
-            }
-            SettingsSection(title: "Text tools") {
-                TextEditor(text: $input).frame(minHeight: 110).scrollContentBackground(.hidden).padding(8).background(FrogStyle.inset)
-                HStack {
-                    Button("Clean URL") { result = LinkCleaning.clean(input) ?? "Enter an HTTP or HTTPS URL." }
-                    Button("Base64 encode") { result = Data(input.utf8).base64EncodedString() }
-                    Button("Base64 decode") { result = QuickTextTools.base64Decoded(input) ?? "Not valid UTF-8 Base64." }
-                    Button("Generate UUID") { result = UUID().uuidString }
-                }.controlSize(.small)
-                if !result.isEmpty {
-                    Text(result).font(.system(size: 12, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                    Button("Copy result") { ViewActions.copy(result) }
-                }
             }
         }.buttonStyle(FrogButtonStyle())
     }

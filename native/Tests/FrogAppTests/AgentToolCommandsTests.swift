@@ -118,35 +118,35 @@ import XCTest
         XCTAssertEqual(saved.first { $0.title == "Groceries" }?.text, "Milk\nBread")
     }
 
-    func testTheShelfSaysWhenTheStoreIsFull() async throws {
-        try await enable(.shelf)
+    func testAddingANoteSaysWhenTheStoreIsFull() async throws {
+        try await enable(.scratchpad)
         await model.documents.load()
-        for index in 0..<999 { model.documents.add(UtilityDocument(kind: .note, title: "Note \(index)", text: "")) }
-        let file = directory.appendingPathComponent("report.txt")
-        try "report".write(to: file, atomically: true, encoding: .utf8)
-        let full = await run("shelf", "add", "report.txt", "report.txt")
+        for index in 0..<999 { model.documents.add(UtilityDocument(kind: .script, title: "Script \(index)", text: "")) }
+        let last = await run("notes", "add", "Last")
+        XCTAssertEqual(last.exitCode, 0, last.error)
+        let full = await run("notes", "add", "One too many")
         XCTAssertEqual(full.exitCode, AgentExit.failure)
-        XCTAssertTrue(full.error.contains("room for 1 more"), full.error)
-        XCTAssertEqual(model.documents.items.count, 999)
-        let one = await run("shelf", "add", "report.txt")
-        XCTAssertEqual(one.exitCode, 0, one.error)
+        XCTAssertTrue(full.error.contains("room for 0 more"), full.error)
+        XCTAssertEqual(model.documents.items.count, 1000)
     }
 
-    func testSnippetsShowTheirTextAndExpandItWithoutRevealingSensitiveText() async throws {
-        try await enable(.snippets)
-        await store(UtilityDocument(kind: .snippet, title: "Greeting", text: "Hi {{clipboard}}, {{date}}"))
+    func testNotesThatPasteShowTheirTextAndExpandItWithoutRevealingSensitiveText() async throws {
+        try await enable(.scratchpad)
+        await store(UtilityDocument(kind: .note, title: "Greeting", text: "Hi {{clipboard}}, {{date}}", pastes: true))
         pasteboard.clearContents(); pasteboard.setString("Anna", forType: .string)
 
-        let raw = await run("snippets", "show", "Greeting")
+        let raw = await run("notes", "show", "Greeting")
         XCTAssertEqual(raw.output, "Hi {{clipboard}}, {{date}}")
-        let expanded = await run("snippets", "show", "greeting", "--expand")
+        let expanded = await run("notes", "show", "greeting", "--expand")
         XCTAssertTrue(expanded.output.hasPrefix("Hi Anna, "), expanded.output)
         XCTAssertFalse(expanded.output.contains("{{"), expanded.output)
-        let list = await run("snippets", "list")
-        XCTAssertTrue(list.output.contains("Greeting"), list.output)
+        let list = await run("notes", "list")
+        XCTAssertTrue(list.output.contains("Greeting") && list.output.contains("pastes"), list.output)
+        let json = try array(await run("notes", "list", json: true))
+        XCTAssertEqual(json.first?["pastes"] as? Bool, true)
 
         XCTAssertTrue(ClipboardHistoryEntry(text: "hunter2", isSensitive: true).write(to: pasteboard, plainText: true))
-        let concealed = await run("snippets", "show", "Greeting", "--expand")
+        let concealed = await run("notes", "show", "Greeting", "--expand")
         XCTAssertEqual(concealed.exitCode, AgentExit.failure)
         XCTAssertFalse(concealed.output.contains("hunter2") || concealed.error.contains("hunter2"))
 
@@ -156,9 +156,18 @@ import XCTest
         transient.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
         pasteboard.clearContents(); pasteboard.writeObjects([transient])
         XCTAssertTrue(pasteboard.holdsSensitiveText)
-        let code = await run("snippets", "show", "Greeting", "--expand")
+        let code = await run("notes", "show", "Greeting", "--expand")
         XCTAssertEqual(code.exitCode, AgentExit.failure)
         XCTAssertFalse(code.output.contains("482913"))
+    }
+
+    func testCommandsOfRetiredFeaturesSayWhatToUseInstead() async {
+        let snippets = await run("snippets", "list")
+        XCTAssertEqual(snippets.exitCode, AgentExit.usage)
+        XCTAssertTrue(snippets.error.contains("frog notes list"), snippets.error)
+        let shelf = await run("shelf", "add", "report.pdf")
+        XCTAssertEqual(shelf.exitCode, AgentExit.usage)
+        XCTAssertTrue(shelf.error.contains("notes now"), shelf.error)
     }
 
     func testScriptsRunAsTheAppRunsThemAndPassOnTheirExitCode() async throws {
@@ -241,22 +250,6 @@ import XCTest
         XCTAssertEqual(history.entries.first?.text, "See you at 10")
         let empty = await run("clipboard", "copy")
         XCTAssertEqual(empty.exitCode, AgentExit.usage)
-    }
-
-    func testShelfTakesFilesAndLinksAndListsTheirPaths() async throws {
-        try await enable(.shelf)
-        let file = directory.appendingPathComponent("report.txt")
-        try "report".write(to: file, atomically: true, encoding: .utf8)
-        let added = await run("shelf", "add", "report.txt", "https://example.com/page")
-        XCTAssertEqual(added.exitCode, 0, added.error)
-        let items = try array(await run("shelf", "list", json: true))
-        XCTAssertEqual(items.count, 2)
-        let paths = items.compactMap { $0["files"] as? [String] }.flatMap { $0 }
-        XCTAssertEqual(paths.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath() }, [file.resolvingSymlinksInPath()])
-        let list = await run("shelf", "list")
-        XCTAssertTrue(list.output.contains("report.txt"), list.output)
-        let missing = await run("shelf", "add", "nothing-here.txt")
-        XCTAssertEqual(missing.exitCode, AgentExit.usage)
     }
 
     func testRulesAreListedAndRunOnTextWithoutCopying() async throws {
@@ -360,8 +353,8 @@ import XCTest
 
     func testCommandsOfAFeatureThatIsOffSayHowToTurnItOn() async throws {
         let cases: [([String], String)] = [
-            (["scripts", "list"], "scripts"), (["snippets", "list"], "snippets"), (["notes", "list"], "notes"),
-            (["shelf", "list"], "shelf"), (["clipboard", "list"], "clipboard"), (["usage"], "usage")
+            (["scripts", "list"], "scripts"), (["notes", "list"], "notes"),
+            (["clipboard", "list"], "clipboard"), (["usage"], "usage")
         ]
         for (words, feature) in cases {
             let response = await AgentCommands.run(AgentRequest(arguments: words), model: model)
@@ -378,8 +371,8 @@ import XCTest
 
     func testHelpListsAndExplainsTheToolCommands() async {
         let help = await run("help")
-        for usage in ["scripts run <name> [--timeout SECONDS]", "snippets show <name> [--expand]", "notes append <name> [text]",
-                      "shelf add <path or link>…", "clipboard list [--limit N]", "rules run <rule> <text>", "awake on", "monitor", "usage"] {
+        for usage in ["scripts run <name> [--timeout SECONDS]", "notes show <name> [--expand]", "notes append <name> [text]",
+                      "clipboard list [--limit N]", "rules run <rule> <text>", "awake on", "monitor", "usage"] {
             XCTAssertTrue(help.output.contains(usage), usage)
         }
         let details = await run("help", "scripts", "run")

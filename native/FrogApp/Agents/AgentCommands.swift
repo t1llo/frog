@@ -12,9 +12,16 @@ import FrogCore
     static let groups: [String: String] = [
         "status": "Frog", "version": "Frog", "features": "Frog", "open": "Frog",
         "windows": "Windows", "apps": "Windows",
-        "scripts": "Scripts", "snippets": "Snippets", "notes": "Notes", "shelf": "Shelf",
+        "scripts": "Scripts", "notes": "Notes",
         "clipboard": "Clipboard", "rules": "Writing rules", "awake": "Stay awake",
         "monitor": "System monitor", "usage": "Mr. Usage"
+    ]
+
+    /// Commands of features that became part of others, with what to use instead. Skills installed
+    /// before then still name them.
+    static let retired: [String: String] = [
+        "snippets": "Snippets are notes now. Run `frog notes list`, and `frog notes show <name> --expand` to fill in their variables.",
+        "shelf": "The shelf is gone; its items are notes now. Run `frog notes list`."
     ]
 
     static func run(_ request: AgentRequest, model: AppModel) async -> AgentResponse {
@@ -28,6 +35,7 @@ import FrogCore
             if words.count == 1, all.contains(where: { $0.words.first == words[0] }) {
                 return help(for: words, model: model, json: request.json)
             }
+            if let first = words.first, let hint = retired[first] { return .failure(hint, exitCode: AgentExit.usage) }
             let typed = words.joined(separator: " ")
             return .failure("Unknown command “\(typed)”. Run `frog help` for the list.", exitCode: AgentExit.usage)
         }

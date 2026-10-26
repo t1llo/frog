@@ -104,7 +104,7 @@ struct StatisticsView: View {
         case .systemCommand: "System commands"
         case .commandSelection: "Command bar selections"
         case .scriptRun: "Scripts completed"
-        case .snippetCopy: "Snippets copied"
+        case .snippetCopy: "Notes pasted"
         }
     }
 }

@@ -3,9 +3,9 @@ import FrogAgent
 import FrogCore
 import os
 
-/// Scripts, snippets, notes and the shelf: the items on those pages, read from and saved to the same store.
+/// Scripts and notes: the items on those pages, read from and saved to the same store.
 extension AgentCommands {
-    static var documentTools: [AgentCommand] { scripts + snippets + notes + shelf }
+    static var documentTools: [AgentCommand] { scripts + notes }
 
     private static var scripts: [AgentCommand] {
         [
@@ -51,38 +51,31 @@ extension AgentCommands {
         ]
     }
 
-    private static var snippets: [AgentCommand] {
-        [
-            AgentCommand(words: ["snippets", "list"], summary: "Your snippets.", feature: .snippets) { call in
-                list(try await items(.snippet, call.model), kind: .snippet) { [$0.shownTitle, preview($0.text)] }
-            },
-            AgentCommand(words: ["snippets", "show"], arguments: "<name> [--expand]", summary: "Print a snippet.",
-                         details: """
-                         With --expand, {{date}}, {{time}} and {{clipboard}} are filled in as pasting the snippet would. \
-                         Text an app marked as sensitive, such as a password, is never filled in.
-
-                         Example: frog snippets show signature --expand
-                         """, flags: ["expand"], feature: .snippets) { call in
-                let snippet = try await document(.snippet, call)
-                guard call.flag("expand") else { return show(snippet) }
-                let pasteboard = call.model.clipboardHistoryStore.pasteboard
-                if snippet.text.contains("{{clipboard}}"), pasteboard.holdsSensitiveText {
-                    throw AgentCommandError.failed("The clipboard holds text marked as sensitive, so {{clipboard}} is not filled in.")
-                }
-                return show(snippet, text: SnippetExpansion.expand(snippet.text, clipboard: pasteboard.string(forType: .string) ?? ""))
-            }
-        ]
-    }
-
     private static var notes: [AgentCommand] {
         [
-            AgentCommand(words: ["notes", "list"], summary: "Your notes, with when each changed.", feature: .scratchpad) { call in
-                list(try await items(.note, call.model), kind: .note) { [$0.shownTitle, $0.modified.formatted(date: .abbreviated, time: .shortened)] }
-            },
-            AgentCommand(words: ["notes", "show"], arguments: "<name>", summary: "Print a note.",
-                         details: "Takes a name from `frog notes list`; the start of a name is enough when only one note begins with it.",
+            AgentCommand(words: ["notes", "list"], summary: "Your notes, with when each changed.",
+                         details: "Notes marked “pastes” are pasted when chosen in the command bar, with their variables filled in.",
                          feature: .scratchpad) { call in
-                show(try await document(.note, call))
+                list(try await items(.note, call.model), kind: .note) {
+                    [$0.shownTitle, $0.modified.formatted(date: .abbreviated, time: .shortened), $0.pastes ? "pastes" : ""]
+                }
+            },
+            AgentCommand(words: ["notes", "show"], arguments: "<name> [--expand]", summary: "Print a note.",
+                         details: """
+                         Takes a name from `frog notes list`; the start of a name is enough when only one note begins with it.
+
+                         With --expand, {{date}}, {{time}} and {{clipboard}} are filled in as pasting the note from the \
+                         command bar would. Text an app marked as sensitive, such as a password, is never filled in.
+
+                         Example: frog notes show signature --expand
+                         """, flags: ["expand"], feature: .scratchpad) { call in
+                let note = try await document(.note, call)
+                guard call.flag("expand") else { return show(note) }
+                let pasteboard = call.model.clipboardHistoryStore.pasteboard
+                if note.text.contains("{{clipboard}}"), pasteboard.holdsSensitiveText {
+                    throw AgentCommandError.failed("The clipboard holds text marked as sensitive, so {{clipboard}} is not filled in.")
+                }
+                return show(note, text: SnippetExpansion.expand(note.text, clipboard: pasteboard.string(forType: .string) ?? ""))
             },
             AgentCommand(words: ["notes", "add"], arguments: "<title> [text]", summary: "Add a note.",
                          details: """
@@ -126,40 +119,6 @@ extension AgentCommands {
         ]
     }
 
-    private static var shelf: [AgentCommand] {
-        [
-            AgentCommand(words: ["shelf", "list"], summary: "What is on the shelf: files with their paths, links and text.", feature: .shelf) { call in
-                list(try await items(.shelf, call.model), kind: .shelf, files: true) { item in
-                    [item.shownTitle, item.files.isEmpty ? preview(item.text) : item.files.map(\.path).joined(separator: ", ")]
-                }
-            },
-            AgentCommand(words: ["shelf", "add"], arguments: "<path or link>…", summary: "Put files or links on the shelf.",
-                         details: """
-                         Each file or http(s) link becomes a shelf item, ready to drag into another app. Paths are relative to \
-                         the folder the command is typed in.
-
-                         Example: frog shelf add report.pdf ~/Desktop/chart.png
-                         """, feature: .shelf) { call in
-                guard !call.positional.isEmpty else { throw AgentCommandError.usage("Missing <path>. Usage: \(call.command.usage)") }
-                guard call.positional.count <= 100 else { throw AgentCommandError.usage("Add up to 100 items at a time.") }
-                let added = try call.positional.map { word -> UtilityDocument in
-                    if let link = URL(string: word), ["http", "https"].contains(link.scheme?.lowercased() ?? ""), link.host != nil {
-                        return ShelfDrop.document(url: link)
-                    }
-                    let file = call.path(word)
-                    guard FileManager.default.fileExists(atPath: file.path) else { throw AgentCommandError.usage("Nothing found at \(file.path).") }
-                    return ShelfDrop.document(url: file)
-                }
-                let documents = try await loadedDocuments(call.model)
-                try checkRoom(documents, for: added.count)
-                added.forEach { documents.add($0) }
-                try await save(documents) { added.forEach { documents.remove($0.id) } }
-                let text = added.count == 1 ? "Put “\(added[0].shownTitle)” on the shelf." : "Put \(added.count) items on the shelf."
-                return AgentResult(added.map { Entry($0, text: true, files: true) }, text: text)
-            }
-        ]
-    }
-
     // MARK: Store
 
     private static func loadedDocuments(_ model: AppModel) async throws -> LocalDocuments {
@@ -197,17 +156,17 @@ extension AgentCommands {
         guard text.utf8.count <= 1_000_000 else { throw AgentCommandError.failed("A note holds at most 1 MB of text.") }
     }
 
-    /// Notes, snippets, scripts and the shelf share one store of up to 1,000 items.
+    /// Notes and scripts share one store of up to 1,000 items.
     private static func checkRoom(_ documents: LocalDocuments, for count: Int) throws {
         let free = 1000 - documents.items.count
         guard count <= free else {
-            throw AgentCommandError.failed("Frog keeps up to 1,000 notes, snippets, scripts and shelf items together. There is room for \(max(0, free)) more.")
+            throw AgentCommandError.failed("Frog keeps up to 1,000 notes and scripts together. There is room for \(max(0, free)) more.")
         }
     }
 
-    private static func list(_ items: [UtilityDocument], kind: UtilityDocument.Kind, files: Bool = false,
+    private static func list(_ items: [UtilityDocument], kind: UtilityDocument.Kind,
                              columns: (UtilityDocument) -> [String]) -> AgentResult {
-        AgentResult(items.map { Entry($0, text: files, files: files) },
+        AgentResult(items.map { Entry($0) },
                     text: items.isEmpty ? kind.empty : AgentTable.render(items.map(columns)))
     }
 
@@ -222,11 +181,15 @@ extension AgentCommands {
         let name: String
         let modified: Date
         var text: String?
+        /// Files a note that was a shelf item holds.
         var files: [String]?
-        init(_ item: UtilityDocument, text: Bool = false, files: Bool = false) {
+        /// Whether choosing the note in the command bar pastes it. Only notes have it.
+        let pastes: Bool?
+        init(_ item: UtilityDocument, text: Bool = false) {
             id = item.id; name = item.title; modified = item.modified
             self.text = text ? item.text : nil
-            self.files = files ? item.files.map(\.path) : nil
+            files = item.files.isEmpty ? nil : item.files.map(\.path)
+            pastes = item.kind == .note ? item.pastes : nil
         }
     }
 
@@ -246,13 +209,13 @@ private extension UtilityDocument {
 
 private extension UtilityDocument.Kind {
     var noun: String {
-        switch self { case .note: "note"; case .snippet: "snippet"; case .shelf: "shelf item"; case .script: "script" }
+        switch self { case .note: "note"; case .script: "script" }
     }
     /// The first word of its commands.
     var command: String {
-        switch self { case .note: "notes"; case .snippet: "snippets"; case .shelf: "shelf"; case .script: "scripts" }
+        switch self { case .note: "notes"; case .script: "scripts" }
     }
     var empty: String {
-        switch self { case .note: "No notes yet."; case .snippet: "No snippets yet."; case .shelf: "The shelf is empty."; case .script: "No scripts yet." }
+        switch self { case .note: "No notes yet."; case .script: "No scripts yet." }
     }
 }

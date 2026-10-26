@@ -113,6 +113,15 @@ enum TextConfiguration {
     /// Every key the file accepts; docs/configuration.md names each of them.
     static var keys: [String] { fields.map(\.key) }
 
+    /// Switches of features that were retired. A file still holding them loads, the migration in
+    /// `ToolkitPreferences` reads their values, and the next save leaves them out.
+    private static let retiredFields: [Field] = ToolkitPreferences.retiredFeatures.sorted().map {
+        .init("feature.\(kebab($0))", "toolkit.enabled.\($0)", .bool)
+    }
+    private static func lookup(_ key: String) -> Field? {
+        fields.first { $0.key == key } ?? retiredFields.first { $0.key == key }
+    }
+
     private static func kebab(_ text: String) -> String {
         text.reduce("") { $0 + ($1.isUppercase ? "-" + $1.lowercased() : String($1)) }
     }
@@ -130,7 +139,7 @@ enum TextConfiguration {
             if trimmed.isEmpty || trimmed.hasPrefix("#") { return Line(raw: raw) }
             guard let equal = raw.firstIndex(of: "=") else { throw issue(index, "expected key = value") }
             let key = raw[..<equal].trimmingCharacters(in: .whitespaces)
-            guard fields.contains(where: { $0.key == key }) else { throw issue(index, "unknown key '\(key)'; see docs/configuration.md") }
+            guard lookup(key) != nil else { throw issue(index, "unknown key '\(key)'; see docs/configuration.md") }
             guard seen.insert(key).inserted else { throw issue(index, "duplicate key '\(key)'; keep one assignment") }
             let start = raw.index(after: equal)
             let tail = String(raw[start...])
@@ -180,7 +189,7 @@ enum TextConfiguration {
         defaults = merge(defaults, preferences)
         let lines = try parse(text)
         for (index, line) in lines.enumerated() {
-            guard let key = line.key, let raw = line.value, let field = fields.first(where: { $0.key == key }) else { continue }
+            guard let key = line.key, let raw = line.value, let field = lookup(key) else { continue }
             do {
                 let parsed = try value(raw, kind: field.kind)
                 if case .shortcut = field.kind {
@@ -266,7 +275,7 @@ enum TextConfiguration {
         for field in fields {
             if let value = get(field.path, in: prefs), !keptInCompanion(field, value) { values[field.key] = try spelling(value, kind: field.kind) }
         }
-        var lines = try parse(text ?? header)
+        var lines = try parse(text ?? header).filter { line in !retiredFields.contains { $0.key == line.key } }
         for index in lines.indices {
             guard let key = lines[index].key else { continue }
             if let value = values.removeValue(forKey: key) {
@@ -332,7 +341,10 @@ enum TextConfiguration {
         case .string:
             guard !string.isEmpty, string.utf8.count <= 256, !string.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { throw FrogError.message("expected 1–256 characters without control characters") }; return string
         case .strings, .featureOrder:
-            guard let strings = try? JSONDecoder().decode([String].self, from: Data(raw.utf8)), strings.allSatisfy({ FeatureID(rawValue: $0) != nil }) else { throw FrogError.message("expected a JSON list of feature IDs, such as [\"usage\", \"scripts\"]") }; return strings
+            guard let strings = try? JSONDecoder().decode([String].self, from: Data(raw.utf8)),
+                  strings.allSatisfy({ FeatureID(rawValue: $0) != nil || ToolkitPreferences.retiredFeatures.contains($0) }) else { throw FrogError.message("expected a JSON list of feature IDs, such as [\"usage\", \"scripts\"]") }
+            // Retired IDs are accepted here and dropped by `ToolkitPreferences`, so a line that still has one is rewritten.
+            return strings
         case .identifiers:
             guard let ids = try? JSONDecoder().decode([String].self, from: Data(raw.utf8)), (try? BundleIdentifiers.validate(ids)) != nil else { throw FrogError.message("expected a JSON list of app bundle identifiers, such as [\"com.apple.TextEdit\"]") }; return ids
         case .shortcut:

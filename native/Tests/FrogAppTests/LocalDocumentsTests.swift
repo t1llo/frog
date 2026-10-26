@@ -2,7 +2,7 @@ import XCTest
 import FrogCore
 @testable import FrogApp
 
-/// Saving notes, snippets, shelf items and scripts, without a window.
+/// Saving notes and scripts, without a window.
 @MainActor final class LocalDocumentsTests: XCTestCase {
     func testAnEditWhileQuitWaitsForTheSaveIsSavedAndQuitGoesAhead() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -11,7 +11,7 @@ import FrogCore
         await documents.load()
         documents.add(UtilityDocument(kind: .note, title: "Before quit"))
         let flushing = Task { await documents.flush() }
-        // The quit is waiting for the save of the first edit when the second arrives, as a shelf drop still adding
+        // The quit is waiting for the save of the first edit when the second arrives, as an agent still adding
         // its items would. Everything here runs on the main actor: yielding lets the save reach its delay and the quit
         // its wait for that save.
         await Task.yield()

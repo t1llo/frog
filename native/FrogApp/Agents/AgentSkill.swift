@@ -7,14 +7,14 @@ enum AgentSkill {
     /// The skill's name, which is also the name of its folder.
     static let name = "frog"
     /// Raise it whenever `text` changes, so Settings offers Update to installs of an older one.
-    static let version = 1
+    static let version = 2
     /// The frontmatter key that marks a skill Frog wrote, with its version.
     static let marker = "frog-skill-version"
 
     static let text = """
     ---
     name: frog
-    description: Control the user's Mac and the Frog menu-bar app with the `frog` command. Use when the user asks to arrange, move, resize or focus windows or apply a window layout; open or list apps; list or run their Frog scripts; read, add or append to notes; read snippets; use the clipboard history or the shelf; run a writing rule on text; keep the Mac awake; check CPU, GPU or memory load or their Claude and Codex usage limits; or open, check or configure Frog and its features.
+    description: Control the user's Mac and the Frog menu-bar app with the `frog` command. Use when the user asks to arrange, move, resize or focus windows or apply a window layout; open or list apps; list or run their Frog scripts; read, add or append to notes; use the clipboard history; run a writing rule on text; keep the Mac awake; check CPU, GPU or memory load or their Claude and Codex usage limits; or open, check or configure Frog and its features.
     metadata:
       \(marker): "\(version)"
     ---
@@ -23,7 +23,7 @@ enum AgentSkill {
 
     The `frog` command talks to Frog, the menu-bar app running on this Mac. The running app is the reference for what it can do:
 
-    - `frog help` lists every command by group: Frog, Windows, Scripts, Snippets, Notes, Shelf, Clipboard, Writing rules, Stay awake, System monitor, Mr. Usage.
+    - `frog help` lists every command by group: Frog, Windows, Scripts, Notes, Clipboard, Writing rules, Stay awake, System monitor, Mr. Usage.
     - `frog help <command>` explains one command, with its options and examples.
     - A group marked "(off)" belongs to a Frog feature that is switched off. Ask the user before turning it on with `frog features enable <feature>`.
 

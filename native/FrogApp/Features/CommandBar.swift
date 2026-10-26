@@ -360,8 +360,11 @@ import SwiftUI
     /// The rows a presentation starts with and the field they paste into. This runs before the panel takes
     /// keyboard focus and opens no window.
     func prepareResults(_ model: AppModel, frontPID: pid_t?) {
-        // Finding the focused field is Accessibility IPC to the app in front. Only clipboard rows and snippets paste there.
-        let pastes = [.clipboard, .snippets].contains(where: model.configuration.preferences.featureEnabled)
+        // Finding the focused field is Accessibility IPC to the app in front. Only clipboard rows and notes that
+        // paste paste there. Before the notes are read, one of them might.
+        let preferences = model.configuration.preferences
+        let pastes = preferences.featureEnabled(.clipboard) || preferences.featureEnabled(.scratchpad)
+            && (!model.documents.loaded || model.documents.items.contains(where: \.pastes))
         pasteTarget = pastes ? captureTarget() : nil
         context = CommandBarContext(model: model, frontPID: frontPID, pasteboard: pasteboard, pasteTarget: pasteTarget,
                                     waitForRelease: waitForRelease, copy: { [weak self] in self?.copy($0) })
@@ -375,9 +378,9 @@ import SwiftUI
         if model.configuration.preferences.featureEnabled(.windowSwitcher) { addWindows(cachedWindows) }
         addRoutes(model, frontPID: frontPID)
         addSettings()
-        // Snippets, notes, shelf items and scripts are in memory once the store has been read. Only that first
-        // read is waited for, and on its own: a snippet must not be missing while the applications are rescanned.
-        if [.snippets, .scratchpad, .shelf, .scripts].contains(where: model.configuration.preferences.featureEnabled) {
+        // Notes and scripts are in memory once the store has been read. Only that first read is waited for, and
+        // on its own: a note that pastes must not be missing while the applications are rescanned.
+        if [.scratchpad, .scripts].contains(where: model.configuration.preferences.featureEnabled) {
             if model.documents.loaded { addDocuments(model) }
             else {
                 let token = generation
@@ -410,26 +413,29 @@ import SwiftUI
     private func addDocuments(_ model: AppModel) {
         let target = pasteTarget
         for item in model.documents.items {
-            if item.kind == .snippet, model.configuration.preferences.featureEnabled(.snippets) {
+            if item.kind == .note, item.pastes, model.configuration.preferences.featureEnabled(.scratchpad) {
+                let isCurrent = { [weak model] in
+                    model?.configuration.preferences.featureEnabled(.scratchpad) == true
+                        && model?.documents.items.contains(where: { $0.id == item.id && $0.pastes }) == true
+                }
                 let deliver: (Bool) async throws -> Void = { [weak self, weak model] paste in
-                    guard let self, let model, model.configuration.preferences.featureEnabled(.snippets),
+                    guard let self, let model, isCurrent(),
                           let current = model.documents.items.first(where: { $0.id == item.id }) else { return }
                     let text = SnippetExpansion.expand(current.text, clipboard: self.pasteboard.string(forType: .string) ?? "")
                     let sensitive = current.text.contains("{{clipboard}}") && self.pasteboard.holdsSensitiveText
                     let entry = ClipboardHistoryEntry(text: text, isSensitive: sensitive)
                     if paste {
                         try await ClipboardHistoryDelivery.paste(entry, plainText: true, pasteboard: self.pasteboard, target: target,
-                            isCurrent: { model.configuration.preferences.featureEnabled(.snippets) && model.documents.items.contains(where: { $0.id == item.id }) }, waitForRelease: self.waitForRelease)
+                                                                 isCurrent: isCurrent, waitForRelease: self.waitForRelease)
                     } else {
-                        guard entry.write(to: self.pasteboard, plainText: true) else { throw FrogError.message("Could not copy the snippet.") }
+                        guard entry.write(to: self.pasteboard, plainText: true) else { throw FrogError.message("Could not copy the note.") }
                     }
                     self.onToolUse?(.snippetCopy)
                 }
-                add(SearchRecord(id: "snippet:\(item.id)", title: item.title, subtitle: "Snippet · Paste · ⌘↩ Copy", symbol: "text.badge.plus"), copy: { try await deliver(false) }) { try await deliver(true) }
+                // The ID it had as a snippet, so the choices the command bar learned still count.
+                add(SearchRecord(id: "snippet:\(item.id)", title: item.title, subtitle: "Note · Paste · ⌘↩ Copy", symbol: "text.badge.plus"), copy: { try await deliver(false) }) { try await deliver(true) }
             } else if item.kind == .note, model.configuration.preferences.featureEnabled(.scratchpad) {
                 add(SearchRecord(id: "note:\(item.id)", title: item.title, subtitle: "Notes", keywords: String(item.text.prefix(512)), symbol: "note.text")) { [weak model] in model?.openDocument(item) }
-            } else if item.kind == .shelf, model.configuration.preferences.featureEnabled(.shelf) {
-                add(SearchRecord(id: "shelf:\(item.id)", title: item.title, subtitle: "Shelf", symbol: "tray")) { [weak model] in model?.openDocument(item) }
             } else if item.kind == .script, model.configuration.preferences.featureEnabled(.scripts) {
                 add(SearchRecord(id: "script:\(item.id)", title: item.title, subtitle: "Run saved script", symbol: "terminal")) { [weak model] in
                     model?.openDocument(item); model?.runScript(item)
@@ -474,16 +480,29 @@ import SwiftUI
                 }
             }
         }
-        if model.configuration.preferences.featureEnabled(.quickActions) {
-            add(SearchRecord(id: "quick:uuid", title: "Generate UUID", subtitle: "Copy a new UUID", symbol: "number")) { [weak self] in self?.copy(UUID().uuidString) }
-            add(SearchRecord(id: "quick:url", title: "Clean clipboard URL", subtitle: "Remove tracking parameters and copy", symbol: "link")) { [weak self] in
-                guard let self, let cleaned = LinkCleaning.clean(self.pasteboard.string(forType: .string) ?? "") else { throw FrogError.message("Copy an HTTP or HTTPS URL first.") }
-                self.copy(cleaned)
-            }
-        }
+        addTextTools()
         // Provider rows sit where the emoji rows always have, so equally good matches keep their order.
         if let context { for provider in providers { for row in provider.rows(in: context) { add(row) } } }
         addClipboard(model.clipboardHistoryStore.entries, model: model)
+    }
+    /// Small tools that work on the clipboard and copy their result.
+    private func addTextTools() {
+        add(SearchRecord(id: "quick:uuid", title: "Generate UUID", subtitle: "Copy a new UUID", symbol: "number")) { [weak self] in self?.copy(UUID().uuidString) }
+        add(SearchRecord(id: "quick:url", title: "Clean clipboard URL", subtitle: "Remove tracking parameters and copy", symbol: "link")) { [weak self] in
+            guard let self, let cleaned = LinkCleaning.clean(self.pasteboard.string(forType: .string) ?? "") else { throw FrogError.message("Copy an HTTP or HTTPS URL first.") }
+            self.copy(cleaned)
+        }
+        add(SearchRecord(id: "quick:base64-encode", title: "Base64 encode clipboard", subtitle: "Copy the clipboard text as Base64", symbol: "lock.doc")) { [weak self] in
+            guard let self, let text = self.pasteboard.string(forType: .string), !text.isEmpty else { throw FrogError.message("Copy some text first.") }
+            guard !self.pasteboard.holdsSensitiveText else { throw FrogError.message("The clipboard holds text marked as sensitive.") }
+            self.copy(Base64Text.encoded(text))
+        }
+        add(SearchRecord(id: "quick:base64-decode", title: "Base64 decode clipboard", subtitle: "Copy the decoded text", symbol: "lock.open")) { [weak self] in
+            guard let self, let decoded = Base64Text.decoded(self.pasteboard.string(forType: .string) ?? ""), !decoded.isEmpty else {
+                throw FrogError.message("The clipboard does not hold Base64 text.")
+            }
+            self.copy(decoded)
+        }
     }
     /// Paste only goes ahead in the history generation its row was built in, which the store renews before it
     /// changes its entries. The rows are therefore rebuilt whenever the entries change.

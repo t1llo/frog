@@ -20,6 +20,12 @@ final class PageShotsTests: XCTestCase {
         var configuration = Configuration()
         for feature in FeatureID.allCases { configuration.preferences.setFeature(feature, enabled: true) }
         try ConfigurationStore(directory: root).save(configuration)
+        // Notes and Scripts show an item rather than their empty state.
+        try await UtilityDocumentStore(directory: root.appendingPathComponent("Toolkit")).save([
+            UtilityDocument(kind: .note, title: "Email signature", text: "Best,\nAnna\n{{date}}", pastes: true),
+            UtilityDocument(kind: .note, title: "Meeting notes", text: "# Standup\n- Ship the release\n- Update the website"),
+            UtilityDocument(kind: .script, title: "Clean downloads", text: "find ~/Downloads -mtime +30 -delete")
+        ], revision: 0)
         let usage = UsageDashboardModel(defaults: temporaryDefaults(), fixtureRoot: root.appendingPathComponent("fixtures"))
         let toolkit = Toolkit(makeUsage: { usage }, showsUsageStatusItem: false)
         let model = AppModel(dataDirectory: root, registerShortcuts: false, readKey: { _ in nil }, readAccessibility: { true },

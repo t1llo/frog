@@ -170,7 +170,7 @@ final class FeatureOrganizationTests: XCTestCase {
     /// The default sidebar order, grouped by kind. A user's own arrangement is stored and kept.
     func testTheCatalogIsGroupedByKind() {
         XCTAssertEqual(FeatureID.allCases, [.writing, .explain, .dictation, .commandBar, .applicationShortcuts, .windows,
-                                            .windowSwitcher, .clipboard, .snippets, .scratchpad, .shelf, .scripts, .quickActions,
+                                            .windowSwitcher, .clipboard, .scratchpad, .scripts,
                                             .usage, .systemMonitor, .stayAwake, .menuBar, .cleaner])
     }
 

@@ -126,19 +126,6 @@ final class ScriptRunnerTests: XCTestCase {
         XCTAssertEqual(Set(directories).count, directories.count)
         XCTAssertTrue(directories.contains("/usr/bin"))
     }
-
-    @MainActor func testShelfAcceptsNativeFileURLAndTextProviders() async throws {
-        let url = URL(fileURLWithPath: "/fixture/folder/example.txt")
-        let file = await ShelfDrop.document(from: NSItemProvider(object: url as NSURL))
-        XCTAssertEqual(file?.files, [url])
-        XCTAssertEqual(file?.text, "")
-        let text = await ShelfDrop.document(from: NSItemProvider(object: "two\nlines" as NSString))
-        XCTAssertEqual(text?.title, "two lines")
-        XCTAssertEqual(text?.text, "two\nlines")
-        let link = await ShelfDrop.document(from: NSItemProvider(object: URL(string: "https://example.org/path")! as NSURL))
-        XCTAssertEqual(link?.text, "https://example.org/path")
-        XCTAssertEqual(link?.files, [])
-    }
 }
 
 private final class ScriptPrintedFixture: @unchecked Sendable {

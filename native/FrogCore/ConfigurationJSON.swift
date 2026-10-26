@@ -24,6 +24,15 @@ indirect enum ConfigurationJSON: Codable, Equatable, Sendable {
         case .null: try c.encodeNil()
         }
     }
+    /// The document without the switches of retired features. Kept, they would read as fields this
+    /// version does not know, and every save would write them back.
+    func removingRetiredFeatures() -> Self {
+        guard case .object(var root) = self, case .object(var preferences) = root["preferences"],
+              case .object(var toolkit) = preferences["toolkit"], case .object(var enabled) = toolkit["enabled"] else { return self }
+        for id in ToolkitPreferences.retiredFeatures { enabled[id] = nil }
+        toolkit["enabled"] = .object(enabled); preferences["toolkit"] = .object(toolkit); root["preferences"] = .object(preferences)
+        return .object(root)
+    }
     /// Only unknown fields survive; deleting a known optional field or array item stays deleted.
     static func preserving(_ original: Self, known: Self, updated: Self) -> Self {
         if case .object(let old) = original, case .object(let baseline) = known, case .object(let new) = updated {

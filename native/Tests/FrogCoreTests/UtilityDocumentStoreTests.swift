@@ -18,20 +18,44 @@ final class UtilityDocumentStoreTests: XCTestCase {
     }
     /// Four saved items of which the second has a kind a later version added and the third lost its title.
     private func partlyUnreadable(_ first: UtilityDocument, _ last: UtilityDocument) throws -> Data {
-        let filler = [UtilityDocument(kind: .shelf, title: "Later kind"), UtilityDocument(kind: .script, title: "Damaged")]
+        let filler = [UtilityDocument(kind: .note, title: "Later kind"), UtilityDocument(kind: .script, title: "Damaged")]
         var elements = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode([first] + filler + [last])) as? [[String: Any]])
         elements[1]["kind"] = "laterKind"
         elements[2].removeValue(forKey: "title")
         return try JSONSerialization.data(withJSONObject: elements, options: [.prettyPrinted])
     }
 
+    func testSnippetsAndShelfItemsFromEarlierVersionsLoadAsNotes() async throws {
+        let file = URL(fileURLWithPath: "/tmp/report.pdf")
+        let saved = [UtilityDocument(kind: .note, title: "Signature", text: "Best, {{date}}"),
+                     UtilityDocument(kind: .note, title: "report.pdf", files: [file]),
+                     UtilityDocument(kind: .note, title: "Plain note", text: "text")]
+        var elements = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [[String: Any]])
+        elements[0]["kind"] = "snippet"; elements[1]["kind"] = "shelf"
+        try JSONSerialization.data(withJSONObject: elements).write(to: self.file)
+
+        let store = UtilityDocumentStore(directory: root)
+        let loaded = try await store.load()
+        let unreadable = await store.unreadable
+        XCTAssertNil(unreadable)
+        XCTAssertEqual(loaded.map(\.kind), [.note, .note, .note])
+        XCTAssertEqual(loaded.map(\.pastes), [true, false, false], "A snippet pastes; a shelf item does not")
+        XCTAssertEqual(loaded[1].files, [file], "A shelf item keeps its file")
+        XCTAssertEqual(loaded.map(\.id), saved.map(\.id))
+
+        try await store.save(loaded, revision: 1)
+        let written = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: self.file)) as? [[String: Any]])
+        XCTAssertEqual(written.compactMap { $0["kind"] as? String }, ["note", "note", "note"])
+        XCTAssertEqual(written.map { $0["pastes"] as? Bool }, [true, nil, nil], "Only a note that pastes says so")
+    }
+
     func testItemsThisVersionCannotReadAreLeftOutAndTheFileIsKeptBeforeItIsReplaced() async throws {
-        let note = UtilityDocument(kind: .note, title: "Readable note", text: "text"), snippet = UtilityDocument(kind: .snippet, title: "Readable snippet")
-        let original = try partlyUnreadable(note, snippet)
+        let note = UtilityDocument(kind: .note, title: "Readable note", text: "text"), script = UtilityDocument(kind: .script, title: "Readable script")
+        let original = try partlyUnreadable(note, script)
         try original.write(to: file)
         let store = UtilityDocumentStore(directory: root)
         let loaded = try await store.load()
-        XCTAssertEqual(loaded, [note, snippet], "One unreadable item must not hide the others")
+        XCTAssertEqual(loaded, [note, script], "One unreadable item must not hide the others")
         // Reading changes nothing on disk, however often it happens.
         let again = try await store.load()
         XCTAssertEqual(again, loaded)
@@ -50,13 +74,13 @@ final class UtilityDocumentStoreTests: XCTestCase {
         XCTAssertEqual(kept.map(\.lastPathComponent), [unreadable.backup.lastPathComponent])
         XCTAssertEqual(try Data(contentsOf: XCTUnwrap(kept.first)), original, "The copy holds the file exactly as it was")
         XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: XCTUnwrap(kept.first).path)[.posixPermissions] as? Int, 0o600)
-        XCTAssertEqual(try JSONDecoder().decode([UtilityDocument].self, from: Data(contentsOf: file)), [note, snippet, added])
+        XCTAssertEqual(try JSONDecoder().decode([UtilityDocument].self, from: Data(contentsOf: file)), [note, script, added])
         // One copy is enough: later saves, and a later start, find a file that reads completely.
         try await store.save(loaded, revision: 2)
         XCTAssertEqual(try backups().count, 1)
         let relaunched = UtilityDocumentStore(directory: root)
         let reread = try await relaunched.load()
-        XCTAssertEqual(reread, [note, snippet])
+        XCTAssertEqual(reread, [note, script])
         let none = await relaunched.unreadable
         XCTAssertNil(none)
         try await relaunched.save(reread + [added], revision: 1)

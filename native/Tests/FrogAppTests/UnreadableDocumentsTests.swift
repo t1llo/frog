@@ -12,8 +12,8 @@ import FrogCore
     override func tearDown() { try? FileManager.default.removeItem(at: root) }
 
     func testReadableItemsStayUsableBesideOnesThisVersionCannotReadAndTheNoticeOutlastsTheSave() async throws {
-        let note = UtilityDocument(kind: .note, title: "Readable note"), snippet = UtilityDocument(kind: .snippet, title: "Readable snippet")
-        var elements = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode([note, UtilityDocument(kind: .shelf, title: "Later kind"), snippet])) as? [[String: Any]])
+        let note = UtilityDocument(kind: .note, title: "Readable note"), script = UtilityDocument(kind: .script, title: "Readable script")
+        var elements = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode([note, UtilityDocument(kind: .note, title: "Later kind"), script])) as? [[String: Any]])
         elements[1]["kind"] = "laterKind"
         let original = try JSONSerialization.data(withJSONObject: elements)
         try original.write(to: file)
@@ -21,7 +21,7 @@ import FrogCore
         let model = LocalDocuments(directory: root)
         await model.load()
         XCTAssertTrue(model.loaded)
-        XCTAssertEqual(model.items, [note, snippet])
+        XCTAssertEqual(model.items, [note, script])
         XCTAssertNil(model.issue)
         let unreadable = try XCTUnwrap(model.unreadable)
         XCTAssertEqual(unreadable.count, 1); XCTAssertEqual(unreadable.total, 3)
@@ -34,7 +34,7 @@ import FrogCore
         XCTAssertEqual(model.unreadable, unreadable, "The notice stays after the save that leaves the items out of the file")
         XCTAssertEqual(model.fileToReveal?.lastPathComponent, unreadable.backup.lastPathComponent)
         XCTAssertEqual(try Data(contentsOf: unreadable.backup), original)
-        XCTAssertEqual(try JSONDecoder().decode([UtilityDocument].self, from: Data(contentsOf: file)).map(\.title), ["Readable note", "Readable snippet", "Added"])
+        XCTAssertEqual(try JSONDecoder().decode([UtilityDocument].self, from: Data(contentsOf: file)).map(\.title), ["Readable note", "Readable script", "Added"])
     }
 
     func testAFileThatCannotBeOpenedIsNamedCanBeRevealedAndIsNeverReplaced() async throws {

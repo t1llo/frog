@@ -45,11 +45,8 @@ struct MainView: View {
             case .usage:
                 if let usage = model.toolkit.usage() { UsageDashboardView(usage: usage) }
             case .stayAwake: StayAwakeView(power: model.power)
-            case .snippets: UtilityDocumentsView(documents: model.documents, kind: .snippet)
             case .scratchpad: UtilityDocumentsView(documents: model.documents, kind: .note)
-            case .shelf: UtilityDocumentsView(documents: model.documents, kind: .shelf)
             case .scripts: UtilityDocumentsView(documents: model.documents, kind: .script)
-            case .quickActions: QuickActionsView()
             case .menuBar:
                 MenuBarSettingsView(organizer: model.toolkit.menuBarOrganizer, settings: Binding(
                     get: { model.configuration.preferences.toolkitSettings.menuBar ?? MenuBarPreferences() },

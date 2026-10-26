@@ -343,7 +343,6 @@ import FrogCore
         defer { try? FileManager.default.removeItem(at: root) }
         var configuration = Configuration()
         configuration.preferences.setFeature(.commandBar, enabled: true)
-        configuration.preferences.setFeature(.quickActions, enabled: true)
         configuration.preferences.windowSwitcherEnabled = false
         try ConfigurationStore(directory: root).save(configuration)
         let model = AppModel(dataDirectory: root, registerShortcuts: false)
@@ -364,6 +363,17 @@ import FrogCore
         XCTAssertNotNil(pasteboard.string(forType: .string).flatMap(UUID.init(uuidString:)))
         bar.show()
         XCTAssertEqual(bar.results.first?.id, "quick:uuid")
+
+        // The Base64 rows work on the clipboard text and copy their result.
+        pasteboard.clearContents(); pasteboard.setString("Frog", forType: .string)
+        bar.query = "Base64 encode"
+        bar.choose(try XCTUnwrap(bar.results.firstIndex { $0.id == "quick:base64-encode" }))
+        for _ in 0..<100 where pasteboard.string(forType: .string) == "Frog" { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(pasteboard.string(forType: .string), "RnJvZw==")
+        bar.show(); bar.query = "Base64 decode"
+        bar.choose(try XCTUnwrap(bar.results.firstIndex { $0.id == "quick:base64-decode" }))
+        for _ in 0..<100 where pasteboard.string(forType: .string) != "Frog" { try await Task.sleep(for: .milliseconds(5)) }
+        XCTAssertEqual(pasteboard.string(forType: .string), "Frog")
     }
 
     func testClosingDuringIndexingRejectsLateAppsAndReleasesResults() async throws {
@@ -384,11 +394,11 @@ import FrogCore
         XCTAssertTrue(bar.results.isEmpty)
     }
 
-    func testSensitiveClipboardIsExcludedAndSnippetInsertionUsesNativeDelivery() async throws {
+    func testSensitiveClipboardIsExcludedAndANoteThatPastesUsesNativeDelivery() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var config = Configuration()
-        for feature in [FeatureID.commandBar, .snippets, .clipboard] { config.preferences.setFeature(feature, enabled: true) }
+        for feature in [FeatureID.commandBar, .scratchpad, .clipboard] { config.preferences.setFeature(feature, enabled: true) }
         config.preferences.windowSwitcherEnabled = false
         try ConfigurationStore(directory: root).save(config)
         let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
@@ -399,7 +409,7 @@ import FrogCore
         _ = ClipboardHistoryEntry(text: "sensitive-fixture", isSensitive: true).write(to: pasteboard, plainText: true)
         await history.poll()
         await model.documents.load()
-        let snippet = UtilityDocument(kind: .snippet, title: "Greeting fixture", text: "Hello {{clipboard}}")
+        let snippet = UtilityDocument(kind: .note, title: "Greeting fixture", text: "Hello {{clipboard}}", pastes: true)
         model.documents.add(snippet)
         let target = CommandPasteTarget()
         let bar = CommandBar(model: model, pasteboard: pasteboard, fileScopes: [root], captureTarget: { target }, waitForRelease: {}, loadApplications: { [] })

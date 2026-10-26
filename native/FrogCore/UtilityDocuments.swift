@@ -1,15 +1,51 @@
 import Foundation
 
 public struct UtilityDocument: Identifiable, Codable, Equatable, Sendable {
-    public enum Kind: String, Codable, Sendable { case note, snippet, shelf, script }
+    public enum Kind: String, Codable, Sendable { case note, script }
     public var id: UUID
     public var kind: Kind
     public var title: String
     public var text: String
+    /// Files the item holds. Only notes that were shelf items have them.
     public var files: [URL]
     public var modified: Date
-    public init(id: UUID = UUID(), kind: Kind, title: String, text: String = "", files: [URL] = [], modified: Date = Date()) {
-        self.id = id; self.kind = kind; self.title = title; self.text = text; self.files = files; self.modified = modified
+    /// A note the command bar pastes, with `SnippetExpansion`'s variables filled in, instead of opening it.
+    public var pastes: Bool
+    public init(id: UUID = UUID(), kind: Kind, title: String, text: String = "", files: [URL] = [], modified: Date = Date(), pastes: Bool = false) {
+        self.id = id; self.kind = kind; self.title = title; self.text = text; self.files = files; self.modified = modified; self.pastes = pastes
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, kind, title, text, files, modified, pastes }
+
+    /// Reads the kinds of earlier versions too: a snippet becomes a note that pastes, a shelf item a
+    /// note that keeps its files and links. A kind this version does not know is an error, which
+    /// the store reports as an unreadable item.
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        title = try values.decode(String.self, forKey: .title)
+        text = try values.decode(String.self, forKey: .text)
+        files = try values.decode([URL].self, forKey: .files)
+        modified = try values.decode(Date.self, forKey: .modified)
+        pastes = try values.decodeIfPresent(Bool.self, forKey: .pastes) ?? false
+        switch try values.decode(String.self, forKey: .kind) {
+        case "note", "shelf": kind = .note
+        case "snippet": kind = .note; pastes = true
+        case "script": kind = .script
+        case let other:
+            throw DecodingError.dataCorruptedError(forKey: .kind, in: values, debugDescription: "Unknown kind \(other)")
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(kind, forKey: .kind)
+        try values.encode(title, forKey: .title)
+        try values.encode(text, forKey: .text)
+        try values.encode(files, forKey: .files)
+        try values.encode(modified, forKey: .modified)
+        if pastes { try values.encode(true, forKey: .pastes) }
     }
 }
 
@@ -99,6 +135,16 @@ public enum SnippetExpansion {
         }
         return output
     }
+}
+
+public enum Base64Text {
+    /// Base64 that was pasted is often wrapped or ends in a line break. Spaces and line breaks
+    /// are dropped; any other character outside the alphabet still makes the input invalid,
+    /// rather than being skipped into different bytes.
+    public static func decoded(_ input: String) -> String? {
+        Data(base64Encoded: String(input.filter { !$0.isWhitespace })).flatMap { String(data: $0, encoding: .utf8) }
+    }
+    public static func encoded(_ input: String) -> String { Data(input.utf8).base64EncodedString() }
 }
 
 public enum LinkCleaning {

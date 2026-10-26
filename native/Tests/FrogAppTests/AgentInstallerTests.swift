@@ -149,8 +149,8 @@ final class AgentInstallerTests: XCTestCase {
         for needed in ["frog help", "--json", "--stdin", "69", "Settings → Agents", "/Applications/Frog.app/Contents/Helpers/frog", "Accessibility", "frog status"] {
             XCTAssertTrue(text.contains(needed), needed)
         }
-        // Only what the commands can do: no notifications, no search, no adding snippets.
-        for promise in ["notif", "search", "add notes or snippets"] { XCTAssertFalse(description.contains(promise), promise) }
+        // Only what the commands can do: no notifications, no search, nothing of retired features.
+        for promise in ["notif", "search", "snippet", "shelf"] { XCTAssertFalse(description.contains(promise), promise) }
     }
 
     func testAnOlderSkillCanBeUpdated() throws {

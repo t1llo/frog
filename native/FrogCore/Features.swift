@@ -11,11 +11,8 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
     case windows
     case windowSwitcher
     case clipboard
-    case snippets
     case scratchpad
-    case shelf
     case scripts
-    case quickActions
     case usage
     case systemMonitor
     case stayAwake
@@ -33,11 +30,8 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .windows: "Windows"
         case .windowSwitcher: "Window switcher"
         case .clipboard: "Clipboard"
-        case .snippets: "Snippets"
         case .scratchpad: "Notes"
-        case .shelf: "Shelf"
         case .scripts: "Scripts"
-        case .quickActions: "Quick actions"
         case .usage: "Mr. Usage"
         case .systemMonitor: "System monitor"
         case .stayAwake: "Stay awake"
@@ -55,11 +49,8 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .windows: "rectangle.split.2x1"
         case .windowSwitcher: "macwindow.on.rectangle"
         case .clipboard: "clipboard"
-        case .snippets: "text.badge.plus"
         case .scratchpad: "note.text"
-        case .shelf: "tray"
         case .scripts: "terminal"
-        case .quickActions: "bolt"
         case .usage: "chart.bar.xaxis"
         case .systemMonitor: "gauge.medium"
         case .stayAwake: "cup.and.saucer"
@@ -78,11 +69,8 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .windows: "Snap and tile windows."
         case .windowSwitcher: "Switch between windows with the keyboard."
         case .clipboard: "Search and paste text you copied."
-        case .snippets: "Reusable text with variables."
-        case .scratchpad: "Markdown notes."
-        case .shelf: "Hold files, links and text for later."
+        case .scratchpad: "Markdown notes, and text to paste from the command bar."
         case .scripts: "Run your own shell scripts."
-        case .quickActions: "Mac controls and small text tools."
         case .usage: "Plan limits and activity of your AI tools."
         case .systemMonitor: "CPU, GPU, disk and battery."
         case .stayAwake: "Keep the Mac awake, also with the lid closed."
@@ -151,6 +139,21 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         cleaner = try values.decodeIfPresent(CleanerPreferences.self, forKey: .cleaner)
         commandBar = try values.decodeIfPresent(CommandBarPreferences.self, forKey: .commandBar)
         agentAccess = try values.decodeIfPresent(Bool.self, forKey: .agentAccess)
+        retireMergedFeatures()
+    }
+
+    /// Features earlier versions had. Snippets and the shelf became notes, and Quick actions became
+    /// command bar rows, in 1.0.39.
+    public static let retiredFeatures: Set<String> = ["snippets", "shelf", "quickActions"]
+
+    /// Someone who used snippets or the shelf finds those items in Notes, so Notes is turned on for
+    /// them. The retired IDs are dropped, so the next save no longer writes them.
+    mutating func retireMergedFeatures() {
+        if enabled["snippets"] == true || enabled["shelf"] == true { enabled["scratchpad"] = true }
+        for id in Self.retiredFeatures { enabled[id] = nil }
+        hiddenSidebarItems.subtract(Self.retiredFeatures)
+        pinnedSidebarItems.subtract(Self.retiredFeatures)
+        sidebarOrder.removeAll { Self.retiredFeatures.contains($0) }
     }
 }
 

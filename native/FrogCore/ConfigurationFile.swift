@@ -37,7 +37,7 @@ public enum ConfigurationFile {
         try check(configuration)
         try validate(configuration)
         guard retainingUnknownFields else { return configuration }
-        configuration.originalJSON = try JSONDecoder().decode(ConfigurationJSON.self, from: data)
+        configuration.originalJSON = try JSONDecoder().decode(ConfigurationJSON.self, from: data).removingRetiredFeatures()
         configuration.knownJSON = try JSONDecoder().decode(ConfigurationJSON.self, from: JSONEncoder().encode(configuration))
         return configuration
     }
