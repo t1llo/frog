@@ -16,6 +16,19 @@ public enum PluginSource: Codable, Equatable, Sendable {
         case .link(let url): URL(string: url)?.host ?? url
         }
     }
+
+    /// Whether a plugin from `other` comes from the same place, so it may keep what the user approved for this one.
+    /// Links share a place when they share the host and the first folder, such as github.com/jane. A file
+    /// chosen on this Mac shares none, since anyone can make a file with any plugin's id.
+    public func sharesOrigin(with other: PluginSource) -> Bool {
+        switch (self, other) {
+        case (.folder(let a), .folder(let b)): return a == b
+        case (.link(let a), .link(let b)):
+            guard let a = URL(string: a), let b = URL(string: b), let host = a.host?.lowercased(), host == b.host?.lowercased() else { return false }
+            return a.pathComponents.dropFirst().first == b.pathComponents.dropFirst().first
+        default: return false
+        }
+    }
 }
 
 /// What Frog keeps about an installed plugin besides its files.
@@ -131,6 +144,8 @@ public final class PluginStore: @unchecked Sendable {
         try change { registry in
             if let index = registry.plugins.firstIndex(where: { $0.id == id }) {
                 var record = registry.plugins[index]
+                // Code from somewhere else gets none of the approval the installed plugin had.
+                if !record.source.sharesOrigin(with: source) { record.approved = nil }
                 record.source = source; record.sha256 = sha256; record.updated = now
                 if approving { record.approved = package.grant; record.enabled = true }
                 registry.plugins[index] = record
@@ -223,9 +238,10 @@ public final class PluginStorage: @unchecked Sendable {
         var next = current
         next[key] = json
         guard next != current else { return }
-        let size = next.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count }
-        guard size <= Self.maximumBytes else { throw PluginError.invalid("The plugin's storage is full: it can keep 5 MB.") }
-        try PrivateFile.write(try JSONEncoder().encode(next), to: file)
+        // The limit counts the file as written, escapes included, so it always reads back.
+        let data = try JSONEncoder().encode(next)
+        guard data.count <= Self.maximumBytes else { throw PluginError.invalid("The plugin's storage is full: it can keep 5 MB.") }
+        try PrivateFile.write(data, to: file)
         values = next
     }
 }

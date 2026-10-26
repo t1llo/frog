@@ -5,6 +5,10 @@ import Foundation
 /// The access a plugin asks for, or the access the user approved: its permissions, its hosts, and the
 /// SHA-256 of each script the user could read.
 public struct PluginGrant: Codable, Equatable, Sendable {
+    /// Under this key in `scripts`, a plugin with scripts pins all its files: a script can run any of them, so a
+    /// change to any file needs the user's review. No script can have this name.
+    public static let filesKey = "(files)"
+
     public var permissions: [PluginPermission]
     public var hosts: [String]
     public var scripts: [String: String]
@@ -69,6 +73,7 @@ public struct PluginPackage: Sendable {
             throw PluginError.invalid("The entry page “\(entry)” is not in the folder.")
         }
         var hashes: [String: String] = [:]
+        if !manifest.scripts.isEmpty { hashes[PluginGrant.filesKey] = try digest(root, files) }
         for (name, path) in manifest.scripts {
             guard paths.contains(path) else { throw PluginError.invalid("The script “\(name)” at \(path) is not in the folder.") }
             let data = try readFile(root.appendingPathComponent(path), maximumBytes: maximumScriptBytes)
@@ -107,6 +112,16 @@ public struct PluginPackage: Sendable {
             data.append(contentsOf: buffer.prefix(count))
         }
         return data
+    }
+
+    /// One SHA-256 over every file's path and contents.
+    static func digest(_ root: URL, _ files: [File]) throws -> String {
+        var hasher = SHA256()
+        for file in files {
+            let data = try readFile(root.appendingPathComponent(file.path), maximumBytes: maximumBytes)
+            hasher.update(data: Data("\(file.path)\u{0}\(sha256(data))\n".utf8))
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     public static func sha256(_ data: Data) -> String {

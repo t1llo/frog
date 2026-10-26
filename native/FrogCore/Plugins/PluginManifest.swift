@@ -32,7 +32,7 @@ public enum PluginPermission: String, Codable, CaseIterable, Comparable, Sendabl
         case .links: "Opens web links in your default browser, which can send what is in the link to that site."
         case .network: "Sends requests to the sites listed below, and only those. It can send them anything the plugin can read."
         case .ai: "Sends text to the model your Writing rules use by default. A cloud model's provider bills you for it."
-        case .scripts: "Runs the scripts shown below with your full access to this Mac: your files, apps and accounts. Install it only if you trust the author and have read the scripts."
+        case .scripts: "Runs the scripts shown below with your full access to this Mac: your files, apps and accounts, and the permissions you gave Frog, such as Accessibility. Install it only if you trust the author and have read the scripts."
         }
     }
 
@@ -206,7 +206,9 @@ public struct PluginManifest: Codable, Equatable, Sendable {
 
     /// The access the plugin asks for, given the SHA-256 of each of its scripts.
     public func grant(scriptHashes: [String: String]) -> PluginGrant {
-        PluginGrant(permissions: permissions, hosts: hosts, scripts: scripts.keys.reduce(into: [:]) { $0[$1] = scriptHashes[$1] ?? "" })
+        var pinned = scripts.keys.reduce(into: [String: String]()) { $0[$1] = scriptHashes[$1] ?? "" }
+        if !scripts.isEmpty { pinned[PluginGrant.filesKey] = scriptHashes[PluginGrant.filesKey] ?? "" }
+        return PluginGrant(permissions: permissions, hosts: hosts, scripts: pinned)
     }
 
     /// Whether this Frog version is new enough, for a version such as "1.0.40"; a development build always is.
@@ -273,8 +275,8 @@ public struct PluginHost: Equatable, Sendable {
         guard !text.isEmpty, text.count <= 253,
               labels.allSatisfy({ !$0.isEmpty && $0.count <= 63 && $0.first != "-" && $0.last != "-"
                     && $0.allSatisfy { $0.isASCII && ($0.isLowercase || $0.isNumber || $0 == "-") } }) else { return nil }
-        // A wildcard covers one domain's subdomains, never a whole top-level domain.
-        if wildcard, labels.count < 2 { return nil }
+        // A wildcard covers one domain's subdomains, never a whole top-level domain or a range of addresses.
+        if wildcard, labels.count < 2 || labels.last!.allSatisfy(\.isNumber) { return nil }
         self.pattern = pattern; self.name = String(text); self.port = port
     }
 
