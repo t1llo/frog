@@ -51,6 +51,7 @@ enum FrogStyle {
     static var surface: AnyShapeStyle { adaptiveSurface(themed(\.surface), strength: 0.78) }
     static var inset: AnyShapeStyle { adaptiveSurface(themed(\.inset), strength: 0.55) }
     static var opaqueCanvas: Color { themed(\.canvas) }
+    static var opaqueInset: Color { themed(\.inset) }
     private static func adaptiveSurface(_ color: Color, strength: Double) -> AnyShapeStyle {
         AnyShapeStyle(FrogSurfaceStyle(color: color, settings: FrogAppearance.shared.settings, strength: strength))
     }

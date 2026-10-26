@@ -33,6 +33,7 @@ struct MainView: View {
         case .features: FeaturesView()
         case .settings: PreferencesView(permissionsRequest: $permissionsRequest)
         case .statistics: StatisticsView(statistics: model.statistics, onBack: { model.toolkit.select(.settings) })
+        case .plugin(let id): PluginPageView(id: id)
         case .feature(let feature):
             switch feature {
             case .writing: RulesView(fixedCategory: .text)
@@ -56,6 +57,7 @@ struct MainView: View {
             case .explain: ExplainView()
             case .windows: WindowsView()
             case .cleaner: CleanerView(cleaner: model.cleaner)
+            case .plugins: PluginsView(plugins: model.plugins)
             }
         }
     }
@@ -79,6 +81,9 @@ struct MainView: View {
                         .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border).frame(height: 1) }
                 }
             }.clipped().padding(.top, 32).background(FrogStyle.canvas)
+                .sheet(item: Binding(get: { model.pluginReview }, set: { if $0 == nil { model.pluginRuntime?.dismissReview() } })) { review in
+                    PluginReviewSheet(review: review, plugins: model.plugins) { model.report($0) }
+                }
         }
         .font(.system(size: 13)).foregroundStyle(FrogStyle.ink)
         .environment(\.locale, L10n.locale)
@@ -104,14 +109,28 @@ struct MainView: View {
 
                 ScrollViewReader { proxy in
                     ScrollView {
-                        SidebarFeatureList(features: model.toolkit.sidebar) { feature, marker in
-                            navigationButton(featureItem(feature, marker: marker)).id(ToolkitRoute.feature(feature))
+                        VStack(alignment: .leading, spacing: 2) {
+                            SidebarFeatureList(features: model.toolkit.sidebar) { feature, marker in
+                                navigationButton(featureItem(feature, marker: marker)).id(ToolkitRoute.feature(feature))
+                            }
+                            let pages = model.pluginPages
+                            if !pages.isEmpty {
+                                Text(L10n.text("Plugins")).font(.system(size: 10, weight: .medium)).foregroundStyle(FrogStyle.muted)
+                                    .padding(.horizontal, 9).padding(.top, 12).padding(.bottom, 4).accessibilityAddTraits(.isHeader)
+                                ForEach(pages) { item in
+                                    navigationButton(NavigationItem(id: .plugin(item.id), title: item.name, symbol: PluginSymbol.name(item.symbol)))
+                                        .id(ToolkitRoute.plugin(item.id))
+                                }
+                            }
                         }.padding(.horizontal, 8).padding(.bottom, 6).minimalScrollbars()
                     }
                     // Reveals a feature opened from elsewhere, such as the command bar, by the least scrolling;
                     // a row already in view stays where it is.
                     .onChange(of: section) { _, route in
-                        if case .feature = route { proxy.scrollTo(route) }
+                        switch route {
+                        case .feature, .plugin: proxy.scrollTo(route)
+                        default: break
+                        }
                     }
                 }
             }.padding(.top, 32).background(FrogStyle.sidebar)

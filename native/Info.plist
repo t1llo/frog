@@ -20,6 +20,13 @@
     <key>SUAutomaticallyUpdate</key><true/>
     <key>SUScheduledCheckInterval</key><integer>3600</integer>
     <key>SUEnableSystemProfiling</key><false/>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key><string>xyz.beffa.frog</string>
+            <key>CFBundleURLSchemes</key><array><string>frog</string></array>
+        </dict>
+    </array>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSAccessibilityUsageDescription</key><string>Frog reads and replaces selected text for writing shortcuts, and lists and activates windows for Command-Tab switching.</string>

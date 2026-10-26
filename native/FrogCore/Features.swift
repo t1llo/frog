@@ -18,6 +18,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
     case stayAwake
     case menuBar
     case cleaner
+    case plugins
 
     public var id: String { rawValue }
     public var title: String {
@@ -37,6 +38,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .stayAwake: "Stay awake"
         case .menuBar: "Menu bar"
         case .cleaner: "App cleaner"
+        case .plugins: "Plugins"
         }
     }
     public var symbol: String {
@@ -56,6 +58,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .stayAwake: "cup.and.saucer"
         case .menuBar: "menubar.rectangle"
         case .cleaner: "trash.circle"
+        case .plugins: "puzzlepiece.extension"
         }
     }
     /// One line for the Features page and the command bar's search.
@@ -76,6 +79,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .stayAwake: "Keep the Mac awake, also with the lid closed."
         case .menuBar: "Hide menu bar icons behind a divider."
         case .cleaner: "Uninstall apps with the files they leave behind."
+        case .plugins: "Features you build with your AI agent, or install from others."
         }
     }
 }
@@ -273,8 +277,13 @@ extension Preferences {
 
 public enum ToolkitRoute: Hashable, Sendable {
     case feature(FeatureID), history, models, features, settings, statistics
+    /// An installed plugin's page, by its id.
+    case plugin(String)
     public func available(in preferences: Preferences) -> Bool {
-        guard case .feature(let feature) = self else { return true }
-        return preferences.featureEnabled(feature)
+        switch self {
+        case .feature(let feature): preferences.featureEnabled(feature)
+        case .plugin: preferences.featureEnabled(.plugins)
+        default: true
+        }
     }
 }

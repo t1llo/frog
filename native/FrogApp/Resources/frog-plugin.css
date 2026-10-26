@@ -1,0 +1,167 @@
+/* Frog's stylesheet for plugin pages, served at /_frog/frog.css.
+   Frog sets the --frog-* colors and font on :root for the current appearance and theme.
+   The defaults below have no specificity, so Frog's values win; they apply only outside
+   Frog. Use the same variables in your own CSS. */
+
+:where(:root) {
+  --frog-ink: #252525;
+  --frog-muted: #73736f;
+  --frog-canvas: #ffffff;
+  --frog-surface: #ffffff;
+  --frog-border: #e2e2df;
+  --frog-accent: #397a4c;
+  --frog-critical: #c8443c;
+  --frog-font: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  --frog-inset: color-mix(in srgb, var(--frog-ink) 5%, var(--frog-canvas));
+  --frog-line: color-mix(in srgb, var(--frog-border) 70%, transparent);
+  --frog-selection: color-mix(in srgb, var(--frog-accent) 14%, transparent);
+  --frog-radius: 6px;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :where(:root) {
+    --frog-ink: #e8e8e8;
+    --frog-muted: #a0a0a3;
+    --frog-canvas: #191919;
+    --frog-surface: #1e1e1f;
+    --frog-border: #383839;
+    --frog-accent: #a3d8af;
+    --frog-critical: #f07f78;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body { margin: 0; }
+body {
+  font: 13px/1.45 var(--frog-font);
+  color: var(--frog-ink);
+  background: var(--frog-canvas);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { margin: 0 0 8px; color: var(--frog-ink); font-weight: 600; }
+h1 { font-size: 19px; line-height: 1.25; letter-spacing: -0.4px; }
+h2 { font-size: 15px; line-height: 1.3; letter-spacing: -0.2px; }
+h3 { font-size: 12px; line-height: 1.35; }
+p, ul, ol, pre, table { margin: 0 0 10px; }
+:is(h1, h2, h3, p, ul, ol, pre, table):last-child { margin-bottom: 0; }
+small, .frog-small { font-size: 11px; }
+.frog-muted { color: var(--frog-muted); }
+.frog-caption { font-size: 11px; font-weight: 500; color: var(--frog-muted); }
+.frog-tabular { font-variant-numeric: tabular-nums; }
+
+a { color: var(--frog-accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--frog-accent) 75%, transparent);
+  outline-offset: 1px;
+}
+
+button {
+  font: 500 12px/16px var(--frog-font);
+  color: var(--frog-ink);
+  background: var(--frog-surface);
+  border: 1px solid color-mix(in srgb, var(--frog-border) 85%, transparent);
+  border-radius: var(--frog-radius);
+  padding: 5px 10px;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: default;
+  white-space: nowrap;
+}
+button:hover:not(:disabled) { background: color-mix(in srgb, var(--frog-ink) 5%, var(--frog-surface)); }
+button:active:not(:disabled) { opacity: 0.7; }
+button:disabled { opacity: 0.4; }
+button.frog-primary { color: var(--frog-canvas); background: var(--frog-ink); border-color: transparent; }
+button.frog-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--frog-ink) 88%, var(--frog-canvas)); }
+button.frog-quiet { background: transparent; border-color: transparent; color: var(--frog-muted); }
+button.frog-quiet:hover:not(:disabled) { background: var(--frog-selection); color: var(--frog-ink); }
+
+input, textarea, select {
+  font: 12px/18px var(--frog-font);
+  color: var(--frog-ink);
+  background: var(--frog-inset);
+  border: 1px solid var(--frog-line);
+  border-radius: var(--frog-radius);
+  padding: 4px 9px;
+  min-height: 28px;
+  max-width: 100%;
+}
+textarea { display: block; width: 100%; padding: 8px 10px; resize: vertical; line-height: 1.5; }
+input::placeholder, textarea::placeholder { color: var(--frog-muted); opacity: 0.8; }
+:is(input, textarea, select):focus { outline: none; border-color: var(--frog-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--frog-accent) 22%, transparent); }
+:is(input, textarea, select):disabled { opacity: 0.5; }
+input[type="checkbox"], input[type="radio"], input[type="range"] { min-height: 0; padding: 0; accent-color: var(--frog-accent); }
+select {
+  appearance: none;
+  padding-right: 26px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--frog-muted) 50%),
+    linear-gradient(135deg, var(--frog-muted) 50%, transparent 50%);
+  background-position: right 13px center, right 9px center;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+}
+label { font-size: 12px; font-weight: 500; }
+
+code, kbd, pre { font: 11.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace; }
+code, kbd { background: var(--frog-inset); border-radius: 4px; padding: 1px 4px; }
+pre { background: var(--frog-inset); border: 1px solid var(--frog-line); border-radius: var(--frog-radius); padding: 10px 12px; overflow: auto; }
+pre code { background: none; padding: 0; }
+
+hr { border: 0; border-top: 1px solid var(--frog-line); margin: 12px 0; }
+
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { text-align: left; font-size: 11px; font-weight: 500; color: var(--frog-muted); }
+th, td { padding: 7px 10px; border-bottom: 1px solid var(--frog-line); }
+tr:last-child td { border-bottom: 0; }
+
+/* Layout */
+.frog-page { display: flex; flex-direction: column; gap: 14px; max-width: 1080px; margin: 0 auto; padding: 20px; }
+.frog-header { display: flex; align-items: center; gap: 20px; min-height: 32px; }
+.frog-header > :first-child { flex: 1; min-width: 0; }
+.frog-header h1 { margin: 0; }
+.frog-subtitle { margin: 6px 0 0; font-size: 13px; color: var(--frog-muted); }
+.frog-stack { display: flex; flex-direction: column; gap: var(--gap, 10px); }
+.frog-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--gap, 8px); }
+:is(.frog-stack, .frog-row) > * { margin: 0; }
+.frog-spacer { flex: 1; }
+.frog-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--min, 120px), 1fr)); gap: var(--gap, 10px); }
+
+/* Surfaces */
+.frog-card { background: var(--frog-surface); border: 1px solid var(--frog-border); border-radius: var(--frog-radius); padding: 12px; }
+.frog-list { list-style: none; margin: 0; padding: 0; background: var(--frog-surface); border: 1px solid var(--frog-line); border-radius: var(--frog-radius); overflow: hidden; }
+.frog-list > li { padding: 9px 12px; }
+.frog-list > li + li { border-top: 1px solid var(--frog-line); }
+.frog-list > li:has(> .frog-item) { padding: 0; }
+.frog-item { display: block; width: 100%; min-height: 0; padding: 9px 12px; border: 0; border-radius: 0; background: none; font: inherit; color: inherit; text-align: left; white-space: normal; }
+button.frog-item:hover:not(:disabled), a.frog-item:hover { background: var(--frog-selection); text-decoration: none; }
+.frog-item:focus-visible { outline-offset: -2px; }
+.frog-stat { display: flex; flex-direction: column; gap: 2px; }
+.frog-stat strong { font-size: 20px; line-height: 1.2; font-weight: 600; letter-spacing: -0.3px; font-variant-numeric: tabular-nums; }
+.frog-stat span { font-size: 11px; color: var(--frog-muted); }
+
+.frog-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; line-height: 14px; color: var(--frog-muted); background: var(--frog-inset); }
+.frog-badge.frog-accent { color: var(--frog-accent); background: var(--frog-selection); }
+
+.frog-segmented { display: inline-flex; gap: 2px; padding: 2px; background: var(--frog-inset); border: 1px solid var(--frog-line); border-radius: var(--frog-radius); }
+.frog-segmented button { min-height: 24px; padding: 3px 12px; border-color: transparent; background: transparent; color: var(--frog-muted); border-radius: 4px; }
+.frog-segmented button:hover:not(:disabled) { background: transparent; color: var(--frog-ink); }
+.frog-segmented button[aria-pressed="true"] { background: var(--frog-surface); color: var(--frog-ink); border-color: var(--frog-line); box-shadow: 0 1px 1px rgb(0 0 0 / 0.06); }
+
+/* Messages */
+.frog-error, .frog-notice { margin: 0; padding: 10px 12px; border-radius: var(--frog-radius); font-size: 12px; overflow-wrap: anywhere; }
+.frog-error { color: var(--frog-ink); background: color-mix(in srgb, var(--frog-critical) 11%, transparent); border: 1px solid color-mix(in srgb, var(--frog-critical) 30%, transparent); }
+.frog-notice { color: var(--frog-muted); background: var(--frog-inset); border: 1px solid var(--frog-line); }
+.frog-empty { padding: 44px 24px; text-align: center; color: var(--frog-muted); }
+
+.frog-spinner { display: inline-block; width: 12px; height: 12px; border: 1.5px solid var(--frog-line); border-top-color: var(--frog-muted); border-radius: 50%; animation: frog-spin 0.8s linear infinite; vertical-align: -2px; }
+@keyframes frog-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .frog-spinner { animation-duration: 2.4s; } }

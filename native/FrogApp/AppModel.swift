@@ -103,6 +103,29 @@ final class AppModel: ObservableObject {
         }
         return cleanerModel!
     }
+    private(set) var pluginRuntime: PluginRuntime?
+    /// Installed plugins and their pages, created when first needed.
+    var plugins: PluginRuntime {
+        if let pluginRuntime { return pluginRuntime }
+        let runtime = PluginRuntime(store: PluginStore(directory: historyStore.directory.appendingPathComponent("Plugins", isDirectory: true)))
+        runtime.openPage = { [weak self] id in self?.openPlugin(id) }
+        runtime.report = { [weak self] error in self?.report(error) }
+        runtime.complete = { [weak self] name, instructions, text in
+            guard let self else { throw CancellationError() }
+            return try await self.completeForPlugin(name: name, instructions: instructions, text: text)
+        }
+        runtime.onApproved = { [weak self] id in self?.pluginApproved(id) }
+        runtime.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
+        pluginRuntime = runtime
+        return runtime
+    }
+    /// The plugin waiting for the user's review, without starting the plugin runtime to ask.
+    var pluginReview: PluginReview? { pluginRuntime?.review }
+    /// Plugins with a page in the sidebar.
+    var pluginPages: [PluginItem] {
+        guard configuration.preferences.featureEnabled(.plugins), let pluginRuntime else { return [] }
+        return pluginRuntime.items.filter { $0.runs && $0.hasPage }
+    }
     var hasPendingDocumentWrites: Bool { documentsModel?.needsFlush == true }
     func flushDocuments() async -> Bool { await documentsModel?.flush() ?? true }
     private lazy var commandBar: CommandBar = {
@@ -407,6 +430,7 @@ final class AppModel: ObservableObject {
             case .explain: self.answerCapture?.cancel(); self.answers.close(); self.selectionWatcher.stop()
             case .windows: if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.windowLayout.stop()
             case .cleaner: self.cleanerModel?.stop()
+            case .plugins: self.pluginRuntime?.configure(enabled: false)
             default: break
             }
         }
@@ -471,6 +495,7 @@ final class AppModel: ObservableObject {
         if configuration.preferences.featureEnabled(.commandBar) { commandBar.warm() }
         configureWindowLayout()
         configureAgentServer()
+        configurePlugins()
     }
 
     func shutdown() {
@@ -484,6 +509,7 @@ final class AppModel: ObservableObject {
         commandBar.stop()
         toolkit.stop()
         cleanerModel?.stop()
+        pluginRuntime?.stop()
         systemStatusTask?.cancel(); systemStatusTask = nil
         loginStatusTask?.cancel(); loginStatusTask = nil
         loginWriteTask?.cancel(); loginWriteTask = nil
@@ -513,6 +539,60 @@ final class AppModel: ObservableObject {
     }
 
     func openFeature(_ feature: FeatureID) { toolkit.select(.feature(feature)); showSettings() }
+    func openPlugin(_ id: String) { toolkit.select(.plugin(id)); showSettings() }
+
+    private func configurePlugins() {
+        let enabled = configuration.preferences.featureEnabled(.plugins)
+        if enabled || pluginRuntime != nil { plugins.configure(enabled: enabled) }
+    }
+
+    /// The user approved a plugin, maybe from a link while Plugins was off: Plugins turns on and the plugin opens.
+    private func pluginApproved(_ id: String) {
+        Task { @MainActor in
+            if !configuration.preferences.featureEnabled(.plugins) {
+                do { try await setFeature(.plugins, enabled: true) } catch { report(error); return }
+            }
+            plugins.refresh()
+            if plugins.item(id)?.hasPage == true { openPlugin(id) } else { openFeature(.plugins) }
+        }
+    }
+
+    /// `frog://plugins/install?url=<https link to a .frogplugin>&sha256=<its hash>`, as the plugin directory links.
+    /// Opens the plugin's review; nothing installs without the user's yes.
+    func openLink(_ link: URL) {
+        guard link.scheme?.lowercased() == "frog", link.host?.lowercased() == "plugins", link.path == "/install",
+              let query = URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems,
+              let target = query.first(where: { $0.name == "url" })?.value.flatMap(URL.init(string:)) else {
+            report(FrogError.message("Frog cannot open this link: \(link.absoluteString.prefix(200))"))
+            return
+        }
+        let sha256 = query.first(where: { $0.name == "sha256" })?.value?.lowercased()
+        toolkit.select(configuration.preferences.featureEnabled(.plugins) ? .feature(.plugins) : .features)
+        showSettings()
+        Task { @MainActor in
+            do { try await plugins.openLink(target, sha256: sha256) } catch { report(error) }
+        }
+    }
+
+    /// Runs a plugin's `frog.ai` call through the model Writing rules use by default.
+    func completeForPlugin(name: String, instructions: String, text: String) async throws -> String {
+        var rule = Rule(name: name, instructions: instructions)
+        let provider: ProviderConfiguration
+        do { provider = try resolved(rule) }
+        catch {
+            guard let fallback = configuration.defaultProviderID else {
+                throw FrogError.message("Choose a default text model in Models so plugins can use AI.")
+            }
+            rule.providerID = fallback
+            provider = try resolved(rule)
+        }
+        if provider.id == Self.localProviderID {
+            if !localModels.loaded.contains(provider.model) { try await localModels.prepare(provider.model) }
+            return try await localModels.complete(text, instructions: rule.expandedInstructions(), modelID: provider.model)
+        }
+        let key = provider.kind.localTool == nil ? try readKey(provider.id) : nil
+        return try await complete(text, rule, provider, key)
+    }
     func showCommandBar() {
         guard !isRecordingShortcut else { return }
         commandBar.show()
@@ -688,6 +768,7 @@ final class AppModel: ObservableObject {
         if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
         configureWindowLayout()
         configureAgentServer()
+        if started { configurePlugins() }
     }
 
     private func configureWindowLayout() { windowLayout.configure(configuration, active: started && registerShortcuts) }

@@ -85,6 +85,7 @@ Disabled by default:
 - `explain`
 - `windows`
 - `cleaner`
+- `plugins`
 
 `scratchpad` is Notes. Snippets and the shelf became part of Notes in 1.0.39, and Quick actions became command bar rows: a file that still sets `snippets`, `shelf` or `quick-actions` loads, turns Notes on when `snippets` or `shelf` was on, and leaves those keys out the next time Frog saves it.
 
@@ -98,6 +99,7 @@ Older installations retain their existing shortcut/window enablement semantics d
 - `systemMonitor`
 - `explain`
 - `cleaner`
+- `plugins`
 
 `pinned-sidebar-items` lists the features shown at the top of the sidebar, and `sidebar-order` the feature IDs in the order the sidebar shows them; both take the same IDs. An empty `sidebar-order` keeps Frog's own order, and a feature it leaves out follows the one it comes after in that order. Both are what the sidebar writes when you pin a row from its context menu or hold Shift and drag one; **Reset sidebar order** in that menu empties them.
 
@@ -263,6 +265,10 @@ Enable with `feature.cleaner = true`. Portable settings, read only while the cle
 - `cleaner.possible-matches`: boolean, default `false`. Also lists files whose names only resemble the app; Frog never ticks them.
 
 Removal history, ignored items and dismissed notices stay on each Mac in `~/Library/Application Support/Frog/Cleaner/`. See the [App cleaner guide](cleaner.md).
+
+### Plugins
+
+Enable with `feature.plugins = true`. Installed plugins, what each one may do and what each one stored stay on each Mac in `~/Library/Application Support/Frog/Plugins/`, never in this folder. See the [plugins guide](plugins.md).
 
 ### Command bar
 

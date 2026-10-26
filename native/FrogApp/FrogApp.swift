@@ -42,7 +42,8 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Frog 1.0.0 to 1.0.2 posted notifications; remove any they left in Notification Center.
+        // Frog 1.0.0 to 1.0.2 posted notifications; remove any they left in Notification Center, once, so
+        // plugin notifications that are waiting stay.
         DesktopNotifications.clearPreviousNotifications()
         NSApplication.shared.setActivationPolicy(.accessory)
         model.openSettings = { [weak self] in self?.showWindow() }
@@ -88,6 +89,11 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
         NSApplication.shared.activate(ignoringOtherApps: true)
         if window?.isMiniaturized == true { window?.deminiaturize(nil) }
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// `frog://plugins/install?…` links from the plugin directory.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls.prefix(1) { model.openLink(url) }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

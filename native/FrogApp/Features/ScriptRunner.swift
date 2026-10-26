@@ -21,11 +21,18 @@ struct ScriptTimeout: LocalizedError {
 enum ScriptProcess {
     /// `onOutput` receives everything printed so far while the script runs, and once more as it ends, including
     /// when it is stopped or runs out of time, so what it printed until then is not lost.
-    static func run(_ script: String, timeout: TimeInterval = 60, outputLimit: Int = 256 * 1024, onOutput: (@Sendable (String) -> Void)? = nil) async throws -> ScriptResult {
+    /// `arguments` become `$1`, `$2` and so on; `directory` is where it runs, the home folder by default; `environment`
+    /// is added to Frog's own.
+    static func run(_ script: String, arguments: [String] = [], directory: URL? = nil, environment: [String: String] = [:],
+                    timeout: TimeInterval = 60, outputLimit: Int = 256 * 1024, onOutput: (@Sendable (String) -> Void)? = nil) async throws -> ScriptResult {
         guard script.utf8.count <= 100_000, !script.contains("\0") else {
             throw FrogError.message("Scripts must contain at most 100,000 bytes and no null characters.")
         }
-        let work = Task.detached(priority: .utility) { try execute(script, timeout: timeout, outputLimit: max(0, outputLimit), onOutput: onOutput) }
+        guard !(arguments + environment.keys + environment.values).contains(where: { $0.contains("\0") }) else {
+            throw FrogError.message("Script arguments cannot contain null characters.")
+        }
+        let launch = Launch(script: script, arguments: arguments, directory: directory?.path ?? FileManager.default.homeDirectoryForCurrentUser.path, environment: environment)
+        let work = Task.detached(priority: .utility) { try execute(launch, timeout: timeout, outputLimit: max(0, outputLimit), onOutput: onOutput) }
         return try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
     }
 
@@ -51,7 +58,14 @@ enum ScriptProcess {
         return directories.filter { seen.insert($0).inserted }.joined(separator: ":")
     }
 
-    private static func execute(_ script: String, timeout: TimeInterval, outputLimit: Int, onOutput: (@Sendable (String) -> Void)?) throws -> ScriptResult {
+    private struct Launch: Sendable {
+        let script: String
+        let arguments: [String]
+        let directory: String
+        let environment: [String: String]
+    }
+
+    private static func execute(_ launch: Launch, timeout: TimeInterval, outputLimit: Int, onOutput: (@Sendable (String) -> Void)?) throws -> ScriptResult {
         try Task.checkCancellation()
         var descriptors: [Int32] = [0, 0]
         guard pipe(&descriptors) == 0 else { throw POSIXError(.EIO) }
@@ -65,12 +79,14 @@ enum ScriptProcess {
         posix_spawn_file_actions_adddup2(&actions, descriptors[1], STDERR_FILENO)
         posix_spawn_file_actions_addclose(&actions, descriptors[0])
         posix_spawn_file_actions_addclose(&actions, descriptors[1])
-        posix_spawn_file_actions_addchdir_np(&actions, FileManager.default.homeDirectoryForCurrentUser.path)
+        posix_spawn_file_actions_addchdir_np(&actions, launch.directory)
         posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT))
         posix_spawnattr_setpgroup(&attributes, 0)
-        let argv = ["/bin/zsh", "-f", "-c", script].map { strdup($0) } + [nil]
+        // After -c, the next word is $0 and the ones after it $1, $2 and so on.
+        let argv = (["/bin/zsh", "-f", "-c", launch.script] + (launch.arguments.isEmpty ? [] : ["zsh"] + launch.arguments)).map { strdup($0) } + [nil]
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = searchPath(inherited: environment["PATH"])
+        environment.merge(launch.environment) { $1 }
         let env = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
         defer { argv.forEach { free($0) }; env.forEach { free($0) } }
         var pid: pid_t = 0
