@@ -409,7 +409,8 @@ final class LocalToolClientTests: XCTestCase {
         let task = Task { try await LocalToolProcess.run(executable: tool, arguments: [], environment: [:], directory: root) }
         defer { task.cancel() }
         var pids: [Int32] = []
-        for _ in 0..<200 {
+        // A new script can take over a second to start while macOS checks it.
+        for _ in 0..<2000 {
             pids = ((try? String(contentsOf: root.appendingPathComponent("pids"), encoding: .utf8)) ?? "").split(whereSeparator: \.isWhitespace).compactMap { Int32($0) }
             if pids.count == 2 { break }
             try await Task.sleep(for: .milliseconds(5))
