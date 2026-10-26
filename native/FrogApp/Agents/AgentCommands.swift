@@ -6,7 +6,7 @@ import FrogCore
 /// file per area (`AgentCommands+Core.swift` and its siblings); `all` lists them in the order
 /// `frog help` shows them.
 @MainActor enum AgentCommands {
-    static var all: [AgentCommand] { core + windows + tools }
+    static var all: [AgentCommand] { core + windows + tools + plugins }
 
     /// The heading each command's first word is listed under in `frog help`.
     static let groups: [String: String] = [
@@ -14,7 +14,7 @@ import FrogCore
         "windows": "Windows", "apps": "Windows",
         "scripts": "Scripts", "notes": "Notes",
         "clipboard": "Clipboard", "rules": "Writing rules", "awake": "Stay awake",
-        "monitor": "System monitor", "usage": "Mr. Usage"
+        "monitor": "System monitor", "usage": "Mr. Usage", "plugins": "Plugins"
     ]
 
     /// Commands of features that became part of others, with what to use instead. Skills installed

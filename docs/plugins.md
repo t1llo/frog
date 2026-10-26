@@ -134,22 +134,53 @@ Frog sets these CSS variables on the page, for the light and dark appearance and
 <link rel="stylesheet" href="/_frog/frog.css">
 ```
 
+It styles plain elements (headings, `button`, `input`, `textarea`, `select`, `table`, `code`) and adds these classes:
+
+| Class | Use |
+| --- | --- |
+| `frog-page` | The page's main element: padding and a column of sections. |
+| `frog-header`, `frog-subtitle` | A header with the `h1` and a line under it on the left, buttons on the right. |
+| `frog-card` | A bordered section. |
+| `frog-stack`, `frog-row`, `frog-spacer` | A column, a row, and a gap that pushes what follows to the end of a row. |
+| `frog-grid` | Equal columns that wrap; set `--min` for the narrowest column, such as `style="--min: 160px"`. |
+| `frog-list`, `frog-item` | A list of rows; `frog-item` on a `button` or `a` in a row makes the whole row clickable. |
+| `frog-stat` | A number in `strong` over a label in `span`. |
+| `frog-badge`, `frog-accent` | A small label; with `frog-accent`, in the accent color. |
+| `frog-segmented` | Buttons side by side, one chosen; mark it with `aria-pressed="true"`. |
+| `frog-primary`, `frog-quiet` | The main button, and a button without a border. |
+| `frog-muted`, `frog-caption`, `frog-small`, `frog-tabular` | Quieter text, a caption, smaller text and figures of equal width. |
+| `frog-notice`, `frog-error`, `frog-empty`, `frog-spinner` | A note, an error, an empty state and a loading spinner. |
+
 ## Building one with an AI agent
 
 With agent access on (Settings → Agents) and the Frog skill installed, ask your agent for the feature you want, such as "build me a Frog plugin that shows my open GitHub pull requests". It uses these commands:
 
 ```
-frog plugins new <folder> --name "Name"   start a plugin from a template
+frog plugins guide                        this reference, from the running Frog
+frog plugins new <folder> [--name N] [--id ID]   start a plugin from a template
 frog plugins check <folder>               check the manifest and files
 frog plugins install <folder>             install or update it for your review
-frog plugins logs <id>                    the page's console and errors
-frog plugins snapshot <id>                a picture of the page, to check its layout
-frog plugins pack <id> [--output file]    a .frogplugin file to share, with its SHA-256
 frog plugins list                         installed plugins and their state
-frog plugins remove <id>                  move a plugin to the Trash
+frog plugins snapshot <id> [--output f.png]      a picture of the page, to check its layout
+frog plugins logs <id>                    the page's console and errors
+frog plugins run <id> <command>           run one of its commands, as the command bar does
+frog plugins open <id>                    show its page in Frog's window
+frog plugins pack <folder|id> [--output f]       a .frogplugin file to share, with its SHA-256
+frog plugins remove <id>                  remove it, to the Trash
 ```
 
-Your first install of a plugin waits for you in Frog → Plugins. After you approve it, the agent's updates apply while they ask for nothing new.
+Your first install of a plugin waits for you in Frog → Plugins, which shows its review. After you approve it, the agent's updates apply at once while they ask for nothing new.
+
+### For agents
+
+1. Plugins must be on: `frog features list` shows it. Ask the user before `frog features enable plugins`.
+2. Start with `frog plugins new <folder>` in a folder of the user's choice, outside Frog's own folders. Give a plugin the user may share an id they own, such as `io.github.<user>.<name>`.
+3. Ask for the fewest permissions that do the job, and only the hosts the plugin needs. Keep everything in the folder: pages cannot load scripts, styles or fonts from the web.
+4. Use Frog's stylesheet and its `frog-*` classes, and keep the page simple and calm like Frog's own pages: a header, then cards.
+5. Run `frog plugins check <folder>`, then `frog plugins install <folder>`. The first install waits for the user: tell them to approve it in Frog's window, and wait until `frog plugins list` shows it `on`.
+6. Check your work: `frog plugins snapshot <id>` and look at the picture, `frog plugins logs <id>` for errors, and `frog plugins run <id> <command>` for commands. After each change, install again; the page reloads.
+7. Never put API keys or tokens in the plugin's files. Let the user paste one into the page, and keep it with `frog.storage`, which only this plugin reads.
+8. To share it, `frog plugins pack <folder>` and give the user the file and its SHA-256.
 
 ## Sharing
 

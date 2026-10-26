@@ -25,6 +25,7 @@ A Mac app that lives in your menu bar and replaces ten small Mac apps.
 | **Menu bar & Stay awake** | Hide/reveal icons, auto-hide, timed awake sessions and low-battery stop. |
 | **System monitor** | CPU/GPU charts, disk capacity and I/O, battery power and thermal status in an optional Frog menu view. |
 | **App cleaner** | Uninstall apps with the files they leave behind, after a full review; everything goes to the Trash. |
+| **Plugins** | Add features of your own: small pages and commands, built with an AI agent or by hand, that run sandboxed and ask before they use anything. Share them as one file. |
 | **AI agents** | The `frog` command and a skill let Claude Code, Codex, Gemini CLI, pi and OpenCode arrange windows, run your scripts, add notes and more. Off by default. |
 | **Personalization** | Eleven themes including Tokyo Night, transparency, editable config files and optional local statistics. |
 
@@ -67,7 +68,7 @@ See [Development](docs/development.md) for signing and packaging.
 
 ## Guides
 
-[Configuration and themes](docs/configuration.md) · [Providers](docs/providers.md) · [Local models](docs/local-model-sources.md) · [Installed AI tools](docs/local-tool-providers.md) · [Mr. Usage](docs/usage-integration.md) · [Statistics](docs/statistics.md) · [Stay awake](docs/stay-awake.md) · [App cleaner](docs/cleaner.md) · [Agents](docs/agents.md) · [Verification](docs/verification.md)
+[Configuration and themes](docs/configuration.md) · [Providers](docs/providers.md) · [Local models](docs/local-model-sources.md) · [Installed AI tools](docs/local-tool-providers.md) · [Mr. Usage](docs/usage-integration.md) · [Statistics](docs/statistics.md) · [Stay awake](docs/stay-awake.md) · [App cleaner](docs/cleaner.md) · [Agents](docs/agents.md) · [Plugins](docs/plugins.md) · [Verification](docs/verification.md)
 
 ## License
 

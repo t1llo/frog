@@ -7,14 +7,14 @@ enum AgentSkill {
     /// The skill's name, which is also the name of its folder.
     static let name = "frog"
     /// Raise it whenever `text` changes, so Settings offers Update to installs of an older one.
-    static let version = 2
+    static let version = 3
     /// The frontmatter key that marks a skill Frog wrote, with its version.
     static let marker = "frog-skill-version"
 
     static let text = """
     ---
     name: frog
-    description: Control the user's Mac and the Frog menu-bar app with the `frog` command. Use when the user asks to arrange, move, resize or focus windows or apply a window layout; open or list apps; list or run their Frog scripts; read, add or append to notes; use the clipboard history; run a writing rule on text; keep the Mac awake; check CPU, GPU or memory load or their Claude and Codex usage limits; or open, check or configure Frog and its features.
+    description: Control the user's Mac and the Frog menu-bar app with the `frog` command. Use when the user asks to arrange, move, resize or focus windows or apply a window layout; open or list apps; list or run their Frog scripts; read, add or append to notes; use the clipboard history; run a writing rule on text; keep the Mac awake; check CPU, GPU or memory load or their Claude and Codex usage limits; open, check or configure Frog and its features; or build, install, test and share a Frog plugin, a feature of their own in Frog, such as when they want Frog to do something it cannot yet.
     metadata:
       \(marker): "\(version)"
     ---
@@ -23,7 +23,7 @@ enum AgentSkill {
 
     The `frog` command talks to Frog, the menu-bar app running on this Mac. The running app is the reference for what it can do:
 
-    - `frog help` lists every command by group: Frog, Windows, Scripts, Notes, Clipboard, Writing rules, Stay awake, System monitor, Mr. Usage.
+    - `frog help` lists every command by group: Frog, Windows, Scripts, Notes, Clipboard, Writing rules, Stay awake, System monitor, Mr. Usage, Plugins.
     - `frog help <command>` explains one command, with its options and examples.
     - A group marked "(off)" belongs to a Frog feature that is switched off. Ask the user before turning it on with `frog features enable <feature>`.
 
@@ -46,6 +46,15 @@ enum AgentSkill {
     ## Scripts
 
     Frog scripts are the user's own shell commands and run with their permissions. Run the script the user asked for, by name; `frog scripts` shows how to list them when it is unclear which one they mean.
+
+    ## Plugins
+
+    A plugin adds a feature of the user's own to Frog: a page in its sidebar, rows in its command bar, or both, built from HTML, CSS and JavaScript that run in a sandbox. When the user asks for one, or for something Frog cannot do yet:
+
+    - Run `frog plugins guide` first and follow it; it is the reference for the Frog that is running.
+    - Build it in a folder with `frog plugins new`, install it with `frog plugins install`, and check it with `frog plugins snapshot` and `frog plugins logs` until it does what the user asked.
+    - The user approves a plugin's first install, and any update that asks for more access, in Frog's window. You cannot approve it; tell them it is waiting.
+    - Remove a plugin only when the user asks.
 
     """
 
