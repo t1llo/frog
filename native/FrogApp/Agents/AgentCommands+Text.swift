@@ -59,8 +59,10 @@ extension AgentCommands {
                                     list: "frog rules list", id: { $0.id.uuidString }, title: \.name)
                 guard rule.enabled else { throw AgentCommandError.failed("“\(rule.name)” is off. Turn it on on the Writing page first.") }
                 let text = try call.text(from: 1)
-                let result = try await call.model.runRule(rule.id, on: text)
-                return AgentResult(RuleRun(rule: rule.name, result: result), text: result)
+                let run = try await call.model.runRule(rule.id, on: text)
+                var result = AgentResult(RuleRun(rule: rule.name, result: run.result), text: run.result)
+                result.notice = run.historyIssue ?? ""
+                return result
             }
         ]
     }

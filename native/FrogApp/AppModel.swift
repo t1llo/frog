@@ -178,6 +178,8 @@ final class AppModel: ObservableObject {
     }()
     private let processingIndicator = ProcessingIndicator()
     private var processingTask: Task<Void, Never>?
+    /// The rule running belongs to the `frog` tool, which shows no indicator.
+    private var processingForAgent = false
     // One handle per kind: launching an app must not cancel a system action that waits for its keys.
     private var applicationTask: Task<Void, Never>?
     private var systemActionTask: Task<Void, Never>?
@@ -1461,17 +1463,21 @@ final class AppModel: ObservableObject {
         guard configuration.preferences.featureEnabled(.writing) else { return }
         begin(ruleID: ruleID, manualText: text, providerID: providerID, modelID: modelID)
     }
-    /// Runs a Writing rule on `text` for the `frog` tool and returns the result, which is neither pasted nor
-    /// copied. It runs as Try does: one rule at a time, recorded in History while History is on.
-    func runRule(_ ruleID: UUID, on text: String) async throws -> String {
+    /// Runs a Writing rule on `text` for the `frog` tool and returns the result, which is neither pasted, copied
+    /// nor shown on the Writing page. It runs as Try does: one rule at a time, kept in History while History is on.
+    /// `historyIssue`: why History could not keep it. Cancelling the caller cancels the rule.
+    func runRule(_ ruleID: UUID, on text: String) async throws -> (result: String, historyIssue: String?) {
         guard configuration.preferences.featureEnabled(.writing) else { throw FrogError.message("Writing is off.") }
         guard !isProcessing, !dictation.active else { throw FrogError.message("A rule is already running. Try again when it has finished.") }
-        begin(ruleID: ruleID, manualText: text, copiesResult: false)
-        await processingTask?.value
-        switch ruleOutcome {
-        case .failed(let message)?: throw FrogError.message(message)
-        case .cancelled?: throw FrogError.message("The rule was cancelled.")
-        case .done?, nil: return manualResult
+        var ended: (outcome: RuleOutcome, result: String?)?
+        let run = begin(ruleID: ruleID, manualText: text) { ended = ($0, $1) }
+        await withTaskCancellationHandler { await run?.value } onCancel: { run?.cancel() }
+        switch ended {
+        case (.cancelled, _)?: throw FrogError.message("The rule was cancelled.")
+        // With a result, a failure is History's: the text was processed.
+        case (let outcome, let result?)?: return (result, outcome.failure)
+        case (.failed(let message), nil)?: throw FrogError.message(message)
+        case (.done, nil)?, nil: throw FrogError.message("The rule ended without a result.")
         }
     }
     func cancelProcessing() { processingTask?.cancel(); status = "Cancelling…" }
@@ -1591,33 +1597,41 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// `copiesResult`: a result of `manualText` is copied, except for the `frog` tool, which prints it.
-    private func begin(ruleID: UUID, manualText: String?, providerID: UUID? = nil, modelID: String? = nil, copiesResult: Bool = true) {
+    /// `agentReply`: the `frog` tool's run, which hands its outcome and result here instead of copying the result
+    /// or showing it on the Writing page. Returns the run's task, nil when it did not start.
+    @discardableResult
+    private func begin(ruleID: UUID, manualText: String?, providerID: UUID? = nil, modelID: String? = nil,
+                       agentReply: ((RuleOutcome, String?) -> Void)? = nil) -> Task<Void, Never>? {
         guard !isProcessing, !dictation.active else {
-            // A shortcut press is answered by the indicator or popup of what is running.
+            // A shortcut press is answered by the indicator or popup of what is running. An agent's run has neither.
             if manualText != nil {
                 let error = FrogError.message("A rule is already running. Wait or cancel it from the menu.")
                 report(error); ruleOutcome = .failed(error.localizedDescription)
-            }
-            return
+                agentReply?(.failed(error.localizedDescription), nil)
+            } else if processingForAgent { showPressWhileAgentRuns() }
+            return nil
         }
         ruleOutcome = nil
         guard var rule = configuration.rules.first(where: { $0.id == ruleID }), rule.enabled else {
             let error = FrogError.message("Select an enabled rule.")
-            report(error); ruleOutcome = .failed(error.localizedDescription); return
+            report(error); ruleOutcome = .failed(error.localizedDescription); agentReply?(.failed(error.localizedDescription), nil); return nil
         }
         // An answer belongs in the panel: this path would send the selection and paste over it.
         if rule.answersInPanel {
             let error = FrogError.message("This rule answers in a panel. Turn on Explain in Features.")
-            report(error); ruleOutcome = .failed(error.localizedDescription); return
+            report(error); ruleOutcome = .failed(error.localizedDescription); agentReply?(.failed(error.localizedDescription), nil); return nil
         }
-        if manualText != nil { manualResult = "" }
+        if manualText != nil, agentReply == nil { manualResult = "" }
         if let providerID { rule.providerID = providerID; rule.model = modelID ?? "" }
         else if let modelID { rule.model = modelID }
         let provider: ProviderConfiguration
         do { provider = try resolved(rule) }
-        catch { finish(outcome(of: error), background: manualText == nil); return }
+        catch {
+            let ended = outcome(of: error)
+            finish(ended, background: manualText == nil); agentReply?(ended, nil); return nil
+        }
         isProcessing = true
+        processingForAgent = agentReply != nil
         status = "\(rule.name)…"
         if manualText == nil { showIndicatorWorking() }
         let recordingEpoch = historyEpoch
@@ -1625,9 +1639,11 @@ final class AppModel: ObservableObject {
         processingTask = Task { [weak self] in
             guard let self else { return }
             var ended = RuleOutcome.done
+            var produced: String?
             defer {
                 self.finish(ended, background: manualText == nil)
-                self.isProcessing = false; self.processingTask = nil
+                agentReply?(ended, produced)
+                self.isProcessing = false; self.processingForAgent = false; self.processingTask = nil
             }
             do {
                 let selection: (any CapturedTextSelection)?
@@ -1660,12 +1676,12 @@ final class AppModel: ObservableObject {
                         self.report(error); ended = .failed(error.localizedDescription)
                     }
                     self.clipboardHistoryStore.recordCopiedText(result)
+                } else if agentReply != nil {
+                    produced = result
                 } else {
                     self.manualResult = result
-                    if copiesResult {
-                        self.writeClipboard(result)
-                        self.clipboardHistoryStore.recordCopiedText(result)
-                    }
+                    self.writeClipboard(result)
+                    self.clipboardHistoryStore.recordCopiedText(result)
                 }
                 try Task.checkCancellation()
                 if delivered { self.statistics.recordRuleExecution(kind: provider.id == Self.localProviderID || provider.kind.isLocal ? .local : provider.kind.localTool != nil ? .cli : .remote) }
@@ -1679,6 +1695,13 @@ final class AppModel: ObservableObject {
                 }
             } catch { ended = self.outcome(of: error) }
         }
+        return processingTask
+    }
+
+    /// The press waits for nothing: an agent's rule shows no indicator of its own to answer it.
+    private func showPressWhileAgentRuns() {
+        if registerShortcuts, configuration.preferences.showProcessingIndicator { processingIndicator.note("An agent is running a rule…") }
+        else { report(FrogError.message("An agent is running a rule. Press the shortcut again when it has finished.")) }
     }
 
     private func outcome(of error: Error) -> RuleOutcome {
