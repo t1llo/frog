@@ -270,6 +270,10 @@ Removal history, ignored items and dismissed notices stay on each Mac in `~/Libr
 
 - `command-bar.learn-choices`: Learn from your choices: rows you pick for what you type are listed a bit higher. Default false. Stored in `~/Library/Application Support/Frog/command-choices.json`, never in this folder.
 
+### Agents
+
+- `agents.access`: boolean, default `false`. Lets the `frog` command, and the AI agents that use it, control Frog through a socket only your user account can open, `~/Library/Application Support/Frog/agent.sock`. See the [agents guide](agents.md).
+
 
 ## Migration, sync and JSON interchange
 

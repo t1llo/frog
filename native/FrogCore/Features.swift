@@ -111,6 +111,8 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
     public var windows: WindowPreferences?
     public var cleaner: CleanerPreferences?
     public var commandBar: CommandBarPreferences?
+    /// Lets the `frog` command and AI agents control Frog through its local socket. Off unless turned on.
+    public var agentAccess: Bool?
     public var commandBarSettings: CommandBarPreferences { commandBar ?? CommandBarPreferences() }
     public var effectiveCommandBarHotkey: Hotkey { commandBarHotkey ?? Hotkey(keyCode: 49, modifiers: 4096 | 2048) }
     public var effectiveWindowSwitcherHotkey: Hotkey { windowSwitcherHotkey ?? Hotkey(keyCode: 48, modifiers: 256) }
@@ -130,6 +132,7 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         case windows
         case cleaner
         case commandBar
+        case agentAccess
     }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -147,6 +150,7 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         windows = try values.decodeIfPresent(WindowPreferences.self, forKey: .windows)
         cleaner = try values.decodeIfPresent(CleanerPreferences.self, forKey: .cleaner)
         commandBar = try values.decodeIfPresent(CommandBarPreferences.self, forKey: .commandBar)
+        agentAccess = try values.decodeIfPresent(Bool.self, forKey: .agentAccess)
     }
 }
 

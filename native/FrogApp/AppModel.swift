@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import FrogCore
+import FrogAgent
 import FrogUsage
 
 struct AppIssue: Identifiable {
@@ -66,11 +67,18 @@ final class AppModel: ObservableObject {
         return controller
     }()
     private var started = false
+    /// Whether `agentServer` exists, so turning everything off does not create it.
+    private var agentServerCreated = false
     let localModels: LocalModels
     let dictation: DictationController
     let power: StayAwakeController
     let toolkit: Toolkit
     let systemMonitor = SystemMonitor()
+    /// Answers the `frog` tool while agent access is on.
+    private(set) lazy var agentServer = AgentServer(socket: historyStore.directory.appendingPathComponent(AgentSocketPath.fileName)) { [weak self] request in
+        guard let self else { return .failure("Frog is quitting.") }
+        return await AgentCommands.run(request, model: self)
+    }
     /// CPU and GPU in the menu bar, while System monitor and its menu-bar item are on.
     private(set) var systemMonitorItem: SystemMonitorStatusItemController?
     /// The cup in the menu bar while Stay awake is on, when its icon is chosen.
@@ -460,12 +468,14 @@ final class AppModel: ObservableObject {
         configureClipboardHistory()
         if configuration.preferences.featureEnabled(.commandBar) { commandBar.warm() }
         configureWindowLayout()
+        configureAgentServer()
     }
 
     func shutdown() {
         drainUsagePreferences()
         statistics.waitForWrites()
         commandChoices.waitForWrites()
+        if agentServerCreated { agentServer.configure(enabled: false) }
         systemMonitorItem?.stop(); systemMonitorItem = nil
         stayAwakeItem?.stop(); stayAwakeItem = nil
         systemMonitor.stop()
@@ -675,9 +685,18 @@ final class AppModel: ObservableObject {
         localModels.updateCatalog(candidate.modelCatalog)
         if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
         configureWindowLayout()
+        configureAgentServer()
     }
 
     private func configureWindowLayout() { windowLayout.configure(configuration, active: started && registerShortcuts) }
+
+    /// The socket is open only in the running app, never in tests, and only while agent access is on.
+    private func configureAgentServer() {
+        let enabled = started && registerShortcuts && configuration.preferences.toolkitSettings.agentAccess == true
+        guard enabled || agentServerCreated else { return }
+        agentServerCreated = true
+        agentServer.configure(enabled: enabled)
+    }
 
     /// The optional System monitor and Stay awake items, each only while its feature and its
     /// menu-bar choice are on. Created once Frog has started, never by tests that register nothing.

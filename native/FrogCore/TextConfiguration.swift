@@ -61,6 +61,7 @@ enum TextConfiguration {
             .init("system-monitor.menu-bar-style", "toolkit.systemMonitor.menuBarStyle", .choice(MenuBarMeterChoices.styles)),
             .init("system-monitor.menu-bar-palette", "toolkit.systemMonitor.menuBarPalette", .choice(MenuBarMeterChoices.palettes)),
             .init("stay-awake.menu-bar", "toolkit.stayAwake.menuBarItem", .bool),
+            .init("agents.access", "toolkit.agentAccess", .bool),
             .init("stay-awake.menu-bar-style", "toolkit.stayAwake.menuBarStyle", .choice(StayAwakePreferences.menuBarStyles)),
             .init("menubar.auto-hide", "toolkit.menuBar.autoHide", .bool),
             .init("menubar.auto-hide-seconds", "toolkit.menuBar.autoHideSeconds", .number(1...3600)),
