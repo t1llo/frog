@@ -240,6 +240,8 @@ struct PluginReviewSheet: View {
     let review: PluginReview
     @ObservedObject var plugins: PluginRuntime
     let report: (Error) -> Void
+    /// The main button waits a moment after the sheet changes, so a click meant for something else cannot approve it.
+    @State private var armed = false
 
     private var manifest: PluginManifest { review.package.manifest }
 
@@ -255,6 +257,9 @@ struct PluginReviewSheet: View {
                 }
             }
             Text(manifest.description).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+            if let replacing = review.replacing {
+                InlineIssue(message: "You have \(manifest.name) from \(replacing.label). This one comes from \(review.source.label): it replaces that plugin and gets what it stored. Install it only if both come from the same author.")
+            }
             if !review.compatible {
                 InlineIssue(message: "It needs Frog \(manifest.frog ?? "") or later. Update Frog first.")
             }
@@ -294,6 +299,12 @@ struct PluginReviewSheet: View {
                                 }
                             }
                         }
+                        if review.approved != nil, additions.scripts.contains(PluginGrant.filesKey) {
+                            HStack(spacing: 6) {
+                                Text("Its files changed, and its scripts can run any of them.").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                                FrogBadge(text: "Changed", active: true)
+                            }
+                        }
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }.frame(maxHeight: 320).fixedSize(horizontal: false, vertical: true)
@@ -304,8 +315,13 @@ struct PluginReviewSheet: View {
                 Button(review.installed ? "Not now" : "Cancel") { plugins.dismissReview() }.keyboardShortcut(.cancelAction)
                 Button(review.installed ? "Allow" : review.approved == nil ? "Install" : "Update") {
                     do { try plugins.approve(review) } catch { report(error); plugins.dismissReview() }
-                }.buttonStyle(FrogButtonStyle(primary: true)).disabled(!review.compatible)
+                }.buttonStyle(FrogButtonStyle(primary: true)).disabled(!review.compatible || !armed)
             }
+        }
+        .task(id: review.id) {
+            armed = false
+            try? await Task.sleep(for: .seconds(1))
+            armed = true
         }
         .padding(20).frame(width: 480)
         .font(.system(size: 13)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())

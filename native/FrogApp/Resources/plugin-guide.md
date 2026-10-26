@@ -69,14 +69,17 @@ A plugin without permissions can show its page, keep its own storage and receive
 | `links` | Open web links in your browser. |
 | `network` | Send requests with `frog.fetch` to the hosts in `hosts`, and only those. |
 | `ai` | Send text to the AI model your Writing rules use by default. A cloud model's provider bills you for it. |
-| `scripts` | Run the shell scripts listed in `scripts`, with your user's full access to this Mac. Install a plugin with scripts only when you trust its author and have read the scripts. |
+| `scripts` | Run the shell scripts listed in `scripts`, with your user's full access to this Mac and the permissions you gave Frog, such as Accessibility. Install a plugin with scripts only when you trust its author and have read the scripts. |
 
 What the sandbox enforces:
 
 - The page loads only from its own folder, at `frog-plugin://<id>/`. Every other address is blocked, including links, frames, forms, `fetch`, WebSockets and WebRTC; network requests go through `frog.fetch`, which Frog checks against `hosts`.
+- WebRTC, WebTransport, DNS prefetching, the browser's clipboard API (`navigator.clipboard`), web notifications, geolocation and sharing are off in every frame. Use `frog.fetch`, `frog.clipboard` and `frog.notify` instead. Text the user selects and copies in the page copies as usual.
 - The page has no cookies or shared website data, and cannot leave its folder or navigate elsewhere.
+- `alert`, `confirm` and `prompt` show as a sheet on the plugin's page, naming the plugin, and only while the page is shown; a hidden page gets the answer of a dismissed dialog. The user can turn a page's dialogs off.
 - Plugins cannot read Frog's settings, notes, history, keys or other plugins' storage.
-- Frog records the permissions, hosts and script contents you approved. An update that asks for more, adds a host or changes a script waits for you to review it again; any other update applies directly.
+- Frog records the permissions, hosts and script contents you approved. An update that asks for more, adds a host or changes a script waits for you to review it again; any other update applies directly. A plugin with scripts also pins all its files, since a script can run any of them: any change to it waits for review.
+- A plugin from somewhere else than the installed one with the same id, such as a file or another author's link, is reviewed as a new install, and the review says that it replaces the installed plugin and gets what that one stored.
 - Only you can approve or turn on a plugin, in Frog's window. The `frog` command can install one for review, but not approve it.
 
 ## The `frog` object
@@ -109,7 +112,7 @@ const result = await frog.run("stats", { args: ["--short"], input: "text" })
 const stop = frog.on("command", (id) => { … })   // a command bar row was chosen; stop() unsubscribes
 frog.on("show", () => { … })             // the page came into view, the first time included
 frog.on("hide", () => { … })             // another page took its place
-await frog.show()                        // bring the plugin's page forward
+await frog.show()                        // bring the plugin's page forward, right after a command
 await frog.close()                       // unload the plugin while its page is hidden
 frog.info                                // { id, name, version, permissions, frog }
 ```
@@ -117,12 +120,13 @@ frog.info                                // { id, name, version, permissions, fr
 Details:
 
 - **Commands.** A command that arrives before the page listens waits for its first `frog.on("command")` listener, so register it at startup. A command with `"show": false` runs the page without opening it; call `frog.close()` when the work is done.
-- **Clipboard.** `readText` works while the page is shown, or within 10 seconds of one of the plugin's commands. It returns `null` when the clipboard holds no text, or text a password manager marked as concealed.
-- **Notifications.** `at` is a time in milliseconds, such as `Date.now() + 60_000`, at most 30 days ahead; without it the notification shows at once. A plugin has at most 20 waiting. A notification with the same `id` replaces the earlier one. Clicking one opens the plugin's page.
+- **Showing the page.** `frog.show` works within 10 seconds of one of the plugin's commands, so a page in the background cannot bring Frog forward by itself.
+- **Clipboard.** `readText` and `writeText` work while the page is shown, or within 10 seconds of one of the plugin's commands. `readText` returns `null` when the clipboard holds no text, or text a password manager marked as concealed.
+- **Notifications.** `at` is a time in milliseconds, such as `Date.now() + 60_000`, at most 30 days ahead; without it the notification shows at once, at most 10 a minute. A plugin has at most 20 waiting. A notification with the same `id` replaces the earlier one. Clicking one opens the plugin's page.
 - **Links.** `openURL` and links the user clicks open in the default browser, http and https only, with the `links` permission.
 - **Fetch.** `frog.fetch` resolves for any HTTP status; check `ok` or `status`. It rejects when the host is not allowed, the request is not valid or the network fails. With `as: "json"` it parses `body` and rejects when the answer is not JSON. Requests carry no cookies or credentials, redirects to other hosts are not followed, request bodies can be 1 MB and answers 5 MB, and Frog sets `Host`, `Cookie`, `Origin`, `Referer` and similar headers itself.
 - **AI.** One call runs at a time per plugin, with the model your Writing rules use by default.
-- **Scripts.** Scripts run with `/bin/zsh` in the plugin's own data folder. They receive `args` as `$1`, `$2` and so on, `input` in the `FROG_INPUT` environment variable and the plugin's id in `FROG_PLUGIN_ID`. They stop after 60 seconds, and their output is cut at 1 MB. A script runs only while its file is byte for byte the one you approved.
+- **Scripts.** Scripts run with `/bin/zsh` in the plugin's own data folder. They receive `args` as `$1`, `$2` and so on, `input` in the `FROG_INPUT` environment variable and the plugin's id in `FROG_PLUGIN_ID`. They stop after 60 seconds, and their output is cut at 1 MB. A script runs only while it and every other file of the plugin are byte for byte the ones you approved.
 
 `console.log`, errors and rejected promises go to the plugin's log, which `frog plugins logs <id>` prints.
 
@@ -169,7 +173,7 @@ frog plugins pack <folder|id> [--output f]       a .frogplugin file to share, wi
 frog plugins remove <id>                  remove it, to the Trash
 ```
 
-Your first install of a plugin waits for you in Frog → Plugins, which shows its review. After you approve it, the agent's updates apply at once while they ask for nothing new.
+Your first install of a plugin waits for you in Frog → Plugins, which shows its review. After you approve it, the agent's updates apply at once while they ask for nothing new. A plugin with scripts waits for you after every change.
 
 ### For agents
 
@@ -177,7 +181,7 @@ Your first install of a plugin waits for you in Frog → Plugins, which shows it
 2. Start with `frog plugins new <folder>` in a folder of the user's choice, outside Frog's own folders. Give a plugin the user may share an id they own, such as `io.github.<user>.<name>`.
 3. Ask for the fewest permissions that do the job, and only the hosts the plugin needs. Keep everything in the folder: pages cannot load scripts, styles or fonts from the web.
 4. Use Frog's stylesheet and its `frog-*` classes, and keep the page simple and calm like Frog's own pages: a header, then cards.
-5. Run `frog plugins check <folder>`, then `frog plugins install <folder>`. The first install waits for the user: tell them to approve it in Frog's window, and wait until `frog plugins list` shows it `on`.
+5. Run `frog plugins check <folder>`, then `frog plugins install <folder>`. The first install waits for the user: tell them to approve it in Frog's window, and wait until `frog plugins list` shows it `on`. A plugin with scripts waits for the user after every change, so prefer a page without scripts when one can do the job.
 6. Check your work: `frog plugins snapshot <id>` and look at the picture, `frog plugins logs <id>` for errors, and `frog plugins run <id> <command>` for commands. After each change, install again; the page reloads.
 7. Never put API keys or tokens in the plugin's files. Let the user paste one into the page, and keep it with `frog.storage`, which only this plugin reads.
 8. To share it, `frog plugins pack <folder>` and give the user the file and its SHA-256.

@@ -66,7 +66,16 @@ import XCTest
             out.stored = await frog.storage.get("count");
             out.keys = await frog.storage.keys();
             await attempt("hiddenRead", () => frog.clipboard.readText());
-            await frog.clipboard.writeText("from plugin");
+            await attempt("hiddenWrite", () => frog.clipboard.writeText("from plugin"));
+            await attempt("show", () => frog.show());
+            out.confirm = confirm("Allow?");
+            out.prompt = prompt("Your password?");
+            // An empty frame gets fresh copies of what the bridge removes, so WebKit itself has them off.
+            const frame = document.createElement("iframe");
+            document.body.append(frame);
+            out.frame = ["RTCPeerConnection", "WebTransport", "Notification"].map((name) => typeof frame.contentWindow[name]);
+            out.frameClipboard = typeof frame.contentWindow.navigator.clipboard;
+            out.clipboardAPI = typeof navigator.clipboard;
             await attempt("frogFetch", () => frog.fetch("https://example.com"));
             await attempt("ai", () => frog.ai("Say hi"));
             await attempt("script", () => frog.run("anything"));
@@ -84,7 +93,14 @@ import XCTest
         XCTAssertEqual(result["stored"] as? [String: Int], ["value": 3])
         XCTAssertEqual(result["keys"] as? [String], ["count"])
         XCTAssertEqual(result["hiddenRead"] as? String, "error: A plugin reads the clipboard only while its page is open or right after one of its commands.")
-        XCTAssertEqual(pasteboard.string(forType: .string), "from plugin")
+        XCTAssertEqual(result["hiddenWrite"] as? String, "error: A plugin writes the clipboard only while its page is open or right after one of its commands.")
+        XCTAssertEqual(pasteboard.string(forType: .string), "copied")
+        XCTAssertEqual(result["show"] as? String, "error: A plugin shows its page only right after one of its commands.")
+        XCTAssertEqual(result["confirm"] as? Bool, false, "A hidden page's dialog is answered without asking the user")
+        XCTAssertTrue(result["prompt"] is NSNull)
+        XCTAssertEqual(result["frame"] as? [String], ["undefined", "undefined", "undefined"])
+        XCTAssertEqual(result["frameClipboard"] as? String, "undefined")
+        XCTAssertEqual(result["clipboardAPI"] as? String, "undefined")
         for name in ["frogFetch", "ai", "script", "link"] {
             XCTAssertTrue((result[name] as? String)?.contains("permission in plugin.json") == true, "\(name): \(result[name] ?? "nil")")
         }
@@ -98,7 +114,7 @@ import XCTest
     }
 
     func testClipboardReadsWhileShownAndNeverConcealedText() async throws {
-        let host = try await running(try makePlugin(permissions: ["clipboard-read"]))
+        let host = try await running(try makePlugin(permissions: ["clipboard-read", "clipboard-write"]))
         host.isShowing = true
         pasteboard.clearContents()
         pasteboard.setString("visible", forType: .string)
@@ -112,6 +128,23 @@ import XCTest
         pasteboard.writeObjects([item])
         result = try await evaluate("return { text: await frog.clipboard.readText() };", in: host)
         XCTAssertTrue(result["text"] is NSNull, "\(result)")
+
+        _ = try await evaluate("await frog.clipboard.writeText(\"from plugin\"); return {};", in: host)
+        XCTAssertEqual(pasteboard.string(forType: .string), "from plugin")
+    }
+
+    func testWebKitHasTheFeaturesPastTheBridgeOff() {
+        let preferences = WKPreferences()
+        XCTAssertEqual(PluginPageSource.restrict(preferences), PluginPageSource.disabledFeatures,
+                       "Every feature is one this WebKit knows and now has off; update the list when WebKit renames one")
+    }
+
+    func testACommandsOnlyPluginRunsInFrogsOwnPage() async throws {
+        let host = try await running(try makePlugin(permissions: [], extra: ["entry": NSNull(), "commands": [["id": "go", "title": "Go"]]]))
+        let result = try await evaluate("return { url: location.href, frog: typeof frog, direct: await fetch(\"https://example.com\").then(() => \"reached\", () => \"blocked\") };", in: host)
+        XCTAssertEqual(result["url"] as? String, "frog-plugin://com.example.test/_frog/blank.html")
+        XCTAssertEqual(result["frog"] as? String, "object")
+        XCTAssertEqual(result["direct"] as? String, "blocked")
     }
 
     func testCommandsWaitForTheirListenerAndHiddenPagesClose() async throws {
@@ -144,16 +177,40 @@ import XCTest
     func testAScriptRunsAsApprovedAndNotOnceItsFileChanged() async throws {
         let folder = try makePlugin(permissions: ["scripts"], extra: ["scripts": ["hello": "hello.sh"]])
         try Data("printf '%s:%s:%s' \"$1\" \"$FROG_INPUT\" \"$(basename \"$PWD\")\"".utf8).write(to: folder.appendingPathComponent("hello.sh"))
+        try Data("echo helper".utf8).write(to: folder.appendingPathComponent("helper.sh"))
         let host = try await running(folder)
         var result = try await evaluate("return await frog.run(\"hello\", { args: [\"a\"], input: \"b\" });", in: host)
         XCTAssertEqual(result["output"] as? String, "a:b:com.example.test")
         XCTAssertEqual(result["status"] as? Int, 0)
+
+        // A file the script could run changed: that needs the user's review as much as the script itself.
+        try Data("echo changed".utf8).write(to: runtime.store.folder(for: "com.example.test").appendingPathComponent("helper.sh"))
+        result = try await evaluate("""
+            try { await frog.run("hello"); return { ran: true }; } catch (error) { return { error: error.message }; }
+            """, in: host)
+        XCTAssertEqual(result["error"] as? String, "The script “hello” changed since you approved it. Review the plugin again.")
 
         try Data("echo changed".utf8).write(to: runtime.store.folder(for: "com.example.test").appendingPathComponent("hello.sh"))
         result = try await evaluate("""
             try { await frog.run("hello"); return { ran: true }; } catch (error) { return { error: error.message }; }
             """, in: host)
         XCTAssertEqual(result["error"] as? String, "The script “hello” changed since you approved it. Review the plugin again.")
+    }
+
+    func testAFileWithAnInstalledPluginsIdFromElsewhereIsReviewedAsNew() async throws {
+        let folder = try makePlugin(permissions: ["clipboard-read"])
+        let package = try PluginPackage.read(folder)
+        try runtime.store.install(package, source: .link("https://github.com/jane/test/v1.frogplugin"), approving: true)
+        runtime.refresh()
+
+        try await runtime.openArchive(try PluginArchive.create(package), source: .file("/tmp/test.frogplugin"))
+        let review = try XCTUnwrap(runtime.review)
+        XCTAssertNil(review.approved, "Every permission shows as new")
+        XCTAssertEqual(review.replacing, .link("https://github.com/jane/test/v1.frogplugin"))
+
+        try await runtime.openArchive(try PluginArchive.create(package), source: .link("https://github.com/jane/test/v2.frogplugin"))
+        XCTAssertNotNil(runtime.review?.approved)
+        XCTAssertNil(runtime.review?.replacing)
     }
 
     func testALinkThatDoesNotMatchItsHashIsRefusedBeforeDownloading() async {

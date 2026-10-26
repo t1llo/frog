@@ -20,6 +20,8 @@ import WebKit
     private var offscreen: NSWindow?
     /// When the page last received a command; for a moment after, it acts as if it were shown.
     var lastCommand: Date?
+    /// The user asked for no more dialogs from this page.
+    private var dialogsStopped = false
     var commandedRecently: Bool { lastCommand.map { Date().timeIntervalSince($0) < 10 } ?? false }
 
     /// Whether the page is on screen; the page hears `show` and `hide`.
@@ -43,6 +45,7 @@ import WebKit
         configuration.mediaTypesRequiringUserActionForPlayback = .all
         configuration.allowsAirPlayForMediaPlayback = false
         configuration.upgradeKnownHostsToHTTPS = true
+        PluginPageSource.restrict(configuration.preferences)
         if let contentRules { configuration.userContentController.add(contentRules) }
         let info: [String: Any] = ["id": manifest.id, "name": manifest.name, "version": manifest.version,
                                    "permissions": manifest.permissions.map(\.rawValue), "frog": AppVersion.current]
@@ -63,11 +66,8 @@ import WebKit
     }
 
     func load() {
-        guard let entry = manifest.entry, let url = URL(string: "\(PluginPageSource.scheme)://\(id)/\(entry)") else {
-            // A plugin with commands only still gets a page to run them in.
-            webView.loadHTMLString("<!doctype html><title>\(manifest.name)</title>", baseURL: URL(string: "\(PluginPageSource.scheme)://\(id)/"))
-            return
-        }
+        // A plugin with commands only still gets a page to run them in.
+        guard let url = URL(string: "\(PluginPageSource.scheme)://\(id)/\(manifest.entry ?? "_frog/blank.html")") else { return }
         webView.load(URLRequest(url: url))
     }
 
@@ -226,42 +226,56 @@ extension PluginWebHost: WKNavigationDelegate, WKUIDelegate {
         decisionHandler(.deny)
     }
 
+    // Dialogs and file panels are sheets on the plugin's own page, only while the user looks at it, and say which
+    // plugin asks. A hidden page gets the answer a closed dialog gives, and the user can stop a page's dialogs.
+
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo,
                  completionHandler: @escaping @MainActor @Sendable () -> Void) {
-        _ = alert(message, buttons: ["OK"])
-        completionHandler()
+        dialog(message, buttons: ["OK"]) { _ in completionHandler() }
     }
 
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo,
                  completionHandler: @escaping @MainActor @Sendable (Bool) -> Void) {
-        completionHandler(alert(message, buttons: ["OK", "Cancel"]) == .alertFirstButtonReturn)
+        dialog(message, buttons: ["OK", "Cancel"]) { completionHandler($0 == .alertFirstButtonReturn) }
     }
 
     func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo,
                  completionHandler: @escaping @MainActor @Sendable (String?) -> Void) {
         let field = NSTextField(string: defaultText ?? "")
         field.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
-        completionHandler(alert(prompt, buttons: ["OK", "Cancel"], accessory: field) == .alertFirstButtonReturn ? field.stringValue : nil)
+        dialog(prompt, buttons: ["OK", "Cancel"], accessory: field) { completionHandler($0 == .alertFirstButtonReturn ? field.stringValue : nil) }
     }
 
     /// Files the user picks are the only files a page can read.
     func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo,
                  completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void) {
+        guard isShowing, let window = webView.window, window.attachedSheet == nil else { completionHandler(nil); return }
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = parameters.allowsMultipleSelection
         panel.canChooseDirectories = parameters.allowsDirectories
         panel.canChooseFiles = true
-        panel.message = "\(manifest.name) asks for a file."
-        completionHandler(panel.runModal() == .OK ? panel.urls : nil)
+        panel.message = "The plugin “\(manifest.name)” asks for a file."
+        panel.beginSheetModal(for: window) { response in completionHandler(response == .OK ? panel.urls : nil) }
     }
 
-    private func alert(_ message: String, buttons: [String], accessory: NSView? = nil) -> NSApplication.ModalResponse {
+    private func dialog(_ message: String, buttons: [String], accessory: NSView? = nil,
+                        completion: @escaping @MainActor (NSApplication.ModalResponse) -> Void) {
+        guard isShowing, !dialogsStopped, let window = webView.window, window.attachedSheet == nil else {
+            runtime?.log(id, level: "warn", "Answered a dialog the user could not see: \(message.prefix(200))")
+            completion(.alertSecondButtonReturn)
+            return
+        }
         let alert = NSAlert()
-        alert.messageText = manifest.name
+        alert.messageText = "The plugin “\(manifest.name)” says"
         alert.informativeText = String(message.prefix(2_000))
         for button in buttons { alert.addButton(withTitle: button) }
         alert.accessoryView = accessory
-        return alert.runModal()
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = "Don’t show more dialogs from this plugin"
+        alert.beginSheetModal(for: window) { [weak self] response in
+            if alert.suppressionButton?.state == .on { self?.dialogsStopped = true }
+            completion(response)
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 import AppKit
 import FrogCore
 import SwiftUI
+import WebKit
 
 /// What Frog adds to every plugin page: the content policy, the `window.frog` bridge, and the
 /// theme's colours as CSS variables.
@@ -33,6 +34,37 @@ enum PluginPageSource {
      {"trigger":{"url-filter":"^blob:"},"action":{"type":"ignore-previous-rules"}},
      {"trigger":{"url-filter":"^about:"},"action":{"type":"ignore-previous-rules"}}]
     """
+
+    /// WebKit features a plugin page has in no frame: ways past `window.frog` to the network, the clipboard or the user.
+    /// The policy and the bridge cover the main frame, but an empty frame the page adds gets fresh copies of them,
+    /// and DNS prefetching names hosts that neither the policy nor the content rules see.
+    static let disabledFeatures: Set<String> = [
+        "PeerConnectionEnabled", "WebTransportEnabled", "LinkDNSPrefetchEnabled", "LinkPreconnect", "LinkPreconnectEarlyHintsEnabled",
+        "AsyncClipboardAPIEnabled", "DOMPasteAccessRequestsEnabled", "GeolocationAPIEnabled", "NotificationsEnabled",
+        "NotificationEventEnabled", "DeclarativeWebPush", "ServiceWorkersEnabled", "SpeechRecognitionEnabled", "WebShareEnabled",
+        "WebShareFileAPIEnabled"
+    ]
+
+    /// Switches `disabledFeatures` off and returns the ones this WebKit has and now has off. WebKit offers the
+    /// switches as SPI only; a macOS without one keeps the policy, the content rules and the bridge's own removals.
+    @discardableResult
+    static func restrict(_ preferences: WKPreferences) -> Set<String> {
+        let list = Selector(("_features")), set = Selector(("_setEnabled:forFeature:")), get = Selector(("_isEnabledForFeature:"))
+        guard (WKPreferences.self as AnyObject).responds(to: list),
+              let setMethod = class_getInstanceMethod(WKPreferences.self, set), let getMethod = class_getInstanceMethod(WKPreferences.self, get),
+              let features = (WKPreferences.self as AnyObject).perform(list)?.takeUnretainedValue() as? [NSObject] else { return [] }
+        typealias Setter = @convention(c) (AnyObject, Selector, Bool, AnyObject) -> Void
+        typealias Getter = @convention(c) (AnyObject, Selector, AnyObject) -> Bool
+        let setEnabled = unsafeBitCast(method_getImplementation(setMethod), to: Setter.self)
+        let isEnabled = unsafeBitCast(method_getImplementation(getMethod), to: Getter.self)
+        var off: Set<String> = []
+        for feature in features {
+            guard let key = feature.value(forKey: "key") as? String, disabledFeatures.contains(key) else { continue }
+            setEnabled(preferences, set, false, feature)
+            if !isEnabled(preferences, get, feature) { off.insert(key) }
+        }
+        return off
+    }
 
     /// `info` is the JSON of `frog.info`.
     static func bridge(info: String) -> String {
@@ -123,7 +155,8 @@ enum PluginPageSource {
           });
           Object.defineProperty(window, "frog", { value: frog, writable: false, configurable: false, enumerable: true });
 
-          // Peer connections reach the network without asking Frog, so the page has none.
+          // Peer connections reach the network without asking Frog, so the page has none. WebKit has them switched off
+          // in every frame; this covers a WebKit without that switch, in the main frame.
           for (const name of ["RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel", "RTCRtpSender", "RTCRtpReceiver"]) {
             try { Object.defineProperty(window, name, { value: undefined, writable: false, configurable: false }); } catch {}
           }
@@ -176,6 +209,9 @@ enum PluginPageSource {
             guard let url = FrogResources.bundle.url(forResource: "frog-plugin", withExtension: "css"),
                   let data = try? Data(contentsOf: url) else { return nil }
             return (data, "text/css")
+        case "blank.html":
+            // The page of a plugin with commands only, served like any other so it has the same policy.
+            return (Data("<!doctype html><meta charset=\"utf-8\"><title></title>".utf8), "text/html")
         default: return nil
         }
     }

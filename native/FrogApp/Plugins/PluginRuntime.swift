@@ -41,6 +41,9 @@ struct PluginReview: Identifiable {
     let approved: PluginGrant?
     /// Installed already and waiting for approval, rather than unpacked to install.
     let installed: Bool
+    /// Where the installed plugin with this id came from, when this one comes from somewhere else: it replaces
+    /// that plugin and keeps its stored data, so the sheet says so and treats it as a new install.
+    var replacing: PluginSource? = nil
     var compatible: Bool { package.manifest.runs(on: AppVersion.current) }
     var additions: (permissions: [PluginPermission], hosts: [String], scripts: [String]) {
         (approved ?? PluginGrant()).additions(in: package.grant)
@@ -91,6 +94,8 @@ struct PluginListing: Decodable, Identifiable, Equatable {
     private(set) var logs: [String: [PluginLogLine]] = [:]
     private var hosts: [String: PluginWebHost] = [:]
     private var storages: [String: PluginStorage] = [:]
+    /// When each plugin last showed a notification at once, for the rate limit.
+    private var shownNotifications: [String: [Date]] = [:]
     private var contentRules: WKContentRuleList?
     private var busy: [String: Int] = [:]
     private var enabled = false
@@ -256,8 +261,10 @@ struct PluginListing: Decodable, Identifiable, Equatable {
         let sha256 = PluginPackage.sha256(data)
         clearStaging()
         let package = try store.unpack(data, in: stagingDirectory)
-        review = PluginReview(package: package, source: source, sha256: sha256, approved: try store.record(package.manifest.id)?.approved,
-                              installed: false)
+        let record = try store.record(package.manifest.id)
+        let sameOrigin = record?.source.sharesOrigin(with: source) ?? false
+        review = PluginReview(package: package, source: source, sha256: sha256, approved: sameOrigin ? record?.approved : nil,
+                              installed: false, replacing: sameOrigin ? nil : record?.source)
         // The review opens at once; whether the directory lists the file shows once the directory answers.
         if listings.isEmpty { Task { await loadListings() } }
     }
@@ -418,6 +425,9 @@ struct PluginListing: Decodable, Identifiable, Equatable {
             return pasteboard.string(forType: .string)
         case "clipboard.write":
             try require(.clipboardWrite)
+            guard host.isShowing || host.commandedRecently else {
+                throw FrogError.message("A plugin writes the clipboard only while its page is open or right after one of its commands.")
+            }
             let value = try text("text", maximum: 1024 * 1024)!
             pasteboard.clearContents()
             pasteboard.setString(value, forType: .string)
@@ -429,7 +439,7 @@ struct PluginListing: Decodable, Identifiable, Equatable {
                                     at: (arguments["at"] as? NSNumber)?.doubleValue, tag: try text("id", maximum: 100, required: false))
         case "notify.cancel":
             try require(.notifications)
-            let identifier = "plugin.\(id).\(try text("id", maximum: 100)!)"
+            let identifier = Self.notificationPrefix(id) + (try text("id", maximum: 100)!)
             UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [identifier])
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [identifier])
             return nil
@@ -472,7 +482,8 @@ struct PluginListing: Decodable, Identifiable, Equatable {
             let package = try store.package(id)
             let source = try package.scriptText(script)
             // The script that runs is the one the user approved, byte for byte.
-            guard PluginPackage.sha256(Data(source.utf8)) == approvedHash, package.scriptHashes[script] == approvedHash else {
+            guard PluginPackage.sha256(Data(source.utf8)) == approvedHash, package.scriptHashes[script] == approvedHash,
+                  package.scriptHashes[PluginGrant.filesKey] == approved.scripts[PluginGrant.filesKey] else {
                 throw FrogError.message("The script “\(script)” changed since you approved it. Review the plugin again.")
             }
             let scriptArguments = (arguments["args"] as? [Any] ?? []).compactMap { $0 as? String }
@@ -491,6 +502,10 @@ struct PluginListing: Decodable, Identifiable, Equatable {
 
         case "show":
             guard host.manifest.entry != nil else { throw FrogError.message("This plugin has no page to show.") }
+            // Only a command the user ran brings Frog forward; a page in the background cannot.
+            guard host.isShowing || host.commandedRecently else {
+                throw FrogError.message("A plugin shows its page only right after one of its commands.")
+            }
             openPage(id)
             return nil
         case "close":
@@ -540,7 +555,7 @@ struct PluginListing: Decodable, Identifiable, Equatable {
             throw FrogError.message("Notifications from Frog are off. Turn them on in System Settings → Notifications.")
         }
         let tag = tag ?? UUID().uuidString
-        let prefix = "plugin.\(host.id)."
+        let prefix = Self.notificationPrefix(host.id)
         let content = UNMutableNotificationContent()
         content.title = title
         content.subtitle = host.manifest.name
@@ -558,6 +573,12 @@ struct PluginListing: Decodable, Identifiable, Equatable {
                 trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
             }
         }
+        if trigger == nil {
+            let now = Date()
+            let recent = (shownNotifications[host.id] ?? []).filter { now.timeIntervalSince($0) < 60 }
+            guard recent.count < 10 else { throw FrogError.message("A plugin can show at most 10 notifications a minute.") }
+            shownNotifications[host.id] = recent + [now]
+        }
         try await center.add(UNNotificationRequest(identifier: prefix + tag, content: content, trigger: trigger))
         return tag
     }
@@ -565,9 +586,12 @@ struct PluginListing: Decodable, Identifiable, Equatable {
     /// Notification Center serves app bundles only; a test or `swift run` has none.
     static var notificationsAvailable: Bool { Bundle.main.bundleURL.pathExtension == "app" && Bundle.main.bundleIdentifier != nil }
 
+    /// Ids may contain dots, so a slash, which ids cannot, ends the plugin's part of a notification's identifier.
+    static func notificationPrefix(_ id: String) -> String { "plugin.\(id)/" }
+
     private func removeNotifications(of id: String) {
         guard Self.notificationsAvailable else { return }
-        let prefix = "plugin.\(id)."
+        let prefix = Self.notificationPrefix(id)
         UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
             UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: requests.map(\.identifier).filter { $0.hasPrefix(prefix) })
         }
