@@ -61,11 +61,24 @@ function save() {
   frog.storage.set("timer", timer).catch(showError);
 }
 
+// The end of a session is scheduled with macOS when it starts, so it shows on time even when
+// Frog unloads the page or quits.
+function scheduleEnd() {
+  if (!window.frog) return;
+  frog.notify("Focus session done", `${minutes()} minutes of focus. Time for a short break.`, { at: timer.endsAt, id: "done" })
+    .catch(showError);
+}
+
+function cancelEnd() {
+  if (window.frog) frog.cancelNotification("done").catch(showError);
+}
+
 function start() {
   if (running()) return;
   timer.endsAt = Date.now() + (timer.remaining ?? minutes() * 60_000);
   timer.remaining = null;
   save();
+  scheduleEnd();
   render();
 }
 
@@ -74,34 +87,36 @@ function pause() {
   timer.remaining = Math.max(0, timer.endsAt - Date.now());
   timer.endsAt = null;
   save();
+  cancelEnd();
   render();
 }
 
-function reset() {
+function clear() {
   timer.endsAt = null;
   timer.remaining = null;
   save();
   render();
 }
 
+function reset() {
+  clear();
+  cancelEnd();
+}
+
 async function finish() {
-  const endedAt = timer.endsAt;
-  reset();
+  // The notification was scheduled when the session started, so it is not cancelled here.
+  clear();
   if (today.day !== dayKey()) today = { day: dayKey(), count: 0 };
   today.count += 1;
   render();
   if (!window.frog) return;
   try {
     await frog.storage.set("today", today);
-    // A session that ended while Frog was not running is counted without a late notification.
-    if (Date.now() - endedAt < 60_000) {
-      await frog.notify("Focus session done", `${minutes()} minutes of focus. Time for a short break.`);
-    }
   } catch (error) {
     showError(error);
   }
-  // A session started from the command bar ran without the page; let Frog unload it.
-  if (startedByCommand && document.hidden) frog.close();
+  // A session started from the command bar ran without the page; Frog unloads it unless it is shown.
+  if (startedByCommand) frog.close();
   startedByCommand = false;
 }
 
@@ -142,7 +157,7 @@ async function onCommand(id) {
       reset();
       startedByCommand = false;
       await frog.notify("Focus timer", wasActive ? "Stopped the focus session." : "No focus session was running.");
-      if (document.hidden) frog.close();
+      frog.close();
     }
   } catch (error) {
     showError(error);

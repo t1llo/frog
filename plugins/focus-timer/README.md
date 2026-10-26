@@ -17,6 +17,6 @@ The timer keeps the time a session ends at rather than counting ticks, so it sta
 
 - `plugin.json`: the manifest, with the permission and the two commands with `"show": false`.
 - `index.html`: the page, styled with Frog's `/_frog/frog.css`.
-- `app.js`: the timer, `frog.notify`, `frog.storage` for the session and today's count, and `frog.close()` once a command's work is done.
+- `app.js`: the timer, `frog.notify` with `at` to schedule the end with macOS, `frog.storage` for the session and today's count, and `frog.close()` once a command's work is done.
 
 Install it from this folder with `frog plugins install plugins/focus-timer`, then approve it in Frog → Plugins. See [docs/plugins.md](../../docs/plugins.md) for the plugin contract.
