@@ -109,6 +109,9 @@ import XCTest
                       ["windows", "layout", "left-half", "--window", "four"], ["windows", "layout", "left-half", "--window", "-3"],
                       ["windows", "move", "--app", "Safari"], ["windows", "move", "--x", "left"], ["windows", "move", "--width", "0"],
                       ["windows", "move", "--height", "nan"], ["windows", "focus"], ["windows", "focus", "4512", "--window", "4513"],
+                      // A mistyped id must not fall back to the window in front.
+                      ["windows", "layout", "left-half", "4512", "extra"], ["windows", "move", "4512", "10", "--x", "5"],
+                      ["windows", "layout", "left-half", "4512", "--window", "4513"], ["windows", "focus", "4512", "4513"],
                       ["apps", "open"]] {
             let response = await AgentCommands.run(AgentRequest(arguments: words), model: model)
             XCTAssertEqual(response.exitCode, AgentExit.usage, "\(words): \(response.error)")
@@ -177,6 +180,10 @@ import XCTest
         let otherDisplay = await run("windows", "layout", "maximize")
         XCTAssertEqual(otherDisplay.output, "Maximized Terminal — “zsh” on its display.")
         XCTAssertEqual(access.frame(of: WindowHandle(key: shell, element: nil)), monitor.visibleFrame)
+        let positional = await run("windows", "layout", "left-half", "4513")
+        XCTAssertEqual(positional.output, "Moved Safari — “Mail” to the left half.")
+        let moved = await run("windows", "move", "4513", "--x", "40")
+        XCTAssertTrue(moved.output.hasPrefix("Moved Safari — “Mail”"), moved.output)
         let missing = await run("windows", "layout", "center", "--window", "999")
         XCTAssertEqual(missing.exitCode, AgentExit.failure)
         XCTAssertTrue(missing.error.contains("frog windows list"), missing.error)
@@ -241,10 +248,21 @@ import XCTest
         XCTAssertEqual(opened.map(\.path), ["/Applications/Safari.app", "/System/Applications/Notes.app"])
         let unknown = await run("apps", "open", "Mosaic")
         XCTAssertEqual(unknown.exitCode, AgentExit.failure)
-        let noBundle = await run("apps", "open", "Missing.app")
+        let named = await run("apps", "open", "Notes.app")
+        XCTAssertEqual(named.output, "Opened Notes.")
+        let noBundle = await run("apps", "open", "./Missing.app")
         XCTAssertEqual(noBundle.exitCode, AgentExit.failure)
         XCTAssertTrue(noBundle.error.contains(directory.lastPathComponent), noBundle.error)
-        XCTAssertEqual(opened.count, 2)
+        XCTAssertEqual(opened.count, 3)
+    }
+
+    func testAppNamesMatchWholeNamesOrTheStartOfAWord() throws {
+        func app(_ name: String) -> AgentApp { AgentApp(name: name, bundleId: nil, pid: 1, active: false, hidden: false, url: nil) }
+        let apps = [app("Xcode"), app("Visual Studio Code"), app("Safari")]
+        XCTAssertEqual(try AgentCommands.runningApp("code", in: apps).name, "Visual Studio Code")
+        XCTAssertEqual(try AgentCommands.runningApp("XCODE", in: apps).name, "Xcode")
+        XCTAssertEqual(try AgentCommands.runningApp("saf", in: apps).name, "Safari")
+        XCTAssertThrowsError(try AgentCommands.runningApp("ode", in: apps))
     }
 
     func testHelpListsTheWindowAndAppCommands() async {
@@ -257,6 +275,6 @@ import XCTest
             XCTAssertNil(command.feature, "\(usage) needs Accessibility, not a feature")
         }
         let layout = await run("help", "windows", "layout")
-        XCTAssertTrue(layout.output.hasPrefix("frog windows layout <layout> [--window ID | --app NAME]"), layout.output)
+        XCTAssertTrue(layout.output.hasPrefix("frog windows layout <layout> [ID | --app NAME]"), layout.output)
     }
 }

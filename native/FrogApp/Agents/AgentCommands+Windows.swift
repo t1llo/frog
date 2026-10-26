@@ -48,21 +48,22 @@ extension AgentCommands {
                 let layouts = WindowAction.allCases.map { Layout(name: $0.agentName, title: $0.title) }
                 return AgentResult(layouts, text: AgentTable.render(layouts.map { [$0.name, $0.title] }))
             },
-            AgentCommand(words: ["windows", "layout"], arguments: "<layout> [--window ID | --app NAME]",
+            AgentCommand(words: ["windows", "layout"], arguments: "<layout> [ID | --app NAME]",
                          summary: "Arrange a window, as a layout shortcut does.",
                          details: """
                          Takes a name from `frog windows layouts`, such as left-half, top-right, left-third, maximize, \
                          centered-large, next-display or restore. Restore gives back the frame from before the last layout \
                          or move, whether it came from Frog, a shortcut or this tool.
 
-                         Without --window or --app it arranges the focused window of the app in front, such as the terminal \
-                         the command runs in. --app picks that app's focused window.
+                         Pick the window by its id from `frog windows list` (also as --window), or with --app for that \
+                         app's focused window. Without either, it arranges the focused window of the app in front, which \
+                         is whatever the user is looking at.
 
                          Examples: frog windows layout left-half --app Safari
-                                   frog windows layout restore --window 4512
+                                   frog windows layout restore 4512
                          """, options: ["window", "app"]) { call in
                 let action = try layout(call.argument(0, "layout"))
-                let window = try await target(call)
+                let window = try await target(call, idAt: 1)
                 let model = call.model
                 var options = WindowSwitches(model.configuration.preferences).layoutOptions(desktop.macOS())
                 // An agent asking twice wants the same layout twice, not the next size of a cycle.
@@ -71,7 +72,7 @@ extension AgentCommands {
                 try await manager.apply(action, to: window.handle, displays: desktop.displays(), options: options)
                 return await moved(window, by: manager, message: sentence(action, window.name))
             },
-            AgentCommand(words: ["windows", "move"], arguments: "[--window ID | --app NAME] [--x X] [--y Y] [--width W] [--height H]",
+            AgentCommand(words: ["windows", "move"], arguments: "[ID | --app NAME] [--x X] [--y Y] [--width W] [--height H]",
                          summary: "Give a window an exact position or size.",
                          details: """
                          Sets any of the window's x, y, width and height, in points, and keeps the rest. x and y place its \
@@ -82,12 +83,12 @@ extension AgentCommands {
                          The window is picked as for `frog windows layout`.
 
                          Examples: frog windows move --app Safari --x 0 --y 25 --width 1200 --height 800
-                                   frog windows move --window 4512 --width 900
+                                   frog windows move 4512 --width 900
                          """, options: ["window", "app", "x", "y", "width", "height"]) { call in
                 let change = FrameChange(x: try points(call, "x"), y: try points(call, "y"),
                                          width: try points(call, "width", size: true), height: try points(call, "height", size: true))
                 guard !change.isEmpty else { throw AgentCommandError.usage("Give at least one of --x, --y, --width and --height. Usage: \(call.command.usage)") }
-                let window = try await target(call)
+                let window = try await target(call, idAt: 0)
                 let manager = desktop.manager ?? call.model.windowLayout.manager
                 let applied = try await manager.place(window.handle) { change.applied(to: $0) }
                 var message = "Moved \(window.name) to \(AgentFrame(applied).text)."
@@ -98,17 +99,15 @@ extension AgentCommands {
             AgentCommand(words: ["windows", "focus"], arguments: "[ID] [--app NAME]", summary: "Bring a window to the front.",
                          details: """
                          Takes a window id from `frog windows list`, also as --window, or --app for that app's focused \
-                         window. A minimized window is restored, and a window on another Desktop is brought to this one's view.
+                         window. A minimized window is restored.
 
                          Examples: frog windows focus 4512
                                    frog windows focus --app Notes
                          """, options: ["window", "app"]) { call in
-                let id = call.optionalArgument(0)
-                if id != nil, call.option("window") != nil { throw AgentCommandError.usage("Give the window id once. Usage: \(call.command.usage)") }
-                guard id != nil || call.option("window") != nil || call.option("app") != nil else {
+                guard call.optionalArgument(0) != nil || call.option("window") != nil || call.option("app") != nil else {
                     throw AgentCommandError.usage("Give a window id from `frog windows list`, or --app NAME. Usage: \(call.command.usage)")
                 }
-                var window = try await target(call, id: id)
+                var window = try await target(call, idAt: 0, includingMinimized: true)
                 guard await desktop.focus(window) else {
                     throw AgentCommandError.failed("macOS could not bring \(window.name) to the front. It may have closed.")
                 }
@@ -156,13 +155,19 @@ extension AgentCommands {
         return await Task.detached { read(apps, displays, frontmost) }.value
     }
 
-    /// The window a command acts on: the one with the id given, the focused window of `--app`,
-    /// or the focused window of the app in front. While Frog is in front, the window in front of
-    /// all others.
-    static func target(_ call: AgentCall, id given: String? = nil) async throws -> AgentWindow {
+    /// The window a command acts on: the one whose id is the positional argument at `index` or
+    /// `--window`, the focused window of `--app`, or the focused window of the app in front. While
+    /// Frog is in front, the window in front of all others. Words after the id are refused, so a
+    /// mistyped id never falls back to another window.
+    static func target(_ call: AgentCall, idAt index: Int, includingMinimized: Bool = false) async throws -> AgentWindow {
+        if call.positional.count > index + 1 {
+            throw AgentCommandError.usage("Unexpected “\(call.positional[index + 1])”. Usage: \(call.command.usage)")
+        }
+        let given = call.optionalArgument(index)
+        if given != nil, call.option("window") != nil { throw AgentCommandError.usage("Give the window id once. Usage: \(call.command.usage)") }
         let idText = given ?? call.option("window")
         let appName = call.option("app")
-        if idText != nil, appName != nil { throw AgentCommandError.usage("Pick the window with --window or --app, not both.") }
+        if idText != nil, appName != nil { throw AgentCommandError.usage("Pick the window by its id or --app, not both.") }
         let id = try idText.map { text in
             guard let id = UInt32(text), id > 0 else {
                 throw AgentCommandError.usage("A window id is a number from `frog windows list`, not “\(text)”.")
@@ -179,7 +184,9 @@ extension AgentCommands {
         }
         if let appName {
             let app = try runningApp(appName, in: apps)
-            guard let window = frontWindow(await scan([app])) else { throw AgentCommandError.failed("\(app.name) has no window open on this Desktop.") }
+            guard let window = frontWindow(await scan([app]), includingMinimized: includingMinimized) else {
+                throw AgentCommandError.failed("\(app.name) has no window open on this Desktop.")
+            }
             return window
         }
         let frontmost = desktop.frontmost()
@@ -195,15 +202,19 @@ extension AgentCommands {
         return window
     }
 
-    private static func frontWindow(_ windows: [AgentWindow]) -> AgentWindow? {
-        windows.first(where: \.appFocused) ?? windows.first { !$0.minimized }
+    private static func frontWindow(_ windows: [AgentWindow], includingMinimized: Bool = false) -> AgentWindow? {
+        windows.first(where: \.appFocused) ?? windows.first { !$0.minimized } ?? (includingMinimized ? windows.first : nil)
     }
 
-    /// A running app by name or bundle id in any case, else the one app whose name contains the text.
+    /// A running app by name or bundle id in any case, else the one app with a word of its name
+    /// starting with the text, so "code" finds Visual Studio Code but not Xcode.
     static func runningApp(_ text: String, in apps: [AgentApp]) throws -> AgentApp {
         let wanted = text.lowercased()
         if let app = apps.first(where: { $0.name.lowercased() == wanted || $0.bundleId?.lowercased() == wanted }) { return app }
-        let partial = apps.filter { $0.name.lowercased().contains(wanted) }
+        let partial = apps.filter { app in
+            let name = app.name.lowercased()
+            return name.hasPrefix(wanted) || name.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).contains { $0.hasPrefix(wanted) }
+        }
         if partial.count == 1 { return partial[0] }
         guard partial.isEmpty else {
             let names = partial.map(\.name).sorted().joined(separator: ", ")
@@ -214,7 +225,7 @@ extension AgentCommands {
 
     /// The app `frog apps open` opens: a path, a running app, or an installed one.
     private static func application(_ text: String, call: AgentCall) async throws -> URL {
-        if text.contains("/") || text.lowercased().hasSuffix(".app") {
+        if text.contains("/") || text.hasPrefix("~") {
             let url = call.path(text)
             var folder: ObjCBool = false
             guard url.pathExtension.lowercased() == "app", FileManager.default.fileExists(atPath: url.path, isDirectory: &folder), folder.boolValue else {
@@ -222,9 +233,11 @@ extension AgentCommands {
             }
             return url
         }
-        let wanted = text.lowercased()
+        // "Safari.app" is the name Finder shows with extensions visible.
+        let name = text.lowercased().hasSuffix(".app") ? String(text.dropLast(4)) : text
+        let wanted = name.lowercased()
         if let url = desktop.apps().first(where: { $0.name.lowercased() == wanted || $0.bundleId?.lowercased() == wanted })?.url { return url }
-        if let url = await desktop.findApp(text) { return url }
+        if let url = await desktop.findApp(name) { return url }
         throw AgentCommandError.failed("No app named “\(text)” is installed. Give its name as Finder shows it, its bundle id or its path.")
     }
 

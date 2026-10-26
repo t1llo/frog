@@ -129,6 +129,8 @@ extension AgentDesktop {
                 guard case .success(let metadata) = reader.metadata(element), metadata.isSwitchable else { continue }
                 let number = reader.windowID(element)
                 let key = number.map { WindowKey(pid: app.pid, number: $0) } ?? AXWindowAccess.key(of: element, pid: app.pid)
+                // Writes get the time layout shortcuts give them, so a slow app is not left half-moved.
+                AXUIElementSetMessagingTimeout(element, 0.2)
                 let handle = WindowHandle(key: key, element: element)
                 guard let frame = access.frame(of: handle) else { continue }
                 let isFocused = focused.map { CFEqual($0, element) } ?? false
