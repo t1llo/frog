@@ -54,7 +54,7 @@ Release downloads are `Frog-macOS.zip` and `SHA256SUMS`. Updater-enabled release
 
 Releases use semantic versions starting at **1.0.0**. The local publisher selects the next patch version from existing release names and Git tags (`1.0.1`, `1.0.2`, …), tags it `vX.Y.Z`, and titles it `Frog X.Y.Z`. `FROG_VERSION` supplies that version to packaging and Settings. A separate increasing `FROG_BUILD_NUMBER` remains Sparkle's update ordering key. Resuming an existing archive preserves its signed version rather than relabeling it.
 
-Before a release, run the automated checks, `python3 scripts/check-app-launch.py dist/Frog.app`, and the [desktop verification steps](verification.md).
+Before a release, run the automated checks, `python3 scripts/check-app-launch.py dist/Frog.app`, `python3 scripts/check-agent-cli.py dist/Frog.app`, and the [desktop verification steps](verification.md).
 
 ### One-time Apple account setup
 

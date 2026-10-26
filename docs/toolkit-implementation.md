@@ -589,3 +589,21 @@ fixture windows. The live implementation reads and writes through
 Accessibility, and turns the app's `AXEnhancedUserInterface` off around its
 writes and back on afterwards, because Chromium and Electron apps animate and
 settle at another size while it is on.
+
+### Agent access
+`FrogAgent` owns the wire format and transport: one line of JSON for each
+`AgentRequest` and `AgentResponse`, the exit codes in `AgentExit` (1 failure,
+2 usage, 69 unavailable) and an owner-only Unix socket at
+`<data directory>/agent.sock`. `AgentListener` checks the peer's user ID and
+removes only a socket it made. `FrogCLI` is the `frog` tool, shipped as
+`Frog.app/Contents/Helpers/frog`: it forwards its words, `--json`, the
+caller's folder and, with `--stdin` only, standard input, and starts Frog when
+it is not running. The app parses every command, so the tool never falls
+behind the app. `native/FrogApp/Agents` holds `AgentServer`, which listens only
+while `toolkit.agentAccess` is on and shortcuts are registered (so tests never
+open it), the `AgentCommands` registry with one file per area, and the
+installer for the tool's link and the agent skills. Commands reuse the models
+and controllers behind the pages and shortcuts, and commands that belong to a
+feature are refused while it is off. `scripts/check-agent-cli.py` drives the
+packaged tool against the packaged app with isolated data. User-facing
+behaviour is in [agents](agents.md).

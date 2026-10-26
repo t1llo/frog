@@ -99,6 +99,10 @@ enum FrogCommandLine {
         let open = Process()
         open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         open.arguments = ["-g", "-a", app.path]
+        // Frog started for another data folder listens there too.
+        if let folder = ProcessInfo.processInfo.environment["FROG_DATA_DIRECTORY"], !folder.isEmpty {
+            open.arguments! += ["--env", "FROG_DATA_DIRECTORY=\(folder)"]
+        }
         do { try open.run() } catch { return false }
         open.waitUntilExit()
         return open.terminationStatus == 0

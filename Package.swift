@@ -10,7 +10,8 @@ let package = Package(
         // Shipped as Frog.app/Contents/Helpers/frog. Named apart from "Frog", which it would collide with on a case-insensitive disk.
         .executable(name: "frog-cli", targets: ["FrogCLI"]),
         .library(name: "FrogCore", targets: ["FrogCore"]),
-        .library(name: "FrogUsage", targets: ["FrogUsage"])
+        .library(name: "FrogUsage", targets: ["FrogUsage"]),
+        .library(name: "FrogAgent", targets: ["FrogAgent"])
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),

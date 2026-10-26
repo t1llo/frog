@@ -19,6 +19,10 @@ bash scripts/third-party-notices.sh "$app/Contents/Resources/ThirdPartyNotices.t
 swift scripts/make-icon.swift dist/Frog.iconset
 iconutil -c icns dist/Frog.iconset -o "$app/Contents/Resources/Frog.icns"
 cp "$binary_dir/Frog" "$app/Contents/MacOS/Frog"
+# The `frog` command line tool for people and AI agents. It lives in Helpers because
+# "frog" next to "Frog" in Contents/MacOS is one file on a case-insensitive disk.
+mkdir -p "$app/Contents/Helpers"
+cp "$binary_dir/frog-cli" "$app/Contents/Helpers/frog"
 cp native/Info.plist "$app/Contents/Info.plist"
 if [[ -n "${FROG_VERSION:-}" ]]; then
     [[ "$FROG_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo 'FROG_VERSION must be a semantic version, such as 1.0.0.' >&2; exit 1; }
@@ -50,7 +54,7 @@ if [[ -z "${CI:-}" ]] && ! swift scripts/check-metal.swift "$metal_library"; the
     echo 'MLX Metal resources do not load; do not distribute this bundle.' >&2
     exit 1
 fi
-chmod +x "$app/Contents/MacOS/Frog"
+chmod +x "$app/Contents/MacOS/Frog" "$app/Contents/Helpers/frog"
 sign_args=(--force --entitlements native/Frog.entitlements --sign "${FROG_SIGN_IDENTITY:--}")
 # Hardened library validation requires a real signing team for embedded frameworks.
 # Ad-hoc development builds have no Team ID; distribution builds retain runtime protection.
@@ -64,6 +68,7 @@ codesign "${nested_args[@]}" "$sparkle/XPCServices/Installer.xpc"
 codesign "${nested_args[@]}" "$sparkle/Autoupdate"
 codesign "${nested_args[@]}" "$sparkle/Updater.app"
 codesign "${nested_args[@]}" "$app/Contents/Frameworks/Sparkle.framework"
+codesign "${nested_args[@]}" --identifier xyz.beffa.frog.cli "$app/Contents/Helpers/frog"
 codesign "${sign_args[@]}" "$app"
 codesign --verify --deep --strict "$app"
 if [[ "${FROG_APP_ONLY:-0}" == "1" ]]; then

@@ -28,6 +28,8 @@ jobs:
         run: xcodebuild -project native/Frog.xcodeproj -scheme Frog-macOS -configuration Debug -destination 'platform=macOS' -skipPackagePluginValidation -derivedDataPath .build/xcode build
       - name: Verify packaged app launches
         run: python3 scripts/check-app-launch.py dist/Frog.app
+      - name: Verify the frog tool reaches the packaged app
+        run: python3 scripts/check-agent-cli.py dist/Frog.app
       - uses: actions/upload-artifact@v4
         with:
           name: Frog-macOS
