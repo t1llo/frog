@@ -106,6 +106,32 @@ actor WindowManager {
     /// Forgets what Restore would return the window to.
     func forget(_ key: WindowKey) { history.remove(key) }
 
+    /// Where a window is now and what it allows, read once.
+    func read(_ window: WindowHandle) -> (frame: CGRect?, state: WindowState) { (access.frame(of: window), access.state(of: window)) }
+
+    /// Gives a window the frame `change` makes of its current one, with the same checks and
+    /// history as a layout, so Restore returns it to where it was. Returns where its app put it.
+    @discardableResult
+    func place(_ window: WindowHandle, frame change: @Sendable (CGRect) -> CGRect) throws -> CGRect {
+        guard access.isTrusted() else { throw FrogError.message("Allow Accessibility in Settings → Permissions to move windows.") }
+        try Task.checkCancellation()
+        let state = access.state(of: window)
+        guard !state.fullScreen else { throw FrogError.message("Exit full screen before moving or resizing this window.") }
+        guard let current = access.frame(of: window) else { throw FrogError.message("macOS could not read this window's size or display.") }
+        let target = change(current)
+        guard target != current else { return current }
+        guard state.movable else { throw FrogError.message("This window does not allow its position to be changed.") }
+        let resize = target.size != current.size
+        if resize, !state.resizable { throw FrogError.message("This window does not allow resizing.") }
+        try access.setFrame(target, of: window, resize: resize)
+        let applied = access.frame(of: window) ?? target
+        // As with a layout: a window still where Frog put it keeps what Restore returns to.
+        let saved = history.entry(for: window.key)
+        let before = saved.flatMap { $0.action != .restore && WindowGeometry.close(current, $0.move.applied) ? $0.frame : nil } ?? current
+        history.record(window.key, before: before, move: .init(target: target, applied: applied))
+        return applied
+    }
+
     /// Where an action would put the focused window of `pid`; for Restore, the frame it would
     /// return to. Reads the window once and writes nothing. Nil when there is nothing to show.
     func preview(_ action: WindowAction, pid: pid_t, displays: [WindowDisplay], options: WindowLayoutOptions = .legacy) -> CGRect? {
