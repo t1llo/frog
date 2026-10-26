@@ -1,6 +1,10 @@
 import Combine
 import Foundation
 
+/// The places that show the overview. Each says for itself whether it is on screen,
+/// so one closing leaves the others live.
+enum SystemMonitorPresenter: Hashable { case frogMenu, statusItem, page }
+
 protocol SystemMonitorSampling: Sendable {
     /// `reset` drops the baselines, so time before monitoring began is not read as usage.
     /// `full` adds disk and power to the CPU and GPU readings.
@@ -27,7 +31,8 @@ final class SystemMonitor: ObservableObject {
     private var recorded: [SystemMonitorSample] = []
     private var latest: (cpu: SystemMonitorMetric, gpu: SystemMonitorMetric)?
     private var enabled = false
-    private var presented = false
+    private var presenters: Set<SystemMonitorPresenter> = []
+    private var presented: Bool { !presenters.isEmpty }
     /// A menu-bar item shows the readings, so they are taken as often as for the open overview.
     private var liveReadout = false
     private var generation = UUID()
@@ -53,10 +58,10 @@ final class SystemMonitor: ObservableObject {
         if enabled { run(reset: true) } else { cancel() }
     }
 
-    func setPresented(_ presented: Bool) {
-        guard self.presented != presented else { return }
-        self.presented = presented
-        guard enabled else { return }
+    func setPresented(_ shown: Bool, for presenter: SystemMonitorPresenter) {
+        let wasPresented = presented
+        if shown { presenters.insert(presenter) } else { presenters.remove(presenter) }
+        guard presented != wasPresented, enabled else { return }
         if presented {
             // What was recorded out of sight is there on the first frame.
             if let latest { snapshot.cpu = latest.cpu; snapshot.gpu = latest.gpu }
@@ -74,7 +79,7 @@ final class SystemMonitor: ObservableObject {
 
     func stop() {
         enabled = false
-        presented = false
+        presenters = []
         cancel()
     }
 

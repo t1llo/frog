@@ -32,7 +32,7 @@ struct FrogStatusMenu: View {
             }.padding(.horizontal, 8).frame(height: 42)
 
             if systemMonitorEnabled && selectedTab == .system {
-                SystemMonitorView(monitor: model.systemMonitor)
+                SystemMonitorView(monitor: model.systemMonitor, presenter: .frogMenu)
             } else {
                 frogControls
             }
@@ -56,7 +56,7 @@ struct FrogStatusMenu: View {
                 if note.object as? String != Self.popupName { dismiss() }
             }
             .onChange(of: systemMonitorEnabled) { _, enabled in
-                if !enabled { selectedTab = .frog; model.systemMonitor.setPresented(false) }
+                if !enabled { selectedTab = .frog; model.systemMonitor.setPresented(false, for: .frogMenu) }
             }
             .onChange(of: power.isEnabled) { _, _ in choosingDuration = false }
     }

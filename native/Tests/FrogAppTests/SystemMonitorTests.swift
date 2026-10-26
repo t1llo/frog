@@ -6,7 +6,7 @@ import XCTest
     func testDisabledMonitorDoesNoWorkEvenWhenShown() async throws {
         let sampler = MonitorFixture()
         let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5), backgroundInterval: .milliseconds(5))
-        monitor.setPresented(true)
+        monitor.setPresented(true, for: .page)
         try await Task.sleep(for: .milliseconds(25))
         let calls = await sampler.calls
         XCTAssertTrue(calls.isEmpty, "Default-off monitor must not sample even if a view asks")
@@ -26,12 +26,12 @@ import XCTest
         XCTAssertTrue(monitor.history.isEmpty, "Recording out of sight must not redraw a menu that stays mounted")
         XCTAssertEqual(monitor.snapshot, SystemMonitorSnapshot())
 
-        monitor.setPresented(true)
+        monitor.setPresented(true, for: .page)
         XCTAssertGreaterThanOrEqual(monitor.history.count, 3, "The graph has its data on the first frame")
         XCTAssertEqual(monitor.snapshot.cpu, .value(0.25))
         try await waitUntil { await sampler.calls.last?.full == true }
 
-        monitor.setPresented(false)
+        monitor.setPresented(false, for: .page)
         let shown = monitor.history.count
         let hidden = await sampler.calls.count
         try await waitUntil { await sampler.calls.count >= hidden + 3 }
@@ -39,7 +39,7 @@ import XCTest
         XCTAssertTrue(calls.suffix(2).allSatisfy { !$0.full })
         XCTAssertFalse(calls.dropFirst().contains { $0.reset }, "Opening and closing the view must keep the baselines")
         XCTAssertEqual(monitor.history.count, shown)
-        monitor.setPresented(true)
+        monitor.setPresented(true, for: .page)
         XCTAssertGreaterThan(monitor.history.count, shown)
 
         monitor.configure(enabled: false)
@@ -76,29 +76,48 @@ import XCTest
         let sampler = MonitorFixture()
         let monitor = SystemMonitor(sampler: sampler, interval: .seconds(60), backgroundInterval: .seconds(60))
         monitor.configure(enabled: true)
-        monitor.setPresented(true)
+        monitor.setPresented(true, for: .page)
         defer { monitor.stop() }
         try await waitUntil { monitor.snapshot.cpu == .value(0.25) }
         var changes = 0
         let watching = monitor.objectWillChange.sink { changes += 1 }
         defer { watching.cancel() }
         // The view reports this while it is taken down, when nothing may be published.
-        monitor.setPresented(false)
+        monitor.setPresented(false, for: .page)
         XCTAssertEqual(changes, 0, "A view that is going away has nothing to redraw")
         XCTAssertTrue(monitor.isSampling, "Recording goes on out of sight")
-        monitor.setPresented(true)
+        monitor.setPresented(true, for: .page)
         XCTAssertGreaterThan(changes, 0, "Showing it again brings the recorded history")
+    }
+
+    func testAPopupClosingLeavesTheOpenPageLive() async throws {
+        let sampler = MonitorFixture()
+        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5), backgroundInterval: .seconds(60))
+        monitor.configure(enabled: true)
+        defer { monitor.stop() }
+        monitor.setPresented(true, for: .page)
+        monitor.setPresented(true, for: .statusItem)
+        monitor.setPresented(false, for: .statusItem)
+        let shown = await sampler.calls.count
+        try await waitUntil { await sampler.calls.count >= shown + 3 }
+        let calls = await sampler.calls
+        XCTAssertTrue(calls.suffix(3).allSatisfy(\.full), "The page is still on screen")
+        try await waitUntil { monitor.history.count >= shown + 2 }
+        monitor.setPresented(false, for: .page)
+        let hidden = monitor.history.count
+        try await Task.sleep(for: .milliseconds(25))
+        XCTAssertEqual(monitor.history.count, hidden, "With nothing on screen the graph stops redrawing")
     }
 
     func testCancellationRejectsLateSamplerCompletionAcrossReenable() async throws {
         let sampler = GatedMonitorFixture()
         let monitor = SystemMonitor(sampler: sampler, interval: .seconds(60))
         monitor.configure(enabled: true)
-        monitor.setPresented(true)
+        monitor.setPresented(true, for: .page)
         try await waitUntil { await sampler.pendingCount == 1 }
         monitor.stop()
         monitor.configure(enabled: true)
-        monitor.setPresented(true)
+        monitor.setPresented(true, for: .page)
         try await waitUntil { await sampler.pendingCount == 2 }
         await sampler.finish(index: 1, cpu: 0.25)
         try await waitUntil { monitor.snapshot.cpu == .value(0.25) }
@@ -115,7 +134,7 @@ import XCTest
         let clock = ClockFixture(step: 60)
         let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(1), backgroundInterval: .milliseconds(1)) { clock.next() }
         monitor.configure(enabled: true)
-        monitor.setPresented(true)
+        monitor.setPresented(true, for: .page)
         defer { monitor.stop() }
         try await waitUntil { await sampler.calls.count > 20 }
         let history = monitor.history
@@ -129,7 +148,7 @@ import XCTest
         let clock = ClockFixture(step: 0.01)
         let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(1), backgroundInterval: .milliseconds(1)) { clock.next() }
         monitor.configure(enabled: true)
-        monitor.setPresented(true)
+        monitor.setPresented(true, for: .page)
         defer { monitor.stop() }
         try await waitUntil { await sampler.calls.count > SystemMonitor.historyLimit + 4 }
         XCTAssertEqual(monitor.history.count, SystemMonitor.historyLimit)

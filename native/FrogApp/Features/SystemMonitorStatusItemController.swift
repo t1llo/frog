@@ -106,7 +106,7 @@ struct SystemMonitorStatusPopover: View {
                 Text("System").font(.system(size: 13, weight: .semibold))
                 Spacer()
             }.padding(.horizontal, 8).frame(height: 42)
-            SystemMonitorView(monitor: monitor)
+            SystemMonitorView(monitor: monitor, presenter: .statusItem)
             MenuActionRow(title: "Menu bar item settings…", symbol: "slider.horizontal.3", action: openSettings)
         }.padding(5).frame(width: 292).fixedSize(horizontal: false, vertical: true)
             .font(.system(size: 12)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)

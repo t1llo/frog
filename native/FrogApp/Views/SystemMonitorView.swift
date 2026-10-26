@@ -18,10 +18,11 @@ struct SystemMonitorMenuSelector: View {
 
 struct SystemMonitorView: View {
     @ObservedObject var monitor: SystemMonitor
+    let presenter: SystemMonitorPresenter
 
     var body: some View {
         SystemMonitorOverview(snapshot: monitor.snapshot, history: monitor.history)
-            .background(FeatureVisibility { monitor.setPresented($0) })
+            .background(FeatureVisibility { monitor.setPresented($0, for: presenter) })
     }
 }
 
@@ -34,7 +35,7 @@ struct SystemMonitorPage: View {
             PageHeader(title: "System monitor")
             SystemMonitorOverview(snapshot: monitor.snapshot, history: monitor.history, wide: true)
             SystemMonitorMenuBarSettings()
-        }.background(FeatureVisibility { monitor.setPresented($0) })
+        }.background(FeatureVisibility { monitor.setPresented($0, for: .page) })
     }
 }
 

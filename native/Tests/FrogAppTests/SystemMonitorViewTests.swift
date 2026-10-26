@@ -63,7 +63,7 @@ import XCTest
         let sampler = VisibleMonitorFixture()
         let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5), backgroundInterval: .milliseconds(5))
         monitor.configure(enabled: true)
-        let host = NSHostingView(rootView: SystemMonitorView(monitor: monitor).frame(width: 282).fixedSize(horizontal: false, vertical: true))
+        let host = NSHostingView(rootView: SystemMonitorView(monitor: monitor, presenter: .frogMenu).frame(width: 282).fixedSize(horizontal: false, vertical: true))
         let window = MonitorVisibilityFixtureWindow(contentRect: NSRect(x: 80, y: 80, width: 282, height: 350), styleMask: .borderless, backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
