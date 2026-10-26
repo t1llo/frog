@@ -1,3 +1,5 @@
+import Combine
+import FrogCore
 import XCTest
 @testable import FrogApp
 
@@ -198,5 +200,34 @@ final class AgentInstallerTests: XCTestCase {
         try write("#!/bin/sh\n", to: "bin/claude")
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: home.appendingPathComponent("bin/claude").path)
         XCTAssertEqual(installer.detectedAgents(), [.codex, .openCode, .claudeCode])
+    }
+}
+
+/// The Settings switch saves `agents.access`, and the server says whether it listens.
+@MainActor final class AgentAccessTests: XCTestCase {
+    func testTheSwitchIsSavedAndTheServerSaysWhenItListens() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try ConfigurationStore(directory: directory).save(Configuration())
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil })
+        defer { model.shutdown() }
+        XCTAssertNotEqual(model.configuration.preferences.toolkitSettings.agentAccess, true, "Off unless turned on")
+        try model.setAgentAccess(true)
+        XCTAssertEqual(try ConfigurationStore(directory: directory).load().preferences.toolkitSettings.agentAccess, true)
+        XCTAssertFalse(model.agentServer.isListening, "Tests never open the socket")
+        try model.setAgentAccess(false)
+        XCTAssertNotEqual(try ConfigurationStore(directory: directory).load().preferences.toolkitSettings.agentAccess, true)
+
+        // Short, because a socket path must fit in 104 bytes.
+        let folder = URL(fileURLWithPath: "/tmp/frog-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let server = AgentServer(socket: folder.appendingPathComponent("agent.sock")) { _ in .success("") }
+        var seen: [Bool] = []
+        let watch = server.$isListening.sink { seen.append($0) }
+        server.configure(enabled: true)
+        server.configure(enabled: false)
+        watch.cancel()
+        XCTAssertEqual(seen, [false, true, false])
     }
 }

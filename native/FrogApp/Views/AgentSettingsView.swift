@@ -183,8 +183,9 @@ struct AgentSetupStep: View {
             }
             Divider()
             HStack(spacing: 10) {
-                Button(tool || !folders.isEmpty ? "Turn on and install" : "Turn on agent access") { apply() }
-                    .disabled(access && !tool && folders.isEmpty)
+                if !access || tool || !folders.isEmpty {
+                    Button(tool || !folders.isEmpty ? "Turn on and install" : "Turn on agent access") { apply() }
+                }
                 if access { Label("Agents can use Frog", systemImage: "checkmark.circle.fill").font(.system(size: 11)).foregroundStyle(FrogStyle.accent) }
             }
             if let issue = installation.issue { InlineIssue(message: issue) }
@@ -238,7 +239,8 @@ struct AgentSetupStep: View {
     private func option(_ title: String, detail: String, isOn: Binding<Bool>, enabled: Bool) -> some View {
         Toggle(isOn: isOn) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(L10n.text(title)).font(.system(size: 12))
+                // A choice already made stays readable; only its box is dimmed.
+                Text(L10n.text(title)).font(.system(size: 12)).foregroundStyle(FrogStyle.ink)
                 Text(L10n.text(detail)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             }.padding(.leading, 4)
         }.toggleStyle(.checkbox).disabled(!enabled).padding(.vertical, 3)
