@@ -34,6 +34,16 @@ struct ClipboardHistoryEntry: Identifiable, Equatable, Sendable {
     var contentsOptions: NSPasteboard.ContentsOptions { isSensitive ? .currentHostOnly : [] }
 }
 
+extension NSPasteboard.PasteboardType {
+    /// The types with which apps mark copied text as sensitive, such as a password. Clipboard History hides it.
+    static let sensitiveMarks = [NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"), NSPasteboard.PasteboardType("org.nspasteboard.TransientType")]
+}
+
+extension NSPasteboard {
+    /// Whether the text on the pasteboard is marked as sensitive, such as a password.
+    var holdsSensitiveText: Bool { types?.contains(where: NSPasteboard.PasteboardType.sensitiveMarks.contains) == true }
+}
+
 /// Prevent compatibility-selection Copy requests/restoration from becoming clipboard history.
 final class ClipboardHistoryCaptureGate: @unchecked Sendable {
     static let shared = ClipboardHistoryCaptureGate()
@@ -84,8 +94,7 @@ actor ClipboardHistoryReader {
             // A copied file carries its name as text, and the name is not what was copied.
             // File names declared the old way reach the item as a file URL as well.
             if items.count == 1, let item = items.first, !item.types.contains(.fileURL) {
-                let sensitive = ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType"]
-                    .contains { item.types.contains(NSPasteboard.PasteboardType($0)) }
+                let sensitive = item.types.contains(where: NSPasteboard.PasteboardType.sensitiveMarks.contains)
                 if let text = item.string(forType: .string) {
                     retry = text.isEmpty
                     if !text.isEmpty, text.utf8.count <= 512 * 1024 {

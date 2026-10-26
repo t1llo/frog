@@ -415,7 +415,7 @@ import SwiftUI
                     guard let self, let model, model.configuration.preferences.featureEnabled(.snippets),
                           let current = model.documents.items.first(where: { $0.id == item.id }) else { return }
                     let text = SnippetExpansion.expand(current.text, clipboard: self.pasteboard.string(forType: .string) ?? "")
-                    let sensitive = current.text.contains("{{clipboard}}") && self.pasteboard.types?.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) == true
+                    let sensitive = current.text.contains("{{clipboard}}") && self.pasteboard.holdsSensitiveText
                     let entry = ClipboardHistoryEntry(text: text, isSensitive: sensitive)
                     if paste {
                         try await ClipboardHistoryDelivery.paste(entry, plainText: true, pasteboard: self.pasteboard, target: target,

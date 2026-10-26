@@ -9,6 +9,13 @@ struct ScriptResult: Sendable {
     let truncated: Bool
 }
 
+/// A script that ran out of time. `truncated`: what it printed before went past the output limit.
+struct ScriptTimeout: LocalizedError {
+    let seconds: Int
+    let truncated: Bool
+    var errorDescription: String? { "The script exceeded its \(seconds)-second time limit." }
+}
+
 /// A script owns a process group: cancellation, timeout and normal completion
 /// all clean up descendants. Pipes are drained concurrently with process exit.
 enum ScriptProcess {
@@ -110,7 +117,7 @@ enum ScriptProcess {
             if Task.isCancelled || ContinuousClock.now >= deadline {
                 // What arrived up to now is reported on the way out.
                 try Task.checkCancellation()
-                throw FrogError.message("The script exceeded its \(Int(timeout))-second time limit.")
+                throw ScriptTimeout(seconds: Int(timeout), truncated: truncated)
             }
             let result = waitpid(pid, &status, WNOHANG)
             if result == pid { reaped = true; drain(); break }
@@ -130,7 +137,9 @@ enum ScriptProcess {
     @Published private(set) var status = ""
     var onSuccessfulRun: (() -> Void)?
     private var task: Task<Void, Never>?
-    var needsQuitCleanup: Bool { task != nil }
+    /// Scripts the `frog` tool started. Quitting stops them as it stops the page's.
+    private var agentRuns: [UUID: Task<ScriptResult, Error>] = [:]
+    var needsQuitCleanup: Bool { task != nil || !agentRuns.isEmpty }
     private var generation = UUID()
     /// The run whose output is shown and whose task `task` holds. Stop keeps showing what the stopped script printed;
     /// only a new run replaces it.
@@ -171,7 +180,25 @@ enum ScriptProcess {
         generation = UUID(); task?.cancel()
         if running != nil { status = "Stopped" }; running = nil
     }
-    func stopAndWait() async { stop(); await task?.value; task = nil }
+    func stopAndWait() async {
+        stop()
+        // A run an agent starts while these end is stopped as well.
+        var stopped = Set<UUID>()
+        while case let waiting = agentRuns.filter({ !stopped.contains($0.key) }), !waiting.isEmpty {
+            waiting.values.forEach { $0.cancel() }
+            for (id, run) in waiting { stopped.insert(id); _ = try? await run.value }
+        }
+        await task?.value; task = nil
+    }
+
+    /// Runs a script for the `frog` tool, beside the page's own run. Cancelling the caller stops the script.
+    func runForAgent(_ script: String, timeout: TimeInterval, onOutput: @escaping @Sendable (String) -> Void) async throws -> ScriptResult {
+        let id = UUID()
+        let run = Task { try await ScriptProcess.run(script, timeout: timeout, onOutput: onOutput) }
+        agentRuns[id] = run
+        defer { agentRuns[id] = nil }
+        return try await withTaskCancellationHandler { try await run.value } onCancel: { run.cancel() }
+    }
     isolated deinit { task?.cancel() }
 }
 

@@ -153,7 +153,7 @@ struct UtilityDocumentsView: View {
         let board = model.clipboardHistoryStore.pasteboard
         if !item.files.isEmpty { board.clearContents(); board.writeObjects(item.files as [NSURL]); return }
         let text = kind == .snippet ? SnippetExpansion.expand(item.text, clipboard: board.string(forType: .string) ?? "") : item.text
-        let sensitive = kind == .snippet && item.text.contains("{{clipboard}}") && board.types?.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) == true
+        let sensitive = kind == .snippet && item.text.contains("{{clipboard}}") && board.holdsSensitiveText
         guard ClipboardHistoryEntry(text: text, isSensitive: sensitive).write(to: board, plainText: true) else {
             model.report(FrogError.message("Could not copy the item.")); return
         }

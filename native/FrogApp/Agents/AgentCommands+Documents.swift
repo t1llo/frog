@@ -20,7 +20,12 @@ extension AgentCommands {
             AgentCommand(words: ["scripts", "run"], arguments: "<name> [--timeout SECONDS]", summary: "Run a script and print its output.",
                          details: """
                          Runs the script with zsh in your home folder, as its Run button does, for up to 60 seconds or \
-                         the --timeout you give, at most 600. Exits with the script's own exit code.
+                         the --timeout you give, at most 600. Output past 256 KB is cut off. The script stops when \
+                         the command is interrupted or Frog quits.
+
+                         The command exits with the script's own exit code, so any code, 2 included, can come from \
+                         the script. A script that runs out of time or cannot start gives 1. With --json, status is \
+                         the script's exit code, and is left out when the script did not finish.
 
                          Example: frog scripts run "Clean downloads" --timeout 120
                          """, options: ["timeout"], feature: .scripts) { call in
@@ -29,12 +34,13 @@ extension AgentCommands {
                 let printed = OSAllocatedUnfairLock(initialState: "")
                 let run: ScriptRun
                 do {
-                    let result = try await ScriptProcess.run(script.text, timeout: TimeInterval(timeout)) { text in printed.withLock { $0 = text } }
+                    let result = try await call.model.scripts.runForAgent(script.text, timeout: TimeInterval(timeout)) { text in printed.withLock { $0 = text } }
                     run = ScriptRun(name: script.shownTitle, status: result.status, output: result.output, truncated: result.truncated, error: nil)
                     if result.status == 0 { call.model.statistics.recordToolUse(.scriptRun) }
                 } catch {
                     // What it printed before it ran out of time is still worth showing.
-                    run = ScriptRun(name: script.shownTitle, status: nil, output: printed.withLock { $0 }, truncated: false, error: error.localizedDescription)
+                    run = ScriptRun(name: script.shownTitle, status: nil, output: printed.withLock { $0 },
+                                    truncated: (error as? ScriptTimeout)?.truncated ?? false, error: error.localizedDescription)
                 }
                 var result = AgentResult(run, text: run.output)
                 result.exitCode = run.status ?? AgentExit.failure
@@ -60,7 +66,7 @@ extension AgentCommands {
                 let snippet = try await document(.snippet, call)
                 guard call.flag("expand") else { return show(snippet) }
                 let pasteboard = call.model.clipboardHistoryStore.pasteboard
-                if snippet.text.contains("{{clipboard}}"), pasteboard.types?.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) == true {
+                if snippet.text.contains("{{clipboard}}"), pasteboard.holdsSensitiveText {
                     throw AgentCommandError.failed("The clipboard holds text marked as sensitive, so {{clipboard}} is not filled in.")
                 }
                 return show(snippet, text: SnippetExpansion.expand(snippet.text, clipboard: pasteboard.string(forType: .string) ?? ""))
@@ -95,9 +101,10 @@ extension AgentCommands {
                 if documents.items.contains(where: { $0.kind == .note && $0.title == title }) {
                     throw AgentCommandError.failed("A note named “\(title)” already exists. Add to it with `frog notes append`.")
                 }
+                try checkRoom(documents, for: 1)
                 let note = UtilityDocument(kind: .note, title: title, text: text)
                 documents.add(note)
-                try await save(documents)
+                try await save(documents) { documents.remove(note.id) }
                 return AgentResult(Entry(note, text: true), text: "Added the note “\(title)”.")
             },
             AgentCommand(words: ["notes", "append"], arguments: "<name> [text]", summary: "Add text to the end of a note.",
@@ -113,7 +120,7 @@ extension AgentCommands {
                 updated.text = note.text.isEmpty || note.text.hasSuffix("\n") ? note.text + addition : note.text + "\n" + addition
                 try checkSize(updated.text)
                 documents.update(updated)
-                try await save(documents)
+                try await save(documents) { documents.update(note) }
                 return .done("Added to the note “\(note.shownTitle)”.")
             }
         ]
@@ -144,8 +151,9 @@ extension AgentCommands {
                     return ShelfDrop.document(url: file)
                 }
                 let documents = try await loadedDocuments(call.model)
+                try checkRoom(documents, for: added.count)
                 added.forEach { documents.add($0) }
-                try await save(documents)
+                try await save(documents) { added.forEach { documents.remove($0.id) } }
                 let text = added.count == 1 ? "Put “\(added[0].shownTitle)” on the shelf." : "Put \(added.count) items on the shelf."
                 return AgentResult(added.map { Entry($0, text: true, files: true) }, text: text)
             }
@@ -175,13 +183,26 @@ extension AgentCommands {
                  list: "frog \(kind.command) list", id: { $0.id.uuidString }, title: \.title)
     }
 
-    /// Waits until the change is on disk, so the next command, or the page, finds it.
-    private static func save(_ documents: LocalDocuments) async throws {
-        guard await documents.flush() else { throw AgentCommandError.failed(documents.issue ?? "Frog could not save the change.") }
+    /// Waits until the change is on disk, so the next command, or the page, finds it. A change that could not be
+    /// saved is taken back with `undo`, so trying again does not add it twice.
+    private static func save(_ documents: LocalDocuments, undo: () -> Void) async throws {
+        guard await documents.flush() else {
+            let issue = documents.issue
+            undo()
+            throw AgentCommandError.failed(issue ?? "Frog could not save the change.")
+        }
     }
 
     private static func checkSize(_ text: String) throws {
         guard text.utf8.count <= 1_000_000 else { throw AgentCommandError.failed("A note holds at most 1 MB of text.") }
+    }
+
+    /// Notes, snippets, scripts and the shelf share one store of up to 1,000 items.
+    private static func checkRoom(_ documents: LocalDocuments, for count: Int) throws {
+        let free = 1000 - documents.items.count
+        guard count <= free else {
+            throw AgentCommandError.failed("Frog keeps up to 1,000 notes, snippets, scripts and shelf items together. There is room for \(max(0, free)) more.")
+        }
     }
 
     private static func list(_ items: [UtilityDocument], kind: UtilityDocument.Kind, files: Bool = false,
