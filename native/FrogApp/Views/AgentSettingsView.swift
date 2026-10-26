@@ -48,7 +48,7 @@ struct AgentSettingsView: View {
 
     var body: some View {
         SettingsSection(title: "Agents") {
-            CompactRow(title: "Let AI agents use Frog", detail: access && server.isListening ? "Listening for the frog command." : nil) {
+            CompactRow(title: "Let AI agents use Frog") {
                 Toggle("Let AI agents use Frog", isOn: Binding(get: { access }, set: { value in
                     do { try model.setAgentAccess(value) } catch { model.report(error) }
                 })).labelsHidden()
@@ -61,8 +61,6 @@ struct AgentSettingsView: View {
                 AgentSkillRow(installation: installation, folder: folder)
             }
             if let issue = installation.issue { InlineIssue(message: issue) }
-            Divider()
-            Text("Try it in Terminal: `frog status`").font(.caption).foregroundStyle(FrogStyle.muted)
         }.onAppear { installation.refresh() }
     }
 }
@@ -151,15 +149,19 @@ private struct AgentInstalledLabel: View {
     }
 }
 
-/// The setup assistant's AI agents step. Nothing changes until the button is pressed.
+/// The setup assistant's AI agents step. Nothing changes until its button is pressed; the
+/// assistant's own forward button says Not now while this button is on offer.
 struct AgentSetupStep: View {
     @EnvironmentObject private var model: AppModel
     @StateObject private var installation: AgentInstallation
     @State private var tool = false
     @State private var folders: Set<String> = []
     @State private var chosen = false
+    /// Whether the step offers its button, so leaving the step means not now.
+    @Binding var offering: Bool
 
-    init(installer: AgentInstaller = .live) {
+    init(offering: Binding<Bool>, installer: AgentInstaller = .live) {
+        _offering = offering
         _installation = StateObject(wrappedValue: AgentInstallation(installer: installer))
     }
 
@@ -168,7 +170,7 @@ struct AgentSetupStep: View {
     private var isOtherCopy: Bool { if case .otherCopy = installation.tool { true } else { false } }
 
     var body: some View {
-        SettingsSection(title: "Let AI agents use Frog") {
+        SettingsSection(title: "Command and skills") {
             Text("Claude Code, Codex and other agents can then arrange windows, run your scripts and more through the frog command.")
                 .font(.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             Divider()
@@ -183,14 +185,18 @@ struct AgentSetupStep: View {
             }
             Divider()
             HStack(spacing: 10) {
-                if !access || tool || !folders.isEmpty {
-                    Button(tool || !folders.isEmpty ? "Turn on and install" : "Turn on agent access") { apply() }
+                if offers {
+                    Button(!access ? (tool || !folders.isEmpty ? "Turn on and install" : "Turn on agent access") : "Install") { apply() }
+                        .buttonStyle(FrogButtonStyle(primary: true))
                 }
                 if access { Label("Agents can use Frog", systemImage: "checkmark.circle.fill").font(.system(size: 11)).foregroundStyle(FrogStyle.accent) }
             }
             if let issue = installation.issue { InlineIssue(message: issue) }
         }.onAppear(perform: choose)
+            .onChange(of: offers, initial: true) { _, value in offering = value }
     }
+
+    private var offers: Bool { !access || tool || !folders.isEmpty }
 
     /// Ticks what is found on this Mac and not yet installed, once.
     private func choose() {
@@ -204,7 +210,9 @@ struct AgentSetupStep: View {
     }
 
     private func apply() {
-        do { try model.setAgentAccess(true) } catch { installation.issue = error.localizedDescription; return }
+        if !access {
+            do { try model.setAgentAccess(true) } catch { installation.issue = error.localizedDescription; return }
+        }
         var failures: [String] = []
         if tool, toolChoosable {
             do { try installation.installer.installTool() } catch { failures.append(error.localizedDescription) }

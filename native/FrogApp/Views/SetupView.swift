@@ -21,6 +21,8 @@ struct SetupView: View {
     @State private var issue: String?
     @State private var pendingImport: Configuration?
     @State private var microphoneAllowed = false
+    /// The AI agents step offers its own button; until it is used, moving on says Not now.
+    @State private var agentsOffered = false
     private let titles = ["Welcome to Frog", "Choose your models", "Permissions", "Your command bar", "AI agents", "You're ready"]
 
     var body: some View {
@@ -40,7 +42,7 @@ struct SetupView: View {
                     case 1: models
                     case 2: permissions
                     case 3: CommandBarSetupView()
-                    case 4: AgentSetupStep()
+                    case agentsStep: AgentSetupStep(offering: $agentsOffered)
                     default: summary
                     }
                     if let issue { InlineIssue(message: issue) }
@@ -51,10 +53,10 @@ struct SetupView: View {
                 Button("Skip setup") { model.finishSetup() }
                 Spacer()
                 if step > 0 { Button("Back") { step -= 1; issue = nil } }
-                if step > 0 && step < titles.count - 1 { Button("Skip this step") { step += 1; issue = nil } }
-                Button(step == titles.count - 1 ? "Open Frog" : "Continue") {
+                if step > 0 && step < titles.count - 1 && !notNow { Button("Skip this step") { step += 1; issue = nil } }
+                Button(step == titles.count - 1 ? "Open Frog" : notNow ? "Not now" : "Continue") {
                     if step == titles.count - 1 { model.finishSetup() } else { step += 1; issue = nil }
-                }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.defaultAction)
+                }.buttonStyle(FrogButtonStyle(primary: !notNow)).keyboardShortcut(notNow ? nil : .defaultAction)
             }.padding(20).overlay(alignment: .top) { Rectangle().fill(FrogStyle.border.opacity(0.5)).frame(height: 1) }
         }.frame(width: 620, height: 610).foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).background(FrogWindowMaterial())
             .buttonStyle(FrogButtonStyle()).controlSize(.small).tint(FrogStyle.accent)
@@ -71,6 +73,10 @@ struct SetupView: View {
             .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await refreshPermissions() } } }
             .onChange(of: step) { _, _ in Task { await refreshPermissions() } }
     }
+
+    private let agentsStep = 4
+    /// On the AI agents step, moving on without its button leaves agents off.
+    private var notNow: Bool { step == agentsStep && agentsOffered }
 
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 16) {
