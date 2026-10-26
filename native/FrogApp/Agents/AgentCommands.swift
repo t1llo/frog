@@ -41,7 +41,7 @@ import FrogCore
             let call = AgentCall(model: model, command: command, positional: parsed.positional, options: parsed.options, flags: parsed.flags,
                                  directory: request.directory.map { URL(fileURLWithPath: $0, isDirectory: true) }, input: request.input)
             let result = try await command.run(call)
-            return .success(request.json ? result.json : result.text)
+            return AgentResponse(exitCode: result.exitCode, output: request.json ? result.json : result.text, error: result.notice)
         } catch AgentCommandError.usage(let message) {
             return .failure(message, exitCode: AgentExit.usage)
         } catch {

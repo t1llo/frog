@@ -1458,6 +1458,19 @@ final class AppModel: ObservableObject {
         guard configuration.preferences.featureEnabled(.writing) else { return }
         begin(ruleID: ruleID, manualText: text, providerID: providerID, modelID: modelID)
     }
+    /// Runs a Writing rule on `text` for the `frog` tool and returns the result, which is neither pasted nor
+    /// copied. It runs as Try does: one rule at a time, recorded in History while History is on.
+    func runRule(_ ruleID: UUID, on text: String) async throws -> String {
+        guard configuration.preferences.featureEnabled(.writing) else { throw FrogError.message("Writing is off.") }
+        guard !isProcessing, !dictation.active else { throw FrogError.message("A rule is already running. Try again when it has finished.") }
+        begin(ruleID: ruleID, manualText: text, copiesResult: false)
+        await processingTask?.value
+        switch ruleOutcome {
+        case .failed(let message)?: throw FrogError.message(message)
+        case .cancelled?: throw FrogError.message("The rule was cancelled.")
+        case .done?, nil: return manualResult
+        }
+    }
     func cancelProcessing() { processingTask?.cancel(); status = "Cancelling…" }
 
     func showShortcuts() {
@@ -1575,7 +1588,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func begin(ruleID: UUID, manualText: String?, providerID: UUID? = nil, modelID: String? = nil) {
+    /// `copiesResult`: a result of `manualText` is copied, except for the `frog` tool, which prints it.
+    private func begin(ruleID: UUID, manualText: String?, providerID: UUID? = nil, modelID: String? = nil, copiesResult: Bool = true) {
         guard !isProcessing, !dictation.active else {
             // A shortcut press is answered by the indicator or popup of what is running.
             if manualText != nil {
@@ -1645,8 +1659,10 @@ final class AppModel: ObservableObject {
                     self.clipboardHistoryStore.recordCopiedText(result)
                 } else {
                     self.manualResult = result
-                    self.writeClipboard(result)
-                    self.clipboardHistoryStore.recordCopiedText(result)
+                    if copiesResult {
+                        self.writeClipboard(result)
+                        self.clipboardHistoryStore.recordCopiedText(result)
+                    }
                 }
                 try Task.checkCancellation()
                 if delivered { self.statistics.recordRuleExecution(kind: provider.id == Self.localProviderID || provider.kind.isLocal ? .local : provider.kind.localTool != nil ? .cli : .remote) }

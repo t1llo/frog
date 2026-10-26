@@ -72,6 +72,10 @@ struct AgentCommand {
 struct AgentResult {
     let text: String
     let json: String
+    /// For a command that passes on an exit code, such as a script's.
+    var exitCode: Int32 = 0
+    /// A line for standard error, such as why the exit code is not 0.
+    var notice = ""
 
     init<Value: Encodable>(_ value: Value, text: String) {
         self.text = text
