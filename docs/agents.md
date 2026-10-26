@@ -1,6 +1,6 @@
 # Agents
 
-The `frog` command lets you and your AI agents use Frog from a terminal: arrange windows, open apps, run your scripts, read and add notes, read snippets, use the clipboard history and the shelf, run writing rules, keep the Mac awake, read the system monitor and Mr. Usage, and switch Frog's features on and off. A skill tells Claude Code, Codex, Gemini CLI, pi and OpenCode when and how to use it.
+The `frog` command lets you and your AI agents use Frog from a terminal: arrange windows, open apps, run your scripts, read and add notes, use the clipboard history, run writing rules, keep the Mac awake, read the system monitor and Mr. Usage, and switch Frog's features on and off. A skill tells Claude Code, Codex, Gemini CLI, pi and OpenCode when and how to use it.
 
 ## Turn it on
 
@@ -42,7 +42,7 @@ frog features enable scripts
 pbpaste | frog notes add "Title" --stdin
 ```
 
-`frog help` is the reference: the running app answers it, so it always lists exactly the commands that version of Frog has. The groups are Frog (status, version, features, open), Windows (windows and apps), Scripts, Snippets, Notes, Shelf, Clipboard, Writing rules, Stay awake, System monitor and Mr. Usage. A group marked "(off)" belongs to a feature that is switched off; `frog features enable <feature>` turns it on.
+`frog help` is the reference: the running app answers it, so it always lists exactly the commands that version of Frog has. The groups are Frog (status, version, features, open), Windows (windows and apps), Scripts, Notes, Clipboard, Writing rules, Stay awake, System monitor and Mr. Usage. A group marked "(off)" belongs to a feature that is switched off; `frog features enable <feature>` turns it on.
 
 - `--json` prints machine-readable output.
 - `--stdin` passes standard input as the command's text.
@@ -62,6 +62,6 @@ Exit codes:
 
 - Agent access is off until you turn it on, and turning it off closes the socket at once.
 - `frog` talks to Frog through a Unix socket in Frog's data folder, `~/Library/Application Support/Frog/agent.sock`, that only your user account can open. Nothing listens on the network.
-- While access is on, any program running as your user can use every `frog` command, the same as anything that can already run commands in your shell. That includes running your saved scripts, which run your own shell commands with your permissions, reading your notes, snippets and clipboard history, and changing Frog's settings. Turn access off when you do not want agents to have this.
+- While access is on, any program running as your user can use every `frog` command, the same as anything that can already run commands in your shell. That includes running your saved scripts, which run your own shell commands with your permissions, reading your notes and clipboard history, and changing Frog's settings. Turn access off when you do not want agents to have this.
 - Window commands use the Accessibility permission Frog already has; `frog` asks for nothing new.
 - Nothing is sent anywhere. The skill and the link are files in your home folder, and Settings removes them again.

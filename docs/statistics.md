@@ -122,9 +122,9 @@ subpage. The page observes its store directly.
 7. **Scripts — `ScriptRunner.run`:** after the existing current-generation and cancellation
    guard, invoke a success callback only when `result.status == 0`; wire `.scriptRun`.
    Starting a script from the command bar is not script completion.
-8. **Snippets — `UtilityDocumentsView.copy` and command-bar snippet delivery:** count
-   `.snippetCopy` only after the pasteboard write returns true. No snippet text reaches
-   the statistics API. Avoid counting a failed write from the existing ignored Bool.
+8. **Notes that paste — `UtilityDocumentsView.copy` and command-bar delivery:** count
+   `.snippetCopy` (shown as "Notes pasted"; the name is from when these were snippets) only
+   after the pasteboard write returns true. No note text reaches the statistics API. Avoid counting a failed write from the existing ignored Bool.
 9. **Command bar — accepted selections:** `.commandSelection` counts accepted dispatch,
    not successful completion of an asynchronous rule or script. The UI calls this
    “Command bar selections.” It excludes queries, opening, cancellations and immediate

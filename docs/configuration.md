@@ -78,16 +78,15 @@ Disabled by default:
 - `clipboard`
 - `command-bar`
 - `usage`
-- `snippets`
 - `scratchpad`
-- `shelf`
 - `scripts`
-- `quick-actions`
 - `menu-bar`
 - `system-monitor`
 - `explain`
 - `windows`
 - `cleaner`
+
+`scratchpad` is Notes. Snippets and the shelf became part of Notes in 1.0.39, and Quick actions became command bar rows: a file that still sets `snippets`, `shelf` or `quick-actions` loads, turns Notes on when `snippets` or `shelf` was on, and leaves those keys out the next time Frog saves it.
 
 Older installations retain their existing shortcut/window enablement semantics during migration. `hidden-sidebar-items` hides navigation entries without disabling the feature; use a JSON list of stable feature IDs, for example `["usage", "scripts", "commandBar"]`. Multiword feature **keys** are kebab-case; IDs in this list are camelCase:
 
@@ -95,7 +94,6 @@ Older installations retain their existing shortcut/window enablement semantics d
 - `windowSwitcher`
 - `stayAwake`
 - `commandBar`
-- `quickActions`
 - `menuBar`
 - `systemMonitor`
 - `explain`
