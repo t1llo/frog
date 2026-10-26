@@ -39,9 +39,15 @@ struct FeatureVisibility: NSViewRepresentable {
                 guard self?.last == visible else { return }; callback(visible)
             }
         }
+        /// Called while SwiftUI takes the view down, so the page hears that it is hidden on the next turn of the run loop,
+        /// never during the teardown itself.
         func stop() {
             observers.forEach(NotificationCenter.default.removeObserver); observers = []
-            last = false; changed(false)
+            let wasVisible = last == true
+            last = false
+            guard wasVisible else { return }
+            let callback = changed
+            DispatchQueue.main.async { callback(false) }
         }
         isolated deinit { observers.forEach(NotificationCenter.default.removeObserver) }
     }
