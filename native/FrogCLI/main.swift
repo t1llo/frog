@@ -37,7 +37,7 @@ enum FrogCommandLine {
             return output(try send(request, socket: socket))
         } catch {
             FileHandle.standardError.write(Data("frog: \(error.localizedDescription)\n".utf8))
-            return (error as? AgentSocketError) == .unavailable ? AgentExit.unavailable : AgentExit.failure
+            return error is Unavailable || (error as? AgentSocketError) == .unavailable ? AgentExit.unavailable : AgentExit.failure
         }
     }
 
