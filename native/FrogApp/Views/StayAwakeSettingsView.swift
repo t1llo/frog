@@ -52,15 +52,12 @@ struct StayAwakeSettingsView: View {
             }
             if case .unavailable(let message) = power.accessState {
                 Text(message).font(.system(size: 11)).foregroundStyle(FrogStyle.warning)
-            } else if power.accessState == .ready {
-                Text("Both power commands are allowed without a password. Stay awake is ready to use.")
-                    .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
             }
             if let notice = power.accessNotice {
                 Text(notice).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             }
             Divider()
-            Text("Reset restores sleep and removes Frog's permission to change it. Terminal shows each command first; your administrator password stays there.")
+            Text("Setup and Reset run in Terminal, which asks for your password.")
                 .font(FrogType.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             DisclosureGroup("How this works") {
                 Text("Setup adds a rule in /etc/sudoers.d/frog-awake that lets your account run pmset -a disablesleep 0 and 1 without a password. Reset restores sleep and empties that file; the main sudoers file is never edited.")

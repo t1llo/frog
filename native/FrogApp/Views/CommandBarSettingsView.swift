@@ -16,8 +16,6 @@ struct CommandBarSettingsView: View {
                 if let issue = model.hotkeyErrors[AppModel.commandBarID] { Text(issue).font(.caption).foregroundStyle(FrogStyle.warning) }
             }
             CommandChoicesSection(choices: model.commandChoices)
-            Text("Type an app, window or file, or calculate 25% * 200.")
-                .font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
             CommandBarSetupView()
         }
     }

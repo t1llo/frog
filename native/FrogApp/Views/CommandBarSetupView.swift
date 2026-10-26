@@ -15,8 +15,6 @@ struct CommandBarSetupView: View {
 
     var body: some View {
         SettingsSection(title: "Use Frog instead of Spotlight") {
-            Text("Apps, files and calculations — right under ⌘Space.")
-                .font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
             step(1, "Free the shortcut in macOS", detail: "Open System Settings → Keyboard → Keyboard Shortcuts → Spotlight. Turn off “Show Spotlight search”, or give it another shortcut.") {
                 Button("Open Keyboard Settings…") {
                     guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.keyboard?Shortcuts") else { return }
@@ -31,7 +29,7 @@ struct CommandBarSetupView: View {
                 }
             }
             Divider()
-            step(3, "Try it", detail: "Press ⌘Space, then type an app, file name or 25% * 200. Use ↑↓ and Return. Drag beside the search field to move it; the centering button appears after moving.") {
+            step(3, "Try it", detail: "Press ⌘Space, then type an app, file name or 25% * 200.") {
                 Button("Open command bar") { model.showCommandBar() }
                     .disabled(!model.configuration.preferences.featureEnabled(.commandBar))
             }
