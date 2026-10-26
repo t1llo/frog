@@ -167,7 +167,7 @@ struct PluginsView: View {
                 Text("Build a plugin with your AI agent").font(.system(size: 13, weight: .medium))
                 Text("A plugin is a small web page with a plugin.json: it gets a page in this sidebar, rows in the command bar, its own storage, and only the access you approve. Your agent reads the guide, writes the files, installs the plugin here and looks at a picture of it, until it does what you asked.")
                     .font(.system(size: 12)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
-                step(1, "Turn on AI agents in Features, so your agent can use the frog command.")
+                step(1, "In Settings → Agents, let AI agents use Frog and install the frog command and skill.")
                 step(2, "Ask your agent, for example:")
                 HStack {
                     Text(Self.prompt).font(FrogType.mono).textSelection(.enabled)
@@ -352,18 +352,17 @@ struct PluginPageView: View {
     var body: some View {
         let item = model.plugins.item(id)
         VStack(spacing: 0) {
+            // The plugin's page has its own title, so this row only leads back and, while building, reloads.
             HStack(spacing: 8) {
-                Image(systemName: PluginSymbol.name(item?.symbol ?? PluginManifest.defaultSymbol)).foregroundStyle(FrogStyle.muted)
-                Text(item?.name ?? id).font(.system(size: 13, weight: .medium))
+                Button("Plugins", systemImage: "chevron.left") { model.toolkit.select(.feature(.plugins)) }
+                    .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
                 Spacer()
                 if case .folder = item?.record.source {
                     IconAction(title: "Reload", symbol: "arrow.clockwise") { model.plugins.reload(id) }
                 }
-                IconAction(title: "Plugins", symbol: "puzzlepiece.extension") { model.toolkit.select(.feature(.plugins)) }
             }
-            .padding(.horizontal, 16).padding(.bottom, 8)
-            .overlay { WindowDragRegion().accessibilityHidden(true).allowsHitTesting(false) }
-            Rectangle().fill(FrogStyle.border.opacity(0.6)).frame(height: 1)
+            .frame(height: 24).padding(.horizontal, 20)
+            .background { WindowDragRegion().accessibilityHidden(true) }
             if let host {
                 PluginWebContainer(host: host)
                     .background(FeatureVisibility { shown in host.isShowing = shown; if shown { host.refreshTheme() } })

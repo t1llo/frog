@@ -346,7 +346,7 @@ struct PluginListing: Decodable, Identifiable, Equatable {
         defer { loadingListings = false }
         struct Directory: Decodable { let plugins: [PluginListing] }
         do {
-            var request = URLRequest(url: Self.directoryURL)
+            var request = URLRequest(url: Self.directoryURL, timeoutInterval: 15)
             request.setValue("Frog/\(AppVersion.current)", forHTTPHeaderField: "User-Agent")
             let (data, response) = try await downloads.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 2 * 1024 * 1024 else {
