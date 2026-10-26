@@ -16,10 +16,11 @@ enum CodingAgent: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Folders in the home folder that the agent creates once it has run.
-    var homeFolders: [String] {
+    /// Files or folders in the home folder that the agent creates once it has run. Not `~/.claude`
+    /// alone for Claude Code: installing its skill creates that folder.
+    var homeMarkers: [String] {
         switch self {
-        case .claudeCode: [".claude"]
+        case .claudeCode: [".claude.json", ".claude/projects"]
         case .codex: [".codex"]
         case .gemini: [".gemini"]
         case .pi: [".pi"]
@@ -133,16 +134,29 @@ struct AgentInstaller {
         case .installed: return
         case .unavailable(let reason): throw Failure.unavailable(reason)
         case .blocked: throw Failure.notFrogs(linkDisplayPath)
-        case .notInstalled, .otherCopy: break
+        case .notInstalled: try createLink()
+        case .otherCopy: try replaceLink()
         }
-        let folder = linkURL.deletingLastPathComponent()
-        try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
-        // A new link takes the old one's place in one step, so `frog` is never missing.
-        let temporary = folder.appendingPathComponent(".frog-\(UUID().uuidString)")
-        try fileManager.createSymbolicLink(atPath: temporary.path, withDestinationPath: helperURL.path)
+    }
+
+    /// Makes the link where there was nothing. Something that appeared there since makes it fail
+    /// with EEXIST instead of being replaced.
+    func createLink() throws {
+        try fileManager.createDirectory(at: linkURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard symlink(helperURL.path, linkURL.path) == 0 else {
+            let code = errno
+            if code == EEXIST { throw Failure.notFrogs(linkDisplayPath) }
+            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+        }
+    }
+
+    /// A new link takes the place of the link to another copy in one step, so `frog` is never missing.
+    private func replaceLink() throws {
+        let temporary = linkURL.deletingLastPathComponent().appendingPathComponent(".frog-\(UUID().uuidString)")
+        guard symlink(helperURL.path, temporary.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         guard rename(temporary.path, linkURL.path) == 0 else {
             let error = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-            try? fileManager.removeItem(at: temporary)
+            unlink(temporary.path)
             throw error
         }
     }
@@ -160,7 +174,7 @@ struct AgentInstaller {
     /// text, never run, so this can be wrong either way; Settings only uses it to show a hint.
     func shellFindsLocalBin() -> Bool {
         let files = [".zshenv", ".zprofile", ".zshrc", ".zlogin", ".bash_profile", ".bashrc", ".profile",
-                     ".config/fish/config.fish", ".config/fish/fish_variables"]
+                     ".config/fish/config.fish"]
         return files.contains { name in
             guard let text = try? String(contentsOf: home.appendingPathComponent(name), encoding: .utf8) else { return false }
             return text.contains(".local/bin")
@@ -200,9 +214,13 @@ struct AgentInstaller {
     }
 
     /// Whether anything is at `url`, a broken link included.
-    private func exists(_ url: URL) -> Bool {
+    private func exists(_ url: URL) -> Bool { kind(url) != nil }
+
+    /// What is at `url` itself, without following a link: `S_IFDIR`, `S_IFREG`, `S_IFLNK` and so on.
+    private func kind(_ url: URL) -> mode_t? {
         var info = stat()
-        return lstat(url.path, &info) == 0
+        guard lstat(url.path, &info) == 0 else { return nil }
+        return info.st_mode & S_IFMT
     }
 
     // MARK: Skills
@@ -214,16 +232,14 @@ struct AgentInstaller {
     /// How the skill's folder reads in Settings, such as `~/.claude/skills/frog`.
     func displayPath(_ folder: SkillFolder) -> String { "~/\(folder.path)/\(AgentSkill.name)" }
 
+    /// A link in place of the `frog` folder or its `SKILL.md` counts as someone else's: Frog never
+    /// writes through it or removes it.
     func skillState(_ folder: SkillFolder) -> SkillState {
-        let directory = skillFolderURL(folder)
-        var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: directory.path, isDirectory: &isDirectory) else {
-            return exists(directory) ? .blocked : .notInstalled
-        }
-        guard isDirectory.boolValue else { return .blocked }
+        guard let folderKind = kind(skillFolderURL(folder)) else { return .notInstalled }
+        guard folderKind == S_IFDIR else { return .blocked }
         let file = skillFileURL(folder)
-        guard exists(file) else { return .notInstalled }
-        guard let text = try? String(contentsOf: file, encoding: .utf8), let version = AgentSkill.installedVersion(of: text) else { return .blocked }
+        guard let fileKind = kind(file) else { return .notInstalled }
+        guard fileKind == S_IFREG, let text = try? String(contentsOf: file, encoding: .utf8), let version = AgentSkill.installedVersion(of: text) else { return .blocked }
         return version < AgentSkill.version ? .outdated : .installed
     }
 
@@ -242,10 +258,8 @@ struct AgentInstaller {
         case .installed, .outdated: break
         }
         try fileManager.removeItem(at: skillFileURL(folder))
-        let directory = skillFolderURL(folder)
-        if (try? fileManager.contentsOfDirectory(atPath: directory.path))?.isEmpty == true {
-            try fileManager.removeItem(at: directory)
-        }
+        // Removes the folder only when it is empty; anything else left in it keeps it.
+        rmdir(skillFolderURL(folder).path)
     }
 
     // MARK: Agents on this Mac
@@ -253,7 +267,7 @@ struct AgentInstaller {
     /// The agents that have run on this Mac or whose command is installed.
     func detectedAgents() -> Set<CodingAgent> {
         Set(CodingAgent.allCases.filter { agent in
-            agent.homeFolders.contains { exists(home.appendingPathComponent($0)) }
+            agent.homeMarkers.contains { exists(home.appendingPathComponent($0)) }
                 || commandFolders.contains { fileManager.isExecutableFile(atPath: $0.appendingPathComponent(agent.command).path) }
         })
     }

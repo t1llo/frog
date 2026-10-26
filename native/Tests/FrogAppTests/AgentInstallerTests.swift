@@ -89,6 +89,17 @@ final class AgentInstallerTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: installer.linkURL.path), "/nowhere/frog-cli")
     }
 
+    func testANewLinkNeverReplacesSomethingThatAppearedMeanwhile() throws {
+        XCTAssertEqual(installer.toolState(), .notInstalled)
+        // Something takes the place between the check and the link.
+        try write("#!/bin/sh\necho mine\n", to: ".local/bin/frog")
+        XCTAssertThrowsError(try installer.createLink()) { error in
+            XCTAssertEqual(error as? AgentInstaller.Failure, .notFrogs(installer.linkDisplayPath))
+        }
+        XCTAssertEqual(read(".local/bin/frog"), "#!/bin/sh\necho mine\n")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: installer.linkURL.deletingLastPathComponent().path), ["frog"])
+    }
+
     func testToolIsUnavailableWithoutTheAppsHelper() throws {
         let bare = AgentInstaller(home: home, app: root.appendingPathComponent("debug", isDirectory: true))
         guard case .unavailable(let reason) = bare.toolState() else { return XCTFail("\(bare.toolState())") }
@@ -102,6 +113,9 @@ final class AgentInstallerTests: XCTestCase {
     func testShellPathHint() throws {
         XCTAssertFalse(installer.shellFindsLocalBin())
         try write("export PATH=\"$HOME/.local/bin:$PATH\"\n", to: ".zshrc")
+        XCTAssertTrue(installer.shellFindsLocalBin())
+        try FileManager.default.removeItem(at: home.appendingPathComponent(".zshrc"))
+        try write("fish_add_path ~/.local/bin\n", to: ".config/fish/config.fish")
         XCTAssertTrue(installer.shellFindsLocalBin())
         XCTAssertEqual(AgentInstaller.pathLine(shell: "/bin/zsh").file, "~/.zshrc")
         XCTAssertEqual(AgentInstaller.pathLine(shell: "/opt/homebrew/bin/fish").line, "fish_add_path ~/.local/bin")
@@ -132,9 +146,11 @@ final class AgentInstallerTests: XCTestCase {
         XCTAssertFalse(description.contains(": "), "A plain YAML value cannot hold “: ”")
         XCTAssertEqual(AgentSkill.installedVersion(of: text), AgentSkill.version)
         XCTAssertNotNil(AgentSkill.name.range(of: "^[a-z0-9]+(-[a-z0-9]+)*$", options: .regularExpression))
-        for needed in ["frog help", "--json", "--stdin", "69", "Settings → Agents", "/Applications/Frog.app/Contents/Helpers/frog"] {
+        for needed in ["frog help", "--json", "--stdin", "69", "Settings → Agents", "/Applications/Frog.app/Contents/Helpers/frog", "Accessibility", "frog status"] {
             XCTAssertTrue(text.contains(needed), needed)
         }
+        // Only what the commands can do: no notifications, no search, no adding snippets.
+        for promise in ["notif", "search", "add notes or snippets"] { XCTAssertFalse(description.contains(promise), promise) }
     }
 
     func testAnOlderSkillCanBeUpdated() throws {
@@ -172,6 +188,33 @@ final class AgentInstallerTests: XCTestCase {
         XCTAssertEqual(read(".claude/skills/frog"), "notes")
     }
 
+    func testALinkedSkillFolderIsNeverWrittenThroughOrRemoved() throws {
+        let folder = AgentInstaller.skillFolders[1]
+        // The link leads to Frog's own skill text, which still does not make the link Frog's.
+        try write(AgentSkill.text, to: "dotfiles/frog/SKILL.md")
+        try FileManager.default.createDirectory(at: home.appendingPathComponent(".agents/skills"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: installer.skillFolderURL(folder), withDestinationURL: home.appendingPathComponent("dotfiles/frog"))
+        XCTAssertEqual(installer.skillState(folder), .blocked)
+        XCTAssertThrowsError(try installer.installSkill(folder))
+        XCTAssertThrowsError(try installer.removeSkill(folder))
+        XCTAssertEqual(read("dotfiles/frog/SKILL.md"), AgentSkill.text)
+        XCTAssertNotNil(try? FileManager.default.destinationOfSymbolicLink(atPath: installer.skillFolderURL(folder).path))
+    }
+
+    func testALinkedSkillFileIsNeverWrittenThroughOrRemoved() throws {
+        let folder = AgentInstaller.skillFolders[0]
+        let older = AgentSkill.text.replacingOccurrences(of: "\(AgentSkill.marker): \"\(AgentSkill.version)\"",
+                                                         with: "\(AgentSkill.marker): \"\(AgentSkill.version - 1)\"")
+        try write(older, to: "dotfiles/SKILL.md")
+        try FileManager.default.createDirectory(at: installer.skillFolderURL(folder), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: installer.skillFileURL(folder), withDestinationURL: home.appendingPathComponent("dotfiles/SKILL.md"))
+        XCTAssertEqual(installer.skillState(folder), .blocked)
+        XCTAssertThrowsError(try installer.installSkill(folder))
+        XCTAssertThrowsError(try installer.removeSkill(folder))
+        XCTAssertEqual(read("dotfiles/SKILL.md"), older)
+        XCTAssertNotNil(try? FileManager.default.destinationOfSymbolicLink(atPath: installer.skillFileURL(folder).path))
+    }
+
     func testRemovingTheSkillLeavesOtherFilesAndSkillsAlone() throws {
         let folder = AgentInstaller.skillFolders[1]
         try write("---\nname: other\ndescription: Another skill.\n---\n", to: ".agents/skills/other/SKILL.md")
@@ -200,6 +243,13 @@ final class AgentInstallerTests: XCTestCase {
         try write("#!/bin/sh\n", to: "bin/claude")
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: home.appendingPathComponent("bin/claude").path)
         XCTAssertEqual(installer.detectedAgents(), [.codex, .openCode, .claudeCode])
+    }
+
+    func testInstallingClaudeCodesSkillDoesNotMakeClaudeCodeFound() throws {
+        try installer.installSkill(AgentInstaller.skillFolders[0])
+        XCTAssertEqual(installer.detectedAgents(), [])
+        try write("{}", to: ".claude.json")
+        XCTAssertEqual(installer.detectedAgents(), [.claudeCode])
     }
 }
 

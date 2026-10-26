@@ -14,7 +14,7 @@ enum AgentSkill {
     static let text = """
     ---
     name: frog
-    description: Control the user's Mac and the Frog menu-bar app with the `frog` command. Use when the user asks to arrange, move, resize or focus windows or apply a window layout; open or list apps; list or run their Frog scripts; read, search or add notes or snippets; use the clipboard history or the shelf; run a writing rule on text; keep the Mac awake; check CPU, GPU or memory load or their Claude and Codex usage limits; show a notification; or open, check or configure Frog and its features.
+    description: Control the user's Mac and the Frog menu-bar app with the `frog` command. Use when the user asks to arrange, move, resize or focus windows or apply a window layout; open or list apps; list or run their Frog scripts; read, add or append to notes; read snippets; use the clipboard history or the shelf; run a writing rule on text; keep the Mac awake; check CPU, GPU or memory load or their Claude and Codex usage limits; or open, check or configure Frog and its features.
     metadata:
       \(marker): "\(version)"
     ---
@@ -34,6 +34,7 @@ enum AgentSkill {
     - Relative paths are read from the folder `frog` runs in.
     - When `frog` is not on PATH, run `/Applications/Frog.app/Contents/Helpers/frog`.
     - When Frog is not running, `frog` starts it in the background and waits for it.
+    - Window commands need Frog to have Accessibility; `frog status` shows whether it has. Only the user can allow it, in System Settings.
 
     ## Exit codes
 
