@@ -961,6 +961,9 @@ final class AppModel: ObservableObject {
         try savePreferences(preferences)
     }
 
+    /// Lets the `frog` command and AI agents use Frog, or stops them; the socket opens or closes with the save.
+    func setAgentAccess(_ enabled: Bool) throws { try updateToolkit { $0.agentAccess = enabled } }
+
     /// Learn from your choices counts only while the Command bar is on.
     static func learnsCommandChoices(_ preferences: Preferences) -> Bool {
         preferences.featureEnabled(.commandBar) && preferences.toolkitSettings.commandBarSettings.learnChoices

@@ -21,7 +21,7 @@ struct SetupView: View {
     @State private var issue: String?
     @State private var pendingImport: Configuration?
     @State private var microphoneAllowed = false
-    private let titles = ["Welcome to Frog", "Choose your models", "Permissions", "Your command bar", "You're ready"]
+    private let titles = ["Welcome to Frog", "Choose your models", "Permissions", "Your command bar", "AI agents", "You're ready"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -40,6 +40,7 @@ struct SetupView: View {
                     case 1: models
                     case 2: permissions
                     case 3: CommandBarSetupView()
+                    case 4: AgentSetupStep()
                     default: summary
                     }
                     if let issue { InlineIssue(message: issue) }

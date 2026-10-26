@@ -48,6 +48,7 @@ struct PreferencesView: View {
                         Task { if !DictationController.microphoneGranted { _ = await DictationController.requestMicrophone() }; DictationController.openMicrophoneSettings(); model.objectWillChange.send() }
                     }
                 }.id("permissions")
+                AgentSettingsView(server: model.agentServer)
                 SettingsSection(title: "History") {
                     CompactRow(title: "Save history on this Mac") { Toggle("Save history on this Mac", isOn: preference(\.historyEnabled)).labelsHidden() }
                     Divider()

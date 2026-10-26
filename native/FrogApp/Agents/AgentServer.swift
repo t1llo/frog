@@ -8,16 +8,18 @@ import FrogAgent
 
     let socket: URL
     private let handler: Handler
-    private var listener: AgentListener?
+    private var listener: AgentListener? {
+        didSet { if isListening != (listener != nil) { isListening = listener != nil } }
+    }
     /// Why the socket could not be opened, for Settings.
     @Published private(set) var issue: String?
+    /// Whether agents can reach Frog now, for Settings.
+    @Published private(set) var isListening = false
 
     init(socket: URL, handler: @escaping Handler) {
         self.socket = socket
         self.handler = handler
     }
-
-    var isListening: Bool { listener != nil }
 
     func configure(enabled: Bool) {
         guard enabled else {
