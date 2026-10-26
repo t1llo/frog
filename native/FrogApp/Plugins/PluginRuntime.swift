@@ -41,8 +41,6 @@ struct PluginReview: Identifiable {
     let approved: PluginGrant?
     /// Installed already and waiting for approval, rather than unpacked to install.
     let installed: Bool
-    /// The Frog plugin directory lists this exact file.
-    let listed: Bool
     var compatible: Bool { package.manifest.runs(on: AppVersion.current) }
     var additions: (permissions: [PluginPermission], hosts: [String], scripts: [String]) {
         (approved ?? PluginGrant()).additions(in: package.grant)
@@ -73,7 +71,8 @@ struct PluginListing: Decodable, Identifiable, Equatable {
 /// Runs the installed plugins: one sandboxed page each, created when first needed, and the `frog` bridge, which
 /// checks every call against what the user approved.
 @MainActor final class PluginRuntime: NSObject, ObservableObject {
-    static let directoryURL = URL(string: "https://frog.beffa.xyz/plugins/index.json")!
+    /// The plugin directory's index; nil reads none, as in tests.
+    var directoryURL: URL? = URL(string: "https://frog.beffa.xyz/plugins/index.json")
     static let maximumLogLines = 500
 
     @Published private(set) var items: [PluginItem] = []
@@ -255,9 +254,10 @@ struct PluginListing: Decodable, Identifiable, Equatable {
         let sha256 = PluginPackage.sha256(data)
         clearStaging()
         let package = try store.unpack(data, in: stagingDirectory)
-        if listings.isEmpty { await loadListings() }
         review = PluginReview(package: package, source: source, sha256: sha256, approved: try store.record(package.manifest.id)?.approved,
-                              installed: false, listed: listings.contains { $0.sha256.lowercased() == sha256 })
+                              installed: false)
+        // The review opens at once; whether the directory lists the file shows once the directory answers.
+        if listings.isEmpty { Task { await loadListings() } }
     }
 
     /// Downloads a `.frogplugin` over https, checks it against `sha256` when given, and opens its review.
@@ -289,8 +289,8 @@ struct PluginListing: Decodable, Identifiable, Equatable {
         let package = try store.package(id)
         let record = try store.record(id)
         review = PluginReview(package: package, source: record?.source ?? .folder(package.root.path), sha256: record?.sha256,
-                              approved: record?.approved, installed: true,
-                              listed: record?.sha256.map { sha in listings.contains { $0.sha256.lowercased() == sha } } ?? false)
+                              approved: record?.approved, installed: true)
+        if record?.sha256 != nil, listings.isEmpty { Task { await loadListings() } }
     }
 
     /// Installs or approves what the review showed, exactly: a plugin that changed since is refused.
@@ -340,13 +340,19 @@ struct PluginListing: Decodable, Identifiable, Equatable {
 
     // MARK: Directory
 
+    /// Whether the directory lists this exact file.
+    func isListed(_ sha256: String?) -> Bool {
+        guard let sha256 = sha256?.lowercased() else { return false }
+        return listings.contains { $0.sha256.lowercased() == sha256 }
+    }
+
     func loadListings() async {
-        guard !loadingListings else { return }
+        guard !loadingListings, let directoryURL else { return }
         loadingListings = true
         defer { loadingListings = false }
         struct Directory: Decodable { let plugins: [PluginListing] }
         do {
-            var request = URLRequest(url: Self.directoryURL, timeoutInterval: 15)
+            var request = URLRequest(url: directoryURL, timeoutInterval: 15)
             request.setValue("Frog/\(AppVersion.current)", forHTTPHeaderField: "User-Agent")
             let (data, response) = try await downloads.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 2 * 1024 * 1024 else {

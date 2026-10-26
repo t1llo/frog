@@ -16,6 +16,7 @@ import XCTest
         pasteboard = NSPasteboard(name: NSPasteboard.Name("frog-plugin-test-\(UUID().uuidString)"))
         runtime = PluginRuntime(store: PluginStore(directory: root.appendingPathComponent("Plugins", isDirectory: true)))
         runtime.pasteboard = pasteboard
+        runtime.directoryURL = nil
         runtime.configure(enabled: true)
     }
 

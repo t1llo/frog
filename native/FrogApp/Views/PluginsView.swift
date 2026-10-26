@@ -318,7 +318,7 @@ struct PluginReviewSheet: View {
         case .link, .file:
             HStack(spacing: 6) {
                 Text("From \(review.source.label)").font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
-                if review.listed {
+                if plugins.isListed(review.sha256) {
                     Label("Listed in the Frog directory", systemImage: "checkmark.seal").font(.system(size: 11)).foregroundStyle(FrogStyle.good)
                 } else {
                     Label("Not in the Frog directory", systemImage: "exclamationmark.triangle").font(.system(size: 11)).foregroundStyle(FrogStyle.warning)
