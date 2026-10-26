@@ -1473,10 +1473,6 @@ final class AppModel: ObservableObject {
         dictation.start(rule: rule, preferences: configuration.preferences.workflowSettings, models: localModels, shortcutHeld: shortcutHeld)
     }
 
-    func ensureDictationRule() throws {
-        if !configuration.rules.contains(where: { $0.category == .audio }) { try saveRule(.dictationPreset) }
-    }
-
     private func handleShortcut(_ id: UUID, pressed: Bool) {
         if let command = WindowCommand.command(for: id) { windowLayout.handle(command, pressed: pressed); return }
         if id == Self.commandBarID { if pressed { showCommandBar() }; return }

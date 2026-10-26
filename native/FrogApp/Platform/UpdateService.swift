@@ -92,8 +92,3 @@ struct UpdateSettingsView: View {
         CompactRow(title: "Software updates") { Button("Check for Updates") { updater.check() }.disabled(!updater.canCheck) }
     }
 }
-
-struct CheckForUpdatesButton: View {
-    @ObservedObject private var updater = UpdateService.shared
-    var body: some View { Button("Check for Updates…") { updater.check() }.disabled(!updater.canCheck) }
-}
