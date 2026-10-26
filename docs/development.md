@@ -36,21 +36,13 @@ opening separately before making latency claims. Native action catalogs are
 `SystemAction` (28) and `WindowAction` (23); settings destinations open panes rather
 than toggling hardware.
 
-## Registering a feature this round
+## Adding a feature
 
-Several features are being built in parallel this round. Each registration point (the
-`FeatureID` cases and their `title`, `symbol`, `detail` and `hasPage` switches,
-`ToolkitPreferences`, the text configuration keys, validation, page routes, Features cards,
-teardown in `AppModel`, and `docs/configuration.md` and `docs/privacy.md`) is one entry per
-line and holds a `// slot: <name>` comment (`<!-- slot: <name> -->` in Markdown) for each
-feature that registers there, so that parallel changes merge without conflicts:
-
-- Add your lines directly below your own slot line, in the order you need. Never edit, move
-  or delete a slot line.
-- Never add lines below another feature's slot.
-- If your feature has no slot at a registration point, add a new slot line for it at the end
-  of that list in a separate one-line commit first, then your lines.
-- All slot lines are removed in one commit once the round's features have landed.
+A feature is a `FeatureID` case, off by default, with its `title`, `symbol` and one-line
+`detail`. Every feature has a page of its own in the sidebar, where all of its settings
+live; the Features page only turns features on and off. Register its preferences in
+`ToolkitPreferences`, its text configuration keys, its page route in `MainView`, its
+teardown in `AppModel`, and describe it in `docs/configuration.md` and `docs/privacy.md`.
 
 ## Release packaging
 

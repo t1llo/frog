@@ -85,16 +85,9 @@ Disabled by default:
 - `quick-actions`
 - `menu-bar`
 - `system-monitor`
-<!-- slot: explain -->
 - `explain`
-<!-- slot: windows -->
 - `windows`
-<!-- slot: cleaner -->
 - `cleaner`
-<!-- slot: emoji-picker -->
-<!-- slot: processes -->
-<!-- slot: color-picker -->
-<!-- slot: quicklinks -->
 
 Older installations retain their existing shortcut/window enablement semantics during migration. `hidden-sidebar-items` hides navigation entries without disabling the feature; use a JSON list of stable feature IDs, for example `["usage", "scripts", "commandBar"]`. Multiword feature **keys** are kebab-case; IDs in this list are camelCase:
 
@@ -105,15 +98,8 @@ Older installations retain their existing shortcut/window enablement semantics d
 - `quickActions`
 - `menuBar`
 - `systemMonitor`
-<!-- slot: explain -->
 - `explain`
-<!-- slot: windows -->
-<!-- slot: cleaner -->
 - `cleaner`
-<!-- slot: emoji-picker -->
-<!-- slot: processes -->
-<!-- slot: color-picker -->
-<!-- slot: quicklinks -->
 
 `pinned-sidebar-items` lists the features shown at the top of the sidebar, and `sidebar-order` the feature IDs in the order the sidebar shows them; both take the same IDs. An empty `sidebar-order` keeps Frog's own order, and a feature it leaves out follows the one it comes after in that order. Both are what the sidebar writes when you pin a row from its context menu or hold Shift and drag one; **Reset sidebar order** in that menu empties them.
 
@@ -187,7 +173,6 @@ macOS status-item positions stay on each Mac.
 
 These fields select the display and login-source preference only. Accounts, tokens, readings and polling state are not configuration payloads.
 
-<!-- slot: usage -->
 
 Several Claude accounts on one Mac, such as two Claude app profiles:
 
@@ -222,7 +207,6 @@ The look of the Mr. Usage menu bar item:
 - `stay-awake.menu-bar-style`: `icon` shows the cup alone; `ring` (default) drains a ring
   around it as a timed session runs out; `time` adds the time that is left.
 
-<!-- slot: explain -->
 ### Explain
 
 Enable with `feature.explain = true`. Turning it on adds the **Explain** answer rule once; a deleted one stays deleted. Answer rules themselves live in JSON (see `action.textOutput` below).
@@ -247,7 +231,6 @@ The selection bubble offers Explain, the other answer rules and, in text fields,
 
 Whether a rule shows in the bubble is chosen with **Show in selection bubble** in its editor, on the Explain page for answer rules and on the Writing page for Writing rules; the switch appears while the bubble is on, and a rule left out is marked "Not in the bubble" in its row. The choice is kept with the rules in `config.json` (`bubbleHiddenRules`), not in this file, a copy made with **Save as copy** keeps it, and a deleted rule leaves it too. On the Explain page, the settings above apart from `explain.selection-bubble` sit under **Options** below the bubble's switch.
 
-<!-- slot: windows -->
 ### Windows
 
 Enable with `feature.windows = true`. These settings change layouts only while Windows is on:
@@ -275,31 +258,18 @@ A command shortcut runs only while Windows is on, and must not repeat another gl
 
 `preferences.toolkit.windows.setupChoice` records what was chosen on the Windows page the first time (`snap` or `manual`); the choice card shows while it is missing. It has no text key. A value this version of Frog does not know keeps the card hidden.
 
-<!-- slot: cleaner -->
 ### App cleaner
 
 Enable with `feature.cleaner = true`. Portable settings, read only while the cleaner is on:
 
 - `cleaner.possible-matches`: boolean, default `false`. Also lists files whose names only resemble the app; Frog never ticks them.
-<!-- slot: cleaner-leftovers -->
-<!-- slot: cleaner-junk -->
-<!-- slot: cleaner-assist -->
-<!-- slot: cleaner-disk -->
-<!-- slot: cleaner-startup -->
 
 Removal history, ignored items and dismissed notices stay on each Mac in `~/Library/Application Support/Frog/Cleaner/`. See the [App cleaner guide](cleaner.md).
 
-<!-- slot: command-bar -->
 ### Command bar
 
 - `command-bar.learn-choices`: Learn from your choices: rows you pick for what you type are listed a bit higher. Default false. Stored in `~/Library/Application Support/Frog/command-choices.json`, never in this folder.
 
-<!-- slot: clipboard -->
-<!-- slot: snippets -->
-<!-- slot: emoji-picker -->
-<!-- slot: processes -->
-<!-- slot: color-picker -->
-<!-- slot: quicklinks -->
 
 ## Migration, sync and JSON interchange
 

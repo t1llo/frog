@@ -2,7 +2,7 @@ import XCTest
 @testable import FrogCore
 
 final class SidebarArrangementTests: XCTestCase {
-    private let catalog = FeatureID.allCases.filter(\.hasPage)
+    private let catalog = FeatureID.allCases
 
     func testTheCatalogOrderIsTheDefaultAndStoresNothing() {
         let arrangement = SidebarArrangement(order: [], pinned: [])

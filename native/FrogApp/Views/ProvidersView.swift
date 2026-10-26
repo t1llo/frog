@@ -20,7 +20,7 @@ struct ProvidersView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            PageHeader(title: "Models", subtitle: selectedFilter == "Local models" ? "Download and run models on this Mac." : selectedFilter == "Installed tools" ? "Use the coding tools you already signed in to." : "Connect cloud APIs, Ollama or LM Studio.") {
+            PageHeader(title: "Models") {
                 if selectedFilter == "Local models" {
                     Button("Add model…", systemImage: "plus") { addingLocal = true }
                 } else if selectedFilter == "Providers" {
@@ -46,6 +46,7 @@ struct ProvidersView: View {
                     if !LocalModels.supported { Text("Requires Apple silicon").font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
                 }
                 ModelInventory(kind: kind, search: search, revealedModelID: revealedModelID)
+                if search.isEmpty { LocalModelSettingsView().padding(.top, 6) }
             } else {
                 VStack(spacing: 0) {
                     ForEach(providers) { provider in

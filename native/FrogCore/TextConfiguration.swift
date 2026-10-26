@@ -52,7 +52,6 @@ enum TextConfiguration {
             .init("usage.metric", "toolkit.usage.metric", .choice(["API cost", "Input", "Output", "Cache write", "Cache read"])),
             .init("usage.all-devices", "toolkit.usage.allDevices", .bool),
             .init("usage.login-source", "toolkit.usage.loginSource", .choice(["Automatic", "Claude Code", "Claude Desktop", "OpenCode", "Pi"])),
-            // slot: usage
             .init("usage.claude-accounts", "toolkit.usage.claudeAccounts", .bool),
             .init("usage.claude-accounts-view", "toolkit.usage.claudeAccountsView", .choice(["each", "combined"])),
             .init("usage.claude-accounts-menu-bar", "toolkit.usage.claudeAccountsMenuBar", .choice(["session", "week"])),
@@ -75,7 +74,6 @@ enum TextConfiguration {
             .init("accent", "appearance.accentHex", .color),
             .init("transparency", "appearance.transparency", .number(0...1)),
             .init("popup-transparency", "appearance.popupTransparency", .number(0...1)),
-            // slot: explain
             .init("explain.context", "toolkit.explain.includeContext", .bool),
             .init("explain.notes", "toolkit.explain.notes", .bool),
             .init("explain.notes-folder", "toolkit.explain.notesFolder", .string),
@@ -88,7 +86,6 @@ enum TextConfiguration {
             .init("explain.bubble-max-characters", "toolkit.explain.bubbleMaxCharacters", .integer(100...20_000)),
             .init("explain.bubble-excluded-apps", "toolkit.explain.bubbleExcludedApps", .identifiers),
             .init("explain.bubble-expose-text", "toolkit.explain.bubbleExposeText", .bool),
-            // slot: windows
             .init("windows.gap", "toolkit.windows.gap", .integer(0...40)),
             .init("windows.cycle-sizes", "toolkit.windows.cycleSizes", .bool),
             .init("windows.portrait-thirds", "toolkit.windows.portraitThirds", .bool),
@@ -98,19 +95,8 @@ enum TextConfiguration {
             .init("windows.restore-on-drag", "toolkit.windows.restoreOnDrag", .bool),
             .init("windows.zone-overlay", "toolkit.windows.zoneOverlay", .bool),
             .init("windows.zone-grid", "toolkit.windows.zoneGrid", .choice(ZoneGrid.allCases.map(\.rawValue))),
-            // slot: cleaner
             .init("cleaner.possible-matches", "toolkit.cleaner.possibleMatches", .bool),
-            // slot: cleaner-leftovers
-            // slot: cleaner-junk
-            // slot: cleaner-assist
-            // slot: cleaner-disk
-            // slot: cleaner-startup
-            // slot: command-bar
             .init("command-bar.learn-choices", "toolkit.commandBar.learnChoices", .bool),
-            // slot: clipboard
-            // slot: snippets
-            // slot: emoji-picker
-            // slot: color-picker
         ]
         for feature in FeatureID.allCases where ![.windowSwitcher, .applicationShortcuts, .clipboard].contains(feature) {
             fields.append(.init("feature.\(kebab(feature.rawValue))", "toolkit.enabled.\(feature.rawValue)", .bool))
@@ -252,19 +238,10 @@ enum TextConfiguration {
                 ("menuBar", try JSONEncoder().encode(MenuBarPreferences())),
                 ("systemMonitor", try JSONEncoder().encode(SystemMonitorPreferences())),
                 ("stayAwake", try JSONEncoder().encode(StayAwakePreferences())),
-                // slot: explain
                 ("explain", try JSONEncoder().encode(ExplainSettings())),
-                // slot: windows
                 ("windows", try JSONEncoder().encode(WindowPreferences())),
-                // slot: cleaner
                 ("cleaner", try JSONEncoder().encode(CleanerPreferences())),
-                // slot: command-bar
                 ("commandBar", try JSONEncoder().encode(CommandBarPreferences())),
-                // slot: clipboard
-                // slot: snippets
-                // slot: emoji-picker
-                // slot: color-picker
-                // slot: quicklinks
             ] {
                 if let nested = toolkit[key] as? [String: Any] ?? (creating ? [:] : nil) { toolkit[key] = merge(try object(data), nested) }
             }

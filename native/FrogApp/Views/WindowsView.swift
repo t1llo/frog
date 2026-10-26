@@ -14,7 +14,7 @@ struct WindowsView: View {
         let rows = WindowAction.shortcutRows(configured: model.configuration.rules)
         let lastRowID = rows.last?.id
         PageScroll {
-            PageHeader(title: "Windows", subtitle: "Arrange windows your way: snap them in place, or let Frog tile them.")
+            PageHeader(title: "Windows")
             if !model.accessibilityGranted {
                 InlineIssue(message: "Frog needs Accessibility access to move and resize windows.")
                 Button("Allow Accessibility") { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() }
@@ -24,18 +24,18 @@ struct WindowsView: View {
                 CompactRow(title: "Gap between windows") {
                     Stepper("\(settings.gap) pt", value: binding(\.gap), in: WindowPreferences.gapRange, step: 2).fixedSize()
                 }
-                CompactRow(title: "Cycle sizes when pressed again", detail: "Press a half shortcut again for ½, ⅔ and ⅓ of the screen.") {
+                CompactRow(title: "Cycle sizes when pressed again", detail: "½, ⅔ and ⅓ of the screen.") {
                     Toggle("Cycle sizes when pressed again", isOn: binding(\.cycleSizes)).labelsHidden().toggleStyle(.switch)
                 }
                 CompactRow(title: "Thirds run top to bottom on tall displays") {
                     Toggle("Thirds run top to bottom on tall displays", isOn: binding(\.portraitThirds)).labelsHidden().toggleStyle(.switch)
                 }
-                CompactRow(title: "Leave room for Stage Manager", detail: "Keeps the left 190 points free while Stage Manager is on.") {
+                CompactRow(title: "Leave room for Stage Manager") {
                     Toggle("Leave room for Stage Manager", isOn: binding(\.respectStageManager)).labelsHidden().toggleStyle(.switch)
                 }
             }
             SettingsSection(title: "Snap") {
-                CompactRow(title: "Drag to screen edges", detail: "Drop a window on an edge or corner to fill that part of the screen.") {
+                CompactRow(title: "Drag to screen edges") {
                     Toggle("Drag to screen edges", isOn: binding(\.dragToSnap)).labelsHidden().toggleStyle(.switch)
                 }
                 if macOS.edgeTiling || macOS.topEdgeTiling {
@@ -47,11 +47,11 @@ struct WindowsView: View {
                             .font(.system(size: 11)).foregroundStyle(FrogStyle.accent)
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 6)
                 }
-                CompactRow(title: "Restore size when dragged away", detail: "A snapped window gets its earlier size back when you drag it out.") {
+                CompactRow(title: "Restore size when dragged away") {
                     Toggle("Restore size when dragged away", isOn: binding(\.restoreOnDrag)).labelsHidden().toggleStyle(.switch)
                         .disabled(!settings.dragToSnap)
                 }
-                CompactRow(title: "Show zones while holding Shift", detail: "Hold Shift while dragging a window to drop it into a zone.") {
+                CompactRow(title: "Show zones while holding Shift") {
                     Toggle("Show zones while holding Shift", isOn: binding(\.zoneOverlay)).labelsHidden().toggleStyle(.switch)
                 }
                 CompactRow(title: "Zones") {
@@ -61,7 +61,7 @@ struct WindowsView: View {
                         }
                     }.disabled(!settings.zoneOverlay)
                 }
-                CompactRow(title: "Layout picker", detail: "Choose a layout from a small panel, from a shortcut, the Frog menu or the command bar.") {
+                CompactRow(title: "Layout picker") {
                     HStack(alignment: .top, spacing: 10) {
                         VStack(alignment: .trailing, spacing: 4) {
                             HotkeyRecorder(hotkey: commandShortcut(.layoutPicker)).disabled(!settings.layoutPicker)
@@ -101,19 +101,13 @@ struct WindowsView: View {
                 }
             }
             SettingsSection(title: "Cheat sheet") {
-                CompactRow(title: "Show window shortcuts while holding", detail: "Hold the shortcut to see your window shortcuts. Release it to close.") {
+                CompactRow(title: "Show window shortcuts while holding") {
                     VStack(alignment: .trailing, spacing: 4) {
                         HotkeyRecorder(hotkey: commandShortcut(.cheatSheet))
                         if let issue = model.hotkeyErrors[WindowCommand.cheatSheet.id] {
                             Text(issue).font(.caption2).foregroundStyle(FrogStyle.warning)
                         }
                     }
-                }
-            }
-            SettingsSection(title: "Related") {
-                CompactRow(title: "Window switcher", detail: "Switch between individual windows with ⌘Tab.") {
-                    Button("Open in Features") { model.openFeature(.windowSwitcher) }.buttonStyle(.plain)
-                        .font(.system(size: 11)).foregroundStyle(FrogStyle.accent)
                 }
             }
         }

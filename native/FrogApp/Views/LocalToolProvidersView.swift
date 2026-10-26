@@ -20,7 +20,7 @@ struct LocalToolProvidersView: View {
                 Button("Refresh") { Task { await refresh() } }.disabled(refreshing)
                 if refreshing { ProgressView().controlSize(.small) }
             }
-            Text("Reuse your CLI login for writing, translation and dictation cleanup. Requests run in the background; your plan's limits and network latency still apply.")
+            Text("Uses your CLI login. Your plan's limits apply.")
                 .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
             ForEach(statuses) { status in
                 HStack(alignment: .top) {

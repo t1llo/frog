@@ -7,7 +7,6 @@ import FrogUsage
 @MainActor final class Toolkit: ObservableObject {
     @Published private(set) var preferences = Preferences()
     @Published private(set) var route: ToolkitRoute = .feature(.writing)
-    @Published private(set) var featureSettingsSelection: FeatureID?
     private var usageModel: UsageDashboardModel?
     private let makeUsage: @MainActor () -> UsageDashboardModel
     private let showsUsageStatusItem: Bool
@@ -49,9 +48,8 @@ import FrogUsage
             usageModel?.setAvailable(false)
         }
     }
+    /// A feature that is off has no page; asking for it opens Features, where it is turned on.
     func select(_ route: ToolkitRoute) {
-        if case .feature(let feature) = route, !feature.hasPage { featureSettingsSelection = feature }
-        else { featureSettingsSelection = nil }
         self.route = route.available(in: preferences) ? route : .features
     }
     func usage() -> UsageDashboardModel? {

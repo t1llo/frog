@@ -269,7 +269,7 @@ struct FrogCard<Content: View>: View {
 
 struct PageHeader<Actions: View>: View {
     let title: String
-    let subtitle: String
+    var subtitle = ""
     @ViewBuilder var actions: Actions
 
     var body: some View {
@@ -288,7 +288,7 @@ struct PageHeader<Actions: View>: View {
 }
 
 extension PageHeader where Actions == EmptyView {
-    init(title: String, subtitle: String) {
+    init(title: String, subtitle: String = "") {
         self.title = title; self.subtitle = subtitle; self.actions = EmptyView()
     }
 }

@@ -181,8 +181,8 @@ small plan badge and source/pricing details in the dashboard. The two primary li
 fit without scrolling; additional limits are indicated in the footer. Partial API
 estimates remain labeled and polling warnings remain available from the status icon.
 
-Clipboard settings now navigate to History → Clipboard. The native history test
-follows that route and verifies explicit sensitive-entry reveal/remasking without
+Clipboard has its own page with the copied items and the Quick paste shortcut. The native
+history test opens that page and verifies explicit sensitive-entry reveal/remasking without
 persisting clipboard contents.
 
 ## Menu-bar follow-up
@@ -329,7 +329,7 @@ Use an installed signed app and a disposable document. Record macOS version, arc
 - Test invalid/duplicate/occupied global hotkeys and remove or disable a rule; registration state must match the UI.
 - With a legacy rule assigned Command-C, launch Frog and copy/cut/paste in a disposable document. Clipboard shortcuts must stay with the focused app, with no Frog processing or popup. Assigning these shortcuts to a new rule must be rejected.
 - Clipboard history: confirm it starts disabled, enable it in Features, then copy disposable text items. Shift–Command–V (or your configured unique shortcut) must open up to 100 newest items without activating Frog. Copy more than 100 to verify oldest-first eviction and duplicate handling.
-  - Ordinary copied text must be readable/searchable without revealing it. Only marked-sensitive previews start hidden; click/Space reveals those, and closing/reopening hides them again. Main History must show the same memory-only items with a Clipboard tag/filter; opening a sensitive entry reveals text and leaving History hides it again. Hidden sensitive contents must not leak through search or accessibility labels. The separate History Hide text preference still applies to ordinary History previews.
+  - Ordinary copied text must be readable/searchable without revealing it. Only marked-sensitive previews start hidden; click/Space reveals those, and closing/reopening hides them again. The Clipboard page must show the same memory-only items, and History must not; opening a sensitive entry reveals text and leaving the page hides it again. Hidden sensitive contents must not leak through search or accessibility labels. The separate History Hide text preference still applies to ordinary History previews.
   - The compact popup must match Frog's current light/dark theme, resize through eight visible rows, then scroll additional entries. Search and keyboard selection must reach older entries. Ordinary items use a text icon rather than a password/lock icon. Copying new items while open and clearing the list must update its size and selection safely.
   - Click the footer's **Copy** action or press Command-C with an item selected. Its text/formatting must reach the clipboard even without an automatic paste target; no paste should occur. Command-C while editing selected search text should remain a normal text-field copy.
   - Record another valid shortcut, reject ordinary Command-C, then successfully record a valid chord again; show the actual reserved-key/conflict error, not a false missing-modifier hint. Check formatted Paste and Paste without formatting in TextEdit and a browser; arrows/Return/Shift–Return and Escape must work.
@@ -770,7 +770,7 @@ on screen. Manual checks on the installed app:
 
 - [ ] Mr. Usage → Menu bar: each tile changes the item at once; *Steps* with A and B accounts
       shows one row per account; *Numbers* · *Clean* looks exactly as before.
-- [ ] Features → System monitor → Show CPU and GPU in the menu bar adds the item; it moves
+- [ ] System monitor → Menu bar → Show CPU and GPU in the menu bar adds the item; it moves
       about every two seconds, opens the System overview, and closing it keeps the item.
 - [ ] Stay awake → Show a cup in the menu bar: the cup appears only while Stay awake is on, the
       small cup beside Frog's icon goes away, the ring drains for a timed session, and its menu
@@ -798,11 +798,6 @@ sample app:
 - [ ] The outcome of a removal offers Put Back, which shows how many items came back in place of the outcome.
 - [ ] Move the sample again, then drag one of its folders out of the Trash by hand: Put Back says "It is no longer in the Trash." for that item and puts back the rest.
 - [ ] "Remove from this list" forgets the record and leaves the Trash as it was. At the end, move the sample app and its folders to the Trash.
-<!-- slot: cleaner-leftovers -->
-<!-- slot: cleaner-junk -->
-<!-- slot: cleaner-assist -->
-<!-- slot: cleaner-disk -->
-<!-- slot: cleaner-startup -->
 
 ## Distribution
 

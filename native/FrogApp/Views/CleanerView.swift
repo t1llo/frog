@@ -5,27 +5,15 @@ import FrogCore
 
 enum CleanerTab: String, CaseIterable, Identifiable {
     case apps
-    // slot: cleaner-leftovers
-    // slot: cleaner-junk
-    // slot: cleaner-disk
-    // slot: cleaner-startup
     var id: String { rawValue }
     var title: String {
         switch self {
         case .apps: "Apps"
-        // slot: cleaner-leftovers
-        // slot: cleaner-junk
-        // slot: cleaner-disk
-        // slot: cleaner-startup
         }
     }
     static func available(_ preferences: Preferences) -> [CleanerTab] {
         var tabs: [CleanerTab] = []
         tabs.append(.apps)
-        // slot: cleaner-leftovers
-        // slot: cleaner-junk
-        // slot: cleaner-disk
-        // slot: cleaner-startup
         return tabs
     }
 }
@@ -48,7 +36,7 @@ struct CleanerView: View {
     var body: some View {
         let tabs = CleanerTab.available(preferences)
         PageScroll {
-            PageHeader(title: "App cleaner", subtitle: "Move apps and the files they leave behind to the Trash.") {
+            PageHeader(title: "App cleaner") {
                 IconAction(title: "Recently moved", symbol: "clock.arrow.circlepath") {
                     cleaner.dismissPutBack(); cleaner.loadRecords(); cleaner.showsRecent = true
                 }
@@ -70,10 +58,6 @@ struct CleanerView: View {
             if let issue = cleaner.issue { InlineIssue(message: issue) }
             switch cleaner.tab {
             case .apps: appsContent        // outcome, review or app list
-            // slot: cleaner-leftovers
-            // slot: cleaner-junk
-            // slot: cleaner-disk
-            // slot: cleaner-startup
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -163,11 +147,6 @@ struct CleanerSettingsView: View {
     var body: some View {
         SettingsSection(title: "App cleaner") {
             possibleMatchesRow
-            // slot: cleaner-leftovers
-            // slot: cleaner-junk
-            // slot: cleaner-assist
-            // slot: cleaner-disk
-            // slot: cleaner-startup
         }
         .padding(12).frame(width: 320)
         .foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
@@ -175,7 +154,7 @@ struct CleanerSettingsView: View {
 
     private var possibleMatchesRow: some View {
         CompactRow(title: "Show possible matches",
-                   detail: "Also list files whose names only resemble the app. They are never ticked.") {
+                   detail: "Files whose names only resemble the app. Never ticked.") {
             Toggle("Show possible matches", isOn: Binding(get: { settings.possibleMatches }, set: { value in
                 save { $0.possibleMatches = value }
             })).labelsHidden().toggleStyle(.switch)

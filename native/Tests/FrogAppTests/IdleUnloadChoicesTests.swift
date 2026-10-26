@@ -5,9 +5,9 @@ import FrogCore
 @MainActor
 final class IdleUnloadChoicesTests: XCTestCase {
     func testLocalModelsCanStayLoadedForHalfAnHourOrAnHour() throws {
-        XCTAssertEqual(PreferencesView.idleUnloadChoices, [120, 300, 900, 1800, 3600],
+        XCTAssertEqual(LocalModelSettingsView.idleUnloadChoices, [120, 300, 900, 1800, 3600],
                        "Dictating a few times an hour must not reload the speech model every time")
-        for seconds in PreferencesView.idleUnloadChoices {
+        for seconds in LocalModelSettingsView.idleUnloadChoices {
             var configuration = Configuration()
             var workflow = configuration.preferences.workflowSettings
             workflow.idleUnloadSeconds = seconds

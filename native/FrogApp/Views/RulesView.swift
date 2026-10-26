@@ -50,12 +50,6 @@ struct RulesView: View {
         if fixedCategory == .text { return answers ? "Explain" : "Writing" }
         return applications ? "Shortcuts" : "Rules"
     }
-    private var pageSubtitle: String {
-        if applications { return "Choose your own shortcuts for apps and everyday Mac actions." }
-        if category == .audio { return "Turn speech into text with your preferred model and shortcut." }
-        if answers { return "Ask about selected text and get a short answer next to it." }
-        return "Transform selected text with reusable instructions and shortcuts."
-    }
     /// The Explain page: answer rules only.
     private var answers: Bool { fixedCategory == .text && output == .panel }
     var body: some View {
@@ -87,7 +81,7 @@ struct RulesView: View {
     }
 
     private var header: some View {
-        PageHeader(title: pageTitle, subtitle: pageSubtitle) {
+        PageHeader(title: pageTitle) {
             if !applications { Button(answers ? "New answer rule" : "New rule", systemImage: "plus") {
                 editing = model.configuration.newRule(category: category, output: output, installed: model.localModels.installed)
             }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut("n", modifiers: .command) }

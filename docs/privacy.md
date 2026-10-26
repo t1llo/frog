@@ -16,7 +16,7 @@ Adding a Hugging Face model link fetches public repository metadata and, for tex
 
 Local cleanup uses downloaded MLX weights. A custom audio rule explicitly choosing a cloud text provider sends the transcript and instructions to that provider; raw audio is not sent. Results are copied, with optional insertion into the currently focused app after transcription, so you can change input fields while recording. Password fields are excluded when identified by Accessibility. Shared history, if enabled, saves the completed transcript and processed text before clipboard/paste delivery, under the same retention controls as writing results. If cleanup fails, the original transcript is preserved on the clipboard with an error message.
 
-Downloaded files live in `~/Library/Application Support/Frog/Models/`. Cancelling a download removes its partial files. A download that fails, or that quitting Frog interrupts, keeps them so that Resume continues from there; the model's row can discard them. Manage installed models in Models → Local models. Idle models unload according to Settings, or sooner when macOS runs short of memory; downloadable inference requires Apple silicon. Models are not included in configuration exports.
+Downloaded files live in `~/Library/Application Support/Frog/Models/`. Cancelling a download removes its partial files. A download that fails, or that quitting Frog interrupts, keeps them so that Resume continues from there; the model's row can discard them. Manage installed models in Models → Local models. Idle models unload according to Models → Local models, or sooner when macOS runs short of memory; downloadable inference requires Apple silicon. Models are not included in configuration exports.
 
 ## On your Mac
 
@@ -50,30 +50,15 @@ The window switcher uses Accessibility to list window titles, observe the recent
 
 The optional floating processing indicator shows rule/status messages without taking focus. Turn it off in **Settings → Show processing indicator**. Compatibility replacement checks input-event counters, not keystroke contents, to reject changed targets.
 
-<!-- slot: explain -->
 **Explain** is off by default. Besides the selected text and the rule's instructions, for an answer rule (Explain and rules on the Explain page) Frog also sends, only when you run the rule: the sentence or paragraph around the selection (up to 1,000 characters; switch off with **Include surrounding text**), the app's name, the reply language (your Mac's first preferred language), and earlier questions and answers in the same panel. The page or document address is never sent. Nothing in the other app is replaced. While the answer panel is open, Frog watches keys pressed in other apps for the Escape key code only, to close the panel; no characters are read. It also notices clicks outside the panel and which app becomes active, without recording either. These monitors are removed when the panel closes. **Copy** puts the answer on the clipboard like any other copy.
 
 **Save to note** (off by default, **Save answers to notes** on the Explain page) writes a Markdown file into the folder you chose, only when you press it: the selection, the answer and its follow-ups, the app's name, the model, and for one note per answer the page or document address. The surrounding text sent to the model is not written to notes. Nothing is sent anywhere; it works with History off. macOS may ask once for access to a folder such as Documents or iCloud Drive. **Open the note after saving** hands the file to Obsidian or your Markdown app.
 
-<!-- slot: command-bar -->
 **Command bar choices.** With Learn from your choices on, Frog keeps the text you typed (up to 32 characters) and the rows you picked (including app and file paths) with their dates in `~/Library/Application Support/Frog/command-choices.json`, readable only by you. Clipboard rows and windows are never recorded. Unused choices fade after a few weeks. The file is never exported, synced or sent anywhere, and it is deleted when you press Forget learned choices, turn the switch off or turn the Command bar off.
 
-<!-- slot: usage -->
 **Several Claude accounts (Mr. Usage):** off by default (`usage.claude-accounts`). While Mr. Usage is on, Frog looks for further Claude accounts by the names of folders directly under Application Support and in the home folder, by whether their files exist, and by whether each Claude Code folder's `.claude.json` holds a login; with the switch off no other account's usage history or Keychain item is read. With the switch on, Frog reads each accepted Claude app folder's `plan-usage-history.json`, each Claude Code profile's `.claude.json` (its `oauthAccount`) and that profile's Keychain item through `security`, as for the one account before. It never reads the Claude app's `config.json`, cookies, local storage or IndexedDB, the Claude app's Keychain key, or other processes' arguments or environment. Labels, include switches, added folders, the dismissal of the offer and each account's polling state stay on this Mac in `xyz.beffa.frog.usage` and are not exported; the configuration holds only the three display choices. Network use: the usage endpoint only for accounts with a Claude Code login, and at most one tiny renewal request per lapsed account every 30 minutes; an account known only from the Claude app causes no request. Live readings for such an account start only from the **Set up live readings…** button, which explains the sign-in before Terminal opens.
-<!-- slot: clipboard -->
-<!-- slot: processes -->
-<!-- slot: color-picker -->
-<!-- slot: quicklinks -->
-<!-- slot: emoji-picker -->
-<!-- slot: windows -->
 **Windows:** while drag to snap or the zone overlay is on, Frog watches mouse-button and drag events system-wide to notice when you drag a window. It does not record them. Once a drag starts, it reads the position and size of the window under the pointer, a few times at most until the window moves, and keeps nothing after the drag. Window titles are not read. With the zone overlay on, Frog also notices whether Shift or Option is held during a window drag.
-<!-- slot: cleaner -->
 - **App cleaner:** off by default. It scans only when you pick or drop an app. It reads folder and file names in your Library folders, launchd property lists, and the Info.plist files and code signatures of apps, never the contents of other files. Containers are checked by exact name and not read without Full Disk Access. Items move only to the Trash, after a confirmation that lists them; Finder moves apps and items that belong to the system and asks for the administrator password itself. The list Frog keeps for Put Back (paths, sizes and dates) stays in `~/Library/Application Support/Frog/Cleaner/removals.json` for 30 days and is not exported. Nothing is sent anywhere. See [App cleaner](cleaner.md).
-  <!-- slot: cleaner-leftovers -->
-  <!-- slot: cleaner-junk -->
-  <!-- slot: cleaner-assist -->
-  <!-- slot: cleaner-disk -->
-  <!-- slot: cleaner-startup -->
 
 ## Updates
 

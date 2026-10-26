@@ -22,49 +22,23 @@ import FrogCore
         XCTAssertEqual(try ConfigurationStore(directory: directory).load(), saved)
     }
 
-    func testEveryFeatureWithoutAPageHasInlineSettingsOrIsSystemMonitor() {
-        for feature in FeatureID.allCases where !feature.hasPage {
-            XCTAssertTrue(FeatureCardSettings.hasSettings(feature) || feature == .systemMonitor, feature.rawValue)
-        }
-    }
-
-    func testLegacyToolLinksOpenTheirFeatureCardEvenWhenDisabled() {
+    func testEveryFeatureOpensItsOwnPageWhileOnAndFeaturesWhileOff() {
         let toolkit = Toolkit(showsUsageStatusItem: false)
         defer { toolkit.stop() }
-        var preferences = Preferences()
-        for enabled in [true, false] {
-            for feature in [FeatureID.windowSwitcher, .clipboard, .systemMonitor] {
-                preferences.setFeature(feature, enabled: enabled)
-                toolkit.apply(preferences)
-                toolkit.select(.feature(feature))
-                XCTAssertEqual(toolkit.route, .features)
-                XCTAssertEqual(toolkit.featureSettingsSelection, feature)
-                XCTAssertFalse(toolkit.sidebar.contains(feature))
-            }
+        for feature in FeatureID.allCases {
+            var preferences = Preferences()
+            preferences.setFeature(feature, enabled: true)
+            toolkit.apply(preferences)
+            toolkit.select(.feature(feature))
+            XCTAssertEqual(toolkit.route, .feature(feature), feature.rawValue)
+            XCTAssertTrue(toolkit.sidebar.contains(feature), feature.rawValue)
+            preferences.setFeature(feature, enabled: false)
+            toolkit.apply(preferences)
+            toolkit.select(.feature(feature))
+            XCTAssertEqual(toolkit.route, .features, feature.rawValue)
+            XCTAssertFalse(toolkit.sidebar.contains(feature), feature.rawValue)
         }
         toolkit.select(.history)
         XCTAssertEqual(toolkit.route, .history)
-        XCTAssertNil(toolkit.featureSettingsSelection)
-        preferences.setFeature(.commandBar, enabled: true)
-        toolkit.apply(preferences)
-        toolkit.select(.feature(.commandBar))
-        XCTAssertEqual(toolkit.route, .feature(.commandBar))
-        XCTAssertTrue(toolkit.sidebar.contains(.commandBar))
-    }
-
-    func testClipboardCardNavigationSelectsClipboardHistoryAndReturnsToFeatures() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        var configuration = Configuration()
-        configuration.preferences.setFeature(.clipboard, enabled: true)
-        try ConfigurationStore(directory: directory).save(configuration)
-        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil })
-        defer { model.shutdown() }
-        model.openClipboardHistoryPage()
-        XCTAssertEqual(model.toolkit.route, .history)
-        XCTAssertEqual(model.historyFilter, .clipboard)
-        model.openFeature(.clipboard)
-        XCTAssertEqual(model.toolkit.route, .features)
-        XCTAssertEqual(model.toolkit.featureSettingsSelection, .clipboard)
     }
 }

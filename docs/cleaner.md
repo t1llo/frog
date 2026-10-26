@@ -26,11 +26,6 @@ Notices above the list say when the app is running (Frog quits it first), when i
 
 Type uninstall or remove and the app's name, for example `uninstall slack`. Frog opens the review; nothing moves until you confirm. The command bar offers up to three apps, the same ones the page lists: never Apple's apps, Finder or Frog itself. Typing the words starts no scan; the scan starts when you choose the row.
 
-<!-- slot: cleaner-leftovers -->
-<!-- slot: cleaner-junk -->
-<!-- slot: cleaner-assist -->
-<!-- slot: cleaner-disk -->
-<!-- slot: cleaner-startup -->
 
 ## What Frog never touches
 
@@ -73,11 +68,6 @@ Frog can put items back only while they are in the Trash. After you empty it, th
 - **Automation for Finder:** macOS asks once, the first time Finder moves something for Frog. If it was denied, the confirmation says what stays where it is before anything moves, and both the confirmation and the outcome offer **Open Automation Settings**.
 - **Administrator password:** asked by Finder, only for items that belong to the system.
 - **App Management:** not expected; Finder moves app bundles, not Frog.
-<!-- slot: cleaner-leftovers -->
-<!-- slot: cleaner-junk -->
-<!-- slot: cleaner-assist -->
-<!-- slot: cleaner-disk -->
-<!-- slot: cleaner-startup -->
 
 ## Settings
 
@@ -85,10 +75,5 @@ The page's **Cleaner settings** button holds the cleaner's switches. In `~/.conf
 
 - `feature.cleaner`: turns the App cleaner on. Default `false`.
 - `cleaner.possible-matches`: also list possible matches. Default `false`.
-<!-- slot: cleaner-leftovers -->
-<!-- slot: cleaner-junk -->
-<!-- slot: cleaner-assist -->
-<!-- slot: cleaner-disk -->
-<!-- slot: cleaner-startup -->
 
 Dismissed notices and the list of what was moved stay on each Mac in `~/Library/Application Support/Frog/Cleaner/` and are not exported. See [configuration](configuration.md#app-cleaner) and [privacy](privacy.md).

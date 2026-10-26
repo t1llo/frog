@@ -1,33 +1,33 @@
 import Foundation
 
-/// How the sidebar orders the features that have a page: pinned ones first, then the others, each group in the
+/// How the sidebar orders the features: pinned ones first, then the others, each group in the
 /// order the user arranged. A feature the stored order does not name, such as one a later Frog adds, takes its
 /// place after the feature it follows in the catalog.
 public struct SidebarArrangement: Equatable, Sendable {
-    /// Every feature with a page, in the user's order.
+    /// Every feature, in the user's order.
     public private(set) var order: [FeatureID]
     public private(set) var pinned: Set<FeatureID>
 
     public init(order stored: [String], pinned: Set<String>) {
         var order: [FeatureID] = []
         for id in stored {
-            if let feature = FeatureID(rawValue: id), feature.hasPage, !order.contains(feature) { order.append(feature) }
+            if let feature = FeatureID(rawValue: id), !order.contains(feature) { order.append(feature) }
         }
-        let catalog = FeatureID.allCases.filter(\.hasPage)
+        let catalog = FeatureID.allCases
         for (index, feature) in catalog.enumerated() where !order.contains(feature) {
             let previous = catalog[..<index].last { order.contains($0) }
             order.insert(feature, at: previous.flatMap { order.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
         }
         self.order = order
-        self.pinned = Set(pinned.compactMap(FeatureID.init(rawValue:)).filter(\.hasPage))
+        self.pinned = Set(pinned.compactMap(FeatureID.init(rawValue:)))
     }
 
     /// What settings keep: the whole order, so a feature turned on later already has its place; nothing while it
     /// is the catalog's, so later catalog changes still reach the user.
-    public var storedOrder: [String] { order == FeatureID.allCases.filter(\.hasPage) ? [] : order.map(\.rawValue) }
+    public var storedOrder: [String] { order == FeatureID.allCases ? [] : order.map(\.rawValue) }
     public var storedPinned: Set<String> { Set(pinned.map(\.rawValue)) }
     /// The user pinned or moved something, so Reset has something to undo.
-    public var isCustom: Bool { !pinned.isEmpty || order != FeatureID.allCases.filter(\.hasPage) }
+    public var isCustom: Bool { !pinned.isEmpty || order != FeatureID.allCases }
 
     /// The features of `visible` as the sidebar lists them, pinned ones first.
     public func shown(_ visible: [FeatureID]) -> [FeatureID] {

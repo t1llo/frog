@@ -173,31 +173,27 @@ struct AppearanceSettingsView: View {
             }
         }
         Divider()
-        CompactRow(title: "Window transparency", detail: "Blur the desktop behind the whole window. Text stays opaque; fields keep a readable tint.") {
+        CompactRow(title: "Window transparency") {
             HStack(spacing: 10) {
                 Slider(value: Binding(get: { appearance.transparency }, set: { amount in var value = appearance; value.transparency = amount; draft.change(value) }), in: 0...1, onEditingChanged: { if !$0 { draft.commit() } }).frame(width: 145)
                 Text("\(Int(appearance.transparency * 100))%").font(.system(size: 11)).monospacedDigit().frame(width: 32)
             }
         }
         Divider()
-        CompactRow(title: "Popup transparency", detail: "Independent backdrop blur for every Frog popup, including the menu, usage, recording and shortcut panels.") {
+        CompactRow(title: "Popup transparency", detail: "Menus and panels.") {
             HStack(spacing: 10) {
                 Slider(value: Binding(get: { appearance.popupTransparency ?? 0 }, set: { amount in var value = appearance; value.popupTransparency = amount; draft.change(value) }), in: 0...1, onEditingChanged: { if !$0 { draft.commit() } }).frame(width: 145)
                 Text("\(Int((appearance.popupTransparency ?? 0) * 100))%").font(.system(size: 11)).monospacedDigit().frame(width: 32)
             }
         }
         if reduceTransparency || contrast == .increased {
-            Text("macOS accessibility settings currently keep surfaces opaque. Your transparency preferences are saved for later.")
+            Text("Off while macOS reduces transparency.")
                 .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
         }
         Divider()
-        CompactRow(title: "Custom palette", detail: "Override single colours of the theme in the configuration file, then Reload.") {
+        CompactRow(title: "Custom palette", detail: "palette.light.* and palette.dark.* in the configuration file.") {
             Button("Open config") { model.openConfiguration() }
         }
-        DisclosureGroup("How this works") {
-            Text("Edit palette.light.* and palette.dark.* in config. Background, sidebar, surface, inset, border, text, muted and accent inherit the preset until overridden. Choosing a preset resets overrides.")
-                .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
-        }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
     }
     private var appearance: AppearancePreferences { draft.value ?? model.configuration.preferences.appearance ?? AppearancePreferences() }
     /// The nearest six-digit sRGB hex of a picked colour.

@@ -164,20 +164,10 @@ public enum ConfigurationFile {
                 throw FrogError.message("Menu bar auto-hide delay must be between 1 and 3600 seconds.")
             }
         }
-        // slot: explain
         try preferences.toolkit?.explain?.validate()
-        // slot: windows
         try WindowPreferences.validate(preferences, usedShortcuts: &shortcuts)
-        // slot: cleaner
-        // slot: command-bar
         try preferences.toolkit?.commandBar?.validate()
-        // slot: usage
         try preferences.toolkit?.usage?.validate()
-        // slot: clipboard
-        // slot: snippets
-        // slot: emoji-picker
-        // slot: color-picker
-        // slot: quicklinks
         guard (preferences.appearance ?? AppearancePreferences()).valid else {
             throw FrogError.message("Appearance requires six-digit RGB palette colors, known semantic color names and transparency between 0 and 1.")
         }

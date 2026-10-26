@@ -1,135 +1,93 @@
 import Foundation
 
-/// Stable identities shared by configuration, navigation and command routing.
+/// Stable identities shared by configuration, navigation and command routing. The order is the sidebar's and the
+/// Features page's: text and AI first, then finding and arranging things, small tools, and the Mac itself.
 public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
     case writing
-    // slot: explain
     case explain
     case dictation
+    case commandBar
     case applicationShortcuts
+    case windows
     case windowSwitcher
     case clipboard
-    case stayAwake
-    case commandBar
-    case usage
     case snippets
     case scratchpad
     case shelf
     case scripts
     case quickActions
-    case menuBar
+    case usage
     case systemMonitor
-    // slot: windows
-    case windows
-    // slot: cleaner
+    case stayAwake
+    case menuBar
     case cleaner
-    // slot: emoji-picker
-    // slot: processes
-    // slot: color-picker
-    // slot: quicklinks
+
     public var id: String { rawValue }
     public var title: String {
         switch self {
         case .writing: "Writing"
+        case .explain: "Explain"
         case .dictation: "Dictation"
+        case .commandBar: "Command bar"
         case .applicationShortcuts: "Shortcuts"
+        case .windows: "Windows"
         case .windowSwitcher: "Window switcher"
         case .clipboard: "Clipboard"
-        case .stayAwake: "Stay awake"
-        case .commandBar: "Command bar"
-        case .usage: "Mr. Usage"
         case .snippets: "Snippets"
         case .scratchpad: "Notes"
         case .shelf: "Shelf"
         case .scripts: "Scripts"
         case .quickActions: "Quick actions"
-        case .menuBar: "Menu bar"
+        case .usage: "Mr. Usage"
         case .systemMonitor: "System monitor"
-        // slot: explain
-        case .explain: "Explain"
-        // slot: windows
-        case .windows: "Windows"
-        // slot: cleaner
+        case .stayAwake: "Stay awake"
+        case .menuBar: "Menu bar"
         case .cleaner: "App cleaner"
-        // slot: emoji-picker
-        // slot: processes
-        // slot: color-picker
-        // slot: quicklinks
         }
     }
     public var symbol: String {
         switch self {
         case .writing: "text.cursor"
+        case .explain: "questionmark.bubble"
         case .dictation: "waveform"
+        case .commandBar: "magnifyingglass"
         case .applicationShortcuts: "command"
+        case .windows: "rectangle.split.2x1"
         case .windowSwitcher: "macwindow.on.rectangle"
         case .clipboard: "clipboard"
-        case .stayAwake: "cup.and.saucer"
-        case .commandBar: "magnifyingglass"
-        case .usage: "chart.bar.xaxis"
         case .snippets: "text.badge.plus"
         case .scratchpad: "note.text"
         case .shelf: "tray"
         case .scripts: "terminal"
         case .quickActions: "bolt"
-        case .menuBar: "menubar.rectangle"
+        case .usage: "chart.bar.xaxis"
         case .systemMonitor: "gauge.medium"
-        // slot: explain
-        case .explain: "questionmark.bubble"
-        // slot: windows
-        case .windows: "rectangle.split.2x1"
-        // slot: cleaner
+        case .stayAwake: "cup.and.saucer"
+        case .menuBar: "menubar.rectangle"
         case .cleaner: "trash.circle"
-        // slot: emoji-picker
-        // slot: processes
-        // slot: color-picker
-        // slot: quicklinks
         }
     }
+    /// One line for the Features page and the command bar's search.
     public var detail: String {
         switch self {
-        case .writing: "Rewrite selected text with your rules and local or connected models."
-        case .dictation: "Turn speech into text with local or connected speech models."
-        case .applicationShortcuts: "Launch applications and run window or system actions."
-        case .windowSwitcher: "Switch between individual windows with your keyboard."
-        case .clipboard: "Search and paste recent clipboard items kept in memory."
-        case .stayAwake: "Keep background work running on a timed, opt-in session."
-        case .commandBar: "Search applications, files, macOS settings, windows and Frog commands."
-        case .usage: "View plan limits, token activity and estimated costs from your AI tools."
-        case .snippets: "Keep reusable text with date, time and clipboard variables."
-        case .scratchpad: "Write local notes with Markdown preview."
-        case .shelf: "Keep files, links and text ready for your next drag or copy."
-        case .scripts: "Save and explicitly run local shell scripts with captured output."
-        case .quickActions: "Common Mac actions and useful text tools in one place."
-        case .menuBar: "Keep menu bar items behind a divider and reveal them when needed."
-        case .systemMonitor: "See CPU, GPU, disk and power activity in the Frog menu."
-        // slot: explain
-        case .explain: "Ask about selected text and read the answer in a panel next to it, without changing the text."
-        // slot: windows
-        case .windows: "Snap, tile and arrange windows with the mouse or keyboard."
-        // slot: cleaner
-        case .cleaner: "Uninstall apps with the files they leave behind. Everything goes to the Trash first."
-        // slot: emoji-picker
-        // slot: processes
-        // slot: color-picker
-        // slot: quicklinks
-        }
-    }
-
-    /// Small background tools are configured in Features rather than separate pages.
-    public var hasPage: Bool {
-        switch self {
-        case .windowSwitcher: false
-        case .clipboard: false
-        case .systemMonitor: false
-        // slot: explain
-        // slot: windows
-        // slot: cleaner
-        // slot: emoji-picker
-        // slot: processes
-        // slot: color-picker
-        // slot: quicklinks
-        default: true
+        case .writing: "Rewrite selected text with your rules."
+        case .explain: "Ask about selected text and get a short answer."
+        case .dictation: "Turn speech into text."
+        case .commandBar: "Find apps, files, settings and commands."
+        case .applicationShortcuts: "Open apps and run Mac actions with a shortcut."
+        case .windows: "Snap and tile windows."
+        case .windowSwitcher: "Switch between windows with the keyboard."
+        case .clipboard: "Search and paste text you copied."
+        case .snippets: "Reusable text with variables."
+        case .scratchpad: "Markdown notes."
+        case .shelf: "Hold files, links and text for later."
+        case .scripts: "Run your own shell scripts."
+        case .quickActions: "Mac controls and small text tools."
+        case .usage: "Plan limits and activity of your AI tools."
+        case .systemMonitor: "CPU, GPU, disk and battery."
+        case .stayAwake: "Keep the Mac awake, also with the lid closed."
+        case .menuBar: "Hide menu bar icons behind a divider."
+        case .cleaner: "Uninstall apps with the files they leave behind."
         }
     }
 }
@@ -149,20 +107,11 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
     public var systemMonitor: SystemMonitorPreferences?
     /// The icon that says Stay awake is on.
     public var stayAwake: StayAwakePreferences?
-    // slot: explain
     public var explain: ExplainSettings?
-    // slot: windows
     public var windows: WindowPreferences?
-    // slot: cleaner
     public var cleaner: CleanerPreferences?
-    // slot: command-bar
     public var commandBar: CommandBarPreferences?
     public var commandBarSettings: CommandBarPreferences { commandBar ?? CommandBarPreferences() }
-    // slot: clipboard
-    // slot: snippets
-    // slot: emoji-picker
-    // slot: color-picker
-    // slot: quicklinks
     public var effectiveCommandBarHotkey: Hotkey { commandBarHotkey ?? Hotkey(keyCode: 49, modifiers: 4096 | 2048) }
     public var effectiveWindowSwitcherHotkey: Hotkey { windowSwitcherHotkey ?? Hotkey(keyCode: 48, modifiers: 256) }
     public init() {}
@@ -177,19 +126,10 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         case menuBar
         case systemMonitor
         case stayAwake
-        // slot: explain
         case explain
-        // slot: windows
         case windows
-        // slot: cleaner
         case cleaner
-        // slot: command-bar
         case commandBar
-        // slot: clipboard
-        // slot: snippets
-        // slot: emoji-picker
-        // slot: color-picker
-        // slot: quicklinks
     }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -203,19 +143,10 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         menuBar = try values.decodeIfPresent(MenuBarPreferences.self, forKey: .menuBar)
         systemMonitor = try values.decodeIfPresent(SystemMonitorPreferences.self, forKey: .systemMonitor)
         stayAwake = try values.decodeIfPresent(StayAwakePreferences.self, forKey: .stayAwake)
-        // slot: explain
         explain = try values.decodeIfPresent(ExplainSettings.self, forKey: .explain)
-        // slot: windows
         windows = try values.decodeIfPresent(WindowPreferences.self, forKey: .windows)
-        // slot: cleaner
         cleaner = try values.decodeIfPresent(CleanerPreferences.self, forKey: .cleaner)
-        // slot: command-bar
         commandBar = try values.decodeIfPresent(CommandBarPreferences.self, forKey: .commandBar)
-        // slot: clipboard
-        // slot: snippets
-        // slot: emoji-picker
-        // slot: color-picker
-        // slot: quicklinks
     }
 }
 
@@ -320,7 +251,7 @@ extension Preferences {
     public var sidebarFeatures: [FeatureID] {
         let settings = toolkitSettings
         return SidebarArrangement(order: settings.sidebarOrder, pinned: settings.pinnedSidebarItems).shown(
-            FeatureID.allCases.filter { $0.hasPage && featureEnabled($0) && !settings.hiddenSidebarItems.contains($0.rawValue) })
+            FeatureID.allCases.filter { featureEnabled($0) && !settings.hiddenSidebarItems.contains($0.rawValue) })
     }
     /// Window arrangement belongs to Shortcuts, independently of the switcher overlay.
     public func ruleFeatureEnabled(_ rule: Rule) -> Bool {
@@ -337,6 +268,6 @@ public enum ToolkitRoute: Hashable, Sendable {
     case feature(FeatureID), history, models, features, settings, statistics
     public func available(in preferences: Preferences) -> Bool {
         guard case .feature(let feature) = self else { return true }
-        return feature.hasPage && preferences.featureEnabled(feature)
+        return preferences.featureEnabled(feature)
     }
 }

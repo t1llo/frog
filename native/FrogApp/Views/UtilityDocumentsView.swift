@@ -16,14 +16,6 @@ struct UtilityDocumentsView: View {
     @State private var dropTask: Task<Void, Never>?
     @State private var deleting: UUID?
     private var title: String { switch kind { case .note: "Notes"; case .snippet: "Snippets"; case .shelf: "Shelf"; case .script: "Scripts" } }
-    private var subtitle: String {
-        switch kind {
-        case .note: "A private space for notes on this Mac."
-        case .snippet: "Reusable text, ready to copy."
-        case .shelf: "Keep files, links and text close."
-        case .script: "Your local scripts and their output."
-        }
-    }
     private var deleteQuestion: String {
         switch kind {
         case .note: "Delete this note?"
@@ -35,7 +27,7 @@ struct UtilityDocumentsView: View {
     private var items: [UtilityDocument] { documents.items.filter { $0.kind == kind && (search.isEmpty || ($0.title + " " + $0.text).localizedStandardContains(search)) } }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            PageHeader(title: title, subtitle: subtitle) {
+            PageHeader(title: title) {
                 if kind == .shelf { Button("Paste", systemImage: "clipboard") { pasteToShelf() }.disabled(!documents.loaded) }
                 Button("New", systemImage: "plus") {
                     selected = documents.add(UtilityDocument(kind: kind, title: kind.newItemTitle))
@@ -274,7 +266,7 @@ struct QuickActionsView: View {
     @State private var result = ""
     var body: some View {
         PageScroll {
-            PageHeader(title: "Quick actions", subtitle: "Useful controls and local text tools.")
+            PageHeader(title: "Quick actions")
             HStack {
                 Button("Switch appearance", systemImage: "circle.lefthalf.filled") {
                     var prefs = model.configuration.preferences

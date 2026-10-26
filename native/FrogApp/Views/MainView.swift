@@ -36,11 +36,11 @@ struct MainView: View {
         case .feature(let feature):
             switch feature {
             case .writing: RulesView(fixedCategory: .text)
-            case .dictation: RulesView(fixedCategory: .audio)
+            case .dictation: RulesView(fixedCategory: .audio, output: .replace) { RecordingSettingsView() }
             case .applicationShortcuts: RulesView(applications: true)
-            case .windowSwitcher: FeaturesView()
-            case .clipboard: FeaturesView()
-            case .systemMonitor: FeaturesView()
+            case .windowSwitcher: WindowSwitcherView()
+            case .clipboard: ClipboardView()
+            case .systemMonitor: SystemMonitorPage(monitor: model.systemMonitor)
             case .commandBar: CommandBarSettingsView()
             case .usage:
                 if let usage = model.toolkit.usage() { UsageDashboardView(usage: usage) }
@@ -56,16 +56,9 @@ struct MainView: View {
                     set: { value in
                         do { try model.updateToolkit { $0.menuBar = value.normalized } } catch { model.report(error) }
                     }))
-            // slot: explain
             case .explain: ExplainView()
-            // slot: windows
             case .windows: WindowsView()
-            // slot: cleaner
             case .cleaner: CleanerView(cleaner: model.cleaner)
-            // slot: emoji-picker
-            // slot: processes
-            // slot: color-picker
-            // slot: quicklinks
             }
         }
     }

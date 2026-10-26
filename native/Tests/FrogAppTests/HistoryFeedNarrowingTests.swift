@@ -70,9 +70,9 @@ final class HistoryFeedNarrowingTests: XCTestCase {
     }
 
     func testTheAnswersFilterShowsWhileExplainIsOnOrAnswersRemain() {
-        XCTAssertEqual(HistoryFilter.visible(explainEnabled: false, hasAnswers: false), [.text, .audio, .clipboard])
-        XCTAssertEqual(HistoryFilter.visible(explainEnabled: true, hasAnswers: false), [.text, .answers, .audio, .clipboard])
-        XCTAssertEqual(HistoryFilter.visible(explainEnabled: false, hasAnswers: true), [.text, .answers, .audio, .clipboard])
-        XCTAssertEqual(HistoryFilter.visible(explainEnabled: true, hasAnswers: true), [.text, .answers, .audio, .clipboard])
+        XCTAssertEqual(HistoryFilter.visible(explainEnabled: false, hasAnswers: false), [.text, .audio])
+        XCTAssertEqual(HistoryFilter.visible(explainEnabled: true, hasAnswers: false), [.text, .answers, .audio])
+        XCTAssertEqual(HistoryFilter.visible(explainEnabled: false, hasAnswers: true), [.text, .answers, .audio])
+        XCTAssertEqual(HistoryFilter.visible(explainEnabled: true, hasAnswers: true), [.text, .answers, .audio])
     }
 }

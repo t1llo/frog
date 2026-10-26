@@ -1,53 +1,55 @@
 import SwiftUI
 import FrogCore
-import FrogUsage
 
+/// Turns features on and off. Each feature's settings are on its own page.
 struct FeaturesView: View {
     @EnvironmentObject private var model: AppModel
     @State private var search = ""
     @State private var pending = Set<FeatureID>()
+
+    private var shown: [FeatureID] {
+        FeatureID.allCases.filter { search.isEmpty || ($0.title + " " + $0.detail).localizedStandardContains(search) }
+    }
+
     var body: some View {
-        ScrollViewReader { proxy in
-            PageScroll {
-                PageHeader(title: "Features", subtitle: "Choose the tools that belong in your Frog.")
-                SearchBox(placeholder: "Find a feature", text: $search)
-                ForEach(FeatureID.allCases.filter { search.isEmpty || ($0.title + " " + $0.detail).localizedStandardContains(search) }) { feature in
-                    featureCard(feature).id(feature)
-                }
-            }
-            .task(id: model.toolkit.featureSettingsSelection) {
-                if let feature = model.toolkit.featureSettingsSelection {
-                    search = ""
-                    await Task.yield()
-                    proxy.scrollTo(feature, anchor: .top)
-                }
+        PageScroll {
+            PageHeader(title: "Features")
+            SearchBox(placeholder: "Find a feature", text: $search)
+            let shown = shown
+            if shown.isEmpty {
+                FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another word.")
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(shown.enumerated()), id: \.element) { index, feature in
+                        if index > 0 { Divider().opacity(0.5).padding(.leading, 46) }
+                        row(feature)
+                    }
+                }.frogTableSurface()
             }
         }
     }
-    private func featureCard(_ feature: FeatureID) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: feature.symbol).font(.system(size: 17)).frame(width: 26, height: 28).foregroundStyle(FrogStyle.muted)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(feature.title).font(.system(size: 13, weight: .medium))
-                    Text(feature.detail).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
-                    if feature.hasPage, model.configuration.preferences.featureEnabled(feature) {
-                        Button("Open") { model.openFeature(feature) }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(FrogStyle.accent)
-                            .accessibilityLabel("Open \(feature.title)")
-                    }
-                }.frame(maxWidth: .infinity, alignment: .leading)
-                Toggle(feature.title, isOn: Binding(get: { model.configuration.preferences.featureEnabled(feature) }, set: { enabled in
-                    pending.insert(feature)
-                    Task {
-                        defer { pending.remove(feature) }
-                        do { try await model.setFeature(feature, enabled: enabled) } catch { model.report(error) }
-                    }
-                })).labelsHidden().toggleStyle(.switch).controlSize(.small).disabled(pending.contains(feature))
+
+    private func row(_ feature: FeatureID) -> some View {
+        let enabled = model.configuration.preferences.featureEnabled(feature)
+        return HStack(spacing: 12) {
+            Image(systemName: feature.symbol).font(.system(size: 14)).frame(width: 22).foregroundStyle(FrogStyle.muted)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L10n.text(feature.title)).font(.system(size: 12, weight: .medium))
+                Text(L10n.text(feature.detail)).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            if enabled {
+                Button("Open") { model.toolkit.select(.feature(feature)) }
+                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(FrogStyle.accent)
+                    .accessibilityLabel("Open \(feature.title)")
             }
-            if model.configuration.preferences.featureEnabled(feature), FeatureCardSettings.hasSettings(feature) {
-                Divider().opacity(0.5)
-                FeatureCardSettings(feature: feature)
-            }
-        }.padding(14).frogTableSurface()
+            Toggle(feature.title, isOn: Binding(get: { enabled }, set: { on in
+                pending.insert(feature)
+                Task {
+                    defer { pending.remove(feature) }
+                    do { try await model.setFeature(feature, enabled: on) } catch { model.report(error) }
+                }
+            })).labelsHidden().toggleStyle(.switch).controlSize(.small).disabled(pending.contains(feature))
+        }.padding(.horizontal, 12).padding(.vertical, 9)
     }
 }

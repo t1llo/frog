@@ -27,7 +27,7 @@ struct ExplainView: View {
                         })).labelsHidden().toggleStyle(.switch)
                     }
                     Divider()
-                    CompactRow(title: "Save answers to notes", detail: "Adds Save to note. Notes are Markdown files in a folder you choose.") {
+                    CompactRow(title: "Save answers to notes", detail: "Markdown files in a folder you choose.") {
                         Toggle("Save answers to notes", isOn: Binding(get: { settings.notes }, set: { value in
                             update { $0.notes = value }
                         })).labelsHidden().toggleStyle(.switch)
@@ -83,7 +83,7 @@ struct ExplainView: View {
 
     private var bubbleSection: some View {
         SettingsSection(title: "Selection bubble") {
-            CompactRow(title: "Show a bubble when you select text", detail: "Offers your rules next to text you select in other apps.") {
+            CompactRow(title: "Show a bubble when you select text") {
                 Toggle("Show a bubble when you select text", isOn: Binding(get: { settings.selectionBubble }, set: { value in
                     update { $0.selectionBubble = value }
                 })).labelsHidden().toggleStyle(.switch)

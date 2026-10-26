@@ -121,7 +121,7 @@ Record a shortcut under **Cheat sheet → Show window shortcuts while holding**.
 
 ## Window switcher
 
-The ⌘Tab window switcher, which switches between individual windows rather than apps, is a separate feature. **Related → Window switcher → Open in Features** on the Windows page takes you to its card.
+The ⌘Tab window switcher, which switches between individual windows rather than apps, is a separate feature with its own **Window switcher** page. Turn it on in **Features**.
 
 ## Accessibility
 

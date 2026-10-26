@@ -2,30 +2,27 @@ import XCTest
 @testable import FrogCore
 
 final class FeatureOrganizationTests: XCTestCase {
-    func testInlineToolsStayAvailableWithoutCreatingSidebarPages() {
+    func testEveryEnabledFeatureHasASidebarPage() {
         var preferences = Preferences()
-        for feature in [FeatureID.windowSwitcher, .clipboard, .commandBar] {
+        for feature in FeatureID.allCases {
             preferences.setFeature(feature, enabled: true)
+            XCTAssertTrue(preferences.sidebarFeatures.contains(feature), feature.rawValue)
+            XCTAssertTrue(ToolkitRoute.feature(feature).available(in: preferences), feature.rawValue)
+            preferences.setFeature(feature, enabled: false)
+            XCTAssertFalse(preferences.sidebarFeatures.contains(feature), feature.rawValue)
+            XCTAssertFalse(ToolkitRoute.feature(feature).available(in: preferences), feature.rawValue)
         }
-        XCTAssertTrue(preferences.featureEnabled(.windowSwitcher))
-        XCTAssertTrue(preferences.featureEnabled(.clipboard))
-        XCTAssertFalse(preferences.sidebarFeatures.contains(.windowSwitcher))
-        XCTAssertFalse(preferences.sidebarFeatures.contains(.clipboard))
-        XCTAssertTrue(preferences.sidebarFeatures.contains(.commandBar))
-        XCTAssertFalse(ToolkitRoute.feature(.windowSwitcher).available(in: preferences))
-        XCTAssertFalse(ToolkitRoute.feature(.clipboard).available(in: preferences))
-        XCTAssertTrue(ToolkitRoute.feature(.commandBar).available(in: preferences))
         XCTAssertTrue(ToolkitRoute.history.available(in: preferences))
     }
 
-    func testSystemMonitorIsOptInAndHasNoSidebarPage() throws {
+    func testSystemMonitorIsOptInAndGetsASidebarPage() throws {
         var preferences = Preferences()
         XCTAssertFalse(preferences.featureEnabled(.systemMonitor))
         preferences.setFeature(.systemMonitor, enabled: true)
         let restored = try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(preferences))
         XCTAssertTrue(restored.featureEnabled(.systemMonitor))
-        XCTAssertFalse(restored.sidebarFeatures.contains(.systemMonitor))
-        XCTAssertFalse(ToolkitRoute.feature(.systemMonitor).available(in: restored))
+        XCTAssertTrue(restored.sidebarFeatures.contains(.systemMonitor))
+        XCTAssertTrue(ToolkitRoute.feature(.systemMonitor).available(in: restored))
     }
 
     func testWindowActionsFollowShortcutsIndependentlyOfSwitcher() {
@@ -170,10 +167,11 @@ final class FeatureOrganizationTests: XCTestCase {
         }
     }
 
-    func testExistingFeaturesKeepTheirRelativeOrder() {
-        let existing: [FeatureID] = [.writing, .dictation, .applicationShortcuts, .windowSwitcher, .clipboard, .stayAwake,
-                                     .commandBar, .usage, .snippets, .scratchpad, .shelf, .scripts, .quickActions, .menuBar, .systemMonitor]
-        XCTAssertEqual(FeatureID.allCases.filter(existing.contains), existing)
+    /// The default sidebar order, grouped by kind. A user's own arrangement is stored and kept.
+    func testTheCatalogIsGroupedByKind() {
+        XCTAssertEqual(FeatureID.allCases, [.writing, .explain, .dictation, .commandBar, .applicationShortcuts, .windows,
+                                            .windowSwitcher, .clipboard, .snippets, .scratchpad, .shelf, .scripts, .quickActions,
+                                            .usage, .systemMonitor, .stayAwake, .menuBar, .cleaner])
     }
 
     func testEnsureToolkitRunsTheSwitcherMigration() {

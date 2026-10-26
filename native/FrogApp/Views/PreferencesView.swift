@@ -8,23 +8,19 @@ struct PreferencesView: View {
     @EnvironmentObject private var model: AppModel
     @State private var pendingConfiguration: Configuration?
     @State private var confirmingImport = false
-    /// A model folder chosen while models are downloaded in the current one, until it is confirmed.
-    @State private var pendingModelFolder: URL?
     @State private var legalDocument: LegalDocument?
     private var prefs: WorkflowPreferences { model.configuration.preferences.workflowSettings }
-    /// Seconds a local model stays loaded after its last use, besides unloading at once.
-    static let idleUnloadChoices = [120, 300, 900, 1800, 3600]
     var body: some View {
         ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                PageHeader(title: "Settings", subtitle: "General behaviour, appearance, permissions and data")
+                PageHeader(title: "Settings")
                 SettingsSection(title: "General") {
-                    CompactRow(title: "Setup assistant", detail: "Choose models and review permissions. Every step is optional.") {
+                    CompactRow(title: "Setup assistant") {
                         Button("Open setup…") { model.showSetup() }
                     }
                     Divider()
-                    CompactRow(title: "Start at login", detail: "Start quietly in the menu bar.") { Toggle("Start at login", isOn: Binding(get: { model.startAtLogin }, set: model.setStartAtLogin)).labelsHidden() }
+                    CompactRow(title: "Start at login") { Toggle("Start at login", isOn: Binding(get: { model.startAtLogin }, set: model.setStartAtLogin)).labelsHidden() }
                     if model.loginNeedsAttention {
                         HStack(spacing: 8) {
                             Text(model.loginStatus).font(.caption).foregroundStyle(FrogStyle.warning).fixedSize(horizontal: false, vertical: true)
@@ -35,60 +31,16 @@ struct PreferencesView: View {
                     Divider()
                     CompactRow(title: "Writing indicator") { Toggle("Writing indicator", isOn: preference(\.showProcessingIndicator)).labelsHidden() }
                     Divider()
-                    CompactRow(title: "Show rule shortcuts", detail: "Hold the shortcut to see your rules; release to dismiss.") {
+                    CompactRow(title: "Show rule shortcuts", detail: "Hold to see your rules.") {
                         HotkeyRecorder(hotkey: Binding(get: { prefs.shortcutPanelHotkey }, set: { value in update { $0.shortcutPanelHotkey = value } }))
                     }
                     if let issue = model.hotkeyErrors[AppModel.shortcutPanelID] { Text(issue).font(.caption).foregroundStyle(FrogStyle.warning) }
                     Divider()
-                    CompactRow(title: "Your tools", detail: "Choose which features appear and run in Frog.") {
-                        Button("Manage features") { model.toolkit.select(.features) }
-                    }
-                    Divider()
-                    CompactRow(title: "Statistics", detail: "Local activity and feature statistics.") {
+                    CompactRow(title: "Statistics") {
                         Button("View statistics") { model.toolkit.select(.statistics) }
                     }
                 }
                 SettingsSection(title: "Appearance") { AppearanceSettingsView(model: model) }
-                SettingsSection(title: "Local models") {
-                    CompactRow(title: "Unload idle models", detail: "Applies to models running inside Frog.") {
-                        CompactMenu(value: LocalModelSettings.idleTitle(seconds: prefs.idleUnloadSeconds)) {
-                            Button("Immediately") { update { $0.idleUnloadSeconds = 0 } }.accessibilityAddTraits(prefs.idleUnloadSeconds == 0 ? .isSelected : [])
-                            ForEach(Self.idleUnloadChoices, id: \.self) { seconds in
-                                Button(LocalModelSettings.idleTitle(seconds: seconds)) { update { $0.idleUnloadSeconds = seconds } }.accessibilityAddTraits(prefs.idleUnloadSeconds == seconds ? .isSelected : [])
-                            }
-                        }
-                    }
-                    Divider()
-                    CompactRow(title: model.localModels.loaded.isEmpty ? "No models loaded" : "Models in memory", detail: LocalModelSettings.inMemory(model.localModels.loaded, catalog: model.configuration.modelCatalog)) {
-                        Button("Unload now") { Task { await model.localModels.unload() } }.disabled(model.localModels.loaded.isEmpty || model.localModels.busy || model.dictation.active)
-                    }
-                }
-                SettingsSection(title: "Model storage") {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(model.localModels.root.path).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
-                        Spacer(minLength: 8)
-                        if let use = LocalModelSettings.diskUse(model.localModels.totalDiskUse(of: model.localModels.installed)) {
-                            Text(use).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize()
-                        }
-                    }
-                    Text("Existing downloads stay in their current folder.").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                    HStack {
-                        Button("Choose folder…") { chooseModelFolder() }
-                        Button("Use default") { setModelFolder(model.localModels.defaultDirectory) }.disabled(model.localModels.root == model.localModels.defaultDirectory)
-                        Spacer()
-                        Button("Show in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: model.localModels.root.path) }
-                    }.disabled(model.localModels.busy || !model.localModels.progress.isEmpty || model.dictation.active)
-                }
-                SettingsSection(title: "Recording") {
-                    MicrophoneRow(dictation: model.dictation, selection: prefs.microphoneID) { id in update { $0.microphoneID = id } }
-                    Divider()
-                    CompactRow(title: "Mute Mac audio while recording") { Toggle("Mute Mac audio while recording", isOn: Binding(get: { prefs.muteWhileRecording ?? false }, set: { value in update { $0.muteWhileRecording = value } })).labelsHidden() }
-                    Divider()
-                    CompactRow(title: "Cancel recording", detail: "Escape always cancels.") {
-                        HotkeyRecorder(hotkey: Binding(get: { prefs.cancelRecordingHotkey }, set: { value in update { $0.cancelRecordingHotkey = value } }))
-                    }
-                    if let issue = model.hotkeyErrors[AppModel.cancelRecordingID] { Text(issue).font(.caption).foregroundStyle(FrogStyle.warning) }
-                }
                 SettingsSection(title: "Permissions") {
                     permission("Accessibility", allowed: model.accessibilityGranted) { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() }
                     Divider()
@@ -99,7 +51,7 @@ struct PreferencesView: View {
                 SettingsSection(title: "History") {
                     CompactRow(title: "Save history on this Mac") { Toggle("Save history on this Mac", isOn: preference(\.historyEnabled)).labelsHidden() }
                     Divider()
-                    CompactRow(title: "Hide history text", detail: "Mask previews and details until revealed. Saved text is unchanged.") {
+                    CompactRow(title: "Hide history text", detail: "Masked until you reveal it.") {
                         Toggle("Hide history text", isOn: preference(\.hideHistoryText)).labelsHidden()
                     }
                     Divider()
@@ -108,7 +60,7 @@ struct PreferencesView: View {
                     Text(model.historyFileURL.path).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
                 }
                 SettingsSection(title: "Configuration") {
-                    CompactRow(title: "Configuration file", detail: "Simple key=value settings and palette colors. Edit, save, then Reload to apply without restarting.") {
+                    CompactRow(title: "Configuration file", detail: "Edit, save, then Reload.") {
                         HStack {
                             Button("Open config") { model.openConfiguration() }
                             Button("Reload") { do { try model.reloadConfiguration() } catch { model.report(error) } }
@@ -116,15 +68,9 @@ struct PreferencesView: View {
                         }
                     }
                     Text(model.configurationFileURL.path).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
-                    Text("Keep config and config.json in a dotfiles manager or a synced folder to use them on several Macs.")
-                        .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                    DisclosureGroup("How this works") {
-                        Text("Sync both files with a dotfiles manager. Rules, connections and custom model definitions stay in config.json. App edits preserve comments; external edits must be reloaded first.")
-                            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-                    }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                     Button("Show configuration folder") { NSWorkspace.shared.activateFileViewerSelecting([model.configurationFileURL]) }
                     Divider()
-                    CompactRow(title: "Import / export", detail: "Rules, models and preferences. API keys stay in Keychain.") {
+                    CompactRow(title: "Import / export", detail: "API keys stay in Keychain.") {
                         HStack {
                             Button("Import…") { chooseConfiguration() }.disabled(model.isProcessing || model.isTestingProvider || model.dictation.active)
                             Button("Export…") { exportConfiguration() }
@@ -141,8 +87,6 @@ struct PreferencesView: View {
                         Button("Clear log") { model.clearRecentErrors() }
                     }.disabled(model.recentErrors.isEmpty)
                     DisclosureGroup("Recent errors (\(model.recentErrors.count))") {
-                        Text("Last 100 errors from this session. Banners disappear after 6 seconds.")
-                            .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                         if model.recentErrors.isEmpty {
                             Text("No errors recorded.").font(.system(size: 11)).foregroundStyle(FrogStyle.muted).padding(.vertical, 8)
                         } else {
@@ -174,7 +118,6 @@ struct PreferencesView: View {
                     CompactRow(title: "Made by Tillo") { Link("beffa.xyz ↗", destination: URL(string: "https://beffa.xyz")!) }
                     CompactRow(title: "Contact") { Link("frog@beffa.xyz", destination: URL(string: "mailto:frog@beffa.xyz")!) }
                     Text("Build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                    Text("Internal models run on your Mac. External providers receive the text or audio you send. No analytics.").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                 }.sheet(item: $legalDocument) { LegalDocumentView(document: $0) }
             }.toggleStyle(.switch).controlSize(.small).padding(20).frame(maxWidth: 630).frame(maxWidth: .infinity).minimalScrollbars()
         }.onAppear { model.refreshSystemStatus(forceLoginStatus: true) }
@@ -188,10 +131,6 @@ struct PreferencesView: View {
                 Button("Replace configuration") { if let pendingConfiguration { do { try model.importConfiguration(pendingConfiguration) } catch { model.report(error) } }; pendingConfiguration = nil }
                 Button("Cancel", role: .cancel) { pendingConfiguration = nil }
             } message: { Text("The current settings are backed up. Provider keys may need to be re-entered.") }
-            .confirmationDialog(modelFolderChange?.title ?? "Use another model folder?", isPresented: Binding(get: { pendingModelFolder != nil }, set: { if !$0 { pendingModelFolder = nil } }), titleVisibility: .visible) {
-                Button("Use new folder") { if let url = pendingModelFolder { pendingModelFolder = nil; applyModelFolder(url) } }
-                Button("Cancel", role: .cancel) { pendingModelFolder = nil }
-            } message: { Text(modelFolderChange?.message ?? "") }
         }
     }
     private func permission(_ title: String, allowed: Bool, action: @escaping () -> Void) -> some View {
@@ -214,81 +153,6 @@ struct PreferencesView: View {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { pendingConfiguration = try ConfigurationFile.read(from: url); confirmingImport = true } catch { model.report(error) }
-    }
-    private func chooseModelFolder() {
-        let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false; panel.directoryURL = model.localModels.root; panel.title = "Model download folder"
-        guard panel.runModal() == .OK, let url = panel.url else { return }; setModelFolder(url)
-    }
-    private var modelFolderChange: LocalModelSettings.FolderChange? {
-        pendingModelFolder.flatMap { folderChange(to: $0) }
-    }
-    private func folderChange(to url: URL) -> LocalModelSettings.FolderChange? {
-        let models = model.localModels
-        return LocalModelSettings.folderChange(from: models.root, to: url, installed: models.installed.count, bytes: models.totalDiskUse(of: models.installed))
-    }
-    /// Asks first when the downloaded models would stay behind in the current folder.
-    private func setModelFolder(_ url: URL) {
-        guard !model.dictation.active else { return }
-        if folderChange(to: url) != nil { pendingModelFolder = url } else { applyModelFolder(url) }
-    }
-    private func applyModelFolder(_ url: URL) { guard !model.dictation.active else { return }; Task { do { try await model.localModels.changeDirectory(to: url) } catch { model.report(error) } } }
-}
-
-/// The Microphone row of the Recording section. Reading the microphones asks Core Audio about
-/// every device, and the page draws again for every change of the app, once a second while
-/// dictating. So they are read when the row appears and when a device is connected or removed.
-struct MicrophoneRow: View {
-    @ObservedObject var dictation: DictationController
-    let selection: String?
-    var deviceChanges: () -> AsyncStream<Void> = AudioDeviceChanges.stream
-    let choose: (String?) -> Void
-    var body: some View {
-        CompactRow(title: "Microphone") {
-            CompactMenu(value: dictation.microphones.first { String($0.id) == selection }?.name ?? "System default") {
-                Button { choose(nil) } label: { Label("System default", systemImage: selection == nil ? "checkmark" : "mic") }
-                    .accessibilityAddTraits(selection == nil ? .isSelected : [])
-                ForEach(dictation.microphones, id: \.id) { device in
-                    Button { choose(String(device.id)) } label: { Label(device.name, systemImage: selection == String(device.id) ? "checkmark" : "mic") }
-                        .accessibilityAddTraits(selection == String(device.id) ? .isSelected : [])
-                }
-            }
-        }
-        // Read before the first frame, so the row does not show the default first.
-        .onAppear { dictation.refreshMicrophones() }
-        .task { for await _ in deviceChanges() { dictation.refreshMicrophones() } }
-    }
-}
-
-/// What the Local models section says about the idle time and about the models in memory.
-enum LocalModelSettings {
-    /// The idle time as it is saved. The configuration file takes any number of seconds, not only the menu's choices.
-    static func idleTitle(seconds: Int) -> String {
-        guard seconds > 0 else { return "Immediately" }
-        let minutes = seconds / 60, rest = seconds % 60
-        if minutes == 0 { return "\(rest) sec" }
-        return rest == 0 ? "\(minutes) min" : "\(minutes) min \(rest) sec"
-    }
-    /// The names of the models in memory, in the order of the catalog.
-    static func inMemory(_ loaded: Set<String>, catalog: [LocalModelDescriptor]) -> String? {
-        guard !loaded.isEmpty else { return nil }
-        let known = catalog.filter { loaded.contains($0.id) }
-        return (known.map(\.name) + loaded.subtracting(known.map(\.id)).sorted()).joined(separator: ", ")
-    }
-    /// What the downloaded models take on the disk of the model folder.
-    static func diskUse(_ bytes: Int64?) -> String? {
-        bytes.map { "Models use " + LocalModelDescriptor.byteCount($0) }
-    }
-    struct FolderChange: Equatable { let title: String; let message: String }
-    /// What Frog asks before it uses another model folder while models are downloaded
-    /// in this one. It does not move them, so they stay where they are and take their space.
-    static func folderChange(from root: URL, to location: URL, installed: Int, bytes: Int64?) -> FolderChange? {
-        guard installed > 0, root.standardizedFileURL.path != location.standardizedFileURL.path else { return nil }
-        let one = installed == 1, folder = "“\(root.lastPathComponent)”"
-        let use = bytes.map { " and keep\(one ? "s" : "") using " + LocalModelDescriptor.byteCount($0) } ?? ""
-        let models = one ? "The model downloaded in \(folder) stays there" : "The \(installed) models downloaded in \(folder) stay there"
-        return FolderChange(title: "Use another model folder?",
-                            message: "\(models)\(use); Frog does not move \(one ? "it" : "them"). Frog will list only the models in the new folder. Choose this folder again to use \(one ? "it" : "them").")
     }
 }
 

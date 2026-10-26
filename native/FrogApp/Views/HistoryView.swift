@@ -1,11 +1,22 @@
 import SwiftUI
 import FrogCore
 
+/// Frog's own activity: rewritten text, answers and dictation.
 struct HistoryView: View {
     @EnvironmentObject private var model: AppModel
     @StateObject var visibility = HistoryVisibility()
-    var body: some View { HistoryContent(clipboard: model.clipboardHistoryStore, visibility: visibility) }
+    var body: some View { HistoryContent(clipboard: model.clipboardHistoryStore, visibility: visibility, scope: .activity) }
 }
+
+/// The Clipboard page: its shortcut and the text copied since Frog started, kept in memory only.
+struct ClipboardView: View {
+    @EnvironmentObject private var model: AppModel
+    @StateObject var visibility = HistoryVisibility()
+    var body: some View { HistoryContent(clipboard: model.clipboardHistoryStore, visibility: visibility, scope: .clipboard) }
+}
+
+/// Which list the page shows: saved activity, or the copied text in memory.
+enum HistoryScope { case activity, clipboard }
 
 /// Reveal state is view-local and never part of saved application preferences.
 @MainActor
@@ -17,31 +28,36 @@ private struct HistoryContent: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var clipboard: ClipboardHistoryStore
     @ObservedObject var visibility: HistoryVisibility
-    private var clipboardSelected: Bool { model.historyFilter == .clipboard }
+    let scope: HistoryScope
+    private var clipboardSelected: Bool { scope == .clipboard }
+    /// The Clipboard page always shows copied text; History offers its own filters.
+    private var filter: HistoryFilter? { clipboardSelected ? .clipboard : model.historyFilter == .clipboard ? nil : model.historyFilter }
     @State private var viewing: UUID?
     @State private var search = ""
     @State private var confirmClear = false
     @State private var deleting: HistoryItem?
     @State private var copiedID: UUID?
     @State private var note: NoteProgress?
-    init(clipboard: ClipboardHistoryStore, visibility: HistoryVisibility) {
-        self.clipboard = clipboard; self.visibility = visibility
+    init(clipboard: ClipboardHistoryStore, visibility: HistoryVisibility, scope: HistoryScope) {
+        self.clipboard = clipboard; self.visibility = visibility; self.scope = scope
     }
     private func hidden(_ entry: HistoryItem) -> Bool { (entry.requiresReveal || model.configuration.preferences.hideHistoryText) && !visibility.revealed.contains(entry.id) }
 
-    private var allEntries: [HistoryItem] { HistoryFeed.items(saved: model.history, clipboard: clipboard.entries) }
+    private var allEntries: [HistoryItem] {
+        clipboardSelected ? HistoryFeed.items(saved: [], clipboard: clipboard.entries) : HistoryFeed.items(saved: model.history, clipboard: [])
+    }
 
     var body: some View {
         // Merged and sorted once per pass; the list shown is narrowed from it.
         let all = allEntries
-        let displayedEntries = HistoryFeed.narrowed(all, filter: model.historyFilter, search: search, revealed: visibility.revealed)
+        let displayedEntries = HistoryFeed.narrowed(all, filter: filter, search: search, revealed: visibility.revealed)
         let lastEntryID = displayedEntries.last?.id
-        let emptyState = HistoryEmptyState.describing(all: all, shown: displayedEntries, filter: model.historyFilter, search: search,
+        let emptyState = HistoryEmptyState.describing(all: all, shown: displayedEntries, filter: filter, search: search,
                                                       clipboardEnabled: model.configuration.preferences.featureEnabled(.clipboard))
         VStack(alignment: .leading, spacing: 14) {
             if let viewing = all.first(where: { $0.id == self.viewing }) {
                 HStack {
-                    Button { self.viewing = nil } label: { Label("History", systemImage: "arrow.left") }
+                    Button { self.viewing = nil } label: { Label(clipboardSelected ? "Clipboard" : "History", systemImage: "arrow.left") }
                         .keyboardShortcut(.cancelAction)
                         // ⌘[ goes back too, through a button that is not drawn.
                         .background { Button("Back to history") { self.viewing = nil }.keyboardShortcut("[", modifiers: .command).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true) }
@@ -53,7 +69,6 @@ private struct HistoryContent: View {
                 }.frame(height: 32)
                 PageHeader(title: viewing.title, subtitle: viewing.timestamp.formatted(date: .abbreviated, time: .shortened))
                 if let saved = viewing.savedEntry { interruptionStatus(saved) }
-                if viewing.clipboardEntry != nil { Text("Clipboard · Memory only · Cleared when disabled or Frog quits").font(.system(size: 11)).foregroundStyle(FrogStyle.muted) }
                 ScrollView {
                     if hidden(viewing) {
                         VStack(spacing: 12) {
@@ -83,29 +98,32 @@ private struct HistoryContent: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
-            PageHeader(title: "History", subtitle: clipboardSelected ? "Copied text, kept in memory only." : "Recent text, audio and clipboard activity.") {
-                HStack {
-                    if clipboardSelected {
-                        Button("Clipboard settings") { model.openFeature(.clipboard) }
-                    } else if !model.configuration.preferences.historyEnabled {
-                        Button("Enable saved history") {
-                            var preferences = model.configuration.preferences
-                            preferences.historyEnabled = true
-                            do { try model.savePreferences(preferences) } catch { model.report(error) }
+                PageHeader(title: clipboardSelected ? "Clipboard" : "History") {
+                    HStack {
+                        if clipboardSelected {
+                            ClipboardShortcutControl()
+                        } else if !model.configuration.preferences.historyEnabled {
+                            Button("Enable saved history") {
+                                var preferences = model.configuration.preferences
+                                preferences.historyEnabled = true
+                                do { try model.savePreferences(preferences) } catch { model.report(error) }
+                            }
                         }
+                        Menu {
+                            Button(clipboardSelected ? "Clear clipboard" : "Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }
+                                .disabled(clipboardSelected ? clipboard.entries.isEmpty : all.isEmpty)
+                        } label: { Image(systemName: "ellipsis").frame(width: 26).modifier(CompactActionSurface()) }
+                            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help(clipboardSelected ? "Clipboard actions" : "History actions")
                     }
-                    Menu {
-                        Button(clipboardSelected ? "Clear clipboard" : "Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }
-                            .disabled(clipboardSelected ? clipboard.entries.isEmpty : all.isEmpty)
-                    } label: { Image(systemName: "ellipsis").frame(width: 26).modifier(CompactActionSurface()) }
-                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("History actions")
                 }
-            }
-                ListToolbar(placeholder: "Search history", search: $search) {
-                    FilterTag(title: "All", selected: model.historyFilter == nil) { model.historyFilter = nil }
-                    ForEach(HistoryFilter.visible(explainEnabled: model.configuration.preferences.featureEnabled(.explain),
-                                                  hasAnswers: all.contains { $0.filter == .answers })) { value in
-                        FilterTag(title: value.title, selected: model.historyFilter == value) { model.historyFilter = value }
+                if clipboardSelected, let issue = model.hotkeyErrors[AppModel.clipboardHistoryID] { InlineIssue(message: issue) }
+                ListToolbar(placeholder: clipboardSelected ? "Search copied text" : "Search history", search: $search) {
+                    if !clipboardSelected {
+                        FilterTag(title: "All", selected: filter == nil) { model.historyFilter = nil }
+                        ForEach(HistoryFilter.visible(explainEnabled: model.configuration.preferences.featureEnabled(.explain),
+                                                      hasAnswers: all.contains { $0.filter == .answers })) { value in
+                            FilterTag(title: value.title, selected: filter == value) { model.historyFilter = value }
+                        }
                     }
                 }
 
@@ -117,14 +135,14 @@ private struct HistoryContent: View {
                                message: "With History on, answers from Explain and your other answer rules appear here.")
                 Spacer(minLength: 0)
             } else if emptyState == .clipboardOff {
-                FrogEmptyState(symbol: "clipboard", title: "Clipboard is off", message: "Enable Clipboard in Features to keep the text you copy here, in memory only.")
+                FrogEmptyState(symbol: "clipboard", title: "Clipboard is off", message: "Turn on Clipboard in Features.")
                 Spacer(minLength: 0)
             } else if let emptyState {
                 let copied = emptyState == .noCopiedText
                 FrogEmptyState(symbol: copied ? "clipboard" : "clock.arrow.circlepath", title: copied ? "No copied text yet" : "No history yet",
-                               message: copied ? "Copy text in any app to add it here. Items are cleared when Clipboard is disabled or Frog quits." : model.configuration.preferences.historyEnabled
-                                ? "Transformations and interrupted recordings will appear here."
-                                 : "Enable saved history in Settings or Clipboard in Features.")
+                               message: copied ? "Text you copy shows here until Frog quits." : model.configuration.preferences.historyEnabled
+                                ? "Rewritten text, answers and recordings show here."
+                                 : "Turn on Save history to keep them on this Mac.")
                 Spacer(minLength: 0)
             } else {
                 ScrollView {
@@ -162,7 +180,7 @@ private struct HistoryContent: View {
                     if clipboardSelected { clipboard.clear() }
                     else { do { try model.clearHistory() } catch { model.report(error) } }
                 }
-            } message: { Text(clipboardSelected ? "Copied items will be removed from memory." : "Saved originals and results will be deleted, and in-memory clipboard entries will be forgotten.") }
+            } message: { Text(clipboardSelected ? "Copied items will be removed from memory." : "Saved originals and results will be deleted, and copied text will be forgotten.") }
             .confirmationDialog("Delete this history entry?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
                 Button("Delete entry", role: .destructive) {
                     if let deleting {

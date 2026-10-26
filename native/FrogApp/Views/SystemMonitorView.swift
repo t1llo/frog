@@ -25,11 +25,26 @@ struct SystemMonitorView: View {
     }
 }
 
+/// System monitor's own page: the overview at full width, then the menu-bar item's settings.
+struct SystemMonitorPage: View {
+    @ObservedObject var monitor: SystemMonitor
+
+    var body: some View {
+        PageScroll {
+            PageHeader(title: "System monitor")
+            SystemMonitorOverview(snapshot: monitor.snapshot, history: monitor.history, wide: true)
+            SystemMonitorMenuBarSettings()
+        }.background(FeatureVisibility { monitor.setPresented($0) })
+    }
+}
+
 /// Value-only content also makes synthetic native previews independent of the
 /// user's machine, settings, power source and current workload.
 struct SystemMonitorOverview: View {
     let snapshot: SystemMonitorSnapshot
     var history: [SystemMonitorSample] = []
+    /// The page's layout: a taller graph, Disk and Power side by side.
+    var wide = false
     /// Seconds from the newest sample to the moment under the pointer.
     @State private var inspected: Double?
 
@@ -44,18 +59,20 @@ struct SystemMonitorOverview: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top, spacing: 8) {
                     usage("CPU", color: FrogStyle.series, text: sample.map { percent($0.cpu) } ?? percent(snapshot.cpu))
-                        .help("Busy time across all logical CPU cores. Recorded while System monitor is on, also with this view closed.")
+                        .help("Busy time across all CPU cores.")
                     usage("GPU", color: FrogStyle.seriesSecondary, text: sample.map { percent($0.gpu) } ?? percent(snapshot.gpu))
-                        .help("Busiest GPU with a supported driver utilization statistic. Unavailable when the driver does not expose it.")
+                        .help("The busiest GPU, when its driver reports it.")
                 }.overlay(alignment: .topTrailing) {
                     if let sample, let end = history.last?.time {
                         Text(GraphStyle.ago(end.timeIntervalSince(sample.time)))
                             .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                     }
                 }
-                SystemMonitorGraph(history: history, inspected: $inspected, sample: sample).frame(height: 54)
+                SystemMonitorGraph(history: history, inspected: $inspected, sample: sample).frame(height: wide ? 150 : 54)
                 GraphAxis(leading: GraphStyle.ago(SystemMonitor.historyWindow), trailing: "Now")
-            }.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
+            }.modifier(card)
+            let cards = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 6)) : AnyLayout(VStackLayout(spacing: 6))
+            cards {
             VStack(alignment: .leading, spacing: 6) {
                 heading("Disk", symbol: "internaldrive")
                 if let capacity = snapshot.diskCapacity {
@@ -74,7 +91,7 @@ struct SystemMonitorOverview: View {
                     Spacer(minLength: 4)
                     Label(rate(snapshot.diskWrite), systemImage: "arrow.up")
                 }.font(.system(size: 10)).monospacedDigit().foregroundStyle(FrogStyle.muted)
-            }.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
+            }.modifier(card)
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
@@ -94,17 +111,19 @@ struct SystemMonitorOverview: View {
                 }
                 if let flow = snapshot.power.batteryFlow {
                     detail(flow.title, value: flow.watts < 0.1 ? "<0.1 W" : flow.watts.formatted(.number.precision(.fractionLength(1))) + " W")
-                        .help("Measured battery-terminal voltage × current. Battery flow is not total-system or adapter power; draw can occur while plugged in.")
+                        .help("Power into or out of the battery, not the whole Mac.")
                 } else {
                     detail("Battery power", value: "Unavailable")
-                        .help("Battery voltage or signed current is missing, zero, inconsistent or unsupported. Desktop Macs have no battery flow reading.")
                 }
                 detail("Thermal state", value: snapshot.power.thermal)
                 detail("Low Power Mode", value: snapshot.power.lowPower.map { $0 ? "On" : "Off" } ?? "Measuring…")
-            }.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
-        }.padding(.horizontal, 6).padding(.bottom, 8)
+            }.modifier(card)
+            }.fixedSize(horizontal: false, vertical: wide)
+        }.padding(.horizontal, wide ? 0 : 6).padding(.bottom, wide ? 0 : 8)
             .accessibilityElement(children: .contain).accessibilityLabel("System overview")
     }
+
+    private var card: OverviewCard { OverviewCard(wide: wide) }
 
     private func heading(_ title: String, symbol: String) -> some View {
         Label(title, systemImage: symbol).font(.system(size: 11, weight: .medium))
@@ -154,6 +173,18 @@ struct SystemMonitorOverview: View {
         case .measuring: return "Measuring…"
         case .unavailable: return "Unavailable"
         case .value(let value): return bytes(Int64(min(Double(Int64.max / 2), max(0, value)))) + "/s"
+        }
+    }
+}
+
+/// A block of the overview: inset in the menu, a table surface filling its share of the row on the page.
+private struct OverviewCard: ViewModifier {
+    let wide: Bool
+    func body(content: Content) -> some View {
+        if wide {
+            content.padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).frogTableSurface()
+        } else {
+            content.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
         }
     }
 }

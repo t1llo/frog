@@ -5,7 +5,7 @@ struct CommandBarSettingsView: View {
     @EnvironmentObject private var model: AppModel
     var body: some View {
         PageScroll {
-            PageHeader(title: "Command bar", subtitle: "Applications, windows, files and Frog tools, one shortcut away.")
+            PageHeader(title: "Command bar")
             SettingsSection(title: "Shortcut") {
                 CompactRow(title: "Open command bar") {
                     HotkeyRecorder(hotkey: Binding(get: { model.configuration.preferences.toolkitSettings.effectiveCommandBarHotkey }, set: { key in
@@ -16,8 +16,7 @@ struct CommandBarSettingsView: View {
                 if let issue = model.hotkeyErrors[AppModel.commandBarID] { Text(issue).font(.caption).foregroundStyle(FrogStyle.warning) }
             }
             CommandChoicesSection(choices: model.commandChoices)
-            // slot: command-bar
-            Text("Type an application, window or filename. You can also calculate 25% * 200 or convert 5 mi to km. Arrow keys select a result; Return opens it and Escape closes the panel.")
+            Text("Type an app, window or file, or calculate 25% * 200.")
                 .font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
             CommandBarSetupView()
         }
@@ -39,7 +38,7 @@ private struct CommandChoicesSection: View {
     }
     var body: some View {
         SettingsSection(title: "Ranking") {
-            CompactRow(title: "Learn from your choices", detail: "Rows you pick for what you type are listed a bit higher. Kept on this Mac only; unused choices fade after a few weeks.") {
+            CompactRow(title: "Learn from your choices", detail: "Rows you pick move up. Kept on this Mac.") {
                 Toggle("Learn from your choices", isOn: Binding(get: { learning }, set: { on in
                     do {
                         try model.updateToolkit { toolkit in

@@ -38,15 +38,7 @@ import SwiftUI
     private lazy var providers: [any CommandBarRowProviding] = [
         CalculationRows(),
         EmojiRows(),
-        // slot: explain
-        // slot: snippets
-        // slot: processes
-        // slot: color-picker
-        // slot: quicklinks
-        // slot: command-bar
-        // slot: windows
         WindowCommandRows(),
-        // slot: cleaner
         CleanerCommandRows(applications: { [unowned self] in self.cleanerApplications() }),
     ] + extraProviders
     private let extraProviders: [any CommandBarRowProviding]

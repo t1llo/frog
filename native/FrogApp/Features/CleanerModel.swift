@@ -14,11 +14,6 @@ struct CleanerDependencies {
     var applications: @MainActor () async -> [URL]
     var displayName: @Sendable (URL) -> String
     var ownBundleID: String
-    // slot: cleaner-leftovers
-    // slot: cleaner-junk
-    // slot: cleaner-assist
-    // slot: cleaner-disk
-    // slot: cleaner-startup
 
     /// Only builds values: nothing is read until the page asks.
     @MainActor static func live(dataDirectory: URL, protectedPaths: [URL]) -> CleanerDependencies {
@@ -36,11 +31,6 @@ struct CleanerDependencies {
             ownBundleID: "xyz.beffa.frog")
         // `swift run` has no Info.plist; a bundled Frog names itself.
         if let own = Bundle.main.bundleIdentifier { dependencies.ownBundleID = own }
-        // slot: cleaner-leftovers
-        // slot: cleaner-junk
-        // slot: cleaner-assist
-        // slot: cleaner-disk
-        // slot: cleaner-startup
         return dependencies
     }
 }
@@ -318,22 +308,12 @@ final class CleanerModel: ObservableObject {
 
     @Published var tab: CleanerTab = .apps
     // One lazy sub-model per part, each below its own slot.
-    // slot: cleaner-leftovers
-    // slot: cleaner-junk
-    // slot: cleaner-assist
-    // slot: cleaner-disk
-    // slot: cleaner-startup
 
     /// Called after every saved configuration. Keeps showPossibleMatches current, stops sub-models whose
     /// switch is off (each part adds its line below its slot), and falls back to .apps when the selected
     /// tab disappears.
     func apply(_ preferences: Preferences) {
         showPossibleMatches = preferences.featureEnabled(.cleaner) && preferences.cleanerSettings.possibleMatches
-        // slot: cleaner-leftovers
-        // slot: cleaner-junk
-        // slot: cleaner-assist
-        // slot: cleaner-disk
-        // slot: cleaner-startup
         if !CleanerTab.available(preferences).contains(tab) { tab = .apps }
     }
 
@@ -756,11 +736,6 @@ final class CleanerModel: ObservableObject {
 
     /// Called when the feature is turned off: nothing keeps running and nothing stays in memory.
     func stop() {
-        // slot: cleaner-leftovers
-        // slot: cleaner-junk
-        // slot: cleaner-assist
-        // slot: cleaner-disk
-        // slot: cleaner-startup
         generation += 1
         for task in [loadTask, appSizeTask, scanTask, sizeTask] { task?.cancel() }
         loadTask = nil; appSizeTask = nil; scanTask = nil; sizeTask = nil

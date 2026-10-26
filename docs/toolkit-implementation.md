@@ -3,7 +3,7 @@
 Frog's toolkit keeps native macOS interfaces and the existing writing, dictation,
 local-model and connected-provider workflows. Each optional module owns its work:
 disabling it removes its commands and navigation, closes its panels, and stops
-its shortcuts, timers and observers. Its settings remain available in Features.
+its shortcuts, timers and observers. Its settings stay on its page, which comes back when it is turned on again.
 
 Mr. Usage is an optional integrated module. Lofitime and Pomodoro are excluded.
 

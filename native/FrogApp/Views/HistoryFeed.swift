@@ -6,9 +6,10 @@ enum HistoryFilter: String, CaseIterable, Identifiable {
     var id: Self { self }
     var title: String { switch self { case .text: "Text"; case .answers: "Answers"; case .audio: "Audio"; case .clipboard: "Clipboard" } }
 
-    /// The filters the page offers. Answers appears while Explain is on, and stays while saved answers remain.
+    /// The filters History offers; copied text has the Clipboard page. Answers appears while Explain is on, and stays
+    /// while saved answers remain.
     static func visible(explainEnabled: Bool, hasAnswers: Bool) -> [HistoryFilter] {
-        allCases.filter { $0 != .answers || explainEnabled || hasAnswers }
+        allCases.filter { $0 != .clipboard && ($0 != .answers || explainEnabled || hasAnswers) }
     }
 }
 

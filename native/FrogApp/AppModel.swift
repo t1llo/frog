@@ -394,16 +394,9 @@ final class AppModel: ObservableObject {
             case .applicationShortcuts: self.applicationTask?.cancel(); self.systemActionTask?.cancel(); if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.shortcutPanel.hide()
             case .scripts: self.scripts.stop()
             case .commandBar: self.commandBar.stop()
-            // slot: explain
             case .explain: self.answerCapture?.cancel(); self.answers.close(); self.selectionWatcher.stop()
-            // slot: windows
             case .windows: if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.windowLayout.stop()
-            // slot: cleaner
             case .cleaner: self.cleanerModel?.stop()
-            // slot: emoji-picker
-            // slot: processes
-            // slot: color-picker
-            // slot: quicklinks
             default: break
             }
         }
@@ -508,7 +501,6 @@ final class AppModel: ObservableObject {
     }
 
     func openFeature(_ feature: FeatureID) { toolkit.select(.feature(feature)); showSettings() }
-    func openClipboardHistoryPage() { historyFilter = .clipboard; toolkit.select(.history); showSettings() }
     func showCommandBar() {
         guard !isRecordingShortcut else { return }
         commandBar.show()

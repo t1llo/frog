@@ -7,10 +7,10 @@ struct MenuBarSettingsView: View {
 
     var body: some View {
         PageScroll {
-            PageHeader(title: "Menu bar", subtitle: "A quieter menu bar, with your everyday icons still in reach.")
+            PageHeader(title: "Menu bar")
             SettingsSection(title: "Your menu bar") {
                 arrangementPreview
-                Text("Hold ⌘ and drag icons left of the divider to hide them. Keep Frog and the icons you use most on the right.")
+                Text("Hold ⌘ and drag icons left of the divider to hide them.")
                     .font(.system(size: 12)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 8) {
                     Button(organizer.isExpanded ? "Hide icons" : "Show hidden icons") { organizer.toggle() }
@@ -28,11 +28,9 @@ struct MenuBarSettingsView: View {
                         Button("Retry") { organizer.configure(enabled: organizer.isEnabled, settings: settings) }
                     }
                 }
-                Text("Click the arrow to show or hide. Right-click it for options. Option-click to show all and arrange.")
-                    .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             }
             SettingsSection(title: "Behavior") {
-                CompactRow(title: "Automatically hide icons", detail: "Waits until you finish using the menu bar or arranging icons.") {
+                CompactRow(title: "Automatically hide icons") {
                     Toggle("Automatically hide icons", isOn: $settings.autoHide).labelsHidden().toggleStyle(.switch)
                 }
                 if settings.autoHide {
@@ -48,7 +46,7 @@ struct MenuBarSettingsView: View {
                 CompactRow(title: "Hide icons when Frog starts") {
                     Toggle("Hide icons when Frog starts", isOn: $settings.startCollapsed).labelsHidden().toggleStyle(.switch)
                 }
-                CompactRow(title: "Show on hover", detail: "Pause the pointer over the menu bar to reveal hidden icons.") {
+                CompactRow(title: "Show on hover") {
                     Toggle("Show on hover", isOn: $settings.hoverToReveal).labelsHidden().toggleStyle(.switch)
                 }
                 Divider()
@@ -56,11 +54,11 @@ struct MenuBarSettingsView: View {
                 if let error = organizer.hotkeyError { InlineIssue(message: error) }
             }
             SettingsSection(title: "Always-hidden icons") {
-                CompactRow(title: "Use a second divider", detail: "Icons left of the double divider stay hidden when you click the arrow. Option-click to arrange them.") {
+                CompactRow(title: "Use a second divider", detail: "Icons left of it stay hidden when you click the arrow.") {
                     Toggle("Use a second divider", isOn: $settings.permanentlyHiddenSection).labelsHidden().toggleStyle(.switch)
                 }
             }
-            Text("macOS remembers where you drag each icon. If something is out of reach, open Frog from Applications and choose Show all & arrange. A notch can limit the space available for revealed icons.")
+            Text("Icon out of reach? Open Frog from Applications and choose Show all & arrange.")
                 .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
         }
         // A closed, minimised or covered settings window keeps this page, so appearing and

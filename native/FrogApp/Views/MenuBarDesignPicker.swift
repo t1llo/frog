@@ -53,16 +53,15 @@ struct MenuBarPaletteRow: View {
     let selected: MenuBarMeterPalette
     let choose: (MenuBarMeterPalette) -> Void
     var body: some View {
-        CompactRow(title: "Colors", detail: selected == .clean ? "Follows the menu bar, like the system's own icons."
-                   : selected == .level ? "Green, amber from 70%, red from 90%." : "Green to red along each meter.") {
+        CompactRow(title: "Colors") {
             CompactSegments(values: MenuBarMeterPalette.allCases, selected: selected, width: 270, title: { $0.title }, choose: choose)
                 .accessibilityLabel("Menu bar colors")
         }
     }
 }
 
-/// The CPU and GPU item's switch and looks, under System monitor in Features.
-struct SystemMonitorFeatureView: View {
+/// The CPU and GPU item's switch and looks, on the System monitor page.
+struct SystemMonitorMenuBarSettings: View {
     @EnvironmentObject private var model: AppModel
     /// What the previews show, so that every design can be compared on the same load.
     private static let sample = SystemMonitorReading(cpu: .value(0.42), gpu: .value(0.78))
@@ -72,8 +71,8 @@ struct SystemMonitorFeatureView: View {
 
     var body: some View {
         let settings = settings
-        VStack(alignment: .leading, spacing: 12) {
-            CompactRow(title: "Show CPU and GPU in the menu bar", detail: "An item of its own; click it for the whole overview.") {
+        SettingsSection(title: "Menu bar") {
+            CompactRow(title: "Show CPU and GPU in the menu bar") {
                 Toggle("Show CPU and GPU in the menu bar", isOn: Binding(get: { settings.menuBarItem }, set: { on in save { $0.menuBarItem = on } }))
                     .labelsHidden().toggleStyle(.switch)
             }
@@ -110,7 +109,7 @@ struct StayAwakeMenuBarSettings: View {
     var body: some View {
         let settings = settings
         SettingsSection(title: "Menu bar") {
-            CompactRow(title: "Show a cup in the menu bar", detail: "While Stay awake is on, as an item of its own instead of the small cup next to Frog's icon. Its menu turns Stay awake off.") {
+            CompactRow(title: "Show a cup in the menu bar", detail: "While Stay awake is on, instead of the cup next to Frog's icon.") {
                 Toggle("Show a cup in the menu bar", isOn: Binding(get: { settings.menuBarItem }, set: { on in save { $0.menuBarItem = on } }))
                     .labelsHidden().toggleStyle(.switch)
             }

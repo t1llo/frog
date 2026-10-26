@@ -6,7 +6,7 @@ struct UsageDashboardView: View {
     @ObservedObject var usage: UsageDashboardModel
     var body: some View {
         PageScroll {
-            PageHeader(title: "Mr. Usage", subtitle: "Your plan limits and AI activity.") {
+            PageHeader(title: "Mr. Usage") {
                 IconAction(title: "Refresh usage", symbol: "arrow.clockwise", bordered: true) { usage.refresh() }
             }
             UsageProviderControls(usage: usage)
@@ -25,13 +25,12 @@ struct UsageDashboardView: View {
             }
             if UsageStatusPopover.shownAccounts(usage).isEmpty { UsageLimitsView(usage: usage) }
             else { UsageAccountsLimits(usage: usage) }
-            UsageMenuBarDesign(usage: usage)
             Divider().overlay(FrogStyle.border.opacity(0.4))
             UsageActivityView(usage: usage)
             UsageAccountDetails(usage: usage)
             Text("API value is an estimate, not your subscription bill.")
                  .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
-                 .help("Token activity comes from local tool logs; all-device data includes account estimates. Plan limits come from the labeled account or log source. Collection continues while Mr. Usage is enabled.")
+            UsageMenuBarDesign(usage: usage)
         }
         // The main window keeps this page after it is closed or minimised, so appearing and
         // disappearing do not say whether anyone can see it.
@@ -383,7 +382,7 @@ private struct UsageAccountsSection: View {
         let preferences = usage.preferences
         VStack(alignment: .leading, spacing: 10) {
             CompactRow(title: "Show each Claude account",
-                       detail: "Reads the saved limits of every Claude account on this Mac. Live readings need a Claude Code sign-in per account.") {
+                       detail: "Live readings need a Claude Code sign-in per account.") {
                 Toggle("Show each Claude account", isOn: Binding(get: { usage.preferences.claudeAccounts }, set: { on in
                     var next = usage.preferences; next.claudeAccounts = on; usage.updatePreferences(next)
                 })).labelsHidden().toggleStyle(.switch)
@@ -420,7 +419,7 @@ private struct UsageAccountsSection: View {
                         }.accessibilityLabel("Show limits")
                     }
                     if preferences.claudeAccountsView == "each", accounts.filter(\.included).count >= 2 {
-                        CompactRow(title: "Menu bar shows", detail: "The limit shown for each included account, such as “A 37%  B 81%”.") {
+                        CompactRow(title: "Menu bar shows", detail: "Such as “A 37%  B 81%”.") {
                             CompactSegments(values: UsageDashboardPreferences.claudeAccountsMenuBarWindows, selected: preferences.claudeAccountsMenuBar,
                                             width: 140, title: { $0 == "week" ? "Week" : "Session" }) { window in
                                 var next = usage.preferences; next.claudeAccountsMenuBar = window; usage.updatePreferences(next)

@@ -4,9 +4,9 @@ struct StayAwakeView: View {
     @ObservedObject var power: StayAwakeController
     var body: some View {
         PageScroll {
-            PageHeader(title: "Stay awake", subtitle: "Keep background work running when you need it.")
+            PageHeader(title: "Stay awake")
             SettingsSection(title: "Session") {
-                CompactRow(title: "Keep this Mac awake", detail: "Includes lid-closed work. Stops on quit or below 20% battery while unplugged.") {
+                CompactRow(title: "Keep this Mac awake", detail: "Stops on quit, or below 20% battery when unplugged.") {
                     Toggle("Keep this Mac awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
                         .labelsHidden().toggleStyle(.switch)
                         .disabled(!power.canSwitch)
@@ -33,7 +33,7 @@ struct StayAwakeView: View {
                 if let error = power.error { InlineIssue(message: error) }
                 else if let notice = power.notice { Text(notice).font(.caption).foregroundStyle(FrogStyle.muted) }
             }
-            Text("The display can turn off and the screen can lock while background work continues. Tasks that control on-screen apps still need an unlocked session.")
+            Text("The screen can lock while background work continues.")
                 .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             StayAwakeMenuBarSettings()
             StayAwakeSettingsView(power: power)
@@ -46,7 +46,7 @@ struct StayAwakeSettingsView: View {
 
     var body: some View {
         SettingsSection(title: "Access") {
-            CompactRow(title: "Lid-closed access", detail: "Configure once to allow Frog to change the sleep setting.") {
+            CompactRow(title: "Lid-closed access", detail: "Lets Frog change the sleep setting.") {
                 Label(power.accessState.title, systemImage: power.accessState == .ready ? "checkmark.circle.fill" : "info.circle")
                     .font(.system(size: 11)).foregroundStyle(power.accessState == .ready ? FrogStyle.accent : FrogStyle.muted)
             }

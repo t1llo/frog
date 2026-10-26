@@ -13,7 +13,6 @@ final class CleanerPreferencesTests: XCTestCase {
         var preferences = Preferences()
         XCTAssertFalse(preferences.featureEnabled(.cleaner))
         XCTAssertFalse(preferences.sidebarFeatures.contains(.cleaner))
-        XCTAssertTrue(FeatureID.cleaner.hasPage)
         preferences.ensureToolkit()
         var settings = CleanerPreferences()
         settings.possibleMatches = true

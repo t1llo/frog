@@ -4,7 +4,6 @@ import XCTest
 final class WindowPreferencesTests: XCTestCase {
     func testWindowsIsOffByDefaultAndHasAPage() {
         XCTAssertFalse(Preferences().featureEnabled(.windows))
-        XCTAssertTrue(FeatureID.windows.hasPage)
         var preferences = Preferences()
         preferences.setFeature(.windows, enabled: true)
         XCTAssertTrue(preferences.sidebarFeatures.contains(.windows))
