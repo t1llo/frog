@@ -106,10 +106,12 @@ struct MainView: View {
                     ScrollView {
                         SidebarFeatureList(features: model.toolkit.sidebar) { feature, marker in
                             navigationButton(featureItem(feature, marker: marker)).id(ToolkitRoute.feature(feature))
-                        }.padding(.horizontal, 8)
+                        }.padding(.horizontal, 8).padding(.bottom, 6).minimalScrollbars()
                     }
+                    // Reveals a feature opened from elsewhere, such as the command bar, by the least scrolling;
+                    // a row already in view stays where it is.
                     .onChange(of: section) { _, route in
-                        if case .feature = route { proxy.scrollTo(route, anchor: .center) }
+                        if case .feature = route { proxy.scrollTo(route) }
                     }
                 }
             }.padding(.top, 32).background(FrogStyle.sidebar)
