@@ -210,10 +210,13 @@ final class StayAwakeController: ObservableObject {
         }
     }
 
-    func setEnabled(_ enabled: Bool) {
+    func setEnabled(_ enabled: Bool) { setEnabled(enabled, for: nil) }
+
+    /// `length`: how long to stay on this time, leaving the page's own choice as it is.
+    func setEnabled(_ enabled: Bool, for length: DurationChoice?) {
         guard !isBusy, !quitting, hasReadState, !enabled || (featureEnabled && !isConfiguringAccess) else { return }
         isBusy = true; revision += 1
-        operation = Task { _ = await change(enabled) }
+        operation = Task { _ = await change(enabled, for: length) }
     }
 
     func waitForOperation() async { await operation?.value }
@@ -260,7 +263,7 @@ final class StayAwakeController: ObservableObject {
         return restored
     }
 
-    private func change(_ enabled: Bool) async -> Bool {
+    private func change(_ enabled: Bool, for length: DurationChoice? = nil) async -> Bool {
         isBusy = true; revision += 1; error = nil; permissionError = false; readError = false; notice = nil
         defer { isBusy = false }
         do {
@@ -274,7 +277,8 @@ final class StayAwakeController: ObservableObject {
                 guard try await system.hasAccess() else { throw StayAwakeError.permission }
                 let battery = try await system.battery()
                 if battery.onBattery, let percent = battery.percent, percent < 20 { throw StayAwakeError.lowBattery }
-                let end = duration == .untilQuit ? nil : now().addingTimeInterval(duration.rawValue)
+                let length = length ?? duration
+                let end = length == .untilQuit ? nil : now().addingTimeInterval(length.rawValue)
                 try FileManager.default.createDirectory(at: sessionFile.deletingLastPathComponent(), withIntermediateDirectories: true)
                 // Save intent first so a crash between the command and readback
                 // cannot leave an untracked system-wide setting behind.

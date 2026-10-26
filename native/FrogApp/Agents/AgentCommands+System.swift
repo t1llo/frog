@@ -21,7 +21,9 @@ extension AgentCommands {
             AgentCommand(words: ["awake", "on"], arguments: "[--for 30m|1h|4h|quit]", summary: "Keep the Mac awake, also with the lid closed.",
                          details: """
                          Stays on for the time the Stay awake page has chosen, four hours unless changed, or for --for: \
-                         30m, 1h, 4h, or quit for until Frog quits. Needs the one-time access setup on the Stay awake page.
+                         30m, 1h, 4h, or quit for until Frog quits. --for leaves the page's choice as it is. To change \
+                         the time while Stay awake is on, switch it off first. Needs the one-time access setup on the \
+                         Stay awake page.
 
                          Example: frog awake on --for 1h
                          """, options: ["for"], feature: .stayAwake) { call in
@@ -32,7 +34,11 @@ extension AgentCommands {
                     return duration
                 }
                 try await readPower(power)
-                if power.isEnabled { return awakeStatus(power, prefix: "Stay awake is already on") }
+                if power.isEnabled {
+                    var result = awakeStatus(power, prefix: "Stay awake is already on")
+                    if duration != nil { result.notice = "--for was not applied. To change the time, run `frog awake off`, then `frog awake on` again." }
+                    return result
+                }
                 guard !power.isConfiguringAccess else { throw AgentCommandError.failed("Finish the access guide in Terminal first.") }
                 await power.refreshAccessUnlessReady()
                 switch power.accessState {
@@ -40,8 +46,7 @@ extension AgentCommands {
                 case .unavailable(let message): throw AgentCommandError.failed("Frog could not check its access to the sleep setting: \(message)")
                 case .needsSetup, .checking: throw AgentCommandError.failed(setupHint)
                 }
-                if let duration { power.duration = duration }
-                power.setEnabled(true)
+                power.setEnabled(true, for: duration)
                 await power.waitForOperation()
                 guard power.isEnabled else { throw AgentCommandError.failed(power.needsSetup ? setupHint : power.error ?? "macOS did not apply the sleep setting.") }
                 return awakeStatus(power, prefix: "Stay awake is on")
@@ -160,11 +165,14 @@ extension AgentCommands {
         }
 
         var text: String {
-            func bytes(_ count: Int64) -> String { ByteCountFormatter.string(fromByteCount: count, countStyle: .decimal) }
+            func bytes(_ count: Int64, style: ByteCountFormatter.CountStyle = .decimal) -> String {
+                ByteCountFormatter.string(fromByteCount: count, countStyle: style)
+            }
             func percent(_ value: Double?) -> String { value.map { "\(Int($0.rounded()))%" } ?? "unavailable" }
             func rate(_ value: Double?) -> String { value.map { bytes(Int64(max(0, min($0, 1e15)))) + "/s" } ?? "unavailable" }
             var rows = [["CPU", percent(cpuPercent)], ["GPU", percent(gpuPercent)],
-                        ["Memory", memory.used.map { "\(bytes($0)) of \(bytes(memory.total)) in use" } ?? "unavailable"]]
+                        // Memory as macOS counts it, so 32 GB shows as 32 GB.
+                        ["Memory", memory.used.map { "\(bytes($0, style: .memory)) of \(bytes(memory.total, style: .memory)) in use" } ?? "unavailable"]]
             let space = disk.available.flatMap { free in disk.total.map { "\(bytes(free)) free of \(bytes($0))" } } ?? "capacity unavailable"
             rows.append(["Disk", "\(space), reading \(rate(disk.readPerSecond)), writing \(rate(disk.writePerSecond))"])
             var supply = [power.source]
