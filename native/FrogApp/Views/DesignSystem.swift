@@ -38,14 +38,25 @@ struct FrogSurfaceStyle: ShapeStyle {
     func resolve(in environment: EnvironmentValues) -> some ShapeStyle { color.opacity(opacity(in: environment)) }
 }
 
-/// Shared adaptive colors keep the app, sheets, and controls in the same visual language.
+/// Frog's design tokens. docs/design.md has the rules; `DesignConsistencyTests` checks the ones code can.
 enum FrogStyle {
-    static let corner: CGFloat = 6
-    /// Key caps and other small marks inside a control.
-    static let innerRadius: CGFloat = 4
-    static let controlRadius: CGFloat = 5
-    /// Cards and panels; the same value as `corner`, which existing views keep using.
-    static let cardRadius: CGFloat = 6
+    /// Key caps, badges, colour swatches and the thumb of a segmented control.
+    static let smallRadius: CGFloat = 4
+    /// Buttons, fields, dropdowns, segmented controls, list rows and their highlight, menu rows, symbol tiles,
+    /// and blocks inside a popup.
+    static let controlRadius: CGFloat = 6
+    /// Cards, grouped settings, lists, previews and sheets' inner surfaces.
+    static let cardRadius: CGFloat = 10
+    /// Popups, menus and floating panels.
+    static let panelRadius: CGFloat = 12
+    /// Small floating status pills, 36 points tall.
+    static let pillRadius: CGFloat = 18
+    /// Buttons, fields, dropdowns, search boxes and segmented controls.
+    static let controlHeight: CGFloat = 28
+    /// The same controls in popups, panel headers and dense rows.
+    static let compactHeight: CGFloat = 24
+    /// A hovered row or control. Neutral, so it reads the same in every theme; `selection` marks what is chosen.
+    static var hover: Color { ink.opacity(0.06) }
     static var canvas: AnyShapeStyle { adaptiveSurface(themed(\.canvas), strength: 0.85) }
     static var sidebar: AnyShapeStyle { adaptiveSurface(themed(\.sidebar), strength: 0.85) }
     static var surface: AnyShapeStyle { adaptiveSurface(themed(\.surface), strength: 0.78) }
@@ -199,24 +210,68 @@ enum FrogStyle {
     }
 }
 
-/// The type scale for new views; existing views move to it as they are touched.
+/// Frog's type scale. Every text in the app uses one of these; docs/design.md says which goes where.
 enum FrogType {
+    /// Page titles.
     static let title = Font.system(size: 19, weight: .semibold)
+    /// Section headings, popup titles and empty-state titles.
     static let section = Font.system(size: 13, weight: .semibold)
+    /// Page subtitles and empty-state messages.
+    static let lead = Font.system(size: 13)
+    /// Row titles, list items, field text, dropdown values and menu rows.
     static let body = Font.system(size: 12)
+    /// Buttons and the titles of settings and cards.
+    static let bodyMedium = Font.system(size: 12, weight: .medium)
+    /// Row descriptions, secondary lines and compact controls.
+    static let small = Font.system(size: 11)
+    /// Small group labels above content, and compact buttons.
     static let label = Font.system(size: 11, weight: .medium)
+    /// Timestamps, paths, counts, badges and footnotes.
     static let caption = Font.system(size: 10)
     static let mono = Font.system(size: 11, design: .monospaced)
 }
 
 extension View {
-    func frogPanel(corner: CGFloat = 12) -> some View {
-        modifier(FrogPanelSurface(corner: corner))
+    /// Popups and floating panels. `pill` is for 36-point status pills.
+    func frogPanel(pill: Bool = false) -> some View {
+        modifier(FrogPanelSurface(corner: pill ? FrogStyle.pillRadius : FrogStyle.panelRadius))
     }
+    /// The card every grouped surface uses: lists, tables, settings groups, previews.
     func frogTableSurface() -> some View {
-        background(FrogStyle.surface, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
-            .clipShape(RoundedRectangle(cornerRadius: FrogStyle.corner))
-            .overlay(RoundedRectangle(cornerRadius: FrogStyle.corner).strokeBorder(FrogStyle.border.opacity(0.35)))
+        modifier(FrogCardSurface())
+    }
+    /// The fill and hairline every bordered control shares: secondary buttons, dropdowns, fields, search boxes,
+    /// segmented controls and shortcut badges.
+    func frogControlSurface(hovering: Bool = false, height: CGFloat? = FrogStyle.controlHeight) -> some View {
+        modifier(FrogControlSurface(hovering: hovering, height: height))
+    }
+    /// A row that highlights on hover and when chosen, as in lists, menus and the sidebar.
+    func frogRowHighlight(hovering: Bool, selected: Bool = false) -> some View {
+        background(selected ? FrogStyle.selection : hovering ? FrogStyle.hover : .clear,
+                   in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+            .contentShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+    }
+}
+
+private struct FrogCardSurface: ViewModifier {
+    @Environment(\.colorSchemeContrast) private var contrast
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: FrogStyle.cardRadius)
+        content.background(FrogStyle.surface, in: shape).clipShape(shape)
+            .overlay(shape.strokeBorder(contrast == .increased ? FrogStyle.muted : FrogStyle.border.opacity(0.5)))
+    }
+}
+
+private struct FrogControlSurface: ViewModifier {
+    let hovering: Bool
+    let height: CGFloat?
+    @Environment(\.colorSchemeContrast) private var contrast
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: FrogStyle.controlRadius)
+        content.frame(minHeight: height)
+            .background { ZStack { shape.fill(FrogStyle.inset); shape.fill(hovering ? FrogStyle.hover : .clear) } }
+            .overlay(shape.strokeBorder(contrast == .increased ? FrogStyle.muted : FrogStyle.border.opacity(0.5)))
+            .contentShape(shape)
     }
 }
 
@@ -239,32 +294,111 @@ private struct FrogPanelSurface: ViewModifier {
     }
 }
 
+/// Frog's one button. The main window sets the secondary kind for every button inside it.
 struct FrogButtonStyle: ButtonStyle {
-    var primary = false
-    @Environment(\.isEnabled) private var enabled
+    enum Kind {
+        /// The one main action of a page, sheet or card.
+        case primary
+        /// Every other action.
+        case secondary
+        /// Actions that sit beside content, such as Reset or Skip: no fill until hovered.
+        case ghost
+        /// Removes or deletes something.
+        case destructive
+    }
+    var kind: Kind = .secondary
+    /// 24 points tall, for popups, panel headers and dense rows.
+    var compact = false
+
+    init(_ kind: Kind = .secondary, compact: Bool = false) { self.kind = kind; self.compact = compact }
+    init(primary: Bool) { kind = primary ? .primary : .secondary }
 
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .medium))
-            .padding(.horizontal, 10).padding(.vertical, 7)
-            .foregroundStyle(primary ? FrogStyle.panelSurface : FrogStyle.ink)
-            .background(primary ? AnyShapeStyle(FrogStyle.ink) : FrogStyle.surface, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
-            .overlay(RoundedRectangle(cornerRadius: FrogStyle.corner).strokeBorder(primary ? .clear : FrogStyle.border.opacity(0.6), lineWidth: 1))
-            .opacity(enabled ? (configuration.isPressed ? 0.7 : 1) : 0.4)
-            .contentShape(RoundedRectangle(cornerRadius: FrogStyle.corner))
+        FrogButtonBody(configuration: configuration, kind: kind, compact: compact)
     }
 }
 
-struct FrogCard<Content: View>: View {
-    var padding: CGFloat = 12
-    @ViewBuilder var content: Content
-    @Environment(\.colorSchemeContrast) private var contrast
+extension ButtonStyle where Self == FrogButtonStyle {
+    static func frog(_ kind: FrogButtonStyle.Kind = .secondary, compact: Bool = false) -> FrogButtonStyle {
+        FrogButtonStyle(kind, compact: compact)
+    }
+}
+
+private struct FrogButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    let kind: FrogButtonStyle.Kind
+    let compact: Bool
+    @Environment(\.isEnabled) private var enabled
+    @State private var hovering = false
 
     var body: some View {
-        content.padding(padding).frame(maxWidth: .infinity, alignment: .leading)
-            .background(FrogStyle.surface, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
-            .overlay(RoundedRectangle(cornerRadius: FrogStyle.corner)
-                .strokeBorder(contrast == .increased ? FrogStyle.muted : FrogStyle.border, lineWidth: 1))
+        let shape = RoundedRectangle(cornerRadius: FrogStyle.controlRadius)
+        let label = configuration.label
+            .font(compact ? FrogType.label : FrogType.bodyMedium).lineLimit(1)
+            .padding(.horizontal, compact ? 8 : 10)
+            .foregroundStyle(foreground)
+        Group {
+            switch kind {
+            case .secondary, .destructive:
+                label.frogControlSurface(hovering: hovering && enabled, height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
+            case .primary:
+                label.frame(minHeight: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
+                    .background(FrogStyle.ink.opacity(hovering && enabled ? 0.86 : 1), in: shape).contentShape(shape)
+            case .ghost:
+                label.frame(minHeight: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
+                    .background(hovering && enabled ? FrogStyle.hover : .clear, in: shape).contentShape(shape)
+            }
+        }
+        .opacity(enabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
+        .onHover { hovering = $0 }
+    }
+
+    private var foreground: Color {
+        switch kind {
+        case .primary: FrogStyle.panelSurface
+        case .secondary: FrogStyle.ink
+        case .ghost: hovering ? FrogStyle.ink : FrogStyle.muted
+        case .destructive: FrogStyle.critical
+        }
+    }
+}
+
+/// A padded card. Lists and tables that draw their own rows use `frogTableSurface()`.
+struct FrogCard<Content: View>: View {
+    var padding: CGFloat = 14
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content.padding(padding).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
+    }
+}
+
+/// A titled group: a heading, then its rows in one card. Rows are set apart by space, never by lines.
+struct SettingsSection<Content: View, Accessory: View>: View {
+    let title: String
+    @ViewBuilder var accessory: Accessory
+    @ViewBuilder var content: Content
+
+    init(title: String, @ViewBuilder accessory: () -> Accessory, @ViewBuilder content: () -> Content) {
+        self.title = title; self.accessory = accessory(); self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 8)
+                accessory
+            }.frame(minHeight: 20)
+            VStack(alignment: .leading, spacing: 10) { content }
+                .padding(14).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
+        }
+    }
+}
+
+extension SettingsSection where Accessory == EmptyView {
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.init(title: title, accessory: { EmptyView() }, content: content)
     }
 }
 
@@ -276,15 +410,15 @@ struct PageHeader<Actions: View>: View {
     var body: some View {
         HStack(alignment: .center, spacing: 20) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(L10n.text(title)).font(.system(size: 19, weight: .semibold)).tracking(-0.4)
+                Text(L10n.text(title)).font(FrogType.title).tracking(-0.4)
                     .foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
-                if !subtitle.isEmpty { Text(L10n.text(subtitle)).font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
+                if !subtitle.isEmpty { Text(L10n.text(subtitle)).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
                     .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
                 .overlay { WindowDragRegion().accessibilityHidden(true) }
             actions
-        }.frame(minHeight: 32)
+        }.frame(minHeight: FrogStyle.controlHeight)
     }
 }
 
@@ -298,7 +432,7 @@ struct PageScroll<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) { content }
+            VStack(alignment: .leading, spacing: 20) { content }
                 .padding(20).frame(maxWidth: 1080)
                 .frame(maxWidth: .infinity, alignment: .top)
                 .minimalScrollbars()
@@ -306,10 +440,11 @@ struct PageScroll<Content: View>: View {
     }
 }
 
+/// A small label above a group of content inside a card or panel. Page sections use `SettingsSection`.
 struct SectionCaption: View {
     let text: String
     var body: some View {
-        Text(L10n.text(text)).font(.system(size: 11, weight: .medium))
+        Text(L10n.text(text)).font(FrogType.label)
             .foregroundStyle(FrogStyle.muted).accessibilityAddTraits(.isHeader)
     }
 }
@@ -320,7 +455,7 @@ struct SymbolTile: View {
     var body: some View {
         Image(systemName: symbol).font(.system(size: size * 0.4, weight: .medium))
             .foregroundStyle(FrogStyle.muted).frame(width: size, height: size)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
             .accessibilityHidden(true)
     }
 }
@@ -329,30 +464,28 @@ struct FrogBadge: View {
     let text: String
     var active = false
     var body: some View {
-        Text(L10n.text(text)).font(.system(size: 10, weight: .semibold))
+        Text(L10n.text(text)).font(FrogType.caption.weight(.semibold))
             .foregroundStyle(active ? FrogStyle.accent : FrogStyle.muted)
             .padding(.horizontal, 6).padding(.vertical, 3)
-            .background(active ? AnyShapeStyle(FrogStyle.accentSoft) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.innerRadius))
+            .background(active ? AnyShapeStyle(FrogStyle.accentSoft) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius))
     }
 }
 
 struct ShortcutBadge: View {
     let text: String
     var body: some View {
-        Text(text).font(.system(size: 12, weight: .medium, design: .monospaced))
-            .padding(.horizontal, 7).modifier(CompactActionSurface())
+        Text(text).font(FrogType.bodyMedium)
+            .padding(.horizontal, 8).modifier(CompactActionSurface())
             .accessibilityLabel("Shortcut: \(text)")
     }
 }
 
+/// A compact, 24-point control with the shared fill and hairline, which highlights on hover.
 struct CompactActionSurface: ViewModifier {
     @State private var hovering = false
     func body(content: Content) -> some View {
-        content.frame(height: 24)
-            .foregroundStyle(FrogStyle.ink)
-            .background(hovering ? AnyShapeStyle(FrogStyle.selection) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-            .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius).strokeBorder(FrogStyle.border.opacity(0.6)))
-            .contentShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+        content.foregroundStyle(FrogStyle.ink)
+            .frogControlSurface(hovering: hovering, height: FrogStyle.compactHeight)
             .onHover { hovering = $0 }
     }
 }
@@ -361,11 +494,10 @@ struct LabeledField<Content: View>: View {
     let title: String
     @ViewBuilder var content: Content
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(L10n.text(title)).font(.system(size: 12, weight: .medium)).foregroundStyle(FrogStyle.ink)
-            content.textFieldStyle(.plain).padding(8)
-                .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(FrogStyle.border, lineWidth: 1))
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L10n.text(title)).font(FrogType.bodyMedium).foregroundStyle(FrogStyle.ink)
+            content.textFieldStyle(.plain).font(FrogType.body).padding(.horizontal, 8).padding(.vertical, 6)
+                .frogControlSurface()
         }
     }
 }
@@ -385,6 +517,7 @@ struct FrogMenu<Content: View>: View {
     }
 }
 
+/// An icon-only action. Borderless shows only its symbol until hovered; bordered matches a compact button.
 struct IconAction: View {
     let title: String
     let symbol: String
@@ -395,13 +528,14 @@ struct IconAction: View {
     var body: some View {
         Button(role: destructive ? .destructive : nil, action: action) {
             if bordered {
-                Image(systemName: symbol).font(.system(size: 12, weight: .medium))
-                    .frame(width: 24).modifier(CompactActionSurface())
+                Image(systemName: symbol).font(FrogType.label)
+                    .foregroundStyle(destructive ? FrogStyle.critical : FrogStyle.ink)
+                    .frame(width: FrogStyle.compactHeight).modifier(CompactActionSurface())
             } else {
-            Image(systemName: symbol).font(.system(size: 13, weight: .medium))
-                .foregroundStyle(destructive ? FrogStyle.critical : hovering ? FrogStyle.accent : FrogStyle.muted)
-                .frame(width: 26, height: 26)
-                .contentShape(RoundedRectangle(cornerRadius: FrogStyle.corner))
+                Image(systemName: symbol).font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(destructive ? FrogStyle.critical : hovering ? FrogStyle.ink : FrogStyle.muted)
+                    .frame(width: FrogStyle.controlHeight, height: FrogStyle.controlHeight)
+                    .frogRowHighlight(hovering: hovering)
             }
         }.buttonStyle(.plain).onHover { hovering = $0 }.accessibilityLabel(L10n.text(title)).help(L10n.text(title))
     }
@@ -413,9 +547,9 @@ struct SettingRow<Control: View>: View {
     @ViewBuilder var control: Control
     var body: some View {
         HStack(spacing: 24) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(L10n.text(title)).font(.system(size: 12, weight: .medium)).foregroundStyle(FrogStyle.ink)
-                Text(L10n.text(description)).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L10n.text(title)).font(FrogType.bodyMedium).foregroundStyle(FrogStyle.ink)
+                Text(L10n.text(description)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                     .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
             }.frame(maxWidth: .infinity, alignment: .leading)
             control
@@ -430,8 +564,8 @@ struct FrogEmptyState: View {
     var body: some View {
         VStack(spacing: 10) {
             SymbolTile(symbol: symbol, size: 32)
-            Text(L10n.text(title)).font(.system(size: 14, weight: .medium)).foregroundStyle(FrogStyle.ink)
-            Text(L10n.text(message)).font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
+            Text(L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.ink)
+            Text(L10n.text(message)).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
                 .multilineTextAlignment(.center).lineSpacing(4).frame(maxWidth: 340)
         }.frame(maxWidth: .infinity).padding(.vertical, 44).padding(.horizontal, 24)
     }

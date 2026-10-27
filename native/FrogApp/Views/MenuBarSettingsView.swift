@@ -94,7 +94,7 @@ struct MenuBarSettingsView: View {
                 Text("Always visible").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
             }.frame(maxWidth: .infinity)
         }.padding(18).foregroundStyle(FrogStyle.ink)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Menu bar layout: hidden icons, divider, visible icons and arrow. Command-drag to arrange.")
     }

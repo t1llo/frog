@@ -119,7 +119,7 @@ struct ClipboardHistoryView: View {
             IconAction(title: "Paste with formatting", symbol: "return") { paste(entry, false) }
                 .opacity(selected ? 1 : 0).allowsHitTesting(selected).accessibilityHidden(!selected)
         }.padding(.horizontal, 10).frame(height: ClipboardHistoryLayout.rowHeight)
-            .background(selected ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+            .background(selected ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
             .accessibilityAddTraits(selected ? .isSelected : [])
     }
 

@@ -131,7 +131,7 @@ struct MarkdownBlockView: View {
         case .heading(let level): Text(block.text).font(.system(size: level == 1 ? 20 : level == 2 ? 17 : level == 3 ? 15 : 13, weight: .semibold)).accessibilityAddTraits(.isHeader)
         case .code:
             Text(block.text).font(.system(size: 12, design: .monospaced)).padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+                .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
         case .rule: Rectangle().fill(FrogStyle.border).frame(height: 1).frame(maxWidth: .infinity)
         case .table(let rows):
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 6) {

@@ -273,13 +273,3 @@ struct HistoryLimitsView: View {
     }
 }
 
-struct SettingsSection<Content: View>: View {
-    let title: String
-    @ViewBuilder var content: Content
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(title).font(.system(size: 12, weight: .semibold)).padding(.leading, 10)
-            VStack(alignment: .leading, spacing: 7) { content }.padding(12).frame(maxWidth: .infinity).frogTableSurface()
-        }
-    }
-}

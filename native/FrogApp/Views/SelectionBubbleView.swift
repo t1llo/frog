@@ -22,8 +22,6 @@ struct SelectionBubbleView: View {
     let expand: () -> Void
 
     static let space = "selectionBubble"
-    /// The bar is a slim strip; the list has the corners of Frog's menus.
-    static let barCorner: CGFloat = 10
     /// The list is as wide as its longest row within these bounds.
     static let listWidths: ClosedRange<CGFloat> = 248...320
     static let rowHeight: CGFloat = 30
@@ -59,7 +57,7 @@ struct SelectionBubbleView: View {
             }
         }
         .padding(4)
-        .frogPanel(corner: Self.barCorner)
+        .frogPanel()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L10n.text("Selection bubble"))
     }
@@ -128,7 +126,7 @@ struct SelectionBubbleView: View {
             Image(systemName: item.symbol).font(.system(size: 11, weight: .medium))
                 .foregroundStyle(item.answers ? FrogStyle.accent : FrogStyle.muted)
                 .frame(width: 22, height: 22)
-                .background(item.answers ? FrogStyle.accentSoft : FrogStyle.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+                .background(item.answers ? FrogStyle.accentSoft : FrogStyle.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
             Text(item.title).font(FrogType.body).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 12)
             if let hotkey = item.hotkey {

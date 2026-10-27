@@ -26,10 +26,10 @@ struct FrogStatusMenu: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
                 Image(nsImage: FrogMenuIcon.image).renderingMode(.template)
-                Text("Frog").font(.system(size: 13, weight: .semibold))
+                Text("Frog").font(FrogType.section)
                 Spacer()
                 if systemMonitorEnabled { SystemMonitorMenuSelector(selection: $selectedTab) }
-            }.padding(.horizontal, 8).frame(height: 42)
+            }.padding(.horizontal, 8).frame(height: 40)
 
             if systemMonitorEnabled && selectedTab == .system {
                 SystemMonitorView(monitor: model.systemMonitor, presenter: .frogMenu)
@@ -40,14 +40,9 @@ struct FrogStatusMenu: View {
             action(model.setupPresented ? "Set up Frog…" : "Open Frog", symbol: "arrow.up.forward.app", key: "⌘,") {
                 dismiss(); model.showSettings()
             }.keyboardShortcut(",")
-            Divider().padding(.horizontal, 8)
-            HStack {
-                Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")")
-                Spacer()
-                Button("Quit Frog") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q").buttonStyle(.plain)
-            }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted).padding(.horizontal, 9).padding(.vertical, 8)
-        }.padding(5).frame(width: 292).fixedSize(horizontal: false, vertical: true)
-            .font(.system(size: 12)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
+            action("Quit Frog", symbol: "power", key: "⌘Q") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
+        }.padding(6).frame(width: 292).fixedSize(horizontal: false, vertical: true)
+            .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()
             .background(MenuWindowSizing())
             .task { model.refreshSystemStatus(); await power.refresh(); await power.refreshAccessUnlessReady() }
@@ -74,7 +69,7 @@ struct FrogStatusMenu: View {
             if model.isProcessing { action("Cancel processing", symbol: "xmark") { model.cancelProcessing() } }
             if let error = model.errorMessage {
                 HStack(alignment: .top) {
-                    Text(String(error.prefix(500))).font(.system(size: 10)).foregroundStyle(FrogStyle.warning)
+                    Text(String(error.prefix(500))).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
                         .lineLimit(3).help("Full details are in Settings → Logs.")
                     Spacer(minLength: 0)
                     IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)
@@ -96,24 +91,24 @@ struct FrogStatusMenu: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
                 Label("Stay awake", systemImage: power.isEnabled ? "cup.and.saucer.fill" : "cup.and.saucer")
-                    .font(.system(size: 12, weight: .medium)).fixedSize()
+                    .font(FrogType.bodyMedium).fixedSize()
                 Spacer(minLength: 0)
                 if power.isBusy { ProgressView().controlSize(.mini) }
                 if !power.hasReadState {
-                    Text("Checking…").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                    Text("Checking…").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                 } else if power.isEnabled {
                     Text(power.deadline.map { "Until \($0.formatted(date: .omitted, time: .shortened))" } ?? (power.ownsSession ? "Until Frog quits" : "On outside Frog"))
-                        .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                        .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                 } else {
                     Button { choosingDuration.toggle() } label: {
-                        CompactDropdownLabel(value: L10n.text(power.duration.title), width: 98, height: 24)
+                        CompactDropdownLabel(value: L10n.text(power.duration.title), width: 98, height: FrogStyle.compactHeight)
                     }.buttonStyle(.plain).disabled(power.isBusy)
                         .accessibilityLabel("Stay-awake duration").accessibilityValue(power.duration.title)
                 }
                 Toggle("Stay awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
                     .labelsHidden().toggleStyle(.switch).disabled(!power.canSwitch)
                     .accessibilityHint("Keep this Mac awake, including with the lid closed")
-            }.frame(height: 24)
+            }.frame(height: FrogStyle.compactHeight)
             if choosingDuration && !power.isEnabled {
                 VStack(spacing: 1) {
                     ForEach(StayAwakeController.DurationChoice.allCases) { duration in
@@ -124,28 +119,28 @@ struct FrogStatusMenu: View {
                                 if power.duration == duration {
                                     Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(FrogStyle.accent)
                                 }
-                            }.font(.system(size: 11)).padding(.horizontal, 8).frame(height: 24).contentShape(Rectangle())
+                            }.font(FrogType.small).padding(.horizontal, 8).frame(height: FrogStyle.compactHeight).contentShape(Rectangle())
                         }.buttonStyle(MenuRowStyle()).accessibilityAddTraits(power.duration == duration ? .isSelected : [])
                     }
                 }
             }
             if let error = power.error {
-                Text(String(error.prefix(500))).font(.system(size: 10)).foregroundStyle(FrogStyle.warning)
+                Text(String(error.prefix(500))).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
                     .lineLimit(3).help("Open Stay awake for details.")
             } else if let notice = power.notice {
-                Text(String(notice.prefix(500))).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(3)
+                Text(String(notice.prefix(500))).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(3)
             }
             if power.isConfiguringAccess {
-                Text("Finish in Terminal…").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                Text("Finish in Terminal…").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
             } else if power.accessState != .ready && power.accessState != .checking {
                 HStack {
-                    Text(power.accessState.title).foregroundStyle(FrogStyle.muted)
+                    Text(power.accessState.title).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                     Spacer()
-                    Button("Set up access…") { power.configureAccess(); dismiss() }.buttonStyle(.plain).foregroundStyle(FrogStyle.accent)
-                }.font(.system(size: 10))
+                    Button("Set up access…") { power.configureAccess(); dismiss() }.buttonStyle(.frog(compact: true))
+                }
             }
-        }.padding(.horizontal, 8).padding(.vertical, 8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
-            .padding(.horizontal, 6).padding(.bottom, 4)
+        }.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+            .padding(.horizontal, 2).padding(.bottom, 4)
     }
 
     private func action(_ title: String, symbol: String, key: String? = nil, perform: @escaping () -> Void) -> some View {
@@ -159,7 +154,7 @@ private struct MenuBarOrganizerNotice: View {
     var body: some View {
         if let notice = organizer.menuNotice {
             HStack(alignment: .top) {
-                Text(notice).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                Text(notice).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                     .lineLimit(3).help("Open Menu bar for details.")
                 Spacer(minLength: 0)
             }.padding(8)
@@ -184,16 +179,22 @@ struct MenuActionRow: View {
                 Image(systemName: symbol).frame(width: 16).foregroundStyle(FrogStyle.muted)
                 Text(L10n.text(title))
                 Spacer()
-                if let key { Text(key).font(.system(size: 10)).foregroundStyle(FrogStyle.muted) }
-            }.padding(.horizontal, 9).frame(height: 30).contentShape(Rectangle())
+                if let key { Text(key).font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
+            }.padding(.horizontal, 8).frame(height: FrogStyle.controlHeight).contentShape(Rectangle())
         }.buttonStyle(MenuRowStyle())
     }
 }
 
+/// Menu rows highlight like list rows: a neutral fill on hover, the control radius.
 struct MenuRowStyle: ButtonStyle {
-    @State private var hovered = false
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
-        configuration.label.background(hovered || configuration.isPressed ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: 5))
-            .onHover { hovered = $0 }
+        Row(configuration: configuration)
+    }
+    private struct Row: View {
+        let configuration: ButtonStyleConfiguration
+        @State private var hovering = false
+        var body: some View {
+            configuration.label.frogRowHighlight(hovering: hovering || configuration.isPressed).onHover { hovering = $0 }
+        }
     }
 }

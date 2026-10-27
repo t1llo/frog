@@ -41,8 +41,8 @@ struct LocalToolProvidersView: View {
             HStack {
                 TextField("Tool default, or model ID", text: $model)
                     .textFieldStyle(.plain).font(.system(size: 12)).padding(8)
-                    .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
-                    .overlay(RoundedRectangle(cornerRadius: FrogStyle.corner).strokeBorder(FrogStyle.border.opacity(0.6)))
+                    .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                    .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius).strokeBorder(FrogStyle.border.opacity(0.6)))
                     .accessibilityLabel("Coding-tool model")
                 CompactMenu(value: "Models", width: 105) {
                     ForEach(models) { item in Button(item.name) { model = item.id } }

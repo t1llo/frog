@@ -472,7 +472,7 @@ private struct UsageAccountSettingsRow: View {
                 ForEach(account.sources, id: \.self) { source in
                     Text(source).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
                         .padding(.horizontal, 6).padding(.vertical, 3)
-                        .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.innerRadius))
+                        .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius))
                         .help(source)
                 }
             }

@@ -19,16 +19,14 @@ struct PanelFooter: View {
                 Text(L10n.text(primaryTitle)).font(FrogType.label).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 KeyCap("↩")
             }
-            if primaryTitle != nil && showsActions {
-                Divider().frame(height: 14).padding(.horizontal, 2)
-            }
             if showsActions {
                 Text(L10n.text("Actions")).font(FrogType.label).foregroundStyle(FrogStyle.ink)
+                    .padding(.leading, primaryTitle != nil ? 8 : 0)
                 HStack(spacing: 3) { KeyCap("⌘"); KeyCap("K") }
             }
             if let closeTitle {
-                if primaryTitle != nil || showsActions { Divider().frame(height: 14).padding(.horizontal, 2) }
                 Text(L10n.text(closeTitle)).font(FrogType.label).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                    .padding(.leading, primaryTitle != nil || showsActions ? 8 : 0)
                 KeyCap("esc")
             }
         }
@@ -36,7 +34,7 @@ struct PanelFooter: View {
         .padding(.horizontal, 12)
         .frame(height: 32)
         .frame(maxWidth: .infinity)
-        .overlay(alignment: .top) { Divider() }
+        .background(FrogStyle.inset)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
     }
@@ -59,7 +57,7 @@ struct KeyCap: View {
         Text(key).font(FrogType.label).foregroundStyle(FrogStyle.muted)
             .frame(minWidth: 18, minHeight: 18)
             .padding(.horizontal, 3)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.innerRadius))
-            .overlay(RoundedRectangle(cornerRadius: FrogStyle.innerRadius).strokeBorder(FrogStyle.border.opacity(0.6)))
+            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius))
+            .overlay(RoundedRectangle(cornerRadius: FrogStyle.smallRadius).strokeBorder(FrogStyle.border.opacity(0.6)))
     }
 }

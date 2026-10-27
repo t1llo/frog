@@ -30,7 +30,7 @@ struct LegalDocumentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             PageHeader(title: document.title, subtitle: document.summary)
-            ReadOnlyText(text: text).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+            ReadOnlyText(text: text).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
                 .accessibilityLabel(L10n.text(document.title))
             HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
         }.padding(22).frame(width: 640, height: 520).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)

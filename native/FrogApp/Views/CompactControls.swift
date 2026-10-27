@@ -11,9 +11,7 @@ struct SearchBox: View {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(FrogStyle.muted) }
                     .buttonStyle(.plain).accessibilityLabel("Clear search")
             }
-        }.font(.system(size: 12)).padding(.horizontal, 9).padding(.vertical, 7)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
-            .overlay(RoundedRectangle(cornerRadius: FrogStyle.corner).strokeBorder(FrogStyle.border.opacity(0.45)))
+        }.font(FrogType.body).padding(.horizontal, 8).frogControlSurface()
     }
 }
 
@@ -21,14 +19,14 @@ struct FilterTag: View {
     let title: String
     let selected: Bool
     let action: () -> Void
+    @State private var hovering = false
     var body: some View {
         Button(action: action) {
-            Text(L10n.text(title)).font(.system(size: 11, weight: selected ? .semibold : .regular))
-                .padding(.horizontal, 10).padding(.vertical, 7)
-                .foregroundStyle(selected ? FrogStyle.ink : FrogStyle.muted)
-                .background(selected ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
-                .contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
+            Text(L10n.text(title)).font(selected ? FrogType.bodyMedium : FrogType.body)
+                .padding(.horizontal, 10).frame(height: FrogStyle.controlHeight)
+                .foregroundStyle(selected || hovering ? FrogStyle.ink : FrogStyle.muted)
+                .frogRowHighlight(hovering: hovering, selected: selected)
+        }.buttonStyle(.plain).onHover { hovering = $0 }.accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -48,12 +46,12 @@ struct CompactRow<Content: View>: View {
     var body: some View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(L10n.text(title)).font(.system(size: 12))
-                if let detail { Text(L10n.text(detail)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true) }
+                Text(L10n.text(title)).font(FrogType.body)
+                if let detail { Text(L10n.text(detail)).font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true) }
             }
             Spacer(minLength: 12)
             content.controlSize(.small).fixedSize(horizontal: true, vertical: false).environment(\.compactRowTitle, title)
-        }.padding(.vertical, 3)
+        }.frame(minHeight: FrogStyle.controlHeight)
     }
 }
 
@@ -71,9 +69,9 @@ struct CompactMenu<Content: View>: View {
             .modifier(RowControlName(title: rowTitle, value: L10n.text(value)))
             .popover(isPresented: $showing, arrowEdge: .bottom) {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 2) { content }
+                    VStack(alignment: .leading, spacing: 1) { content }
                         .buttonStyle(CompactOptionStyle { showing = false })
-                        .padding(8)
+                        .padding(6)
                 }.frame(width: 280).frame(maxHeight: 280).fixedSize(horizontal: false, vertical: true)
                     .foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
                     // The options are not controls of the row.
@@ -96,19 +94,19 @@ struct CompactDropdownLabel: View {
     let value: String
     var symbol: String? = nil
     var width: CGFloat = 220
-    var height: CGFloat = 32
+    /// `FrogStyle.controlHeight`, or `FrogStyle.compactHeight` in popups and panel headers.
+    var height: CGFloat = FrogStyle.controlHeight
     @State private var hovering = false
+    private var compact: Bool { height < FrogStyle.controlHeight }
     var body: some View {
-        HStack(spacing: height < 28 ? 5 : 8) {
+        HStack(spacing: compact ? 5 : 7) {
             if let symbol { Image(systemName: symbol).foregroundStyle(FrogStyle.muted) }
             Text(value).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 2)
-            Image(systemName: "chevron.down").font(.system(size: 9)).foregroundStyle(FrogStyle.muted)
-        }.font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.ink)
-            .padding(.horizontal, height < 28 ? 7 : 9).frame(width: width, height: height)
-            .background(hovering ? AnyShapeStyle(FrogStyle.selection) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-            .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius).strokeBorder(FrogStyle.border.opacity(0.6)))
-            .contentShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius)).onHover { hovering = $0 }
+            Image(systemName: "chevron.down").font(.system(size: 9, weight: .medium)).foregroundStyle(FrogStyle.muted)
+        }.font(compact ? FrogType.small : FrogType.body).foregroundStyle(FrogStyle.ink)
+            .padding(.horizontal, 8).frame(width: width, height: height)
+            .frogControlSurface(hovering: hovering, height: height).onHover { hovering = $0 }
     }
 }
 
@@ -124,8 +122,8 @@ private struct CompactOptionStyle: PrimitiveButtonStyle {
         var body: some View {
             Button { configuration.trigger(); dismiss() } label: {
                 HStack { configuration.label; Spacer(minLength: 0) }
-                    .font(.system(size: 12)).padding(8).contentShape(Rectangle())
-                    .background(hovering ? FrogStyle.accentSoft : .clear, in: RoundedRectangle(cornerRadius: 5))
+                    .font(FrogType.body).padding(.horizontal, 8).frame(minHeight: FrogStyle.controlHeight)
+                    .frogRowHighlight(hovering: hovering)
             }.buttonStyle(.plain).onHover { hovering = $0 }
         }
     }
@@ -143,16 +141,17 @@ struct CompactSegments<Value: Hashable>: View {
         HStack(spacing: 2) {
             ForEach(values, id: \.self) { value in
                 Button { choose(value) } label: {
-                    Text(L10n.text(title(value))).font(.system(size: 11, weight: selected == value ? .semibold : .regular))
-                        .frame(maxWidth: .infinity).padding(.vertical, compact ? 3 : 6)
+                    Text(L10n.text(title(value)))
+                        .font(compact ? (selected == value ? FrogType.label : FrogType.small) : (selected == value ? FrogType.bodyMedium : FrogType.body))
+                        .lineLimit(1).frame(maxWidth: .infinity, maxHeight: .infinity)
                         .foregroundStyle(selected == value ? FrogStyle.ink : FrogStyle.muted)
-                        .background(selected == value ? FrogStyle.surface : AnyShapeStyle(Color.clear), in: RoundedRectangle(cornerRadius: FrogStyle.innerRadius))
+                        .background(selected == value ? FrogStyle.surface : AnyShapeStyle(Color.clear), in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius))
+                        .shadow(color: .black.opacity(selected == value ? 0.08 : 0), radius: 1, y: 0.5)
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityAddTraits(selected == value ? .isSelected : [])
             }
-        }.padding(compact ? 2 : 3).frame(width: width, height: compact ? 24 : nil)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: compact ? 5 : 7))
-            .overlay { if compact { RoundedRectangle(cornerRadius: 5).strokeBorder(FrogStyle.border.opacity(0.6)) } }
+        }.padding(2).frame(width: width, height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
+            .frogControlSurface(height: nil)
     }
 }
 
@@ -165,6 +164,6 @@ struct ListToolbar<Filters: View>: View {
             filters
             Spacer(minLength: 12)
             SearchBox(placeholder: placeholder, text: $search).frame(width: 190)
-        }.frame(height: 32)
+        }.frame(height: FrogStyle.controlHeight)
     }
 }

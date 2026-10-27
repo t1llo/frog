@@ -31,7 +31,7 @@ struct SidebarFeatureList<Row: View>: View {
         VStack(spacing: 2) {
             ForEach(Array(features.enumerated()), id: \.element) { index, feature in
                 if index > 0, arrangement.pinned.contains(features[index - 1]), !arrangement.pinned.contains(feature) {
-                    Divider().opacity(0.6).padding(.horizontal, 9).padding(.vertical, 3)
+                    Color.clear.frame(height: 8).accessibilityHidden(true)
                 }
                 row(feature, grips ? "line.3.horizontal" : arrangement.pinned.contains(feature) ? "pin.fill" : nil)
                     .opacity(dragged == feature ? 0.45 : 1)
@@ -98,7 +98,6 @@ struct SidebarFeatureList<Row: View>: View {
             .disabled(!arrangement.canMove(feature, by: -1, in: features))
         Button("Move down", systemImage: "arrow.down") { save { $0.move(feature, by: 1, in: features) } }
             .disabled(!arrangement.canMove(feature, by: 1, in: features))
-        Divider()
         Button("Reset sidebar order") { save { $0 = SidebarArrangement(order: [], pinned: []) } }
             .disabled(!arrangement.isCustom)
         Text("Hold Shift and drag a row to move it")

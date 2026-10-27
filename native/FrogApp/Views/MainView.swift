@@ -7,7 +7,7 @@ struct MainView: View {
     private var section: ToolkitRoute { model.toolkit.route }
     @State private var permissionsRequest = ScrollRequest()
 
-    private struct NavigationItem: Identifiable {
+    fileprivate struct NavigationItem: Identifiable {
         let id: ToolkitRoute
         let title: String
         let symbol: String
@@ -65,27 +65,26 @@ struct MainView: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebar.frame(width: 176)
-                .overlay(alignment: .trailing) { Rectangle().fill(FrogStyle.border.opacity(0.6)).frame(width: 1) }
             VStack(spacing: 0) {
                 selectedPage.id(section).frame(maxWidth: .infinity, maxHeight: .infinity)
                 if let error = model.errorMessage {
-                    HStack(alignment: .top, spacing: 12) {
+                    HStack(alignment: .center, spacing: 10) {
                         Image(systemName: "exclamationmark.circle.fill").foregroundStyle(FrogStyle.critical)
-                        Text(error).font(.system(size: 12)).textSelection(.enabled)
+                        Text(error).font(FrogType.body).textSelection(.enabled)
                             .lineLimit(3).help("Full details are in Settings → Logs.")
                             .frame(maxWidth: .infinity, alignment: .leading)
                         IconAction(title: "Copy error", symbol: "doc.on.doc") { ViewActions.copy(error) }
-                        Button { model.dismissError() } label: { Image(systemName: "xmark") }
-                            .buttonStyle(.plain).accessibilityLabel("Dismiss error")
-                    }.padding(16).background(FrogStyle.surface)
-                        .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border).frame(height: 1) }
+                        IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)
+                    }.padding(.leading, 12).padding(.trailing, 4).padding(.vertical, 4)
+                        .background(FrogStyle.critical.opacity(0.08), in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
+                        .padding(.horizontal, 20).padding(.bottom, 16)
                 }
             }.clipped().padding(.top, 32).background(FrogStyle.canvas)
                 .sheet(item: Binding(get: { model.pluginReview }, set: { if $0 == nil { model.pluginRuntime?.dismissReview() } })) { review in
                     PluginReviewSheet(review: review, plugins: model.plugins) { model.report($0) }
                 }
         }
-        .font(.system(size: 13)).foregroundStyle(FrogStyle.ink)
+        .font(FrogType.lead).foregroundStyle(FrogStyle.ink)
         .environment(\.locale, L10n.locale)
         .background(FrogWindowMaterial())
         .ignoresSafeArea(.container, edges: .top)
@@ -102,7 +101,7 @@ struct MainView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
                     Image(nsImage: FrogMenuIcon.image).renderingMode(.template).frame(width: 20)
-                    Text("Frog").font(.system(size: 14, weight: .semibold)).tracking(-0.2)
+                    Text("Frog").font(FrogType.section).tracking(-0.2)
                 }.padding(.horizontal, 16).padding(.top, 19).padding(.bottom, 23)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .overlay { WindowDragRegion().accessibilityHidden(true) }
@@ -115,8 +114,7 @@ struct MainView: View {
                             }
                             let pages = model.pluginPages
                             if !pages.isEmpty {
-                                Text(L10n.text("Plugins")).font(.system(size: 10, weight: .medium)).foregroundStyle(FrogStyle.muted)
-                                    .padding(.horizontal, 9).padding(.top, 12).padding(.bottom, 4).accessibilityAddTraits(.isHeader)
+                                SectionCaption(text: "Plugins").padding(.horizontal, 9).padding(.top, 14).padding(.bottom, 4)
                                 ForEach(pages) { item in
                                     navigationButton(NavigationItem(id: .plugin(item.id), title: item.name, symbol: PluginSymbol.name(item.symbol)))
                                         .id(ToolkitRoute.plugin(item.id))
@@ -135,44 +133,52 @@ struct MainView: View {
                 }
             }.padding(.top, 32).background(FrogStyle.sidebar)
             VStack(spacing: 2) { ForEach(workspaceNavigation) { navigationButton($0) } }
-                .padding(8).padding(.vertical, 4)
-                .background(FrogStyle.surface)
-                .background(FrogStyle.canvas)
-                .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border.opacity(0.6)).frame(height: 1) }
+                .padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 10)
             if !model.accessibilityGranted || !DictationController.microphoneGranted {
                 Button {
                     model.toolkit.select(.settings); permissionsRequest.ask()
                 } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.muted)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Finish setup").font(.system(size: 11, weight: .medium))
+                        Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Finish setup").font(FrogType.label).foregroundStyle(FrogStyle.ink)
                             Text(L10n.text(!model.accessibilityGranted ? "Allow Accessibility" : "Allow Microphone"))
-                                .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                                .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                         }
                         Spacer(minLength: 0)
-                    }.padding(10).contentShape(Rectangle())
-                }.buttonStyle(.plain).padding(.horizontal, 6).padding(.bottom, 10)
-                    .background(FrogStyle.sidebar)
+                    }.padding(10).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                        .contentShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                }.buttonStyle(.plain).padding(.horizontal, 8).padding(.bottom, 10)
             }
-        }
+        }.background(FrogStyle.sidebar)
     }
     private func navigationButton(_ item: NavigationItem) -> some View {
-        Button { model.toolkit.select(item.id) } label: {
+        SidebarRow(item: item, selected: section == item.id) { model.toolkit.select(item.id) }
+            .optionalNavigationShortcut(item.key)
+    }
+}
+
+/// A sidebar page: highlighted on hover, filled with the selection colour when open.
+private struct SidebarRow: View {
+    let item: MainView.NavigationItem
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+    var body: some View {
+        Button(action: action) {
             HStack(spacing: 9) {
                 Image(systemName: item.symbol).font(.system(size: 13)).frame(width: 18)
-                Text(L10n.text(item.title)).font(.system(size: 12, weight: section == item.id ? .medium : .regular)).lineLimit(1)
+                Text(L10n.text(item.title)).font(selected ? FrogType.bodyMedium : FrogType.body).lineLimit(1)
                 Spacer(minLength: 0)
                 if let marker = item.marker {
                     Image(systemName: marker).font(.system(size: 9)).foregroundStyle(FrogStyle.muted).accessibilityHidden(true)
                 }
             }
-            .foregroundStyle(section == item.id ? FrogStyle.ink : FrogStyle.muted)
-            .padding(.horizontal, 9).padding(.vertical, 7)
-            .background(section == item.id ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
-            .contentShape(RoundedRectangle(cornerRadius: FrogStyle.corner))
-        }.buttonStyle(.plain).optionalNavigationShortcut(item.key)
-            .accessibilityAddTraits(section == item.id ? .isSelected : []).help(item.title)
+            .foregroundStyle(selected || hovering ? FrogStyle.ink : FrogStyle.muted)
+            .padding(.horizontal, 9).frame(height: FrogStyle.controlHeight)
+            .frogRowHighlight(hovering: hovering, selected: selected)
+        }.buttonStyle(.plain).onHover { hovering = $0 }
+            .accessibilityAddTraits(selected ? .isSelected : []).help(item.title)
     }
 }
 
@@ -205,7 +211,7 @@ struct InlineIssue: View {
     let message: String
     var body: some View {
         Label(message, systemImage: "exclamationmark.circle")
-            .font(.system(size: 12)).foregroundStyle(FrogStyle.ink)
+            .font(FrogType.body).foregroundStyle(FrogStyle.ink)
             .fixedSize(horizontal: false, vertical: true).padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(FrogStyle.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))

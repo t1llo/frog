@@ -173,7 +173,7 @@ struct PluginsView: View {
                     Text(Self.prompt).font(FrogType.mono).textSelection(.enabled)
                     Spacer(minLength: 8)
                     IconAction(title: "Copy", symbol: "doc.on.doc") { ViewActions.copy(Self.prompt) }
-                }.padding(10).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+                }.padding(10).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
                 step(3, "Review it here when it asks for access the first time. Updates that ask for nothing new run at once.")
                 step(4, "To share it, ask your agent to pack it: `frog plugins pack` makes a .frogplugin file anyone can install.")
             }
@@ -185,7 +185,7 @@ struct PluginsView: View {
                     .font(.system(size: 12)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
                 HStack {
                     TextField("https://…/plugin.frogplugin", text: $link).textFieldStyle(.plain).padding(8)
-                        .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+                        .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
                         .onSubmit(openTypedLink)
                     Button("Review", action: openTypedLink).disabled(URL(string: link.trimmingCharacters(in: .whitespaces))?.scheme != "https" || plugins.downloading != nil)
                 }
@@ -291,7 +291,7 @@ struct PluginReviewSheet: View {
                                 ScrollView {
                                     Text((try? review.package.scriptText(name)) ?? "The script could not be read.")
                                         .font(FrogType.mono).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                                }.frame(maxHeight: 160).padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.corner))
+                                }.frame(maxHeight: 160).padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
                             } label: {
                                 HStack(spacing: 6) {
                                     Text(name).font(FrogType.mono)
