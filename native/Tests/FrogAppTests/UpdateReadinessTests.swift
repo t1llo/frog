@@ -11,7 +11,7 @@ import XCTest
         XCTAssertEqual(rowHeight(), 0, accuracy: 0.5)
         readiness.ready("1.0.26")
         XCTAssertEqual(readiness.version, "1.0.26")
-        XCTAssertEqual(rowHeight(), 30, accuracy: 0.5)
+        XCTAssertEqual(rowHeight(), FrogStyle.controlHeight, accuracy: 0.5)
         readiness.ready("")
         XCTAssertEqual(rowHeight(), 0, accuracy: 0.5, "An update with no version to name is not announced")
     }

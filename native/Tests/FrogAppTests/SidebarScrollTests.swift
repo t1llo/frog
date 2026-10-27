@@ -49,11 +49,12 @@ final class SidebarScrollTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(150))
         }
         XCTAssertEqual(y(), 90, "The scroll wheel scrolls the list")
-        // Stay awake is below the visible rows: the list scrolls until it shows, not until it is centred.
-        try await choose(.stayAwake)
+        // App cleaner is below the visible rows, with or without the Finish setup button under the list:
+        // the list scrolls until it shows, not until it is centred.
+        try await choose(.cleaner)
         XCTAssertGreaterThan(y(), 90)
         XCTAssertLessThan(y(), 190)
-        try await choose(.stayAwake)
+        try await choose(.cleaner)
         XCTAssertLessThan(y(), 190)
     }
 
