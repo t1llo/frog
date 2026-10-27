@@ -53,7 +53,7 @@ struct WindowCheatSheetContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Window shortcuts").font(FrogType.section)
+            Text("Window shortcuts").font(FrogType.section).accessibilityAddTraits(.isHeader)
             if sections.isEmpty {
                 Text("No window shortcuts yet. Add them on the Windows page.")
                     .font(FrogType.body).foregroundStyle(FrogStyle.muted)
@@ -61,7 +61,7 @@ struct WindowCheatSheetContent: View {
             }
             ForEach(sections) { section in
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(section.title).font(FrogType.label).foregroundStyle(FrogStyle.muted)
+                    SectionCaption(text: section.title)
                     ForEach(section.items) { item in
                         HStack(spacing: 10) {
                             Group {
@@ -72,9 +72,12 @@ struct WindowCheatSheetContent: View {
                             }.frame(width: 24)
                             Text(item.title).font(FrogType.body)
                             Spacer(minLength: 8)
-                            ShortcutBadge(text: HotkeyManager.display(item.hotkey))
+                            ShortcutKeyCaps(hotkey: item.hotkey)
                         }
-                        .frame(height: 24)
+                        .frame(height: FrogStyle.compactHeight)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(item.title)
+                        .accessibilityValue(HotkeyManager.display(item.hotkey))
                     }
                 }
             }

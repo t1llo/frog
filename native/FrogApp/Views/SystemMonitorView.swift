@@ -66,7 +66,7 @@ struct SystemMonitorOverview: View {
                 }.overlay(alignment: .topTrailing) {
                     if let sample, let end = history.last?.time {
                         Text(GraphStyle.ago(end.timeIntervalSince(sample.time)))
-                            .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                            .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                     }
                 }
                 SystemMonitorGraph(history: history, inspected: $inspected, sample: sample).frame(height: wide ? 150 : 54)
@@ -78,33 +78,33 @@ struct SystemMonitorOverview: View {
                 heading("Disk", symbol: "internaldrive")
                 if let capacity = snapshot.diskCapacity {
                     HStack(alignment: .firstTextBaseline) {
-                        Text(bytes(capacity.available)).font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text(bytes(capacity.available)).font(GraphStyle.figure).monospacedDigit()
                         Text("free").foregroundStyle(FrogStyle.muted)
                         Spacer(minLength: 0)
-                        Text("of \(bytes(capacity.total))").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                        Text("of \(bytes(capacity.total))").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                     }
                     meter(capacity.usedFraction, color: FrogStyle.level(capacity.usedFraction, warning: 0.85, critical: 0.95))
                 } else {
-                    Text("Capacity unavailable").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                    Text("Capacity unavailable").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }
                 HStack {
                     Label(rate(snapshot.diskRead), systemImage: "arrow.down")
                     Spacer(minLength: 4)
                     Label(rate(snapshot.diskWrite), systemImage: "arrow.up")
-                }.font(.system(size: 10)).monospacedDigit().foregroundStyle(FrogStyle.muted)
+                }.font(FrogType.caption).monospacedDigit().foregroundStyle(FrogStyle.muted)
             }.modifier(card)
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     heading("Power", symbol: "bolt")
                     Spacer(minLength: 4)
-                    Text(snapshot.power.source).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                    Text(snapshot.power.source).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                 }
                 if let percent = snapshot.power.batteryPercent {
                     HStack {
-                        Text("\(percent)%").font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text("\(percent)%").font(GraphStyle.figure).monospacedDigit()
                         Text(snapshot.power.charging ? "Charging" : "Battery charge")
-                            .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                            .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                         Spacer()
                     }
                     meter(Double(percent) / 100, color: snapshot.power.charging ? FrogStyle.good
@@ -120,20 +120,20 @@ struct SystemMonitorOverview: View {
                 detail("Low Power Mode", value: snapshot.power.lowPower.map { $0 ? "On" : "Off" } ?? "Measuring…")
             }.modifier(card)
             }.fixedSize(horizontal: false, vertical: wide)
-        }.padding(.horizontal, wide ? 0 : 6).padding(.bottom, wide ? 0 : 8)
+        }.padding(.horizontal, wide ? 0 : 2).padding(.bottom, wide ? 0 : 4)
             .accessibilityElement(children: .contain).accessibilityLabel("System overview")
     }
 
     private var card: OverviewCard { OverviewCard(wide: wide) }
 
     private func heading(_ title: String, symbol: String) -> some View {
-        Label(title, systemImage: symbol).font(.system(size: 11, weight: .medium))
+        Label(title, systemImage: symbol).font(FrogType.label)
     }
 
     private func usage(_ title: String, color: Color, text: String) -> some View {
         GraphLegend(color: color, title: title) {
-            Text(text).font(.system(size: text.hasSuffix("%") ? 20 : 11, weight: .semibold, design: .rounded))
-                .monospacedDigit().frame(height: 24, alignment: .leading)
+            Text(text).font(text.hasSuffix("%") ? GraphStyle.legendValue(page: wide) : FrogType.small)
+                .monospacedDigit().frame(height: wide ? 34 : 24, alignment: .leading)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -149,7 +149,7 @@ struct SystemMonitorOverview: View {
             Text(label).foregroundStyle(FrogStyle.muted)
             Spacer(minLength: 6)
             Text(value)
-        }.font(.system(size: 10))
+        }.font(FrogType.caption)
     }
 
     private func percent(_ metric: SystemMonitorMetric) -> String {
@@ -185,7 +185,7 @@ private struct OverviewCard: ViewModifier {
         if wide {
             content.padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).frogTableSurface()
         } else {
-            content.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
+            content.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
         }
     }
 }

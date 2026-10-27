@@ -11,7 +11,7 @@ enum ClipboardHistoryLayout {
 
     static func size(entryCount: Int) -> CGSize {
         let contentHeight = entryCount == 0 ? emptyHeight : CGFloat(min(visibleRows, entryCount)) * rowHeight
-        return CGSize(width: width, height: headerHeight + footerHeight + inset * 2 + 2 + contentHeight)
+        return CGSize(width: width, height: headerHeight + footerHeight + inset * 2 + contentHeight)
     }
 
     /// The free area of the display with keyboard focus (`main`), where the field it pastes into
@@ -36,29 +36,29 @@ struct ClipboardHistoryView: View {
     let close: () -> Void
     let clear: () -> Void
     let resize: (Int) -> Void
+    @State private var hovered: UUID?
 
     var body: some View {
         let entries = state.visibleEntries(in: history.entries)
         let selected = entries.indices.contains(state.selectedIndex) ? entries[state.selectedIndex] : nil
         let size = ClipboardHistoryLayout.size(entryCount: entries.count)
         VStack(spacing: 0) {
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(FrogStyle.muted)
-                    TextField("Search clipboard…", text: $state.query).textFieldStyle(.plain).font(.system(size: 14))
-                    Menu {
-                        Button("Clear clipboard history", role: .destructive, action: clear).disabled(history.entries.isEmpty)
-                    } label: { Image(systemName: "ellipsis") }
-                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Clipboard actions")
-                    IconAction(title: "Close", symbol: "xmark", action: close)
-                }
-             .padding(.horizontal, 16).frame(height: ClipboardHistoryLayout.headerHeight)
-            Divider().opacity(0.5)
+            HStack(spacing: 12) {
+                Image(systemName: "magnifyingglass").foregroundStyle(FrogStyle.muted).frame(width: 20)
+                TextField("Search clipboard…", text: $state.query).textFieldStyle(.plain).font(FrogType.lead)
+                Menu {
+                    Button("Clear clipboard history", role: .destructive, action: clear).disabled(history.entries.isEmpty)
+                } label: { Image(systemName: "ellipsis") }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Clipboard actions")
+                IconAction(title: "Close", symbol: "xmark", action: close)
+            }
+            .padding(.leading, 14).padding(.trailing, 8).frame(height: ClipboardHistoryLayout.headerHeight)
 
             VStack(spacing: 0) {
                 if entries.isEmpty {
                     VStack(spacing: 6) {
-                        Text(state.query.isEmpty ? "No copied text yet" : "No matching items").font(.system(size: 12, weight: .medium))
-                        Text(state.query.isEmpty ? "Copy text in any app to add it here." : "Try another search.").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                        Text(state.query.isEmpty ? "No copied text yet" : "No matching items").font(FrogType.bodyMedium)
+                        Text(state.query.isEmpty ? "Copy text in any app to add it here." : "Try another search.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                     }.frame(maxWidth: .infinity).frame(height: ClipboardHistoryLayout.emptyHeight)
                 } else {
                     ScrollViewReader { proxy in
@@ -75,31 +75,43 @@ struct ClipboardHistoryView: View {
                     }
                 }
             }.padding(ClipboardHistoryLayout.inset)
-            Divider().opacity(0.5)
 
-            HStack(spacing: 12) {
-                 Text("\(history.entries.count) items")
-                 Spacer(minLength: 0)
-                Button("⌘C Copy") { if let selected { copy(selected) } }.buttonStyle(.plain).disabled(selected == nil)
-                Text("↩ Paste")
-                Button("⇧↩ Plain") { if let selected { paste(selected, true) } }.buttonStyle(.plain).disabled(selected == nil)
-            }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                .padding(.horizontal, 12).frame(height: ClipboardHistoryLayout.footerHeight)
+            // The footer of every Frog panel: on the inset fill, each action named beside its keys.
+            HStack(spacing: 2) {
+                Text("\(history.entries.count) items").foregroundStyle(FrogStyle.muted)
+                Spacer(minLength: 0)
+                Button { if let selected { copy(selected) } } label: { hint("Copy", keys: ["⌘", "C"]) }
+                    .buttonStyle(.frog(.ghost, compact: true)).disabled(selected == nil).accessibilityLabel("⌘C Copy")
+                hint("Paste", keys: ["↩"]).padding(.horizontal, 8)
+                    .accessibilityElement(children: .ignore).accessibilityLabel("↩ Paste")
+                Button { if let selected { paste(selected, true) } } label: { hint("Plain", keys: ["⇧", "↩"]) }
+                    .buttonStyle(.frog(.ghost, compact: true)).disabled(selected == nil).accessibilityLabel("⇧↩ Plain")
+            }.font(FrogType.label)
+                .padding(.leading, 14).padding(.trailing, 4).frame(height: ClipboardHistoryLayout.footerHeight)
+                .frame(maxWidth: .infinity).background(FrogStyle.inset)
         }.frame(width: size.width, height: size.height)
-             .frogPanel()
+            .frogPanel()
             .environment(\.locale, L10n.locale)
             .onChange(of: entries.count, initial: true) { _, count in resize(count) }
+    }
+
+    /// "Copy ⌘C": what a key does, then its keys as caps, as in `PanelFooter`.
+    private func hint(_ title: String, keys: [String]) -> some View {
+        HStack(spacing: 6) {
+            Text(L10n.text(title)).foregroundStyle(FrogStyle.ink)
+            HStack(spacing: 3) { ForEach(keys, id: \.self) { KeyCap($0) } }
+        }
     }
 
     private func entryRow(_ entry: ClipboardHistoryEntry, index: Int) -> some View {
         let selected = state.selectedIndex == index
         let hidden = entry.isSensitive && !state.revealedIDs.contains(entry.id)
-        return HStack(spacing: 10) {
+        return HStack(spacing: 12) {
             Image(systemName: entry.isSensitive ? "lock" : "doc.text")
                 .font(.system(size: 12)).foregroundStyle(selected ? FrogStyle.accent : FrogStyle.muted)
                 .frame(width: 20).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(entry.displayPreview(revealed: !hidden)).font(.system(size: 12)).lineLimit(1)
+                Text(entry.displayPreview(revealed: !hidden)).font(FrogType.body).lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 6) {
                     Text(entry.timestamp, style: .time)
@@ -118,8 +130,11 @@ struct ClipboardHistoryView: View {
                 .help(entry.isSensitive ? (hidden ? "Click to reveal" : "Click to hide") : "Double-click to paste, or select and press Return")
             IconAction(title: "Paste with formatting", symbol: "return") { paste(entry, false) }
                 .opacity(selected ? 1 : 0).allowsHitTesting(selected).accessibilityHidden(!selected)
-        }.padding(.horizontal, 10).frame(height: ClipboardHistoryLayout.rowHeight)
-            .background(selected ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+        }.padding(.horizontal, 8).frame(height: ClipboardHistoryLayout.rowHeight)
+            .frogRowHighlight(hovering: hovered == entry.id, selected: selected)
+            .onHover { inside in
+                if inside { hovered = entry.id } else if hovered == entry.id { hovered = nil }
+            }
             .accessibilityAddTraits(selected ? .isSelected : [])
     }
 

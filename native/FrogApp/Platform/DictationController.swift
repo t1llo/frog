@@ -638,6 +638,7 @@ enum DictationPopupLayout {
 private struct DictationPopup: View {
     @ObservedObject var controller: DictationController
     @State private var copiedPartial = false
+    @State private var closeHovering = false
     var body: some View {
         let failed = controller.phase == .failed
         VStack(alignment: .leading, spacing: 8) {
@@ -659,33 +660,30 @@ private struct DictationPopup: View {
                     .help("Change microphone").accessibilityLabel("Change microphone")
                     .simultaneousGesture(TapGesture().onEnded { controller.refreshMicrophones() })
                 }
-                Text(L10n.text(controller.statusText)).font(.system(size: 12, weight: .semibold))
+                Text(L10n.text(controller.statusText)).font(FrogType.section)
                     .lineLimit(1).truncationMode(.tail).help(L10n.text(controller.statusText))
                 Spacer(minLength: 0)
                 if controller.phase == .recording {
                     Text(String(format: "%d:%02d", controller.elapsed / 60, controller.elapsed % 60))
-                        .font(.system(size: 12)).monospacedDigit().foregroundStyle(FrogStyle.muted)
-                    Button { controller.requestStop() } label: {
-                        Label("Stop", systemImage: "stop.fill").font(.system(size: 11, weight: .medium))
-                            .padding(.horizontal, 7).frame(height: 24)
-                            .background(FrogStyle.accentSoft, in: RoundedRectangle(cornerRadius: 5))
-                    }.buttonStyle(.plain).help("Stop recording").accessibilityLabel("Stop recording")
+                        .font(FrogType.body).monospacedDigit().foregroundStyle(FrogStyle.muted)
+                    Button { controller.requestStop() } label: { Label("Stop", systemImage: "stop.fill") }
+                        .buttonStyle(.frog(compact: true)).help("Stop recording").accessibilityLabel("Stop recording")
                 }
                 if failed {
-                    Button { controller.retryTranscription() } label: {
-                        Label("Retry", systemImage: "arrow.clockwise").font(.system(size: 11, weight: .medium))
-                            .padding(.horizontal, 7).frame(height: 24)
-                            .background(FrogStyle.accentSoft, in: RoundedRectangle(cornerRadius: 5))
-                    }.buttonStyle(.plain).help("Transcribe the recording again").accessibilityLabel("Retry transcription")
+                    Button { controller.retryTranscription() } label: { Label("Retry", systemImage: "arrow.clockwise") }
+                        .buttonStyle(.frog(compact: true)).help("Transcribe the recording again").accessibilityLabel("Retry transcription")
                 }
+                // An `IconAction` at the compact height, which keeps its own help text.
                 Button { controller.interrupt() } label: {
-                    Image(systemName: "xmark").font(.system(size: 10, weight: .medium))
-                        .frame(width: 24, height: 24).contentShape(Rectangle())
-                }.buttonStyle(.plain).help(failed ? "Discard recording" : "Cancel dictation · Esc")
+                    Image(systemName: "xmark").font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(closeHovering ? FrogStyle.ink : FrogStyle.muted)
+                        .frame(width: FrogStyle.compactHeight, height: FrogStyle.compactHeight)
+                        .frogRowHighlight(hovering: closeHovering)
+                }.buttonStyle(.plain).onHover { closeHovering = $0 }.help(failed ? "Discard recording" : "Cancel dictation · Esc")
                     .accessibilityLabel(failed ? "Discard recording" : "Cancel dictation")
             }.frame(height: 26)
             if failed {
-                Text(controller.failure).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                Text(controller.failure).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                     .lineLimit(2).truncationMode(.tail).help(controller.failure)
                     .frame(maxWidth: .infinity, alignment: .topLeading).frame(height: 28, alignment: .topLeading)
             }
@@ -693,7 +691,7 @@ private struct DictationPopup: View {
                 HStack(spacing: 8) {
                     if controller.noMicrophoneInput {
                         Label("No microphone input", systemImage: "exclamationmark.triangle.fill")
-                            .font(.system(size: 11)).foregroundStyle(FrogStyle.warning).fixedSize()
+                            .font(FrogType.small).foregroundStyle(FrogStyle.warning).fixedSize()
                     }
                     MicrophoneWaveform(meter: controller.microphoneMeter)
                 }.frame(height: 28)
@@ -713,7 +711,7 @@ private struct DictationPopup: View {
                     if !controller.liveText.isEmpty {
                         Button(copiedPartial ? "Copied" : "Copy partial text") {
                             controller.copyPartialTranscript(); copiedPartial = true
-                        }.buttonStyle(.plain).font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.accent)
+                        }.buttonStyle(.frog(.ghost, compact: true))
                             .fixedSize().help("Copy the text recognised before the failure")
                     }
                 }.frame(height: 20)
@@ -823,7 +821,7 @@ private struct MicrophoneWaveform: View {
             for (index, level) in levels.enumerated() {
                 let height = max(2, CGFloat(level) * size.height)
                 let rect = CGRect(x: CGFloat(index) * step, y: (size.height - height) / 2, width: max(2, step - 3), height: height)
-                context.fill(Path(roundedRect: rect, cornerRadius: 2), with: .color(FrogStyle.accent.opacity(level > 0.02 ? 0.85 : 0.25)))
+                context.fill(Capsule().path(in: rect), with: .color(FrogStyle.accent.opacity(level > 0.02 ? 0.85 : 0.25)))
             }
         }.accessibilityLabel("Microphone input level")
             .accessibilityValue("\(Int((levels.last ?? 0) * 100)) percent")

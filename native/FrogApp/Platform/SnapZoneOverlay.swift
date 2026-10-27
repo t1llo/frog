@@ -67,8 +67,8 @@ private final class SnapZoneOverlayModel: ObservableObject {
     @Published var layout: SnapZoneLayout?
 }
 
-/// Rounded tiles with a 1 pt accent outline and the layout's name; the one under the pointer
-/// filled with the accent at 30 %.
+/// Tiles with a window's corner radius, a 1 pt accent outline and the layout's name; the one under
+/// the pointer filled with the accent at 30 %.
 private struct SnapZoneOverlayView: View {
     @ObservedObject var model: SnapZoneOverlayModel
 
@@ -78,15 +78,15 @@ private struct SnapZoneOverlayView: View {
                 ForEach(layout.zones) { zone in
                     let local = zone.frame.offsetBy(dx: -layout.frame.minX, dy: -layout.frame.minY).insetBy(dx: 4, dy: 4)
                     let highlighted = zone.action == layout.highlight
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: FrogStyle.panelRadius)
                         .fill(highlighted ? FrogStyle.accent.opacity(0.3) : Color.black.opacity(0.06))
-                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(FrogStyle.accent, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: FrogStyle.panelRadius).strokeBorder(FrogStyle.accent, lineWidth: 1))
                         .overlay {
                             Text(zone.action.title)
-                                .font(.system(size: 12, weight: .medium))
+                                .font(FrogType.bodyMedium)
                                 .foregroundStyle(FrogStyle.ink)
-                                .padding(.horizontal, 8).padding(.vertical, 4)
-                                .background(.regularMaterial, in: Capsule())
+                                .padding(.horizontal, 8).frame(height: FrogStyle.compactHeight)
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
                         }
                         .frame(width: max(0, local.width), height: max(0, local.height))
                         .offset(x: local.minX, y: local.minY)

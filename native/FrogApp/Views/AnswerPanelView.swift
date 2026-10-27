@@ -89,14 +89,11 @@ struct AnswerPanelView: View {
 
     private static let followUpID = "follow-up"
 
-    /// A rule across the panel's width sets each follow-up apart from the answer before it.
+    /// Space sets each follow-up apart from the answer before it.
     private func question(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Divider().opacity(0.5)
-            Text(text).font(FrogType.label).foregroundStyle(FrogStyle.muted)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.top, 2)
+        Text(text).font(FrogType.label).foregroundStyle(FrogStyle.muted)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.top, 8)
     }
 
     /// A note that could not be saved takes the line until the next action.
@@ -115,9 +112,8 @@ struct AnswerPanelView: View {
                 case nil: EmptyView()
                 }
             }
-            .buttonStyle(FrogButtonStyle()).controlSize(.small)
+            .buttonStyle(.frog(compact: true))
             .padding(.horizontal, 12).padding(.vertical, 6)
-            .overlay(alignment: .top) { if hasContent { Divider().opacity(0.6) } }
             .accessibilityElement(children: .combine)
         }
     }
@@ -127,9 +123,8 @@ struct AnswerPanelView: View {
             HStack(spacing: 2) {
                 TextField(L10n.text(followUpPlaceholder), text: $model.question)
                     .textFieldStyle(.plain).font(FrogType.body)
-                    .padding(.horizontal, 8).frame(height: 24)
-                    .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-                    .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius).strokeBorder(FrogStyle.border.opacity(0.6)))
+                    .padding(.horizontal, 8)
+                    .frogControlSurface(height: FrogStyle.compactHeight)
                     // It stays enabled while the answer runs, so it keeps focus and the next question can be typed.
                     .disabled(followUpBlocked)
                     .onSubmit { model.ask(model.question) }
@@ -154,7 +149,6 @@ struct AnswerPanelView: View {
             }
         }
         .padding(.leading, 8).padding(.trailing, 6).padding(.vertical, 6)
-        .overlay(alignment: .top) { Divider().opacity(0.6) }
     }
 
     // MARK: State
@@ -192,8 +186,9 @@ struct AnswerPanelView: View {
     }
 }
 
-/// One of the panel's actions as a small icon, named for VoiceOver, with its shortcut on hover. An active one, such
-/// as a pinned panel or a copied answer, takes the accent colour.
+/// One of the panel's actions as a small icon, named for VoiceOver, with its shortcut on hover: an `IconAction` at the
+/// compact height, which keeps its own help text. An active one, such as a pinned panel or a copied answer, takes the
+/// accent colour.
 private struct PanelIcon: View {
     let symbol: String
     let title: String
@@ -206,9 +201,9 @@ private struct PanelIcon: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 12, weight: .medium))
-                .foregroundStyle(active || (hovering && enabled) ? FrogStyle.accent : FrogStyle.muted)
-                .frame(width: 24, height: 24)
-                .contentShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                .foregroundStyle(active ? FrogStyle.accent : hovering && enabled ? FrogStyle.ink : FrogStyle.muted)
+                .frame(width: FrogStyle.compactHeight, height: FrogStyle.compactHeight)
+                .frogRowHighlight(hovering: hovering && enabled)
         }
         .buttonStyle(.plain).opacity(enabled || active ? 1 : 0.4)
         .onHover { hovering = $0 }

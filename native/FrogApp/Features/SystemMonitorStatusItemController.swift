@@ -103,13 +103,13 @@ struct SystemMonitorStatusPopover: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
                 Image(systemName: "gauge.medium").foregroundStyle(FrogStyle.muted)
-                Text("System").font(.system(size: 13, weight: .semibold))
+                Text("System").font(FrogType.section)
                 Spacer()
-            }.padding(.horizontal, 8).frame(height: 42)
+            }.padding(.horizontal, 8).frame(height: 40)
             SystemMonitorView(monitor: monitor, presenter: .statusItem)
             MenuActionRow(title: "Menu bar item settings…", symbol: "slider.horizontal.3", action: openSettings)
-        }.padding(5).frame(width: 292).fixedSize(horizontal: false, vertical: true)
-            .font(.system(size: 12)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
+        }.padding(6).frame(width: 292).fixedSize(horizontal: false, vertical: true)
+            .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()
             .environment(\.locale, L10n.locale)
     }

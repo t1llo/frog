@@ -7,7 +7,7 @@ struct UsageDashboardView: View {
     var body: some View {
         PageScroll {
             PageHeader(title: "Mr. Usage") {
-                IconAction(title: "Refresh usage", symbol: "arrow.clockwise", bordered: true) { usage.refresh() }
+                IconAction(title: "Refresh usage", symbol: "arrow.clockwise") { usage.refresh() }
             }
             UsageProviderControls(usage: usage)
             if usage.preferences.provider == "Claude" {
@@ -15,9 +15,9 @@ struct UsageDashboardView: View {
                 if !usage.claudeAccountsEnabled {
                     HStack(spacing: 8) {
                         Text("Claude Code profile: \(usage.claudeConfigDirectory.lastPathComponent)")
-                            .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                            .font(FrogType.small).foregroundStyle(FrogStyle.muted)
                             .help(usage.claudeConfigDirectory.path)
-                        Button("Choose folder…") { chooseClaudeProfile() }.buttonStyle(FrogButtonStyle())
+                        Button("Choose folder…") { chooseClaudeProfile() }.buttonStyle(.frog())
                     }
                 }
                 // Found once two accounts are, and kept while on, so it can be turned on after Not now.
@@ -25,11 +25,10 @@ struct UsageDashboardView: View {
             }
             if UsageStatusPopover.shownAccounts(usage).isEmpty { UsageLimitsView(usage: usage) }
             else { UsageAccountsLimits(usage: usage) }
-            Divider().overlay(FrogStyle.border.opacity(0.4))
             UsageActivityView(usage: usage)
             UsageAccountDetails(usage: usage)
             Text("API value is an estimate, not your subscription bill.")
-                 .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(3)
+                .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineSpacing(3)
             UsageMenuBarDesign(usage: usage)
         }
         // The main window keeps this page after it is closed or minimised, so appearing and
@@ -49,7 +48,7 @@ struct UsageDashboardView: View {
     }
 }
 
-/// The menu-bar popup, laid out like Frog's own: a 42-point header, content, one command row
+/// The menu-bar popup, laid out like Frog's own: a 40-point header, content, the command rows
 /// and a quiet footer, as tall as its content.
 struct UsageStatusPopover: View {
     static let popupName = "Mr. Usage"
@@ -67,21 +66,20 @@ struct UsageStatusPopover: View {
         let accounts = Self.shownAccounts(usage)
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Text("Mr. Usage").font(.system(size: 13, weight: .semibold)).fixedSize()
+                Text("Mr. Usage").font(FrogType.section).fixedSize()
                 Spacer(minLength: 6)
                 CompactSegments(values: usage.providers, selected: provider, width: 128, compact: true, title: { $0 }) {
                     var next = usage.preferences; next.provider = $0; usage.updatePreferences(next)
                 }.accessibilityElement(children: .contain).accessibilityLabel("Usage provider")
                 IconAction(title: "Refresh usage", symbol: "arrow.clockwise", bordered: true) { usage.refresh() }
-            }.padding(.horizontal, 8).frame(height: 42)
-            VStack(alignment: .leading, spacing: 14) {
-                if provider == "Claude", usage.accountsNoticeVisible { UsageAccountsNotice(usage: usage) }
+            }.padding(.horizontal, 8).frame(height: 40)
+            VStack(alignment: .leading, spacing: 18) {
+                if provider == "Claude", usage.accountsNoticeVisible { UsageAccountsNotice(usage: usage, compact: true) }
                 if accounts.isEmpty { UsageLimitsView(usage: usage, compact: true) }
                 else { UsageAccountsLimits(usage: usage, compact: true) }
-                Divider().overlay(FrogStyle.border.opacity(0.4))
                 UsageActivityView(usage: usage, compact: true,
                     showsCompactTokens: accounts.isEmpty && usage.windows(provider: provider).count <= 1)
-            }.padding(.horizontal, 9).padding(.top, 4).padding(.bottom, 12)
+            }.padding(.horizontal, 8).padding(.top, 4).padding(.bottom, 12)
             // At most one account is offered live readings or a sign-in: the first that needs one.
             if let account = accounts.first(where: \.needsLiveSetup) {
                 MenuActionRow(title: "Set up live readings for \(account.label)…", symbol: "person.crop.circle.badge.plus") {
@@ -98,7 +96,6 @@ struct UsageStatusPopover: View {
             }
             UpdateReadyRow(install: installUpdate)
             MenuActionRow(title: "Open dashboard", symbol: "arrow.up.forward.app", action: openDashboard)
-            Divider().padding(.horizontal, 8)
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 if !accounts.isEmpty { UsageAccountsFooter(accounts: accounts.filter(\.included), now: context.date) } else {
                 HStack(spacing: 4) {
@@ -110,12 +107,12 @@ struct UsageStatusPopover: View {
                     }
                     Spacer()
                     if let source = usage.planSource(provider: provider) { Text(source) }
-                }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                 }
-            }.padding(.horizontal, 9).padding(.vertical, 8)
+            }.padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 4)
         }
-        .padding(5).frame(width: Self.width).fixedSize(horizontal: false, vertical: true)
-        .font(.system(size: 12)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
+        .padding(6).frame(width: Self.width).fixedSize(horizontal: false, vertical: true)
+        .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
         .frogPanel()
         .onAppear { usage.setPresented(true, for: .popup) }
         .onDisappear { usage.setPresented(false, for: .popup) }
@@ -144,16 +141,18 @@ struct UsageStatusPopover: View {
 /// Offers once to show each Claude account Frog found; Not now never asks again.
 private struct UsageAccountsNotice: View {
     @ObservedObject var usage: UsageDashboardModel
+    /// In the popup: compact buttons, and the radius of a block inside a popup.
+    var compact = false
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(usage.accountsNoticeText).font(FrogType.body).lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
-                Button(usage.accountsNoticeAction) { usage.showAllAccounts() }.buttonStyle(FrogButtonStyle(primary: true))
-                Button("Not now") { usage.dismissAccountsNotice() }.buttonStyle(FrogButtonStyle())
+                Button(usage.accountsNoticeAction) { usage.showAllAccounts() }.buttonStyle(.frog(.primary, compact: compact))
+                Button("Not now") { usage.dismissAccountsNotice() }.buttonStyle(.frog(compact: compact))
             }
-        }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
+        }.padding(compact ? 8 : 14).frame(maxWidth: .infinity, alignment: .leading)
+            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: compact ? FrogStyle.controlRadius : FrogStyle.cardRadius))
             .accessibilityElement(children: .contain)
     }
 }
@@ -172,7 +171,7 @@ private struct UsageAccountsLimits: View {
                 } else if usage.preferences.claudeAccountsView == "combined" {
                     combined(accounts, now: context.date)
                 } else if compact {
-                    Text("Plan limits").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                    SectionCaption(text: "Plan limits")
                     ForEach(accounts.prefix(4)) { UsageAccountRow(account: $0, now: context.date) }
                 } else {
                     ForEach(accounts) { UsageAccountLimits(account: $0, now: context.date) }
@@ -187,10 +186,10 @@ private struct UsageAccountsLimits: View {
         let windows = usage.combinedWindows(now: now)
         let basis = windows.first?.basisDescription
         Text("Plan limits · " + accounts.map(\.label).joined(separator: " + "))
-            .font(compact ? .system(size: 11) : FrogType.section).foregroundStyle(compact ? FrogStyle.muted : FrogStyle.ink)
+            .font(compact ? FrogType.label : FrogType.section).foregroundStyle(compact ? FrogStyle.muted : FrogStyle.ink)
             .lineLimit(1).help(basis ?? "")
         if windows.isEmpty {
-            Text("No current reading").font(.system(size: 12, weight: .medium))
+            Text("No current reading").font(FrogType.bodyMedium)
         } else {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: compact || windows.count == 1 ? 1 : 2),
                       alignment: .leading, spacing: compact ? 14 : 18) {
@@ -215,7 +214,7 @@ private struct UsageAccountRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Text(account.label).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                Text(account.label).font(FrogType.bodyMedium).lineLimit(1)
                 if let plan = account.plan { UsagePlanBadge(plan: plan) }
                 Spacer(minLength: 4)
                 Text(account.age.map { UsageStatusPopover.age(of: $0, at: now) } ?? "No reading yet")
@@ -243,7 +242,7 @@ private struct UsageMiniMeter: View {
             HStack(spacing: 4) {
                 Text(title).foregroundStyle(FrogStyle.muted)
                 Spacer(minLength: 2)
-                Text(window?.usedText ?? "—").font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                Text(window?.usedText ?? "—").font(FrogType.label).monospacedDigit()
                 if let reset = window?.resetsAt {
                     Text(UsageStatusPopover.shortReset(reset, now: now)).foregroundStyle(FrogStyle.muted)
                         .help(reset.formatted(date: .abbreviated, time: .shortened))
@@ -260,9 +259,7 @@ private struct UsageMiniMeter: View {
 private struct UsagePlanBadge: View {
     let plan: String
     var body: some View {
-        Text(plan).font(.system(size: 10, weight: .medium)).lineLimit(1)
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(FrogStyle.inset, in: Capsule()).foregroundStyle(FrogStyle.muted)
+        FrogBadge(text: plan).lineLimit(1)
     }
 }
 
@@ -281,7 +278,7 @@ private struct UsageAccountsFooter: View {
                     .help(warning).accessibilityLabel(warning)
             }
             Spacer()
-        }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+        }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
     }
 }
 
@@ -391,11 +388,11 @@ private struct UsageAccountsSection: View {
                 HStack(spacing: 8) {
                     SectionCaption(text: "Accounts")
                     Spacer(minLength: 0)
-                    Button("Add folder…") { addFolder() }.buttonStyle(FrogButtonStyle())
+                    Button("Add folder…") { addFolder() }.buttonStyle(.frog())
                         .help("A Claude app data folder or a Claude Code folder Frog did not find")
                 }
                 FrogCard(padding: 0) {
-                    VStack(alignment: .leading, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 2) {
                         if accounts.isEmpty {
                             Text(usage.searchingClaudeAccounts ? "Looking for Claude accounts…"
                                  : "No Claude account found. Add the folder of a Claude app profile or a Claude Code folder.")
@@ -404,7 +401,6 @@ private struct UsageAccountsSection: View {
                         }
                         ForEach(accounts) { account in
                             UsageAccountSettingsRow(usage: usage, account: account) { liveSetup = account }.padding(12)
-                            if account.id != accounts.last?.id { Divider().overlay(FrogStyle.border.opacity(0.35)) }
                         }
                     }
                 }
@@ -488,11 +484,11 @@ private struct UsageAccountSettingsRow: View {
                 Label(note, systemImage: "link").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
             }
             if account.needsLiveSetup {
-                Button("Set up live readings…", action: setUpLiveReadings).buttonStyle(FrogButtonStyle())
+                Button("Set up live readings…", action: setUpLiveReadings).buttonStyle(.frog())
                     .help("Signs Claude Code in as \(account.label), so Frog can check its limits with Anthropic")
             } else if account.needsSignIn {
                 Button(account.checkingSignIn ? "Checking the login…" : "Sign in to Claude Code…") { ClaudeSignIn.start(usage, account: account.id) }
-                    .buttonStyle(FrogButtonStyle()).disabled(account.checkingSignIn)
+                    .buttonStyle(.frog()).disabled(account.checkingSignIn)
                     .help("Opens Terminal to sign in to Claude Code as \(account.label), in this account’s own Claude Code folder")
             }
         }.help(usage.accountLogin(for: account.id) ?? "")
@@ -515,9 +511,8 @@ private struct UsageAccountLabelField: View {
     var body: some View {
         TextField("Label", text: $text)
             .textFieldStyle(.plain).font(FrogType.label)
-            .padding(.horizontal, 7).frame(width: 120, height: 24)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-            .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius).strokeBorder(FrogStyle.border.opacity(focused ? 0.9 : 0.5)))
+            .padding(.horizontal, 8).frame(width: 120)
+            .frogControlSurface(height: FrogStyle.compactHeight)
             .focused($focused)
             .onSubmit(commit)
             .onChange(of: focused) { _, focused in if !focused { commit() } }
@@ -543,25 +538,21 @@ private struct UsageLimitsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 if compact {
                     HStack {
-                        Text("Plan limits").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                        SectionCaption(text: "Plan limits")
                         Spacer()
-                        if let plan = usage.planName(provider: provider) {
-                            Text(plan).font(.system(size: 10, weight: .medium)).lineLimit(1)
-                                .padding(.horizontal, 7).padding(.vertical, 3)
-                                .background(FrogStyle.inset, in: Capsule()).foregroundStyle(FrogStyle.muted)
-                        }
+                        if let plan = usage.planName(provider: provider) { UsagePlanBadge(plan: plan) }
                     }
                 } else if let plan = usage.planName(provider: provider) {
                     Label("\(plan) plan", systemImage: "person.crop.circle")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(FrogType.bodyMedium)
                 }
                 if windows.isEmpty {
                     HStack(spacing: 10) {
                         Image(systemName: "chart.bar.xaxis").font(.system(size: compact ? 15 : 20)).foregroundStyle(FrogStyle.muted)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("No current reading").font(.system(size: 12, weight: .medium))
+                            Text("No current reading").font(FrogType.bodyMedium)
                             if !compact { Text("The source status below explains the latest check.")
-                                .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                                .font(FrogType.small).foregroundStyle(FrogStyle.muted)
                             }
                         }
                     }.padding(.vertical, compact ? 2 : 8).help(usage.status(provider: provider))
@@ -571,19 +562,19 @@ private struct UsageLimitsView: View {
                     }
                 }
                 if !compact, usage.status(provider: provider) != "Newest available plan limits" {
-                  Text(usage.status(provider: provider))
-                    .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineSpacing(2)
-                     .help(usage.status(provider: provider)).textSelection(.enabled)
+                    Text(usage.status(provider: provider))
+                        .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineSpacing(2)
+                        .help(usage.status(provider: provider)).textSelection(.enabled)
                 }
                 if !compact, provider == "Claude", usage.needsClaudeSignIn {
                     Button(usage.checkingClaudeSignIn ? "Checking Claude Code’s login…" : "Sign in to Claude Code…") { ClaudeSignIn.start(usage) }
-                        .buttonStyle(FrogButtonStyle()).disabled(usage.checkingClaudeSignIn)
+                        .buttonStyle(.frog()).disabled(usage.checkingClaudeSignIn)
                 }
                 if !compact, let credits = usage.credits(provider: provider) {
-                    Label(credits, systemImage: "creditcard").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                    Label(credits, systemImage: "creditcard").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }
                 if !compact, provider == "Claude", let label = usage.accountLabel {
-                    Text(label).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                    Text(label).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                 }
                 if !compact, let source = usage.planSource(provider: provider), !windows.isEmpty {
                     HStack(spacing: 4) {
@@ -591,7 +582,7 @@ private struct UsageLimitsView: View {
                         if let updated = usage.planUpdatedAt(provider: provider) {
                             Text("·"); Text(updated, style: .relative); Text("ago")
                         }
-                    }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                    }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                 }
             }
         }
@@ -628,10 +619,9 @@ private struct UsageLimitView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 6 : 9) {
             HStack(alignment: .firstTextBaseline) {
-                Text(window.title).font(.system(size: 12, weight: .medium))
+                Text(window.title).font(FrogType.bodyMedium)
                 Spacer()
-                Text(window.usedText)
-                    .font(.system(size: compact ? 14 : 17, weight: .semibold)).monospacedDigit()
+                Text(window.usedText).font(GraphStyle.figure).monospacedDigit()
             }
             GeometryReader { geometry in
                 Capsule().fill(FrogStyle.inset)
@@ -652,10 +642,10 @@ private struct UsageLimitView: View {
                     Text("Resets in \(Duration.seconds(max(0, reset.timeIntervalSince(now))).formatted(.units(allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 1)))")
                         .help(reset.formatted(date: .abbreviated, time: .shortened))
                 }
-            }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+            }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
             if !compact, let elapsed, let pace = window.pace(at: now) {
                 Text(pace)
-                    .font(.system(size: 10)).foregroundStyle(paceColor(pace))
+                    .font(FrogType.caption).foregroundStyle(paceColor(pace))
                     .help("\(Int(fraction * 100))% used with \(Int(elapsed * 100))% of the window elapsed")
             }
         }.padding(.trailing, compact ? 0 : 8).accessibilityElement(children: .combine)
@@ -672,7 +662,7 @@ private struct UsageActivityView: View {
         VStack(alignment: .leading, spacing: compact ? 10 : 14) {
             HStack(alignment: .top) {
                 GraphLegend(color: FrogStyle.series, title: settings.metric == "API cost" ? (compact ? "API estimate" : "Estimated API cost") : "\(settings.metric) tokens", spacing: 5) {
-                    Text(chart.total).font(.system(size: compact ? 20 : 32, weight: .semibold)).tracking(-0.6).monospacedDigit()
+                    Text(chart.total).font(GraphStyle.legendValue(page: !compact)).monospacedDigit()
                 }
                 Spacer()
                 if !compact {
@@ -684,7 +674,8 @@ private struct UsageActivityView: View {
                         }
                     }.accessibilityLabel("Activity metric")
                 }
-                CompactMenu(value: compact ? settings.range : rangeTitle(settings.range), width: compact ? 70 : 150) {
+                CompactMenu(value: compact ? settings.range : rangeTitle(settings.range), width: compact ? 70 : 150,
+                            height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight) {
                     ForEach(usage.ranges, id: \.self) { range in
                         Button(rangeTitle(range)) { var next = usage.preferences; next.range = range; usage.updatePreferences(next) }
                             .help(rangeSpan(range))
@@ -692,14 +683,14 @@ private struct UsageActivityView: View {
                 }.accessibilityLabel("Activity period")
             }
             if !usage.loaded {
-                HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Reading token activity…").font(.system(size: 11)).foregroundStyle(FrogStyle.muted) }
+                HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Reading token activity…").font(FrogType.small).foregroundStyle(FrogStyle.muted) }
                     .frame(maxWidth: .infinity, minHeight: compact ? 80 : 140)
             } else if !chart.hasActivity {
                 VStack(spacing: 6) {
                     Image(systemName: "chart.xyaxis.line").font(.system(size: 22)).foregroundStyle(FrogStyle.muted)
-                    Text("No token activity in this period").font(.system(size: 12, weight: .medium))
+                    Text("No token activity in this period").font(FrogType.bodyMedium)
                     if !compact { Text(settings.provider == "Claude" ? "Reads Claude Code, OpenCode and Pi logs. Desktop-only chats are not included." : "Reads Codex, OpenCode and Pi logs on this Mac.")
-                        .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).multilineTextAlignment(.center)
+                        .font(FrogType.small).foregroundStyle(FrogStyle.muted).multilineTextAlignment(.center)
                     }
                 }.frame(maxWidth: .infinity, minHeight: compact ? 80 : 140)
             } else {
@@ -712,7 +703,7 @@ private struct UsageActivityView: View {
                         Text("Total tokens").foregroundStyle(FrogStyle.muted)
                         Spacer()
                         Text(usage.format(chart.totalTokens, metric: "Input")).monospacedDigit()
-                    }.font(.system(size: 11))
+                    }.font(FrogType.small)
                     if showsCompactTokens {
                         HStack(spacing: 12) {
                             ForEach(["Input", "Cache read", "Output"], id: \.self) { name in
@@ -721,48 +712,47 @@ private struct UsageActivityView: View {
                                     Text(usage.format(chart.totals.first { $0.name == name }?.value ?? 0, metric: name)).monospacedDigit()
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }
-                        }.font(.system(size: 10))
+                        }.font(FrogType.caption)
                             .help("Input excludes cache reads. Account token splits are estimates; full details are in the dashboard.")
                     }
                 } else { UsageTokenTotals(usage: usage, chart: chart) }
                 if !compact {
-                    VStack(spacing: 0) {
+                    VStack(spacing: 2) {
                         ForEach(chart.models) { row in
                             VStack(spacing: 6) {
-                              HStack(spacing: 12) {
-                                Circle().fill(FrogStyle.accent.opacity(0.65)).frame(width: 5, height: 5)
-                                Text(row.name).lineLimit(1).help(row.name)
-                                Spacer()
-                                Text(usage.format(row.value, metric: settings.metric)).monospacedDigit()
-                              }.font(.system(size: 12))
-                              GeometryReader { geometry in
-                                  Capsule().fill(FrogStyle.accent.opacity(0.2))
-                                      .frame(width: geometry.size.width * row.value / max(row.value, chart.models.map(\.value).reduce(0, +)))
-                              }.frame(height: 2)
-                            }.padding(.vertical, 9)
-                            if row.id != chart.models.last?.id { Divider().overlay(FrogStyle.border.opacity(0.25)) }
+                                HStack(spacing: 12) {
+                                    Circle().fill(FrogStyle.accent.opacity(0.65)).frame(width: 5, height: 5)
+                                    Text(row.name).lineLimit(1).help(row.name)
+                                    Spacer()
+                                    Text(usage.format(row.value, metric: settings.metric)).monospacedDigit()
+                                }.font(FrogType.body)
+                                GeometryReader { geometry in
+                                    Capsule().fill(FrogStyle.accent.opacity(0.2))
+                                        .frame(width: geometry.size.width * row.value / max(row.value, chart.models.map(\.value).reduce(0, +)))
+                                }.frame(height: 2)
+                            }.padding(.vertical, 8)
                         }
                     }
                 }
             }
             if !compact, !chart.unpricedModels.isEmpty {
                 Text("Price unavailable: " + chart.unpricedModels.joined(separator: ", "))
-                    .font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(compact ? 2 : nil)
+                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(compact ? 2 : nil)
             }
             if let warning = usage.activityWarning {
                 Label(compact ? "Activity may be incomplete" : warning, systemImage: "clock.arrow.circlepath")
-                    .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                     .help(warning)
             }
             if !compact, !chart.sources.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Activity sources").font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.muted)
+                    SectionCaption(text: "Activity sources")
                     ForEach(chart.sources) { source in
                         HStack {
                             Text(source.name)
                             Spacer()
                             Text(usage.format(source.value, metric: settings.metric)).monospacedDigit()
-                        }.font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                        }.font(FrogType.small).foregroundStyle(FrogStyle.muted)
                     }
                 }
             }
@@ -770,10 +760,10 @@ private struct UsageActivityView: View {
                 Text(usage.hasAccountActivity
                      ? "Account totals by UTC day; local activity fills unreported days. Token splits and API cost are estimated from \(usage.accountEstimateBasis)."
                      : "Account activity is unavailable. Showing this Mac’s logs while account checks retry.")
-                    .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
             } else if !compact {
                 Text("Local logs can span multiple accounts; they are not filtered by the selected plan login.")
-                    .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
             }
         }
     }
@@ -800,7 +790,7 @@ private struct UsageTokenTotals: View {
                 Text("Total tokens · \(chart.range)").foregroundStyle(FrogStyle.muted)
                 Spacer()
                 Text(usage.format(chart.totalTokens, metric: "Input")).monospacedDigit()
-            }.font(.system(size: 12, weight: .medium))
+            }.font(FrogType.bodyMedium)
                 .help("Uncached input + cache reads + cache writes + output. Lifetime statistics are separate.")
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
                 ForEach(chart.totals) { total in
@@ -810,16 +800,17 @@ private struct UsageTokenTotals: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(total.label == "API cost" ? "API equivalent" : total.label)
-                                    .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                                 Text(usage.format(total.value, metric: total.name))
-                                    .font(.system(size: 14, weight: .medium)).monospacedDigit()
+                                    .font(GraphStyle.figure).monospacedDigit()
                             }
                             Spacer(minLength: 0)
                             if total.name == usage.preferences.metric {
                                 Circle().fill(FrogStyle.accent).frame(width: 4, height: 4)
                             }
                         }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(total.name == usage.preferences.metric ? AnyShapeStyle(FrogStyle.accent.opacity(0.08)) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
+                            .background(total.name == usage.preferences.metric ? AnyShapeStyle(FrogStyle.selection) : FrogStyle.inset,
+                                        in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
                             .contentShape(Rectangle())
                     }.buttonStyle(.plain)
                         .accessibilityAddTraits(total.name == usage.preferences.metric ? .isSelected : [])
@@ -836,27 +827,27 @@ private struct UsageAccountDetails: View {
             if let lifetime = usage.lifetime(provider: usage.preferences.provider) {
                 DisclosureGroup {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(lifetime.detail).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                        Text(lifetime.detail).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
                             ForEach(lifetime.statistics) { statistic in
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(statistic.name).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                                    Text(statistic.value).font(.system(size: 14, weight: .medium)).monospacedDigit()
+                                    Text(statistic.name).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                                    Text(statistic.value).font(GraphStyle.figure).monospacedDigit()
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
-                        Text(lifetime.note).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                        Text(lifetime.note).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                     }.padding(.top, 8)
-                } label: { Text(lifetime.title).font(.system(size: 12, weight: .medium)) }
+                } label: { Text(lifetime.title).font(FrogType.bodyMedium) }
             }
             if usage.preferences.provider == "OpenAI", !usage.planHistory.isEmpty {
                 DisclosureGroup {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("All devices · daily report; can lag live limits.")
-                            .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                            .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                         if let updated = usage.planHistoryUpdatedAt {
                             Text("Reported \(updated.formatted(date: .abbreviated, time: .shortened))")
-                                .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                                .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                         }
                         ForEach(usage.planHistory.prefix(5)) { period in
                             VStack(alignment: .leading, spacing: 6) {
@@ -864,18 +855,18 @@ private struct UsageAccountDetails: View {
                                     Text("\(period.start.formatted(date: .abbreviated, time: .omitted)) – \(period.end.formatted(date: .abbreviated, time: .omitted))")
                                     Spacer()
                                     Text(String(format: "%.1f%%", period.percentage)).monospacedDigit()
-                                }.font(.system(size: 11))
+                                }.font(FrogType.small)
                                 ProgressView(value: min(100, max(0, period.percentage)), total: 100).tint(FrogStyle.accent)
                                 ForEach(period.models.prefix(4)) { row in
                                     HStack {
                                         Text(row.name); Spacer()
                                         Text(String(format: "%.1f%%", row.value)).monospacedDigit()
-                                    }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                                    }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                                 }
                             }
                         }
                     }.padding(.top, 8)
-                } label: { Text("Recent plan usage").font(.system(size: 12, weight: .medium)) }
+                } label: { Text("Recent plan usage").font(FrogType.bodyMedium) }
             }
         }
     }
@@ -931,7 +922,7 @@ struct UsageTrendChart: View {
                 }
                 ForEach(steps) { step in
                     BarMark(x: .value("Date", step.date), y: .value("Amount", step.bar), width: .fixed(compact ? 2 : 3))
-                        .foregroundStyle(FrogStyle.series).cornerRadius(1)
+                        .foregroundStyle(FrogStyle.series)
                         .opacity(selected == nil || selected?.id == step.id ? 1 : 0.4)
                         .accessibilityLabel(label(step.date, long: true))
                         .accessibilityValue(format(step.amount))
@@ -958,8 +949,8 @@ struct UsageTrendChart: View {
             .overlay(alignment: .topLeading) {
                 if let selected {
                     Text("\(label(selected.date, long: true)) · \(format(selected.amount)) · \(format(selected.total)) total")
-                        .font(.system(size: 10, weight: .medium)).monospacedDigit().lineLimit(1)
-                        .padding(6).background(FrogStyle.panelSurface, in: RoundedRectangle(cornerRadius: 4))
+                        .font(FrogType.caption).monospacedDigit().lineLimit(1)
+                        .padding(6).background(FrogStyle.panelSurface, in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius))
                         .allowsHitTesting(false)
                 }
             }

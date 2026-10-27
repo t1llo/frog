@@ -53,7 +53,7 @@ final class ProcessingIndicator {
         panel.contentView = NSHostingView(rootView: HStack(spacing: 8) {
             if let symbol { Image(systemName: symbol).foregroundStyle(warning ? FrogStyle.warning : FrogStyle.accent) }
             else { ProgressView().controlSize(.small) }
-            Text(text).font(.system(size: 11, weight: .medium)).lineLimit(1)
+            Text(text).font(FrogType.label).lineLimit(1)
         }.frame(width: 200, height: 36).frogPanel(pill: true))
         if !panel.isVisible, let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main {
             panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - 100, y: screen.visibleFrame.minY + 24))

@@ -140,7 +140,7 @@ final class SecureInputNoticePanel {
         guard let panel else { return }
         let host = NSHostingView(rootView: HStack(spacing: 8) {
             Image(systemName: "lock").foregroundStyle(FrogStyle.warning)
-            Text(message).font(.system(size: 11, weight: .medium)).lineLimit(1)
+            Text(message).font(FrogType.label).lineLimit(1)
         }.padding(.horizontal, 14).frame(height: 36).frogPanel(pill: true))
         let size = host.fittingSize
         panel.contentView = host

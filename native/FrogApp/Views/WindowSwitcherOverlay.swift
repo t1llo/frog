@@ -44,7 +44,7 @@ struct WindowSwitcherOverlay: View {
             if !model.query.isEmpty { queryLine }
             if model.windows.isEmpty {
                 Spacer()
-                Text(model.query.isEmpty ? L10n.text("No accessible windows") : "No windows match \"\(model.query)\"").font(.system(size: 14, weight: .medium))
+                Text(model.query.isEmpty ? L10n.text("No accessible windows") : "No windows match \"\(model.query)\"").font(FrogType.section)
                     .lineLimit(1).truncationMode(.middle).padding(.horizontal, 16)
                 Spacer()
             } else {
@@ -53,30 +53,30 @@ struct WindowSwitcherOverlay: View {
                         LazyVStack(spacing: 0) {
                             ForEach(model.windows) { window in
                                 Button { choose(window.id) } label: {
-                                    HStack(spacing: 9) {
+                                    HStack(spacing: 12) {
                                         if let icon = model.icons[window.pid] {
                                             Image(nsImage: icon).resizable().frame(width: 20, height: 20)
                                         } else { Image(systemName: "app").frame(width: 20, height: 20) }
                                         VStack(alignment: .leading, spacing: 1) {
-                                            Text(window.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                                            Text(window.appName).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                                            Text(window.title).font(FrogType.body).lineLimit(1)
+                                            Text(window.appName).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                                         }.frame(maxWidth: .infinity, alignment: .leading)
-                                         if window.minimized || window.hidden {
-                                             Image(systemName: window.minimized ? "minus.rectangle" : "eye.slash")
-                                                 .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                                                 .help(window.minimized ? "Minimized" : "Hidden")
+                                        if window.minimized || window.hidden {
+                                            Image(systemName: window.minimized ? "minus.rectangle" : "eye.slash")
+                                                .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                                                .help(window.minimized ? "Minimized" : "Hidden")
                                         }
-                                        if let shortcut = model.shortcuts[window.pid] { Text(shortcut).font(.system(size: 10)).foregroundStyle(FrogStyle.muted) }
-                                         Image(systemName: "return").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                                             .opacity(model.selected == window.id ? 1 : 0)
-                                     }.padding(.horizontal, 8).frame(height: WindowSwitcherLayout.rowHeight)
-                                         .background(model.selected == window.id ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: 5))
-                                        .contentShape(Rectangle())
+                                        if let shortcut = model.shortcuts[window.pid] { Text(shortcut).font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
+                                        Image(systemName: "return").font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.accent)
+                                            .opacity(model.selected == window.id ? 1 : 0)
+                                    }.padding(.horizontal, 8).frame(height: WindowSwitcherLayout.rowHeight)
+                                        // The pointer moves the selection here, so the selection is the only highlight.
+                                        .frogRowHighlight(hovering: false, selected: model.selected == window.id)
                                 }.buttonStyle(.plain).id(window.id)
                                     .onContinuousHover { phase in if case .active = phase { hover(window.id) } }
                                     .accessibilityAddTraits(model.selected == window.id ? .isSelected : [])
                             }
-                        }.padding(5)
+                        }.padding(6)
                     }
                     .scrollIndicators(.hidden)
                     .onChange(of: model.selected) { _, id in if let id, !model.selectionFromPointer { proxy.scrollTo(id) } }
@@ -96,8 +96,7 @@ struct WindowSwitcherOverlay: View {
             Text(model.query).font(FrogType.body).lineLimit(1).truncationMode(.head)
             Spacer(minLength: 8)
             KeyCap("⌫")
-        }.padding(.horizontal, 13).frame(height: WindowSwitcherLayout.queryLineHeight)
-            .overlay(alignment: .bottom) { Divider() }
+        }.padding(.horizontal, 14).frame(height: WindowSwitcherLayout.queryLineHeight)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(L10n.text("Search"))
             .accessibilityValue(model.query)

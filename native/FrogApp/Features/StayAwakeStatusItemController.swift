@@ -80,7 +80,6 @@ import FrogCore
         let title = NSMenuItem(title: Self.description(power), action: nil, keyEquivalent: "")
         title.isEnabled = false
         menu.addItem(title)
-        menu.addItem(.separator())
         let off = NSMenuItem(title: L10n.text("Turn off Stay awake"), action: #selector(turnOff), keyEquivalent: "")
         off.target = self
         off.isEnabled = power.canSwitch

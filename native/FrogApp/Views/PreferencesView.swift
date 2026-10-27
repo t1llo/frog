@@ -19,23 +19,19 @@ struct PreferencesView: View {
                     CompactRow(title: "Setup assistant") {
                         Button("Open setup…") { model.showSetup() }
                     }
-                    Divider()
                     CompactRow(title: "Start at login") { Toggle("Start at login", isOn: Binding(get: { model.startAtLogin }, set: model.setStartAtLogin)).labelsHidden() }
                     if model.loginNeedsAttention {
                         HStack(spacing: 8) {
-                            Text(model.loginStatus).font(.caption).foregroundStyle(FrogStyle.warning).fixedSize(horizontal: false, vertical: true)
+                            Text(model.loginStatus).font(FrogType.caption).foregroundStyle(FrogStyle.warning).fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: 8)
                             Button("Open Login Items") { LoginService.openLoginItems() }
                         }
                     }
-                    Divider()
                     CompactRow(title: "Writing indicator") { Toggle("Writing indicator", isOn: preference(\.showProcessingIndicator)).labelsHidden() }
-                    Divider()
                     CompactRow(title: "Show rule shortcuts", detail: "Hold to see your rules.") {
                         HotkeyRecorder(hotkey: Binding(get: { prefs.shortcutPanelHotkey }, set: { value in update { $0.shortcutPanelHotkey = value } }))
                     }
-                    if let issue = model.hotkeyErrors[AppModel.shortcutPanelID] { Text(issue).font(.caption).foregroundStyle(FrogStyle.warning) }
-                    Divider()
+                    if let issue = model.hotkeyErrors[AppModel.shortcutPanelID] { Text(issue).font(FrogType.caption).foregroundStyle(FrogStyle.warning) }
                     CompactRow(title: "Statistics") {
                         Button("View statistics") { model.toolkit.select(.statistics) }
                     }
@@ -43,7 +39,6 @@ struct PreferencesView: View {
                 SettingsSection(title: "Appearance") { AppearanceSettingsView(model: model) }
                 SettingsSection(title: "Permissions") {
                     permission("Accessibility", allowed: model.accessibilityGranted) { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() }
-                    Divider()
                     permission("Microphone", allowed: DictationController.microphoneGranted) {
                         Task { if !DictationController.microphoneGranted { _ = await DictationController.requestMicrophone() }; DictationController.openMicrophoneSettings(); model.objectWillChange.send() }
                     }
@@ -51,14 +46,11 @@ struct PreferencesView: View {
                 AgentSettingsView(server: model.agentServer)
                 SettingsSection(title: "History") {
                     CompactRow(title: "Save history on this Mac") { Toggle("Save history on this Mac", isOn: preference(\.historyEnabled)).labelsHidden() }
-                    Divider()
                     CompactRow(title: "Hide history text", detail: "Masked until you reveal it.") {
                         Toggle("Hide history text", isOn: preference(\.hideHistoryText)).labelsHidden()
                     }
-                    Divider()
                     HistoryLimitsView(model: model)
-                    Divider()
-                    Text(model.historyFileURL.path).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
+                    Text(model.historyFileURL.path).font(FrogType.caption).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
                 }
                 SettingsSection(title: "Configuration") {
                     CompactRow(title: "Configuration file", detail: "Edit, save, then Reload.") {
@@ -68,9 +60,12 @@ struct PreferencesView: View {
                                 .disabled(model.isProcessing || model.isTestingProvider || model.dictation.active)
                         }
                     }
-                    Text(model.configurationFileURL.path).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
-                    Button("Show configuration folder") { NSWorkspace.shared.activateFileViewerSelecting([model.configurationFileURL]) }
-                    Divider()
+                    HStack(spacing: 8) {
+                        Text(model.configurationFileURL.path).font(FrogType.caption).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
+                        Spacer(minLength: 8)
+                        Button("Show configuration folder") { NSWorkspace.shared.activateFileViewerSelecting([model.configurationFileURL]) }
+                            .buttonStyle(.frog(.ghost))
+                    }
                     CompactRow(title: "Import / export", detail: "API keys stay in Keychain.") {
                         HStack {
                             Button("Import…") { chooseConfiguration() }.disabled(model.isProcessing || model.isTestingProvider || model.dictation.active)
@@ -85,11 +80,11 @@ struct PreferencesView: View {
                             ViewActions.copy(model.recentErrors.map { "\($0.timestamp.ISO8601Format())  \($0.message)" }.joined(separator: "\n"))
                         }
                         Spacer()
-                        Button("Clear log") { model.clearRecentErrors() }
+                        Button("Clear log") { model.clearRecentErrors() }.buttonStyle(.frog(.destructive))
                     }.disabled(model.recentErrors.isEmpty)
                     DisclosureGroup("Recent errors (\(model.recentErrors.count))") {
                         if model.recentErrors.isEmpty {
-                            Text("No errors recorded.").font(.system(size: 11)).foregroundStyle(FrogStyle.muted).padding(.vertical, 8)
+                            Text("No errors recorded.").font(FrogType.small).foregroundStyle(FrogStyle.muted).padding(.vertical, 8)
                         } else {
                             ScrollView {
                                 LazyVStack(alignment: .leading, spacing: 10) {
@@ -97,28 +92,28 @@ struct PreferencesView: View {
                                         VStack(alignment: .leading, spacing: 3) {
                                             HStack {
                                                 Text(issue.timestamp.formatted(date: .omitted, time: .standard))
-                                                    .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                                                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                                                 Spacer()
                                                 IconAction(title: "Copy error", symbol: "doc.on.doc") { ViewActions.copy("\(issue.timestamp.ISO8601Format())  \(issue.message)") }
                                             }
-                                            Text(issue.message).font(.system(size: 11)).textSelection(.enabled)
+                                            Text(issue.message).font(FrogType.small).textSelection(.enabled)
                                                 .fixedSize(horizontal: false, vertical: true)
                                         }.frame(maxWidth: .infinity, alignment: .leading)
                                     }
                                 }.padding(.vertical, 8).minimalScrollbars()
                             }.frame(maxHeight: 200)
                         }
-                    }.font(.system(size: 12))
+                    }.font(FrogType.body)
                 }
                 SettingsSection(title: "About") {
-                    CompactRow(title: "Frog") { Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")").foregroundStyle(FrogStyle.muted) }
+                    CompactRow(title: "Frog") { Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")").font(FrogType.body).foregroundStyle(FrogStyle.muted) }
                     CompactRow(title: "Source code") { Link("GitHub ↗", destination: URL(string: "https://github.com/t1llo/frog")!) }
                     ForEach(LegalDocument.allCases.filter { $0.url() != nil }) { document in
                         CompactRow(title: document.title, detail: document.summary) { Button("View") { legalDocument = document } }
                     }
                     CompactRow(title: "Made by Tillo") { Link("beffa.xyz ↗", destination: URL(string: "https://beffa.xyz")!) }
                     CompactRow(title: "Contact") { Link("frog@beffa.xyz", destination: URL(string: "mailto:frog@beffa.xyz")!) }
-                    Text("Build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                    Text("Build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                 }.sheet(item: $legalDocument) { LegalDocumentView(document: $0) }
             }.toggleStyle(.switch).controlSize(.small).padding(20).frame(maxWidth: 630).frame(maxWidth: .infinity).minimalScrollbars()
         }.onAppear { model.refreshSystemStatus(forceLoginStatus: true) }
@@ -138,7 +133,7 @@ struct PreferencesView: View {
         CompactRow(title: title) {
             HStack(spacing: 10) {
                 Label(allowed ? "Allowed" : "Permission needed", systemImage: allowed ? "checkmark.circle.fill" : "exclamationmark.circle")
-                    .font(.system(size: 11)).foregroundStyle(allowed ? FrogStyle.accent : FrogStyle.warning)
+                    .font(FrogType.small).foregroundStyle(allowed ? FrogStyle.accent : FrogStyle.warning)
                 Button(allowed ? "Manage…" : "Allow…", action: action)
             }
         }
@@ -157,7 +152,7 @@ struct PreferencesView: View {
     }
 }
 
-/// The two history limits while their steppers move. Saving a lower limit deletes the saved
+/// The two history limits while they change. Saving a lower limit deletes the saved
 /// entries that no longer fit, so such a change waits here until it has been asked about. Any
 /// other change is saved at once.
 @MainActor
@@ -173,7 +168,7 @@ final class HistoryLimitsDraft: ObservableObject {
             "History would keep at most \(limits.entries) \(limits.entries == 1 ? "entry" : "entries") from the last \(limits.days) \(limits.days == 1 ? "day" : "days"). The saved originals and results that no longer fit will be permanently deleted from this Mac."
         }
     }
-    /// What the steppers show while it is not saved.
+    /// What the menus show while it is not saved.
     @Published private(set) var value: Limits?
     /// The change that waits for an answer.
     @Published private(set) var question: Question?
@@ -201,7 +196,7 @@ final class HistoryLimitsDraft: ObservableObject {
                   save: { limits in do { try model.savePreferences(preferences(limits)) } catch { model.report(error) } })
     }
 
-    /// One step of a stepper.
+    /// One change of a limit.
     func change(_ limits: Limits) {
         // The question on screen names a number of entries, which must stay true until it is answered.
         guard question == nil else { return }
@@ -223,7 +218,7 @@ final class HistoryLimitsDraft: ObservableObject {
         guard let value, question == nil else { return }
         let count = dropped(value)
         if count > 0 { question = Question(limits: value, dropped: count); return }
-        // The history changed while the stepper moved, and nothing is left to ask about.
+        // The history changed while the change waited, and nothing is left to ask about.
         forget()
         if value != stored() { save(value) }
     }
@@ -234,7 +229,7 @@ final class HistoryLimitsDraft: ObservableObject {
         save(question.limits)
     }
 
-    /// The answer was no, or the page went away: the steppers show the saved limits again.
+    /// The answer was no, or the page went away: the menus show the saved limits again.
     func cancel() {
         pause?.cancel(); pause = nil
         if question != nil { question = nil }
@@ -246,6 +241,9 @@ final class HistoryLimitsDraft: ObservableObject {
 
 /// The Maximum entries and Retention rows of the History section.
 struct HistoryLimitsView: View {
+    /// The menus' choices, within the 1...200 entries and 1...30 days the configuration allows.
+    static let entryChoices = [10, 25, 50, 100, 200]
+    static let dayChoices = [1, 3, 7, 14, 30]
     @ObservedObject private var model: AppModel
     @StateObject private var draft: HistoryLimitsDraft
     init(model: AppModel) {
@@ -254,11 +252,20 @@ struct HistoryLimitsView: View {
     }
     var body: some View {
         CompactRow(title: "Maximum entries") {
-            Stepper("\(limits.entries)", value: Binding(get: { limits.entries }, set: { value in var next = limits; next.entries = value; draft.change(next) }), in: 1...200).fixedSize()
+            CompactMenu(value: "\(limits.entries)") {
+                ForEach(Self.choices(Self.entryChoices, current: limits.entries), id: \.self) { entries in
+                    Button("\(entries)") { var next = limits; next.entries = entries; choose(next) }
+                        .compactChoice(selected: entries == limits.entries)
+                }
+            }
         }
-        Divider()
         CompactRow(title: "Retention") {
-            Stepper("\(limits.days) days", value: Binding(get: { limits.days }, set: { value in var next = limits; next.days = value; draft.change(next) }), in: 1...30).fixedSize()
+            CompactMenu(value: Self.days(limits.days)) {
+                ForEach(Self.choices(Self.dayChoices, current: limits.days), id: \.self) { days in
+                    Button(Self.days(days)) { var next = limits; next.days = days; choose(next) }
+                        .compactChoice(selected: days == limits.days)
+                }
+            }
         }.onDisappear { draft.cancel() }
             // The window keeps this page when it closes. A step that was not asked about yet is dropped with it.
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { _ in if draft.question == nil { draft.cancel() } }
@@ -271,5 +278,10 @@ struct HistoryLimitsView: View {
     private var limits: HistoryLimitsDraft.Limits {
         draft.value ?? .init(entries: model.configuration.preferences.historyLimit, days: model.configuration.preferences.historyRetentionDays)
     }
+    /// A choice is one change, so a limit that deletes entries is asked about at once.
+    private func choose(_ limits: HistoryLimitsDraft.Limits) { draft.change(limits); draft.ask() }
+    /// A limit set in the configuration file stays on offer, so the menu shows what is saved.
+    static func choices(_ values: [Int], current: Int) -> [Int] { values.contains(current) ? values : (values + [current]).sorted() }
+    static func days(_ count: Int) -> String { count == 1 ? "1 day" : "\(count) days" }
 }
 

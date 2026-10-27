@@ -55,16 +55,34 @@ struct CompactRow<Content: View>: View {
     }
 }
 
-/// Mark the option that is chosen with `.accessibilityAddTraits(.isSelected)`.
+private struct CompactChoiceKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    fileprivate var compactChoiceSelected: Bool {
+        get { self[CompactChoiceKey.self] }
+        set { self[CompactChoiceKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// Marks the option of a `CompactMenu` that is the current choice: it shows a checkmark, and VoiceOver
+    /// reads it as selected.
+    func compactChoice(selected: Bool) -> some View {
+        environment(\.compactChoiceSelected, selected).accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// Mark the option that is chosen with `.compactChoice(selected:)`.
 struct CompactMenu<Content: View>: View {
     let value: String
     var width: CGFloat = 220
+    /// `FrogStyle.compactHeight` in popups and panel headers.
+    var height: CGFloat = FrogStyle.controlHeight
     @ViewBuilder var content: Content
     @State private var showing = false
     @Environment(\.compactRowTitle) private var rowTitle
     var body: some View {
         Button { showing.toggle() } label: {
-            CompactDropdownLabel(value: L10n.text(value), width: width)
+            CompactDropdownLabel(value: L10n.text(value), width: width, height: height)
         }.buttonStyle(.plain).help(L10n.text(value))
             .modifier(RowControlName(title: rowTitle, value: L10n.text(value)))
             .popover(isPresented: $showing, arrowEdge: .bottom) {
@@ -119,9 +137,17 @@ private struct CompactOptionStyle: PrimitiveButtonStyle {
         let configuration: PrimitiveButtonStyleConfiguration
         let dismiss: () -> Void
         @State private var hovering = false
+        @Environment(\.compactChoiceSelected) private var chosen
         var body: some View {
             Button { configuration.trigger(); dismiss() } label: {
-                HStack { configuration.label; Spacer(minLength: 0) }
+                HStack(spacing: 8) {
+                    configuration.label
+                    Spacer(minLength: 0)
+                    if chosen {
+                        Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.accent)
+                            .accessibilityHidden(true)
+                    }
+                }
                     .font(FrogType.body).padding(.horizontal, 8).frame(minHeight: FrogStyle.controlHeight)
                     .frogRowHighlight(hovering: hovering)
             }.buttonStyle(.plain).onHover { hovering = $0 }

@@ -170,7 +170,8 @@ import FrogCore
             if case .settings = action { openedSettings = true }
         }
         adapter.updateMenu(OrganizerMenuState(expanded: false, arranging: false, autoHide: true))
-        XCTAssertEqual(adapter.contextMenu.items.filter { !$0.isSeparatorItem }.map(\.title),
+        XCTAssertFalse(adapter.contextMenu.items.contains(where: \.isSeparatorItem), "Frog's menus have no lines")
+        XCTAssertEqual(adapter.contextMenu.items.map(\.title),
                        ["Show hidden icons", "Show all & arrange…", "Automatically hide icons", "Menu bar settings…"])
         let autoHide = try XCTUnwrap(adapter.contextMenu.items.first { $0.title == "Automatically hide icons" })
         XCTAssertEqual(autoHide.state, .on)
@@ -182,7 +183,8 @@ import FrogCore
         adapter.updateMenu(OrganizerMenuState(expanded: true, arranging: true, autoHide: false))
         XCTAssertEqual(adapter.contextMenu.items[0].title, "Hide menu bar icons")
         XCTAssertEqual(adapter.contextMenu.items[1].title, "Done arranging")
-        XCTAssertEqual(adapter.contextMenu.items[3].state, .off)
+        XCTAssertEqual(adapter.contextMenu.items[2].title, "Automatically hide icons")
+        XCTAssertEqual(adapter.contextMenu.items[2].state, .off)
         XCTAssertTrue(NativeOrganizerStatusItems.arrowImage(expanded: true).isTemplate)
     }
 
@@ -196,12 +198,12 @@ import FrogCore
         let adapter = NativeOrganizerStatusItems()
         adapter.updateMenu(OrganizerMenuState(expanded: true, arranging: false, autoHide: true, issue: issue))
         // A menu does not wrap, so each sentence gets its own line.
-        let reason = Array(adapter.contextMenu.items.prefix { !$0.isSeparatorItem })
+        let reason = Array(adapter.contextMenu.items.prefix { !$0.isEnabled })
         XCTAssertEqual(reason.map(\.title), ["Command-drag Frog's divider to the LEFT of its arrow.",
                                              "Frog keeps everything revealed until the arrow is safely on the right."])
         XCTAssertEqual(reason.map(\.title).joined(separator: " "), issue)
         XCTAssertTrue(reason.allSatisfy { $0.action == nil && !$0.isEnabled }, "The reason is read, not chosen")
-        XCTAssertEqual(adapter.contextMenu.items.filter { !$0.isSeparatorItem }.dropFirst(reason.count).map(\.title),
+        XCTAssertEqual(adapter.contextMenu.items.dropFirst(reason.count).map(\.title),
                        ["Hide menu bar icons", "Show all & arrange…", "Automatically hide icons", "Menu bar settings…"])
         XCTAssertEqual(NativeOrganizerStatusItems.arrowToolTip(expanded: true, issue: issue), issue, "Resting on the arrow says it too")
         XCTAssertEqual(NativeOrganizerStatusItems.arrowToolTip(expanded: true, issue: nil),

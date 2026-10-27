@@ -208,17 +208,16 @@ struct LayoutPickerView: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("Arrange window").font(.system(size: 13, weight: .medium))
+                    Text("Arrange window").font(FrogType.section)
                     if let name = panel.appName {
                         Text(name).font(FrogType.body).foregroundStyle(FrogStyle.muted).lineLimit(1)
                     }
                     Spacer(minLength: 0)
                 }
                 TextField("Filter layouts", text: $panel.query)
-                    .textFieldStyle(.plain).font(.system(size: 13)).focused($focused)
-                    .padding(.horizontal, 8).frame(height: 28)
-                    .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
-                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(FrogStyle.border.opacity(0.6)))
+                    .textFieldStyle(.plain).font(FrogType.body).focused($focused)
+                    .padding(.horizontal, 8)
+                    .frogControlSurface()
                 if let status = panel.status {
                     Text(status).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
                         .fixedSize(horizontal: false, vertical: true)
@@ -253,7 +252,7 @@ struct LayoutPickerView: View {
             }
             ForEach(panel.picker.sections) { section in
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(section.title).font(FrogType.label).foregroundStyle(FrogStyle.muted)
+                    SectionCaption(text: section.title)
                     ForEach(Array(section.rows.enumerated()), id: \.offset) { _, row in
                         let badges = row.contains { $0.hotkey != nil }
                         HStack(spacing: 6) {
@@ -283,7 +282,7 @@ private struct LayoutPickerTile: View {
     var body: some View {
         VStack(spacing: 4) {
             WindowLayoutGlyph(action: tile.action, size: CGSize(width: 44, height: 28))
-            Text(tile.title).font(.system(size: 11)).multilineTextAlignment(.center).lineLimit(2)
+            Text(tile.title).font(FrogType.small).multilineTextAlignment(.center).lineLimit(2)
                 .frame(height: 28, alignment: .top)
             if showsBadge {
                 if let key = tile.hotkey { ShortcutBadge(text: HotkeyManager.display(key)) }
@@ -292,9 +291,8 @@ private struct LayoutPickerTile: View {
         }
         .padding(6)
         .frame(maxWidth: .infinity)
-        .background(selected ? FrogStyle.selection : Color.clear, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selected ? FrogStyle.accent.opacity(0.6) : Color.clear))
-        .contentShape(RoundedRectangle(cornerRadius: 8))
+        // The pointer moves the selection here, so the selection is the only highlight, as in Frog's other lists.
+        .frogRowHighlight(hovering: false, selected: selected)
         .onHover { if $0 { hover() } }
         .onTapGesture(perform: apply)
         .id(tile.action.rawValue)

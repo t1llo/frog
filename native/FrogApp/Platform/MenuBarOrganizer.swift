@@ -563,16 +563,13 @@ struct OrganizerMenuState: Equatable {
                 let item = NSMenuItem(title: index < sentences.count - 1 ? sentence + "." : sentence, action: nil, keyEquivalent: "")
                 item.isEnabled = false; menu.addItem(item)
             }
-            menu.addItem(.separator())
         }
         for (title, selector) in [(state.expanded ? "Hide menu bar icons" : "Show hidden icons", #selector(toggleFromMenu)),
                                   (state.arranging ? "Done arranging" : "Show all & arrange…", #selector(arrangeFromMenu))] {
             let item = NSMenuItem(title: title, action: selector, keyEquivalent: ""); item.target = self; menu.addItem(item)
         }
-        menu.addItem(.separator())
         let autoHide = NSMenuItem(title: "Automatically hide icons", action: #selector(autoHideFromMenu), keyEquivalent: "")
         autoHide.target = self; autoHide.state = state.autoHide ? .on : .off; menu.addItem(autoHide)
-        menu.addItem(.separator())
         let settings = NSMenuItem(title: "Menu bar settings…", action: #selector(settingsFromMenu), keyEquivalent: "")
         settings.target = self; menu.addItem(settings)
         contextMenu = menu

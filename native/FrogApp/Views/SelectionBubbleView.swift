@@ -24,7 +24,7 @@ struct SelectionBubbleView: View {
     static let space = "selectionBubble"
     /// The list is as wide as its longest row within these bounds.
     static let listWidths: ClosedRange<CGFloat> = 248...320
-    static let rowHeight: CGFloat = 30
+    static let rowHeight: CGFloat = FrogStyle.controlHeight
 
     var body: some View {
         Group {
@@ -39,14 +39,14 @@ struct SelectionBubbleView: View {
     private var bar: some View {
         HStack(spacing: 2) {
             ForEach(Array(visible.enumerated()), id: \.element.id) { index, item in
-                if index > 0, visible[index - 1].answers != item.answers { separator }
+                if index > 0, visible[index - 1].answers != item.answers { groupGap }
                 Button { select(item) } label: { barLabel(item) }
                     .buttonStyle(BubbleButtonStyle(pointer: pointer))
                     .help(Self.help(item))
                     .accessibilityLabel(Self.accessibilityTitle(item))
             }
             if !more.isEmpty {
-                separator
+                groupGap
                 Button(action: expand) {
                     Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.muted)
                         .frame(width: 24, height: 26).contentShape(Rectangle())
@@ -62,9 +62,9 @@ struct SelectionBubbleView: View {
         .accessibilityLabel(L10n.text("Selection bubble"))
     }
 
-    private var separator: some View {
-        Rectangle().fill(FrogStyle.border.opacity(0.7)).frame(width: 1, height: 16).padding(.horizontal, 2)
-            .accessibilityHidden(true)
+    /// Rules that answer and rules that replace the selection are set apart by a little more space, not a line.
+    private var groupGap: some View {
+        Color.clear.frame(width: 6, height: 1).accessibilityHidden(true)
     }
 
     private func barLabel(_ item: BubbleItem) -> some View {
@@ -98,19 +98,16 @@ struct SelectionBubbleView: View {
     private var listContent: some View {
         let all = visible + more
         let answers = all.filter(\.answers), writing = all.filter { !$0.answers }
-        return VStack(alignment: .leading, spacing: 1) {
+        return VStack(alignment: .leading, spacing: 8) {
             if !answers.isEmpty { section("Answer", answers) }
-            if !writing.isEmpty {
-                if !answers.isEmpty { Divider().padding(.horizontal, 8).padding(.vertical, 4) }
-                section("Replace selection", writing)
-            }
+            if !writing.isEmpty { section("Replace selection", writing) }
         }
-        .padding(5)
+        .padding(6)
     }
 
     private func section(_ title: String, _ items: [BubbleItem]) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            SectionCaption(text: title).padding(.horizontal, 5).padding(.top, 4).padding(.bottom, 3)
+            SectionCaption(text: title).padding(.horizontal, 8).padding(.top, 4).padding(.bottom, 3)
             ForEach(items) { item in
                 Button { select(item) } label: { listRow(item) }
                     .buttonStyle(BubbleButtonStyle(pointer: pointer))
@@ -130,11 +127,11 @@ struct SelectionBubbleView: View {
             Text(item.title).font(FrogType.body).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 12)
             if let hotkey = item.hotkey {
-                Text(HotkeyManager.display(hotkey)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                Text(HotkeyManager.display(hotkey)).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                     .fixedSize()
             }
         }
-        .padding(.horizontal, 5)
+        .padding(.horizontal, 8)
         .frame(height: Self.rowHeight)
         .contentShape(Rectangle())
     }
@@ -151,7 +148,8 @@ struct SelectionBubbleView: View {
     }
 }
 
-/// A highlight under the pointer and while pressed, as rows in Frog's menus and command bar have.
+/// The hover fill under the pointer and while pressed, as rows in Frog's menus and command bar have
+/// (`frogRowHighlight`), from the pointer the bubble's container reports.
 private struct BubbleButtonStyle: ButtonStyle {
     @ObservedObject var pointer: BubblePointer
 
@@ -160,8 +158,8 @@ private struct BubbleButtonStyle: ButtonStyle {
             .background {
                 GeometryReader { proxy in
                     let hovered = pointer.location.map { proxy.frame(in: .named(SelectionBubbleView.space)).contains($0) } ?? false
-                    RoundedRectangle(cornerRadius: FrogStyle.cardRadius)
-                        .fill(configuration.isPressed || hovered ? FrogStyle.selection : .clear)
+                    RoundedRectangle(cornerRadius: FrogStyle.controlRadius)
+                        .fill(configuration.isPressed || hovered ? FrogStyle.hover : .clear)
                 }
             }
     }

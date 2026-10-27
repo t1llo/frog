@@ -40,10 +40,12 @@ private struct ShortcutReferenceView: View {
     }
 }
 
+/// The same layout as the window cheat sheet: a title, then each group under its caption, every row with its keys.
 private struct ShortcutReferenceContent: View {
     let groups: ShortcutReferencePanel.Groups
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            Text("Frog shortcuts").font(FrogType.section).accessibilityAddTraits(.isHeader)
             ForEach(groups, id: \.group) { section in
                 VStack(alignment: .leading, spacing: 6) {
                     SectionCaption(text: section.group.title)
@@ -51,10 +53,8 @@ private struct ShortcutReferenceContent: View {
                         HStack(spacing: 10) {
                             Text(L10n.text(item.title)).font(FrogType.body).lineLimit(1)
                             Spacer(minLength: 8)
-                            HStack(spacing: 3) {
-                                ForEach(Array(HotkeyManager.keys(item.hotkey).enumerated()), id: \.offset) { KeyCap($0.element) }
-                            }
-                        }.frame(minHeight: 22)
+                            ShortcutKeyCaps(hotkey: item.hotkey)
+                        }.frame(minHeight: FrogStyle.compactHeight)
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel(L10n.text(item.title))
                             .accessibilityValue(HotkeyManager.display(item.hotkey))
@@ -65,6 +65,16 @@ private struct ShortcutReferenceContent: View {
                 Text("No shortcuts yet. Give a Writing or Dictation action a shortcut, or add one in Shortcuts.")
                     .font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             }
-        }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+        }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A shortcut in a reference panel: each key as a cap.
+struct ShortcutKeyCaps: View {
+    let hotkey: Hotkey
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(Array(HotkeyManager.keys(hotkey).enumerated()), id: \.offset) { KeyCap($0.element) }
+        }
     }
 }

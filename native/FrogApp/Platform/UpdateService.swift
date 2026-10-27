@@ -82,12 +82,10 @@ struct UpdateSettingsView: View {
     var body: some View {
         if let version = readiness.version {
             CompactRow(title: "Version \(version) is ready", detail: "Frog installs it when it quits.") {
-                Button("Install and Relaunch…") { updater.check() }
+                Button("Install and Relaunch…") { updater.check() }.buttonStyle(.frog(.primary))
             }
-            Divider()
         }
         CompactRow(title: "Check automatically") { Toggle("Check automatically", isOn: Binding(get: { updater.automaticChecks }, set: updater.setAutomaticChecks)).labelsHidden() }
-        Divider()
         CompactRow(title: "Download updates automatically") { Toggle("Download updates automatically", isOn: Binding(get: { updater.automaticDownloads }, set: updater.setAutomaticDownloads)).labelsHidden() }
         CompactRow(title: "Software updates") { Button("Check for Updates") { updater.check() }.disabled(!updater.canCheck) }
     }

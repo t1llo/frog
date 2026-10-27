@@ -49,9 +49,9 @@ final class WindowPreviewPanel {
 /// The accent at 30 % with a 2 pt accent border.
 private struct WindowPreviewShape: View {
     var body: some View {
-        RoundedRectangle(cornerRadius: 10)
+        RoundedRectangle(cornerRadius: FrogStyle.panelRadius)
             .fill(FrogStyle.accent.opacity(0.3))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(FrogStyle.accent, lineWidth: 2))
+            .overlay(RoundedRectangle(cornerRadius: FrogStyle.panelRadius).strokeBorder(FrogStyle.accent, lineWidth: 2))
             .ignoresSafeArea()
             .accessibilityHidden(true)
     }

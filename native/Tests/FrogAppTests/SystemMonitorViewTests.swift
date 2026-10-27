@@ -160,9 +160,7 @@ private struct MonitorMenuFixtureView: View {
                 Text("Command bar").padding(12)
             }
             Text("Open Frog").padding(9)
-            Divider().padding(.horizontal, 8)
-            HStack { Text("v1.0.0"); Spacer(); Text("Quit Frog") }
-                .font(.system(size: 10)).foregroundStyle(FrogStyle.muted).padding(9)
+            Text("Quit Frog").padding(9)
         }.padding(5).frame(width: 292).fixedSize(horizontal: false, vertical: true)
             .font(.system(size: 12)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel().background(MenuWindowSizing())

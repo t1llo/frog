@@ -38,7 +38,7 @@ struct FrogSurfaceStyle: ShapeStyle {
     func resolve(in environment: EnvironmentValues) -> some ShapeStyle { color.opacity(opacity(in: environment)) }
 }
 
-/// Frog's design tokens. docs/design.md has the rules; `DesignConsistencyTests` checks the ones code can.
+/// Frog's design tokens. docs/design.md has the rules; `StyleTokenScanTests` checks the ones code can.
 enum FrogStyle {
     /// Key caps, badges, colour swatches and the thumb of a segmented control.
     static let smallRadius: CGFloat = 4
@@ -251,6 +251,54 @@ extension View {
                    in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
             .contentShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
     }
+}
+
+extension View {
+    /// A list row that keeps its own hover state. Lists in a card set their rows 1–2 points apart, inset 6
+    /// from the card's edge.
+    func frogHoverRow(selected: Bool = false) -> some View {
+        modifier(HoverRowHighlight(selected: selected))
+    }
+}
+
+private struct HoverRowHighlight: ViewModifier {
+    var selected = false
+    @State private var hovering = false
+    func body(content: Content) -> some View {
+        content.frogRowHighlight(hovering: hovering, selected: selected).onHover { hovering = $0 }
+    }
+}
+
+/// Choosing items in a list, such as files to remove. Settings that turn something on or off use a switch.
+struct FrogCheckboxStyle: ToggleStyle {
+    func makeBody(configuration: ToggleStyleConfiguration) -> FrogCheckbox { FrogCheckbox(configuration: configuration) }
+}
+
+struct FrogCheckbox: View {
+    let configuration: ToggleStyleConfiguration
+    @Environment(\.isEnabled) private var enabled
+    var body: some View {
+        Button { configuration.isOn.toggle() } label: {
+            HStack(spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: FrogStyle.smallRadius)
+                        .fill(configuration.isOn ? AnyShapeStyle(FrogStyle.accent) : FrogStyle.inset)
+                    RoundedRectangle(cornerRadius: FrogStyle.smallRadius)
+                        .strokeBorder(configuration.isOn ? Color.clear : FrogStyle.border)
+                    if configuration.isOn {
+                        Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(FrogStyle.panelSurface)
+                    }
+                }.frame(width: 14, height: 14).opacity(enabled ? 1 : 0.45)
+                configuration.label
+            }.contentShape(Rectangle())
+        }.buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(configuration.isOn ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+extension ToggleStyle where Self == FrogCheckboxStyle {
+    static var frogCheckbox: FrogCheckboxStyle { FrogCheckboxStyle() }
 }
 
 private struct FrogCardSurface: ViewModifier {

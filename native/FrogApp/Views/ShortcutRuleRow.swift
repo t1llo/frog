@@ -17,11 +17,11 @@ struct ShortcutRuleRow<Leading: View>: View {
         HStack(spacing: 10) {
             leading()
             VStack(alignment: .leading, spacing: 4) {
-                Text(rule.name).font(.system(size: 12, weight: .medium))
+                Text(rule.name).font(FrogType.bodyMedium)
                 if let detail {
-                    Text(detail).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                    Text(detail).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
                 }
-                if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(FrogStyle.warning) }
+                if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(FrogType.caption).foregroundStyle(FrogStyle.warning) }
             }.frame(maxWidth: .infinity, alignment: .leading)
             Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { value in
                 var updated = rule; updated.enabled = value

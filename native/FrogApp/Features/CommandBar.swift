@@ -893,14 +893,12 @@ private struct CommandBarView: View {
                 Image(systemName: "magnifyingglass").foregroundStyle(FrogStyle.muted)
                     .frame(width: 24, height: 40).overlay { WindowDragRegion(onDragEnd: bar.finishDragging).help("Drag to move") }
                 TextField("Search anything…", text: $bar.query)
-                    .textFieldStyle(.plain).font(.system(size: 16)).focused($focused)
+                    .textFieldStyle(.plain).font(FrogType.lead).focused($focused)
                 if bar.showsPositionReset {
-                    Button { bar.center() } label: { Image(systemName: "scope") }
-                        .buttonStyle(.plain).help("Center command bar").accessibilityLabel("Center command bar")
+                    IconAction(title: "Center command bar", symbol: "scope") { bar.center() }
                 }
             }.padding(.horizontal, 14).frame(height: 50)
                 .background(WindowDragRegion(onDragEnd: bar.finishDragging))
-            Divider()
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 2) {
@@ -908,8 +906,10 @@ private struct CommandBarView: View {
                             CommandResultRow(bar: bar, result: result, iconKey: bar.iconPath(for: result), selected: index == bar.selection)
                                 .equatable().id(result.id)
                         }
-                        if bar.results.isEmpty { Text("No matching results").foregroundStyle(FrogStyle.muted).padding(28) }
-                    }.padding(8)
+                        if bar.results.isEmpty {
+                            Text("No matching results").font(FrogType.body).foregroundStyle(FrogStyle.muted).padding(28)
+                        }
+                    }.padding(6)
                 }.onChange(of: bar.selection) { _, value in
                     if bar.results.indices.contains(value) { proxy.scrollTo(bar.results[value].id) }
                 }
@@ -924,25 +924,26 @@ private struct CommandResultRow: View, Equatable {
     let result: SearchRecord
     let iconKey: String?
     let selected: Bool
+    @State private var hovering = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.bar === rhs.bar && lhs.result == rhs.result && lhs.iconKey == rhs.iconKey && lhs.selected == rhs.selected
     }
 
+    /// The keyboard's row takes the selection colour, the pointer's the hover fill, as rows in every Frog list do.
     var body: some View {
         Button {
             if let index = bar.results.firstIndex(where: { $0.id == result.id }) { bar.choose(index) }
         } label: {
             HStack(spacing: 12) {
                 CommandResultIcon(bar: bar, result: result, key: iconKey)
-                Text(result.title).font(.system(size: 13, weight: selected ? .medium : .regular)).lineLimit(1)
+                Text(result.title).font(FrogType.body).lineLimit(1)
                 Spacer(minLength: 10)
-                Text(result.subtitle).font(.system(size: 10)).foregroundStyle(result.isFrogCommand ? FrogStyle.accent : FrogStyle.muted).lineLimit(1).frame(maxWidth: 160, alignment: .trailing)
+                Text(result.subtitle).font(FrogType.caption).foregroundStyle(result.isFrogCommand ? FrogStyle.accent : FrogStyle.muted).lineLimit(1).frame(maxWidth: 160, alignment: .trailing)
                 if selected { Image(systemName: "return").font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.accent) }
-            }.padding(.horizontal, 10).frame(height: 40)
-                .background(selected ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
-                .contentShape(Rectangle())
-        }.buttonStyle(.plain)
+            }.padding(.horizontal, 8).frame(height: 40)
+                .frogRowHighlight(hovering: hovering, selected: selected)
+        }.buttonStyle(.plain).onHover { hovering = $0 }
     }
 }
 
@@ -963,7 +964,7 @@ private struct CommandResultIcon: View {
             else {
                 Image(systemName: result.symbol).font(.system(size: 12, weight: .medium))
                     .foregroundStyle(result.isFrogCommand ? FrogStyle.accent : FrogStyle.muted).frame(width: 24, height: 24)
-                    .background(result.isFrogCommand ? FrogStyle.accentSoft : FrogStyle.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                    .background(result.isFrogCommand ? FrogStyle.accentSoft : FrogStyle.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
             }
         }.frame(width: 24, height: 24)
             .task(id: [result.id, key]) {
