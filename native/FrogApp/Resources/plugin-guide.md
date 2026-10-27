@@ -138,16 +138,18 @@ Frog sets these CSS variables on the page, for the light and dark appearance and
 <link rel="stylesheet" href="/_frog/frog.css">
 ```
 
+The stylesheet also defines `--frog-line` for hairlines, `--frog-hover` for hovered rows, and Frog's radii: `--frog-radius-small` for badges, `--frog-radius` for controls and rows, and `--frog-radius-card` for cards and lists. Like Frog, it separates content with space rather than lines.
+
 It styles plain elements (headings, `button`, `input`, `textarea`, `select`, `table`, `code`) and adds these classes:
 
 | Class | Use |
 | --- | --- |
 | `frog-page` | The page's main element: padding and a column of sections. |
 | `frog-header`, `frog-subtitle` | A header with the `h1` and a line under it on the left, buttons on the right. |
-| `frog-card` | A bordered section. |
+| `frog-card` | A card around a section. |
 | `frog-stack`, `frog-row`, `frog-spacer` | A column, a row, and a gap that pushes what follows to the end of a row. |
 | `frog-grid` | Equal columns that wrap; set `--min` for the narrowest column, such as `style="--min: 160px"`. |
-| `frog-list`, `frog-item` | A list of rows; `frog-item` on a `button` or `a` in a row makes the whole row clickable. |
+| `frog-list`, `frog-item` | A list of rows that highlight on hover; `frog-item` on a `button` or `a` in a row makes the whole row clickable. |
 | `frog-stat` | A number in `strong` over a label in `span`. |
 | `frog-badge`, `frog-accent` | A small label; with `frog-accent`, in the accent color. |
 | `frog-segmented` | Buttons side by side, one chosen; mark it with `aria-pressed="true"`. |

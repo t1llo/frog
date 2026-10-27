@@ -13,9 +13,13 @@
   --frog-critical: #c8443c;
   --frog-font: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   --frog-inset: color-mix(in srgb, var(--frog-ink) 5%, var(--frog-canvas));
-  --frog-line: color-mix(in srgb, var(--frog-border) 70%, transparent);
-  --frog-selection: color-mix(in srgb, var(--frog-accent) 14%, transparent);
+  --frog-line: color-mix(in srgb, var(--frog-border) 50%, transparent);
+  --frog-selection: color-mix(in srgb, var(--frog-accent) 13%, transparent);
+  --frog-hover: color-mix(in srgb, var(--frog-ink) 6%, transparent);
+  /* Frog's radii: key caps and badges, controls and rows, cards and lists. */
+  --frog-radius-small: 4px;
   --frog-radius: 6px;
+  --frog-radius-card: 10px;
   color-scheme: light dark;
 }
 
@@ -64,8 +68,8 @@ a:hover { text-decoration: underline; }
 button {
   font: 500 12px/16px var(--frog-font);
   color: var(--frog-ink);
-  background: var(--frog-surface);
-  border: 1px solid color-mix(in srgb, var(--frog-border) 85%, transparent);
+  background: var(--frog-inset);
+  border: 1px solid var(--frog-line);
   border-radius: var(--frog-radius);
   padding: 5px 10px;
   min-height: 28px;
@@ -76,13 +80,13 @@ button {
   cursor: default;
   white-space: nowrap;
 }
-button:hover:not(:disabled) { background: color-mix(in srgb, var(--frog-ink) 5%, var(--frog-surface)); }
-button:active:not(:disabled) { opacity: 0.7; }
+button:hover:not(:disabled) { background: color-mix(in srgb, var(--frog-ink) 6%, var(--frog-inset)); }
+button:active:not(:disabled) { opacity: 0.75; }
 button:disabled { opacity: 0.4; }
 button.frog-primary { color: var(--frog-canvas); background: var(--frog-ink); border-color: transparent; }
 button.frog-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--frog-ink) 88%, var(--frog-canvas)); }
 button.frog-quiet { background: transparent; border-color: transparent; color: var(--frog-muted); }
-button.frog-quiet:hover:not(:disabled) { background: var(--frog-selection); color: var(--frog-ink); }
+button.frog-quiet:hover:not(:disabled) { background: var(--frog-hover); color: var(--frog-ink); }
 
 input, textarea, select {
   font: 12px/18px var(--frog-font);
@@ -112,20 +116,21 @@ select {
 label { font-size: 12px; font-weight: 500; }
 
 code, kbd, pre { font: 11.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace; }
-code, kbd { background: var(--frog-inset); border-radius: 4px; padding: 1px 4px; }
-pre { background: var(--frog-inset); border: 1px solid var(--frog-line); border-radius: var(--frog-radius); padding: 10px 12px; overflow: auto; }
+code, kbd { background: var(--frog-inset); border-radius: var(--frog-radius-small); padding: 1px 4px; }
+pre { background: var(--frog-inset); border-radius: var(--frog-radius); padding: 10px 12px; overflow: auto; }
 pre code { background: none; padding: 0; }
 
-hr { border: 0; border-top: 1px solid var(--frog-line); margin: 12px 0; }
+/* Frog separates content with space, not lines. */
+hr { border: 0; margin: 16px 0; }
 
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th { text-align: left; font-size: 11px; font-weight: 500; color: var(--frog-muted); }
-th, td { padding: 7px 10px; border-bottom: 1px solid var(--frog-line); }
-tr:last-child td { border-bottom: 0; }
+th, td { padding: 7px 10px; }
+tbody tr:hover td { background: var(--frog-hover); }
 
 /* Layout */
-.frog-page { display: flex; flex-direction: column; gap: 14px; max-width: 1080px; margin: 0 auto; padding: 20px; }
-.frog-header { display: flex; align-items: center; gap: 20px; min-height: 32px; }
+.frog-page { display: flex; flex-direction: column; gap: 20px; max-width: 1080px; margin: 0 auto; padding: 20px; }
+.frog-header { display: flex; align-items: center; gap: 20px; min-height: 28px; }
 .frog-header > :first-child { flex: 1; min-width: 0; }
 .frog-header h1 { margin: 0; }
 .frog-subtitle { margin: 6px 0 0; font-size: 13px; color: var(--frog-muted); }
@@ -136,30 +141,29 @@ tr:last-child td { border-bottom: 0; }
 .frog-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--min, 120px), 1fr)); gap: var(--gap, 10px); }
 
 /* Surfaces */
-.frog-card { background: var(--frog-surface); border: 1px solid var(--frog-border); border-radius: var(--frog-radius); padding: 12px; }
-.frog-list { list-style: none; margin: 0; padding: 0; background: var(--frog-surface); border: 1px solid var(--frog-line); border-radius: var(--frog-radius); overflow: hidden; }
-.frog-list > li { padding: 9px 12px; }
-.frog-list > li + li { border-top: 1px solid var(--frog-line); }
+.frog-card { background: var(--frog-surface); border: 1px solid var(--frog-line); border-radius: var(--frog-radius-card); padding: 14px; }
+.frog-list { list-style: none; margin: 0; padding: 4px; display: flex; flex-direction: column; gap: 1px; background: var(--frog-surface); border: 1px solid var(--frog-line); border-radius: var(--frog-radius-card); overflow: hidden; }
+.frog-list > li { padding: 7px 10px; border-radius: var(--frog-radius); }
 .frog-list > li:has(> .frog-item) { padding: 0; }
-.frog-item { display: block; width: 100%; min-height: 0; padding: 9px 12px; border: 0; border-radius: 0; background: none; font: inherit; color: inherit; text-align: left; white-space: normal; }
-button.frog-item:hover:not(:disabled), a.frog-item:hover { background: var(--frog-selection); text-decoration: none; }
+.frog-item { display: block; width: 100%; min-height: 0; padding: 7px 10px; border: 0; border-radius: var(--frog-radius); background: none; font: inherit; color: inherit; text-align: left; white-space: normal; }
+button.frog-item:hover:not(:disabled), a.frog-item:hover { background: var(--frog-hover); text-decoration: none; }
 .frog-item:focus-visible { outline-offset: -2px; }
 .frog-stat { display: flex; flex-direction: column; gap: 2px; }
 .frog-stat strong { font-size: 20px; line-height: 1.2; font-weight: 600; letter-spacing: -0.3px; font-variant-numeric: tabular-nums; }
 .frog-stat span { font-size: 11px; color: var(--frog-muted); }
 
-.frog-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; line-height: 14px; color: var(--frog-muted); background: var(--frog-inset); }
+.frog-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: var(--frog-radius-small); font-size: 10px; font-weight: 600; line-height: 14px; color: var(--frog-muted); background: var(--frog-inset); }
 .frog-badge.frog-accent { color: var(--frog-accent); background: var(--frog-selection); }
 
 .frog-segmented { display: inline-flex; gap: 2px; padding: 2px; background: var(--frog-inset); border: 1px solid var(--frog-line); border-radius: var(--frog-radius); }
-.frog-segmented button { min-height: 24px; padding: 3px 12px; border-color: transparent; background: transparent; color: var(--frog-muted); border-radius: 4px; }
+.frog-segmented button { min-height: 22px; padding: 2px 12px; border-color: transparent; background: transparent; color: var(--frog-muted); border-radius: var(--frog-radius-small); }
 .frog-segmented button:hover:not(:disabled) { background: transparent; color: var(--frog-ink); }
-.frog-segmented button[aria-pressed="true"] { background: var(--frog-surface); color: var(--frog-ink); border-color: var(--frog-line); box-shadow: 0 1px 1px rgb(0 0 0 / 0.06); }
+.frog-segmented button[aria-pressed="true"] { background: var(--frog-surface); color: var(--frog-ink); box-shadow: 0 0.5px 1px rgb(0 0 0 / 0.08); }
 
 /* Messages */
-.frog-error, .frog-notice { margin: 0; padding: 10px 12px; border-radius: var(--frog-radius); font-size: 12px; overflow-wrap: anywhere; }
-.frog-error { color: var(--frog-ink); background: color-mix(in srgb, var(--frog-critical) 11%, transparent); border: 1px solid color-mix(in srgb, var(--frog-critical) 30%, transparent); }
-.frog-notice { color: var(--frog-muted); background: var(--frog-inset); border: 1px solid var(--frog-line); }
+.frog-error, .frog-notice { margin: 0; padding: 10px 12px; border-radius: var(--frog-radius-card); font-size: 12px; overflow-wrap: anywhere; }
+.frog-error { color: var(--frog-ink); background: color-mix(in srgb, var(--frog-critical) 8%, transparent); }
+.frog-notice { color: var(--frog-muted); background: var(--frog-inset); }
 .frog-empty { padding: 44px 24px; text-align: center; color: var(--frog-muted); }
 
 .frog-spinner { display: inline-block; width: 12px; height: 12px; border: 1.5px solid var(--frog-line); border-top-color: var(--frog-muted); border-radius: 50%; animation: frog-spin 0.8s linear infinite; vertical-align: -2px; }
