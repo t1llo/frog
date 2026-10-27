@@ -49,6 +49,7 @@ enum PluginPageSource {
     /// switches as SPI only; a macOS without one keeps the policy, the content rules and the bridge's own removals.
     @discardableResult
     static func restrict(_ preferences: WKPreferences) -> Set<String> {
+        switchOffDNSPrefetching(preferences)
         let list = Selector(("_features")), set = Selector(("_setEnabled:forFeature:")), get = Selector(("_isEnabledForFeature:"))
         guard (WKPreferences.self as AnyObject).responds(to: list),
               let setMethod = class_getInstanceMethod(WKPreferences.self, set), let getMethod = class_getInstanceMethod(WKPreferences.self, get),
@@ -64,6 +65,15 @@ enum PluginPageSource {
             if !isEnabled(preferences, get, feature) { off.insert(key) }
         }
         return off
+    }
+
+    /// WebKit's older DNS prefetching setting. A macOS whose WebKit has no `LinkDNSPrefetchEnabled` feature still has
+    /// this one, so DNS prefetching is off there too.
+    static func switchOffDNSPrefetching(_ preferences: WKPreferences) {
+        let set = Selector(("_setDNSPrefetchingEnabled:"))
+        guard let method = class_getInstanceMethod(WKPreferences.self, set) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+        unsafeBitCast(method_getImplementation(method), to: Setter.self)(preferences, set, false)
     }
 
     /// `info` is the JSON of `frog.info`.

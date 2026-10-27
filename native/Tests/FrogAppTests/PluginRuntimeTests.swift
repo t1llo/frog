@@ -135,8 +135,12 @@ import XCTest
 
     func testWebKitHasTheFeaturesPastTheBridgeOff() {
         let preferences = WKPreferences()
-        XCTAssertEqual(PluginPageSource.restrict(preferences), PluginPageSource.disabledFeatures,
+        // Older WebKit, such as CI's, has no LinkDNSPrefetchEnabled; the older DNS prefetching setting covers it there.
+        XCTAssertEqual(PluginPageSource.restrict(preferences).union(["LinkDNSPrefetchEnabled"]), PluginPageSource.disabledFeatures,
                        "Every feature is one this WebKit knows and now has off; update the list when WebKit renames one")
+        if preferences.responds(to: Selector(("_dnsPrefetchingEnabled"))) {
+            XCTAssertEqual(preferences.value(forKey: "_dnsPrefetchingEnabled") as? Bool, false)
+        }
     }
 
     func testACommandsOnlyPluginRunsInFrogsOwnPage() async throws {
