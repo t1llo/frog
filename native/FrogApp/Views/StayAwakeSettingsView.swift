@@ -11,30 +11,22 @@ struct StayAwakeView: View {
                         .labelsHidden().toggleStyle(.switch)
                         .disabled(!power.canSwitch)
                 }
-                Divider()
                 CompactRow(title: "Duration") {
                     CompactMenu(value: power.duration.title) {
                         ForEach(StayAwakeController.DurationChoice.allCases) { duration in
-                            Button { power.duration = duration } label: {
-                                HStack {
-                                    Text(L10n.text(duration.title))
-                                    Spacer()
-                                    if power.duration == duration {
-                                        Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(FrogStyle.accent)
-                                    }
-                                }
-                            }.accessibilityAddTraits(power.duration == duration ? .isSelected : [])
+                            Button(L10n.text(duration.title)) { power.duration = duration }
+                                .compactChoice(selected: power.duration == duration)
                         }
                     }.disabled(power.isEnabled || power.isBusy)
                 }
                 if let deadline = power.deadline, power.isEnabled {
-                    Text("Until \(deadline.formatted(date: .omitted, time: .shortened))").font(.caption).foregroundStyle(FrogStyle.muted)
+                    Text("Until \(deadline.formatted(date: .omitted, time: .shortened))").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                 }
                 if let error = power.error { InlineIssue(message: error) }
-                else if let notice = power.notice { Text(notice).font(.caption).foregroundStyle(FrogStyle.muted) }
+                else if let notice = power.notice { Text(notice).font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
             }
             Text("The screen can lock while background work continues.")
-                .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                .font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             StayAwakeMenuBarSettings()
             StayAwakeSettingsView(power: power)
         }.task { await power.refresh() }
@@ -48,15 +40,15 @@ struct StayAwakeSettingsView: View {
         SettingsSection(title: "Access") {
             CompactRow(title: "Lid-closed access", detail: "Lets Frog change the sleep setting.") {
                 Label(power.accessState.title, systemImage: power.accessState == .ready ? "checkmark.circle.fill" : "info.circle")
-                    .font(.system(size: 11)).foregroundStyle(power.accessState == .ready ? FrogStyle.accent : FrogStyle.muted)
+                    .font(FrogType.small).foregroundStyle(power.accessState == .ready ? FrogStyle.accent : FrogStyle.muted)
             }
             if case .unavailable(let message) = power.accessState {
-                Text(message).font(.system(size: 11)).foregroundStyle(FrogStyle.warning)
+                Text(message).font(FrogType.small).foregroundStyle(FrogStyle.warning)
             }
             if let notice = power.accessNotice {
-                Text(notice).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                Text(notice).font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             }
-            Divider()
+            SectionCaption(text: "Setup").padding(.top, 6)
             Text("Setup and Reset run in Terminal, which asks for your password.")
                 .font(FrogType.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             DisclosureGroup("How this works") {
@@ -66,14 +58,14 @@ struct StayAwakeSettingsView: View {
             HStack {
                 if power.isConfiguringAccess {
                     ProgressView().controlSize(.small)
-                    Text("Finish the guide in Terminal…").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                    Text("Finish the guide in Terminal…").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                     Spacer()
                     Button("Cancel") { power.cancelAccessGuide() }
                 } else {
-                    if power.accessState != .ready { Button("Set up access…") { power.configureAccess() } }
+                    if power.accessState != .ready { Button("Set up access…") { power.configureAccess() }.buttonStyle(.frog(.primary)) }
                     Button("Check access") { Task { await power.refreshAccess(force: true) } }
                     Spacer()
-                    Button("Reset access…") { power.configureAccess(.reset) }.disabled(power.isBusy)
+                    Button("Reset access…") { power.configureAccess(.reset) }.buttonStyle(.frog(.ghost)).disabled(power.isBusy)
                 }
             }
         }.task { await power.refreshAccess() }

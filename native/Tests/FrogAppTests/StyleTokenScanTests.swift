@@ -1,8 +1,8 @@
 import Foundation
 import XCTest
 
-/// Colours, radii and small text come from the theme tokens, so every view follows the theme.
-/// The scan reads the app's sources as text; it opens no window.
+/// Colours, radii, controls and text come from the theme tokens, so every view follows the theme and
+/// docs/design.md. The scan reads the app's sources as text; it opens no window.
 final class StyleTokenScanTests: XCTestCase {
     /// `"File.swift: pattern"` entries a view may keep, each with a comment that says why.
     private let allowed: Set<String> = []
@@ -17,17 +17,37 @@ final class StyleTokenScanTests: XCTestCase {
     }
 
     func testControlsUseRadiusTokens() throws {
-        try assertNoMatch(#"cornerRadius: [79]\b"#, "use FrogStyle.controlRadius or FrogStyle.cardRadius")
+        try assertNoMatch(#"cornerRadius:\s*[0-9]|\.cornerRadius\(\s*[0-9]"#, "use a FrogStyle radius",
+                          except: ["Views/DesignSystem.swift"])
+    }
+
+    func testContentIsSeparatedBySpaceRatherThanLines() throws {
+        try assertNoMatch(#"\bDivider\(\)|\.separator\(\)"#, "separate with space, a heading or a surface")
+        // Markdown rules and quote bars are the user's own content.
+        try assertNoMatch(#"Rectangle\(\)\.fill\(FrogStyle\.border"#, "separate with space, a heading or a surface",
+                          except: ["Views/MarkdownPreview.swift"])
+    }
+
+    func testControlsAreFrogsOwn() throws {
+        try assertNoMatch(#"\.buttonStyle\(\.(bordered|borderedProminent|borderless|link|accessoryBar)\b"#, "use FrogButtonStyle")
+        try assertNoMatch(#"\.textFieldStyle\(\.(roundedBorder|squareBorder)\)"#, "use LabeledField or frogControlSurface")
+        try assertNoMatch(#"\.toggleStyle\(\.checkbox\)"#, "use a switch")
+        try assertNoMatch(#"\bStepper\("#, "offer the choices in a CompactMenu")
+    }
+
+    func testTextUsesFrogsTypeScale() throws {
+        try assertNoMatch(#"\.font\(\.(caption2?|headline|title[23]?|body|callout|subheadline|footnote|largeTitle)\b"#, "use FrogType")
     }
 
     func testTextIsNeverSetInNinePoints() throws {
         try assertNoMatch(#"Text\(.*\.font\(\.system\(size: 9\)\)"#, "use FrogType.caption")
     }
 
-    private func assertNoMatch(_ pattern: String, _ advice: String, file: StaticString = #filePath, line: UInt = #line) throws {
+    private func assertNoMatch(_ pattern: String, _ advice: String, except files: Set<String> = [],
+                               file: StaticString = #filePath, line: UInt = #line) throws {
         let expression = try NSRegularExpression(pattern: pattern)
         var found: [String] = []
-        for (name, source) in try appSources() {
+        for (name, source) in try appSources() where !files.contains(name) {
             for (index, text) in source.components(separatedBy: "\n").enumerated() {
                 guard !text.trimmingCharacters(in: .whitespaces).hasPrefix("//"),
                       let match = expression.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),

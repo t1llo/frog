@@ -1,6 +1,6 @@
 # Design rules
 
-Frog looks quiet and consistent: Raycast's dense, keyboard-first popups and Linear's and Notion's calm pages. Every value comes from [DesignSystem.swift](../native/FrogApp/Views/DesignSystem.swift) and [CompactControls.swift](../native/FrogApp/Views/CompactControls.swift). A view never invents its own button, radius, height or text size. `DesignConsistencyTests` checks the rules that code can check.
+Frog looks quiet and consistent: Raycast's dense, keyboard-first popups and Linear's and Notion's calm pages. Every value comes from [DesignSystem.swift](../native/FrogApp/Views/DesignSystem.swift) and [CompactControls.swift](../native/FrogApp/Views/CompactControls.swift). A view never invents its own button, radius, height or text size. `StyleTokenScanTests` checks the rules that code can check.
 
 ## No lines
 
@@ -26,7 +26,7 @@ Circles and capsules are fine for dots, avatars, toggles and progress bars. No o
 - Pages: `PageScroll` (padding 20, sections 20 apart) with a `PageHeader`.
 - A section is `SettingsSection`: a heading, then one card with padding 14 and rows 10 apart.
 - Inside a card, a sub-group starts with a `SectionCaption`.
-- List rows are 1–2 apart, highlighted with `frogRowHighlight(hovering:selected:)`.
+- List rows are 1–2 apart, highlighted with `frogRowHighlight(hovering:selected:)`, or `frogHoverRow(selected:)` when the row tracks its own hover.
 
 ## Type
 
@@ -53,18 +53,19 @@ Use `FrogType` for text. A literal size is only for an SF Symbol's size.
 - `.frog(.ghost)`: text actions beside content, such as Reset, Skip or Set up myself.
 - `.frog(.destructive)`: removes or deletes something.
 - `compact: true` in popups, panel headers and dense rows.
-- `IconAction` for icon-only actions; `bordered: true` beside compact controls.
+- `IconAction` for icon-only actions: a plain icon that highlights on hover, like the "…" menus beside it. `bordered: true` only in a popup header, beside compact segments.
 - `.buttonStyle(.plain)` only for rows, tiles and cards that draw their own hover with `frogRowHighlight`.
 - Never `.bordered`, `.borderedProminent`, `.borderless` or `.link`.
 
 ## Controls
 
-- Dropdowns: `CompactMenu` (or `CompactDropdownLabel` for a custom popover).
-- Choices of two to four: `CompactSegments`.
-- On/off: `Toggle` with the switch style. No checkboxes.
+- Dropdowns: `CompactMenu` (or `CompactDropdownLabel` for a custom popover). Mark the current option with `.compactChoice(selected:)`; it shows a checkmark.
+- Choices of two to four, and switching between parts of a page (Providers, Installed tools): `CompactSegments`.
+- On/off settings: `Toggle` with the switch style.
+- Picking items from a list (files to remove, models to offer, agents to set up): `.toggleStyle(.frogCheckbox)`. Never the system checkbox.
 - Numbers from a short list: `CompactMenu` rather than a `Stepper`.
 - Text: `LabeledField` or `frogControlSurface()`. No `.roundedBorder`.
-- Search: `SearchBox`. Filters: `FilterTag`.
+- Search: `SearchBox`. Filters that narrow a list (All, Text, Audio): `FilterTag`.
 - Shortcuts: `ShortcutBadge` and `KeyCap`, in the sans font.
 
 ## Surfaces and colour

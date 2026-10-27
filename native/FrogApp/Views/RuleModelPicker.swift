@@ -51,36 +51,50 @@ struct RuleModelPicker: View {
                     ScrollView {
                         VStack(spacing: 2) {
                             ForEach(matches, id: \.self) { item in
-                                Button { item.apply(to: &rule); showing = false } label: {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            HStack(spacing: 6) {
-                                                Text(name(item)).font(.system(size: 12, weight: .medium)).fixedSize(horizontal: false, vertical: true)
-                                                if item.providerID == nil, model.configuration.localModel(item.modelID)?.isRecommended == true { RecommendedModelBadge() }
-                                            }
-                                            Text(source(item)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                                            if item.providerID == nil, let descriptor = model.configuration.localModel(item.modelID), speech {
-                                                Text(descriptor.recommendationSummary ?? descriptor.languages).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                                            }
+                                RuleModelOption(selected: selected == item, action: { item.apply(to: &rule); showing = false }) {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        HStack(spacing: 6) {
+                                            Text(name(item)).font(FrogType.bodyMedium).fixedSize(horizontal: false, vertical: true)
+                                            if item.providerID == nil, model.configuration.localModel(item.modelID)?.isRecommended == true { RecommendedModelBadge() }
                                         }
-                                        Spacer()
-                                        if selected == item { Image(systemName: "checkmark").foregroundStyle(FrogStyle.accent) }
-                                    }.padding(10).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                                }.buttonStyle(.plain)
+                                        Text(source(item)).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                                        if item.providerID == nil, let descriptor = model.configuration.localModel(item.modelID), speech {
+                                            Text(descriptor.recommendationSummary ?? descriptor.languages).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                                        }
+                                    }
+                                }
                             }
                             if matches.isEmpty {
                                 Text(choices.isEmpty ? (local ? "No downloaded models. Download one in Models to use it here." : "No external models. Add a compatible model to a provider in Models.") : "No models match this search.")
-                                    .font(.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true).padding(12)
+                                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true).padding(12)
                             }
                         }
                     }.id(local).frame(height: 280)
-                    Divider()
                     Button("No model selected") {
                         if speech { rule.action?.audioModelID = nil; rule.action?.audioProviderID = nil }
                         else { rule.providerID = nil; rule.model = ""; rule.action?.localTextModelID = nil }
                         showing = false
-                    }.buttonStyle(.plain).font(.system(size: 11)).frame(maxWidth: .infinity, alignment: .leading).padding(8)
+                    }.buttonStyle(.frog(.ghost, compact: true)).frame(maxWidth: .infinity, alignment: .leading)
                 }.padding(12).frame(width: 420).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
             }
+    }
+}
+
+/// A model in the picker's list: highlighted on hover, and when it is the rule's model.
+private struct RuleModelOption<Label: View>: View {
+    let selected: Bool
+    let action: () -> Void
+    @ViewBuilder var label: Label
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                label
+                Spacer()
+                if selected { Image(systemName: "checkmark").foregroundStyle(FrogStyle.accent) }
+            }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                .frogRowHighlight(hovering: hovering, selected: selected)
+        }.buttonStyle(.plain).onHover { hovering = $0 }
     }
 }

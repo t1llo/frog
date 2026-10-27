@@ -84,15 +84,15 @@ struct RulesView: View {
         PageHeader(title: pageTitle) {
             if !applications { Button(answers ? "New answer rule" : "New rule", systemImage: "plus") {
                 editing = model.configuration.newRule(category: category, output: output, installed: model.localModels.installed)
-            }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut("n", modifiers: .command) }
+            }.buttonStyle(.frog(.primary)).keyboardShortcut("n", modifiers: .command) }
         }
     }
 
     private func ruleTable(scrolls: Bool) -> some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 8) {
             // Answer rules are few, so the Explain page lists them without a search field.
             if answers {
-                HStack(spacing: 4) { SectionCaption(text: "Your rules"); Spacer(minLength: 0) }.frame(height: 32).padding(12)
+                listHeading.frame(minHeight: 20)
             } else {
                 ListToolbar(placeholder: applications ? "Search shortcuts" : "Search rules", search: $search) {
                     if applications, fixedCategory == nil {
@@ -104,27 +104,31 @@ struct RulesView: View {
                             filter = $0; search = ""
                         }
                     } else {
-                        SectionCaption(text: "Your rules")
+                        listHeading
                     }
-                }.padding(12)
+                }
             }
             if applications, fixedCategory == nil, windowsEnabled {
-                Divider().opacity(0.5)
                 HStack(spacing: 8) {
-                    Text("Window layouts are on the Windows page.").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                    Text("Window layouts are on the Windows page.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                     Spacer()
-                    Button("Open Windows") { model.openFeature(.windows) }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(FrogStyle.accent)
-                }.padding(.horizontal, 12).padding(.vertical, 8)
+                    Button("Open Windows") { model.openFeature(.windows) }.buttonStyle(.frog(.ghost, compact: true))
+                }
             }
-            Divider().opacity(0.5)
-            if scrolls { ScrollView { ruleRows.minimalScrollbars() } } else { ruleRows }
-        }.frogTableSurface()
+            Group {
+                if scrolls { ScrollView { ruleRows.minimalScrollbars() } } else { ruleRows }
+            }.frogTableSurface()
+        }
+    }
+
+    /// The list's heading, in the style of a settings section's.
+    private var listHeading: some View {
+        Text(L10n.text("Your rules")).font(FrogType.section).foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
     }
 
     private var ruleRows: some View {
         let displayedRules = rules
-        let lastRuleID = displayedRules.last?.id
-        return LazyVStack(spacing: 0) {
+        return LazyVStack(spacing: 2) {
             ForEach(displayedRules) { rule in
                 Group {
                     if applications {
@@ -138,10 +142,10 @@ struct RulesView: View {
                                 .font(.system(size: 13)).foregroundStyle(FrogStyle.muted).frame(width: 24)
                             Button { editing = rule } label: {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(rule.name).font(.system(size: 12, weight: .medium))
+                                    Text(rule.name).font(FrogType.bodyMedium)
                                     Text(model.ruleModelLabel(rule) + (model.ruleLeftOutOfBubble(rule) ? " · " + L10n.text("Not in the bubble") : ""))
-                                        .font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                                    if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(.caption2).foregroundStyle(FrogStyle.warning) }
+                                        .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                                    if let issue = model.hotkeyErrors[rule.id] { Text(issue).font(FrogType.caption).foregroundStyle(FrogStyle.warning) }
                                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                             }.buttonStyle(.plain)
                             Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { value in
@@ -157,28 +161,26 @@ struct RulesView: View {
                                 Button(rule.category == .audio ? "Record" : "Try") {
                                     if rule.category == .audio { model.startDictation(rule) }
                                     else { trying = rule }
-                                }.disabled(!rule.enabled || model.isProcessing || model.dictation.active)
+                                }.buttonStyle(.frog(compact: true))
+                                .disabled(!rule.enabled || model.isProcessing || model.dictation.active)
                                 .accessibilityLabel(rule.category == .audio ? "Record with \(rule.name)" : "Try \(rule.name)")
                             }
                             IconAction(title: "Edit \(rule.name)", symbol: "pencil") { editing = rule }
                         }
                     }
-                }.padding(.horizontal, 12).padding(.vertical, 10)
-                    .overlay(alignment: .bottom) {
-                        if rule.id != lastRuleID { Divider().opacity(0.5) }
-                    }
+                }.padding(.horizontal, 8).padding(.vertical, 8).frogHoverRow()
             }
             if displayedRules.isEmpty {
                 VStack(spacing: 8) {
-                    Text(search.isEmpty ? "No rules yet" : "No matching rules").font(.system(size: 12, weight: .medium))
+                    Text(search.isEmpty ? "No rules yet" : "No matching rules").font(FrogType.bodyMedium)
                     if !applications && search.isEmpty {
                         Button("Create a rule", systemImage: "plus") {
                             editing = model.configuration.newRule(category: category, output: output, installed: model.localModels.installed)
                         }
-                    } else if !search.isEmpty { Button("Clear search") { search = "" }.buttonStyle(.plain) }
-                }.foregroundStyle(FrogStyle.muted).frame(maxWidth: .infinity).padding(24)
+                    } else if !search.isEmpty { Button("Clear search") { search = "" }.buttonStyle(.frog(.ghost)) }
+                }.foregroundStyle(FrogStyle.muted).frame(maxWidth: .infinity).padding(18)
             }
-        }
+        }.padding(6)
     }
 }
 
@@ -200,17 +202,17 @@ private struct RuleTryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             PageHeader(title: rule.name, subtitle: model.ruleModelLabel(rule))
-            Text("Enter text to try this rule. The result is copied when it finishes.").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-            TextEditor(text: $input).font(.system(size: 13)).scrollContentBackground(.hidden)
-                .padding(8).frame(height: 120).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 6))
+            Text("Enter text to try this rule. The result is copied when it finishes.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+            TextEditor(text: $input).font(FrogType.body).scrollContentBackground(.hidden)
+                .padding(8).frame(height: 120).frogControlSurface(height: nil)
                 .accessibilityLabel("Text to transform").disabled(running)
             if running {
-                HStack { ProgressView().controlSize(.small); Text(model.status).font(.system(size: 12)) }
+                HStack { ProgressView().controlSize(.small); Text(model.status).font(FrogType.body) }
             }
             if let issue { InlineIssue(message: issue) }
             if !result.isEmpty {
                 SectionCaption(text: "Result · Copied to clipboard")
-                ScrollView { Text(result).font(.system(size: 13)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+                ScrollView { Text(result).font(FrogType.body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
             } else { Spacer(minLength: 0) }
             HStack {
                 if running { Button("Cancel request") { model.cancelProcessing() } }
@@ -221,7 +223,7 @@ private struct RuleTryView: View {
                     model.processManual(text: input, ruleID: rule.id)
                     running = model.isProcessing
                     if !running { issue = model.ruleOutcome?.failure }
-                }.buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.return, modifiers: .command)
+                }.buttonStyle(.frog(.primary)).keyboardShortcut(.return, modifiers: .command)
                     .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isProcessing || model.dictation.active)
             }
         }.padding(20).frame(width: 520, height: 460).foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).background(FrogWindowMaterial())
@@ -275,10 +277,10 @@ struct RuleEditor: View {
         VStack(spacing: 0) {
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(rule.category == .application ? "Application shortcut" : rule.category == .audio ? "Audio rule" : rule.answersInPanel ? "Answer rule" : "Text rule").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                    TextField("Name your rule", text: $rule.name).textFieldStyle(.plain).font(.system(size: 23, weight: .semibold)).accessibilityLabel("Rule name")
+                    Text(rule.category == .application ? "Application shortcut" : rule.category == .audio ? "Audio rule" : rule.answersInPanel ? "Answer rule" : "Text rule").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    TextField("Name your rule", text: $rule.name).textFieldStyle(.plain).font(FrogType.title).accessibilityLabel("Rule name")
                 }
-                Toggle("Enabled", isOn: $rule.enabled).toggleStyle(.switch).controlSize(.mini).font(.system(size: 11))
+                Toggle("Enabled", isOn: $rule.enabled).toggleStyle(.switch).controlSize(.mini).font(FrogType.small)
             }.padding(20)
             if rule.category == .audio {
                 CompactSegments(values: [0, 1], selected: step, title: { $0 == 0 ? "Speech-to-text" : "Cleanup" }) { step = $0 }.padding(.bottom, 12)
@@ -286,57 +288,60 @@ struct RuleEditor: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if rule.category == .audio && step == 1 {
-                        CompactRow(title: "Improve transcript", detail: "A text model cleans up the transcript. Adds processing time.") {
-                            Toggle("Improve transcript", isOn: Binding(get: { rule.action?.cleanup ?? false }, set: { rule.action?.cleanup = $0 })).labelsHidden().toggleStyle(.switch)
-                        }
-                        if rule.action?.cleanup == true {
-                            CompactRow(title: "Cleanup model") { RuleModelPicker(rule: $rule) }
-                            instructions
-                        }
-                    } else {
-                        VStack(spacing: 10) {
-                            if rule.category == .application {
-                                CompactRow(title: "Application") { Button(rule.action?.applicationPath.map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent } ?? "Choose application") { chooseApplication() } }
-                            } else {
-                                CompactRow(title: rule.category == .audio ? "Speech model" : "Text model") { RuleModelPicker(rule: $rule, speech: rule.category == .audio) }
-                            }
-                            Divider()
-                            CompactRow(title: "Shortcut") { HotkeyRecorder(hotkey: $rule.hotkey) }
-                            if let warning = rule.answerHotkeyWarning {
-                                Text(warning).font(.system(size: 10)).foregroundStyle(FrogStyle.warning)
-                                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            if rule.category == .audio { audioOptions }
-                            if rule.category == .text, model.offersBubbleChoice {
-                                Divider()
-                                CompactRow(title: "Show in selection bubble", detail: rule.answersInPanel ? nil : "In text fields only.") {
-                                    Toggle("Show in selection bubble", isOn: Binding(get: { showsInBubble }, set: { inBubble = $0 }))
-                                        .labelsHidden().toggleStyle(.switch)
+                        FrogCard {
+                            VStack(spacing: 10) {
+                                CompactRow(title: "Improve transcript", detail: "A text model cleans up the transcript. Adds processing time.") {
+                                    Toggle("Improve transcript", isOn: Binding(get: { rule.action?.cleanup ?? false }, set: { rule.action?.cleanup = $0 })).labelsHidden().toggleStyle(.switch)
+                                }
+                                if rule.action?.cleanup == true {
+                                    CompactRow(title: "Cleanup model") { RuleModelPicker(rule: $rule) }
                                 }
                             }
-                        }.padding(13).frogTableSurface()
+                        }
+                        if rule.action?.cleanup == true { instructions }
+                    } else {
+                        FrogCard {
+                            VStack(spacing: 10) {
+                                if rule.category == .application {
+                                    CompactRow(title: "Application") { Button(rule.action?.applicationPath.map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent } ?? "Choose application") { chooseApplication() } }
+                                } else {
+                                    CompactRow(title: rule.category == .audio ? "Speech model" : "Text model") { RuleModelPicker(rule: $rule, speech: rule.category == .audio) }
+                                }
+                                CompactRow(title: "Shortcut") { HotkeyRecorder(hotkey: $rule.hotkey) }
+                                if let warning = rule.answerHotkeyWarning {
+                                    Text(warning).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
+                                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                if rule.category == .audio { audioOptions }
+                                if rule.category == .text, model.offersBubbleChoice {
+                                    CompactRow(title: "Show in selection bubble", detail: rule.answersInPanel ? nil : "In text fields only.") {
+                                        Toggle("Show in selection bubble", isOn: Binding(get: { showsInBubble }, set: { inBubble = $0 }))
+                                            .labelsHidden().toggleStyle(.switch)
+                                    }
+                                }
+                            }
+                        }
                         if rule.category == .text { instructions }
                     }
                 }.padding(.horizontal, 20).padding(.bottom, 16).minimalScrollbars()
             }
             if let issue {
-                Text(issue).font(.system(size: 11)).foregroundStyle(FrogStyle.warning)
+                Text(issue).font(FrogType.small).foregroundStyle(FrogStyle.warning)
                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20).padding(.bottom, 10)
             }
             HStack(spacing: 8) {
                 if existing {
-                    Button("Delete", systemImage: "trash", role: .destructive) { deleting = true }.buttonStyle(.plain).foregroundStyle(FrogStyle.critical)
-                    Button("Save as copy", systemImage: "square.on.square") { saveCopy() }.buttonStyle(.plain).foregroundStyle(FrogStyle.muted).padding(.leading, 8)
+                    Button("Delete", systemImage: "trash", role: .destructive) { deleting = true }.buttonStyle(.frog(.destructive))
+                    Button("Save as copy", systemImage: "square.on.square") { saveCopy() }.buttonStyle(.frog(.ghost))
                         .help("Save this rule with your changes as a new rule, without its shortcut. The original stays as it was.")
                         .disabled(rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Save") { do { try model.saveRule(rule, inBubble: inBubble); onSave(); dismiss() } catch { issue = error.localizedDescription } }
-                    .buttonStyle(FrogButtonStyle(primary: true)).keyboardShortcut(.defaultAction).disabled(rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }.font(.system(size: 12)).padding(.horizontal, 20).padding(.vertical, 15)
-                .overlay(alignment: .top) { Rectangle().fill(FrogStyle.border.opacity(0.5)).frame(height: 1) }
+                    .buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction).disabled(rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }.padding(.horizontal, 20).padding(.vertical, 16)
         }.frame(width: 520, height: rule.category == .application ? 320 : 460)
             .foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).background(FrogWindowMaterial()).tint(FrogStyle.accent).buttonStyle(FrogButtonStyle()).controlSize(.small)
             .onChange(of: model.configuration, initial: true) { reconcileModels() }
@@ -362,27 +367,23 @@ struct RuleEditor: View {
     }
     private var instructions: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack { Text("Instructions").font(.system(size: 12, weight: .medium)); Spacer(); if rule.category == .text { Text(rule.answersInPanel ? "Sent with the selected text" : "Applied to selected text").font(.system(size: 10)).foregroundStyle(FrogStyle.muted) } }
-            TextEditor(text: $rule.instructions).font(.system(size: 12)).scrollContentBackground(.hidden).padding(9).frame(height: 120)
-                .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 8)).overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(FrogStyle.border.opacity(0.6)))
+            HStack { Text("Instructions").font(FrogType.bodyMedium); Spacer(); if rule.category == .text { Text(rule.answersInPanel ? "Sent with the selected text" : "Applied to selected text").font(FrogType.caption).foregroundStyle(FrogStyle.muted) } }
+            TextEditor(text: $rule.instructions).font(FrogType.body).scrollContentBackground(.hidden).padding(8).frame(height: 120)
+                .frogControlSurface(height: nil)
         }
     }
     private var audioOptions: some View {
         Group {
-            Divider()
             CompactRow(title: "Language") {
                 CompactMenu(value: languageName(rule.action?.transcriptionLanguage ?? languageChoices.first ?? "auto")) {
                     ForEach(languageChoices, id: \.self) { language in
                         Button(languageName(language)) { rule.action?.transcriptionLanguage = language }
-                            .accessibilityAddTraits(language == (rule.action?.transcriptionLanguage ?? languageChoices.first ?? "auto") ? .isSelected : [])
+                            .compactChoice(selected: language == (rule.action?.transcriptionLanguage ?? languageChoices.first ?? "auto"))
                     }
                 }
             }
-            Divider()
             CompactRow(title: "Recording") { CompactSegments(values: RecordingMode.allCases, selected: rule.action?.recordingMode ?? .toggle, title: { $0.title }) { rule.action?.recordingMode = $0 } }
-            Divider()
             CompactRow(title: "Output") { CompactSegments(values: TranscriptOutput.allCases, selected: rule.action?.output ?? .copy, title: { $0.title }) { rule.action?.output = $0 } }
-            Divider()
             CompactRow(title: "Recording popup") { Toggle("Recording popup", isOn: Binding(get: { rule.action?.showRecordingPopup ?? true }, set: { rule.action?.showRecordingPopup = $0 })).labelsHidden().toggleStyle(.switch) }
         }
     }

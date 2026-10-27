@@ -29,11 +29,11 @@ struct PluginsView: View {
                 IconAction(title: "Install a plugin file", symbol: "square.and.arrow.down") { chooseFile() }
             }
             HStack(spacing: 4) {
-                ForEach(PluginsTab.allCases) { item in FilterTag(title: item.title, selected: item == tab) { tab = item } }
+                CompactSegments(values: PluginsTab.allCases, selected: tab, width: 300, title: \.title) { tab = $0 }
                 Spacer()
                 if let host = plugins.downloading {
                     ProgressView().controlSize(.small)
-                    Text("Downloading from \(host)…").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                    Text("Downloading from \(host)…").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }
             }
             switch tab {
@@ -74,32 +74,32 @@ struct PluginsView: View {
                 SymbolTile(symbol: PluginSymbol.name(item.symbol), size: 36)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text(item.name).font(.system(size: 13, weight: .medium))
-                        if let version = item.manifest?.version { Text(version).font(.system(size: 11)).foregroundStyle(FrogStyle.muted) }
+                        Text(item.name).font(FrogType.bodyMedium)
+                        if let version = item.manifest?.version { Text(version).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
                         if item.needsReview { FrogBadge(text: "Needs review", active: true) }
                         else if !item.record.enabled { FrogBadge(text: "Off") }
                         else if plugins.running.contains(item.id) { FrogBadge(text: "Running") }
                     }
                     if let description = item.manifest?.description {
-                        Text(description).font(.system(size: 12)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                        Text(description).font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
                     }
                     if let problem = item.problem {
-                        Text(problem).font(.system(size: 11)).foregroundStyle(FrogStyle.critical).fixedSize(horizontal: false, vertical: true)
+                        Text(problem).font(FrogType.small).foregroundStyle(FrogStyle.critical).fixedSize(horizontal: false, vertical: true)
                     }
-                    Text(sourceLine(item)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
+                    Text(sourceLine(item)).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 HStack(spacing: 6) {
                     if item.needsReview {
                         Button("Review") {
                             do { try plugins.reviewInstalled(item.id) } catch { model.report(error) }
-                        }.buttonStyle(FrogButtonStyle(primary: true))
+                        }.buttonStyle(.frog(.primary))
                     } else if item.problem == nil {
                         if item.runs, item.hasPage { Button("Open") { model.openPlugin(item.id) } }
                         Toggle("", isOn: Binding(get: { item.record.enabled }, set: { plugins.setEnabled(item.id, $0) }))
                             .toggleStyle(.switch).controlSize(.small).labelsHidden()
                             .accessibilityLabel("\(item.name) on")
                     }
-                    IconAction(title: "Remove \(item.name)", symbol: "trash", destructive: false) { removing = item }
+                    IconAction(title: "Remove \(item.name)", symbol: "trash", destructive: true) { removing = item }
                 }
             }
         }
@@ -128,7 +128,7 @@ struct PluginsView: View {
             VStack(spacing: 8) { ForEach(plugins.listings) { listingRow($0) } }
         }
         Text("Every plugin listed was read before it was added, and the file you install must match the one that was read. A listed plugin still runs only with the access you approve.")
-            .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+            .font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             .task { if plugins.listings.isEmpty { await plugins.loadListings() } }
     }
 
@@ -139,13 +139,13 @@ struct PluginsView: View {
                 SymbolTile(symbol: PluginSymbol.name(listing.symbol ?? PluginManifest.defaultSymbol), size: 36)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text(listing.name).font(.system(size: 13, weight: .medium))
-                        Text(listing.version).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                        Text(listing.name).font(FrogType.bodyMedium)
+                        Text(listing.version).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                     }
-                    Text("By \(listing.author)").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                    Text(listing.description).font(.system(size: 12)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                    Text("By \(listing.author)").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    Text(listing.description).font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
                     Text(listing.permissions.isEmpty ? "Asks for no permissions" : "Asks to: " + listing.permissions.compactMap { PluginPermission(rawValue: $0)?.title.lowercased() }.joined(separator: ", "))
-                        .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                        .font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 if installed?.record.sha256 == listing.sha256.lowercased() {
                     FrogBadge(text: "Installed")
@@ -164,9 +164,9 @@ struct PluginsView: View {
     @ViewBuilder private var build: some View {
         FrogCard {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Build a plugin with your AI agent").font(.system(size: 13, weight: .medium))
+                Text("Build a plugin with your AI agent").font(FrogType.bodyMedium)
                 Text("A plugin is a small web page with a plugin.json: it gets a page in this sidebar, rows in the command bar, its own storage, and only the access you approve. Your agent reads the guide, writes the files, installs the plugin here and looks at a picture of it, until it does what you asked.")
-                    .font(.system(size: 12)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                    .font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
                 step(1, "In Settings → Agents, let AI agents use Frog and install the frog command and skill.")
                 step(2, "Ask your agent, for example:")
                 HStack {
@@ -180,12 +180,12 @@ struct PluginsView: View {
         }
         FrogCard {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Install from a link").font(.system(size: 13, weight: .medium))
+                Text("Install from a link").font(FrogType.bodyMedium)
                 Text("Paste an https link to a .frogplugin file. You review what it asks for before anything is installed.")
-                    .font(.system(size: 12)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                    .font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
                 HStack {
-                    TextField("https://…/plugin.frogplugin", text: $link).textFieldStyle(.plain).padding(8)
-                        .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                    TextField("https://…/plugin.frogplugin", text: $link).textFieldStyle(.plain).font(FrogType.body)
+                        .padding(.horizontal, 8).frogControlSurface()
                         .onSubmit(openTypedLink)
                     Button("Review", action: openTypedLink).disabled(URL(string: link.trimmingCharacters(in: .whitespaces))?.scheme != "https" || plugins.downloading != nil)
                 }
@@ -195,8 +195,8 @@ struct PluginsView: View {
 
     private func step(_ number: Int, _ text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("\(number)").font(.system(size: 11, weight: .semibold)).foregroundStyle(FrogStyle.muted).frame(width: 14)
-            Text(.init(text)).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+            Text("\(number)").font(FrogType.label).foregroundStyle(FrogStyle.muted).frame(width: 14)
+            Text(.init(text)).font(FrogType.body).fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -251,12 +251,12 @@ struct PluginReviewSheet: View {
             HStack(alignment: .top, spacing: 12) {
                 SymbolTile(symbol: PluginSymbol.name(manifest.displaySymbol), size: 40)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(review.approved == nil ? "Install \(manifest.name)?" : "Update \(manifest.name)?").font(.system(size: 15, weight: .semibold))
-                    Text("Version \(manifest.version)\(manifest.author.map { " · by \($0)" } ?? "")").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                    Text(review.approved == nil ? "Install \(manifest.name)?" : "Update \(manifest.name)?").font(FrogType.section)
+                    Text("Version \(manifest.version)\(manifest.author.map { " · by \($0)" } ?? "")").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                     origin
                 }
             }
-            Text(manifest.description).font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+            Text(manifest.description).font(FrogType.body).fixedSize(horizontal: false, vertical: true)
             if let replacing = review.replacing {
                 InlineIssue(message: "You have \(manifest.name) from \(replacing.label). This one comes from \(review.source.label): it replaces that plugin and gets what it stored. Install it only if both come from the same author.")
             }
@@ -267,7 +267,7 @@ struct PluginReviewSheet: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if manifest.permissions.isEmpty {
                         Text("It asks for no permissions: it shows its page, keeps its own storage and receives its commands.")
-                            .font(.system(size: 12)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                            .font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
                     } else {
                         SectionCaption(text: review.approved != nil && additions.permissions.isEmpty && additions.hosts.isEmpty && additions.scripts.isEmpty
                                        ? "It asks for nothing new" : "It asks to")
@@ -301,7 +301,7 @@ struct PluginReviewSheet: View {
                         }
                         if review.approved != nil, additions.scripts.contains(PluginGrant.filesKey) {
                             HStack(spacing: 6) {
-                                Text("Its files changed, and its scripts can run any of them.").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                                Text("Its files changed, and its scripts can run any of them.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                                 FrogBadge(text: "Changed", active: true)
                             }
                         }
@@ -310,12 +310,12 @@ struct PluginReviewSheet: View {
             }.frame(maxHeight: 320).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Text("\(review.package.files.count) files · \(ByteCountFormatter.string(fromByteCount: Int64(review.package.size), countStyle: .file))")
-                    .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                 Spacer()
                 Button(review.installed ? "Not now" : "Cancel") { plugins.dismissReview() }.keyboardShortcut(.cancelAction)
                 Button(review.installed ? "Allow" : review.approved == nil ? "Install" : "Update") {
                     do { try plugins.approve(review) } catch { report(error); plugins.dismissReview() }
-                }.buttonStyle(FrogButtonStyle(primary: true)).disabled(!review.compatible || !armed)
+                }.buttonStyle(.frog(.primary)).disabled(!review.compatible || !armed)
             }
         }
         .task(id: review.id) {
@@ -324,20 +324,20 @@ struct PluginReviewSheet: View {
             armed = true
         }
         .padding(20).frame(width: 480)
-        .font(.system(size: 13)).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
+        .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
     }
 
     @ViewBuilder private var origin: some View {
         switch review.source {
         case .folder(let path):
-            Text("Built on this Mac in \((path as NSString).abbreviatingWithTildeInPath)").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+            Text("Built on this Mac in \((path as NSString).abbreviatingWithTildeInPath)").font(FrogType.small).foregroundStyle(FrogStyle.muted)
         case .link, .file:
             HStack(spacing: 6) {
-                Text("From \(review.source.label)").font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
+                Text("From \(review.source.label)").font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
                 if plugins.isListed(review.sha256) {
-                    Label("Listed in the Frog directory", systemImage: "checkmark.seal").font(.system(size: 11)).foregroundStyle(FrogStyle.good)
+                    Label("Listed in the Frog directory", systemImage: "checkmark.seal").font(FrogType.small).foregroundStyle(FrogStyle.good)
                 } else {
-                    Label("Not in the Frog directory", systemImage: "exclamationmark.triangle").font(.system(size: 11)).foregroundStyle(FrogStyle.warning)
+                    Label("Not in the Frog directory", systemImage: "exclamationmark.triangle").font(FrogType.small).foregroundStyle(FrogStyle.warning)
                 }
             }
         }
@@ -349,10 +349,10 @@ struct PluginReviewSheet: View {
                 .foregroundStyle(permission.isSensitive ? FrogStyle.warning : FrogStyle.muted).frame(width: 16)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(permission.title).font(.system(size: 12, weight: .medium))
+                    Text(permission.title).font(FrogType.bodyMedium)
                     if new { FrogBadge(text: "New", active: true) }
                 }
-                Text(permission.detail).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                Text(permission.detail).font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -371,13 +371,13 @@ struct PluginPageView: View {
             // The plugin's page has its own title, so this row only leads back and, while building, reloads.
             HStack(spacing: 8) {
                 Button("Plugins", systemImage: "chevron.left") { model.toolkit.select(.feature(.plugins)) }
-                    .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
+                    .buttonStyle(.frog(.ghost))
                 Spacer()
                 if case .folder = item?.record.source {
                     IconAction(title: "Reload", symbol: "arrow.clockwise") { model.plugins.reload(id) }
                 }
             }
-            .frame(height: 24).padding(.horizontal, 20)
+            .frame(height: FrogStyle.controlHeight).padding(.horizontal, 20)
             .background { WindowDragRegion().accessibilityHidden(true) }
             if let host {
                 PluginWebContainer(host: host)

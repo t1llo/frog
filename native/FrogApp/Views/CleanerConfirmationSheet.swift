@@ -23,14 +23,11 @@ struct CleanerConfirmationSheet: View {
     var body: some View {
         let plan = pending.plan, prompt = pending.prompt
         VStack(alignment: .leading, spacing: 12) {
-            Text(prompt.title).font(.system(size: 14, weight: .medium)).fixedSize(horizontal: false, vertical: true)
+            Text(prompt.title).font(FrogType.section).fixedSize(horizontal: false, vertical: true)
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(removals, id: \.item.id) { removal in
-                        itemRow(removal.item)
-                        if removal.item.id != removals.last?.item.id { Divider().opacity(0.4) }
-                    }
-                }
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    ForEach(removals, id: \.item.id) { removal in itemRow(removal.item) }
+                }.padding(6)
             }
             .frame(maxHeight: 260).fixedSize(horizontal: false, vertical: true)
             .frogTableSurface()
@@ -44,7 +41,7 @@ struct CleanerConfirmationSheet: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(prompt.notes, id: \.self) { note in
-                    Text(note).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
+                    Text(note).font(FrogType.small).fixedSize(horizontal: false, vertical: true)
                 }
             }
             if !plan.refused.isEmpty {
@@ -52,9 +49,9 @@ struct CleanerConfirmationSheet: View {
                     SectionCaption(text: "Left out")
                     ForEach(plan.refused, id: \.item.id) { refusal in
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(roots.displayPath(refusal.item.url)).font(.system(size: 11))
+                            Text(roots.displayPath(refusal.item.url)).font(FrogType.small)
                                 .lineLimit(1).truncationMode(.middle)
-                            Text(refusal.reason).font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                            Text(refusal.reason).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                         }
                     }
                 }
@@ -63,14 +60,14 @@ struct CleanerConfirmationSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ProgressView(value: Double(removing.done), total: Double(max(removing.total, 1)))
                     Text("Moving \(min(removing.done + 1, removing.total)) of \(removing.total)…")
-                        .font(.system(size: 11).monospacedDigit()).foregroundStyle(FrogStyle.muted)
+                        .font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)
                 }
             } else {
                 HStack(spacing: 8) {
                     Spacer()
                     Button(prompt.cancel) { cleaner.cancelRemoval() }.keyboardShortcut(.cancelAction)
                     Button(prompt.confirm, role: .destructive) { Task { await cleaner.confirmRemoval() } }
-                        .buttonStyle(FrogButtonStyle(primary: true))
+                        .buttonStyle(.frog(.destructive))
                 }
             }
         }
@@ -93,11 +90,11 @@ struct CleanerConfirmationSheet: View {
         HStack(spacing: 8) {
             Image(systemName: item.kind.symbol).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
                 .frame(width: 16).accessibilityHidden(true)
-            Text(roots.displayPath(item.url)).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+            Text(roots.displayPath(item.url)).font(FrogType.body).lineLimit(1).truncationMode(.middle)
             if item.owner == .administrator { FrogBadge(text: "Needs password") }
             Spacer(minLength: 8)
-            Text(size(of: item)).font(.system(size: 11).monospacedDigit()).foregroundStyle(FrogStyle.muted)
-        }.padding(.horizontal, 10).padding(.vertical, 5)
+            Text(size(of: item)).font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)
+        }.padding(.horizontal, 8).padding(.vertical, 5)
     }
 
     private func size(of item: CleanerItem) -> String {

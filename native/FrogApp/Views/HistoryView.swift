@@ -51,14 +51,13 @@ private struct HistoryContent: View {
         // Merged and sorted once per pass; the list shown is narrowed from it.
         let all = allEntries
         let displayedEntries = HistoryFeed.narrowed(all, filter: filter, search: search, revealed: visibility.revealed)
-        let lastEntryID = displayedEntries.last?.id
         let emptyState = HistoryEmptyState.describing(all: all, shown: displayedEntries, filter: filter, search: search,
                                                       clipboardEnabled: model.configuration.preferences.featureEnabled(.clipboard))
         VStack(alignment: .leading, spacing: 14) {
             if let viewing = all.first(where: { $0.id == self.viewing }) {
                 HStack {
-                    Button { self.viewing = nil } label: { Label(clipboardSelected ? "Clipboard" : "History", systemImage: "arrow.left") }
-                        .keyboardShortcut(.cancelAction)
+                    Button { self.viewing = nil } label: { Label(clipboardSelected ? "Clipboard" : "History", systemImage: "chevron.left") }
+                        .buttonStyle(.frog(.ghost)).keyboardShortcut(.cancelAction)
                         // ⌘[ goes back too, through a button that is not drawn.
                         .background { Button("Back to history") { self.viewing = nil }.keyboardShortcut("[", modifiers: .command).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true) }
                     Spacer()
@@ -66,26 +65,26 @@ private struct HistoryContent: View {
                     // Actions for an answer entry go here, before Delete.
                     if let saved = viewing.savedEntry, saved.answer != nil, model.answerNotesEnabled, !hidden(viewing) { noteButton(saved) }
                     IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = viewing }
-                }.frame(height: 32)
+                }.frame(height: FrogStyle.controlHeight)
                 PageHeader(title: viewing.title, subtitle: viewing.timestamp.formatted(date: .abbreviated, time: .shortened))
                 if let saved = viewing.savedEntry { interruptionStatus(saved) }
                 ScrollView {
                     if hidden(viewing) {
                         VStack(spacing: 12) {
                             Image(systemName: "eye.slash").foregroundStyle(FrogStyle.muted)
-                            Text("History text is hidden").font(.system(size: 12))
+                            Text("History text is hidden").font(FrogType.body)
                             Button("Reveal text") { visibility.revealed.insert(viewing.id) }
                         }.frame(maxWidth: .infinity).padding(32)
-                    } else if let saved = viewing.savedEntry { HistoryDetail(entry: saved).padding(16).minimalScrollbars() }
+                    } else if let saved = viewing.savedEntry { HistoryDetail(entry: saved).padding(14).minimalScrollbars() }
                     else if let entry = viewing.clipboardEntry {
                         VStack(alignment: .leading, spacing: 14) {
                             HStack {
                                 SectionCaption(text: entry.isSensitive ? "Sensitive copied text" : "Copied text")
                                 Spacer()
-                                Button("Copy") { copy(viewing) }
+                                Button("Copy") { copy(viewing) }.buttonStyle(.frog(compact: true))
                             }
                             HistoryLongText(text: entry.text)
-                        }.padding(16).minimalScrollbars()
+                        }.padding(14).minimalScrollbars()
                     }
                 }.frogTableSurface()
                     .onCopyCommand {
@@ -94,7 +93,7 @@ private struct HistoryContent: View {
                         return [NSItemProvider(object: viewing.text as NSString)]
                     }
                 if note?.id == viewing.id, case .failed(let message) = note?.state {
-                    Text(message).font(.system(size: 11)).foregroundStyle(FrogStyle.warning)
+                    Text(message).font(FrogType.small).foregroundStyle(FrogStyle.warning)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
@@ -107,12 +106,12 @@ private struct HistoryContent: View {
                                 var preferences = model.configuration.preferences
                                 preferences.historyEnabled = true
                                 do { try model.savePreferences(preferences) } catch { model.report(error) }
-                            }
+                            }.buttonStyle(.frog(compact: true))
                         }
                         Menu {
                             Button(clipboardSelected ? "Clear clipboard" : "Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }
                                 .disabled(clipboardSelected ? clipboard.entries.isEmpty : all.isEmpty)
-                        } label: { Image(systemName: "ellipsis").frame(width: 26).modifier(CompactActionSurface()) }
+                        } label: { Image(systemName: "ellipsis").font(FrogType.label).frame(width: FrogStyle.compactHeight).modifier(CompactActionSurface()) }
                             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help(clipboardSelected ? "Clipboard actions" : "History actions")
                     }
                 }
@@ -146,14 +145,9 @@ private struct HistoryContent: View {
                 Spacer(minLength: 0)
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(displayedEntries) { item in
-                            historyRow(item)
-                                .overlay(alignment: .bottom) {
-                                    if item.id != lastEntryID { Divider().opacity(0.5) }
-                                }
-                        }
-                    }.minimalScrollbars()
+                    LazyVStack(spacing: 2) {
+                        ForEach(displayedEntries) { item in historyRow(item) }
+                    }.padding(6).minimalScrollbars()
                 }
                 .frogTableSurface()
             }
@@ -201,14 +195,14 @@ private struct HistoryContent: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 10) {
                             Text(item.clipboardEntry != nil ? (item.requiresReveal ? "Sensitive copied text" : "Copied text") : item.title)
-                                .font(.system(size: 12, weight: .medium)).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                                .font(FrogType.bodyMedium).foregroundStyle(FrogStyle.ink).lineLimit(1)
                             Spacer(minLength: 8)
                             Text(item.timestamp.formatted(date: .abbreviated, time: .shortened))
-                                .font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                                .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                         }
-                        Text(hidden(item) ? "•••••••• · Click to reveal" : item.text.isEmpty ? L10n.text("No transcript available") : HistoryPreview.text(item.text)).font(.system(size: 12)).foregroundStyle(FrogStyle.ink)
+                        Text(hidden(item) ? "•••••••• · Click to reveal" : item.text.isEmpty ? L10n.text("No transcript available") : HistoryPreview.text(item.text)).font(FrogType.body).foregroundStyle(FrogStyle.ink)
                             .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-                        Text(metadata(item)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                        Text(metadata(item)).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                         if let saved = item.savedEntry { interruptionStatus(saved) }
                     }
                 }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
@@ -217,7 +211,7 @@ private struct HistoryContent: View {
             IconAction(title: copiedID == item.id ? "Copied" : "Copy result", symbol: copiedID == item.id ? "checkmark" : "doc.on.doc") {
                 copy(item); copiedID = item.id
             }.disabled(item.text.isEmpty)
-        }.padding(.horizontal, 12).padding(.vertical, 10)
+        }.padding(.horizontal, 8).padding(.vertical, 8).frogHoverRow()
             .contextMenu {
                 Button("Open full entry") { if item.requiresReveal { visibility.revealed.insert(item.id) }; viewing = item.id }
                 Button("Copy", systemImage: "doc.on.doc") { copy(item) }.disabled(item.text.isEmpty)
@@ -246,7 +240,7 @@ private struct HistoryContent: View {
                 } else if entry.transcriptState == .partial {
                     Text("Partial transcript")
                 }
-            }.font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+            }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
         }
     }
     /// Saves the answer and its follow-ups as a note; "Saved" shows for two seconds.
@@ -375,14 +369,14 @@ private struct HistoryLongText: View {
         VStack(alignment: .leading, spacing: lineSpacing) {
             ForEach(Array(leading.pages.enumerated()), id: \.offset) { _, page in
                 // The next page starts on a new line, which stands for the line end that closes this one.
-                Text(page.last?.isNewline == true ? page.dropLast() : page).font(.system(size: 13)).lineSpacing(lineSpacing)
+                Text(page.last?.isNewline == true ? page.dropLast() : page).font(FrogType.lead).lineSpacing(lineSpacing)
                     .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if leading.more {
                 HStack(spacing: 10) {
                     Button("Show more") { shown += 1 }
-                    Text("Long text is shown in parts. Copy takes all of it.").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                    Text("Long text is shown in parts. Copy takes all of it.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }.padding(.top, 10)
             }
         }
@@ -400,13 +394,13 @@ private struct HistoryDetail: View {
     @State private var copied: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        // Sections are set apart by space and their captions.
+        VStack(alignment: .leading, spacing: 20) {
             if let answer = entry.answer {
                 answerSections(answer)
             } else {
                 metadataLine([entry.providerName, entry.model, entry.targetLanguage])
                 textSection("Result", text: entry.processedText)
-                Divider().opacity(0.5)
                 textSection("Original", text: entry.originalText)
             }
         }.padding(.top, 4)
@@ -415,7 +409,7 @@ private struct HistoryDetail: View {
 
     private func metadataLine(_ parts: [String]) -> some View {
         Text(parts.filter { !$0.isEmpty }.joined(separator: " · "))
-            .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
+            .font(FrogType.small).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
     }
 
     /// An answer: the first answer, its follow-ups, then what was asked about.
@@ -424,7 +418,6 @@ private struct HistoryDetail: View {
         metadataLine([answer.application ?? "", entry.providerName, entry.model])
         textSection("Answer", text: entry.processedText)
         if !answer.followUps.isEmpty {
-            Divider().opacity(0.5)
             VStack(alignment: .leading, spacing: 12) {
                 sectionHeader("Follow-ups", copying: answer.followUps.map { "\($0.question)\n\n\($0.answer)" }.joined(separator: "\n\n"))
                 ForEach(Array(answer.followUps.enumerated()), id: \.offset) { _, turn in
@@ -436,10 +429,8 @@ private struct HistoryDetail: View {
                 }
             }
         }
-        Divider().opacity(0.5)
         textSection("Selection", text: entry.originalText)
         if let context = answer.context, !context.isEmpty {
-            Divider().opacity(0.5)
             textSection("Context", text: context)
         }
     }
@@ -457,7 +448,7 @@ private struct HistoryDetail: View {
             Spacer()
             Button(L10n.text(copied == title ? "Copied" : "Copy"), systemImage: copied == title ? "checkmark" : "doc.on.doc") {
                 ViewActions.copy(text); copied = title
-            }.accessibilityLabel("Copy \(title.lowercased())").disabled(text.isEmpty)
+            }.buttonStyle(.frog(compact: true)).accessibilityLabel("Copy \(title.lowercased())").disabled(text.isEmpty)
         }
     }
 }

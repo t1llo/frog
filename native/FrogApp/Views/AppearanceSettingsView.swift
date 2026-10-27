@@ -142,7 +142,6 @@ struct AppearanceSettingsView: View {
         CompactRow(title: "Appearance") {
             CompactSegments(values: AppearancePreferences.Mode.allCases, selected: appearance.mode ?? .system, title: { $0.rawValue.capitalized }) { mode in var value = appearance; value.mode = mode; draft.set(value) }
         }.onDisappear { draft.commit() }
-        Divider()
         CompactRow(title: "Theme") {
             CompactMenu(value: appearance.effectiveTheme.title) {
                 ForEach(AppearancePreferences.Theme.allCases, id: \.self) { theme in
@@ -150,20 +149,18 @@ struct AppearanceSettingsView: View {
                         var value = appearance; value.theme = theme; value.useThemeAccent = true
                         value.lightPalette = nil; value.darkPalette = nil
                         draft.set(value)
-                    }.accessibilityAddTraits(theme == appearance.effectiveTheme ? .isSelected : [])
+                    }.compactChoice(selected: theme == appearance.effectiveTheme)
                 }
             }
         }
-        Divider()
         CompactRow(title: "Accent color") {
-            HStack(spacing: 10) {
-                Button("Reset") { var value = appearance; value.useThemeAccent = true; value.lightPalette?["accent"] = nil; value.darkPalette?["accent"] = nil; draft.set(value) }.buttonStyle(.link)
+            HStack(spacing: 8) {
+                Button("Reset") { var value = appearance; value.useThemeAccent = true; value.lightPalette?["accent"] = nil; value.darkPalette?["accent"] = nil; draft.set(value) }.buttonStyle(.frog(.ghost))
                 HStack(spacing: 2) {
                     Text("#").foregroundStyle(FrogStyle.muted)
                     TextField("RGB", text: $accentInput).textFieldStyle(.plain).frame(width: 58)
                         .onSubmit { saveAccent() }.accessibilityLabel("Accent hex color")
-                }.font(.system(size: 11, design: .monospaced)).padding(6)
-                    .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 5))
+                }.font(FrogType.body).padding(.horizontal, 8).frogControlSurface()
                     .onAppear { accentInput = appearance.accentHex }
                     .onChange(of: appearance.accentHex) { _, value in accentInput = value }
                 ColorPicker("Accent color", selection: Binding(get: { FrogStyle.accent }, set: { color in
@@ -172,27 +169,25 @@ struct AppearanceSettingsView: View {
                 }), supportsOpacity: false).labelsHidden()
             }
         }
-        Divider()
+        CompactRow(title: "Custom palette", detail: "palette.light.* and palette.dark.* in the configuration file.") {
+            Button("Open config") { model.openConfiguration() }
+        }
+        SectionCaption(text: "Transparency").padding(.top, 6)
         CompactRow(title: "Window transparency") {
             HStack(spacing: 10) {
                 Slider(value: Binding(get: { appearance.transparency }, set: { amount in var value = appearance; value.transparency = amount; draft.change(value) }), in: 0...1, onEditingChanged: { if !$0 { draft.commit() } }).frame(width: 145)
-                Text("\(Int(appearance.transparency * 100))%").font(.system(size: 11)).monospacedDigit().frame(width: 32)
+                Text("\(Int(appearance.transparency * 100))%").font(FrogType.small).monospacedDigit().frame(width: 32)
             }
         }
-        Divider()
         CompactRow(title: "Popup transparency", detail: "Menus and panels.") {
             HStack(spacing: 10) {
                 Slider(value: Binding(get: { appearance.popupTransparency ?? 0 }, set: { amount in var value = appearance; value.popupTransparency = amount; draft.change(value) }), in: 0...1, onEditingChanged: { if !$0 { draft.commit() } }).frame(width: 145)
-                Text("\(Int((appearance.popupTransparency ?? 0) * 100))%").font(.system(size: 11)).monospacedDigit().frame(width: 32)
+                Text("\(Int((appearance.popupTransparency ?? 0) * 100))%").font(FrogType.small).monospacedDigit().frame(width: 32)
             }
         }
         if reduceTransparency || contrast == .increased {
             Text("Off while macOS reduces transparency.")
-                .font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-        }
-        Divider()
-        CompactRow(title: "Custom palette", detail: "palette.light.* and palette.dark.* in the configuration file.") {
-            Button("Open config") { model.openConfiguration() }
+                .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
         }
     }
     private var appearance: AppearancePreferences { draft.value ?? model.configuration.preferences.appearance ?? AppearancePreferences() }

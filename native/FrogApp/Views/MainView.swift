@@ -96,6 +96,13 @@ struct MainView: View {
         }
     }
 
+    private func reveal(_ route: ToolkitRoute, in proxy: ScrollViewProxy) {
+        switch route {
+        case .feature, .plugin: proxy.scrollTo(route)
+        default: break
+        }
+    }
+
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
@@ -123,13 +130,9 @@ struct MainView: View {
                         }.padding(.horizontal, 8).padding(.bottom, 6).minimalScrollbars()
                     }
                     // Reveals a feature opened from elsewhere, such as the command bar, by the least scrolling;
-                    // a row already in view stays where it is.
-                    .onChange(of: section) { _, route in
-                        switch route {
-                        case .feature, .plugin: proxy.scrollTo(route)
-                        default: break
-                        }
-                    }
+                    // a row already in view stays where it is. A window that opens on a page shows its row too.
+                    .onAppear { reveal(section, in: proxy) }
+                    .onChange(of: section) { _, route in reveal(route, in: proxy) }
                 }
             }.padding(.top, 32).background(FrogStyle.sidebar)
             VStack(spacing: 2) { ForEach(workspaceNavigation) { navigationButton($0) } }

@@ -12,7 +12,6 @@ struct WindowsView: View {
 
     var body: some View {
         let rows = WindowAction.shortcutRows(configured: model.configuration.rules)
-        let lastRowID = rows.last?.id
         PageScroll {
             PageHeader(title: "Windows")
             if !model.accessibilityGranted {
@@ -22,7 +21,12 @@ struct WindowsView: View {
             WindowSetupCard(macOS: macOS)
             SettingsSection(title: "Sizes") {
                 CompactRow(title: "Gap between windows") {
-                    Stepper("\(settings.gap) pt", value: binding(\.gap), in: WindowPreferences.gapRange, step: 2).fixedSize()
+                    CompactMenu(value: points(settings.gap), width: 180) {
+                        ForEach(Self.gapChoices(including: settings.gap), id: \.self) { gap in
+                            Button(points(gap)) { update { $0.gap = gap } }
+                                .compactChoice(selected: gap == settings.gap)
+                        }
+                    }
                 }
                 CompactRow(title: "Cycle sizes when pressed again", detail: "½, ⅔ and ⅓ of the screen.") {
                     Toggle("Cycle sizes when pressed again", isOn: binding(\.cycleSizes)).labelsHidden().toggleStyle(.switch)
@@ -41,11 +45,11 @@ struct WindowsView: View {
                 if macOS.edgeTiling || macOS.topEdgeTiling {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(nativeTilingNote)
-                            .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                            .font(FrogType.small).foregroundStyle(FrogStyle.muted)
                             .fixedSize(horizontal: false, vertical: true)
-                        Button("Open Desktop & Dock") { MacWindowManagerReader.openDesktopAndDock() }.buttonStyle(.plain)
-                            .font(.system(size: 11)).foregroundStyle(FrogStyle.accent)
-                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 6)
+                        Button("Open Desktop & Dock") { MacWindowManagerReader.openDesktopAndDock() }
+                            .buttonStyle(.frog(.ghost, compact: true))
+                    }.frame(maxWidth: .infinity, alignment: .leading)
                 }
                 CompactRow(title: "Restore size when dragged away") {
                     Toggle("Restore size when dragged away", isOn: binding(\.restoreOnDrag)).labelsHidden().toggleStyle(.switch)
@@ -66,7 +70,7 @@ struct WindowsView: View {
                         VStack(alignment: .trailing, spacing: 4) {
                             HotkeyRecorder(hotkey: commandShortcut(.layoutPicker)).disabled(!settings.layoutPicker)
                             if let issue = model.hotkeyErrors[WindowCommand.layoutPicker.id] {
-                                Text(issue).font(.caption2).foregroundStyle(FrogStyle.warning)
+                                Text(issue).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
                             }
                         }
                         Toggle("Layout picker", isOn: binding(\.layoutPicker)).labelsHidden().toggleStyle(.switch)
@@ -75,37 +79,36 @@ struct WindowsView: View {
             }
             SettingsSection(title: "Layout shortcuts") {
                 VStack(alignment: .leading, spacing: 6) {
-                    Button("Use suggested shortcuts", action: useSuggestedShortcuts).buttonStyle(FrogButtonStyle())
+                    Button("Use suggested shortcuts", action: useSuggestedShortcuts).buttonStyle(.frog())
                     if let suggestion {
-                        Text(suggestion).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                        Text(suggestion).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if voiceOverNote {
                         Text("VoiceOver uses Control-Option. These shortcuts work, but VoiceOver users may prefer others.")
-                            .font(.system(size: 11)).foregroundStyle(FrogStyle.warning)
+                            .font(FrogType.small).foregroundStyle(FrogStyle.warning)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 6)
-                VStack(spacing: 0) {
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                // A list in the card: each row's highlight reaches past the card's padding, so the row's content
+                // lines up with the rows above.
+                VStack(spacing: 2) {
                     ForEach(rows) { rule in
                         ShortcutRuleRow(rule: rule, model: model) {
                             if let action = rule.action?.windowAction {
                                 WindowLayoutGlyph(action: action).frame(width: 28, height: 28)
                             } else { ShortcutRuleSymbol() }
                         }
-                            .padding(.vertical, 8)
-                            .overlay(alignment: .bottom) {
-                                if rule.id != lastRowID { Divider().opacity(0.5) }
-                            }
+                            .padding(.horizontal, 8).padding(.vertical, 6).frogHoverRow()
                     }
-                }
+                }.padding(.horizontal, -8)
             }
             SettingsSection(title: "Cheat sheet") {
                 CompactRow(title: "Show window shortcuts while holding") {
                     VStack(alignment: .trailing, spacing: 4) {
                         HotkeyRecorder(hotkey: commandShortcut(.cheatSheet))
                         if let issue = model.hotkeyErrors[WindowCommand.cheatSheet.id] {
-                            Text(issue).font(.caption2).foregroundStyle(FrogStyle.warning)
+                            Text(issue).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
                         }
                     }
                 }
@@ -129,6 +132,13 @@ struct WindowsView: View {
         let off = macOS.topEdgeTiling ? "\(tile), and for the top edge \(fill)," : tile
         return "macOS already tiles windows dragged to screen edges, so Frog's edges are paused. \(zones) or turn off \(off) in Desktop & Dock."
     }
+
+    /// The gaps the menu offers, with the saved one when it is not among them.
+    static func gapChoices(including current: Int) -> [Int] {
+        Set([0, 2, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40, current]).filter { WindowPreferences.gapRange.contains($0) }.sorted()
+    }
+
+    private func points(_ gap: Int) -> String { "\(gap) pt" }
 
     /// The saved Windows settings, or their defaults.
     private var settings: WindowPreferences { model.configuration.preferences.toolkitSettings.windows ?? WindowPreferences() }

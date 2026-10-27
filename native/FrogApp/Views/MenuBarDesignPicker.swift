@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import FrogCore
 
-/// One tile per design, each drawn as the menu bar will show it; the chosen one is outlined.
+/// One tile per design, each drawn as the menu bar will show it; the chosen one is highlighted.
 struct MenuBarDesignTiles<Choice: Hashable>: View {
     let choices: [Choice]
     let selected: Choice
@@ -15,22 +15,30 @@ struct MenuBarDesignTiles<Choice: Hashable>: View {
     var body: some View {
         HStack(spacing: 8) {
             ForEach(choices, id: \.self) { choice in
-                let chosen = choice == selected
-                Button { choose(choice) } label: {
-                    VStack(spacing: 7) {
-                        MenuBarPreviewStrip(image: image(choice, scheme == .dark))
-                        Text(L10n.text(title(choice))).font(.system(size: 11, weight: chosen ? .semibold : .regular))
-                            .foregroundStyle(chosen ? FrogStyle.ink : FrogStyle.muted)
-                    }
-                    .padding(7).frame(maxWidth: .infinity)
-                    .background(chosen ? FrogStyle.selection : .clear, in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
-                    .overlay(RoundedRectangle(cornerRadius: FrogStyle.cardRadius)
-                        .strokeBorder(chosen ? FrogStyle.accent : FrogStyle.border.opacity(0.5), lineWidth: chosen ? 1.5 : 1))
-                    .contentShape(Rectangle())
-                }.buttonStyle(.plain)
-                    .accessibilityLabel(L10n.text(title(choice))).accessibilityAddTraits(chosen ? .isSelected : [])
+                MenuBarDesignTile(title: L10n.text(title(choice)), image: image(choice, scheme == .dark), chosen: choice == selected) { choose(choice) }
             }
         }
+    }
+}
+
+private struct MenuBarDesignTile: View {
+    let title: String
+    let image: NSImage
+    let chosen: Bool
+    let choose: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: choose) {
+            VStack(spacing: 7) {
+                MenuBarPreviewStrip(image: image)
+                Text(title).font(chosen ? FrogType.label : FrogType.small)
+                    .foregroundStyle(chosen ? FrogStyle.ink : FrogStyle.muted)
+            }
+            .padding(7).frame(maxWidth: .infinity)
+            .frogRowHighlight(hovering: hovering, selected: chosen)
+        }.buttonStyle(.plain).onHover { hovering = $0 }
+            .accessibilityLabel(title).accessibilityAddTraits(chosen ? .isSelected : [])
     }
 }
 
@@ -41,9 +49,8 @@ struct MenuBarPreviewStrip: View {
     var body: some View {
         Image(nsImage: image).renderingMode(image.isTemplate ? .template : .original)
             .foregroundStyle(scheme == .dark ? Color.white : Color.black)
-            .frame(maxWidth: .infinity).frame(height: 28)
-            .background(scheme == .dark ? Color(white: 0.16) : Color(white: 0.93), in: RoundedRectangle(cornerRadius: 5))
-            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(FrogStyle.border.opacity(0.35)))
+            .frame(maxWidth: .infinity).frame(height: FrogStyle.controlHeight)
+            .background(scheme == .dark ? Color(white: 0.16) : Color(white: 0.93), in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius))
             .accessibilityHidden(true)
     }
 }

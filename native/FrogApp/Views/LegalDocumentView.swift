@@ -32,9 +32,9 @@ struct LegalDocumentView: View {
             PageHeader(title: document.title, subtitle: document.summary)
             ReadOnlyText(text: text).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
                 .accessibilityLabel(L10n.text(document.title))
-            HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
+            HStack { Spacer(); Button("Done") { dismiss() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction) }
         }.padding(22).frame(width: 640, height: 520).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
-            .buttonStyle(FrogButtonStyle()).environment(\.locale, L10n.locale)
+            .buttonStyle(.frog()).environment(\.locale, L10n.locale)
     }
 }
 

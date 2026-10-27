@@ -9,13 +9,11 @@ struct RecordingSettingsView: View {
     var body: some View {
         SettingsSection(title: "Recording") {
             MicrophoneRow(dictation: model.dictation, selection: prefs.microphoneID) { id in update { $0.microphoneID = id } }
-            Divider()
             CompactRow(title: "Mute Mac audio while recording") { Toggle("Mute Mac audio while recording", isOn: Binding(get: { prefs.muteWhileRecording ?? false }, set: { value in update { $0.muteWhileRecording = value } })).labelsHidden() }
-            Divider()
             CompactRow(title: "Cancel recording", detail: "Escape always cancels.") {
                 HotkeyRecorder(hotkey: Binding(get: { prefs.cancelRecordingHotkey }, set: { value in update { $0.cancelRecordingHotkey = value } }))
             }
-            if let issue = model.hotkeyErrors[AppModel.cancelRecordingID] { Text(issue).font(.caption).foregroundStyle(FrogStyle.warning) }
+            if let issue = model.hotkeyErrors[AppModel.cancelRecordingID] { Text(issue).font(FrogType.caption).foregroundStyle(FrogStyle.warning) }
         }.toggleStyle(.switch).controlSize(.small)
     }
 
@@ -33,11 +31,11 @@ struct MicrophoneRow: View {
     var body: some View {
         CompactRow(title: "Microphone") {
             CompactMenu(value: dictation.microphones.first { String($0.id) == selection }?.name ?? "System default") {
-                Button { choose(nil) } label: { Label("System default", systemImage: selection == nil ? "checkmark" : "mic") }
-                    .accessibilityAddTraits(selection == nil ? .isSelected : [])
+                Button("System default") { choose(nil) }
+                    .compactChoice(selected: selection == nil)
                 ForEach(dictation.microphones, id: \.id) { device in
-                    Button { choose(String(device.id)) } label: { Label(device.name, systemImage: selection == String(device.id) ? "checkmark" : "mic") }
-                        .accessibilityAddTraits(selection == String(device.id) ? .isSelected : [])
+                    Button(device.name) { choose(String(device.id)) }
+                        .compactChoice(selected: selection == String(device.id))
                 }
             }
         }

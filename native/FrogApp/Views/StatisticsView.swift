@@ -22,7 +22,7 @@ struct StatisticsView: View {
         PageScroll {
             if let onBack {
                 Button("Settings", systemImage: "chevron.left", action: onBack)
-                    .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
+                    .buttonStyle(.frog(.ghost))
             }
             PageHeader(title: "Statistics")
             SettingsSection(title: "Local statistics") {
@@ -31,7 +31,7 @@ struct StatisticsView: View {
                         .labelsHidden().toggleStyle(.switch).disabled(!statistics.loaded)
                 }
                 if !statistics.snapshot.recordingEnabled {
-                    Text("Paused. Existing totals remain until you reset them.").font(.caption).foregroundStyle(FrogStyle.muted)
+                    Text("Paused. Existing totals remain until you reset them.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                 }
                 if let issue = statistics.issue { InlineIssue(message: issue) }
             }
@@ -44,7 +44,7 @@ struct StatisticsView: View {
             }
             SettingsSection(title: "Rules executed") {
                 countRow("Successful rule runs", count: totals.ruleRuns)
-                Divider()
+                SectionCaption(text: "By kind").padding(.top, 6)
                 ForEach(ActivityRuleKind.allCases, id: \.self) { kind in
                     countRow(ruleTitle(kind), count: totals.ruleRuns(kind))
                 }
@@ -55,13 +55,13 @@ struct StatisticsView: View {
                 }
             }
             Text("Only completed actions count. Daily totals are kept for a year.")
-                .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                .font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             SettingsSection(title: "Storage") {
                 CompactRow(title: "Reset all statistics") {
-                    Button("Reset statistics", role: .destructive) { confirmingReset = true }
+                    Button("Reset statistics", role: .destructive) { confirmingReset = true }.buttonStyle(.frog(.destructive))
                 }
             }
-        }.foregroundStyle(FrogStyle.ink).buttonStyle(FrogButtonStyle())
+        }.foregroundStyle(FrogStyle.ink).buttonStyle(.frog())
             .onAppear { statistics.reload() }
             .confirmationDialog("Reset all statistics?", isPresented: $confirmingReset, titleVisibility: .visible) {
                 Button("Reset statistics", role: .destructive) { statistics.reset() }
@@ -71,13 +71,13 @@ struct StatisticsView: View {
     private func metric(_ title: String, value: String, symbol: String) -> some View {
         FrogCard {
             VStack(alignment: .leading, spacing: 8) {
-                Label(title, systemImage: symbol).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                Text(value).font(.system(size: 24, weight: .medium)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
+                Label(title, systemImage: symbol).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                Text(value).font(FrogType.title).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
             }
         }.accessibilityElement(children: .combine)
     }
     private func countRow(_ title: String, count: Int) -> some View {
-        CompactRow(title: title) { Text(count.formatted()).monospacedDigit().font(.system(size: 12, weight: .medium)) }
+        CompactRow(title: title) { Text(count.formatted()).font(FrogType.bodyMedium).monospacedDigit() }
     }
     private func duration(_ seconds: Double) -> String {
         let seconds = Int(seconds.rounded(.down))

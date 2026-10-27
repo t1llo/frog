@@ -21,14 +21,12 @@ struct CommandBarSetupView: View {
                     if !NSWorkspace.shared.open(url) { issue = "Open System Settings manually, then choose Keyboard → Keyboard Shortcuts → Spotlight." }
                 }
             }
-            Divider()
             step(2, "Give ⌘Space to Frog", detail: "Enables the command bar and saves its shortcut. If another launcher uses ⌘Space, change its shortcut first too.") {
                 Button(assigned ? "Retry ⌘Space" : "Use ⌘Space") {
                     do { try model.useCommandBarShortcut(shortcut); issue = nil }
                     catch { issue = error.localizedDescription }
                 }
             }
-            Divider()
             step(3, "Try it", detail: "Press ⌘Space, then type an app, file name or 25% * 200.") {
                 Button("Open command bar") { model.showCommandBar() }
                     .disabled(!model.configuration.preferences.featureEnabled(.commandBar))
@@ -37,20 +35,20 @@ struct CommandBarSetupView: View {
                 InlineIssue(message: error)
             } else if assigned {
                 Label("Frog is set to ⌘Space. Try the shortcut to confirm.", systemImage: "checkmark.circle")
-                    .font(.caption).foregroundStyle(FrogStyle.accent)
+                    .font(FrogType.caption).foregroundStyle(FrogStyle.accent)
             }
             Text("To switch back, choose another Frog shortcut, then re-enable Spotlight’s shortcut in Keyboard Settings.")
-                .font(.caption).foregroundStyle(FrogStyle.muted)
+                .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
         }
     }
 
     private func step<Content: View>(_ number: Int, _ title: String, detail: String, @ViewBuilder action: () -> Content) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Text("\(number)").font(.system(size: 11, weight: .semibold)).foregroundStyle(FrogStyle.accent)
-                .frame(width: 24, height: 24).background(FrogStyle.accentSoft, in: Circle())
-            VStack(alignment: .leading, spacing: 7) {
-                Text(title).font(.system(size: 12, weight: .medium))
-                Text(detail).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+            Text("\(number)").font(FrogType.label).foregroundStyle(FrogStyle.accent)
+                .frame(width: FrogStyle.compactHeight, height: FrogStyle.compactHeight).background(FrogStyle.accentSoft, in: Circle())
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title).font(FrogType.bodyMedium)
+                Text(detail).font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
                 action()
             }.frame(maxWidth: .infinity, alignment: .leading)
         }

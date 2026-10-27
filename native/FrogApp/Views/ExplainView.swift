@@ -26,7 +26,6 @@ struct ExplainView: View {
                             update { $0.includeContext = value }
                         })).labelsHidden().toggleStyle(.switch)
                     }
-                    Divider()
                     CompactRow(title: "Save answers to notes", detail: "Markdown files in a folder you choose.") {
                         Toggle("Save answers to notes", isOn: Binding(get: { settings.notes }, set: { value in
                             update { $0.notes = value }
@@ -48,7 +47,6 @@ struct ExplainView: View {
                     }
                 }
             }
-            Divider()
             CompactRow(title: "Save as") {
                 CompactSegments(values: ExplainSettings.NotesMode.allCases, selected: settings.notesMode, width: 260,
                                 title: { $0 == .perAnswer ? "One note per answer" : "Add to one note" }) { mode in
@@ -56,12 +54,10 @@ struct ExplainView: View {
                 }
             }
             if settings.notesMode == .append {
-                Divider()
                 CompactRow(title: "File", detail: notesFileIssue ?? "YYYY, MM and DD become today's date.") {
                     TextField("Daily/YYYY-MM-DD.md", text: $notesFile)
-                        .textFieldStyle(.plain).font(.system(size: 11, design: .monospaced))
-                        .frame(width: 200).padding(6)
-                        .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: 5))
+                        .textFieldStyle(.plain).font(FrogType.body)
+                        .padding(.horizontal, 8).frame(width: 220).frogControlSurface()
                         .focused($editingFile)
                         .onSubmit(saveNotesFile)
                         .onChange(of: editingFile) { _, editing in if !editing { saveNotesFile() } }
@@ -70,7 +66,6 @@ struct ExplainView: View {
                         .accessibilityLabel("Notes file")
                 }
             }
-            Divider()
             CompactRow(title: "Open the note after saving", detail: "In Obsidian when the folder is in a vault.") {
                 Toggle("Open the note after saving", isOn: Binding(get: { settings.notesOpen }, set: { value in
                     update { $0.notesOpen = value }
@@ -99,12 +94,11 @@ struct ExplainView: View {
                     if !model.accessibilityGranted {
                         Button("Open System Settings") {
                             SelectionService.requestAccess(); SelectionService.openAccessibilitySettings()
-                        }.controlSize(.small)
+                        }.buttonStyle(.frog(compact: true))
                     }
                 }
             }
             if settings.selectionBubble {
-                Divider()
                 DisclosureGroup(isExpanded: $showsBubbleOptions) {
                     bubbleOptions.padding(.top, 6)
                 } label: {
@@ -116,47 +110,39 @@ struct ExplainView: View {
 
     /// When the bubble shows and where it never does.
     private var bubbleOptions: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 10) {
             CompactRow(title: "Also after a double-click") {
                 Toggle("Also after a double-click", isOn: Binding(get: { settings.bubbleDoubleClick }, set: { value in
                     update { $0.bubbleDoubleClick = value }
                 })).labelsHidden().toggleStyle(.switch)
             }
-            Divider()
             CompactRow(title: "Also after selecting with the keyboard") {
                 Toggle("Also after selecting with the keyboard", isOn: Binding(get: { settings.bubbleKeyboard }, set: { value in
                     update { $0.bubbleKeyboard = value }
                 })).labelsHidden().toggleStyle(.switch)
             }
-            Divider()
             CompactRow(title: "Chrome and Electron apps", detail: "Shows the bubble where you select with the mouse; the text is copied when you pick a rule.") {
                 Toggle("Chrome and Electron apps", isOn: Binding(get: { settings.bubbleExposeText }, set: { value in
                     update { $0.bubbleExposeText = value }
                 })).labelsHidden().toggleStyle(.switch)
                     .help(L10n.text("Chrome, Arc, Helium, Slack and similar apps hide their text from other apps, so the bubble offers your answer rules without reading it. Editors built on VS Code show no bubble."))
             }
-            Divider()
             CompactRow(title: "Longest selection") {
                 CompactMenu(value: characters(settings.bubbleMaxCharacters), width: 150) {
                     ForEach(Self.characterChoices(including: settings.bubbleMaxCharacters), id: \.self) { count in
                         Button(characters(count)) { update { $0.bubbleMaxCharacters = count } }
-                            .accessibilityAddTraits(count == settings.bubbleMaxCharacters ? .isSelected : [])
+                            .compactChoice(selected: count == settings.bubbleMaxCharacters)
                     }
                 }
             }
-            Divider()
             CompactRow(title: "Never show in") {
                 Menu {
                     Button("Choose an App…", action: chooseExcludedApp)
-                    let running = runningApps
-                    if !running.isEmpty {
-                        Divider()
-                        ForEach(running, id: \.id) { app in
-                            Button(app.name) { addExcludedApp(app.id) }
-                        }
+                    ForEach(runningApps, id: \.id) { app in
+                        Button(app.name) { addExcludedApp(app.id) }
                     }
                 } label: {
-                    Image(systemName: "plus")
+                    Image(systemName: "plus").font(FrogType.label).frame(width: FrogStyle.compactHeight).modifier(CompactActionSurface())
                 }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 .help(L10n.text("Add an app")).accessibilityLabel(L10n.text("Add an app"))

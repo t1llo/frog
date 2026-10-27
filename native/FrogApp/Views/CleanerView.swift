@@ -67,7 +67,7 @@ struct CleanerView: View {
         }
         .overlay {
             if dropTargeted {
-                RoundedRectangle(cornerRadius: 10).strokeBorder(FrogStyle.accent, lineWidth: 2)
+                RoundedRectangle(cornerRadius: FrogStyle.cardRadius).strokeBorder(FrogStyle.accent, lineWidth: 2)
                     .padding(6).allowsHitTesting(false)
             }
         }
@@ -108,7 +108,7 @@ struct CleanerView: View {
         HStack(spacing: 10) {
             Image(systemName: "lock.shield").foregroundStyle(FrogStyle.muted).accessibilityHidden(true)
             Text("Without Full Disk Access, Frog cannot measure or move some app data.")
-                .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+                .font(FrogType.body).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button("Open Settings") { NSWorkspace.shared.open(RemovalSummary.SettingsLink.fullDiskAccess.url) }
             Button("Not now") {
@@ -116,7 +116,7 @@ struct CleanerView: View {
                     try cleaner.dependencies.store.setFlag(Self.fullDiskAccessNoticeFlag, true)
                     noticeDismissed = true
                 } catch { model.report(error) }
-            }
+            }.buttonStyle(.frog(.ghost))
         }.padding(.horizontal, 4)
     }
 

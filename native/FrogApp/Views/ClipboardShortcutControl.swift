@@ -6,7 +6,7 @@ struct ClipboardShortcutControl: View {
     @EnvironmentObject private var model: AppModel
     var body: some View {
         HStack(spacing: 8) {
-            Text("Quick paste").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+            Text("Quick paste").font(FrogType.small).foregroundStyle(FrogStyle.muted)
             HotkeyRecorder(hotkey: Binding(get: { model.configuration.preferences.workflowSettings.effectiveClipboardHistoryHotkey }, set: { value in
                 var preferences = model.configuration.preferences.workflowSettings
                 preferences.clipboardHistoryHotkey = value

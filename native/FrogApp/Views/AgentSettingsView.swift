@@ -53,11 +53,10 @@ struct AgentSettingsView: View {
                     do { try model.setAgentAccess(value) } catch { model.report(error) }
                 })).labelsHidden()
             }
-            if access, let issue = server.issue { Text(issue).font(.caption).foregroundStyle(FrogStyle.warning).fixedSize(horizontal: false, vertical: true) }
-            Divider()
+            if access, let issue = server.issue { Text(issue).font(FrogType.caption).foregroundStyle(FrogStyle.warning).fixedSize(horizontal: false, vertical: true) }
+            SectionCaption(text: "Command and skills").padding(.top, 6)
             AgentToolRow(installation: installation)
             ForEach(AgentInstaller.skillFolders) { folder in
-                Divider()
                 AgentSkillRow(installation: installation, folder: folder)
             }
             if let issue = installation.issue { InlineIssue(message: issue) }
@@ -78,10 +77,10 @@ private struct AgentToolRow: View {
                     Button("Install") { installation.perform(installer.installTool) }
                 case .installed:
                     AgentInstalledLabel()
-                    Button("Remove") { installation.perform(installer.removeTool) }
+                    Button("Remove") { installation.perform(installer.removeTool) }.buttonStyle(.frog(.destructive))
                 case .otherCopy:
                     Button("Relink") { installation.perform(installer.installTool) }
-                    Button("Remove") { installation.perform(installer.removeTool) }
+                    Button("Remove") { installation.perform(installer.removeTool) }.buttonStyle(.frog(.destructive))
                 case .blocked:
                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([installer.linkURL]) }
                 }
@@ -91,7 +90,7 @@ private struct AgentToolRow: View {
             let path = AgentInstaller.pathLine(shell: AgentInstaller.loginShell)
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("If Terminal can’t find frog, add this line to \(path.file):").font(.caption).foregroundStyle(FrogStyle.muted)
+                    Text("If Terminal can’t find frog, add this line to \(path.file):").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                     Text(path.line).font(FrogType.mono).textSelection(.enabled)
                 }
                 Spacer(minLength: 8)
@@ -120,14 +119,14 @@ private struct AgentSkillRow: View {
             HStack(spacing: 10) {
                 switch installation.state(folder) {
                 case .notInstalled:
-                    if !installation.found(folder) { Text("Not found").font(.system(size: 11)).foregroundStyle(FrogStyle.muted) }
+                    if !installation.found(folder) { Text("Not found").font(FrogType.small).foregroundStyle(FrogStyle.muted) }
                     Button("Install") { installation.perform { try installer.installSkill(folder) } }
                 case .installed:
                     AgentInstalledLabel()
-                    Button("Remove") { installation.perform { try installer.removeSkill(folder) } }
+                    Button("Remove") { installation.perform { try installer.removeSkill(folder) } }.buttonStyle(.frog(.destructive))
                 case .outdated:
                     Button("Update") { installation.perform { try installer.installSkill(folder) } }
-                    Button("Remove") { installation.perform { try installer.removeSkill(folder) } }
+                    Button("Remove") { installation.perform { try installer.removeSkill(folder) } }.buttonStyle(.frog(.destructive))
                 case .blocked:
                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([installer.skillFolderURL(folder)]) }
                 }
@@ -145,7 +144,7 @@ private struct AgentSkillRow: View {
 
 private struct AgentInstalledLabel: View {
     var body: some View {
-        Label("Installed", systemImage: "checkmark.circle.fill").font(.system(size: 11)).foregroundStyle(FrogStyle.accent)
+        Label("Installed", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.accent)
     }
 }
 
@@ -172,24 +171,21 @@ struct AgentSetupStep: View {
     var body: some View {
         SettingsSection(title: "Command and skills") {
             Text("Claude Code, Codex and other agents can then arrange windows, run your scripts and more through the frog command.")
-                .font(.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
-            Divider()
+                .font(FrogType.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             option("Command line tool", detail: toolDetail, isOn: Binding(get: { tool || installation.tool == .installed }, set: { tool = $0 }),
                    enabled: toolChoosable)
             ForEach(AgentInstaller.skillFolders) { folder in
-                Divider()
                 option(folder.title, detail: skillDetail(folder), isOn: Binding(
                     get: { folders.contains(folder.id) || installation.state(folder) == .installed },
                     set: { if $0 { folders.insert(folder.id) } else { folders.remove(folder.id) } }),
                        enabled: [.notInstalled, .outdated].contains(installation.state(folder)))
             }
-            Divider()
             HStack(spacing: 10) {
                 if offers {
                     Button(!access ? (tool || !folders.isEmpty ? "Turn on and install" : "Turn on agent access") : "Install") { apply() }
-                        .buttonStyle(FrogButtonStyle(primary: true))
+                        .buttonStyle(.frog(.primary))
                 }
-                if access { Label("Agents can use Frog", systemImage: "checkmark.circle.fill").font(.system(size: 11)).foregroundStyle(FrogStyle.accent) }
+                if access { Label("Agents can use Frog", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.accent) }
             }
             if let issue = installation.issue { InlineIssue(message: issue) }
         }.onAppear(perform: choose)
@@ -245,12 +241,9 @@ struct AgentSetupStep: View {
     }
 
     private func option(_ title: String, detail: String, isOn: Binding<Bool>, enabled: Bool) -> some View {
-        Toggle(isOn: isOn) {
-            VStack(alignment: .leading, spacing: 3) {
-                // A choice already made stays readable; only its box is dimmed.
-                Text(L10n.text(title)).font(.system(size: 12)).foregroundStyle(FrogStyle.ink)
-                Text(L10n.text(detail)).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
-            }.padding(.leading, 4)
-        }.toggleStyle(.checkbox).disabled(!enabled).padding(.vertical, 3)
+        CompactRow(title: title, detail: detail) {
+            // A choice already made stays readable; only its checkbox is dimmed.
+            Toggle(L10n.text(title), isOn: isOn).labelsHidden().toggleStyle(.frogCheckbox).disabled(!enabled)
+        }
     }
 }

@@ -12,32 +12,31 @@ struct LocalModelSettingsView: View {
     private var prefs: WorkflowPreferences { model.configuration.preferences.workflowSettings }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 20) {
             SettingsSection(title: "Memory") {
                 CompactRow(title: "Unload idle models") {
                     CompactMenu(value: LocalModelSettings.idleTitle(seconds: prefs.idleUnloadSeconds)) {
-                        Button("Immediately") { update { $0.idleUnloadSeconds = 0 } }.accessibilityAddTraits(prefs.idleUnloadSeconds == 0 ? .isSelected : [])
+                        Button("Immediately") { update { $0.idleUnloadSeconds = 0 } }.compactChoice(selected: prefs.idleUnloadSeconds == 0)
                         ForEach(LocalModelSettingsView.idleUnloadChoices, id: \.self) { seconds in
-                            Button(LocalModelSettings.idleTitle(seconds: seconds)) { update { $0.idleUnloadSeconds = seconds } }.accessibilityAddTraits(prefs.idleUnloadSeconds == seconds ? .isSelected : [])
+                            Button(LocalModelSettings.idleTitle(seconds: seconds)) { update { $0.idleUnloadSeconds = seconds } }.compactChoice(selected: prefs.idleUnloadSeconds == seconds)
                         }
                     }
                 }
-                Divider()
                 CompactRow(title: model.localModels.loaded.isEmpty ? "No models loaded" : "Models in memory", detail: LocalModelSettings.inMemory(model.localModels.loaded, catalog: model.configuration.modelCatalog)) {
                     Button("Unload now") { Task { await model.localModels.unload() } }.disabled(model.localModels.loaded.isEmpty || model.localModels.busy || model.dictation.active)
                 }
             }
             SettingsSection(title: "Storage") {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(model.localModels.root.path).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
+                    Text(model.localModels.root.path).font(FrogType.caption).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
                     Spacer(minLength: 8)
                     if let use = LocalModelSettings.diskUse(model.localModels.totalDiskUse(of: model.localModels.installed)) {
-                        Text(use).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize()
+                        Text(use).font(FrogType.caption).foregroundStyle(FrogStyle.muted).fixedSize()
                     }
                 }
                 HStack {
                     Button("Choose folder…") { chooseModelFolder() }
-                    Button("Use default") { setModelFolder(model.localModels.defaultDirectory) }.disabled(model.localModels.root == model.localModels.defaultDirectory)
+                    Button("Use default") { setModelFolder(model.localModels.defaultDirectory) }.buttonStyle(.frog(.ghost)).disabled(model.localModels.root == model.localModels.defaultDirectory)
                     Spacer()
                     Button("Show in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: model.localModels.root.path) }
                 }.disabled(model.localModels.busy || !model.localModels.progress.isEmpty || model.dictation.active)

@@ -102,7 +102,7 @@ struct MarkdownPreviewView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 9) { ForEach(blocks) { MarkdownBlockView(block: $0) } }
-                .font(.system(size: 13)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                .font(FrogType.lead).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(12)
         }
         .task(id: markdown) {
             let text = markdown
@@ -128,9 +128,10 @@ struct MarkdownBlockView: View {
     @ViewBuilder private var content: some View {
         switch block.kind {
         case .paragraph: Text(block.text).foregroundStyle(block.quoted ? FrogStyle.muted : FrogStyle.ink)
-        case .heading(let level): Text(block.text).font(.system(size: level == 1 ? 20 : level == 2 ? 17 : level == 3 ? 15 : 13, weight: .semibold)).accessibilityAddTraits(.isHeader)
+        // The type scale has two heading sizes: the first two levels take the title's, the rest the section's.
+        case .heading(let level): Text(block.text).font(level <= 2 ? FrogType.title : FrogType.section).accessibilityAddTraits(.isHeader)
         case .code:
-            Text(block.text).font(.system(size: 12, design: .monospaced)).padding(8).frame(maxWidth: .infinity, alignment: .leading)
+            Text(block.text).font(FrogType.mono).padding(8).frame(maxWidth: .infinity, alignment: .leading)
                 .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
         case .rule: Rectangle().fill(FrogStyle.border).frame(height: 1).frame(maxWidth: .infinity)
         case .table(let rows):

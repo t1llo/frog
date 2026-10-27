@@ -4,10 +4,7 @@ import FrogCore
 import UniformTypeIdentifiers
 
 struct RecommendedModelBadge: View {
-    var body: some View {
-        Text("Recommended").font(.system(size: 9, weight: .medium)).foregroundStyle(FrogStyle.accent)
-            .padding(.horizontal, 6).padding(.vertical, 3).background(FrogStyle.accentSoft, in: Capsule())
-    }
+    var body: some View { FrogBadge(text: "Recommended", active: true) }
 }
 
 struct SetupView: View {
@@ -29,9 +26,9 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
                 FrogMark()
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(titles[step]).font(.system(size: 23, weight: .semibold))
-                    Text("Step \(step + 1) of \(titles.count) · Everything can be changed later").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(titles[step]).font(FrogType.title).tracking(-0.4)
+                    Text("Step \(step + 1) of \(titles.count) · Everything can be changed later").font(FrogType.lead).foregroundStyle(FrogStyle.muted)
                 }
                 Spacer()
             }.padding(24)
@@ -50,16 +47,16 @@ struct SetupView: View {
                 }.padding(.horizontal, 24).padding(.bottom, 24).frame(maxWidth: .infinity, alignment: .leading).minimalScrollbars()
             }
             HStack(spacing: 10) {
-                Button("Skip setup") { model.finishSetup() }
+                Button("Skip setup") { model.finishSetup() }.buttonStyle(.frog(.ghost))
                 Spacer()
                 if step > 0 { Button("Back") { step -= 1; issue = nil } }
-                if step > 0 && step < titles.count - 1 && !notNow { Button("Skip this step") { step += 1; issue = nil } }
+                if step > 0 && step < titles.count - 1 && !notNow { Button("Skip this step") { step += 1; issue = nil }.buttonStyle(.frog(.ghost)) }
                 Button(step == titles.count - 1 ? "Open Frog" : notNow ? "Not now" : "Continue") {
                     if step == titles.count - 1 { model.finishSetup() } else { step += 1; issue = nil }
-                }.buttonStyle(FrogButtonStyle(primary: !notNow)).keyboardShortcut(notNow ? nil : .defaultAction)
-            }.padding(20).overlay(alignment: .top) { Rectangle().fill(FrogStyle.border.opacity(0.5)).frame(height: 1) }
+                }.buttonStyle(.frog(notNow ? .secondary : .primary)).keyboardShortcut(notNow ? nil : .defaultAction)
+            }.padding(20)
         }.frame(width: 620, height: 610).foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).background(FrogWindowMaterial())
-            .buttonStyle(FrogButtonStyle()).controlSize(.small).tint(FrogStyle.accent)
+            .buttonStyle(.frog()).controlSize(.small).tint(FrogStyle.accent)
             .sheet(item: $provider) { ProviderEditor(provider: $0).environmentObject(model) }
             .confirmationDialog("Import settings and skip setup?", isPresented: Binding(get: { pendingImport != nil }, set: { if !$0 { pendingImport = nil } })) {
                 Button("Import settings") {
@@ -79,21 +76,23 @@ struct SetupView: View {
     private var notNow: Bool { step == agentsStep && agentsOffered }
 
     private var welcome: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("How would you like to use Frog?").font(.headline)
-            choice("An offline experience", detail: "Download models once, then process text and recordings on your Mac. Apple silicon required.", symbol: "desktopcomputer", selected: !external) { external = false }
-            choice("External providers too", detail: "Connect a cloud API, Ollama or LM Studio. You can also use local models.", symbol: "network", selected: external) { external = true }
-            Text("This only chooses your next setup step. You can add either kind of model at any time.").font(.caption).foregroundStyle(FrogStyle.muted)
-            Divider()
-            CompactRow(title: "Already have a configuration?", detail: "Import a file and skip the assistant.") { Button("Import settings…") { chooseImport() } }
+        VStack(alignment: .leading, spacing: 20) {
+            SettingsSection(title: "How would you like to use Frog?") {
+                SetupChoice(title: "An offline experience", detail: "Download models once, then process text and recordings on your Mac. Apple silicon required.", symbol: "desktopcomputer", selected: !external) { external = false }
+                SetupChoice(title: "External providers too", detail: "Connect a cloud API, Ollama or LM Studio. You can also use local models.", symbol: "network", selected: external) { external = true }
+                Text("This only chooses your next setup step. You can add either kind of model at any time.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+            }
+            FrogCard {
+                CompactRow(title: "Already have a configuration?", detail: "Import a file and skip the assistant.") { Button("Import settings…") { chooseImport() } }
+            }
         }
     }
 
     private var models: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             if external {
                 SettingsSection(title: "External providers") {
-                    Text("Choose a service, add your API key if needed, and select its models. Keys stay in Keychain.").font(.caption).foregroundStyle(FrogStyle.muted)
+                    Text("Choose a service, add your API key if needed, and select its models. Keys stay in Keychain.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                     ForEach(model.configuration.providers) { item in
                         CompactRow(title: item.name, detail: "\(item.models.count) models configured") { Button("Edit…") { provider = item } }
                     }
@@ -102,12 +101,12 @@ struct SetupView: View {
             }
             SettingsSection(title: "Recommended offline pair") {
                 Text("Whisper Turbo for broad multilingual dictation and Qwen3 1.7B for writing or optional cleanup. No model account required.")
-                    .font(.caption).foregroundStyle(FrogStyle.muted)
+                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                 ForEach(LocalModelDescriptor.recommendedPair) { item in
                     VStack(alignment: .leading, spacing: 6) {
                         CompactRow(title: item.name, detail: item.kind == .audio ? "Speech-to-text · \(item.downloadSize)" : "Text · \(item.downloadSize)") {
                             if model.localModels.installed.contains(item.id) {
-                                Label("Downloaded", systemImage: "checkmark.circle.fill").foregroundStyle(FrogStyle.accent)
+                                Label("Downloaded", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.accent)
                             } else if let progress = model.localModels.progress[item.id] {
                                 HStack { ModelDownloadProgress(fraction: progress.fraction, preparing: model.localModels.preparing.contains(item.id), width: 90); Button("Cancel") { model.localModels.cancelDownload(item.id) } }
                             } else {
@@ -115,7 +114,7 @@ struct SetupView: View {
                             }
                         }
                         ModelDownloadSummary(progress: model.localModels.progress[item.id], preparing: model.localModels.preparing.contains(item.id))
-                        if let error = model.localModels.errors[item.id] { Text(error).font(.caption).foregroundStyle(FrogStyle.warning) }
+                        if let error = model.localModels.errors[item.id] { Text(error).font(FrogType.caption).foregroundStyle(FrogStyle.warning) }
                     }
                 }
                 Button("Download recommended pair") {
@@ -125,17 +124,17 @@ struct SetupView: View {
                 }.disabled(!LocalModels.supported || LocalModelDescriptor.recommendedPair.allSatisfy { model.localModels.installed.contains($0.id) || model.localModels.progress[$0.id] != nil })
                 // The size is the catalog's, like the sizes in the rows above.
                 Text("For faster dictation in 25 European languages, choose Parakeet v3\(LocalModelDescriptor.find("parakeet-v3").map { " (\($0.downloadSize))" } ?? "") under other local models below.")
-                    .font(.caption).foregroundStyle(FrogStyle.muted)
-                if !LocalModels.supported { Text("Internal inference requires Apple silicon. Use an external provider on this Mac, or skip for now.").font(.caption).foregroundStyle(FrogStyle.warning) }
-                Text("Downloads continue if you move to the next step. You can cancel them in Models.").font(.caption).foregroundStyle(FrogStyle.muted)
+                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                if !LocalModels.supported { Text("Internal inference requires Apple silicon. Use an external provider on this Mac, or skip for now.").font(FrogType.caption).foregroundStyle(FrogStyle.warning) }
+                Text("Downloads continue if you move to the next step. You can cancel them in Models.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
             }
             DisclosureGroup("Choose other local models", isExpanded: $browse) {
                 VStack(alignment: .leading, spacing: 12) {
                     CompactSegments(values: [LocalModelDescriptor.Kind.audio, .text], selected: kind, title: { $0 == .audio ? "Speech" : "Text" }) { kind = $0 }
                     ModelInventory(kind: kind)
                 }.padding(.top, 10)
-            }
-            if !external { Button("Set up an external provider instead…") { external = true } }
+            }.font(FrogType.body)
+            if !external { Button("Set up an external provider instead…") { external = true }.buttonStyle(.frog(.ghost)) }
         }
     }
 
@@ -144,7 +143,6 @@ struct SetupView: View {
             permission("Accessibility", detail: "Replace selected text and switch windows with Command–Tab.", allowed: model.accessibilityGranted) {
                 SelectionService.requestAccess(); SelectionService.openAccessibilitySettings()
             }
-            Divider()
             permission("Microphone", detail: "Record speech when you run an audio rule.", allowed: microphoneAllowed) {
                 Task {
                     if !DictationController.microphoneGranted { _ = await DictationController.requestMicrophone() }
@@ -152,40 +150,25 @@ struct SetupView: View {
                     await refreshPermissions()
                 }
             }
-            Divider()
-            Text("You can skip any permission and enable it later in Settings. Features needing it stay unavailable until allowed.").font(.caption).foregroundStyle(FrogStyle.muted)
+            Text("You can skip any permission and enable it later in Settings. Features needing it stay unavailable until allowed.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
         }
     }
 
     private var summary: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Your setup is saved as you go.").font(.headline)
-            Text("\(model.localModels.installed.count) local models downloaded · \(model.configuration.providers.count) external providers")
+        SettingsSection(title: "Your setup is saved as you go.") {
+            Text("\(model.localModels.installed.count) local models downloaded · \(model.configuration.providers.count) external providers").font(FrogType.bodyMedium)
             if !model.localModels.progress.isEmpty { Text("Model downloads are still running. See progress in Models.").foregroundStyle(FrogStyle.muted) }
             Text("Choose a model and shortcut for each action in Writing and Dictation. Option–Space is the built-in Dictate shortcut.")
             Text("Models and Settings are always available. You can mix local and external models, import settings, or reopen this assistant later.")
-            Text("History is optional. Local models keep your text and recordings on this Mac; external providers receive what you send them.").font(.caption).foregroundStyle(FrogStyle.muted)
-        }.font(.system(size: 13))
-    }
-
-    private func choice(_ title: String, detail: String, symbol: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: symbol).font(.title2).foregroundStyle(FrogStyle.accent).frame(width: 32)
-                VStack(alignment: .leading, spacing: 5) { Text(title).font(.headline); Text(detail).font(.caption).foregroundStyle(FrogStyle.muted).multilineTextAlignment(.leading) }
-                Spacer()
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(selected ? FrogStyle.accent : FrogStyle.muted)
-            }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                .background(selected ? AnyShapeStyle(FrogStyle.accentSoft) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
-                .overlay(RoundedRectangle(cornerRadius: FrogStyle.cardRadius).strokeBorder(selected ? FrogStyle.accent.opacity(0.5) : FrogStyle.border))
-        }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
+            Text("History is optional. Local models keep your text and recordings on this Mac; external providers receive what you send them.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+        }.font(FrogType.body)
     }
 
     private func permission(_ title: String, detail: String, allowed: Bool, action: @escaping () -> Void) -> some View {
         CompactRow(title: title, detail: detail) {
             HStack(spacing: 8) {
                 Label(allowed ? "Allowed" : "Not allowed", systemImage: allowed ? "checkmark.circle.fill" : "exclamationmark.circle")
-                    .font(.system(size: 10)).foregroundStyle(allowed ? FrogStyle.accent : FrogStyle.warning)
+                    .font(FrogType.small).foregroundStyle(allowed ? FrogStyle.accent : FrogStyle.warning)
                 if !allowed { Button("Allow…", action: action) }
             }
         }
@@ -198,5 +181,32 @@ struct SetupView: View {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { pendingImport = try ConfigurationFile.read(from: url) } catch { issue = error.localizedDescription }
+    }
+}
+
+/// One answer to the welcome question: a block inside the card that highlights on hover and when chosen.
+private struct SetupChoice: View {
+    let title: String
+    let detail: String
+    let symbol: String
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(FrogStyle.accent).frame(width: 32)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(FrogType.bodyMedium).foregroundStyle(FrogStyle.ink)
+                    Text(detail).font(FrogType.small).foregroundStyle(FrogStyle.muted).multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(selected ? FrogStyle.accent : FrogStyle.muted)
+            }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                .frogRowHighlight(hovering: hovering, selected: selected)
+                .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+        }.buttonStyle(.plain).onHover { hovering = $0 }.accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

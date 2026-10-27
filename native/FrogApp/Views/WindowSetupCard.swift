@@ -24,31 +24,32 @@ struct WindowSetupCard: View {
 
     var body: some View {
         if let confirmation {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(confirmation.message).font(.system(size: 12, weight: .medium))
-                if let shortcuts = confirmation.shortcuts {
-                    Text(shortcuts).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+            FrogCard {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(confirmation.message).font(FrogType.bodyMedium)
+                    if let shortcuts = confirmation.shortcuts {
+                        Text(shortcuts).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    }
+                    Button("Undo") { undo(confirmation) }.buttonStyle(.frog())
                 }
-                Button("Undo") { undo(confirmation) }.buttonStyle(FrogButtonStyle())
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(12).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
         } else if settings.setupChoice == nil {
             SettingsSection(title: "How do you want to arrange windows?") {
                 if let restored {
-                    Text(restored).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                    Text(restored).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 ForEach(WindowSetupChoice.options, id: \.self) { choice in
-                    Button { choose(choice) } label: { WindowSetupOption(choice: choice) }.buttonStyle(.plain)
+                    WindowSetupOption(choice: choice) { choose(choice) }
                 }
-                Toggle("Add suggested shortcuts (⌃⌥ with arrows and letters)", isOn: $addShortcuts).toggleStyle(.checkbox)
-                    .font(.system(size: 12))
-                Button("Set up myself") { record(.manual) }.buttonStyle(.plain)
-                    .font(.system(size: 11)).foregroundStyle(FrogStyle.accent)
+                CompactRow(title: "Add suggested shortcuts (⌃⌥ with arrows and letters)") {
+                    Toggle("Add suggested shortcuts (⌃⌥ with arrows and letters)", isOn: $addShortcuts).labelsHidden().toggleStyle(.switch)
+                }
+                Button("Set up myself") { record(.manual) }.buttonStyle(.frog(.ghost))
             }
         } else if let restored {
-            Text(restored).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+            Text(restored).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -101,20 +102,21 @@ struct WindowSetupCard: View {
 /// One choice of the card: its name and what it does, as a large button.
 private struct WindowSetupOption: View {
     let choice: WindowSetupChoice
+    let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(choice.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(FrogStyle.ink)
-            Text(choice.detail).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(hovering ? FrogStyle.selection : Color.clear, in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
-        .overlay(RoundedRectangle(cornerRadius: FrogStyle.cardRadius).strokeBorder(hovering ? FrogStyle.accent : FrogStyle.border, lineWidth: 1))
-        .contentShape(RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
-        .onHover { hovering = $0 }
-        .accessibilityElement(children: .combine)
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(choice.title).font(FrogType.bodyMedium).foregroundStyle(FrogStyle.ink)
+                Text(choice.detail).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frogRowHighlight(hovering: hovering)
+            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+            .accessibilityElement(children: .combine)
+        }.buttonStyle(.plain).onHover { hovering = $0 }
     }
 }

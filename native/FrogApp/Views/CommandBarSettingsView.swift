@@ -13,7 +13,7 @@ struct CommandBarSettingsView: View {
                     }), showsClearButton: false)
                     Button("Open") { model.showCommandBar() }
                 }
-                if let issue = model.hotkeyErrors[AppModel.commandBarID] { Text(issue).font(.caption).foregroundStyle(FrogStyle.warning) }
+                if let issue = model.hotkeyErrors[AppModel.commandBarID] { Text(issue).font(FrogType.caption).foregroundStyle(FrogStyle.warning) }
             }
             CommandChoicesSection(choices: model.commandChoices)
             CommandBarSetupView()
@@ -48,10 +48,10 @@ private struct CommandChoicesSection: View {
             if learning || choices.issue != nil {
                 CompactRow(title: remembered) {
                     Button("Forget learned choices…", role: .destructive) { confirmingForget = true }
-                        .disabled(choices.count == 0 && choices.issue == nil)
+                        .buttonStyle(.frog(.destructive)).disabled(choices.count == 0 && choices.issue == nil)
                 }
                 if let issue = choices.issue {
-                    Text(issue).font(.caption).foregroundStyle(FrogStyle.warning).fixedSize(horizontal: false, vertical: true)
+                    Text(issue).font(FrogType.caption).foregroundStyle(FrogStyle.warning).fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

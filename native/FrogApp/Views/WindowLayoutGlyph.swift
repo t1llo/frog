@@ -11,6 +11,8 @@ struct WindowLayoutGlyph: View {
 
     static let size = CGSize(width: 22, height: 14)
     private static let display = CGRect(x: 0, y: 0, width: 16, height: 10)
+    /// How far the filled area keeps from the outline.
+    private static let fillInset: CGFloat = 1.5
 
     /// The symbol for a layout that has no target area, or that keeps the window's size.
     static func symbol(for action: WindowAction) -> String? {
@@ -45,10 +47,14 @@ struct WindowLayoutGlyph: View {
                     let bounds = CGRect(origin: .zero, size: size).insetBy(dx: 0.5, dy: 0.5)
                     if let area {
                         let fill = CGRect(x: bounds.minX + area.minX * bounds.width, y: bounds.minY + area.minY * bounds.height,
-                                          width: area.width * bounds.width, height: area.height * bounds.height).insetBy(dx: 1.5, dy: 1.5)
-                        context.fill(Path(roundedRect: fill, cornerRadius: 1.5), with: .color(FrogStyle.accent))
+                                          width: area.width * bounds.width, height: area.height * bounds.height)
+                            .insetBy(dx: Self.fillInset, dy: Self.fillInset)
+                        // Concentric with the outline's corners, and never rounder than a narrow area allows.
+                        let corner = min(FrogStyle.smallRadius - Self.fillInset, min(fill.width, fill.height) / 2)
+                        context.fill(Path(roundedRect: fill, cornerRadius: corner), with: .color(FrogStyle.accent))
                     }
-                    context.stroke(Path(roundedRect: bounds, cornerRadius: 3), with: .color(FrogStyle.muted), lineWidth: 1)
+                    // The outline is drawn like a swatch, with the small radius.
+                    context.stroke(Path(roundedRect: bounds, cornerRadius: FrogStyle.smallRadius), with: .color(FrogStyle.muted), lineWidth: 1)
                 }
             }
         }

@@ -17,11 +17,14 @@ struct HotkeyRecorder: View {
         // One view: a second one would land beside the recorder in the row that holds it.
         VStack(alignment: .trailing, spacing: 4) {
             HStack(spacing: 6) {
+                let text = recording ? L10n.text("Press shortcut…") : hotkey.map(HotkeyManager.display) ?? L10n.text("Record shortcut")
+                // A secondary control in the sans font, like every other button beside it.
                 Button {
                     recording.toggle(); hint = nil
                 } label: {
-                    ShortcutBadge(text: recording ? L10n.text("Press shortcut…") : hotkey.map(HotkeyManager.display) ?? L10n.text("Record shortcut"))
-                }.buttonStyle(.plain).help(recording ? "Press a new shortcut, or Escape to cancel." : "Click to change shortcut")
+                    Text(text)
+                }.buttonStyle(.frog()).accessibilityLabel("Shortcut: \(text)")
+                    .help(recording ? "Press a new shortcut, or Escape to cancel." : "Click to change shortcut")
                 if showsClearButton && (hotkey != nil || recording) {
                     Button { hotkey = nil; recording = false; hint = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(FrogStyle.muted) }
                         .buttonStyle(.plain).accessibilityLabel("Clear shortcut")
@@ -33,7 +36,7 @@ struct HotkeyRecorder: View {
             }
             if let hint {
                 // Rows give their control its one-line width, so the hint wraps only at a width of its own.
-                Text(hint).font(.caption2).foregroundStyle(FrogStyle.warning).multilineTextAlignment(.trailing)
+                Text(hint).font(FrogType.caption).foregroundStyle(FrogStyle.warning).multilineTextAlignment(.trailing)
                     .frame(width: 220, alignment: .trailing).fixedSize(horizontal: false, vertical: true)
             }
         }.onChange(of: recording) { _, value in

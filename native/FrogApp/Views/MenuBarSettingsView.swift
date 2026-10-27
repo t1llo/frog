@@ -11,7 +11,7 @@ struct MenuBarSettingsView: View {
             SettingsSection(title: "Your menu bar") {
                 arrangementPreview
                 Text("Hold ⌘ and drag icons left of the divider to hide them.")
-                    .font(.system(size: 12)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                    .font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 8) {
                     Button(organizer.isExpanded ? "Hide icons" : "Show hidden icons") { organizer.toggle() }
                         .disabled(!organizer.isInstalled)
@@ -20,7 +20,7 @@ struct MenuBarSettingsView: View {
                     }.disabled(!organizer.isInstalled)
                     Spacer()
                     Text(organizer.isEditingArrangement ? "Arranging" : organizer.isExpanded ? "Shown" : "Hidden")
-                        .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                        .font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }
                 if let issue = organizer.issue {
                     InlineIssue(message: issue)
@@ -37,19 +37,17 @@ struct MenuBarSettingsView: View {
                     CompactRow(title: "Hide after") {
                         CompactMenu(value: "\(settings.autoHideSeconds.formatted(.number.precision(.fractionLength(0...1)))) seconds", width: 180) {
                             ForEach([5.0, 10, 15, 30, 60], id: \.self) { seconds in
-                                Button("\(Int(seconds)) seconds") { settings.autoHideSeconds = seconds }.accessibilityAddTraits(settings.autoHideSeconds == seconds ? .isSelected : [])
+                                Button("\(Int(seconds)) seconds") { settings.autoHideSeconds = seconds }.compactChoice(selected: settings.autoHideSeconds == seconds)
                             }
                         }
                     }
                 }
-                Divider()
                 CompactRow(title: "Hide icons when Frog starts") {
                     Toggle("Hide icons when Frog starts", isOn: $settings.startCollapsed).labelsHidden().toggleStyle(.switch)
                 }
                 CompactRow(title: "Show on hover") {
                     Toggle("Show on hover", isOn: $settings.hoverToReveal).labelsHidden().toggleStyle(.switch)
                 }
-                Divider()
                 CompactRow(title: "Show / hide shortcut") { HotkeyRecorder(hotkey: $settings.hotkey) }
                 if let error = organizer.hotkeyError { InlineIssue(message: error) }
             }
@@ -59,7 +57,7 @@ struct MenuBarSettingsView: View {
                 }
             }
             Text("Icon out of reach? Open Frog from Applications and choose Show all & arrange.")
-                .font(.system(size: 11)).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                .font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
         }
         // A closed, minimised or covered settings window keeps this page, so appearing and
         // disappearing do not say whether it can be seen. Out of sight it must not hold the icons open.
@@ -81,7 +79,7 @@ struct MenuBarSettingsView: View {
                     Image(systemName: "externaldrive")
                     Image(systemName: "headphones")
                 }.font(.system(size: 14)).opacity(organizer.isExpanded ? 1 : 0.25)
-                Text("Hidden icons").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                Text("Hidden icons").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
             }.frame(maxWidth: .infinity)
             Rectangle().fill(FrogStyle.muted).frame(width: 1, height: 34)
             VStack(spacing: 10) {
@@ -91,10 +89,10 @@ struct MenuBarSettingsView: View {
                     Image(systemName: "battery.100percent")
                     Image(nsImage: NativeOrganizerStatusItems.arrowImage(expanded: organizer.isExpanded))
                 }.font(.system(size: 14))
-                Text("Always visible").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                Text("Always visible").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
             }.frame(maxWidth: .infinity)
         }.padding(18).foregroundStyle(FrogStyle.ink)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
+            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Menu bar layout: hidden icons, divider, visible icons and arrow. Command-drag to arrange.")
     }

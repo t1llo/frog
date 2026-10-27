@@ -19,12 +19,9 @@ struct FeaturesView: View {
             if shown.isEmpty {
                 FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another word.")
             } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(shown.enumerated()), id: \.element) { index, feature in
-                        if index > 0 { Divider().opacity(0.5).padding(.leading, 46) }
-                        row(feature)
-                    }
-                }.frogTableSurface()
+                VStack(spacing: 2) {
+                    ForEach(shown, id: \.self) { feature in row(feature) }
+                }.padding(6).frogTableSurface()
             }
         }
     }
@@ -35,12 +32,12 @@ struct FeaturesView: View {
             Image(systemName: feature.symbol).font(.system(size: 14)).frame(width: 22).foregroundStyle(FrogStyle.muted)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(L10n.text(feature.title)).font(.system(size: 12, weight: .medium))
-                Text(L10n.text(feature.detail)).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                Text(L10n.text(feature.title)).font(FrogType.bodyMedium)
+                Text(L10n.text(feature.detail)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
             }.frame(maxWidth: .infinity, alignment: .leading)
             if enabled {
                 Button("Open") { model.toolkit.select(.feature(feature)) }
-                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(FrogStyle.accent)
+                    .buttonStyle(.frog(.ghost, compact: true))
                     .accessibilityLabel("Open \(feature.title)")
             }
             Toggle(feature.title, isOn: Binding(get: { enabled }, set: { on in
@@ -50,6 +47,6 @@ struct FeaturesView: View {
                     do { try await model.setFeature(feature, enabled: on) } catch { model.report(error) }
                 }
             })).labelsHidden().toggleStyle(.switch).controlSize(.small).disabled(pending.contains(feature))
-        }.padding(.horizontal, 12).padding(.vertical, 9)
+        }.padding(.horizontal, 8).padding(.vertical, 7).frogHoverRow()
     }
 }

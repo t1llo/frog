@@ -13,42 +13,41 @@ struct LocalToolProvidersView: View {
     @State private var modelError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Coding tools").font(.system(size: 12, weight: .semibold))
-                Spacer()
-                Button("Refresh") { Task { await refresh() } }.disabled(refreshing)
+        SettingsSection(title: "Coding tools", accessory: {
+            HStack(spacing: 8) {
                 if refreshing { ProgressView().controlSize(.small) }
+                Button("Refresh") { Task { await refresh() } }.buttonStyle(.frog(compact: true)).disabled(refreshing)
             }
+        }) {
             Text("Uses your CLI login. Your plan's limits apply.")
-                .font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                .font(FrogType.small).foregroundStyle(FrogStyle.muted)
             ForEach(statuses) { status in
                 HStack(alignment: .top) {
                     Image(systemName: status.installed ? "checkmark.circle" : "circle.dashed")
                         .foregroundStyle(status.installed ? FrogStyle.accent : FrogStyle.muted)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(status.kind.title).font(.system(size: 12, weight: .medium))
-                        Text(status.detail).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+                        Text(status.kind.title).font(FrogType.bodyMedium)
+                        Text(status.detail).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                     }
                     Spacer()
                 }
             }
             CompactRow(title: "Tool") {
-                CompactMenu(value: selected.title, width: 180) {
-                    ForEach(LocalToolKind.allCases) { kind in Button(kind.title) { selected = kind } }
+                CompactMenu(value: selected.title) {
+                    ForEach(LocalToolKind.allCases) { kind in
+                        Button(kind.title) { selected = kind }.compactChoice(selected: kind == selected)
+                    }
                 }
             }
             HStack {
                 TextField("Tool default, or model ID", text: $model)
-                    .textFieldStyle(.plain).font(.system(size: 12)).padding(8)
-                    .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-                    .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius).strokeBorder(FrogStyle.border.opacity(0.6)))
+                    .textFieldStyle(.plain).font(FrogType.body).padding(.horizontal, 8).frogControlSurface()
                     .accessibilityLabel("Coding-tool model")
                 CompactMenu(value: "Models", width: 105) {
                     ForEach(models) { item in Button(item.name) { model = item.id } }
                 }
                 Button("Use model") { onSelect(selected, model.trimmingCharacters(in: .whitespacesAndNewlines)) }
-                    .disabled(!canSelect)
+                    .buttonStyle(.frog(.primary)).disabled(!canSelect)
             }
             if let modelError { Text(modelError).font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
             if selected == .opencode {

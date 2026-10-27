@@ -38,7 +38,8 @@ final class RulesWorkflowTests: XCTestCase {
             try await click(host, x: 80, top: 140)
             XCTAssertEqual(model.toolkit.route, .feature(.dictation), "The Dictation sidebar item must open its rule editor page")
         }
-        try await click(host, x: host.bounds.maxX - 100, top: 80)
+        // The centre of the page header's New rule button.
+        try await click(host, x: host.bounds.maxX - 100, top: 66)
         let sheet = try XCTUnwrap(window.attachedSheet, "Clicking New rule must open the editor")
         let content = try XCTUnwrap(sheet.contentView)
         let name = try XCTUnwrap(descendants(content).compactMap { $0 as? NSTextField }.first {

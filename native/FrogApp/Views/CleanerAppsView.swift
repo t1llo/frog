@@ -10,17 +10,15 @@ struct CleanerAppsView: View {
     var body: some View {
         let apps = cleaner.visibleApps
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+            ListToolbar(placeholder: "Search apps", search: $cleaner.search) {
                 CompactSegments(values: CleanerAppSort.allCases, selected: cleaner.sort, width: 140, title: \.title) { cleaner.sort = $0 }
-                Spacer(minLength: 12)
-                SearchBox(placeholder: "Search apps", text: $cleaner.search).frame(width: 220)
-                    .onSubmit { if let row = apps.first(where: { $0.id == highlighted }) ?? apps.first { open(row) } }
             }
+            .onSubmit { if let row = apps.first(where: { $0.id == highlighted }) ?? apps.first { open(row) } }
             if apps.isEmpty {
                 if cleaner.loadingApps {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
-                        Text("Finding apps…").font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
+                        Text("Finding apps…").font(FrogType.body).foregroundStyle(FrogStyle.muted)
                     }.padding(.vertical, 12)
                 } else if !cleaner.search.trimmingCharacters(in: .whitespaces).isEmpty {
                     FrogEmptyState(symbol: "magnifyingglass", title: "No matching apps",
@@ -30,13 +28,10 @@ struct CleanerAppsView: View {
                                    message: "Apps in your Applications folders appear here. Drop an app onto this page to review it.")
                 }
             } else {
-                LazyVStack(spacing: 0) {
-                    ForEach(apps) { row in
-                        appRow(row)
-                        if row.id != apps.last?.id { Divider().opacity(0.4).padding(.leading, 46) }
-                    }
+                LazyVStack(spacing: 2) {
+                    ForEach(apps) { row in appRow(row) }
                 }
-                .frogTableSurface()
+                .padding(6).frogTableSurface()
                 .focusable().focused($listFocused).focusEffectDisabled()
                 .onKeyPress(.downArrow) { move(1, in: apps) }
                 .onKeyPress(.upArrow) { move(-1, in: apps) }
@@ -46,7 +41,7 @@ struct CleanerAppsView: View {
                     return .handled
                 }
             }
-            Text("Drop an app here to review it.").font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
+            Text("Drop an app here to review it.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
         }
     }
 
@@ -55,21 +50,21 @@ struct CleanerAppsView: View {
         return Button { open(row) } label: {
             HStack(spacing: 10) {
                 ApplicationIcon(path: identity.path, size: 24)
-                Text(identity.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                Text(identity.name).font(FrogType.bodyMedium).lineLimit(1)
                 if let version = identity.version {
-                    Text(version).font(.system(size: 11)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                    Text(version).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
                 }
                 if identity.isAppStore { FrogBadge(text: "App Store") }
                 if identity.owner == .administrator { FrogBadge(text: "Needs password") }
                 Spacer(minLength: 8)
                 Text(row.size.map { CleanerFormat.bytes($0.bytes) } ?? "—")
-                    .font(.system(size: 11).monospacedDigit()).foregroundStyle(FrogStyle.muted)
+                    .font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)
                 Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(FrogStyle.muted).accessibilityHidden(true)
             }
-            .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(highlighted == row.id ? FrogStyle.selection : .clear)
-            .contentShape(Rectangle())
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            // The pointer and the arrow keys move one highlight, so it is drawn as the chosen row.
+            .frogRowHighlight(hovering: false, selected: highlighted == row.id)
         }
         .buttonStyle(.plain)
         .onHover { if $0 { highlighted = row.id } }
