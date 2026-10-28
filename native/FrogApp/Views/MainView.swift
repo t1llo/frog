@@ -4,6 +4,7 @@ import FrogCore
 
 struct MainView: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var section: ToolkitRoute { model.toolkit.route }
     @State private var permissionsRequest = ScrollRequest()
 
@@ -67,18 +68,23 @@ struct MainView: View {
             sidebar.frame(width: 176)
             VStack(spacing: 0) {
                 selectedPage.id(section).frame(maxWidth: .infinity, maxHeight: .infinity)
-                if let error = model.errorMessage {
-                    HStack(alignment: .center, spacing: 10) {
-                        Image(systemName: "exclamationmark.circle.fill").foregroundStyle(FrogStyle.critical)
-                        Text(error).font(FrogType.body).textSelection(.enabled)
-                            .lineLimit(3).help("Full details are in Settings → Logs.")
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        IconAction(title: "Copy error", symbol: "doc.on.doc") { ViewActions.copy(error) }
-                        IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)
-                    }.padding(.leading, 12).padding(.trailing, 4).padding(.vertical, 4)
-                        .background(FrogStyle.critical.opacity(0.08), in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
-                        .padding(.horizontal, 20).padding(.bottom, 16)
-                }
+                // Errors are occasional: the banner rises into place (fades with Reduce Motion) and leaves a little faster.
+                // The page beside it does not animate.
+                VStack(spacing: 0) {
+                    if let error = model.errorMessage {
+                        HStack(alignment: .center, spacing: 10) {
+                            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(FrogStyle.critical)
+                            Text(error).font(FrogType.body).textSelection(.enabled)
+                                .lineLimit(3).help("Full details are in Settings → Logs.")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            CopyAction(title: "Copy error") { ViewActions.copy(error) }
+                            IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)
+                        }.padding(.leading, 12).padding(.trailing, 4).padding(.vertical, 4)
+                            .background(FrogStyle.critical.opacity(0.08), in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
+                            .padding(.horizontal, 20).padding(.bottom, 16)
+                            .transition(.asymmetric(insertion: reduceMotion ? .opacity : .offset(y: 8).combined(with: .opacity), removal: .opacity))
+                    }
+                }.animation(model.errorMessage == nil ? FrogMotion.exit : FrogMotion.reveal, value: model.errorMessage)
             }.clipped().padding(.top, 32).background(FrogStyle.canvas)
                 .sheet(item: Binding(get: { model.pluginReview }, set: { if $0 == nil { model.pluginRuntime?.dismissReview() } })) { review in
                     PluginReviewSheet(review: review, plugins: model.plugins) { model.report($0) }

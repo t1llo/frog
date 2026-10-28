@@ -1,12 +1,38 @@
 import Foundation
 
 /// What the layout picker lists and which tile is selected: the layouts that place the window,
-/// grouped as the cheat sheet groups them, four tiles to a row, filtered by the typed text.
+/// grouped as the cheat sheet groups them, five tiles to a row, filtered by the typed text.
 public struct LayoutPickerModel: Equatable, Sendable {
     public struct Tile: Equatable, Sendable, Identifiable {
         public var action: WindowAction
         public var hotkey: Hotkey?
+        /// The full name, for VoiceOver and help. The filter matches it and `name`.
         public var title: String { action.title }
+        /// The name under its section's heading, one short line: "Left" under Halves, "50%" under Sizes.
+        public var name: String {
+            switch action {
+            case .leftHalf, .leftThird: "Left"
+            case .rightHalf, .rightThird: "Right"
+            case .topHalf: "Top"
+            case .bottomHalf: "Bottom"
+            case .topLeft: "Top left"
+            case .topRight: "Top right"
+            case .bottomLeft: "Bottom left"
+            case .bottomRight: "Bottom right"
+            case .centerThird, .center: "Center"
+            case .leftTwoThirds: "Left ⅔"
+            case .rightTwoThirds: "Right ⅔"
+            case .maximize: "Maximize"
+            case .centeredSmall: "50%"
+            case .centeredMedium: "70%"
+            case .centeredLarge: "90%"
+            case .nextDisplay: "Next"
+            case .previousDisplay: "Previous"
+            case .restore: "Restore"
+            case .minimize: "Minimize"
+            case .toggleFullScreen: "Full screen"
+            }
+        }
         public var id: String { action.rawValue }
         public init(action: WindowAction, hotkey: Hotkey?) { self.action = action; self.hotkey = hotkey }
     }
@@ -24,7 +50,7 @@ public struct LayoutPickerModel: Equatable, Sendable {
 
     public enum Direction: Sendable { case left, right, up, down }
 
-    public static let columns = 4
+    public static let columns = 5
     /// The section titles in order; the cheat sheet's, without its commands.
     public static let sectionTitles = ["Halves", "Quarters", "Thirds", "Sizes", "Displays", "Undo"]
     /// Minimize and full screen leave nothing to place, so the picker does not offer them.
@@ -78,10 +104,11 @@ public struct LayoutPickerModel: Equatable, Sendable {
     static func sections(query: String, hotkeys: [WindowAction: Hotkey]) -> [Section] {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return sectionTitles.compactMap { title in
-            let tiles = offered.filter { action in
-                WindowCheatSheet.group(for: action) == title
-                    && (text.isEmpty || action.title.localizedCaseInsensitiveContains(text) || title.localizedCaseInsensitiveContains(text))
-            }.map { Tile(action: $0, hotkey: hotkeys[$0]) }
+            let tiles = offered.filter { WindowCheatSheet.group(for: $0) == title }
+                .map { Tile(action: $0, hotkey: hotkeys[$0]) }
+                .filter { tile in
+                    text.isEmpty || [tile.title, tile.name, title].contains { $0.localizedCaseInsensitiveContains(text) }
+                }
             return tiles.isEmpty ? nil : Section(title: title, tiles: tiles)
         }
     }

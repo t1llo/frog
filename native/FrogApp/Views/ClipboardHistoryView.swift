@@ -91,7 +91,7 @@ struct ClipboardHistoryView: View {
                 .frame(maxWidth: .infinity).background(FrogStyle.inset)
         }.frame(width: size.width, height: size.height)
             .frogPanel()
-            .environment(\.locale, L10n.locale)
+            .environment(\.locale, L10n.locale).environment(\.frogKeyboardSurface, true)
             .onChange(of: entries.count, initial: true) { _, count in resize(count) }
     }
 

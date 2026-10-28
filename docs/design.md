@@ -1,6 +1,6 @@
 # Design rules
 
-Frog looks quiet and consistent: Raycast's dense, keyboard-first popups and Linear's and Notion's calm pages. Every value comes from [DesignSystem.swift](../native/FrogApp/Views/DesignSystem.swift) and [CompactControls.swift](../native/FrogApp/Views/CompactControls.swift). A view never invents its own button, radius, height or text size. `StyleTokenScanTests` checks the rules that code can check.
+Frog looks quiet and consistent: Raycast's dense, keyboard-first popups and Linear's and Notion's calm pages. Every value comes from [DesignSystem.swift](../native/FrogApp/Views/DesignSystem.swift), [CompactControls.swift](../native/FrogApp/Views/CompactControls.swift) and [Motion.swift](../native/FrogApp/Views/Motion.swift). A view never invents its own button, radius, height, text size or animation. `StyleTokenScanTests` checks the rules that code can check.
 
 ## No lines
 
@@ -74,3 +74,26 @@ Use `FrogType` for text. A literal size is only for an SF Symbol's size.
 - Popups: `frogPanel()`, rows `MenuActionRow` or `MenuRowStyle`, footer `PanelFooter`.
 - `selection` marks what is chosen; `hover` what the pointer is over; `accent` shows state and focus, not decoration.
 - `muted` for secondary text; `good`, `warning` and `critical` for status.
+
+## Motion
+
+Frog moves little: a press answers, a hover leaves softly, a choice slides, and occasional things arrive and leave. Everything else is an instant cut.
+
+| Token | Value | Use |
+| --- | --- | --- |
+| `press` | spring, response 0.2, no bounce | `FrogButtonStyle`: scale 0.97 and the `pressed` fill on the down event |
+| `hoverOut` | ease 0.15 s | A hover fill leaving (`frogRowHighlight`, control surfaces, buttons). Hover in is instant |
+| `slide` | spring, response 0.28, no bounce | The thumb of `CompactSegments` |
+| `reveal` | strong ease-out (0.23, 1, 0.32, 1), 0.2 s | Occasional arrivals: the error banner, a copy confirmation, scrolling to a section |
+| `exit` | strong ease-out, 0.15 s | The same leaving, faster than it came |
+| `step` | spring, response 0.35, no bounce | Steps of the setup assistant: in 16 points from the side they lie on |
+| `fadeOut` | strong ease-out, 0.2 s | Status pills fading out (`NSWindow.fadeOut()`) |
+| `resize` | ease-in-out, 0.22 s | The dictation pill growing with its text; it changes shape on screen |
+| `confirmation` | 1.5 s | How long `CopyAction` shows its checkmark |
+
+- Never animate the command bar, clipboard history, window switcher or layout picker: opening, closing, typing, arrow keys. Their roots set `.environment(\.frogKeyboardSurface, true)`, which turns off hover fades and press motion inside them.
+- Never animate selection moved by arrow keys or Tab, page switches (sidebar and ⌘1–5), or text that streams in.
+- No bounce anywhere: nothing in Frog is thrown or flicked. No ease-in: it starts slow where the eye is watching.
+- Reduce Motion: no scale and no sliding; segments, setup steps and the error banner cross-fade instead.
+- Copy actions use `CopyAction`: its symbol turns into a checkmark for `confirmation`.
+- An animation names a token from `Motion.swift`: `withAnimation(FrogMotion.reveal)`, never `.easeOut(duration:)`, a bare `withAnimation` or a literal `NSAnimationContext` duration. `StyleTokenScanTests` checks it.

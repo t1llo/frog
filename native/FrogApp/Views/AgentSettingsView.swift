@@ -94,7 +94,7 @@ private struct AgentToolRow: View {
                     Text(path.line).font(FrogType.mono).textSelection(.enabled)
                 }
                 Spacer(minLength: 8)
-                IconAction(title: "Copy line", symbol: "doc.on.doc") { ViewActions.copy(path.line) }
+                CopyAction(title: "Copy line") { ViewActions.copy(path.line) }
             }
         }
     }

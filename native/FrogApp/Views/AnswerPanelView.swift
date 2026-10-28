@@ -31,7 +31,7 @@ struct AnswerPanelView: View {
                     // A follow-up's answer starts below the earlier ones, often out of sight in a full panel.
                     .onChange(of: model.session?.pendingQuestion) { _, question in
                         guard question != nil else { return }
-                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.followUpID, anchor: .top) }
+                        withAnimation(FrogMotion.reveal) { proxy.scrollTo(Self.followUpID, anchor: .top) }
                     }
                 }
             }

@@ -163,6 +163,10 @@ struct CompactSegments<Value: Hashable>: View {
     var compact = false
     let title: (Value) -> String
     let choose: (Value) -> Void
+    @Namespace private var thumb
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// One thumb behind all the labels slides to the chosen segment, so it never covers a label on the way. With
+    /// Reduce Motion each segment has its own thumb, and they fade from one to the other.
     var body: some View {
         HStack(spacing: 2) {
             ForEach(values, id: \.self) { value in
@@ -171,13 +175,25 @@ struct CompactSegments<Value: Hashable>: View {
                         .font(compact ? (selected == value ? FrogType.label : FrogType.small) : (selected == value ? FrogType.bodyMedium : FrogType.body))
                         .lineLimit(1).frame(maxWidth: .infinity, maxHeight: .infinity)
                         .foregroundStyle(selected == value ? FrogStyle.ink : FrogStyle.muted)
-                        .background(selected == value ? FrogStyle.surface : AnyShapeStyle(Color.clear), in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius))
-                        .shadow(color: .black.opacity(selected == value ? 0.08 : 0), radius: 1, y: 0.5)
+                        .background { if reduceMotion && selected == value { thumbShape } }
+                        .matchedGeometryEffect(id: value, in: thumb)
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityAddTraits(selected == value ? .isSelected : [])
             }
-        }.padding(2).frame(width: width, height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
+        }
+        .background {
+            if !reduceMotion && values.contains(selected) {
+                thumbShape.matchedGeometryEffect(id: selected, in: thumb, isSource: false)
+            }
+        }
+        .padding(2).frame(width: width, height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
             .frogControlSurface(height: nil)
+            .animation(reduceMotion ? FrogMotion.reveal : FrogMotion.slide, value: selected)
+    }
+
+    private var thumbShape: some View {
+        RoundedRectangle(cornerRadius: FrogStyle.smallRadius).fill(FrogStyle.surface)
+            .shadow(color: .black.opacity(0.08), radius: 1, y: 0.5)
     }
 }
 

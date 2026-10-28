@@ -89,7 +89,7 @@ struct UtilityDocumentsView: View {
         VStack(alignment: .leading, spacing: 10) {
             TextField("Title", text: binding(item, \.title)).textFieldStyle(.plain).font(FrogType.title)
             HStack {
-                Button("Copy", systemImage: "doc.on.doc") { copy(item) }.buttonStyle(.frog(compact: true))
+                CopyAction(labeled: true) { copy(item) }.buttonStyle(.frog(compact: true))
                 if kind == .note {
                     CompactSegments(values: [false, true], selected: preview, width: 160, compact: true, title: { $0 ? "Preview" : "Edit" }) { preview = $0 }
                 }
@@ -192,7 +192,7 @@ struct ScriptOutputView: View {
                 if runner.running != nil { Button("Stop", systemImage: "stop.fill", action: runner.stop) }
                 Text(showsResult ? runner.status : runner.running != nil ? "Another script is running…" : "").font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(2)
                 Spacer()
-                if showsResult, !runner.output.isEmpty { Button("Copy output") { ViewActions.copy(runner.output) } }
+                if showsResult, !runner.output.isEmpty { CopyAction(title: "Copy output", labeled: true) { ViewActions.copy(runner.output) } }
             }.controlSize(.small)
             Text("Runs with zsh in your home folder, up to 60 seconds. Output stays in memory.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
             if showsResult, !runner.output.isEmpty {

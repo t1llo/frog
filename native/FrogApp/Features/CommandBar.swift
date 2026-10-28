@@ -884,7 +884,7 @@ private final class CommandBarPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
-private struct CommandBarView: View {
+struct CommandBarView: View {
     @ObservedObject var bar: CommandBar
     @FocusState private var focused: Bool
     var body: some View {
@@ -914,7 +914,7 @@ private struct CommandBarView: View {
                     if bar.results.indices.contains(value) { proxy.scrollTo(bar.results[value].id) }
                 }
             }
-         }.frame(width: 600, height: 390).frogPanel()
+         }.frame(width: 600, height: 390).frogPanel().environment(\.frogKeyboardSurface, true)
              .onAppear { focused = true }.onChange(of: bar.invocation) { focused = true }
     }
 }

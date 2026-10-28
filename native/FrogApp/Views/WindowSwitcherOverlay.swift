@@ -87,6 +87,7 @@ struct WindowSwitcherOverlay: View {
             .environment(\.locale, L10n.locale)
             .frogPanel()
             .foregroundStyle(FrogStyle.ink)
+            .environment(\.frogKeyboardSurface, true)
     }
 
     /// What has been typed to narrow the list; Backspace takes it back a character at a time.

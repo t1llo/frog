@@ -57,6 +57,8 @@ enum FrogStyle {
     static let compactHeight: CGFloat = 24
     /// A hovered row or control. Neutral, so it reads the same in every theme; `selection` marks what is chosen.
     static var hover: Color { ink.opacity(0.06) }
+    /// A control held down.
+    static var pressed: Color { ink.opacity(0.1) }
     static var canvas: AnyShapeStyle { adaptiveSurface(themed(\.canvas), strength: 0.85) }
     static var sidebar: AnyShapeStyle { adaptiveSurface(themed(\.sidebar), strength: 0.85) }
     static var surface: AnyShapeStyle { adaptiveSurface(themed(\.surface), strength: 0.78) }
@@ -242,14 +244,25 @@ extension View {
     }
     /// The fill and hairline every bordered control shares: secondary buttons, dropdowns, fields, search boxes,
     /// segmented controls and shortcut badges.
-    func frogControlSurface(hovering: Bool = false, height: CGFloat? = FrogStyle.controlHeight) -> some View {
-        modifier(FrogControlSurface(hovering: hovering, height: height))
+    func frogControlSurface(hovering: Bool = false, pressed: Bool = false, height: CGFloat? = FrogStyle.controlHeight) -> some View {
+        modifier(FrogControlSurface(hovering: hovering, pressed: pressed, height: height))
     }
     /// A row that highlights on hover and when chosen, as in lists, menus and the sidebar.
     func frogRowHighlight(hovering: Bool, selected: Bool = false) -> some View {
-        background(selected ? FrogStyle.selection : hovering ? FrogStyle.hover : .clear,
-                   in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-            .contentShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+        modifier(RowHighlight(hovering: hovering, selected: selected))
+    }
+}
+
+private struct RowHighlight: ViewModifier {
+    let hovering: Bool
+    let selected: Bool
+    @Environment(\.frogKeyboardSurface) private var keyboardSurface
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: FrogStyle.controlRadius)
+        content.background {
+            shape.fill(selected ? FrogStyle.selection : hovering ? FrogStyle.hover : .clear)
+                .animation(FrogMotion.hover(hovering, keyboardSurface: keyboardSurface), value: hovering)
+        }.contentShape(shape)
     }
 }
 
@@ -312,12 +325,20 @@ private struct FrogCardSurface: ViewModifier {
 
 private struct FrogControlSurface: ViewModifier {
     let hovering: Bool
+    let pressed: Bool
     let height: CGFloat?
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.frogKeyboardSurface) private var keyboardSurface
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: FrogStyle.controlRadius)
         content.frame(minHeight: height)
-            .background { ZStack { shape.fill(FrogStyle.inset); shape.fill(hovering ? FrogStyle.hover : .clear) } }
+            .background {
+                ZStack {
+                    shape.fill(FrogStyle.inset)
+                    shape.fill(pressed ? FrogStyle.pressed : hovering ? FrogStyle.hover : .clear)
+                        .animation(FrogMotion.hover(hovering || pressed, keyboardSurface: keyboardSurface), value: hovering || pressed)
+                }
+            }
             .overlay(shape.strokeBorder(contrast == .increased ? FrogStyle.muted : FrogStyle.border.opacity(0.5)))
             .contentShape(shape)
     }
@@ -377,27 +398,38 @@ private struct FrogButtonBody: View {
     let kind: FrogButtonStyle.Kind
     let compact: Bool
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.frogKeyboardSurface) private var keyboardSurface
     @State private var hovering = false
 
+    /// A press answers on the down event: a deeper fill and, unless motion is reduced, a slight shrink.
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: FrogStyle.controlRadius)
+        let pressed = configuration.isPressed && enabled
+        let hovered = hovering && enabled
+        let fade = FrogMotion.hover(hovered || pressed, keyboardSurface: keyboardSurface)
         let label = configuration.label
             .font(compact ? FrogType.label : FrogType.bodyMedium).lineLimit(1)
             .padding(.horizontal, compact ? 8 : 10)
             .foregroundStyle(foreground)
+            .frame(minHeight: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
         Group {
             switch kind {
             case .secondary, .destructive:
-                label.frogControlSurface(hovering: hovering && enabled, height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
+                label.frogControlSurface(hovering: hovered, pressed: pressed, height: nil)
             case .primary:
-                label.frame(minHeight: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
-                    .background(FrogStyle.ink.opacity(hovering && enabled ? 0.86 : 1), in: shape).contentShape(shape)
+                label.background {
+                    shape.fill(FrogStyle.ink.opacity(pressed ? 0.76 : hovered ? 0.86 : 1)).animation(fade, value: hovered || pressed)
+                }.contentShape(shape)
             case .ghost:
-                label.frame(minHeight: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
-                    .background(hovering && enabled ? FrogStyle.hover : .clear, in: shape).contentShape(shape)
+                label.background {
+                    shape.fill(pressed ? FrogStyle.pressed : hovered ? FrogStyle.hover : .clear).animation(fade, value: hovered || pressed)
+                }.contentShape(shape)
             }
         }
-        .opacity(enabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
+        // Only the scale springs: whatever the action changes inside the button on release stays an instant cut.
+        .animation(keyboardSurface ? nil : FrogMotion.press) { $0.scaleEffect(pressed && !reduceMotion && !keyboardSurface ? 0.97 : 1) }
+        .opacity(enabled ? 1 : 0.4)
         .onHover { hovering = $0 }
     }
 
@@ -522,7 +554,8 @@ struct FrogBadge: View {
 struct ShortcutBadge: View {
     let text: String
     var body: some View {
-        Text(text).font(FrogType.bodyMedium)
+        // One line always; in a narrow layout tile a four-modifier shortcut shrinks a little instead of wrapping.
+        Text(text).font(FrogType.bodyMedium).lineLimit(1).minimumScaleFactor(0.8)
             .padding(.horizontal, 8).modifier(CompactActionSurface())
             .accessibilityLabel("Shortcut: \(text)")
     }
@@ -576,16 +609,53 @@ struct IconAction: View {
     var body: some View {
         Button(role: destructive ? .destructive : nil, action: action) {
             if bordered {
-                Image(systemName: symbol).font(FrogType.label)
+                Image(systemName: symbol).font(FrogType.label).contentTransition(.symbolEffect(.replace))
                     .foregroundStyle(destructive ? FrogStyle.critical : FrogStyle.ink)
                     .frame(width: FrogStyle.compactHeight).modifier(CompactActionSurface())
             } else {
-                Image(systemName: symbol).font(.system(size: 13, weight: .medium))
+                Image(systemName: symbol).font(.system(size: 13, weight: .medium)).contentTransition(.symbolEffect(.replace))
                     .foregroundStyle(destructive ? FrogStyle.critical : hovering ? FrogStyle.ink : FrogStyle.muted)
                     .frame(width: FrogStyle.controlHeight, height: FrogStyle.controlHeight)
                     .frogRowHighlight(hovering: hovering)
             }
         }.buttonStyle(.plain).onHover { hovering = $0 }.accessibilityLabel(L10n.text(title)).help(L10n.text(title))
+    }
+}
+
+/// A copy that confirms itself: the symbol turns into a checkmark for a moment. An icon, or a button with
+/// `title` when `labeled`.
+struct CopyAction: View {
+    var title = "Copy"
+    var labeled = false
+    let perform: () -> Void
+    @State private var copied = false
+    /// Counts copies, so copying again restarts the confirmation.
+    @State private var copies = 0
+    var body: some View {
+        Group {
+            if labeled {
+                Button(action: copy) {
+                    Label { Text(L10n.text(title)) } icon: {
+                        // One width for both symbols, so the button never nudges its neighbours.
+                        Image(systemName: copied ? "checkmark" : "doc.on.doc").contentTransition(.symbolEffect(.replace))
+                            .frame(width: 14)
+                    }
+                }.accessibilityLabel(L10n.text(copied ? "Copied" : title))
+            } else {
+                IconAction(title: copied ? "Copied" : title, symbol: copied ? "checkmark" : "doc.on.doc", action: copy)
+            }
+        }
+        .task(id: copies) {
+            guard copies > 0 else { return }
+            do { try await Task.sleep(for: FrogMotion.confirmation); withAnimation(FrogMotion.reveal) { copied = false } } catch {}
+        }
+    }
+
+    private func copy() {
+        perform()
+        copies += 1
+        withAnimation(FrogMotion.reveal) { copied = true }
+        AccessibilityNotification.Announcement(L10n.text("Copied")).post()
     }
 }
 

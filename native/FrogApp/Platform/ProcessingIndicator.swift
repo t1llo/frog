@@ -62,11 +62,27 @@ final class ProcessingIndicator {
         dismissal = Task { [weak self] in
             do {
                 try await Task.sleep(for: .seconds(1))
-                self?.panel?.orderOut(nil)
+                self?.panel?.fadeOut()
                 self?.dismissal = nil
             } catch { }
         }
     }
 
     func hide() { dismissal?.cancel(); dismissal = nil; processing = false; panel?.orderOut(nil) }
+}
+
+extension NSWindow {
+    /// A status pill leaving: it fades over `FrogMotion.fadeOut`, then orders out. Setting `alphaValue` back to 1
+    /// meanwhile ends the fade and keeps the window. Only for windows whose content stays as it was while fading.
+    func fadeOut() {
+        guard isVisible else { return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = FrogMotion.fadeOut
+            context.timingFunction = FrogMotion.fadeOutCurve
+            animator().alphaValue = 0
+        } completionHandler: { [weak self] in
+            guard let self, self.alphaValue < 0.01 else { return }
+            self.orderOut(nil)
+        }
+    }
 }

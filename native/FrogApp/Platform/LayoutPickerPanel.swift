@@ -7,7 +7,7 @@ import FrogCore
 /// Created once and reused: hidden, never released.
 @MainActor
 final class LayoutPickerPanel: ObservableObject {
-    static let width: CGFloat = 420
+    static let width: CGFloat = 440
     static let maximumHeight: CGFloat = 620
 
     @Published private(set) var picker = LayoutPickerModel(hotkeys: [:])
@@ -239,7 +239,7 @@ struct LayoutPickerView: View {
         .frame(width: LayoutPickerPanel.width, height: measuring ? nil : panel.height, alignment: .top)
         .frogPanel()
         .foregroundStyle(FrogStyle.ink)
-        .environment(\.locale, L10n.locale)
+        .environment(\.locale, L10n.locale).environment(\.frogKeyboardSurface, true)
         .onAppear { focused = true }
         .onChange(of: panel.invocation) { focused = true }
     }
@@ -255,7 +255,7 @@ struct LayoutPickerView: View {
                     SectionCaption(text: section.title)
                     ForEach(Array(section.rows.enumerated()), id: \.offset) { _, row in
                         let badges = row.contains { $0.hotkey != nil }
-                        HStack(spacing: 6) {
+                        HStack(spacing: 4) {
                             ForEach(row) { tile in
                                 LayoutPickerTile(tile: tile, selected: panel.picker.selection == tile.action, showsBadge: badges,
                                                  hover: { panel.hovered(tile.action) }, apply: { panel.apply(tile.action) })
@@ -282,14 +282,13 @@ private struct LayoutPickerTile: View {
     var body: some View {
         VStack(spacing: 4) {
             WindowLayoutGlyph(action: tile.action, size: CGSize(width: 44, height: 28))
-            Text(tile.title).font(FrogType.small).multilineTextAlignment(.center).lineLimit(2)
-                .frame(height: 28, alignment: .top)
+            Text(tile.name).font(FrogType.small).lineLimit(1)
             if showsBadge {
                 if let key = tile.hotkey { ShortcutBadge(text: HotkeyManager.display(key)) }
                 else { Color.clear.frame(height: 24) }
             }
         }
-        .padding(6)
+        .padding(.horizontal, 4).padding(.vertical, 6)
         .frame(maxWidth: .infinity)
         // The pointer moves the selection here, so the selection is the only highlight, as in Frog's other lists.
         .frogRowHighlight(hovering: false, selected: selected)
@@ -298,6 +297,7 @@ private struct LayoutPickerTile: View {
         .id(tile.action.rawValue)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(tile.title)
+        .help(tile.title)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { apply() }
     }

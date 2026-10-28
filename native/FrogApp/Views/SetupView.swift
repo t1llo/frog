@@ -7,10 +7,28 @@ struct RecommendedModelBadge: View {
     var body: some View { FrogBadge(text: "Recommended", active: true) }
 }
 
+/// Where the assistant is: a segment per step, filled up to the current one.
+private struct SetupProgress: View {
+    let step: Int
+    let count: Int
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(0..<count, id: \.self) { index in
+                Capsule().fill(index <= step ? FrogStyle.accent : FrogStyle.border)
+                    .frame(width: 22, height: 4)
+            }
+        }
+        .accessibilityElement().accessibilityLabel("Step \(step + 1) of \(count)")
+    }
+}
+
 struct SetupView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var step = 0
+    /// Which way the last move went, so the next step comes in from that side.
+    @State private var forward = true
     @State private var external = false
     @State private var provider: ProviderConfiguration?
     @State private var browse = false
@@ -22,26 +40,22 @@ struct SetupView: View {
     @State private var agentsOffered = false
     private let titles = ["Welcome to Frog", "Choose your models", "Permissions", "Your command bar", "AI agents", "You're ready"]
 
+    /// `step` opens the assistant at a later step, for pictures of it.
+    init(step: Int = 0) { _step = State(initialValue: step) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
                 FrogMark()
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 10) {
                     Text(titles[step]).font(FrogType.title).tracking(-0.4)
-                    Text("Step \(step + 1) of \(titles.count) · Everything can be changed later").font(FrogType.lead).foregroundStyle(FrogStyle.muted)
+                    SetupProgress(step: step, count: titles.count)
                 }
                 Spacer()
             }.padding(24)
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    switch step {
-                    case 0: welcome
-                    case 1: models
-                    case 2: permissions
-                    case 3: CommandBarSetupView()
-                    case agentsStep: AgentSetupStep(offering: $agentsOffered)
-                    default: summary
-                    }
+                    ZStack(alignment: .topLeading) { page.id(step).transition(stepTransition) }
                     if let issue { InlineIssue(message: issue) }
                     if let error = model.errorMessage { InlineIssue(message: error) }
                 }.padding(.horizontal, 24).padding(.bottom, 24).frame(maxWidth: .infinity, alignment: .leading).minimalScrollbars()
@@ -49,10 +63,10 @@ struct SetupView: View {
             HStack(spacing: 10) {
                 Button("Skip setup") { model.finishSetup() }.buttonStyle(.frog(.ghost))
                 Spacer()
-                if step > 0 { Button("Back") { step -= 1; issue = nil } }
-                if step > 0 && step < titles.count - 1 && !notNow { Button("Skip this step") { step += 1; issue = nil }.buttonStyle(.frog(.ghost)) }
+                if step > 0 { Button("Back") { go(to: step - 1) } }
+                if step > 0 && step < titles.count - 1 && !notNow { Button("Skip this step") { go(to: step + 1) }.buttonStyle(.frog(.ghost)) }
                 Button(step == titles.count - 1 ? "Open Frog" : notNow ? "Not now" : "Continue") {
-                    if step == titles.count - 1 { model.finishSetup() } else { step += 1; issue = nil }
+                    if step == titles.count - 1 { model.finishSetup() } else { go(to: step + 1) }
                 }.buttonStyle(.frog(notNow ? .secondary : .primary)).keyboardShortcut(notNow ? nil : .defaultAction)
             }.padding(20)
         }.frame(width: 620, height: 610).foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).background(FrogWindowMaterial())
@@ -75,12 +89,35 @@ struct SetupView: View {
     /// On the AI agents step, moving on without its button leaves agents off.
     private var notNow: Bool { step == agentsStep && agentsOffered }
 
+    @ViewBuilder private var page: some View {
+        switch step {
+        case 0: welcome
+        case 1: models
+        case 2: permissions
+        case 3: CommandBarSetupView()
+        case agentsStep: AgentSetupStep(offering: $agentsOffered)
+        default: summary
+        }
+    }
+
+    private func go(to next: Int) {
+        forward = next > step
+        issue = nil
+        withAnimation(reduceMotion ? FrogMotion.reveal : FrogMotion.step) { step = next }
+    }
+
+    /// The next step slides in from the side it lies on while the last one fades; Reduce Motion only fades.
+    private var stepTransition: AnyTransition {
+        let removal = AnyTransition.opacity.animation(FrogMotion.exit)
+        let insertion = reduceMotion ? AnyTransition.opacity : .offset(x: forward ? 16 : -16).combined(with: .opacity)
+        return .asymmetric(insertion: insertion, removal: removal)
+    }
+
     private var welcome: some View {
         VStack(alignment: .leading, spacing: 20) {
             SettingsSection(title: "How would you like to use Frog?") {
                 SetupChoice(title: "An offline experience", detail: "Download models once, then process text and recordings on your Mac. Apple silicon required.", symbol: "desktopcomputer", selected: !external) { external = false }
                 SetupChoice(title: "External providers too", detail: "Connect a cloud API, Ollama or LM Studio. You can also use local models.", symbol: "network", selected: external) { external = true }
-                Text("This only chooses your next setup step. You can add either kind of model at any time.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
             }
             FrogCard {
                 CompactRow(title: "Already have a configuration?", detail: "Import a file and skip the assistant.") { Button("Import settings…") { chooseImport() } }
@@ -150,7 +187,6 @@ struct SetupView: View {
                     await refreshPermissions()
                 }
             }
-            Text("You can skip any permission and enable it later in Settings. Features needing it stay unavailable until allowed.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
         }
     }
 

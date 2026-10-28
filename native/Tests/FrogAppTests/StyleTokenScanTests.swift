@@ -39,6 +39,17 @@ final class StyleTokenScanTests: XCTestCase {
         try assertNoMatch(#"\.font\(\.(caption2?|headline|title[23]?|body|callout|subheadline|footnote|largeTitle)\b"#, "use FrogType")
     }
 
+    func testAnimationsNameAMotionToken() throws {
+        let advice = "name a FrogMotion token; docs/design.md says what may move"
+        // A bare withAnimation, or a curve written in place: `.animation(.easeOut…)`, `flag ? nil : .spring()`,
+        // `Transaction(animation: .linear)`, `Animation.default`.
+        try assertNoMatch(#"withAnimation\s*\{|(?<![\w.])\.(easeIn|easeOut|easeInOut|linear|spring|interactiveSpring|interpolatingSpring|smooth|snappy|bouncy|timingCurve)\b|\bAnimation\.\w+"#,
+                          advice, except: ["Views/Motion.swift"])
+        // AppKit animations: their duration and curve are tokens too.
+        try assertNoMatch(#"(?<![\w.])(context|ctx|\$0)\.duration\s*=(?!=)(?!\s*FrogMotion\.)|CAMediaTimingFunction\("#, advice, except: ["Views/Motion.swift"])
+        try assertNoMatch(#"\.bounce\b|\bbounce:"#, "nothing in Frog bounces")
+    }
+
     func testTextIsNeverSetInNinePoints() throws {
         try assertNoMatch(#"Text\(.*\.font\(\.system\(size: 9\)\)"#, "use FrogType.caption")
     }

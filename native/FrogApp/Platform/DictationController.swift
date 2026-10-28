@@ -597,8 +597,8 @@ final class DictationController: ObservableObject {
         guard frame != panel.frame else { return }
         if animated, panel.isVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = DictationPopupLayout.transitionDuration
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                context.duration = FrogMotion.resize
+                context.timingFunction = FrogMotion.resizeCurve
                 panel.animator().setFrame(frame, display: true)
             }
         } else { panel.setFrame(frame, display: true) }
@@ -608,7 +608,6 @@ final class DictationController: ObservableObject {
 /// Geometry is based on rendered text, so a short preview doesn't reserve a large blank area.
 @MainActor
 enum DictationPopupLayout {
-    static let transitionDuration = 0.22
     static let maximumHeight = 220.0
     static let maximumTranscriptHeight = 104.0
     /// Presentation only. Keep native glyph layout bounded even for hours of Unicode text.

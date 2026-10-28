@@ -36,7 +36,6 @@ private struct HistoryContent: View {
     @State private var search = ""
     @State private var confirmClear = false
     @State private var deleting: HistoryItem?
-    @State private var copiedID: UUID?
     @State private var note: NoteProgress?
     init(clipboard: ClipboardHistoryStore, visibility: HistoryVisibility, scope: HistoryScope) {
         self.clipboard = clipboard; self.visibility = visibility; self.scope = scope
@@ -81,7 +80,7 @@ private struct HistoryContent: View {
                             HStack {
                                 SectionCaption(text: entry.isSensitive ? "Sensitive copied text" : "Copied text")
                                 Spacer()
-                                Button("Copy") { copy(viewing) }.buttonStyle(.frog(compact: true))
+                                CopyAction(labeled: true) { copy(viewing) }.buttonStyle(.frog(compact: true))
                             }
                             HistoryLongText(text: entry.text)
                         }.padding(14).minimalScrollbars()
@@ -165,10 +164,6 @@ private struct HistoryContent: View {
                 if let viewing, !ids.contains(viewing) { self.viewing = nil }
                 if let deleting, deleting.clipboardEntry != nil, !ids.contains(deleting.id) { self.deleting = nil }
             }
-            .task(id: copiedID) {
-                guard copiedID != nil else { return }
-                do { try await Task.sleep(for: .seconds(1.5)); copiedID = nil } catch { }
-            }
             .confirmationDialog(clipboardSelected ? "Clear clipboard history?" : "Clear all local history?", isPresented: $confirmClear) {
                 Button(clipboardSelected ? "Clear clipboard history" : "Clear all history", role: .destructive) {
                     if clipboardSelected { clipboard.clear() }
@@ -208,9 +203,7 @@ private struct HistoryContent: View {
                 }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain).help("Open full entry")
             if item.requiresReveal || model.configuration.preferences.hideHistoryText { revealButton(item) }
-            IconAction(title: copiedID == item.id ? "Copied" : "Copy result", symbol: copiedID == item.id ? "checkmark" : "doc.on.doc") {
-                copy(item); copiedID = item.id
-            }.disabled(item.text.isEmpty)
+            CopyAction(title: "Copy result") { copy(item) }.disabled(item.text.isEmpty)
         }.padding(.horizontal, 8).padding(.vertical, 8).frogHoverRow()
             .contextMenu {
                 Button("Open full entry") { if item.requiresReveal { visibility.revealed.insert(item.id) }; viewing = item.id }

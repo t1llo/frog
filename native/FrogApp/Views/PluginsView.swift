@@ -172,7 +172,7 @@ struct PluginsView: View {
                 HStack {
                     Text(Self.prompt).font(FrogType.mono).textSelection(.enabled)
                     Spacer(minLength: 8)
-                    IconAction(title: "Copy", symbol: "doc.on.doc") { ViewActions.copy(Self.prompt) }
+                    CopyAction { ViewActions.copy(Self.prompt) }
                 }.padding(10).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
                 step(3, "Review it here when it asks for access the first time. Updates that ask for nothing new run at once.")
                 step(4, "To share it, ask your agent to pack it: `frog plugins pack` makes a .frogplugin file anyone can install.")
