@@ -73,6 +73,38 @@ final class ClipboardHistoryPasteTargetTests: XCTestCase {
         XCTAssertEqual(steps, ["field 0.0", "focus field", "field 0.15"])
     }
 
+    func testAFieldWhoseFocusCameBackIsNotAskedToTakeIt() async throws {
+        // A single-line field asked to take focus it already has selects all of its text.
+        let probe = TargetProbe()
+        probe.range = CFRange(location: 7, length: 0)
+        let target = try XCTUnwrap(NativeClipboardHistoryPasteTarget.capture(pid: probe.pid, access: probe.access))
+        try await target.prepareForPaste(isCurrent: { true })
+        XCTAssertEqual(probe.activations, 1, "The app comes forward again")
+        XCTAssertEqual(probe.refocuses, 0)
+    }
+
+    func testAFieldWithoutFocusIsAskedOnceAfterAMoment() async throws {
+        let probe = TargetProbe()
+        probe.range = CFRange(location: 7, length: 0); probe.keyboardFocused = false
+        let target = try XCTUnwrap(NativeClipboardHistoryPasteTarget.capture(pid: probe.pid, access: probe.access))
+        try await target.prepareForPaste(isCurrent: { true })
+        XCTAssertEqual(probe.refocuses, 1)
+        XCTAssertEqual(probe.pausesBeforeRefocus, NativeClipboardHistoryPasteTarget.focusGrace, "Focus gets a moment to come back by itself")
+
+        // Focus that never comes back ends the wait with the item copied.
+        let stuck = TargetProbe()
+        stuck.range = CFRange(location: 7, length: 0); stuck.keyboardFocused = false; stuck.refocusWorks = false
+        let stuckTarget = try XCTUnwrap(NativeClipboardHistoryPasteTarget.capture(pid: stuck.pid, access: stuck.access))
+        do {
+            try await stuckTarget.prepareForPaste(isCurrent: { true })
+            XCTFail("A field that never has focus again is not pasted into")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("The item is copied"), error.localizedDescription)
+        }
+        XCTAssertEqual(stuck.refocuses, 1, "Focus is asked for once, not again and again")
+        XCTAssertEqual(stuck.pauses, NativeClipboardHistoryPasteTarget.focusAttempts - 1)
+    }
+
     func testCopyOnlyMessageNamesAccessibilityOnlyWhenItIsMissing() async {
         let granted = ClipboardHistoryDelivery.copyOnlyMessage(trusted: true, frontmostPID: 7, ownPID: 9)
         XCTAssertFalse(granted.contains("Accessibility"), granted)
@@ -110,6 +142,12 @@ final class ClipboardHistoryPasteTargetTests: XCTestCase {
     var editableReads = 0
     var menuWalks = 0
     var commands = 0
+    var keyboardFocused = true
+    var refocusWorks = true
+    var activations = 0
+    var refocuses = 0
+    var pauses = 0
+    var pausesBeforeRefocus: Int?
 
     var access: ClipboardHistoryTargetAccess {
         ClipboardHistoryTargetAccess(trusted: { true }, frontmostPID: { self.pid }, ownPID: -1,
@@ -117,6 +155,12 @@ final class ClipboardHistoryPasteTargetTests: XCTestCase {
             range: { _ in self.range }, role: { _ in self.role }, secure: { _ in false }, enabled: { _ in true },
             editable: { _ in self.editableReads += 1; return self.editable },
             nativePasteAvailable: { self.menuWalks += 1; return self.pasteMenu },
-            pause: {}, command: { self.commands += 1 })
+            keyboardFocused: { _ in self.keyboardFocused },
+            activate: { self.activations += 1 },
+            restoreFocus: { _ in
+                self.refocuses += 1; self.pausesBeforeRefocus = self.pausesBeforeRefocus ?? self.pauses
+                if self.refocusWorks { self.keyboardFocused = true }
+            },
+            pause: { self.pauses += 1 }, command: { self.commands += 1 })
     }
 }

@@ -78,7 +78,7 @@ private struct HistoryContent: View {
                     else if let entry = viewing.clipboardEntry {
                         VStack(alignment: .leading, spacing: 14) {
                             HStack {
-                                SectionCaption(text: entry.isSensitive ? "Sensitive copied text" : "Copied text")
+                                SectionCaption(text: entry.isSensitive ? entry.sensitiveTitle : "Copied text")
                                 Spacer()
                                 CopyAction(labeled: true) { copy(viewing) }.buttonStyle(.frog(compact: true))
                             }
@@ -188,13 +188,13 @@ private struct HistoryContent: View {
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 10) {
-                            Text(item.clipboardEntry != nil ? (item.requiresReveal ? "Sensitive copied text" : "Copied text") : item.title)
+                            Text(item.clipboardEntry.map { $0.isSensitive ? $0.sensitiveTitle : "Copied text" } ?? item.title)
                                 .font(FrogType.bodyMedium).foregroundStyle(FrogStyle.ink).lineLimit(1)
                             Spacer(minLength: 8)
                             Text(item.timestamp.formatted(date: .abbreviated, time: .shortened))
                                 .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                         }
-                        Text(hidden(item) ? "•••••••• · Click to reveal" : item.text.isEmpty ? L10n.text("No transcript available") : HistoryPreview.text(item.text)).font(FrogType.body).foregroundStyle(FrogStyle.ink)
+                        Text(hidden(item) ? "\(ClipboardHistoryEntry.mask) · Click to reveal" : item.text.isEmpty ? L10n.text("No transcript available") : HistoryPreview.text(item.text)).font(FrogType.body).foregroundStyle(FrogStyle.ink)
                             .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
                         Text(metadata(item)).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                         if let saved = item.savedEntry { interruptionStatus(saved) }

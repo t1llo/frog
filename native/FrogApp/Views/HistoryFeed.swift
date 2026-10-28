@@ -42,7 +42,7 @@ enum HistoryItem: Identifiable, Equatable {
                 .contains { $0.localizedStandardContains(query) }
         case .clipboard(let entry):
             // Hidden contents must not leak through search results before reveal.
-            return ["Clipboard", "Memory only", entry.isSensitive ? "Sensitive" : "", !entry.isSensitive || revealed ? entry.text : ""]
+            return ["Clipboard", "Memory only", entry.isSensitive ? entry.sensitivityLabel : "", !entry.isSensitive || revealed ? entry.text : ""]
                 .contains { $0.localizedStandardContains(query) }
         }
     }

@@ -46,6 +46,10 @@ final class ClipboardHistoryPanelDecisionTests: XCTestCase {
         let keyDown = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
             windowNumber: 0, context: nil, characters: "a", charactersIgnoringModifiers: "a", isARepeat: false, keyCode: 0))
         XCTAssertTrue(ClipboardHistoryController.isNewInput(keyDown))
+        // The Return that chose an item, held a moment too long, repeats into the other app.
+        let held = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: true, keyCode: 36))
+        XCTAssertFalse(ClipboardHistoryController.isNewInput(held), "A held key is not new input")
     }
 
     func testPanelOpensOnTheScreenItIsGiven() {

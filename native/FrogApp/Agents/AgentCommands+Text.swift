@@ -10,13 +10,14 @@ extension AgentCommands {
             AgentCommand(words: ["clipboard", "list"], arguments: "[--limit N]", summary: "Text you copied recently, newest first.",
                          details: """
                          Shows the last 20 items, or as many as --limit gives, up to \(ClipboardHistoryStore.capacity). Text an app \
-                         marked as sensitive, such as a password, stays hidden, also with --json.
+                         marked as sensitive, and text that looks like a password, API key, token or private key, stays hidden, also \
+                         with --json, which names its kind.
 
                          Example: frog clipboard list --limit 5
                          """, options: ["limit"], feature: .clipboard) { call in
                 let limit = try call.integer("limit", default: 20, in: 1...ClipboardHistoryStore.capacity)
                 let items = call.model.clipboardHistoryStore.entries.prefix(limit).map(ClipboardItem.init)
-                let rows = items.map { [shortTime($0.copied), $0.text.map { preview($0, length: 80) } ?? "Sensitive text, hidden"] }
+                let rows = items.map { [shortTime($0.copied), $0.text.map { preview($0, length: 80) } ?? "\($0.kind ?? "Sensitive text"), hidden"] }
                 return AgentResult(items, text: items.isEmpty ? "Nothing copied yet." : AgentTable.render(rows))
             },
             AgentCommand(words: ["clipboard", "copy"], arguments: "<text>", summary: "Put text on the clipboard.",
@@ -81,9 +82,11 @@ extension AgentCommands {
     private struct ClipboardItem: Encodable {
         let copied: Date
         let sensitive: Bool
+        /// "API key", "Password" and the like, for text that looks like one.
+        let kind: String?
         let text: String?
         init(_ entry: ClipboardHistoryEntry) {
-            copied = entry.timestamp; sensitive = entry.isSensitive
+            copied = entry.timestamp; sensitive = entry.isSensitive; kind = entry.secret?.label
             text = entry.isSensitive ? nil : entry.text
         }
     }

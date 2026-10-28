@@ -3,6 +3,7 @@ import ApplicationServices
 import SwiftUI
 import Combine
 import FrogCore
+import os
 
 @MainActor
 protocol ClipboardHistoryPasteTarget {
@@ -54,6 +55,8 @@ enum ClipboardHistoryDelivery {
 
 @MainActor
 final class ClipboardHistoryController {
+    /// Why a chosen item was not pasted, without what it holds: `log show --predicate 'subsystem == "frog" && category == "clipboard"'`.
+    private static let log = Logger(subsystem: "frog", category: "clipboard")
     let history: ClipboardHistoryStore
     var onError: ((Error) -> Void)?
     var onSuccessfulPaste: (() -> Void)?
@@ -179,7 +182,7 @@ final class ClipboardHistoryController {
                     guard let self else { return }
                     let pid = (notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
                     if let pid, pid == self.target?.applicationPID { return }
-                    self.cancel()
+                    self.cancel("another app became active")
                 }
             }
         if let visibleFrame = ClipboardHistoryLayout.visibleFrame(main: NSScreen.main?.visibleFrame,
@@ -202,9 +205,11 @@ final class ClipboardHistoryController {
     }
 
     /// A trackpad flick keeps coasting after the fingers left, and fingers resting on the
-    /// trackpad send scrolls that move nothing. Neither is input made after the panel opened
-    /// or an item was chosen, so neither closes the panel or stops a paste.
+    /// trackpad send scrolls that move nothing. A key held a moment too long repeats, such as
+    /// the Return that chose the item. None of these is input made after the panel opened or
+    /// an item was chosen, so none closes the panel or stops a paste.
     nonisolated static func isNewInput(_ event: NSEvent) -> Bool {
+        if event.type == .keyDown { return !event.isARepeat }
         guard event.type == .scrollWheel else { return true }
         return event.momentumPhase.isEmpty && (event.scrollingDeltaX != 0 || event.scrollingDeltaY != 0)
     }
@@ -230,11 +235,11 @@ final class ClipboardHistoryController {
         // an essential invalidation signal, including during focus restoration.
         deliveryInputMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]) { [weak self] event in
             guard Self.isNewInput(event) else { return }
-            MainActor.assumeIsolated { self?.cancel() }
+            MainActor.assumeIsolated { self?.cancel("new input in another app") }
         }
         deliveryLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]) { [weak self] event in
             guard Self.isNewInput(event) else { return event }
-            MainActor.assumeIsolated { self?.cancel() }
+            MainActor.assumeIsolated { self?.cancel("new input in Frog") }
             return event
         }
         deliver(entry, plainText: plainText, to: target)
@@ -257,8 +262,11 @@ final class ClipboardHistoryController {
                     waitForRelease: self.waitForRelease)
                 self.onSuccessfulPaste?()
             } catch is CancellationError { }
-            catch { self?.onError?(error) }
-            if self?.operation == token { self?.hide() }
+            catch {
+                Self.log.notice("Paste failed: \(error.localizedDescription, privacy: .public)")
+                self?.onError?(error)
+            }
+            if self?.operation == token { self?.hide(); self?.delivery = nil }
         }
     }
 
@@ -276,7 +284,10 @@ final class ClipboardHistoryController {
         if let workspaceObserver { activationNotifications.removeObserver(workspaceObserver) }; workspaceObserver = nil
     }
 
-    func cancel() { hide(); operation = UUID(); delivery?.cancel(); delivery = nil }
+    func cancel(_ reason: String = "cancelled") {
+        if delivery != nil { Self.log.notice("Paste stopped: \(reason, privacy: .public)") }
+        hide(); operation = UUID(); delivery?.cancel(); delivery = nil
+    }
     func stop() { configure(enabled: false) }
     func waitForDelivery() async { await delivery?.value }
     static func isComposing(_ responder: NSResponder?) -> Bool {

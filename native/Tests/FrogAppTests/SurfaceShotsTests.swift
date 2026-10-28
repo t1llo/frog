@@ -27,7 +27,9 @@ final class SurfaceShotsTests: XCTestCase {
         let history = ClipboardHistoryStore(pasteboard: pasteboard, gate: ClipboardHistoryCaptureGate())
         history.configure(enabled: true, automaticallyPoll: false)
         for text in ["git push origin main", "https://frog.beffa.xyz/docs/command-bar/", "Thanks, see you at 3!",
-                     "Meeting moved to Thursday", "brew install --cask frog"] { history.recordCopiedText(text) }
+                     "Meeting moved to Thursday", "brew install --cask frog",
+                     // A password and a key, made up here, to show how hidden items look.
+                     "Synth3tic&Pass", "sk-" + "proj-" + SyntheticKey.make(48)] { history.recordCopiedText(text) }
         let usage = UsageDashboardModel(defaults: temporaryDefaults(), fixtureRoot: root.appendingPathComponent("fixtures"))
         let toolkit = Toolkit(makeUsage: { usage }, showsUsageStatusItem: false)
         let model = AppModel(dataDirectory: root, registerShortcuts: false, readKey: { _ in nil }, readAccessibility: { true },

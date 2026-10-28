@@ -17,6 +17,8 @@ struct ClipboardHistoryTargetAccess {
     var editable: (AXUIElement) -> Bool
     var nativePasteAvailable: () -> Bool = { false }
     var keyboardFocused: (AXUIElement) -> Bool = { _ in true }
+    /// Brings the original app forward again, which hands keyboard focus back to its window.
+    var activate: () -> Void = {}
     var restoreFocus: (AXUIElement) -> Void = { _ in }
     var pause: () async throws -> Void = { try await Task.sleep(for: .milliseconds(20)) }
     var command: () throws -> Void
@@ -55,11 +57,10 @@ struct ClipboardHistoryTargetAccess {
              editable: { AXRead.isEditable($0) },
              nativePasteAvailable: { menu.item("v") != nil },
              keyboardFocused: { AXRead.boolean($0, kAXFocusedAttribute) != false },
+             // Only called while the original app/window still owns focus. The app can
+             // still be frontmost while a closing nonactivating panel owns keyboard focus.
+             activate: { NSRunningApplication(processIdentifier: pid)?.activate(options: []) },
              restoreFocus: { focused in
-                 // Only called while the original app/window still owns focus.
-                 // The app can still be frontmost while a closing nonactivating
-                 // panel owns keyboard focus. Activate only that same app.
-                 NSRunningApplication(processIdentifier: pid)?.activate(options: [])
                  // The limit is for questions. A request that is cut short may still be
                  // carried out, so handing focus back keeps the time it always had.
                  limit(focused, 0)
@@ -104,24 +105,32 @@ struct NativeClipboardHistoryPasteTarget: ClipboardHistoryPasteTarget {
         return Self(window: window, focused: focused, range: range, pid: pid, access: access)
     }
 
+    /// About half a second for the original field to have keyboard focus again.
+    static let focusAttempts = 25
+    /// Attempts the field gets to take focus back by itself before it is asked to.
+    static let focusGrace = 3
+
     func prepareForPaste(isCurrent: () -> Bool) async throws {
         // Closing a key nonactivating panel releases focus asynchronously. Wait
         // only for missing focus, never for a different app/window/field to leave.
-        var restored = false
-        for attempt in 0..<16 {
+        var activated = false, refocused = false
+        for attempt in 0..<Self.focusAttempts {
             try Task.checkCancellation()
             guard isCurrent() else { throw CancellationError() }
             guard access.trusted(), access.frontmostPID() == pid else { throw changedTarget() }
             if let currentWindow = access.window() {
                 guard CFEqual(window, currentWindow) else { throw changedTarget() }
-                if let current = access.focused() {
-                    guard CFEqual(focused, current) else { throw changedTarget() }
-                    try validateField(current)
-                    if restored && access.keyboardFocused(current) { return }
-                } else { try validateField(focused) }
-                if !restored { access.restoreFocus(focused); restored = true }
+                let current = access.focused()
+                if let current { guard CFEqual(focused, current) else { throw changedTarget() } }
+                try validateField(current ?? focused)
+                if activated, let current, access.keyboardFocused(current) { return }
+                if !activated { access.activate(); activated = true }
+                // Focus comes back by itself once the app is in front. A single-line field asked
+                // to take focus it already has starts editing over and selects all of its text,
+                // so it is asked only when focus stays away.
+                else if !refocused, attempt >= Self.focusGrace { access.restoreFocus(focused); refocused = true }
             }
-            if attempt < 15 { try await access.pause() }
+            if attempt < Self.focusAttempts - 1 { try await access.pause() }
         }
         throw FrogError.message("The original field did not regain focus. The item is copied; paste it manually.")
     }

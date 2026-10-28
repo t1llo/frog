@@ -7,16 +7,29 @@ struct ClipboardHistoryEntry: Identifiable, Equatable, Sendable {
     let timestamp: Date
     let text: String
     let formatting: [String: Data]
+    /// Marked sensitive by the app it was copied from, or a key or password by its look.
     let isSensitive: Bool
+    /// What kind of credential the text looks like; nil for ordinary text and for text only its app marked.
+    let secret: ClipboardSecret?
     var preview: String { String(text.prefix(300)).replacingOccurrences(of: "\n", with: " ") }
 
     init(text: String, formatting: [String: Data] = [:], isSensitive: Bool = false, timestamp: Date = Date()) {
-        id = UUID(); self.timestamp = timestamp; self.text = text; self.formatting = formatting; self.isSensitive = isSensitive
+        id = UUID(); self.timestamp = timestamp; self.text = text; self.formatting = formatting
+        secret = ClipboardSecret.detect(text)
+        self.isSensitive = isSensitive || secret != nil
     }
 
+    /// Hidden text shows as a password field does, in dots of one length that says nothing of its own.
+    static let mask = String(repeating: "•", count: 12)
+
     func displayPreview(revealed: Bool) -> String {
-        !isSensitive || revealed ? preview : "Sensitive text · Click to reveal"
+        !isSensitive || revealed ? preview : Self.mask
     }
+
+    /// "API key", "Password", or "Sensitive" for text its app marked.
+    var sensitivityLabel: String { secret?.label ?? "Sensitive" }
+    /// "Copied API key", or "Sensitive copied text" for text its app marked.
+    var sensitiveTitle: String { secret?.title ?? "Sensitive copied text" }
 
     func write(to pasteboard: NSPasteboard, plainText: Bool) -> Bool {
         let item = NSPasteboardItem()

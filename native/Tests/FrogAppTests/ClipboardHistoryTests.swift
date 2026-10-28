@@ -591,7 +591,7 @@ final class ClipboardHistoryTests: XCTestCase {
         XCTAssertEqual(notifications.observerCount, 0)
     }
 
-    func testNativePanelClickAndSpaceRevealOnlyUntilPanelCloses() async throws {
+    func testNativePanelSpaceRevealsOnlyUntilPanelClosesAndAClickKeepsItHidden() async throws {
         _ = NSApplication.shared
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -623,6 +623,8 @@ final class ClipboardHistoryTests: XCTestCase {
         }
         try await Task.sleep(for: .milliseconds(20))
         XCTAssertTrue(panel.isVisible, "Clicking a copied-text preview must not dismiss the nonactivating panel")
+        XCTAssertTrue(controller.state.revealedIDs.isEmpty, "A click selects; only Space or the eye shows hidden text")
+        try await sendKey(49, to: panel)
         XCTAssertEqual(controller.state.revealedIDs, [entry.id])
         try await sendKey(53, to: panel)
         XCTAssertTrue(controller.state.revealedIDs.isEmpty)
