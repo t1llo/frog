@@ -1,11 +1,15 @@
 name: Native macOS
+# A run takes about 25 macOS minutes, so pushes to main don't start it: every change is tested locally first
+# (AGENTS.md). Run it with `gh workflow run native.yml` before a release, or open a pull request.
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
+# A newer commit on the same branch or pull request replaces a run still in progress.
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   verify:
     runs-on: xcode-27

@@ -50,7 +50,7 @@ For a local app without release archives or publication, run `make build`. It bu
 
 The packaging script defaults to ad-hoc signing; `make build` selects an available Developer ID identity when possible. CI uses ad-hoc signing. Developer ID builds use hardened runtime and a secure timestamp. Follow the setup below to sign and notarize a release for direct download.
 
-Release downloads are `Frog-macOS.zip` and `SHA256SUMS`. Updater-enabled releases also include a signed Sparkle `appcast.xml`. GitHub Actions builds and tests the app without signing credentials. Distribution releases are signed, notarized and published manually from the maintainer's Mac.
+Release downloads are `Frog-macOS.zip` and `SHA256SUMS`. Updater-enabled releases also include a signed Sparkle `appcast.xml`. GitHub Actions builds and tests the app without signing credentials, on pull requests and on demand (`gh workflow run native.yml`); pushes to `main` only run the secret scan. Distribution releases are signed, notarized and published manually from the maintainer's Mac.
 
 Releases use semantic versions starting at **1.0.0**. The local publisher selects the next patch version from existing release names and Git tags (`1.0.1`, `1.0.2`, …), tags it `vX.Y.Z`, and titles it `Frog X.Y.Z`. `FROG_VERSION` supplies that version to packaging and Settings. A separate increasing `FROG_BUILD_NUMBER` remains Sparkle's update ordering key. Resuming an existing archive preserves its signed version rather than relabeling it.
 
