@@ -1,61 +1,97 @@
+<div align="center">
+
+<img src="docs/images/frog_icon.png" alt="Frog" width="128" height="128">
+
 # Frog
 
+**The Mac menu-bar app your AI agent can extend.**<br>
+Ten small Mac apps in one, local models built in, and plugins your agent writes for you.<br>
+Free and open source. No account, no telemetry.
+
+[![Latest release](https://img.shields.io/github/v/release/t1llo/frog?label=release&color=397A4C)](https://github.com/t1llo/frog/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/t1llo/frog/total?color=397A4C)](https://github.com/t1llo/frog/releases)
+[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-397A4C?logo=apple&logoColor=white)](#install)
+[![License: GPL-3.0](https://img.shields.io/github/license/t1llo/frog?color=397A4C)](LICENSE)
 [![Build](https://github.com/t1llo/frog/actions/workflows/native.yml/badge.svg?branch=main)](https://github.com/t1llo/frog/actions/workflows/native.yml)
-[![Release](https://img.shields.io/github/v/release/t1llo/frog)](https://github.com/t1llo/frog/releases/latest)
-![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue)
 
-A Mac app that lives in your menu bar and replaces ten small Mac apps.
+[**Download for Mac**](https://github.com/t1llo/frog/releases/latest) · [Website](https://frog.beffa.xyz/) · [Plugins](https://frog.beffa.xyz/plugins/) · [Docs](docs/)
 
-**[Website](https://frog.beffa.xyz/)** · **[Download](https://github.com/t1llo/frog/releases/latest)**
+<br>
 
-![Frog: ten Mac apps, one menu bar. The Features page switches tools such as Writing, Dictation and Shortcuts on and off.](docs/media/frog-preview.jpg)
+<img src="docs/media/frog-preview.jpg" alt="Frog: ten Mac apps, one menu bar" width="860">
 
-[![Native Frog walkthrough: Features, Mr. Usage, snippets, notes, Tokyo Night and clipboard](docs/media/frog-readme-demo.gif)](docs/media/frog-toolkit.mp4)
+</div>
 
-## Tools
+## Why Frog
 
-| | |
+- **Your agent builds the features you're missing.** Ask Claude Code, Codex, Gemini CLI, pi or OpenCode for "a Frog plugin that shows my open pull requests" and it builds one, checks it and installs it for your review. Plugins are sandboxed and ask before they use anything.
+- **Local models, on your Mac.** Dictation with Whisper or Parakeet and writing rules with Qwen, Llama or Gemma, all on Apple silicon. Cloud providers are optional, and their keys stay in Keychain.
+- **One app instead of ten.** Writing, dictation, command bar, window snapping, clipboard, notes, AI usage limits, system monitor, app cleaner. Switch on only what you use.
+
+<div align="center">
+
+[![Frog walkthrough: Features, Mr. Usage, snippets, notes, themes and clipboard](docs/media/frog-readme-demo.gif)](docs/media/frog-toolkit.mp4)
+
+</div>
+
+## Plugins, built by your agent
+
+Switch on **Settings → Agents**, then ask:
+
+```text
+> Build me a Frog plugin that lists the top Hacker News stories
+  and opens one when I click it.
+```
+
+The agent uses the `frog` command that ships with the app:
+
+```sh
+frog plugins new ~/frog-plugins/hacker-news       # start from a template
+frog plugins check ~/frog-plugins/hacker-news     # validate manifest and files
+frog plugins install ~/frog-plugins/hacker-news   # waits for your review
+frog plugins snapshot io.github.you.hacker-news   # looks at its own work
+```
+
+The first install waits for you in **Frog → Plugins**, with every permission listed. After that, the agent's updates apply at once while they ask for nothing new. Share a plugin as one `.frogplugin` file.
+
+Examples in [`plugins/`](plugins/): [Hacker News](plugins/hacker-news), [Focus timer](plugins/focus-timer), [Word counter](plugins/word-counter). The full contract is in [docs/plugins.md](docs/plugins.md).
+
+The same `frog` command lets agents arrange windows, run your scripts, add notes, read the clipboard history and check your Claude or Codex limits. See [docs/agents.md](docs/agents.md).
+
+## What's inside
+
+| Tool | What it does |
 | --- | --- |
-| **Writing & dictation** | Local speech models, custom rewrite rules, connected providers and installed AI tools. |
-| **Explain** | Select text and read an answer in a panel next to it: any model, follow-up questions, nothing replaced; save answers to Obsidian or any Markdown folder; an optional bubble that appears when you select text. |
-| **Command bar & windows** | App/file and macOS settings search, calculations, conversions, window switching and the Windows page. |
-| **Windows** | Drag-to-snap zones, a layout picker, ⌃⌥ shortcuts on request, gaps and a cheat sheet. |
-| **Clipboard & documents** | Searchable clipboard, Markdown notes that can paste from the command bar, and saved scripts. |
-| **Mr. Usage** | Claude/OpenAI limits, token charts and estimated costs; combined OpenCode + Codex activity. |
-| **Menu bar & Stay awake** | Hide/reveal icons, auto-hide, timed awake sessions and low-battery stop. |
-| **System monitor** | CPU/GPU charts, disk capacity and I/O, battery power and thermal status in an optional Frog menu view. |
-| **App cleaner** | Uninstall apps with the files they leave behind, after a full review; everything goes to the Trash. |
-| **Plugins** | Add features of your own: small pages and commands, built with an AI agent or by hand, that run sandboxed and ask before they use anything. Share them as one file. |
-| **AI agents** | The `frog` command and a skill let Claude Code, Codex, Gemini CLI, pi and OpenCode arrange windows, run your scripts, add notes and more. Off by default. |
-| **Personalization** | Eleven themes including Tokyo Night, transparency, editable config files and optional local statistics. |
-
-Enable tools individually in **Features**. No Frog account. No telemetry.
-
-The command bar can learn from your choices, so rows you pick often for what you type
-are listed a bit higher; it is off by default and stays on your Mac.
-Window switcher and Clipboard shortcuts are configured in their Features cards;
-clipboard entries live in **History**. **Shortcuts** groups Application, Windows
-and Other actions. Window layouts live on the **Windows** page when it is on.
-In the window switcher, type to filter; the query shows at the top.
-Give **Show shortcuts** a key and hold it to see every shortcut, grouped by page.
-Enable **System monitor** to switch between **Frog** and **System** in the menu-bar
-popup. While it is on, CPU and GPU load are recorded every few seconds, so the graph
-already holds the last ten minutes when you open it. Disk and power are read only
-while the view is visible; unsupported metrics show as unavailable.
-Several Claude accounts: Frog finds a second Claude app profile and can show A and B
-side by side or combined in **Mr. Usage**. Off by default.
+| **Writing** | Rewrite selected text with your own rules, each on a shortcut. |
+| **Dictation** | Speech to text with local Whisper or Parakeet models. |
+| **Explain** | Select text, get an answer in a panel beside it, ask follow-ups, save to Obsidian. |
+| **Command bar** | Apps, files, settings, calculations and conversions. |
+| **Windows** | Drag-to-snap zones, a layout picker, keyboard halves and thirds, a window switcher. |
+| **Clipboard & notes** | Searchable clipboard history, Markdown notes and saved scripts. |
+| **Mr. Usage** | Claude and OpenAI plan limits, token charts and estimated cost. |
+| **System monitor** | CPU and GPU charts, disk, battery and thermals in the menu bar. |
+| **Menu bar & Stay awake** | Hide icons you rarely need; keep the Mac awake for a while. |
+| **App cleaner** | Uninstall apps with the files they leave behind, after a review. |
+| **Plugins** | Your own pages and commands, sandboxed, shared as one file. |
+| **Themes** | Eleven themes, including Tokyo Night, and editable config files. |
 
 ## Install
 
-**[Download the latest release](https://github.com/t1llo/frog/releases/latest)**, open the DMG (or unzip the ZIP), and move **Frog.app** to **Applications**.
+[**Download the latest release**](https://github.com/t1llo/frog/releases/latest), open the DMG and move **Frog.app** to **Applications**.
 
-macOS 14+ · Apple silicon and Intel · Built-in model inference requires Apple silicon.
+macOS 14 or later, Apple silicon or Intel. Built-in local models need Apple silicon.
 
-Local models stay on your Mac; connected providers use their own services. API keys live in Keychain. Permissions are feature-specific. **[Privacy](docs/privacy.md)**
+## Privacy
 
-## Build
+- No Frog account, no analytics, no Frog backend.
+- Local models never leave your Mac; connected providers are used only when you pick them.
+- API keys live in the macOS Keychain; each permission is asked for by the feature that needs it.
 
-Requires Xcode with Swift 6.3+ (CI uses Xcode 27).
+Details in [docs/privacy.md](docs/privacy.md).
+
+## Build from source
+
+Requires Xcode with Swift 6.3 or later.
 
 ```sh
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
@@ -64,11 +100,15 @@ make build
 open dist/Frog.app
 ```
 
-See [Development](docs/development.md) for signing and packaging.
+Signing and packaging: [docs/development.md](docs/development.md).
 
-## Guides
+## Docs
 
-[Configuration and themes](docs/configuration.md) · [Providers](docs/providers.md) · [Local models](docs/local-model-sources.md) · [Installed AI tools](docs/local-tool-providers.md) · [Mr. Usage](docs/usage-integration.md) · [Statistics](docs/statistics.md) · [Stay awake](docs/stay-awake.md) · [App cleaner](docs/cleaner.md) · [Agents](docs/agents.md) · [Plugins](docs/plugins.md) · [Verification](docs/verification.md)
+[Configuration and themes](docs/configuration.md) · [Plugins](docs/plugins.md) · [Agents](docs/agents.md) · [Local models](docs/local-model-sources.md) · [Providers](docs/providers.md) · [Installed AI tools](docs/local-tool-providers.md) · [Mr. Usage](docs/usage-integration.md) · [Windows](docs/windows.md) · [Stay awake](docs/stay-awake.md) · [App cleaner](docs/cleaner.md) · [Statistics](docs/statistics.md)
+
+## Contributing
+
+Issues and pull requests are welcome. Built a plugin you like? Open an issue with a link to its `.frogplugin` and it can join the [directory](https://frog.beffa.xyz/plugins/).
 
 ## License
 
