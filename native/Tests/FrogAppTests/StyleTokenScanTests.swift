@@ -33,6 +33,9 @@ final class StyleTokenScanTests: XCTestCase {
         try assertNoMatch(#"\.textFieldStyle\(\.(roundedBorder|squareBorder)\)"#, "use LabeledField or frogControlSurface")
         try assertNoMatch(#"\.toggleStyle\(\.checkbox\)"#, "use a switch")
         try assertNoMatch(#"\bStepper\("#, "offer the choices in a CompactMenu")
+        // The dictation pill's microphone menu is the one bare symbol, in the accent colour.
+        try assertNoMatch(#"\.menuStyle\(\.borderlessButton\)"#, "use IconMenu: the borderless style drops Frog's surface and hover",
+                          except: ["Platform/DictationController.swift"])
     }
 
     func testTextUsesFrogsTypeScale() throws {

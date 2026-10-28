@@ -62,9 +62,10 @@ import SwiftUI
         deactivation = nil; otherPopup = nil
         guard let panel else { return }
         self.panel = nil
-        panel.orderOut(nil)
+        // It fades like Frog's own menu-bar popup; clicks meanwhile reach whatever is beneath it.
+        panel.ignoresMouseEvents = true
         // Popup content is created when opened; releasing it ends its visible refresh.
-        panel.contentView = nil
+        panel.fadeOut { panel.contentView = nil }
     }
 
     /// Directly beneath the status item and left-aligned with it, like a MenuBarExtra window,

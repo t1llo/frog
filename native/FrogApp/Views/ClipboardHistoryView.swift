@@ -46,10 +46,9 @@ struct ClipboardHistoryView: View {
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass").foregroundStyle(FrogStyle.muted).frame(width: 20)
                 TextField("Search clipboard…", text: $state.query).textFieldStyle(.plain).font(FrogType.lead)
-                Menu {
+                IconMenu(title: "Clipboard actions", bordered: false) {
                     Button("Clear clipboard history", role: .destructive, action: clear).disabled(history.entries.isEmpty)
-                } label: { Image(systemName: "ellipsis") }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Clipboard actions")
+                }
                 IconAction(title: "Close", symbol: "xmark", action: close)
             }
             .padding(.leading, 14).padding(.trailing, 8).frame(height: ClipboardHistoryLayout.headerHeight)

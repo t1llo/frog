@@ -61,13 +61,12 @@ struct ModelInventory: View {
                                 ModelDownloadProgress(fraction: progress.fraction, preparing: model.localModels.preparing.contains(item.id), width: 70)
                                 Button("Cancel") { model.localModels.cancelDownload(item.id) }.buttonStyle(.frog(compact: true))
                             } else if installed {
-                                Menu {
+                                IconMenu(title: "Model actions") {
                                     Button("Check files") { model.localModels.checkFiles(item.id) }
                                         .disabled(model.localModels.fileChecks[item.id] == .checking)
                                     Button("Delete download…", role: .destructive) { deleting = item }
                                         .disabled(model.localModels.busy || model.dictation.active)
-                                } label: { Image(systemName: "ellipsis").font(FrogType.label).frame(width: FrogStyle.compactHeight).modifier(CompactActionSurface()) }
-                                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Model actions")
+                                }
                             } else {
                                 Button(L10n.text(unfinished ? "Resume" : "Download")) { model.localModels.download(item) }.buttonStyle(.frog(compact: true)).disabled(!LocalModels.supported)
                                 if unfinished {

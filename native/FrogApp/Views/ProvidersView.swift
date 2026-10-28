@@ -91,11 +91,10 @@ private struct ProviderRow: View {
                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain)
             IconAction(title: "Edit provider", symbol: "pencil") { edit(provider) }
-            Menu {
+            IconMenu(title: "Provider actions") {
                 Button("Duplicate") { var copy = provider; copy.id = UUID(); copy.name += " copy"; edit(copy) }
                 Button("Delete…", role: .destructive) { delete(provider) }
-            } label: { Image(systemName: "ellipsis").font(FrogType.label).frame(width: FrogStyle.compactHeight).modifier(CompactActionSurface()) }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Provider actions")
+            }
         }.padding(.vertical, 8).padding(.horizontal, 8)
             .frogRowHighlight(hovering: hovering).onHover { hovering = $0 }
     }

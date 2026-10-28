@@ -190,14 +190,29 @@ struct SetupView: View {
         }
     }
 
+    /// The setup as it stands: what processes text and speech, and the shortcut to try first.
     private var summary: some View {
-        SettingsSection(title: "Your setup is saved as you go.") {
-            Text("\(model.localModels.installed.count) local models downloaded · \(model.configuration.providers.count) external providers").font(FrogType.bodyMedium)
-            if !model.localModels.progress.isEmpty { Text("Model downloads are still running. See progress in Models.").foregroundStyle(FrogStyle.muted) }
-            Text("Choose a model and shortcut for each action in Writing and Dictation. Option–Space is the built-in Dictate shortcut.")
-            Text("Models and Settings are always available. You can mix local and external models, import settings, or reopen this assistant later.")
-            Text("History is optional. Local models keep your text and recordings on this Mac; external providers receive what you send them.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-        }.font(FrogType.body)
+        let local = model.localModels.installed.map { model.localModelLabel($0) }.sorted()
+        let providers = model.configuration.providers.map(\.name)
+        let rules = model.configuration.rules
+        let dictate = rules.first { $0.preset && $0.category == .audio } ?? rules.first { $0.category == .audio && $0.hotkey != nil }
+        return SettingsSection(title: "Your setup") {
+            CompactRow(title: "Local models", detail: local.isEmpty ? "None downloaded" : local.joined(separator: ", ")) {
+                if !model.localModels.progress.isEmpty {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text("Downloading").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    }
+                }
+            }
+            CompactRow(title: "Providers", detail: providers.isEmpty ? "None connected" : providers.joined(separator: ", ")) { EmptyView() }
+            if let dictate {
+                CompactRow(title: dictate.name, detail: model.ruleModelLabel(dictate)) {
+                    if let hotkey = dictate.hotkey { ShortcutKeyCaps(hotkey: hotkey) }
+                    else { Text("No shortcut").font(FrogType.small).foregroundStyle(FrogStyle.muted) }
+                }
+            }
+        }
     }
 
     private func permission(_ title: String, detail: String, allowed: Bool, action: @escaping () -> Void) -> some View {

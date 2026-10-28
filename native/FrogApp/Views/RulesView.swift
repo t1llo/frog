@@ -115,9 +115,37 @@ struct RulesView: View {
                     Button("Open Windows") { model.openFeature(.windows) }.buttonStyle(.frog(.ghost, compact: true))
                 }
             }
-            Group {
-                if scrolls { ScrollView { ruleRows.minimalScrollbars() } } else { ruleRows }
-            }.frogTableSurface()
+            let displayed = rules
+            if displayed.isEmpty {
+                emptyState
+                if scrolls { Spacer(minLength: 0) }
+            } else {
+                Group {
+                    if scrolls { ScrollView { ruleRows(displayed).minimalScrollbars() } } else { ruleRows(displayed) }
+                }.frogTableSurface()
+            }
+        }
+    }
+
+    /// No rows: the shared empty state in place of the list.
+    @ViewBuilder private var emptyState: some View {
+        if !search.isEmpty {
+            FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another word.") {
+                Button("Clear search") { search = "" }
+            }
+        } else if applications && category == .application && !applicationCatalog.scanned {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Finding apps…").font(FrogType.body).foregroundStyle(FrogStyle.muted)
+            }.frame(maxWidth: .infinity).padding(.vertical, 44)
+        } else if applications {
+            FrogEmptyState(symbol: "app.dashed", title: "No apps found", message: "Apps in your Applications folders appear here.")
+        } else {
+            // The page header's New rule button is the action.
+            FrogEmptyState(symbol: category == .audio ? "waveform" : answers ? "questionmark.bubble" : "text.alignleft",
+                           title: answers ? "No answer rules yet" : "No rules yet",
+                           message: category == .audio ? "A rule turns what you say into text, with its own shortcut."
+                            : answers ? "An answer rule explains selected text in a panel." : "A rule rewrites selected text in any app, with its own shortcut.")
         }
     }
 
@@ -126,9 +154,8 @@ struct RulesView: View {
         Text(L10n.text("Your rules")).font(FrogType.section).foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
     }
 
-    private var ruleRows: some View {
-        let displayedRules = rules
-        return LazyVStack(spacing: 2) {
+    private func ruleRows(_ displayedRules: [Rule]) -> some View {
+        LazyVStack(spacing: 2) {
             ForEach(displayedRules) { rule in
                 Group {
                     if applications {
@@ -169,16 +196,6 @@ struct RulesView: View {
                         }
                     }
                 }.padding(.horizontal, 8).padding(.vertical, 8).frogHoverRow()
-            }
-            if displayedRules.isEmpty {
-                VStack(spacing: 8) {
-                    Text(search.isEmpty ? "No rules yet" : "No matching rules").font(FrogType.bodyMedium)
-                    if !applications && search.isEmpty {
-                        Button("Create a rule", systemImage: "plus") {
-                            editing = model.configuration.newRule(category: category, output: output, installed: model.localModels.installed)
-                        }
-                    } else if !search.isEmpty { Button("Clear search") { search = "" }.buttonStyle(.frog(.ghost)) }
-                }.foregroundStyle(FrogStyle.muted).frame(maxWidth: .infinity).padding(18)
             }
         }.padding(6)
     }

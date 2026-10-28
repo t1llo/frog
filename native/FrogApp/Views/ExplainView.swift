@@ -136,16 +136,12 @@ struct ExplainView: View {
                 }
             }
             CompactRow(title: "Never show in") {
-                Menu {
+                IconMenu(title: "Add an app", symbol: "plus") {
                     Button("Choose an App…", action: chooseExcludedApp)
                     ForEach(runningApps, id: \.id) { app in
                         Button(app.name) { addExcludedApp(app.id) }
                     }
-                } label: {
-                    Image(systemName: "plus").font(FrogType.label).frame(width: FrogStyle.compactHeight).modifier(CompactActionSurface())
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                .help(L10n.text("Add an app")).accessibilityLabel(L10n.text("Add an app"))
             }
             ForEach(settings.bubbleExcludedApps, id: \.self) { id in
                 HStack(spacing: 8) {

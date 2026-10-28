@@ -290,6 +290,7 @@ struct FrogCheckboxStyle: ToggleStyle {
 struct FrogCheckbox: View {
     let configuration: ToggleStyleConfiguration
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         Button { configuration.isOn.toggle() } label: {
             HStack(spacing: 8) {
@@ -298,10 +299,11 @@ struct FrogCheckbox: View {
                         .fill(configuration.isOn ? AnyShapeStyle(FrogStyle.accent) : FrogStyle.inset)
                     RoundedRectangle(cornerRadius: FrogStyle.smallRadius)
                         .strokeBorder(configuration.isOn ? Color.clear : FrogStyle.border)
-                    if configuration.isOn {
-                        Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(FrogStyle.panelSurface)
-                    }
-                }.frame(width: 14, height: 14).opacity(enabled ? 1 : 0.45)
+                    // The mark grows in from 0.8 as the box fills; Reduce Motion keeps only the fade.
+                    Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(FrogStyle.panelSurface)
+                        .scaleEffect(configuration.isOn || reduceMotion ? 1 : 0.8).opacity(configuration.isOn ? 1 : 0)
+                        .accessibilityHidden(true)
+                }.frame(width: 14, height: 14).animation(FrogMotion.check, value: configuration.isOn).opacity(enabled ? 1 : 0.45)
                 configuration.label
             }.contentShape(Rectangle())
         }.buttonStyle(.plain)
@@ -608,17 +610,44 @@ struct IconAction: View {
     @State private var hovering = false
     var body: some View {
         Button(role: destructive ? .destructive : nil, action: action) {
-            if bordered {
-                Image(systemName: symbol).font(FrogType.label).contentTransition(.symbolEffect(.replace))
-                    .foregroundStyle(destructive ? FrogStyle.critical : FrogStyle.ink)
-                    .frame(width: FrogStyle.compactHeight).modifier(CompactActionSurface())
-            } else {
-                Image(systemName: symbol).font(.system(size: 13, weight: .medium)).contentTransition(.symbolEffect(.replace))
-                    .foregroundStyle(destructive ? FrogStyle.critical : hovering ? FrogStyle.ink : FrogStyle.muted)
-                    .frame(width: FrogStyle.controlHeight, height: FrogStyle.controlHeight)
-                    .frogRowHighlight(hovering: hovering)
-            }
+            IconLabel(symbol: symbol, destructive: destructive, bordered: bordered, hovering: hovering)
         }.buttonStyle(.plain).onHover { hovering = $0 }.accessibilityLabel(L10n.text(title)).help(L10n.text(title))
+    }
+}
+
+/// A menu behind an icon, "…" unless `symbol` says otherwise, drawn exactly like the `IconAction` beside it.
+/// The system's borderless menu style would drop Frog's surface and hover.
+struct IconMenu<Items: View>: View {
+    let title: String
+    var symbol = "ellipsis"
+    var bordered = true
+    @ViewBuilder var items: Items
+    @State private var hovering = false
+    var body: some View {
+        Menu { items } label: { IconLabel(symbol: symbol, destructive: false, bordered: bordered, hovering: hovering) }
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+            .onHover { hovering = $0 }.accessibilityLabel(L10n.text(title)).help(L10n.text(title))
+    }
+}
+
+/// The icon of `IconAction` and `IconMenu`: on a 24-point control surface when `bordered`, else a muted symbol
+/// that darkens on a 28-point hover fill.
+private struct IconLabel: View {
+    let symbol: String
+    let destructive: Bool
+    let bordered: Bool
+    let hovering: Bool
+    var body: some View {
+        if bordered {
+            Image(systemName: symbol).font(FrogType.label).contentTransition(.symbolEffect(.replace))
+                .foregroundStyle(destructive ? FrogStyle.critical : FrogStyle.ink)
+                .frame(width: FrogStyle.compactHeight).modifier(CompactActionSurface())
+        } else {
+            Image(systemName: symbol).font(.system(size: 13, weight: .medium)).contentTransition(.symbolEffect(.replace))
+                .foregroundStyle(destructive ? FrogStyle.critical : hovering ? FrogStyle.ink : FrogStyle.muted)
+                .frame(width: FrogStyle.controlHeight, height: FrogStyle.controlHeight)
+                .frogRowHighlight(hovering: hovering)
+        }
     }
 }
 
@@ -675,17 +704,27 @@ struct SettingRow<Control: View>: View {
     }
 }
 
-struct FrogEmptyState: View {
+/// An empty list or page: a symbol, a title, one sentence and, when there is one, the action that fills it.
+struct FrogEmptyState<Actions: View>: View {
     let symbol: String
     let title: String
     let message: String
+    @ViewBuilder var actions: Actions
     var body: some View {
         VStack(spacing: 10) {
             SymbolTile(symbol: symbol, size: 32)
             Text(L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.ink)
             Text(L10n.text(message)).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
                 .multilineTextAlignment(.center).lineSpacing(4).frame(maxWidth: 340)
+            // A padded EmptyView would still take space, so the others keep their layout.
+            if Actions.self != EmptyView.self { actions.padding(.top, 4) }
         }.frame(maxWidth: .infinity).padding(.vertical, 44).padding(.horizontal, 24)
+    }
+}
+
+extension FrogEmptyState where Actions == EmptyView {
+    init(symbol: String, title: String, message: String) {
+        self.init(symbol: symbol, title: title, message: message) { EmptyView() }
     }
 }
 

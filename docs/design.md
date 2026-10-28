@@ -53,7 +53,8 @@ Use `FrogType` for text. A literal size is only for an SF Symbol's size.
 - `.frog(.ghost)`: text actions beside content, such as Reset, Skip or Set up myself.
 - `.frog(.destructive)`: removes or deletes something.
 - `compact: true` in popups, panel headers and dense rows.
-- `IconAction` for icon-only actions: a plain icon that highlights on hover, like the "…" menus beside it. `bordered: true` only in a popup header, beside compact segments.
+- `IconAction` for icon-only actions: a plain icon that highlights on hover. `bordered: true` only in a popup header, beside compact segments.
+- `IconMenu` for a menu behind an icon ("…" by default): drawn exactly like the `IconAction` beside it. Never `.menuStyle(.borderlessButton)`, which drops Frog's surface and hover.
 - `.buttonStyle(.plain)` only for rows, tiles and cards that draw their own hover with `frogRowHighlight`.
 - Never `.bordered`, `.borderedProminent`, `.borderless` or `.link`.
 
@@ -67,6 +68,7 @@ Use `FrogType` for text. A literal size is only for an SF Symbol's size.
 - Text: `LabeledField` or `frogControlSurface()`. No `.roundedBorder`.
 - Search: `SearchBox`. Filters that narrow a list (All, Text, Audio): `FilterTag`.
 - Shortcuts: `ShortcutBadge` and `KeyCap`, in the sans font.
+- Empty lists and pages: `FrogEmptyState`, with the action that fills it in its trailing slot, unless the page header already has that action.
 
 ## Surfaces and colour
 
@@ -86,14 +88,15 @@ Frog moves little: a press answers, a hover leaves softly, a choice slides, and 
 | `slide` | spring, response 0.28, no bounce | The thumb of `CompactSegments` |
 | `reveal` | strong ease-out (0.23, 1, 0.32, 1), 0.2 s | Occasional arrivals: the error banner, a copy confirmation, scrolling to a section |
 | `exit` | strong ease-out, 0.15 s | The same leaving, faster than it came |
+| `check` | strong ease-out, 0.15 s | `FrogCheckbox`: the mark grows in from 0.8 as the box fills |
 | `step` | spring, response 0.35, no bounce | Steps of the setup assistant: in 16 points from the side they lie on |
-| `fadeOut` | strong ease-out, 0.2 s | Status pills fading out (`NSWindow.fadeOut()`) |
+| `fadeOut` | strong ease-out, 0.2 s | Status pills and status item popups fading out (`NSWindow.fadeOut()`) |
 | `resize` | ease-in-out, 0.22 s | The dictation pill growing with its text; it changes shape on screen |
 | `confirmation` | 1.5 s | How long `CopyAction` shows its checkmark |
 
 - Never animate the command bar, clipboard history, window switcher or layout picker: opening, closing, typing, arrow keys. Their roots set `.environment(\.frogKeyboardSurface, true)`, which turns off hover fades and press motion inside them.
 - Never animate selection moved by arrow keys or Tab, page switches (sidebar and ⌘1–5), or text that streams in.
 - No bounce anywhere: nothing in Frog is thrown or flicked. No ease-in: it starts slow where the eye is watching.
-- Reduce Motion: no scale and no sliding; segments, setup steps and the error banner cross-fade instead.
+- Reduce Motion: no scale and no sliding; segments, setup steps, the error banner and the checkbox mark cross-fade instead.
 - Copy actions use `CopyAction`: its symbol turns into a checkmark for `confirmation`.
 - An animation names a token from `Motion.swift`: `withAnimation(FrogMotion.reveal)`, never `.easeOut(duration:)`, a bare `withAnimation` or a literal `NSAnimationContext` duration. `StyleTokenScanTests` checks it.

@@ -56,11 +56,12 @@ struct PluginsView: View {
     @ViewBuilder private var installed: some View {
         if plugins.items.isEmpty {
             FrogEmptyState(symbol: "puzzlepiece.extension", title: "No plugins yet",
-                           message: "Ask your AI agent to build one, or install one from the directory.")
-            HStack(spacing: 8) {
-                Button("Build your own") { tab = .build }
-                Button("Open the directory") { tab = .browse }
-            }.frame(maxWidth: .infinity)
+                           message: "Ask your AI agent to build one, or install one from the directory.") {
+                HStack(spacing: 8) {
+                    Button("Build your own") { tab = .build }
+                    Button("Open the directory") { tab = .browse }
+                }
+            }
         } else {
             VStack(spacing: 8) {
                 ForEach(plugins.items) { item in installedRow(item) }
@@ -384,8 +385,9 @@ struct PluginPageView: View {
                     .background(FeatureVisibility { shown in host.isShowing = shown; if shown { host.refreshTheme() } })
                     .onDisappear { host.isShowing = false }
             } else if let failure {
-                FrogEmptyState(symbol: "exclamationmark.triangle", title: "This plugin cannot open", message: failure)
-                Button("Open Plugins") { model.toolkit.select(.feature(.plugins)) }
+                FrogEmptyState(symbol: "exclamationmark.triangle", title: "This plugin cannot open", message: failure) {
+                    Button("Open Plugins") { model.toolkit.select(.feature(.plugins)) }
+                }
                 Spacer()
             } else {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)

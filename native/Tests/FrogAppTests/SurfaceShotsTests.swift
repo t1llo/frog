@@ -19,6 +19,8 @@ final class SurfaceShotsTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         var configuration = Configuration()
         for feature in FeatureID.allCases { configuration.preferences.setFeature(feature, enabled: true) }
+        // `start()` adds Dictate on first launch; these models never start.
+        configuration.rules.append(.dictationPreset)
         try ConfigurationStore(directory: root).save(configuration)
         let pasteboard = NSPasteboard(name: .init(UUID().uuidString))
         defer { pasteboard.releaseGlobally() }

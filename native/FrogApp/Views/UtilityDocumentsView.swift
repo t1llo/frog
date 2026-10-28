@@ -99,14 +99,13 @@ struct UtilityDocumentsView: View {
                         .font(FrogType.small).foregroundStyle(FrogStyle.muted)
                         .help("Choosing the note in the command bar pastes its text instead of opening it")
                 }
-                Menu {
+                IconMenu(title: "Item actions") {
                     Button("Export…", systemImage: "square.and.arrow.up") { export(item) }
                     if item.files.isEmpty { ShareLink(item: item.text) { Label("Share text…", systemImage: "square.and.arrow.up.on.square") } }
                     Button("Delete item", systemImage: "trash", role: .destructive) {
                         if item.deletionAsksFirst { deleting = item.id } else { remove(item.id) }
                     }
-                } label: { Image(systemName: "ellipsis").font(FrogType.label).frame(width: FrogStyle.compactHeight).modifier(CompactActionSurface()) }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Item actions")
+                }
             }.controlSize(.small)
             if item.pastes { Text("Variables: {{date}}, {{time}}, {{clipboard}}").font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
             if !item.files.isEmpty {

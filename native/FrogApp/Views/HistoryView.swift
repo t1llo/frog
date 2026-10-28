@@ -107,11 +107,10 @@ private struct HistoryContent: View {
                                 do { try model.savePreferences(preferences) } catch { model.report(error) }
                             }.buttonStyle(.frog(compact: true))
                         }
-                        Menu {
+                        IconMenu(title: clipboardSelected ? "Clipboard actions" : "History actions") {
                             Button(clipboardSelected ? "Clear clipboard" : "Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }
                                 .disabled(clipboardSelected ? clipboard.entries.isEmpty : all.isEmpty)
-                        } label: { Image(systemName: "ellipsis").font(FrogType.label).frame(width: FrogStyle.compactHeight).modifier(CompactActionSurface()) }
-                            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help(clipboardSelected ? "Clipboard actions" : "History actions")
+                        }
                     }
                 }
                 if clipboardSelected, let issue = model.hotkeyErrors[AppModel.clipboardHistoryID] { InlineIssue(message: issue) }

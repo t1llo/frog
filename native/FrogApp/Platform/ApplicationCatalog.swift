@@ -79,6 +79,8 @@ enum ApplicationCatalog {
 final class ApplicationCatalogStore: ObservableObject {
     static let shared = ApplicationCatalogStore()
     @Published private(set) var installed: [Rule] = []
+    /// False until the first scan has finished, so an empty list can say it is still looking.
+    @Published private(set) var scanned = false
     /// By application path, as the last scan found them.
     private(set) var alternativeNames: [String: [String]] = [:]
     private let discover: @Sendable () async -> ApplicationCatalog.Discovery
@@ -117,6 +119,7 @@ final class ApplicationCatalogStore: ObservableObject {
                 installed = refreshed
             }
             scannedAt = .now; loading = nil
+            if !scanned { scanned = true }
             return installed
         }
         loading = task

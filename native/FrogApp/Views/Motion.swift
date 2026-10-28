@@ -1,5 +1,5 @@
+import AppKit
 import SwiftUI
-import QuartzCore
 
 /// Frog's motion. docs/design.md says what moves and what never does; `StyleTokenScanTests` checks that every
 /// animation in the app names one of these.
@@ -15,9 +15,12 @@ enum FrogMotion {
     static let reveal = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.2)
     /// The same leaving, a little faster than it came.
     static let exit = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.15)
+    /// A checkbox's mark arriving or leaving: small and frequent, so it stays at 0.15 s.
+    static let check = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.15)
     /// A step of the setup assistant.
     static let step = Animation.spring(response: 0.35, dampingFraction: 1)
-    /// Floating status pills fading out, for `NSAnimationContext`, on the curve of `reveal` and `exit`.
+    /// Floating windows fading out (status pills, status item popups), for `NSAnimationContext`, on the curve of
+    /// `reveal` and `exit`.
     static let fadeOut: TimeInterval = 0.2
     static let fadeOutCurve = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
     /// The dictation pill growing with its text, for `NSAnimationContext`. It changes shape on screen, so it eases
@@ -30,6 +33,24 @@ enum FrogMotion {
     /// Hover in is instant and hover out fades, except on keyboard surfaces, where nothing moves.
     static func hover(_ active: Bool, keyboardSurface: Bool) -> Animation? {
         active || keyboardSurface ? nil : hoverOut
+    }
+}
+
+extension NSWindow {
+    /// A status pill or popup leaving: it fades over `FrogMotion.fadeOut`, orders out, then runs `done`. Setting
+    /// `alphaValue` back to 1 meanwhile ends the fade and keeps the window. Only for windows whose content stays as
+    /// it was while fading.
+    func fadeOut(then done: (() -> Void)? = nil) {
+        guard isVisible else { done?(); return }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = FrogMotion.fadeOut
+            context.timingFunction = FrogMotion.fadeOutCurve
+            animator().alphaValue = 0
+        } completionHandler: { [weak self] in
+            guard let self, self.alphaValue < 0.01 else { return }
+            self.orderOut(nil)
+            done?()
+        }
     }
 }
 
