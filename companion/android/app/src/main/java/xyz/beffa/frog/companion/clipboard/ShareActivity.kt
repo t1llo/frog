@@ -15,7 +15,10 @@ import xyz.beffa.frog.companion.CompanionApp
 import xyz.beffa.frog.companion.service.CompanionService
 import xyz.beffa.frog.companion.service.SendResult
 
-/** Share-sheet target for text, images and any file, single or multiple. */
+/**
+ * Share-sheet target for text, images and any file, single or multiple, and the
+ * "Send to Mac" item of the text selection menu, which also copies the text on the phone.
+ */
 class ShareActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,6 +45,12 @@ class ShareActivity : ComponentActivity() {
 
     private suspend fun sendAll(intent: Intent): List<SendResult> {
         val controller = CompanionApp.controller(this)
+        if (intent.action == Intent.ACTION_PROCESS_TEXT) {
+            val text = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
+            if (text.isNullOrEmpty()) return emptyList()
+            withContext(Dispatchers.Main) { ContentReader.copyText(this@ShareActivity, text) }
+            return listOf(controller.send(OutgoingItem.text(text)))
+        }
         val uris: List<Uri> = when (intent.action) {
             Intent.ACTION_SEND -> listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
             Intent.ACTION_SEND_MULTIPLE ->
