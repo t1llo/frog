@@ -353,8 +353,8 @@ private fun SendHint(showAddTile: Boolean, onAddTile: () -> Unit, modifier: Modi
         SendWay("Selected text", "Tap Send to Mac in the menu next to Copy. It copies the text too.")
         SendWay(
             "Codes and links copied with a tap",
-            "Tap Share in the preview that pops up after copying and choose Send to Mac, " +
-                "or swipe down and tap the Send to Mac tile, or Send clipboard in the notification.",
+            "Swipe down and tap the Send to Mac tile, or Send clipboard in the notification. " +
+                "Send to device in the copy preview is Quick Share, which can't reach Frog.",
         )
         SendWay("Photos and files", "Share them and choose Send to Mac.")
         if (showAddTile) {
