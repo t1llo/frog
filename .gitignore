@@ -33,3 +33,7 @@ node_modules
 /docs/local-workflows.md
 **/*.prototype.md
 **/*.prototype.html
+*.jks
+*.keystore
+key.properties
+keystore.properties

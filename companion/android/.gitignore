@@ -1,0 +1,17 @@
+# Machine-specific SDK path
+local.properties
+
+# Release signing: never commit keys or their passwords
+keystore.properties
+*.jks
+*.keystore
+
+# Build output and caches
+build/
+.gradle/
+.kotlin/
+captures/
+
+# IDE
+.idea/
+*.iml

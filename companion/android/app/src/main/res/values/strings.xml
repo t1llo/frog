@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Frog Companion</string>
+    <!-- "Frog Companion" is cut short under launcher icons. -->
+    <string name="launcher_label">Frog</string>
+    <string name="share_label">Send to Mac</string>
+    <string name="tile_label">Send to Mac</string>
+    <string name="shortcut_send_short">Send clipboard</string>
+    <string name="shortcut_send_long">Send clipboard to Mac</string>
+</resources>

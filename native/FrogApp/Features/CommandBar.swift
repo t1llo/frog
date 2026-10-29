@@ -40,6 +40,7 @@ import SwiftUI
         EmojiRows(),
         WindowCommandRows(),
         CleanerCommandRows(applications: { [unowned self] in self.cleanerApplications() }),
+        PhoneCommandRows(),
         PluginCommandRows(),
     ] + extraProviders
     private let extraProviders: [any CommandBarRowProviding]

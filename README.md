@@ -72,6 +72,7 @@ The same `frog` command lets agents arrange windows, run your scripts, add notes
 | **System monitor** | CPU and GPU charts, disk, battery and thermals in the menu bar. |
 | **Menu bar & Stay awake** | Hide icons you rarely need; keep the Mac awake for a while. |
 | **App cleaner** | Uninstall apps with the files they leave behind, after a review. |
+| **Phone** | Share the clipboard and files with your Android phone over Wi-Fi or Bluetooth, through the Frog Companion app. |
 | **Plugins** | Your own pages and commands, sandboxed, shared as one file. |
 | **Themes** | Eleven themes, including Tokyo Night, and editable config files. |
 

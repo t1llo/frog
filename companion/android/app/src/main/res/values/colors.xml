@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Frog's canvas (docs/design.md, theme "Frog"). -->
+    <color name="window_background">#FFF7F7F5</color>
+    <color name="launcher_background">#FF5E8F5F</color>
+</resources>

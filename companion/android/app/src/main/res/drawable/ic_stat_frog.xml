@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status bar icon: the launcher silhouette cropped to its glyph. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="58" android:viewportHeight="58">
+    <group android:translateX="-25" android:translateY="-27">
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd" android:pathData="M31.39,50.62A11.5,11.5 0,1 1,51.46 42.08A27,19 0,0 1,56.54 42.08A11.5,11.5 0,1 1,76.61 50.62A27,19 0,1 1,31.39 50.62ZM33.5,44a6.5,6.5 0,1 0,13,0a6.5,6.5 0,1 0,-13,0ZM61.5,44a6.5,6.5 0,1 0,13,0a6.5,6.5 0,1 0,-13,0ZM39.4,42.2a2.2,2.2 0,1 0,4.4,0a2.2,2.2 0,1 0,-4.4,0ZM64.2,42.2a2.2,2.2 0,1 0,4.4,0a2.2,2.2 0,1 0,-4.4,0ZM42,62Q54,75 66,62Q54,69 42,62Z" />
+    </group>
+</vector>

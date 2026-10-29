@@ -132,7 +132,11 @@ struct PluginListing: Decodable, Identifiable, Equatable {
         self.enabled = enabled
         if enabled {
             refresh()
-            if Self.notificationsAvailable { UNUserNotificationCenter.current().delegate = self }
+            // Clicking a plugin's notification opens its page.
+            NotificationRouter.shared.register(key: "plugin") { [weak self] _, info in
+                guard let self, let id = info["plugin"], let item = self.item(id), item.runs, item.hasPage else { return }
+                self.openPage(id)
+            }
         } else {
             stopPages()
         }
@@ -597,21 +601,6 @@ struct PluginListing: Decodable, Identifiable, Equatable {
         }
         UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: notifications.map(\.request.identifier).filter { $0.hasPrefix(prefix) })
-        }
-    }
-}
-
-extension PluginRuntime: UNUserNotificationCenterDelegate {
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound, .list]
-    }
-
-    /// Clicking a plugin's notification opens its page.
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        guard let id = response.notification.request.content.userInfo["plugin"] as? String else { return }
-        await MainActor.run {
-            guard let item = self.item(id), item.runs, item.hasPage else { return }
-            self.openPage(id)
         }
     }
 }

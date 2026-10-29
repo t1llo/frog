@@ -18,6 +18,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
     case stayAwake
     case menuBar
     case cleaner
+    case phone
     case plugins
 
     public var id: String { rawValue }
@@ -38,6 +39,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .stayAwake: "Stay awake"
         case .menuBar: "Menu bar"
         case .cleaner: "App cleaner"
+        case .phone: "Phone"
         case .plugins: "Plugins"
         }
     }
@@ -58,6 +60,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .stayAwake: "cup.and.saucer"
         case .menuBar: "menubar.rectangle"
         case .cleaner: "trash.circle"
+        case .phone: "iphone"
         case .plugins: "puzzlepiece.extension"
         }
     }
@@ -79,6 +82,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .stayAwake: "Keep the Mac awake, also with the lid closed."
         case .menuBar: "Hide menu bar icons behind a divider."
         case .cleaner: "Uninstall apps with the files they leave behind."
+        case .phone: "Share the clipboard and files with your Android phone."
         case .plugins: "Features you build with your AI agent, or install from others."
         }
     }
@@ -105,6 +109,8 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
     public var commandBar: CommandBarPreferences?
     /// Lets the `frog` command and AI agents control Frog through its local socket. Off unless turned on.
     public var agentAccess: Bool?
+    /// Sends copied text and images to paired phones while Phone is on. On unless turned off.
+    public var phoneAutoSend: Bool?
     public var commandBarSettings: CommandBarPreferences { commandBar ?? CommandBarPreferences() }
     public var effectiveCommandBarHotkey: Hotkey { commandBarHotkey ?? Hotkey(keyCode: 49, modifiers: 4096 | 2048) }
     public var effectiveWindowSwitcherHotkey: Hotkey { windowSwitcherHotkey ?? Hotkey(keyCode: 48, modifiers: 256) }
@@ -125,6 +131,7 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         case cleaner
         case commandBar
         case agentAccess
+        case phoneAutoSend
     }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -143,6 +150,7 @@ public struct ToolkitPreferences: Codable, Equatable, Sendable {
         cleaner = try values.decodeIfPresent(CleanerPreferences.self, forKey: .cleaner)
         commandBar = try values.decodeIfPresent(CommandBarPreferences.self, forKey: .commandBar)
         agentAccess = try values.decodeIfPresent(Bool.self, forKey: .agentAccess)
+        phoneAutoSend = try values.decodeIfPresent(Bool.self, forKey: .phoneAutoSend)
         retireMergedFeatures()
     }
 

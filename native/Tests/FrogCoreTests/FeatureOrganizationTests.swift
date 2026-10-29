@@ -171,7 +171,7 @@ final class FeatureOrganizationTests: XCTestCase {
     func testTheCatalogIsGroupedByKind() {
         XCTAssertEqual(FeatureID.allCases, [.writing, .explain, .dictation, .commandBar, .applicationShortcuts, .windows,
                                             .windowSwitcher, .clipboard, .scratchpad, .scripts,
-                                            .usage, .systemMonitor, .stayAwake, .menuBar, .cleaner, .plugins])
+                                            .usage, .systemMonitor, .stayAwake, .menuBar, .cleaner, .phone, .plugins])
     }
 
     func testEnsureToolkitRunsTheSwitcherMigration() {

@@ -103,6 +103,9 @@ final class AppModel: ObservableObject {
         }
         return cleanerModel!
     }
+    /// Phone runs only while its feature is on, in the running app; tests may make one with `phoneFactory`.
+    private(set) var phone: PhoneController?
+    var phoneFactory: (@MainActor () -> PhoneController)?
     private(set) var pluginRuntime: PluginRuntime?
     /// Installed plugins and their pages, created when first needed.
     var plugins: PluginRuntime {
@@ -495,6 +498,7 @@ final class AppModel: ObservableObject {
         if configuration.preferences.featureEnabled(.commandBar) { commandBar.warm() }
         configureWindowLayout()
         configureAgentServer()
+        configurePhone()
         configurePlugins()
     }
 
@@ -509,6 +513,8 @@ final class AppModel: ObservableObject {
         commandBar.stop()
         toolkit.stop()
         cleanerModel?.stop()
+        phone?.stop(); phone = nil
+        clipboardHistoryStore.configure(forwardingCopies: false)
         pluginRuntime?.stop()
         systemStatusTask?.cancel(); systemStatusTask = nil
         loginStatusTask?.cancel(); loginStatusTask = nil
@@ -768,10 +774,35 @@ final class AppModel: ObservableObject {
         if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
         configureWindowLayout()
         configureAgentServer()
+        configurePhone()
         if started { configurePlugins() }
     }
 
     private func configureWindowLayout() { windowLayout.configure(configuration, active: started && registerShortcuts) }
+
+    /// The listener, the Bonjour advert and the Bluetooth peripheral exist only while Phone is on, in
+    /// the running app. Copies reach the phone through the clipboard history's watch, never a second one.
+    private func configurePhone() {
+        let preferences = configuration.preferences
+        let enabled = started && (registerShortcuts || phoneFactory != nil) && preferences.featureEnabled(.phone)
+        if enabled, phone == nil {
+            let controller = phoneFactory?() ?? PhoneController(
+                store: PhonePairingStore(fileURL: PhonePairingStore.defaultFile(in: historyStore.directory), secrets: KeychainPhoneSecretStore()),
+                clipboard: clipboardHistoryStore)
+            phone = controller
+            controller.start()
+        } else if !enabled, let phone {
+            phone.stop()
+            self.phone = nil
+        }
+        phone?.autoSend = preferences.toolkitSettings.phoneAutoSend ?? true
+        clipboardHistoryStore.onCopy = { [weak self] copy in self?.phone?.clipboardDidCopy(copy) }
+        clipboardHistoryStore.configure(forwardingCopies: phone?.autoSend == true, automaticallyPoll: registerShortcuts)
+    }
+
+    func setPhoneAutoSend(_ enabled: Bool) {
+        do { try updateToolkit { $0.phoneAutoSend = enabled } } catch { report(error) }
+    }
 
     /// The socket is open only in the running app, never in tests, and only while agent access is on.
     private func configureAgentServer() {

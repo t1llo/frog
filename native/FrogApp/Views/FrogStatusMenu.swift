@@ -82,6 +82,9 @@ struct FrogStatusMenu: View {
             if model.configuration.preferences.workflowSettings.clipboardHistoryEnabled == true {
                 action("Clipboard history", symbol: "clipboard", key: HotkeyManager.display(model.configuration.preferences.workflowSettings.effectiveClipboardHistoryHotkey)) { dismiss(); model.showClipboardHistory() }
             }
+            if let phone = model.phone {
+                PhoneMenuRow(phone: phone) { dismiss(); model.openFeature(.phone) }
+            }
             if model.windowLayout.pickerAvailable { action("Arrange window…", symbol: "rectangle.split.2x1") { dismiss(); model.windowLayout.handle(.layoutPicker, pressed: true) } }
         }
     }
@@ -168,6 +171,16 @@ extension Notification.Name {
 }
 
 /// A full-width command row shared by the menu-bar popups.
+/// Phone at a glance: how the phone is connected, and the way to its page.
+private struct PhoneMenuRow: View {
+    @ObservedObject var phone: PhoneController
+    let open: () -> Void
+    var body: some View {
+        MenuActionRow(title: "Phone", symbol: phone.overall == .offline ? "iphone.slash" : "iphone",
+                      key: L10n.text(phone.statusText), action: open)
+    }
+}
+
 struct MenuActionRow: View {
     let title: String
     let symbol: String

@@ -58,6 +58,7 @@ struct MainView: View {
             case .explain: ExplainView()
             case .windows: WindowsView()
             case .cleaner: CleanerView(cleaner: model.cleaner)
+            case .phone: PhoneView()
             case .plugins: PluginsView(plugins: model.plugins)
             }
         }

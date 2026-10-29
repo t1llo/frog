@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Frog Companion's launcher glyph: Frog's face on the adaptive icon's 108 grid (safe zone 21 to 87). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <group android:pivotX="54" android:pivotY="56" android:scaleX="1.12" android:scaleY="1.12">
+        <path android:fillColor="#FFB4E3BE" android:pathData="M31.39,50.62A11.5,11.5 0,1 1,51.46 42.08A27,19 0,0 1,56.54 42.08A11.5,11.5 0,1 1,76.61 50.62A27,19 0,1 1,31.39 50.62Z" />
+        <path android:fillColor="#FF173623" android:pathData="M33.5,44a6.5,6.5 0,1 0,13,0a6.5,6.5 0,1 0,-13,0ZM61.5,44a6.5,6.5 0,1 0,13,0a6.5,6.5 0,1 0,-13,0ZM42,62Q54,75 66,62Q54,69 42,62Z" />
+        <path android:fillColor="#FFF4F7F2" android:pathData="M39.4,42.2a2.2,2.2 0,1 0,4.4,0a2.2,2.2 0,1 0,-4.4,0ZM64.2,42.2a2.2,2.2 0,1 0,4.4,0a2.2,2.2 0,1 0,-4.4,0Z" />
+    </group>
+</vector>
