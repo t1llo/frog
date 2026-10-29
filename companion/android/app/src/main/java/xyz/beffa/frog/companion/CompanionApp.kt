@@ -33,10 +33,21 @@ class CompanionApp : Application() {
             .setIcon(IconCompat.createWithResource(this, R.drawable.ic_shortcut_send))
             .setIntent(Intent(this, SendClipboardActivity::class.java).setAction(SendClipboardActivity.ACTION_SEND_CLIPBOARD))
             .build()
-        runCatching { ShortcutManagerCompat.setDynamicShortcuts(this, listOf(send)) }
+        // A sharing shortcut matching res/xml/share_targets.xml, so the share sheet lists Send to Mac first.
+        val share = ShortcutInfoCompat.Builder(this, "share_to_mac")
+            .setShortLabel(getString(R.string.share_label))
+            .setIcon(IconCompat.createWithResource(this, R.mipmap.ic_launcher))
+            // Launchers may list it too; there it sends the clipboard like the shortcut above.
+            .setIntent(Intent(this, SendClipboardActivity::class.java).setAction(SendClipboardActivity.ACTION_SEND_CLIPBOARD))
+            .setCategories(setOf(SHARE_CATEGORY))
+            .setLongLived(true)
+            .build()
+        runCatching { ShortcutManagerCompat.setDynamicShortcuts(this, listOf(send, share)) }
     }
 
     companion object {
+        private const val SHARE_CATEGORY = "xyz.beffa.frog.companion.category.SEND_TO_MAC"
+
         fun controller(context: Context): CompanionController =
             (context.applicationContext as CompanionApp).controller
     }

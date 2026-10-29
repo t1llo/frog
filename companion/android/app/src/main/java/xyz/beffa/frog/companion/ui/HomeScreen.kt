@@ -335,19 +335,28 @@ private fun SendButton(onSend: () -> Unit, modifier: Modifier = Modifier) {
 }
 
 /**
- * Why sending takes a tap, and the other places to tap. Android lets an app read the clipboard
- * only while it is on screen, so every send from the phone starts with a tap.
+ * How to send from the phone. Android lets an app read the clipboard only while it is on screen,
+ * so every send from the phone starts with a tap; these are the places to tap.
  */
 @Composable
 private fun SendHint(showAddTile: Boolean, onAddTile: () -> Unit, modifier: Modifier = Modifier) {
     val frog = frogColors
     Column(modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+        Text("How to send from your phone", style = FrogType.label, color = frog.ink)
         Text(
-            "Android only lets apps read your clipboard when you tap. Send from here, the notification's " +
-                "Send clipboard button, the Send to Mac tile, or the share sheet.",
+            "Copies from your Mac arrive here on their own. Android lets apps read your clipboard " +
+                "only when you tap, so from the phone it takes one tap:",
             style = FrogType.small,
             color = frog.muted,
+            modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
         )
+        SendWay("Selected text", "Tap Send to Mac in the menu next to Copy. It copies the text too.")
+        SendWay(
+            "Codes and links copied with a tap",
+            "Tap Share in the preview that pops up after copying and choose Send to Mac, " +
+                "or swipe down and tap the Send to Mac tile, or Send clipboard in the notification.",
+        )
+        SendWay("Photos and files", "Share them and choose Send to Mac.")
         if (showAddTile) {
             Box(
                 Modifier
@@ -361,6 +370,15 @@ private fun SendHint(showAddTile: Boolean, onAddTile: () -> Unit, modifier: Modi
                 Text("Add the Send to Mac tile", style = FrogType.label, color = frog.accent)
             }
         }
+    }
+}
+
+@Composable
+private fun SendWay(title: String, detail: String) {
+    val frog = frogColors
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(title, style = FrogType.small, color = frog.ink)
+        Text(detail, style = FrogType.small, color = frog.muted)
     }
 }
 

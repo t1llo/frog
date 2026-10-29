@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Puts "Send to Mac" in the top row of the share sheet, through the sharing shortcut CompanionApp publishes. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <share-target android:targetClass="xyz.beffa.frog.companion.clipboard.ShareActivity">
+        <data android:mimeType="*/*" />
+        <category android:name="xyz.beffa.frog.companion.category.SEND_TO_MAC" />
+    </share-target>
+</shortcuts>
