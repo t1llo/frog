@@ -27,6 +27,31 @@ final class UsageParsingTests: XCTestCase {
         XCTAssertEqual(summary.buckets.reduce(0) { $0 + $1.value }, 6)
     }
 
+    /// A month of logs takes minutes to read after a launch; the newest file comes first and
+    /// each slice is handed back, so today's calls show before the older ones are read.
+    func testScanReadsTheNewestTranscriptFirstAndStopsAtTheDeadline() async throws {
+        let root = try fixtureDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let now = Date()
+        for (name, age) in [("old", 5 * 86_400.0), ("new", 60.0)] {
+            let file = root.appendingPathComponent("\(name).jsonl")
+            try jsonLine(["type": "assistant", "timestamp": ISO8601DateFormatter().string(from: now.addingTimeInterval(-age)),
+                "message": ["id": name, "model": "claude-opus-5-5", "usage": ["input_tokens": 1_000, "output_tokens": 100]]]).write(to: file)
+            try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-age)], ofItemAtPath: file.path)
+        }
+        let scanner = TokenScanner(root: root)
+        let first = await scanner.revisedScan(roots: [root], until: .distantPast)
+        XCTAssertFalse(first.complete)
+        XCTAssertEqual(first.result.map(\.model), ["claude-opus-5-5"])
+        XCTAssertEqual(first.result.first?.input, 1_000)
+        XCTAssertEqual(first.result.first?.cost ?? 0, 0.006, accuracy: 1e-9, "1,000 input at $4 and 100 output at $20 per million")
+        XCTAssertGreaterThan(first.result.first?.date ?? .distantPast, now.addingTimeInterval(-3_600), "The newest file is read first")
+        let rest = await scanner.revisedScan(roots: [root], until: .distantPast)
+        XCTAssertTrue(rest.complete)
+        XCTAssertEqual(rest.result.count, 2)
+        XCTAssertGreaterThan(rest.revision, first.revision)
+    }
+
     func testLogLinesCrossingAReadBoundaryAreNeitherLostNorSplitNorReadTwice() throws {
         let root = try fixtureDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

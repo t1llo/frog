@@ -358,6 +358,7 @@ extension ClaudeAccountsCombination.Combined: Identifiable {
     public func setPresented(_ presented: Bool, for presenter: UsagePresenter) {
         guard presented != presenters.contains(presenter) else { return }
         if presented { presenters.insert(presenter) } else { presenters.remove(presenter) }
+        tokens.setShown(!presenters.isEmpty)
         // One leaving while another still shows changes nothing for the one that stays.
         if presented || presenters.isEmpty { updateVisiblePolling() }
     }
@@ -498,6 +499,8 @@ extension ClaudeAccountsCombination.Combined: Identifiable {
             totals: TokenMetric.allCases.map { UsageMetricTotal(name: $0.rawValue, label: $0.label, value: summary.totals[$0] ?? 0) },
             range: range.rawValue, account: account)
     }
+    /// The month behind the charts is still being read, the newest calls first.
+    public var readingOlderActivity: Bool { tokens.readingOlder }
     public func format(_ value: Double, metric: String) -> String {
         (TokenMetric(rawValue: metric) ?? .cost).format(value)
     }

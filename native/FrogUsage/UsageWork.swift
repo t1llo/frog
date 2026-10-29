@@ -3,8 +3,8 @@ import Darwin
 
 /// Synchronous parsers and credential reads run off the UI actor, with their
 /// task cancellation linked to the optional module's lifetime.
-func usageWork<Value>(_ operation: @escaping @Sendable () throws -> Value) async throws -> Value {
-    let task = Task.detached(priority: .utility) {
+func usageWork<Value>(priority: TaskPriority = .utility, _ operation: @escaping @Sendable () throws -> Value) async throws -> Value {
+    let task = Task.detached(priority: priority) {
         try Task.checkCancellation()
         return try operation()
     }

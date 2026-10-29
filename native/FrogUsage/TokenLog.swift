@@ -53,27 +53,41 @@ actor TokenScanner {
         self.roots = root.map { [$0] } ?? roots
     }
 
-    func scan() -> [TokenRecord] {
+    func scan() -> [TokenRecord] { scan(until: nil).records }
+
+    /// Reads the files with new lines, the most recently written first, and stops at `deadline`
+    /// once at least one file is read. A month of busy logs is gigabytes: read in one go, it left
+    /// the charts "Reading token activity…" for half an hour after every launch, while today's
+    /// calls are in the few files written last.
+    func scan(until deadline: Date?) -> (records: [TokenRecord], complete: Bool) {
         let cutoff = Date().addingTimeInterval(-Self.horizon)
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
+        var pending: [(url: URL, modified: Date, size: UInt64)] = []
         for root in roots ?? ClaudePaths.transcriptRoots {
             if let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys) {
                 for case let url as URL in files where url.pathExtension == "jsonl" {
-                    if Task.isCancelled { return [] }
+                    if Task.isCancelled { return ([], false) }
                     guard let v = try? url.resourceValues(forKeys: Set(keys)),
                           let mtime = v.contentModificationDate, mtime >= cutoff,
-                          let size = v.fileSize.map(UInt64.init) else { continue }
-                    var start = offsets[url.path] ?? 0
-                    if size < start { start = 0 }  // rewritten or truncated
-                    if size > start { offsets[url.path] = start + read(url, from: start) }
+                          let size = v.fileSize.map(UInt64.init), size != offsets[url.path] ?? 0 else { continue }
+                    pending.append((url, mtime, size))
                 }
             }
+        }
+        pending.sort { $0.modified > $1.modified }
+        var complete = true
+        for (index, file) in pending.enumerated() {
+            if Task.isCancelled { return ([], false) }
+            var start = offsets[file.url.path] ?? 0
+            if file.size < start { start = 0 }  // rewritten or truncated
+            offsets[file.url.path] = start + read(file.url, from: start)
+            if let deadline, index < pending.count - 1, Date() >= deadline { complete = false; break }
         }
         let recent = records.filter { $0.value.date >= cutoff }
         if recent.count != records.count { revision += 1 }
         records = recent
         fastResponses = fastResponses.intersection(records.keys)
-        return Array(records.values)
+        return (Array(records.values), complete)
     }
 
     /// A scan with the revision it left behind. Both come from one turn of the actor, so no
@@ -82,14 +96,16 @@ actor TokenScanner {
 
     /// The same, over `next` from now on: the Claude Code folders of the accounts shown one by one
     /// come and go. Records do not say which folder they came from, so a folder no longer read
-    /// starts the reading over; an added one only adds its own files.
-    func revisedScan(roots next: [URL]) -> (result: [TokenRecord], revision: Int) {
+    /// starts the reading over; an added one only adds its own files. `complete` is false when
+    /// the scan stopped at `deadline` with files still to read.
+    func revisedScan(roots next: [URL], until deadline: Date? = nil) -> (result: [TokenRecord], revision: Int, complete: Bool) {
         let current = roots ?? ClaudePaths.transcriptRoots
         if next != current {
             if !Set(current).isSubset(of: next) { offsets = [:]; records = [:]; fastResponses = []; revision += 1 }
             roots = next
         }
-        return revisedScan()
+        let scan = scan(until: deadline)
+        return (scan.records, revision, scan.complete)
     }
 
     /// Parses complete lines from `offset` on and returns how many bytes it consumed. A final
@@ -195,6 +211,9 @@ final class TokenStore: ObservableObject {
     private var scanned = false
     /// The scanners' revisions behind `records`. Nil until a scan has been taken over.
     private var appliedRevisions: [Int]?
+    /// The part of `records` from Claude Code's transcripts, and the part from the other tools.
+    private var claudeRecords: [TokenRecord] = []
+    private var otherRecords: [TokenRecord] = []
     /// Where the newest hour and day began when `summaries` were worked out.
     private var summarizedBuckets: [Date?]?
     /// The time the charts end at. A test moves it to see them roll over.
@@ -239,6 +258,7 @@ final class TokenStore: ObservableObject {
         claudeRoots = Self.claudeRoots(fixtureRoot: nil, directory: directory, accountFolders: accountFolders)
         claude = TokenScanner(roots: claudeRoots)
         appliedRevisions = nil
+        readingOlder = true
         claudeActivity = nil
         nextScanAt = .distantPast
         if wasActive { start() }
@@ -251,6 +271,7 @@ final class TokenStore: ObservableObject {
         guard folders != accountFolders else { return }
         accountFolders = folders
         claudeRoots = Self.claudeRoots(fixtureRoot: fixtureRoot, directory: claudeDirectory, accountFolders: folders)
+        readingOlder = true
         refresh(forceLocal: true)
     }
 
@@ -286,6 +307,29 @@ final class TokenStore: ObservableObject {
         pendingScan = false
     }
 
+    /// How long one scan reads Claude Code's transcripts before what it found is shown.
+    static let scanSlice: TimeInterval = 2
+    /// Claude Code's transcripts are not read to their ends yet, after a launch or a new folder.
+    @Published private(set) var readingOlder = true
+    /// Whether a popup or page with the charts is open.
+    private var shown = false
+
+    /// Someone looking at the charts while the logs are still being read waits for them, so the
+    /// reading and its summary go at the priority of what they do, also when already under way;
+    /// otherwise both stay in the background. On a Mac busy with builds and agents, background
+    /// work hardly ran at all.
+    func setShown(_ shown: Bool) {
+        guard shown != self.shown else { return }
+        self.shown = shown
+        guard shown, readingOlder else { return }
+        // Awaiting a task from a higher priority raises it to that priority.
+        for task in [scanTask, aggregationTask].compactMap({ $0 }) {
+            Task(priority: .userInitiated) { await task.value }
+        }
+        refresh(forceLocal: true)
+    }
+    private var workPriority: TaskPriority { shown && readingOlder ? .userInitiated : .utility }
+
     func refresh(forceLocal: Bool = false) {
         guard active else { return }
         if fixtureRoot == nil { fetchLive() }
@@ -296,24 +340,42 @@ final class TokenStore: ObservableObject {
         let generation = lifecycle, roots = claudeRoots
         // Started from the main actor, this would read every log at the priority of the person's
         // own input. Nothing waits for it, so nothing raises it again.
-        scanTask = Task(priority: .utility) {
-            async let a = claude.revisedScan(roots: roots)
+        scanTask = Task(priority: workPriority) {
             async let b = codex.revisedScan()
             async let c = opencode.revisedScan()
             async let d = pi.revisedScan()
             let statsDirectory = claudeDirectory
-            async let stats = try? usageWork { readClaudeActivity(directory: statsDirectory) }
-            let (claudeScan, codexScan, openCodeScan, piScan, lifetime) = await (a, b, c, d, stats)
-            guard active, generation == lifecycle, !Task.isCancelled else { return }
-            let (cl, cx, oc, piRecords) = (claudeScan.result, codexScan.result, openCodeScan.result, piScan.result)
+            async let stats = try? usageWork(priority: Task.currentPriority) { readClaudeActivity(directory: statsDirectory) }
             // Every change published here redraws the usage views and the menu bar readout, and
             // new records are summarised afresh. A scan that found the logs as they were does neither.
-            let revisions = [claudeScan.revision, codexScan.revision, openCodeScan.revision, piScan.revision]
+            var published = false
+            // Claude Code's calls are shown slice by slice as they are read, without waiting for the
+            // other tools: an OpenCode database of gigabytes takes minutes to query on a busy Mac.
+            var complete = false
+            while !complete {
+                let claudeScan = await claude.revisedScan(roots: roots, until: Date().addingTimeInterval(Self.scanSlice))
+                guard active, generation == lifecycle, !Task.isCancelled else { return }
+                complete = claudeScan.complete
+                if claudeScan.revision != appliedRevisions?.first {
+                    appliedRevisions = [claudeScan.revision] + (appliedRevisions?.dropFirst() ?? [-1, -1, -1])
+                    claudeRecords = claudeScan.result
+                    records = claudeRecords + otherRecords
+                    published = true
+                }
+                if readingOlder == complete { readingOlder = !complete }
+                // The charts show from the first slice on, the rest of the month as it comes.
+                scanned = true
+            }
+            let (codexScan, openCodeScan, piScan, lifetime) = await (b, c, d, stats)
+            guard active, generation == lifecycle, !Task.isCancelled, let claudeRevision = appliedRevisions?.first else { return }
+            let (cx, oc) = (codexScan.result, openCodeScan.result)
+            let revisions = [claudeRevision, codexScan.revision, openCodeScan.revision, piScan.revision]
             if revisions != appliedRevisions {
                 appliedRevisions = revisions
-                records = cl + cx.records + oc.records + piRecords
+                otherRecords = cx.records + oc.records + piScan.result
+                records = claudeRecords + otherRecords
                 loggedLimits = cx.limits
-            } else if !aggregating, bucketStarts(clock()) != summarizedBuckets {
+            } else if !published, !aggregating, bucketStarts(clock()) != summarizedBuckets {
                 // The same records belong to other hours and days once the clock has moved on. A
                 // pass under way is left alone: until the first one ends there are no buckets to
                 // compare, and each scan found the clock "moved" and asked for the pass again.
@@ -382,7 +444,8 @@ extension TokenStore {
         aggregating = true
         let life = lifecycle
         // Waiting at the main actor's priority would raise the summarising it waits for to it.
-        aggregationTask = Task(priority: .utility) {
+        let priority = workPriority
+        aggregationTask = Task(priority: priority) {
             // Scans and account responses arriving during a pass are coalesced into one more pass,
             // and every finished pass is shown first. Thrown away for newer records, passes left
             // the charts "Reading token activity…" for good once new lines kept arriving faster
@@ -390,7 +453,7 @@ extension TokenStore {
             while !Task.isCancelled, active, life == lifecycle {
                 let generation = aggregationGeneration
                 let records = records, activity = activity, now = clock()
-                let result = try? await usageWork {
+                let result = try? await usageWork(priority: priority) {
                     let local = TokenMix(records.filter { $0.provider == .openai })
                     let estimated = activity.map { estimatedRecords($0, mix: local ?? .codex) } ?? []
                     let account = reconciledOpenAIRecords(local: records, account: estimated, asOf: activity?.asOf)

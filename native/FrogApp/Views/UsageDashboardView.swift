@@ -739,6 +739,13 @@ private struct UsageActivityView: View {
                 Text("Price unavailable: " + chart.unpricedModels.joined(separator: ", "))
                     .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(compact ? 2 : nil)
             }
+            if usage.loaded, usage.readingOlderActivity {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text("Reading older logs…")
+                }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                    .help("The newest calls are counted first; the rest of the month follows.")
+            }
             if let warning = usage.activityWarning {
                 Label(compact ? "Activity may be incomplete" : warning, systemImage: "clock.arrow.circlepath")
                     .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
