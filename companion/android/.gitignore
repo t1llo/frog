@@ -15,3 +15,9 @@ captures/
 # IDE
 .idea/
 *.iml
+*.p12
+*.p8
+key.properties
+.env
+.env.*
+!.env.example

@@ -150,6 +150,8 @@ fun HomeScreen(controller: CompanionController, status: CompanionStatus, onOpenS
         },
         onOpenSettings = onOpenSettings,
         onAddTile = { requestAddSendTile(context) },
+        backgroundReady = rememberBackgroundReady(),
+        onOpenBatterySettings = { openBatterySettings(context) },
     )
 }
 
@@ -174,7 +176,8 @@ fun HomeContent(
     onCopy: (HistoryItem) -> Unit,
     onOpenSettings: () -> Unit,
     onAddTile: () -> Unit,
-    showBackgroundCard: Boolean = true,
+    backgroundReady: Boolean,
+    onOpenBatterySettings: () -> Unit,
     showAddTile: Boolean = canRequestTile,
 ) {
     val frog = frogColors
@@ -205,8 +208,10 @@ fun HomeContent(
             modifier = Modifier.fillMaxSize(),
         ) {
             item(key = "status") { StatusCard(status) }
-            if (showBackgroundCard) {
-                item(key = "background") { BackgroundCard(Modifier.padding(top = 12.dp)) }
+            if (status.paired) {
+                item(key = "background") {
+                    BackgroundAccess(backgroundReady, onOpenBatterySettings, Modifier.padding(top = 12.dp))
+                }
             }
             item(key = "send") { SendButton(onSend, Modifier.padding(top = 12.dp)) }
             item(key = "send-hint") { SendHint(showAddTile, onAddTile, Modifier.padding(top = 8.dp, bottom = 20.dp)) }
@@ -633,7 +638,7 @@ private fun sampleHistory(): List<HistoryItem> {
 }
 
 @Composable
-private fun HomePreview(history: List<HistoryItem>, link: Link, dark: Boolean = false) {
+private fun HomePreview(history: List<HistoryItem>, link: Link, dark: Boolean = false, backgroundReady: Boolean = true) {
     FrogTheme(dark = dark, dynamicColor = false) {
         HomeContent(
             status = CompanionStatus(paired = true, macName = "Studio Mac", link = link),
@@ -644,7 +649,8 @@ private fun HomePreview(history: List<HistoryItem>, link: Link, dark: Boolean = 
             onCopy = {},
             onOpenSettings = {},
             onAddTile = {},
-            showBackgroundCard = false,
+            backgroundReady = backgroundReady,
+            onOpenBatterySettings = {},
             showAddTile = true,
         )
     }
@@ -660,4 +666,4 @@ fun HomePreviewDark() = HomePreview(sampleHistory(), Link.BLUETOOTH, dark = true
 
 @Preview(name = "Home, empty", widthDp = 393, heightDp = 852, showBackground = true)
 @Composable
-fun HomePreviewEmpty() = HomePreview(emptyList(), Link.SEARCHING)
+fun HomePreviewEmpty() = HomePreview(emptyList(), Link.SEARCHING, backgroundReady = false)

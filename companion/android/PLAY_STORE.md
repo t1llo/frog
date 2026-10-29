@@ -28,7 +28,7 @@ Package: `com.tillo.frogcompanion` · version 1.0.0 (versionCode 1) · minimum A
 > Android only lets the app on screen read the clipboard, so sending from your phone always takes one tap. Frog Companion never reads your clipboard in the background.
 >
 > Getting started
-> 1. Open Frog on your Mac, then Settings → Phone → Pair a phone.
+> 1. In Frog on your Mac, turn on Phone under Features, open Phone and choose Pair a phone.
 > 2. Open Frog Companion and scan the code.
 >
 > Frog Companion needs Frog for macOS.

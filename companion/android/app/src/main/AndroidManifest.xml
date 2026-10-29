@@ -122,4 +122,12 @@
                 android:resource="@xml/file_paths" />
         </provider>
     </application>
+    <!-- Lets the battery button check which settings pages this phone has (package visibility). -->
+    <queries>
+        <intent>
+            <action android:name="android.settings.VIEW_ADVANCED_POWER_USAGE_DETAIL" />
+            <data android:scheme="package" />
+        </intent>
+    </queries>
+
 </manifest>

@@ -16,9 +16,9 @@ class MessageCodecTest {
 
     @Test
     fun helloRoundTrip() {
-        val hello = Message.Hello("Pixel 9", "android", 1)
+        val hello = Message.Hello("Example Phone", "android", 1)
         val header = String(MessageCodec.encode(hello), Charsets.UTF_8).substring(4)
-        assertEquals("{\"type\":\"hello\",\"name\":\"Pixel 9\",\"platform\":\"android\",\"version\":1}", header)
+        assertEquals("{\"type\":\"hello\",\"name\":\"Example Phone\",\"platform\":\"android\",\"version\":1}", header)
         assertEquals(hello, MessageCodec.decode(MessageCodec.encode(hello)))
     }
 
