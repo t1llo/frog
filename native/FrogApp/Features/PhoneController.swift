@@ -129,14 +129,11 @@ final class PhoneController: ObservableObject {
         return .offline
     }
 
-    /// One line for the menu bar popup and the command bar.
+    /// One line for the menu bar popup and the command bar. Wi-Fi or Bluetooth is a detail of the Phone page.
     var statusText: String {
         if phones.isEmpty { return "No phone paired" }
-        switch overall {
-        case .wifi: return "Connected over Wi-Fi"
-        case .bluetooth: return "Connected over Bluetooth"
-        case .offline: return phones.count == 1 ? "\(phones[0].name) is offline" : "No phone connected"
-        }
+        if overall != .offline { return "Connected" }
+        return phones.count == 1 ? "\(phones[0].name) is offline" : "No phone connected"
     }
 
     // MARK: Pairing

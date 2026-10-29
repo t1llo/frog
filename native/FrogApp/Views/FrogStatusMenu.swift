@@ -170,21 +170,24 @@ extension Notification.Name {
     static let frogMenuPopupWillOpen = Notification.Name("xyz.beffa.frog.menuPopupWillOpen")
 }
 
-/// A full-width command row shared by the menu-bar popups.
-/// Phone at a glance: how the phone is connected, and the way to its page.
+/// Phone at a glance: a green dot while the phone is connected, and the way to its page.
 private struct PhoneMenuRow: View {
     @ObservedObject var phone: PhoneController
     let open: () -> Void
     var body: some View {
-        MenuActionRow(title: "Phone", symbol: phone.overall == .offline ? "iphone.slash" : "iphone",
-                      key: L10n.text(phone.statusText), action: open)
+        let connected = phone.overall != .offline
+        MenuActionRow(title: "Phone", symbol: connected ? "iphone" : "iphone.slash",
+                      key: L10n.text(phone.statusText), dot: connected ? FrogStyle.good : nil, action: open)
     }
 }
 
+/// A full-width command row shared by the menu-bar popups.
 struct MenuActionRow: View {
     let title: String
     let symbol: String
     var key: String? = nil
+    /// A status dot before `key`, such as green for a connected phone.
+    var dot: Color? = nil
     let action: () -> Void
     var body: some View {
         Button(action: action) {
@@ -192,6 +195,7 @@ struct MenuActionRow: View {
                 Image(systemName: symbol).frame(width: 16).foregroundStyle(FrogStyle.muted)
                 Text(L10n.text(title))
                 Spacer()
+                if let dot { Circle().fill(dot).frame(width: 7, height: 7) }
                 if let key { Text(key).font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
             }.padding(.horizontal, 8).frame(height: FrogStyle.controlHeight).contentShape(Rectangle())
         }.buttonStyle(MenuRowStyle())

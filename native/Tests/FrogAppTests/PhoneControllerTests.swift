@@ -93,7 +93,7 @@ final class PhoneControllerTests: XCTestCase {
         XCTAssertEqual(phone.phones.map(\.name), ["Test phone"])
         XCTAssertEqual(phone.pairing?.pairedPhoneName, "Test phone")
         XCTAssertEqual(phone.overall, .wifi)
-        XCTAssertEqual(phone.statusText, "Connected over Wi-Fi")
+        XCTAssertEqual(phone.statusText, "Connected")
     }
 
     func testUnknownPhoneIsRefusedWithoutAPairingCode() throws {
