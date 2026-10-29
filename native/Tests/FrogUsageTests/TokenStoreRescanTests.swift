@@ -136,7 +136,9 @@ import XCTest
         store.start()
         defer { store.stop() }
         await settled(store)
-        XCTAssertEqual(priorities, [.utility], "The aggregation")
+        // Claude Code's records are shown before the other tools', so this may summarise twice.
+        XCTAssertFalse(priorities.isEmpty, "The aggregation")
+        XCTAssertEqual(priorities.filter { $0 != .utility }, [], "The aggregation")
         store.refresh(forceLocal: true)
         await settled(store)
         XCTAssertEqual(priorities.last, .utility, "The scan")
