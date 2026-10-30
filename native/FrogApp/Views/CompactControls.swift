@@ -3,15 +3,21 @@ import SwiftUI
 struct SearchBox: View {
     let placeholder: String
     @Binding var text: String
+    /// Lets a popup put the cursor in the field when it opens.
+    var focus: FocusState<Bool>.Binding? = nil
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").foregroundStyle(FrogStyle.muted)
-            TextField(L10n.text(placeholder), text: $text).textFieldStyle(.plain)
+            field
             if !text.isEmpty {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(FrogStyle.muted) }
                     .buttonStyle(.plain).accessibilityLabel("Clear search")
             }
         }.font(FrogType.body).padding(.horizontal, 8).frogControlSurface()
+    }
+    @ViewBuilder private var field: some View {
+        let field = TextField(L10n.text(placeholder), text: $text).textFieldStyle(.plain)
+        if let focus { field.focused(focus) } else { field }
     }
 }
 
@@ -100,7 +106,7 @@ struct CompactMenu<Content: View>: View {
 
 /// The dropdown draws only its choice. In a row VoiceOver reads the row's title as its name and the
 /// choice as its value; outside a row it keeps the name it is given where it is used.
-private struct RowControlName: ViewModifier {
+struct RowControlName: ViewModifier {
     let title: String?
     let value: String
     func body(content: Content) -> some View {
@@ -114,6 +120,8 @@ struct CompactDropdownLabel: View {
     var width: CGFloat = 220
     /// `FrogStyle.controlHeight`, or `FrogStyle.compactHeight` in popups and panel headers.
     var height: CGFloat = FrogStyle.controlHeight
+    /// Held down, or its list is open.
+    var pressed = false
     @State private var hovering = false
     private var compact: Bool { height < FrogStyle.controlHeight }
     var body: some View {
@@ -124,7 +132,7 @@ struct CompactDropdownLabel: View {
             Image(systemName: "chevron.down").font(.system(size: 9, weight: .medium)).foregroundStyle(FrogStyle.muted)
         }.font(compact ? FrogType.small : FrogType.body).foregroundStyle(FrogStyle.ink)
             .padding(.horizontal, 8).frame(width: width, height: height)
-            .frogControlSurface(hovering: hovering, height: height).onHover { hovering = $0 }
+            .frogControlSurface(hovering: hovering, pressed: pressed, height: height).onHover { hovering = $0 }
     }
 }
 

@@ -55,6 +55,15 @@ enum FrogStyle {
     static let controlHeight: CGFloat = 28
     /// The same controls in popups, panel headers and dense rows.
     static let compactHeight: CGFloat = 24
+    /// The least height of a `FrogRow` in a `FrogSection` card.
+    static let rowHeight: CGFloat = 38
+    /// Space around a page's content (`FrogPage`) and between its sections.
+    static let pagePadding: CGFloat = 24
+    static let sectionSpacing: CGFloat = 24
+    /// The widest a settings page's column grows (`FrogPage`), so rows stay readable in a wide window.
+    static let pageWidth: CGFloat = 720
+    /// Dashboards, tables and grids (`FrogPage(width: FrogStyle.wideWidth)`, `PageScroll`).
+    static let wideWidth: CGFloat = 1080
     /// A hovered row or control. Neutral, so it reads the same in every theme; `selection` marks what is chosen.
     static var hover: Color { ink.opacity(0.06) }
     /// A control held down.
@@ -65,6 +74,7 @@ enum FrogStyle {
     static var inset: AnyShapeStyle { adaptiveSurface(themed(\.inset), strength: 0.55) }
     static var opaqueCanvas: Color { themed(\.canvas) }
     static var opaqueInset: Color { themed(\.inset) }
+    static var opaqueSidebar: Color { themed(\.sidebar) }
     private static func adaptiveSurface(_ color: Color, strength: Double) -> AnyShapeStyle {
         AnyShapeStyle(FrogSurfaceStyle(color: color, settings: FrogAppearance.shared.settings, strength: strength))
     }
@@ -348,15 +358,10 @@ private struct FrogControlSurface: ViewModifier {
 
 private struct FrogPanelSurface: ViewModifier {
     let corner: CGFloat
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
     func body(content: Content) -> some View {
         let settings = FrogAppearance.shared.settings
-        let amount = settings.effectiveTransparency(popup: true, reduceTransparency: reduceTransparency, increasedContrast: contrast == .increased)
-        content.background {
-            FrogWindowMaterial(popup: true, cornerRadius: corner)
-                .overlay(FrogStyle.panelSurface.opacity(1 - amount * 0.5))
-        }
+        content.frogSurface(.hud, cornerRadius: corner)
         .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
         .clipShape(RoundedRectangle(cornerRadius: corner))
         .overlay(RoundedRectangle(cornerRadius: corner).strokeBorder(contrast == .increased ? FrogStyle.ink : FrogStyle.border.opacity(0.8)))
@@ -484,23 +489,14 @@ extension SettingsSection where Accessory == EmptyView {
     }
 }
 
+/// The v1 name of `FrogPageHeader`, kept for pages not moved yet.
 struct PageHeader<Actions: View>: View {
     let title: String
     var subtitle = ""
     @ViewBuilder var actions: Actions
 
     var body: some View {
-        HStack(alignment: .center, spacing: 20) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(L10n.text(title)).font(FrogType.title).tracking(-0.4)
-                    .foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
-                if !subtitle.isEmpty { Text(L10n.text(subtitle)).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
-                    .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
-                }
-            }.frame(maxWidth: .infinity, alignment: .leading)
-                .overlay { WindowDragRegion().accessibilityHidden(true) }
-            actions
-        }.frame(minHeight: FrogStyle.controlHeight)
+        FrogPageHeader(title: title, subtitle: subtitle) { actions }
     }
 }
 
@@ -510,15 +506,11 @@ extension PageHeader where Actions == EmptyView {
     }
 }
 
+/// The v1 name of `FrogPage`, at the wide width, kept for pages not moved yet.
 struct PageScroll<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) { content }
-                .padding(20).frame(maxWidth: 1080)
-                .frame(maxWidth: .infinity, alignment: .top)
-                .minimalScrollbars()
-        }
+        FrogPage(width: FrogStyle.wideWidth) { content }
     }
 }
 

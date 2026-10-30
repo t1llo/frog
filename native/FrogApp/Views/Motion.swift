@@ -4,8 +4,8 @@ import SwiftUI
 /// Frog's motion. docs/design.md says what moves and what never does; `StyleTokenScanTests` checks that every
 /// animation in the app names one of these.
 enum FrogMotion {
-    /// A button answering a press: critically damped, so it settles without a bounce.
-    static let press = Animation.spring(response: 0.2, dampingFraction: 1)
+    /// A button answering a press: a quick strong ease-out to 0.97 and back, short enough to never lag a click.
+    static let press = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.14)
     /// A hover fill leaving. It arrives at once. CSS `ease`, the curve for a colour change.
     static let hoverOut = Animation.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.15)
     /// A choice moving to another option, such as the thumb of a segmented control.
