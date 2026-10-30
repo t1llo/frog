@@ -64,7 +64,7 @@ final class StayAwakeController: ObservableObject {
         case untilOff = "until-off", hour = "1h", threeHours = "3h", untilTime = "until-time"
         var id: Self { self }
         var title: String {
-            switch self { case .untilOff: "Until turned off"; case .hour: "1 hour"; case .threeHours: "3 hours"; case .untilTime: "Until a time" }
+            switch self { case .untilOff: "No limit"; case .hour: "1 hour"; case .threeHours: "3 hours"; case .untilTime: "Until a time" }
         }
     }
 

@@ -47,7 +47,7 @@ struct OnboardingView: View {
                     ZStack(alignment: .topLeading) { page.id(step).transition(stepTransition) }
                     if let issue { InlineIssue(message: issue) }
                 }.padding(.horizontal, 28).padding(.bottom, 20).frame(maxWidth: .infinity, alignment: .leading)
-            }.minimalScrollbars()
+            }.minimalScrollbars().bottomScrollFade()
             footer
         }
         .frame(width: 600, height: 580).foregroundStyle(FrogStyle.ink).frogSurface(.window).background(FrogStyle.canvas)
