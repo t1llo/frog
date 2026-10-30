@@ -88,14 +88,13 @@ final class SystemStatusTests: XCTestCase {
 
     func testTheWaitStaysShortWhileTheWindowSwitcherTapNeedsChecking() {
         typealias Wake = SystemStatusWake
-        XCTAssertEqual(Wake.pause(active: false, trusted: true, watchingTap: false, readAgain: false), .untilWake,
-                       "An idle Frog in the background wakes on a change or once a minute")
-        XCTAssertEqual(Wake.pause(active: false, trusted: true, watchingTap: true, readAgain: false), .sleep(Wake.tapCheck),
+        XCTAssertEqual(Wake.pause(active: false, watchingTap: false, readAgain: false), .untilWake,
+                       "An idle Frog in the background wakes on a change or once a minute, with or without Accessibility")
+        XCTAssertEqual(Wake.pause(active: false, watchingTap: true, readAgain: false), .sleep(Wake.tapCheck),
                        "The tick restarts a disabled window switcher tap, so it stays a few seconds while the switcher is on")
         XCTAssertLessThanOrEqual(Wake.tapCheck, .seconds(2))
-        XCTAssertEqual(Wake.pause(active: true, trusted: true, watchingTap: false, readAgain: false), .sleep(.seconds(1)))
-        XCTAssertEqual(Wake.pause(active: false, trusted: false, watchingTap: false, readAgain: false), .sleep(.seconds(1)))
-        XCTAssertEqual(Wake.pause(active: false, trusted: true, watchingTap: false, readAgain: true), .sleep(.seconds(1)),
+        XCTAssertEqual(Wake.pause(active: true, watchingTap: false, readAgain: false), .sleep(.seconds(1)))
+        XCTAssertEqual(Wake.pause(active: false, watchingTap: false, readAgain: true), .sleep(.seconds(1)),
                        "After an Accessibility change it reads again soon, since the first read can still be the old answer")
     }
 
