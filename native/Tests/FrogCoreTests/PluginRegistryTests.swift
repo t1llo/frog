@@ -77,6 +77,16 @@ final class PluginRegistryTests: XCTestCase {
         XCTAssertEqual(text, expected.joined(separator: "\n") + "\n")
     }
 
+    /// The website's signing script (scripts/registry.mjs) signed this entry with a key made from a fixed test seed;
+    /// its test checks the same signature, so both sides sign the same bytes.
+    func testASignatureFromTheWebsiteScriptVerifies() throws {
+        var signed = entry()
+        signed.signature = "AmcMCI2AJ/TLdewIWkUKz3//Vpe9176q1BzMDG0tBAywFwkDdaHfgZOm3mwvVEfnDwnlqsk2EtsdL8D+jtkqDA=="
+        XCTAssertTrue(signed.isSigned(byOneOf: ["6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw="]))
+        signed.version = "1.0.1"
+        XCTAssertFalse(signed.isSigned(byOneOf: ["6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw="]))
+    }
+
     func testOnlyEntriesSignedByATrustedKeyAreKept() throws {
         let good = try signed(entry())
         let otherKey = try signed(entry("com.example.other"), with: Curve25519.Signing.PrivateKey())
