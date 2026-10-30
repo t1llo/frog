@@ -17,6 +17,8 @@ appearance = system
 theme = tokyoNight
 transparency = 0.15
 popup-transparency = 0
+glow = halo
+glow-strength = 0.6
 
 feature.command-bar = true
 feature.usage = true
@@ -148,7 +150,9 @@ Colors are six RGB hex digits, optionally prefixed with `#`. Overrides inherit a
 
 `transparency` and `popup-transparency` independently range from 0 (opaque) to 1. The whole window and all Frog popups use a real, active native `NSVisualEffectView` with behind-window backdrop blur; text is never blurred or faded. Popup fields/cards use their popup setting, independent of the main window. Inset controls retain a stronger tint for readability. Visible pixels blend the palette with the blurred material. Native macOS controls, system status colors and content images retain their platform/content colors.
 
-**Reduce Transparency** or **Increase Contrast** in macOS accessibility settings makes Frog surfaces opaque without changing your saved values. Increased Contrast also strengthens panel outlines. The `frog` theme keeps its black surfaces and green accent in dark mode.
+`glow` is `off` (the default), `halo`, `aurora` or `prism`: a light drawn by a Metal shader inside Frog's panels (command bar, clipboard history, window switcher, every popup) and, softer, in the window's sidebar, with a glare along the panel's edge nearest the light. `glow-strength` ranges from 0 to 1 (0.6 when left out). `glow-motion = false` keeps the light still instead of drifting and following the pointer. Settings → Appearance → Look sets transparency and glow together (Solid, Frosted, Clear glass, Aurora, Prism).
+
+**Reduce Transparency** or **Increase Contrast** in macOS accessibility settings makes Frog surfaces opaque and turns the glow off without changing your saved values. Increased Contrast also strengthens panel outlines. The `frog` theme keeps its black surfaces and green accent in dark mode.
 
 ### Clipboard
 

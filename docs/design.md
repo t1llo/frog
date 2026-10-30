@@ -94,6 +94,7 @@ Use `FrogType` for text. A literal size is only for an SF Symbol's size.
   - Translucent on macOS 26: one Liquid Glass surface for sidebars and floating panels; before 26, the kind's `NSVisualEffectView` material. Windows keep the material: glass is for chrome, not content.
   - `.popover` adds only the tint, because the popover brings its own material.
   - One surface per popup, on its root; rows get a plain highlight, never glass.
+- Glow (`AppearancePreferences.glow`: Halo, Aurora or Prism; off by default) is a light inside the glass, drawn by the `frogGlow` Metal shader in `Resources/FrogGlow.metal` through `FrogGlow`. `frogSurface` adds it to `.hud` panels (full strength, a glare on the rim nearest the light, drifting and following the pointer) and the window draws it in its sidebar with `frogGlow(.sidebar)` (softer, still, no rim, so it never reads as a line). Never on window content or popovers, and never added by a view itself. Off under Reduce Transparency and Increase Contrast; still under Reduce Motion.
 - Feature and plugin icons: `PluginIconTile(symbol:tint:size:)`, a white symbol on a tile filled with the feature's colour, `.sidebar` 20, `.list` 28, `.header` 40. Neutral, decorative symbols stay `SymbolTile`.
 - `selection` marks what is chosen; `hover` what the pointer is over; `accent` shows state and focus, not decoration.
 - `muted` for secondary text; `good`, `warning` and `critical` for status.
@@ -114,8 +115,9 @@ Frog moves little: a press answers, a hover leaves softly, a choice slides, and 
 | `fadeOut` | strong ease-out, 0.2 s | Status pills and status item popups fading out (`NSWindow.fadeOut()`) |
 | `resize` | ease-in-out, 0.22 s | The dictation pill growing with its text; it changes shape on screen |
 | `confirmation` | 1.5 s | How long `CopyAction` shows its checkmark |
+| `glare` | spring, response 0.6, no bounce | The glow's glare gliding after the pointer |
 
-- Never animate the command bar, clipboard history, window switcher or layout picker: opening, closing, typing, arrow keys. Their roots set `.environment(\.frogKeyboardSurface, true)`, which turns off hover fades and press motion inside them.
+- Never animate the command bar, clipboard history, window switcher or layout picker: opening, closing, typing, arrow keys. The one thing that moves in them is the glow's light (its slow drift and the glare after the pointer), which never answers a key and stops with Moving light off or Reduce Motion. Their roots set `.environment(\.frogKeyboardSurface, true)`, which turns off hover fades and press motion inside them.
 - Never animate selection moved by arrow keys or Tab (dropdown lists set `frogKeyboardSurface` for this), page switches (sidebar and ⌘1–5), or text that streams in.
 - No bounce anywhere: nothing in Frog is thrown or flicked. No ease-in: it starts slow where the eye is watching.
 - Reduce Motion: no scale and no sliding; segments, setup steps, the error banner and the checkbox mark cross-fade instead.

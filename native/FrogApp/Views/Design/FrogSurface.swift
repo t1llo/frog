@@ -1,4 +1,5 @@
 import AppKit
+import FrogCore
 import SwiftUI
 
 /// What a surface sits on, which decides its material and how much of the user's transparency it takes.
@@ -15,6 +16,8 @@ enum FrogSurfaceKind {
 
     /// Popovers and panels follow the popup transparency; windows and sidebars the window transparency.
     var isPopup: Bool { self == .popover || self == .hud }
+    /// Panels and sidebars carry the glow. A window's content stays calm, and a popover's material is the system's.
+    var glows: Bool { self == .hud || self == .sidebar }
     fileprivate var material: NSVisualEffectView.Material {
         switch self {
         case .window: .underWindowBackground
@@ -41,6 +44,15 @@ extension View {
     }
 }
 
+extension View {
+    /// The glow of a surface that draws its own fill rather than `frogSurface`, such as the main window's sidebar.
+    /// Put it just inside the fill, so the light lies over the fill and under the content:
+    /// `.frogGlow(.sidebar).background(FrogStyle.sidebar)`.
+    func frogGlow(_ kind: FrogSurfaceKind, cornerRadius: CGFloat = 0) -> some View {
+        modifier(FrogGlowModifier(kind: kind, radius: cornerRadius))
+    }
+}
+
 private struct FrogSurfaceModifier: ViewModifier {
     let kind: FrogSurfaceKind
     let radius: CGFloat
@@ -51,8 +63,37 @@ private struct FrogSurfaceModifier: ViewModifier {
         let amount = FrogAppearance.shared.settings.effectiveTransparency(
             popup: kind.isPopup, reduceTransparency: reduceTransparency, increasedContrast: contrast == .increased)
         content
+            .frogGlow(kind, cornerRadius: radius)
             .background { FrogSurfaceBackground(kind: kind, radius: radius, amount: amount) }
             .environment(\.frogPopupSurface, kind.isPopup)
+    }
+}
+
+/// Panels glow fully, drift and follow the pointer; a sidebar glows softer, stays still and has no glare.
+private struct FrogGlowModifier: ViewModifier {
+    let kind: FrogSurfaceKind
+    let radius: CGFloat
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    @State private var pointer = FrogGlowPointer()
+
+    func body(content: Content) -> some View {
+        let settings = FrogAppearance.shared.settings
+        let glow = kind.glows ? settings.effectiveGlow(reduceTransparency: reduceTransparency, increasedContrast: contrast == .increased) : .off
+        let panel = kind == .hud
+        let moving = panel && settings.glowMotion != false
+        if glow == .off {
+            content
+        } else {
+            content
+                .background {
+                    FrogGlow(style: glow, strength: settings.effectiveGlowStrength * (panel ? 1 : 0.6), radius: radius,
+                             rim: panel ? 1 : 0, moving: moving, pointer: panel ? pointer : nil)
+                        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+                }
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { pointer.size = $0 }
+                .onContinuousHover { phase in if moving { pointer.update(phase) } }
+        }
     }
 }
 

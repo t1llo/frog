@@ -27,7 +27,7 @@ struct PreferencesView: View {
                 FrogRow("Setup") { Button("Open…") { model.showSetup() } }
                 FrogRow("Statistics") { Button("View") { model.toolkit.select(.statistics) } }
             }
-            SettingsSection(title: "Appearance") { AppearanceSettingsView(model: model) }
+            AppearanceSettingsView(model: model)
             FrogSection("Permissions") {
                 permission("Accessibility", allowed: model.accessibilityGranted) { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() }
                 permission("Microphone", allowed: DictationController.microphoneGranted) {

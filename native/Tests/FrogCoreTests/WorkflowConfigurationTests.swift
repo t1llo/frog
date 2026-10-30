@@ -17,6 +17,34 @@ final class WorkflowConfigurationTests: XCTestCase {
             XCTAssertTrue(rendered.isFinite && (0...1).contains(rendered))
         }
     }
+    func testGlowIsOffUntilChosenAndUnderAccessibilityAndLooksMatchWhatTheySet() throws {
+        var settings = AppearancePreferences()
+        XCTAssertEqual(settings.effectiveGlow(reduceTransparency: false, increasedContrast: false), .off)
+        XCTAssertEqual(AppearancePreferences.Look.matching(settings), .solid)
+        for look in AppearancePreferences.Look.allCases {
+            var value = settings; look.apply(to: &value)
+            XCTAssertEqual(AppearancePreferences.Look.matching(value), look)
+            XCTAssertTrue(value.valid)
+        }
+        AppearancePreferences.Look.aurora.apply(to: &settings)
+        XCTAssertEqual(settings.effectiveGlow(reduceTransparency: false, increasedContrast: false), .aurora)
+        XCTAssertEqual(settings.effectiveGlow(reduceTransparency: true, increasedContrast: false), .off)
+        XCTAssertEqual(settings.effectiveGlow(reduceTransparency: false, increasedContrast: true), .off)
+        settings.glowStrength = 0.3
+        XCTAssertNil(AppearancePreferences.Look.matching(settings), "A changed strength is custom")
+        XCTAssertEqual(try JSONDecoder().decode(AppearancePreferences.self, from: JSONEncoder().encode(settings)), settings)
+        for value in [-0.1, 1.5, .nan] { var invalid = settings; invalid.glowStrength = value; XCTAssertFalse(invalid.valid) }
+
+        var configuration = Configuration()
+        configuration.preferences.appearance = settings
+        let companion = try TextConfiguration.companion(configuration)
+        let loaded = try TextConfiguration.decode("glow = prism\nglow-strength = 0.8\nglow-motion = false\n", companion: companion)
+        XCTAssertEqual(loaded.preferences.appearance?.glow, .prism)
+        XCTAssertEqual(loaded.preferences.appearance?.glowStrength, 0.8)
+        XCTAssertEqual(loaded.preferences.appearance?.glowMotion, false)
+        XCTAssertThrowsError(try TextConfiguration.decode("glow = neon\n", companion: companion))
+        XCTAssertEqual(try ConfigMigration().document(from: configuration).value(at: ["glow"]), .string("aurora"))
+    }
     func testSystemShortcutSurvivesConfigurationRoundTripWithoutATextModel() throws {
         var configuration = Configuration()
         var rule = SystemAction.lockScreen.rule

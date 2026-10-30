@@ -107,6 +107,9 @@ public struct ConfigMigration: Sendable {
         table["accent"] = .string("#" + appearance.accentHex)
         table["transparency"] = .float(appearance.transparency)
         table["popup-transparency"] = .float(appearance.popupTransparency ?? 0)
+        if let glow = appearance.glow { table["glow"] = .string(glow.rawValue) }
+        if let strength = appearance.glowStrength { table["glow-strength"] = .float(strength) }
+        if let motion = appearance.glowMotion { table["glow-motion"] = .bool(motion) }
         table["history-enabled"] = .bool(preferences.historyEnabled)
         table["history-hide-text"] = .bool(preferences.hideHistoryText)
         table["history-limit"] = .integer(preferences.historyLimit)

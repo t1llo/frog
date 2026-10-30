@@ -130,7 +130,7 @@ struct MainView: View {
                     .onAppear { reveal(section, in: proxy) }
                     .onChange(of: section) { _, route in reveal(route, in: proxy) }
                 }
-            }.padding(.top, 32).background(FrogStyle.sidebar)
+            }.padding(.top, 32)
             VStack(spacing: 2) { ForEach(workspaceNavigation) { navigationButton($0) } }
                 .padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 10)
             if !model.accessibilityGranted || !DictationController.microphoneGranted {
@@ -149,7 +149,7 @@ struct MainView: View {
                         .contentShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
                 }.buttonStyle(.plain).padding(.horizontal, 8).padding(.bottom, 10)
             }
-        }.background(FrogStyle.sidebar)
+        }.frogGlow(.sidebar).background(FrogStyle.sidebar)
     }
     private func navigationButton(_ item: NavigationItem) -> some View {
         SidebarRow(item: item, selected: section == item.id) { model.toolkit.select(item.id) }

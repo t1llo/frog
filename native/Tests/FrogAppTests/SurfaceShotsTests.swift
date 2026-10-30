@@ -7,7 +7,8 @@ import FrogUsage
 @testable import FrogApp
 
 /// Pictures of Frog's popups and panels, and of each step of the setup assistant, drawn without a window in light
-/// and dark, on a plain backdrop. Runs only with `FROG_SURFACE_SHOTS` set to the folder for the pictures.
+/// and dark, on a plain backdrop. Runs only with `FROG_SURFACE_SHOTS` set to the folder for the pictures;
+/// `FROG_SURFACE_SHOTS_ONLY` picks surfaces and `FROG_SURFACE_SHOTS_LOOK` a look.
 @MainActor
 final class SurfaceShotsTests: XCTestCase {
     func testEverySurface() async throws {
@@ -71,6 +72,14 @@ final class SurfaceShotsTests: XCTestCase {
         ] + (0..<4).map { step in ("setup-\(step + 1)", AnyView(OnboardingView(step: step).environmentObject(model))) }
 
         let only = ProcessInfo.processInfo.environment["FROG_SURFACE_SHOTS_ONLY"]?.split(separator: ",").map(String.init)
+        // FROG_SURFACE_SHOTS_LOOK=aurora draws them with that look's transparency and glow, standing still.
+        let saved = FrogAppearance.shared.settings
+        defer { FrogAppearance.shared.apply(saved) }
+        if let name = ProcessInfo.processInfo.environment["FROG_SURFACE_SHOTS_LOOK"] {
+            let look = try XCTUnwrap(AppearancePreferences.Look(rawValue: name), "Looks: solid, frosted, glass, aurora, prism")
+            var value = saved; look.apply(to: &value); value.glowMotion = false
+            FrogAppearance.shared.apply(value)
+        }
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             let name = appearance == .aqua ? "light" : "dark"
             for (surface, view) in surfaces where only?.contains(surface) ?? true {

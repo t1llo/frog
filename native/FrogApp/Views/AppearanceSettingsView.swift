@@ -140,7 +140,12 @@ struct AppearanceSettingsView: View {
         _model = ObservedObject(wrappedValue: model)
         _draft = StateObject(wrappedValue: AppearanceDraft(model: model))
     }
+    /// Two sections, Appearance and Glass, sharing one draft.
     var body: some View {
+        SettingsSection(title: "Appearance") { colours }
+        SettingsSection(title: "Glass") { glass }
+    }
+    @ViewBuilder private var colours: some View {
         CompactRow(title: "Appearance") {
             CompactSegments(values: AppearancePreferences.Mode.allCases, selected: appearance.mode ?? .system, title: { $0.rawValue.capitalized }) { mode in var value = appearance; value.mode = mode; draft.set(value) }
         }.onDisappear { draft.commit() }
@@ -170,18 +175,29 @@ struct AppearanceSettingsView: View {
         CompactRow(title: "Custom palette", detail: "palette.light.* and palette.dark.* in the configuration file.") {
             Button("Open config") { model.openConfiguration() }
         }
-        SectionCaption(text: "Transparency").padding(.top, 6)
-        CompactRow(title: "Window transparency") {
-            HStack(spacing: 10) {
-                Slider(value: Binding(get: { appearance.transparency }, set: { amount in var value = appearance; value.transparency = amount; draft.change(value) }), in: 0...1, onEditingChanged: { if !$0 { draft.commit() } }).frame(width: 145)
-                Text("\(Int(appearance.transparency * 100))%").font(FrogType.small).monospacedDigit().frame(width: 32)
+    }
+    @ViewBuilder private var glass: some View {
+        CompactRow(title: "Look") {
+            FrogDropdown(selected: AppearancePreferences.Look.matching(appearance), options: AppearancePreferences.Look.allCases.map(Optional.some),
+                         title: { $0?.title ?? "Custom" }, symbol: { $0.map(Self.symbol) }) { look in
+                guard let look else { return }
+                var value = appearance; look.apply(to: &value); draft.set(value)
             }
         }
-        CompactRow(title: "Popup transparency", detail: "Menus and panels.") {
-            HStack(spacing: 10) {
-                Slider(value: Binding(get: { appearance.popupTransparency ?? 0 }, set: { amount in var value = appearance; value.popupTransparency = amount; draft.change(value) }), in: 0...1, onEditingChanged: { if !$0 { draft.commit() } }).frame(width: 145)
-                Text("\(Int((appearance.popupTransparency ?? 0) * 100))%").font(FrogType.small).monospacedDigit().frame(width: 32)
+        amountRow("Window transparency", value: appearance.transparency) { value, amount in value.transparency = amount }
+        amountRow("Popup transparency", detail: "Menus and panels.", value: appearance.popupTransparency ?? 0) { value, amount in value.popupTransparency = amount }
+        CompactRow(title: "Glow", detail: "Light inside panels and the sidebar.") {
+            FrogDropdown(selected: appearance.glow ?? .off, options: AppearancePreferences.Glow.allCases, title: { $0.title }, symbol: Self.symbol) { glow in
+                var value = appearance; value.glow = glow == .off ? nil : glow; draft.set(value)
             }
+        }
+        if (appearance.glow ?? .off) != .off {
+            amountRow("Glow strength", value: appearance.effectiveGlowStrength) { value, amount in value.glowStrength = amount }
+            CompactRow(title: "Moving light", detail: "Drifts and follows the pointer.") {
+                Toggle("Moving light", isOn: Binding(get: { appearance.glowMotion != false }, set: { on in var value = appearance; value.glowMotion = on ? nil : false; draft.set(value) }))
+                    .labelsHidden()
+            }
+            GlassPreview().padding(.vertical, 10)
         }
         if reduceTransparency || contrast == .increased {
             Text("Off while macOS reduces transparency.")
@@ -189,6 +205,35 @@ struct AppearanceSettingsView: View {
         }
     }
     private var appearance: AppearancePreferences { draft.value ?? model.configuration.preferences.appearance ?? AppearancePreferences() }
+    /// A slider from 0 to 100 %, shown at once while dragging and saved when the drag ends.
+    private func amountRow(_ title: String, detail: String? = nil, value amount: Double,
+                           set: @escaping (inout AppearancePreferences, Double) -> Void) -> some View {
+        CompactRow(title: title, detail: detail) {
+            HStack(spacing: 10) {
+                Slider(value: Binding(get: { amount }, set: { amount in var value = appearance; set(&value, amount); draft.change(value) }),
+                       in: 0...1, onEditingChanged: { if !$0 { draft.commit() } }).frame(width: 145)
+                    .accessibilityLabel(title)
+                Text("\(Int((amount * 100).rounded()))%").font(FrogType.small).monospacedDigit().frame(width: 32, alignment: .trailing)
+            }
+        }
+    }
+    private static func symbol(_ look: AppearancePreferences.Look) -> String {
+        switch look {
+        case .solid: "square.fill"
+        case .frosted: "snowflake"
+        case .glass: "square.on.square.dashed"
+        case .aurora: "sparkles"
+        case .prism: "rainbow"
+        }
+    }
+    private static func symbol(_ glow: AppearancePreferences.Glow) -> String? {
+        switch glow {
+        case .off: nil
+        case .halo: "sun.max"
+        case .aurora: "sparkles"
+        case .prism: "rainbow"
+        }
+    }
     /// The nearest six-digit sRGB hex of a picked colour.
     static func hex(of color: NSColor) -> String? {
         guard let rgb = color.usingColorSpace(.sRGB) else { return nil }
@@ -200,5 +245,24 @@ struct AppearanceSettingsView: View {
         value.lightPalette?["accent"] = nil; value.darkPalette?["accent"] = nil
         guard value.valid else { model.report(FrogError.message("Enter a six-digit RGB hex color, such as A3D8AF.")); return }
         draft.set(value); accentInput = hex
+    }
+}
+
+/// A small panel in the shape of the command bar, lit the way Frog's panels are, so a change to the glow shows at
+/// once. The pointer moves its glare.
+private struct GlassPreview: View {
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: FrogStyle.panelRadius, style: .continuous)
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundStyle(FrogStyle.muted)
+            Text("Search apps, files and commands").font(FrogType.lead).foregroundStyle(FrogStyle.muted)
+            Spacer(minLength: 0)
+            KeyCap("⏎")
+        }
+        .padding(.horizontal, 16).frame(height: 56)
+        .frogGlow(.hud, cornerRadius: FrogStyle.panelRadius)
+        .background(FrogStyle.panelSurface, in: shape)
+        .overlay(shape.strokeBorder(FrogStyle.border.opacity(0.8)))
+        .accessibilityElement(children: .ignore).accessibilityLabel("Glow preview")
     }
 }
