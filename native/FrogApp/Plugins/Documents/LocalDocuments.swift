@@ -2,7 +2,13 @@ import Combine
 import Foundation
 import FrogCore
 
+/// The notes and scripts on this Mac, in one file that the Notes and Scripts plugins share. Reads the file on first
+/// use and saves a quarter second after the last change.
 @MainActor final class LocalDocuments: ObservableObject {
+    /// Notes and scripts together.
+    static let maximumItems = 1000
+    static let maximumTextBytes = 1_000_000
+
     @Published private(set) var items: [UtilityDocument] = []
     @Published private(set) var issue: String?
     /// Items the file holds that this version of Frog cannot read. They stay out of `items`, and the first save leaves them out of the file.
@@ -58,5 +64,74 @@ import FrogCore
             } catch is CancellationError { }
             catch { if revision == token { issue = error.localizedDescription } }
         }
+    }
+
+    // MARK: For actions
+
+    /// Loads the file, or says why it cannot be read.
+    func loadForAction() async throws {
+        await load()
+        guard loaded else { throw ActionError.failed(issue ?? "Frog could not open its notes and scripts.") }
+    }
+
+    func items(_ kind: UtilityDocument.Kind) -> [UtilityDocument] { items.filter { $0.kind == kind } }
+
+    /// The item of `kind` titled `name`: the exact title first, then the one title that starts with it, ignoring
+    /// case, or its id.
+    func item(_ kind: UtilityDocument.Kind, titled name: String) throws -> UtilityDocument {
+        let candidates = items(kind)
+        let wanted = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let exact = candidates.first(where: { $0.title == wanted }) ?? candidates.first(where: { $0.id.uuidString.caseInsensitiveCompare(wanted) == .orderedSame }) {
+            return exact
+        }
+        let matching = candidates.filter { $0.title.lowercased().hasPrefix(wanted.lowercased()) }
+        let noun = kind == .note ? "note" : "script"
+        switch matching.count {
+        case 1: return matching[0]
+        case 0: throw ActionError.failed("No \(noun) “\(wanted)”. List them with `frog run \(kind.pluginID).list`.")
+        default:
+            throw ActionError.failed("“\(wanted)” starts \(matching.count) \(noun)s: \(matching.prefix(5).map { "“\($0.shownTitle)”" }.joined(separator: ", ")). Give more of the title.")
+        }
+    }
+
+    /// Waits until the change is on disk, so the next action or the page finds it. A change that could not be saved
+    /// is taken back with `undo`, so trying again does not apply it twice.
+    func commit(undo: () -> Void) async throws {
+        guard await flush() else {
+            let issue = issue
+            undo()
+            throw ActionError.failed(issue ?? "Frog could not save the change.")
+        }
+    }
+
+    func checkRoom() throws {
+        guard items.count < Self.maximumItems else {
+            throw ActionError.failed("Frog keeps up to \(Self.maximumItems) notes and scripts together. Delete one to add another.")
+        }
+    }
+
+    static func checkSize(_ text: String) throws {
+        guard text.utf8.count <= maximumTextBytes else { throw ActionError.failed("A note or script holds at most 1 MB of text.") }
+    }
+}
+
+extension UtilityDocument {
+    var shownTitle: String { title.isEmpty ? "Untitled" : title }
+
+    /// A deleted item cannot be brought back, so Frog asks before it deletes one that holds something, a title of
+    /// its own included. An item that was only just created is removed without a question.
+    var deletionAsksFirst: Bool {
+        let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !files.isEmpty || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !(title.isEmpty || title == kind.newItemTitle)
+    }
+}
+
+extension UtilityDocument.Kind {
+    /// The title of an item that New creates.
+    var newItemTitle: String {
+        switch self { case .note: "Untitled note"; case .script: "New script" }
+    }
+    var pluginID: String {
+        switch self { case .note: "notes"; case .script: "scripts" }
     }
 }

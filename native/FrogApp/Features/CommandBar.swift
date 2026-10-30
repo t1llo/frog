@@ -414,37 +414,8 @@ import SwiftUI
         }
     }
     private func addDocuments(_ model: AppModel) {
-        let target = pasteTarget
-        for item in model.documents.items {
-            if item.kind == .note, item.pastes, model.configuration.preferences.featureEnabled(.scratchpad) {
-                let isCurrent = { [weak model] in
-                    model?.configuration.preferences.featureEnabled(.scratchpad) == true
-                        && model?.documents.items.contains(where: { $0.id == item.id && $0.pastes }) == true
-                }
-                let deliver: (Bool) async throws -> Void = { [weak self, weak model] paste in
-                    guard let self, let model, isCurrent(),
-                          let current = model.documents.items.first(where: { $0.id == item.id }) else { return }
-                    let text = SnippetExpansion.expand(current.text, clipboard: self.pasteboard.string(forType: .string) ?? "")
-                    let sensitive = current.text.contains("{{clipboard}}") && self.pasteboard.holdsSensitiveText
-                    let entry = ClipboardHistoryEntry(text: text, isSensitive: sensitive)
-                    if paste {
-                        try await ClipboardHistoryDelivery.paste(entry, plainText: true, pasteboard: self.pasteboard, target: target,
-                                                                 isCurrent: isCurrent, waitForRelease: self.waitForRelease)
-                    } else {
-                        guard entry.write(to: self.pasteboard, plainText: true) else { throw FrogError.message("Could not copy the note.") }
-                    }
-                    self.onToolUse?(.snippetCopy)
-                }
-                // The ID it had as a snippet, so the choices the command bar learned still count.
-                add(SearchRecord(id: "snippet:\(item.id)", title: item.title, subtitle: "Note · Paste · ⌘↩ Copy", symbol: "text.badge.plus"), copy: { try await deliver(false) }) { try await deliver(true) }
-            } else if item.kind == .note, model.configuration.preferences.featureEnabled(.scratchpad) {
-                add(SearchRecord(id: "note:\(item.id)", title: item.title, subtitle: "Notes", keywords: String(item.text.prefix(512)), symbol: "note.text")) { [weak model] in model?.openDocument(item) }
-            } else if item.kind == .script, model.configuration.preferences.featureEnabled(.scripts) {
-                add(SearchRecord(id: "script:\(item.id)", title: item.title, subtitle: "Run saved script", symbol: "terminal")) { [weak model] in
-                    model?.openDocument(item); model?.runScript(item)
-                }
-            }
-        }
+        guard let context else { return }
+        for row in DocumentCommandRows.rows(in: context) { add(row) }
     }
     private func addRoutes(_ model: AppModel, frontPID: pid_t?) {
         // Record IDs keep the feature names they had before plugins, so learned choices still count.

@@ -160,7 +160,7 @@ enum ScriptProcess {
     /// The run whose output is shown and whose task `task` holds. Stop keeps showing what the stopped script printed;
     /// only a new run replaces it.
     private var shown = UUID()
-    func run(_ script: UtilityDocument) {
+    func run(_ script: UtilityDocument, timeout: TimeInterval = 60) {
         guard script.kind == .script else { return }
         let previous = task
         stop()
@@ -177,7 +177,7 @@ enum ScriptProcess {
             await previous?.value
             do {
                 try Task.checkCancellation()
-                let result = try await ScriptProcess.run(script.text, onOutput: { printed.send($0) })
+                let result = try await ScriptProcess.run(script.text, timeout: timeout, onOutput: { printed.send($0) })
                 printed.finish()
                 guard let self, generation == token, !Task.isCancelled else { return }
                 output = result.output
