@@ -81,6 +81,17 @@ import SwiftUI
         running = [:]
     }
 
+    /// Stops every plugin, as at quit, but returns after `timeout` even if one has not finished,
+    /// so a plugin that hangs cannot keep Frog from quitting.
+    func stopAll(timeout: Duration) async {
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            var resumed = false
+            func finish() { if !resumed { resumed = true; done.resume() } }
+            Task { @MainActor in await self.stopAll(); finish() }
+            Task { @MainActor in try? await Task.sleep(for: timeout); finish() }
+        }
+    }
+
     // MARK: Navigation
 
     func open(_ id: String) { openPage?(id) }

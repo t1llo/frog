@@ -8,9 +8,13 @@ final class PluginHostTests: XCTestCase {
     private final class Probe: FrogPlugin {
         static let info = PluginInfo(id: "probe", name: "Probe", symbol: "circle", tint: .blue, category: .navigate, summary: "A test plugin")
         static var log: [String] = []
+        static var hangsOnStop = false
         init() {}
         func start() async { Self.log.append("start") }
-        func stop() async { Self.log.append("stop") }
+        func stop() async {
+            Self.log.append("stop")
+            if Self.hangsOnStop { try? await Task.sleep(for: .seconds(30)) }
+        }
         var actions: [PluginAction] {
             [PluginAction(id: "probe.echo", title: "Echo",
                           parameters: [ActionParameter(name: "word", required: true),
@@ -27,7 +31,7 @@ final class PluginHostTests: XCTestCase {
     private var enabled: Set<String> = []
 
     private func makeHost() -> PluginHost {
-        Probe.log = []
+        Probe.log = []; Probe.hangsOnStop = false
         let host = PluginHost(descriptors: [PluginDescriptor(Probe.self) { _ in Probe() }],
                               isEnabled: { [unowned self] in self.enabled.contains($0) },
                               setEnabled: { [unowned self] id, on in if on { self.enabled.insert(id) } else { self.enabled.remove(id) } })
@@ -52,6 +56,16 @@ final class PluginHostTests: XCTestCase {
         try await host.setEnabled("probe", false)
         XCTAssertEqual(Probe.log, ["start", "stop"])
         XCTAssertTrue(host.menuRows.isEmpty)
+    }
+
+    func testAPluginThatHangsOnStopCannotBlockQuitting() async throws {
+        let host = makeHost()
+        try await host.setEnabled("probe", true)
+        Probe.hangsOnStop = true
+        let started = ContinuousClock.now
+        await host.stopAll(timeout: .milliseconds(200))
+        XCTAssertLessThan(ContinuousClock.now - started, .seconds(5))
+        XCTAssertEqual(Probe.log, ["start", "stop"])
     }
 
     func testRunChecksParametersAndSaysWhenThePluginIsOff() async throws {

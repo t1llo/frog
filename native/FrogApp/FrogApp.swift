@@ -109,8 +109,15 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard power.needsQuitCleanup || model.hasPendingDocumentWrites || model.scripts.needsQuitCleanup else { return .terminateNow }
         guard termination == nil else { return .terminateLater }
+        // Plugins close what they hold, such as phone sessions, once quitting is certain; the bound keeps one from blocking it.
+        guard power.needsQuitCleanup || model.hasPendingDocumentWrites || model.scripts.needsQuitCleanup else {
+            termination = Task {
+                await model.pluginHost.stopAll(timeout: .seconds(2))
+                sender.reply(toApplicationShouldTerminate: true)
+            }
+            return .terminateLater
+        }
         termination = Task {
             await model.scripts.stopAndWait()
             guard await model.flushDocuments() else {
@@ -122,6 +129,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
                 return
             }
             let restored = await power.prepareToQuit()
+            if restored { await model.pluginHost.stopAll(timeout: .seconds(2)) }
             sender.reply(toApplicationShouldTerminate: restored)
             if !restored {
                 termination = nil
