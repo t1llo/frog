@@ -24,7 +24,7 @@ struct DictationPage: View {
                 MicrophoneRow(dictation: dictation, selection: feature.settings.microphone) { feature.selectMicrophone($0) }
                 FrogRow("Mute Mac audio") {
                     Toggle("Mute Mac audio", isOn: Binding(get: { feature.settings.muteAudio },
-                                                           set: { value in feature.update { $0.muteAudio = value } }))
+                                                           set: { value in feature.update { $0.muteAudio = value } })).labelsHidden()
                 }
                 FrogRow("Cancel shortcut", caption: "Escape always cancels.") {
                     HotkeyRecorder(hotkey: Binding(get: { feature.settings.cancelShortcut?.hotkey }, set: { value in
@@ -59,7 +59,7 @@ private struct DictationRuleSection: View {
     var body: some View {
         FrogSection(rule.name, accessory: {
             RecordButton(rule: rule, dictation: dictation, feature: feature)
-            Toggle("Enable \(rule.name)", isOn: binding(\.enabled)).labelsHidden()
+            Toggle("Enable \(rule.name)", isOn: binding(\.enabled)).labelsHidden().controlSize(.mini)
             IconMenu(title: "More for \(rule.name)") {
                 Button("Rename…") { renaming = true }
                 Button("Delete", role: .destructive) {
@@ -67,34 +67,39 @@ private struct DictationRuleSection: View {
                 }
             }
         }) {
-            FrogRow("Shortcut") {
-                HStack(spacing: 8) {
-                    CompactSegments(values: RecordingMode.allCases, selected: rule.action?.recordingMode ?? .toggle, width: 150,
-                                    title: { $0 == .hold ? "Hold" : "Toggle" }) { mode in save { $0.action?.recordingMode = mode } }
-                    HotkeyRecorder(hotkey: binding(\.hotkey))
-                }
-            }
-            if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
-            FrogRow("Speech model") { RuleModelPicker(rule: Binding(get: { rule }, set: { save(reconciling: $0) }), speech: true) }
-            FrogRow("Language") {
-                FrogDropdown(selected: rule.action?.transcriptionLanguage ?? languages.first ?? "auto", options: languages,
-                             searchPrompt: languages.count > 8 ? "Find a language" : nil,
-                             title: Self.languageName) { code in save { $0.action?.transcriptionLanguage = code } }
-            }
-            FrogRow("Clean up") {
-                FrogDropdown(selected: cleanup, sections: cleanupSections, searchPrompt: textRules.count > 8 ? "Find a rule" : nil,
-                             item: cleanupItem) { choice in save { choice.apply(to: &$0) } }
-            }
-            FrogRow("Output") {
-                CompactSegments(values: TranscriptOutput.allCases, selected: rule.action?.output ?? .copy, width: 150,
-                                title: { $0 == .copy ? "Copy" : "Paste" }) { output in save { $0.action?.output = output } }
-            }
-            FrogRow("Popup while recording") {
-                Toggle("Popup while recording", isOn: Binding(get: { rule.action?.showRecordingPopup ?? true },
-                                                               set: { value in save { $0.action?.showRecordingPopup = value } })).labelsHidden()
-            }
+            rows.opacity(rule.enabled ? 1 : 0.5)
         }
         .sheet(isPresented: $renaming) { RenameSheet(name: rule.name) { name in save { $0.name = name } } }
+    }
+
+    /// The rule's settings; a rule that is off keeps them, dimmed.
+    @ViewBuilder private var rows: some View {
+        FrogRow("Shortcut") {
+            HStack(spacing: 8) {
+                CompactSegments(values: RecordingMode.allCases, selected: rule.action?.recordingMode ?? .toggle, width: 150,
+                                title: { $0 == .hold ? "Hold" : "Toggle" }) { mode in save { $0.action?.recordingMode = mode } }
+                HotkeyRecorder(hotkey: binding(\.hotkey))
+            }
+        }
+        if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
+        FrogRow("Speech model") { RuleModelPicker(rule: Binding(get: { rule }, set: { save(reconciling: $0) }), speech: true) }
+        FrogRow("Language") {
+            FrogDropdown(selected: rule.action?.transcriptionLanguage ?? languages.first ?? "auto", options: languages,
+                         searchPrompt: languages.count > 8 ? "Find a language" : nil,
+                         title: Self.languageName) { code in save { $0.action?.transcriptionLanguage = code } }
+        }
+        FrogRow("Clean up") {
+            FrogDropdown(selected: cleanup, sections: cleanupSections, searchPrompt: textRules.count > 8 ? "Find a rule" : nil,
+                         item: cleanupItem) { choice in save { choice.apply(to: &$0) } }
+        }
+        FrogRow("Output") {
+            CompactSegments(values: TranscriptOutput.allCases, selected: rule.action?.output ?? .copy, width: 150,
+                            title: { $0 == .copy ? "Copy" : "Paste" }) { output in save { $0.action?.output = output } }
+        }
+        FrogRow("Popup while recording") {
+            Toggle("Popup while recording", isOn: Binding(get: { rule.action?.showRecordingPopup ?? true },
+                                                           set: { value in save { $0.action?.showRecordingPopup = value } })).labelsHidden()
+        }
     }
 
     // MARK: Saving

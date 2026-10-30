@@ -1,4 +1,6 @@
+import AppKit
 import AVFoundation
+import SwiftUI
 import Darwin
 import XCTest
 import FrogCore
@@ -234,6 +236,47 @@ final class DictationPluginTests: XCTestCase {
         CleanupChoice.off.apply(to: &rule)
         XCTAssertNil(feature.cleanupRule(for: rule))
         XCTAssertEqual(rule.action?.cleanup, false)
+    }
+
+    // MARK: Page
+
+    /// The Dictation page with two rules, one cleaning up through a Writing rule. Runs only with `FROG_PAGE_SHOTS`.
+    func testPageShots() async throws {
+        guard let folder = ProcessInfo.processInfo.environment["FROG_PAGE_SHOTS"] else {
+            throw XCTSkip("Set FROG_PAGE_SHOTS to a folder to take these pictures")
+        }
+        try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        let fixture = try await Fixture(directory: directory())
+        defer { fixture.model.shutdown() }
+        var writing = Rule(name: "Polish", instructions: "Fix grammar and punctuation.")
+        writing.action = RuleAction(category: .text)
+        try fixture.model.saveRule(writing)
+        var notes = fixture.rule
+        notes.hotkey = Hotkey(keyCode: 49, modifiers: 0x1000 | 0x800); notes.action?.recordingMode = .hold
+        CleanupChoice.rule(writing.id).apply(to: &notes); notes.action?.output = .paste
+        try fixture.model.saveRule(notes)
+        var meeting = Rule.dictationPreset
+        meeting.id = UUID(); meeting.preset = false; meeting.name = "Meeting notes"; meeting.hotkey = nil
+        meeting.action?.audioModelID = "whisper-base"; meeting.action?.transcriptionLanguage = "de"; meeting.enabled = false
+        try fixture.model.saveRule(meeting)
+        await fixture.model.pluginHost.syncAndWait()
+        fixture.model.toolkit.select(.feature(.dictation))
+        let tall = ProcessInfo.processInfo.environment["FROG_PAGE_SHOTS_TALL"] != nil
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let name = appearance == .aqua ? "light" : "dark"
+            let height: CGFloat = tall ? 1_400 : 760
+            let host = NSHostingView(rootView: MainView().environmentObject(fixture.model).frame(width: 1_000, height: height)
+                .background(FrogStyle.opaqueCanvas))
+            host.appearance = NSAppearance(named: appearance)
+            host.frame = NSRect(x: 0, y: 0, width: 1_000, height: height)
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(500))
+            host.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                .write(to: URL(fileURLWithPath: "\(folder)/dictation-rules-\(name).png"))
+        }
     }
 
     // MARK: Fixture
