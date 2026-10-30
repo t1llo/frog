@@ -2,62 +2,77 @@ import AppKit
 import Combine
 import FrogCore
 
-/// Only text and bounded text formatting are retained, never arbitrary clipboard payloads.
+/// One copied text, kept in memory only, with its RTF and HTML when the app gave them. Never a secret:
+/// copies an app marks as concealed, transient or generated (password managers, one-time codes), and text
+/// that looks like a password or key, are not recorded at all.
 struct ClipboardHistoryEntry: Identifiable, Equatable, Sendable {
     let id: UUID
     let timestamp: Date
     let text: String
     let formatting: [String: Data]
-    /// Marked sensitive by the app it was copied from, or a key or password by its look.
+    /// One line of at most `previewLength` characters, for lists. Made once, so scrolling never cuts text.
+    let preview: String
+    /// The start of the text without case and accents, which search compares bytes against.
+    let searchKey: String
+    /// Written marked as concealed and kept on this Mac, such as a note that pastes a copied password. The
+    /// history never keeps one.
     let isSensitive: Bool
-    /// What kind of credential the text looks like; nil for ordinary text and for text only its app marked.
-    let secret: ClipboardSecret?
-    var preview: String { String(text.prefix(300)).replacingOccurrences(of: "\n", with: " ") }
+
+    static let previewLength = 160
 
     init(text: String, formatting: [String: Data] = [:], isSensitive: Bool = false, timestamp: Date = Date()) {
-        id = UUID(); self.timestamp = timestamp; self.text = text; self.formatting = formatting
-        secret = ClipboardSecret.detect(text)
-        self.isSensitive = isSensitive || secret != nil
+        id = UUID(); self.timestamp = timestamp; self.text = text; self.formatting = formatting; self.isSensitive = isSensitive
+        preview = Self.preview(of: text)
+        searchKey = ClipboardSearch.fold(text.prefix(ClipboardSearch.keyLength))
     }
 
-    /// Hidden text shows as a password field does, in dots of one length that says nothing of its own.
-    static let mask = String(repeating: "•", count: 12)
+    /// What it costs to keep: its text, its search key and formatting.
+    var bytes: Int { text.utf8.count + searchKey.utf8.count + formatting.values.reduce(0) { $0 + $1.count } }
 
-    func displayPreview(revealed: Bool) -> String {
-        !isSensitive || revealed ? preview : Self.mask
-    }
-
-    /// "API key", "Password", or "Sensitive" for text its app marked.
-    var sensitivityLabel: String { secret?.label ?? "Sensitive" }
-    /// "Copied API key", or "Sensitive copied text" for text its app marked.
-    var sensitiveTitle: String { secret?.title ?? "Sensitive copied text" }
+    /// The first eight characters of its ID, which `clipboard.copy --id` and `clipboard.paste --id` accept.
+    var shortID: String { String(id.uuidString.prefix(8)).lowercased() }
 
     func write(to pasteboard: NSPasteboard, plainText: Bool) -> Bool {
         let item = NSPasteboardItem()
         item.setString(text, forType: .string)
-        if isSensitive { item.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) }
         if !plainText {
             for (type, data) in formatting { item.setData(data, forType: NSPasteboard.PasteboardType(type)) }
         }
-        pasteboard.prepareForNewContents(with: contentsOptions)
+        if isSensitive {
+            item.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+            pasteboard.prepareForNewContents(with: .currentHostOnly)
+        } else {
+            pasteboard.clearContents()
+        }
         return pasteboard.writeObjects([item])
     }
 
-    /// Marked-sensitive text stays on this Mac. Universal Clipboard would otherwise offer it to
-    /// the person's other devices again, long after the copy in the source application expired.
-    var contentsOptions: NSPasteboard.ContentsOptions { isSensitive ? .currentHostOnly : [] }
+    private static func preview(of text: String) -> String {
+        var result = ""
+        var space = false
+        for character in text.prefix(previewLength * 2) {
+            if character.isWhitespace || character.isNewline {
+                space = !result.isEmpty
+                continue
+            }
+            if space { result.append(" "); space = false }
+            result.append(character)
+            if result.count >= previewLength { break }
+        }
+        return result
+    }
 }
 
 extension NSPasteboard.PasteboardType {
-    /// The types with which apps mark copied text as sensitive, such as a password. Clipboard History hides it.
+    /// The types with which apps mark copied text as sensitive, such as a password.
     static let sensitiveMarks = [NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"), NSPasteboard.PasteboardType("org.nspasteboard.TransientType")]
-    /// Content an app made for itself, such as a generated one-time code. Never sent to a phone.
+    /// Content an app made for itself, such as a generated one-time code.
     static let autoGeneratedMark = NSPasteboard.PasteboardType("org.nspasteboard.AutoGeneratedType")
-    /// The marks that keep a copy on this Mac.
+    /// The marks that keep a copy out of clipboard history and on this Mac.
     static let localOnlyMarks = sensitiveMarks + [autoGeneratedMark]
 }
 
-/// A new copy handed to the Phone feature: text or an image, never files and never marked or
+/// A new copy handed to the Phone plugin: text or an image, never files and never marked or
 /// secret-looking content.
 enum ClipboardCopy: Equatable, Sendable {
     case text(String)
@@ -133,7 +148,7 @@ actor ClipboardHistoryReader {
     /// The count alone, which is all the watch needs to know while nothing is copied.
     func changeCount() -> Int { NSPasteboard(name: name).changeCount }
 
-    func read(after previousCount: Int, forwarding: Bool = false) -> Observation {
+    func read(after previousCount: Int, recording: Bool = true, forwarding: Bool = false) -> Observation {
         let pasteboard = NSPasteboard(name: name)
         if Task.isCancelled { return Observation(changeCount: previousCount, entry: nil, retry: false) }
         let state = gate.state
@@ -148,18 +163,19 @@ actor ClipboardHistoryReader {
             if forwarding, items.count == 1, let item = items.first, !Task.isCancelled {
                 copy = ClipboardCopy.read(item)
             }
-            if items.count == 1, let item = items.first, !item.types.contains(.fileURL) {
-                let sensitive = item.types.contains(where: NSPasteboard.PasteboardType.sensitiveMarks.contains)
+            if items.count == 1, let item = items.first, !item.types.contains(.fileURL),
+               !item.types.contains(where: NSPasteboard.PasteboardType.localOnlyMarks.contains) {
                 if let text = item.string(forType: .string) {
+                    // Some apps put the text on a moment after the copy; it is asked for again.
                     retry = text.isEmpty
-                    if !text.isEmpty, text.utf8.count <= 512 * 1024 {
+                    if recording, !text.isEmpty, text.utf8.count <= ClipboardHistoryStore.textLimit, ClipboardSecret.detect(text) == nil {
                         var formatting: [String: Data] = [:]
                         for type in [NSPasteboard.PasteboardType.rtf, .html] {
                             if Task.isCancelled { break }
-                            if let data = item.data(forType: type), data.count <= 1024 * 1024 { formatting[type.rawValue] = data }
+                            if let data = item.data(forType: type), data.count <= ClipboardHistoryStore.formattingLimit { formatting[type.rawValue] = data }
                         }
                         if !Task.isCancelled, pasteboard.changeCount == count, gate.state.generation == state.generation {
-                            entry = ClipboardHistoryEntry(text: text, formatting: formatting, isSensitive: sensitive)
+                            entry = ClipboardHistoryEntry(text: text, formatting: formatting)
                         }
                     }
                 } else {
@@ -172,12 +188,30 @@ actor ClipboardHistoryReader {
     }
 }
 
+/// The copies kept in memory, newest first, and the one watch of the pasteboard that both clipboard
+/// history and the Phone plugin use. Nothing runs while neither wants it.
 @MainActor
 final class ClipboardHistoryStore: ObservableObject {
-    static let capacity = 100
+    nonisolated static let defaultCapacity = 200
+    nonisolated static let maxCapacity = 1000
+    /// The longest text kept, and the largest RTF or HTML beside it.
+    nonisolated static let textLimit = 512 * 1024
+    nonisolated static let formattingLimit = 1024 * 1024
+    /// All kept copies together stay under this; the oldest go first.
+    nonisolated static let byteBudget = 64 * 1024 * 1024
+
     @Published private(set) var entries: [ClipboardHistoryEntry] = []
+    /// How many copies are kept, 1 to `maxCapacity`.
+    var capacity = ClipboardHistoryStore.defaultCapacity {
+        didSet {
+            capacity = min(max(capacity, 1), Self.maxCapacity)
+            guard entries.count > capacity else { return }
+            entries = Array(entries.prefix(capacity))
+            storedBytes = entries.reduce(0) { $0 + $1.bytes }
+        }
+    }
     private(set) var enabled = false
-    /// Whether new copies go to `onCopy`, for the Phone feature. The watch runs while either is on.
+    /// Whether new copies go to `onCopy`, for the Phone plugin. The watch runs while either is on.
     private(set) var forwardsCopies = false
     var onCopy: ((ClipboardCopy) -> Void)?
     var watching: Bool { enabled || forwardsCopies }
@@ -189,6 +223,7 @@ final class ClipboardHistoryStore: ObservableObject {
     private var polling: Task<Void, Never>?
     private var pendingCount: Int?
     private var pendingAttempts = 0
+    private var storedBytes = 0
     private let pollPause: @Sendable () async throws -> Void
     /// Changes only when entries are forgotten, so that a paste waiting for an item stops,
     /// while a result Frog copies in the meantime leaves it alone.
@@ -207,11 +242,11 @@ final class ClipboardHistoryStore: ObservableObject {
     func configure(enabled: Bool, automaticallyPoll: Bool = true) {
         guard enabled != self.enabled else { return }
         self.enabled = enabled; retentionGeneration = UUID()
-        entries = []
+        entries = []; storedBytes = 0
         restartWatch(automaticallyPoll: automaticallyPoll)
     }
 
-    /// Hands new copies to `onCopy` without keeping them, for the Phone feature. One watch serves both.
+    /// Hands new copies to `onCopy` without keeping them, for the Phone plugin. One watch serves both.
     func configure(forwardingCopies: Bool, automaticallyPoll: Bool = true) {
         guard forwardingCopies != forwardsCopies else { return }
         forwardsCopies = forwardingCopies
@@ -238,7 +273,7 @@ final class ClipboardHistoryStore: ObservableObject {
                     guard let request = await self?.readRequest else { return }
                     // Do not retain the UI store across promised-data IPC, which
                     // AppKit does not expose a cancellation/timeout API for.
-                    let observation = await reader.read(after: request.count, forwarding: request.forwarding)
+                    let observation = await reader.read(after: request.count, recording: request.recording, forwarding: request.forwarding)
                     guard !Task.isCancelled else { return }
                     guard let store = self else { return }
                     settled = await store.receive(observation, epoch: request.epoch)
@@ -250,11 +285,11 @@ final class ClipboardHistoryStore: ObservableObject {
     func poll() async {
         guard watching else { return }
         let request = readRequest
-        let observation = await reader.read(after: request.count, forwarding: request.forwarding)
+        let observation = await reader.read(after: request.count, recording: request.recording, forwarding: request.forwarding)
         receive(observation, epoch: request.epoch)
     }
 
-    private var readRequest: (count: Int, epoch: UUID, forwarding: Bool) { (changeCount, epoch, forwardsCopies) }
+    private var readRequest: (count: Int, epoch: UUID, recording: Bool, forwarding: Bool) { (changeCount, epoch, enabled, forwardsCopies) }
 
     /// The change count that needs no further look; nil while the text of a copy is awaited.
     private var settledCount: Int? { pendingCount == nil ? changeCount : nil }
@@ -275,20 +310,33 @@ final class ClipboardHistoryStore: ObservableObject {
     }
 
     private func record(_ entry: ClipboardHistoryEntry) {
-        guard enabled else { return }
-        let sensitive = entry.isSensitive || entries.contains { $0.text == entry.text && $0.formatting == entry.formatting && $0.isSensitive }
-        let retained = sensitive == entry.isSensitive ? entry : ClipboardHistoryEntry(text: entry.text, formatting: entry.formatting, isSensitive: sensitive, timestamp: entry.timestamp)
+        guard enabled, !entry.isSensitive else { return }
+        var kept = entries
+        if let index = kept.firstIndex(where: { $0.text == entry.text && $0.formatting == entry.formatting }) {
+            storedBytes -= kept.remove(at: index).bytes
+        }
+        kept.insert(entry, at: 0); storedBytes += entry.bytes
+        while kept.count > capacity || (storedBytes > Self.byteBudget && kept.count > 1) { storedBytes -= kept.removeLast().bytes }
         // One change of the list per copy: an open panel searches all of it again on each one.
-        entries = Array(([retained] + entries.filter { $0.text != entry.text || $0.formatting != entry.formatting }).prefix(Self.capacity))
+        entries = kept
     }
 
     /// Explicitly include Frog results even if a subsequent compatibility Copy
     /// temporarily suppresses clipboard polling/restores that same result.
     func recordCopiedText(_ text: String) {
-        guard enabled, !text.isEmpty, text.utf8.count <= 512 * 1024 else { return }
+        guard enabled, !text.isEmpty, text.utf8.count <= Self.textLimit, ClipboardSecret.detect(text) == nil else { return }
         epoch = UUID(); pendingCount = nil; pendingAttempts = 0
         record(ClipboardHistoryEntry(text: text))
         changeCount = pasteboard.changeCount
+    }
+
+    /// The entry with this ID, or with an ID that starts with these characters (at least four).
+    func entry(id text: String) -> ClipboardHistoryEntry? {
+        let key = text.trimmingCharacters(in: .whitespaces).lowercased()
+        if let id = UUID(uuidString: key) { return entries.first { $0.id == id } }
+        guard key.count >= 4 else { return nil }
+        let matches = entries.filter { $0.id.uuidString.lowercased().hasPrefix(key) }
+        return matches.count == 1 ? matches[0] : nil
     }
 
     /// Writing through the store keeps the item's row, also as plain text, and the next
@@ -302,8 +350,8 @@ final class ClipboardHistoryStore: ObservableObject {
         return true
     }
 
-    /// Puts text or an image a phone sent onto the clipboard. The text joins the history; neither is
-    /// taken for a new copy, so neither goes back to a phone.
+    /// Puts text or an image a phone sent onto the clipboard. The text joins the history unless it looks
+    /// like a secret; neither is taken for a new copy, so neither goes back to a phone.
     @discardableResult
     func writeReceived(_ copy: ClipboardCopy, mime: String = "image/png") -> Bool {
         let item = NSPasteboardItem()
@@ -321,7 +369,7 @@ final class ClipboardHistoryStore: ObservableObject {
         pasteboard.prepareForNewContents(with: secret ? .currentHostOnly : [])
         guard pasteboard.writeObjects([item]) else { return false }
         epoch = UUID(); pendingCount = nil; pendingAttempts = 0
-        if let text, enabled, text.utf8.count <= 512 * 1024 { record(ClipboardHistoryEntry(text: text)) }
+        if let text, !secret, enabled, text.utf8.count <= Self.textLimit { record(ClipboardHistoryEntry(text: text)) }
         changeCount = pasteboard.changeCount
         return true
     }
@@ -333,16 +381,53 @@ final class ClipboardHistoryStore: ObservableObject {
     }
 
     func delete(id: UUID) {
-        epoch = UUID(); retentionGeneration = UUID(); entries.removeAll { $0.id == id }
+        epoch = UUID(); retentionGeneration = UUID()
+        if let index = entries.firstIndex(where: { $0.id == id }) { storedBytes -= entries.remove(at: index).bytes }
         pendingCount = nil; pendingAttempts = 0
         changeCount = pasteboard.changeCount
     }
 
     func clear() {
-        epoch = UUID(); retentionGeneration = UUID(); entries = []
+        epoch = UUID(); retentionGeneration = UUID(); entries = []; storedBytes = 0
         pendingCount = nil; pendingAttempts = 0
         changeCount = pasteboard.changeCount
     }
 
     isolated deinit { polling?.cancel() }
+}
+
+/// Matching for the panel, the page and `clipboard.search`: every word of the query, in any order,
+/// ignoring case and accents, within the first `keyLength` characters of each copy. Each entry folds its
+/// text once, so a keystroke compares bytes only.
+enum ClipboardSearch {
+    static let keyLength = 64 * 1024
+
+    static func filter(_ entries: [ClipboardHistoryEntry], query: String) -> [ClipboardHistoryEntry] {
+        let words = query.split(whereSeparator: \.isWhitespace).map { fold($0) }
+        guard !words.isEmpty else { return entries }
+        return entries.filter { entry in words.allSatisfy { contains(entry.searchKey, $0) } }
+    }
+
+    static func fold<S: StringProtocol>(_ text: S) -> String {
+        var folded = String(text).folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+        // Native UTF-8 now, so that a search never converts a bridged string again.
+        folded.makeContiguousUTF8()
+        return folded
+    }
+
+    private static func contains(_ key: String, _ word: String) -> Bool {
+        var key = key, word = word
+        return key.withUTF8 { haystack in
+            word.withUTF8 { needle in memmem(haystack.baseAddress, haystack.count, needle.baseAddress, needle.count) != nil }
+        }
+    }
+}
+
+/// What History's clipboard filter still reads, until History stops showing copied text. Nothing in
+/// clipboard history is ever hidden, since secrets are never kept.
+extension ClipboardHistoryEntry {
+    func displayPreview(revealed: Bool) -> String { revealed || !isSensitive ? preview : Self.mask }
+    var sensitivityLabel: String { "" }
+    var sensitiveTitle: String { "Copied text" }
+    static let mask = String(repeating: "•", count: 12)
 }

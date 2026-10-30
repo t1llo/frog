@@ -33,6 +33,9 @@ final class PageShotsTests: XCTestCase {
                              toolkit: toolkit, systemStatusTick: { try await Task.sleep(for: .seconds(3_600)) })
         defer { model.shutdown() }
         await model.pluginHost.syncAndWait()
+        // Clipboard shows a few copies rather than its empty state; they stay in memory.
+        for text in ["git push origin main", "Meeting moved to Thursday", "https://example.com/docs/command-bar/",
+                     "Thanks, see you at 3!"] { model.clipboardHistoryStore.recordCopiedText(text) }
         let only = ProcessInfo.processInfo.environment["FROG_PAGE_SHOTS_ONLY"]
         let routes: [(String, ToolkitRoute)] = FeatureID.allCases.map { ($0.rawValue, .feature($0)) }
             + [("history", .history), ("models", .models), ("features", .features), ("settings", .settings), ("statistics", .statistics)]

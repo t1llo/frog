@@ -57,9 +57,10 @@ final class HotkeyRulesTests: XCTestCase {
         changed.preferences.workflows = workflow
         XCTAssertNotEqual(AppModel.hotkeyRules(for: changed), registered)
 
+        // The Clipboard plugin registers its own shortcut, so switching it leaves these alone.
         changed = configuration
         changed.preferences.setFeature(.clipboard, enabled: !(configuration.preferences.workflowSettings.clipboardHistoryEnabled == true))
-        XCTAssertNotEqual(AppModel.hotkeyRules(for: changed), registered)
+        XCTAssertEqual(AppModel.hotkeyRules(for: changed), registered)
     }
 
     func testOnlyAChangedShortcutOrAnEarlierFailureRegistersTheShortcutsAgain() {

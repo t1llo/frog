@@ -28,7 +28,7 @@ final class SurfaceShotsTests: XCTestCase {
         history.configure(enabled: true, automaticallyPoll: false)
         for text in ["git push origin main", "https://frog.beffa.xyz/docs/command-bar/", "Thanks, see you at 3!",
                      "Meeting moved to Thursday", "brew install --cask frog",
-                     // A password and a key, made up here, to show how hidden items look.
+                     // A password and a key, made up here: the history never keeps them.
                      "Synth3tic&Pass", "sk-" + "proj-" + SyntheticKey.make(48)] { history.recordCopiedText(text) }
         let usage = UsageDashboardModel(defaults: temporaryDefaults(), fixtureRoot: root.appendingPathComponent("fixtures"))
         let toolkit = Toolkit(makeUsage: { usage }, showsUsageStatusItem: false)
@@ -45,6 +45,7 @@ final class SurfaceShotsTests: XCTestCase {
         bar.query = "win"
 
         let clipboardState = ClipboardHistoryPanelState()
+        clipboardState.update(history.entries)
         let switcher = WindowSwitcherDisplay()
         switcher.windows = [
             SwitcherWindow(id: UUID(), pid: 1, appName: "Safari", title: "Frog — Command bar", minimized: false, hidden: false),
@@ -61,8 +62,7 @@ final class SurfaceShotsTests: XCTestCase {
         let surfaces: [(String, AnyView)] = [
             ("menu", AnyView(FrogStatusMenu(model: model).environment(\.locale, L10n.locale))),
             ("command-bar", AnyView(CommandBarView(bar: bar))),
-            ("clipboard", AnyView(ClipboardHistoryView(history: history, state: clipboardState, paste: { _, _ in }, copy: { _ in },
-                                                       close: {}, clear: {}, resize: { _ in }))),
+            ("clipboard", AnyView(ClipboardHistoryView(state: clipboardState, paste: { _, _ in }, copy: { _ in }, close: {}, resize: {}))),
             ("switcher", AnyView(WindowSwitcherOverlay(model: switcher, choose: { _ in }, hover: { _ in })
                 .frame(height: WindowSwitcherLayout.size(windowCount: switcher.windows.count).height))),
             ("layouts", AnyView(LayoutPickerView(panel: picker, measuring: true))),
