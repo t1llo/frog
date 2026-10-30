@@ -10,23 +10,14 @@ import FrogUsage
     private var usageModel: UsageDashboardModel?
     private let makeUsage: @MainActor () -> UsageDashboardModel
     private let showsUsageStatusItem: Bool
-    private let showsMenuBarOrganizer: Bool
-    let menuBarOrganizer: MenuBarOrganizer
     private(set) var usageStatusItem: UsageStatusItemController?
     private var usagePreferences: UsageDashboardPreferences?
     var onDisable: ((FeatureID) -> Void)?
     var onOpenUsage: (() -> Void)?
-    var onOpenMenuBar: (() -> Void)?
     var onUsagePreferencesChange: ((UsageDashboardPreferences) -> Void)?
 
-    init(makeUsage: @escaping @MainActor () -> UsageDashboardModel = { UsageDashboardModel() }, showsUsageStatusItem: Bool = true,
-         showsMenuBarOrganizer: Bool = false, menuBarOrganizer: MenuBarOrganizer? = nil) {
+    init(makeUsage: @escaping @MainActor () -> UsageDashboardModel = { UsageDashboardModel() }, showsUsageStatusItem: Bool = true) {
         self.makeUsage = makeUsage; self.showsUsageStatusItem = showsUsageStatusItem
-        self.showsMenuBarOrganizer = showsMenuBarOrganizer
-        self.menuBarOrganizer = menuBarOrganizer ?? MenuBarOrganizer()
-        self.menuBarOrganizer.onShowSettings = { [weak self] in
-            self?.select(.feature(.menuBar)); self?.onOpenMenuBar?()
-        }
     }
     var sidebar: [FeatureID] { preferences.sidebarFeatures }
     func apply(_ preferences: Preferences) {
@@ -34,8 +25,6 @@ import FrogUsage
         self.preferences = preferences
         if !route.available(in: preferences) { route = .features }
         for feature in disabled { onDisable?(feature) }
-        menuBarOrganizer.configure(enabled: showsMenuBarOrganizer && preferences.featureEnabled(.menuBar),
-                                   settings: preferences.toolkitSettings.menuBar ?? MenuBarPreferences())
         if preferences.featureEnabled(.usage), let usage = usage() {
             usage.setAvailable(true)
             if showsUsageStatusItem, usageStatusItem == nil {
@@ -71,7 +60,6 @@ import FrogUsage
         usageModel?.applyPreferences(preferences)
     }
     func stop() {
-        menuBarOrganizer.stop()
         usageStatusItem?.stop(); usageStatusItem = nil
         usageModel?.setAvailable(false)
         for id in FeatureID.allCases { onDisable?(id) }

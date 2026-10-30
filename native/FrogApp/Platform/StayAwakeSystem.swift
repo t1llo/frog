@@ -17,7 +17,7 @@ enum StayAwakeError: LocalizedError {
     case permission, command, timeout, unreadable, notApplied, lowBattery
     var errorDescription: String? {
         switch self {
-        case .permission: "Allow Frog's two power commands using Set up access, then try again."
+        case .permission: "Allow Frog's two power commands with Set up… on the Stay awake page, then try again."
         case .command: "macOS could not change the sleep setting. Try again."
         case .timeout: "The power command timed out. Check the current setting before trying again."
         case .unreadable: "Could not read the Mac's power settings."

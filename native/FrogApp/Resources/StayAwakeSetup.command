@@ -349,7 +349,7 @@ else
     say "The exact line shown before is not in $RULE_FILE; another rule allows them."
 fi
 say "Your Mac's sleep setting was not changed. Frog is ready to use the feature."
-say "Open Frog's menu-bar popup and turn on Stay awake when you need it."
-say "Default session: four hours. Frog restores sleep on quit or below 20% battery when unplugged."
-say "You can check or reset this permission in Frog Settings → Stay awake."
+say "With \"Stay awake with the lid closed\" on, every Stay awake session now also works with the lid closed."
+say "Frog restores sleep when the session ends, on quit, or below 20% battery when unplugged."
+say "You can check or reset this permission on Frog's Stay awake page."
 OUTCOME=success
