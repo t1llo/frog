@@ -83,6 +83,71 @@ final class ClipboardPluginTests: XCTestCase {
         do { let text = try await run("clipboard.list").text; XCTAssertEqual(text, "Nothing copied yet.") }
     }
 
+    func testShortcutIsMirroredAndAClashIsRefused() async throws {
+        let plugin = try XCTUnwrap(plugin)
+        let mine = Hotkey(keyCode: 9, modifiers: 256 | 2048)
+        plugin.setShortcut(mine)
+        XCTAssertEqual(plugin.state.settings.shortcut.hotkey, mine)
+        XCTAssertEqual(model.configuration.preferences.workflowSettings.clipboardHistoryHotkey, mine, "The preferences keep a copy")
+
+        // Another Frog shortcut takes keys: the page cannot give them to the clipboard too.
+        let taken = Hotkey(keyCode: 11, modifiers: 256 | 2048)
+        var workflow = model.configuration.preferences.workflowSettings
+        workflow.shortcutPanelHotkey = taken
+        try model.saveWorkflowPreferences(workflow)
+        plugin.setShortcut(taken)
+        XCTAssertEqual(plugin.state.settings.shortcut.hotkey, mine, "A clashing shortcut is not saved")
+        XCTAssertEqual(model.configuration.preferences.workflowSettings.clipboardHistoryHotkey, mine)
+
+        // Written into config.toml by hand, it stays unregistered and the page says why.
+        var edited = plugin.state.settings
+        edited.shortcut = try Shortcut(taken)
+        try model.settingsFile.update("clipboard", edited)
+        plugin.settingsChanged()
+        XCTAssertNotNil(plugin.state.shortcutIssue)
+        XCTAssertEqual(model.configuration.preferences.workflowSettings.clipboardHistoryHotkey, mine)
+
+        // Reload and Import follow the old key.
+        let reloaded = Hotkey(keyCode: 9, modifiers: 256 | 4096)
+        workflow = model.configuration.preferences.workflowSettings
+        workflow.clipboardHistoryHotkey = reloaded
+        try model.saveWorkflowPreferences(workflow)
+        ClipboardPlugin.adoptLegacySettings(model)
+        XCTAssertEqual(plugin.state.settings.shortcut.hotkey, reloaded)
+        XCTAssertNil(plugin.state.shortcutIssue)
+        XCTAssertEqual(model.settingsFile.document.value(at: ["clipboard", "items"]), .integer(ClipboardHistoryStore.defaultCapacity), "Items stay")
+    }
+
+    func testItemsOutOfRangeAreShownAsKept() throws {
+        let plugin = try XCTUnwrap(plugin)
+        var edited = plugin.state.settings
+        edited.items = 5000
+        try model.settingsFile.update("clipboard", edited)
+        plugin.settingsChanged()
+        XCTAssertEqual(plugin.state.settings.items, ClipboardHistoryStore.maxCapacity)
+        XCTAssertEqual(history.capacity, ClipboardHistoryStore.maxCapacity)
+    }
+
+    func testAnAmbiguousIDAsksForMoreCharacters() async throws {
+        history.recordCopiedText("Fixture short")
+        do { _ = try await run("clipboard.copy", ["id": String(history.entries[0].shortID.prefix(2))]); XCTFail("Too short") } catch let ActionError.failed(message) {
+            XCTAssertTrue(message.contains("at least 4"), message)
+        }
+        // A thousand IDs almost surely share a first four characters; another thousand if not.
+        plugin?.setItems(ClipboardHistoryStore.maxCapacity)
+        var shared: [ClipboardHistoryEntry] = []
+        for round in 0..<5 where shared.count < 2 {
+            for index in 0..<1000 { history.recordCopiedText("Fixture \(round) \(index)") }
+            shared = Dictionary(grouping: history.entries) { String($0.shortID.prefix(4)) }.values.first { $0.count > 1 } ?? []
+        }
+        let pair = try XCTUnwrap(shared.count > 1 ? shared : nil)
+        do { _ = try await run("clipboard.copy", ["id": String(pair[0].shortID.prefix(4))]); XCTFail("Ambiguous") } catch let ActionError.failed(message) {
+            XCTAssertTrue(message.contains("matches several items"), message)
+        }
+        do { let text = try await run("clipboard.copy", ["id": pair[0].shortID]).text; XCTAssertEqual(text, "Copied.") }
+        XCTAssertEqual(pasteboard.string(forType: .string), pair[0].text)
+    }
+
     /// 1000 items of a few hundred characters each: what they cost to keep, and a search over all of them.
     func testThousandItemsMemoryAndSearch() throws {
         plugin?.setItems(ClipboardHistoryStore.maxCapacity)

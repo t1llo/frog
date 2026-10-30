@@ -202,7 +202,6 @@ final class AppModel: ObservableObject {
     private var observations = Set<AnyCancellable>()
     static let localProviderID = UUID(uuidString: "7C05FB97-5BEF-48FD-9C28-A67605107251")!
     static let shortcutPanelID = UUID(uuidString: "85F8DE80-89BC-4506-B82D-DCFB71AFE292")!
-    static let clipboardHistoryID = ClipboardPlugin.shortcutID
     static let commandBarID = UUID(uuidString: "76B6A364-18CC-4779-9552-9885FCE778B8")!
     static let menuBarID = UUID(uuidString: "426A0C79-8785-4B2A-96E1-5880E7853209")!
     private let shortcutPanel = ShortcutReferencePanel()
@@ -419,6 +418,7 @@ final class AppModel: ObservableObject {
         let candidate = try configurationStore.load { try self.validateForThisMac($0, change: .reload) }
         applyConfiguration(candidate)
         MacPluginSettings.adoptLegacySettings(self)
+        ClipboardPlugin.adoptLegacySettings(self); PhonePlugin.adoptLegacySettings(self)
         configurationLoadError = nil
         localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds
         if !candidate.preferences.historyEnabled { invalidateHistoryRecovery() }
@@ -1082,6 +1082,7 @@ final class AppModel: ObservableObject {
         try configurationStore.replaceFromImport(candidate)
         applyConfiguration(candidate)
         MacPluginSettings.adoptLegacySettings(self)
+        ClipboardPlugin.adoptLegacySettings(self); PhonePlugin.adoptLegacySettings(self)
         configurationLoadError = nil
         localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds
         errorMessage = nil

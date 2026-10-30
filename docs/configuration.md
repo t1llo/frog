@@ -112,7 +112,7 @@ sidebar-order = ["writing", "scripts", "explain", "dictation"]
 
 ### Global shortcuts
 
-`shortcut.rules`, `shortcut.cancel-recording`, `shortcut.clipboard`, `shortcut.command-bar` and `shortcut.window-switcher` accept readable physical macOS key names:
+`shortcut.rules`, `shortcut.cancel-recording`, `shortcut.clipboard`, `shortcut.command-bar` and `shortcut.window-switcher` accept readable physical macOS key names. The clipboard shortcut lives in `[clipboard]` in `config.toml` (see [Clipboard](#clipboard)); `shortcut.clipboard` is its copy:
 
 ```ini
 shortcut.rules = ctrl+alt+k
@@ -149,6 +149,17 @@ Colors are six RGB hex digits, optionally prefixed with `#`. Overrides inherit a
 `transparency` and `popup-transparency` independently range from 0 (opaque) to 1. The whole window and all Frog popups use a real, active native `NSVisualEffectView` with behind-window backdrop blur; text is never blurred or faded. Popup fields/cards use their popup setting, independent of the main window. Inset controls retain a stronger tint for readability. Visible pixels blend the palette with the blurred material. Native macOS controls, system status colors and content images retain their platform/content colors.
 
 **Reduce Transparency** or **Increase Contrast** in macOS accessibility settings makes Frog surfaces opaque without changing your saved values. Increased Contrast also strengthens panel outlines. The `frog` theme keeps its black surfaces and green accent in dark mode.
+
+### Clipboard
+
+The Clipboard plugin keeps its settings in `[clipboard]` in `config.toml`, written once from `shortcut.clipboard`:
+
+- `shortcut`: readable shortcut, default `shift+cmd+v` (was `shortcut.clipboard`). One that another Frog shortcut already uses is refused on the page and left unregistered when written by hand.
+- `items`: how many copies to keep, 1–1000, default 200. They stay in memory only, and all of them together under 64 MB.
+
+`[clipboard]` decides; Frog keeps `shortcut.clipboard` in step with it. Editing that key and choosing **Reload** or **Import** writes it into `[clipboard]` again.
+
+Actions: `clipboard.show`, `clipboard.list`, `clipboard.search`, `clipboard.copy`, `clipboard.paste` and `clipboard.clear`. `--id` takes an ID from `clipboard.list` or its start, at least 4 characters.
 
 ### Hidden bar
 
@@ -276,9 +287,11 @@ Enable with `feature.plugins = true`. Installed plugins, what each one may do an
 
 ### Phone
 
-Enable with `feature.phone = true`. Frog then listens for paired Android phones running Frog Companion on Wi-Fi (TCP port 47321, Bonjour `_frogcompanion._tcp`) and Bluetooth LE; nothing listens, advertises or asks for a permission while it is off. Portable settings:
+Enable with `feature.phone = true`. Frog then listens for paired Android phones running Frog Companion on Wi-Fi (TCP port 47321, Bonjour `_frogcompanion._tcp`) and Bluetooth LE; nothing listens, advertises or asks for a permission while it is off. Its setting lives in `[phone]` in `config.toml`, written once from `phone.auto-send`, which Frog keeps in step; editing that key and choosing **Reload** or **Import** writes it into `[phone]` again:
 
-- `phone.auto-send`: boolean, default `true`. Sends text and images you copy to a connected phone. Items an app marks as concealed, transient or auto-generated, text that looks like a key or password, and files copied in Finder are never sent on their own; files go with **Send clipboard to phone** in the command bar, **Choose…** on the Phone page or `frog run phone.send --file <path>`.
+- `auto-send`: boolean, default `true` (was `phone.auto-send`). Sends text and images you copy to a connected phone. Items an app marks as concealed, transient or auto-generated, text that looks like a key or password, and files copied in Finder are never sent on their own; files go with **Send clipboard to phone** in the command bar, **Choose…** on the Phone page or `frog run phone.send --file <path>`. `phone.send` refuses text that looks like a key or password, and, when an agent asks, a file that looks like one: a key or keystore by its name (`.pem`, `.key`, `.p8`, `.p12`, `.jks`, `.keystore`, `.env…`), anything under `~/.ssh` or `~/Library/Keychains`, or a file whose start holds a key or password. Text over 1 MB goes as a file.
+
+Actions: `phone.status`, `phone.send`, `phone.pair` (shows the code on the Phone page, never in the terminal) and `phone.unpair`.
 
 Paired phones and this Mac's companion ID stay on each Mac in `~/Library/Application Support/Frog/phone.json`, and each pairing secret in the login Keychain, never in this folder. See the [protocol](companion-protocol.md).
 
