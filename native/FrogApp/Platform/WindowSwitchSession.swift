@@ -91,7 +91,11 @@ struct WindowSwitchKeyRouter: Sendable {
 
     /// The chord's modifiers are held; in a list opened without the chord, no modifier is held.
     private func matchesBaseModifiers(_ flags: CGEventFlags) -> Bool {
-        if sticky { return flags.intersection(Self.baseFlags).isEmpty }
+        if sticky {
+            // The modifiers of the shortcut that opened the list may still be held.
+            let held = flags.intersection(Self.baseFlags)
+            return held.isEmpty || held == stickyFlags
+        }
         return !requiredFlags.isEmpty && flags.intersection(Self.baseFlags) == requiredFlags
     }
 
@@ -108,6 +112,8 @@ struct WindowSwitchKeyRouter: Sendable {
     }
     /// The list was opened without the chord, by `beginSticky`: releasing a modifier does not choose.
     private(set) var sticky = false
+    /// The modifiers held when the sticky list opened, such as those of the shortcut that opened it.
+    private var stickyFlags: CGEventFlags = []
     private(set) var sessionID: UInt64?
     private var nextSessionID: UInt64 = 0
     private var swallowed = Set<UInt16>()
@@ -148,6 +154,8 @@ struct WindowSwitchKeyRouter: Sendable {
         case 123, 126: action = .step(backwards: true)
         case 124, 125: action = .step(backwards: false)
         case 51 where active: action = .deleteSearch
+        // Tab moves through a list opened without the chord, whatever key the chord uses.
+        case 48 where sticky: action = .step(backwards: flags.contains(.maskShift))
         default:
             if active && matches && !text.isEmpty && !text.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
                 swallowed.insert(code)
@@ -163,10 +171,11 @@ struct WindowSwitchKeyRouter: Sendable {
 
     /// Opens the list with no key held, for the command bar, a shortcut or an agent. Tab and the arrows
     /// move, typing searches, Return chooses, Escape or any chord closes it.
-    mutating func beginSticky() -> UInt64 {
+    mutating func beginSticky(held: CGEventFlags = []) -> UInt64 {
         nextSessionID &+= 1
         sessionID = nextSessionID
         active = true; sticky = true
+        stickyFlags = held.intersection(Self.baseFlags)
         return nextSessionID
     }
 
