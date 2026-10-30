@@ -1,3 +1,4 @@
+import FrogCore
 import SwiftUI
 
 /// A feature of Frog. The host creates a plugin when it is turned on, calls `start()`, and calls `stop()` and
@@ -14,6 +15,8 @@ import SwiftUI
     func page() -> AnyView?
     /// Rows or a tab for the Frog menu-bar popup.
     var menu: [MenuContribution] { get }
+    /// Its table in config.toml changed, from Frog or from an editor. Read it again with `context.settings`.
+    func settingsChanged()
 }
 
 extension FrogPlugin {
@@ -22,6 +25,7 @@ extension FrogPlugin {
     var actions: [PluginAction] { [] }
     func page() -> AnyView? { nil }
     var menu: [MenuContribution] { [] }
+    func settingsChanged() {}
     var info: PluginInfo { Self.info }
 }
 
@@ -66,6 +70,24 @@ struct PluginDescriptor: Identifiable {
 
     init(info: PluginInfo, host: PluginHost, legacy: AppModel) {
         self.info = info; self.host = host; self.legacy = legacy
+    }
+
+    /// This plugin's table in config.toml, `[<plugin id>]`; defaults for keys that are missing, with a warning
+    /// reported for each value that could not be read.
+    func settings<Section: ConfigSection>(_ type: Section.Type = Section.self) -> Section {
+        do {
+            let result = try legacy.settingsFile.section(info.id, as: type)
+            for warning in result.warnings { legacy.report(FrogError.message("config.toml line \(warning.line): \(warning.message)")) }
+            return result.value
+        } catch {
+            report(error)
+            return Section()
+        }
+    }
+
+    /// Writes this plugin's table, keeping the comments and spelling of everything it does not change.
+    func save<Section: ConfigSection>(_ settings: Section) throws {
+        try legacy.settingsFile.update(info.id, settings)
     }
 
     /// Shows this plugin's page in the main window.

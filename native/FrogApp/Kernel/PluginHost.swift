@@ -64,6 +64,11 @@ import SwiftUI
         }
     }
 
+    /// Tells every running plugin that config.toml changed.
+    func settingsChanged() {
+        for descriptor in descriptors { running[descriptor.id]?.settingsChanged() }
+    }
+
     func setEnabled(_ id: String, _ enabled: Bool) async throws {
         try await writeEnabled(id, enabled)
         sync()

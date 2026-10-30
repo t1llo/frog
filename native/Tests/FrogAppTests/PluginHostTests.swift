@@ -1,6 +1,7 @@
 import XCTest
 import SwiftUI
 @testable import FrogApp
+import struct FrogCore.ConfigDocument
 
 @MainActor
 final class PluginHostTests: XCTestCase {
@@ -79,5 +80,32 @@ final class PluginHostTests: XCTestCase {
         for descriptor in BuiltinPlugins.all {
             XCTAssertLessThanOrEqual(descriptor.info.summary.count, 50, "\(descriptor.id)'s summary is too long")
         }
+    }
+
+    func testConfigTomlDecidesWhichPluginsAreOn() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        // A first start writes config.toml with the switches Frog has.
+        var model: AppModel? = AppModel(dataDirectory: directory, registerShortcuts: false)
+        let file = directory.appendingPathComponent("config.toml")
+        let first = try ConfigDocument(data: Data(contentsOf: file))
+        XCTAssertEqual(try first.pluginSwitches().count, BuiltinPlugins.all.count)
+        XCTAssertEqual(try first.pluginSwitches()["notes"], model?.pluginEnabled("notes"))
+        model?.shutdown(); model = nil
+
+        // An edit made in an editor wins over the old switches at the next start…
+        let notesOn = try XCTUnwrap(first.pluginSwitches()["notes"])
+        let edited = try String(contentsOf: file, encoding: .utf8)
+            .replacingOccurrences(of: "notes = \(notesOn)", with: "notes = \(!notesOn) # mine")
+        try edited.write(to: file, atomically: true, encoding: .utf8)
+        let reopened = AppModel(dataDirectory: directory, registerShortcuts: false)
+        defer { reopened.shutdown() }
+        XCTAssertEqual(reopened.pluginEnabled("notes"), !notesOn)
+
+        // …and a switch turned in Frog is written back, keeping the comment.
+        try await reopened.setPlugin("notes", enabled: notesOn)
+        let saved = try String(contentsOf: file, encoding: .utf8)
+        XCTAssertTrue(saved.contains("notes = \(notesOn) # mine"), saved)
+        XCTAssertEqual(reopened.pluginEnabled("notes"), notesOn)
     }
 }

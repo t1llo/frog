@@ -40,6 +40,9 @@ final class AppModel: ObservableObject {
 
     var openSettings: (() -> Void)?
     private let configurationStore: ConfigurationStore
+    /// config.toml: which plugins are on, and each plugin's own table. Frog's other settings are still in `config`,
+    /// whose feature switches follow `[plugins]`.
+    let settingsFile: ConfigStore
     private let historyStore: HistoryStore
     private let credentials: any CredentialStore
     private let complete: (String, Rule, ProviderConfiguration, String?) async throws -> String
@@ -139,12 +142,13 @@ final class AppModel: ObservableObject {
         host.openPage = { [unowned self] in self.openPluginPage($0) }
         return host
     }()
-    func pluginEnabled(_ id: String) -> Bool {
-        let preferences = configuration.preferences
-        if id == "history" { return preferences.historyEnabled }
-        return BuiltinPlugins.legacyFeatures[id].map(preferences.featureEnabled) ?? false
-    }
+    func pluginEnabled(_ id: String) -> Bool { Self.pluginSwitch(id, in: configuration.preferences) }
     func setPlugin(_ id: String, enabled: Bool) async throws {
+        try await applyPluginSwitch(id, enabled)
+        try settingsFile.setPlugin(id, enabled: enabled)
+    }
+    /// Turns a plugin on or off in the running app and in `config`, without writing config.toml.
+    private func applyPluginSwitch(_ id: String, _ enabled: Bool) async throws {
         if id == "history" {
             var preferences = configuration.preferences
             preferences.historyEnabled = enabled
@@ -152,6 +156,49 @@ final class AppModel: ObservableObject {
         }
         guard let feature = BuiltinPlugins.legacyFeatures[id] else { throw ActionError.unknown(id) }
         try await setFeature(feature, enabled: enabled)
+    }
+    private static func pluginSwitch(_ id: String, in preferences: Preferences) -> Bool {
+        if id == "history" { return preferences.historyEnabled }
+        return BuiltinPlugins.legacyFeatures[id].map(preferences.featureEnabled) ?? false
+    }
+    private static func setPluginSwitch(_ id: String, _ enabled: Bool, in preferences: inout Preferences) {
+        if id == "history" { preferences.historyEnabled = enabled }
+        else if let feature = BuiltinPlugins.legacyFeatures[id] { preferences.setFeature(feature, enabled: enabled) }
+    }
+    /// config.toml decides which plugins are on. Without one, Frog writes it with the switches it has.
+    private func adoptPluginSwitches(into candidate: inout Configuration) {
+        do {
+            try settingsFile.load()
+            if FileManager.default.fileExists(atPath: settingsFile.fileURL.path) {
+                for (id, enabled) in try settingsFile.pluginSwitches() { Self.setPluginSwitch(id, enabled, in: &candidate.preferences) }
+            } else {
+                let preferences = candidate.preferences
+                try settingsFile.edit { document in
+                    document = try ConfigDocument(parsing: Self.settingsHeading)
+                    for descriptor in BuiltinPlugins.all {
+                        try document.setPlugin(descriptor.id, enabled: Self.pluginSwitch(descriptor.id, in: preferences))
+                    }
+                }
+            }
+        } catch { report(error) }
+    }
+    private static let settingsHeading = """
+        # Frog plugins. [plugins] turns each one on or off; a table named after a plugin holds its settings.
+        # Frog picks up a saved change within a moment.
+
+        """
+    /// An edit to config.toml, from an editor or merged into one of Frog's own saves.
+    private func settingsFileChanged() {
+        let switches: [String: Bool]
+        do { switches = try settingsFile.pluginSwitches() } catch { return report(error) }
+        Task { [weak self] in
+            guard let self else { return }
+            for descriptor in BuiltinPlugins.all {
+                guard let enabled = switches[descriptor.id], enabled != self.pluginEnabled(descriptor.id) else { continue }
+                do { try await self.applyPluginSwitch(descriptor.id, enabled) } catch { self.report(error) }
+            }
+            self.pluginHost.settingsChanged()
+        }
     }
     func openPluginPage(_ id: String) {
         if id == "history" { toolkit.select(.history) }
@@ -308,6 +355,7 @@ final class AppModel: ObservableObject {
         self.readKey = readKey ?? { try credentials.read(providerID: $0) }
         self.writeClipboard = writeClipboard ?? { text in NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
         configurationStore = ConfigurationStore(directory: dataDirectory)
+        settingsFile = ConfigStore(fileURL: configurationStore.directory.appendingPathComponent("config.toml"))
         historyStore = HistoryStore(directory: dataDirectory)
         windowLayout = WindowLayoutController(manager: windowManager)
         let firstConfiguration = !configurationStore.hasExistingConfiguration
@@ -332,6 +380,7 @@ final class AppModel: ObservableObject {
                 }
             }
             candidate.reconcileUnavailableModels(installed: localModels.installed)
+            adoptPluginSwitches(into: &candidate)
             if candidate != configuration { do { try persist(candidate) } catch { report(error) } }
         }
         localModels.onInstall = { [weak self] item in
@@ -531,9 +580,13 @@ final class AppModel: ObservableObject {
         configurePhone()
         configurePlugins()
         pluginHost.sync()
+        settingsFile.onChange = { [weak self] _ in self?.settingsFileChanged() }
+        settingsFile.onError = { [weak self] in self?.report($0) }
+        settingsFile.startWatching()
     }
 
     func shutdown() {
+        settingsFile.stopWatching()
         drainUsagePreferences()
         statistics.waitForWrites()
         commandChoices.waitForWrites()
