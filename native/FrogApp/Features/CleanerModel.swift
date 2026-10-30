@@ -778,9 +778,13 @@ final class CleanerModel: ObservableObject {
             let running = await dependencies.system.running(bundleIDs: Set(plan.quitBundleIDs), inside: plan.removesApp ? app.path : nil)
             if let first = running.first { throw ActionError.failed("\(first.name) is running. Quit it, then try again.") }
         }
-        let generation = self.generation
+        // The page or another agent may have started a removal while this one scanned; only one runs at a time.
+        guard !isRemoving, pending == nil else { throw ActionError.failed("Finish the removal open in Frog first.") }
+        let generation = self.generation, before = phase
+        phase = .removing(done: 0, total: plan.removals.count)
         let result = await makeRemover().perform(plan, title: app.name, confirmForceQuit: { _ in false })
         guard generation == self.generation else { return result }
+        if case .removing = phase { phase = before }
         if result.moved.contains(where: { key($0.original) == key(app.path) }) {
             let path = key(app.path)
             apps.removeAll { key($0.identity.path) == path }

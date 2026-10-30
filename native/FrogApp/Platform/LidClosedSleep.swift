@@ -217,6 +217,16 @@ final class LidClosedSleep: ObservableObject {
 
     func waitForOperation() async { await operation?.value }
 
+    /// Ends Frog's own session whenever its marker says Frog turned the setting on, also after a failed read:
+    /// `change` reads the setting first. `setEnabled` would skip it while the state is unknown.
+    func restoreOwnSession() async {
+        while isBusy, let operation { await operation.value }
+        guard ownsSession, !quitting else { return }
+        let task = Task { _ = await change(false) }
+        operation = task
+        await task.value
+    }
+
     func refresh() async {
         guard !isBusy, !quitting, featureEnabled || ownsSession else { return }
         let token = revision

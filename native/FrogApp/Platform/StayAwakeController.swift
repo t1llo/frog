@@ -17,20 +17,29 @@ enum StayAwakeLength: Equatable, Sendable {
         if clock.count == 2, let hour = Int(clock[0]), let minute = Int(clock[1]), (0..<24).contains(hour), (0..<60).contains(minute) {
             self = .until(hour: hour, minute: minute); return
         }
+        // At most a week; every part is checked against that before it is added, so a huge number cannot overflow.
+        let cap = 7 * 24 * 60
         var minutes = 0, number = ""
+        func add(_ value: Int, times unit: Int) -> Bool {
+            guard value <= cap / unit else { return false }
+            minutes += value * unit
+            return minutes <= cap
+        }
         for character in text {
             if character.isNumber { number.append(character); continue }
             guard let value = Int(number) else { return nil }
             switch character {
-            case "h": minutes += value * 60
-            case "m": minutes += value
+            case "h": guard add(value, times: 60) else { return nil }
+            case "m": guard add(value, times: 1) else { return nil }
             default: return nil
             }
             number = ""
         }
         // A bare number, or what follows "1h", is minutes.
-        if let value = Int(number) { minutes += value }
-        guard minutes > 0, minutes <= 7 * 24 * 60 else { return nil }
+        if !number.isEmpty {
+            guard let value = Int(number), add(value, times: 1) else { return nil }
+        }
+        guard minutes > 0 else { return nil }
         self = .minutes(minutes)
     }
 
@@ -76,6 +85,7 @@ final class StayAwakeController: ObservableObject {
     private var timer: Task<Void, Never>?
     private var lidTask: Task<Void, Never>?
     private var lidObservation: AnyCancellable?
+    private var accessObservation: AnyCancellable?
 
     /// The app's controller: assertions only for the real system, so test systems never touch the display.
     init(system: any StayAwakeSystem = NativeStayAwakeSystem(), directory: URL? = nil, now: @escaping () -> Date = Date.init,
@@ -87,6 +97,15 @@ final class StayAwakeController: ObservableObject {
         lidClosed = lidEnabled
         // The popup and the page show the lid's state through this object.
         lidObservation = lid.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        // Setup finished in Terminal while a session runs: the session now also covers a closed lid.
+        accessObservation = lid.$accessState.removeDuplicates().dropFirst().sink { [weak self] state in
+            guard state == .ready else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.isEnabled, self.lidClosed, !self.lid.ownsSession else { return }
+                if self.notice == Self.lidNeedsSetup { self.notice = nil }
+                self.syncLid()
+            }
+        }
     }
 
     /// What `duration` and `untilTime` choose.
@@ -162,6 +181,8 @@ final class StayAwakeController: ObservableObject {
         }
     }
 
+    static let lidNeedsSetup = "Lid closed needs setup"
+
     /// The lid-closed setting is on exactly while a session runs in lid-closed mode.
     private func syncLid() {
         let wanted = isEnabled && lidClosed
@@ -174,10 +195,10 @@ final class StayAwakeController: ObservableObject {
                 if !self.lid.hasReadState { await self.lid.refresh() }
                 await self.lid.refreshAccessUnlessReady()
                 guard self.isEnabled, self.lidClosed else { return }
-                if self.lid.accessState != .ready { self.notice = "Lid closed needs setup"; return }
+                if self.lid.accessState != .ready { self.notice = Self.lidNeedsSetup; return }
                 if !self.lid.isEnabled { self.lid.setEnabled(true); await self.lid.waitForOperation() }
             } else if self.lid.ownsSession {
-                self.lid.setEnabled(false); await self.lid.waitForOperation()
+                await self.lid.restoreOwnSession()
             }
         }
     }

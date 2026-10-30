@@ -418,6 +418,7 @@ final class AppModel: ObservableObject {
         }
         let candidate = try configurationStore.load { try self.validateForThisMac($0, change: .reload) }
         applyConfiguration(candidate)
+        MacPluginSettings.adoptLegacySettings(self)
         configurationLoadError = nil
         localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds
         if !candidate.preferences.historyEnabled { invalidateHistoryRecovery() }
@@ -911,6 +912,17 @@ final class AppModel: ObservableObject {
         for (name, key) in toolkit.windows?.shortcuts ?? [:] where WindowCommand(rawValue: name) != nil {
             if let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
         }
+        // A plugin shortcut that the preferences do not mirror is seen here, so a new shortcut cannot take its keys.
+        let configured = Set(Self.hotkeyRules(for: candidate).compactMap(\.hotkey)
+            + [candidate.preferences.featureEnabled(.menuBar) ? toolkit.menuBar?.hotkey : nil].compactMap { $0 })
+        if let clash = unmirroredPluginShortcuts.first(where: { configured.contains($0.hotkey) }) {
+            throw FrogError.message("\(HotkeyManager.display(clash.hotkey)) is already the \(clash.name) shortcut.")
+        }
+    }
+
+    /// Plugin shortcuts that are not also kept in the preferences. Hidden bar's is, under `toolkit.menuBar.hotkey`.
+    var unmirroredPluginShortcuts: [(name: String, hotkey: Hotkey)] {
+        pluginShortcuts.filter { $0.key != Self.menuBarID }.map { ($0.value.name, $0.value.hotkey) }
     }
 
     func savePreferences(_ preferences: Preferences) throws {
@@ -1069,6 +1081,7 @@ final class AppModel: ObservableObject {
         candidate.adoptExplicitRuleSettings(installed: localModels.installed)
         try configurationStore.replaceFromImport(candidate)
         applyConfiguration(candidate)
+        MacPluginSettings.adoptLegacySettings(self)
         configurationLoadError = nil
         localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds
         errorMessage = nil
