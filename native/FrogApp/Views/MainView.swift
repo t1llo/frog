@@ -73,7 +73,7 @@ struct MainView: View {
         }
         .font(FrogType.lead).foregroundStyle(FrogStyle.ink)
         .environment(\.locale, L10n.locale)
-        .background(FrogWindowMaterial())
+        .frogSurface(.window)
         .ignoresSafeArea(.container, edges: .top)
         .tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
         .frame(minWidth: 740, minHeight: 520)
@@ -167,7 +167,7 @@ private struct SidebarRow: View {
         Button(action: action) {
             HStack(spacing: 9) {
                 if let tint = item.tint {
-                    PluginTile(symbol: item.symbol, tint: tint, size: 20)
+                    PluginIconTile(symbol: item.symbol, tint: tint, size: .sidebar)
                 } else {
                     Image(systemName: item.symbol).font(.system(size: 13)).frame(width: 20)
                 }

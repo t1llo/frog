@@ -17,8 +17,8 @@ struct PluginsCatalogView: View {
     }
 
     var body: some View {
-        PageScroll {
-            PageHeader(title: "Plugins")
+        FrogPage {
+            FrogPageHeader(title: "Plugins")
             SearchBox(placeholder: "Find a plugin", text: $search)
             let groups = groups
             if groups.isEmpty {
@@ -40,7 +40,7 @@ struct PluginsCatalogView: View {
         let host = model.pluginHost
         let enabled = host.enabled(plugin.id)
         return HStack(spacing: 12) {
-            PluginTile(symbol: plugin.symbol, tint: plugin.tint.color, size: 28)
+            PluginIconTile(symbol: plugin.symbol, tint: plugin.tint.color, size: .list)
             VStack(alignment: .leading, spacing: 2) {
                 Text(L10n.text(plugin.name)).font(FrogType.bodyMedium)
                 Text(L10n.text(plugin.summary)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
@@ -58,22 +58,5 @@ struct PluginsCatalogView: View {
                 }
             })).labelsHidden().toggleStyle(.switch).controlSize(.small).disabled(pending.contains(plugin.id))
         }.padding(.horizontal, 8).padding(.vertical, 6).frogHoverRow()
-    }
-}
-
-/// A plugin's icon: its symbol in white on a rounded tile of its colour, as in System Settings.
-struct PluginTile: View {
-    let symbol: String
-    let tint: Color
-    var size: CGFloat = 20
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
-            .fill(tint.gradient)
-            .frame(width: size, height: size)
-            .overlay {
-                Image(systemName: symbol).font(.system(size: size * 0.5, weight: .semibold)).foregroundStyle(.white)
-            }
-            .accessibilityHidden(true)
     }
 }
