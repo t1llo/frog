@@ -68,7 +68,7 @@ extension AgentCommands {
                 var options = WindowSwitches(model.configuration.preferences).layoutOptions(desktop.macOS())
                 // An agent asking twice wants the same layout twice, not the next size of a cycle.
                 options.cycleSizes = false
-                let manager = desktop.manager ?? model.windowLayout.manager
+                let manager = desktop.manager ?? model.windowManager
                 try await manager.apply(action, to: window.handle, displays: desktop.displays(), options: options)
                 return await moved(window, by: manager, message: sentence(action, window.name))
             },
@@ -89,7 +89,7 @@ extension AgentCommands {
                                          width: try points(call, "width", size: true), height: try points(call, "height", size: true))
                 guard !change.isEmpty else { throw AgentCommandError.usage("Give at least one of --x, --y, --width and --height. Usage: \(call.command.usage)") }
                 let window = try await target(call, idAt: 0)
-                let manager = desktop.manager ?? call.model.windowLayout.manager
+                let manager = desktop.manager ?? call.model.windowManager
                 let applied = try await manager.place(window.handle) { change.applied(to: $0) }
                 var message = "Moved \(window.name) to \(AgentFrame(applied).text)."
                 let wanted = change.applied(to: window.frame)
@@ -150,7 +150,7 @@ extension AgentCommands {
     }
 
     /// The windows of these apps, read off the main actor.
-    private static func scan(_ apps: [AgentApp]) async -> [AgentWindow] {
+    static func scan(_ apps: [AgentApp]) async -> [AgentWindow] {
         let read = desktop.windows, displays = desktop.displays(), frontmost = desktop.frontmost()
         return await Task.detached { read(apps, displays, frontmost) }.value
     }

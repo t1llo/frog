@@ -32,8 +32,6 @@ final class AppModel: ObservableObject {
     @Published private(set) var accessibilityGranted = false
     @Published private(set) var loginStatus = ""
     @Published private(set) var loginNeedsAttention = false
-    @Published private(set) var windowSwitcherStatus = "Not started"
-    @Published private(set) var windowSwitcherReady = false
     @Published private(set) var setupPresented = false
     /// A rule whose editor the rules page opens as it appears: Edit rule in the answer panel asks for one.
     @Published var ruleEditRequest: UUID?
@@ -61,14 +59,8 @@ final class AppModel: ObservableObject {
     /// The wait between two refreshes of the system status: one second, or a tick a test fires.
     private let systemStatusTick: () async throws -> Void
     private let hotkeys = HotkeyManager()
-    private lazy var windowSwitcher: WindowSwitcherController = {
-        let controller = WindowSwitcherController { [weak self] message, ready in
-            if self?.windowSwitcherStatus != message { self?.windowSwitcherStatus = message }
-            if self?.windowSwitcherReady != ready { self?.windowSwitcherReady = ready }
-        }
-        controller.onError = { [weak self] message in self?.report(FrogError.message(message)) }
-        return controller
-    }()
+    /// The window switcher plugin while it runs; it owns the event tap and the window list.
+    weak var windowSwitcher: WindowSwitcherPlugin?
     private var started = false
     /// Whether `agentServer` exists, so turning everything off does not create it.
     private var agentServerCreated = false
@@ -285,9 +277,11 @@ final class AppModel: ObservableObject {
     // One handle per kind: launching an app must not cancel a system action that waits for its keys.
     private var applicationTask: Task<Void, Never>?
     private var systemActionTask: Task<Void, Never>?
-    private let windowManager = WindowManager()
+    /// Moves windows and remembers their frames for Restore, for layout shortcuts, the Windows plugin and `frog`.
+    let windowManager = WindowManager()
     private var windowActionTask: Task<Void, Never>?
-    let windowLayout: WindowLayoutController
+    /// The Windows plugin's panels and drag monitor while it runs.
+    weak var windowLayout: WindowLayoutController?
     private var historyEpoch = UUID()
     private var configurationLoadError: Error?
     private lazy var usagePreferenceWriter = UsagePreferenceWriter(store: configurationStore, initial: configuration)
@@ -357,7 +351,6 @@ final class AppModel: ObservableObject {
         configurationStore = ConfigurationStore(directory: dataDirectory)
         settingsFile = ConfigStore(fileURL: configurationStore.directory.appendingPathComponent("config.toml"))
         historyStore = HistoryStore(directory: dataDirectory)
-        windowLayout = WindowLayoutController(manager: windowManager)
         let firstConfiguration = !configurationStore.hasExistingConfiguration
         if registerShortcuts {
             do {
@@ -498,8 +491,6 @@ final class AppModel: ObservableObject {
         legacyUsagePreferences = toolkit.usage()?.preferences ?? UsageDashboardPreferences()
         power.configureFeature(enabled: configuration.preferences.featureEnabled(.stayAwake))
         toolkit.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
-        windowLayout.onError = { [weak self] in self?.report($0) }
-        windowLayout.onToolUse = { [weak self] in self?.statistics.recordToolUse($0) }
         toolkit.onDisable = { [weak self] feature in
             guard let self else { return }
             self.commandBar.hide()
@@ -510,7 +501,7 @@ final class AppModel: ObservableObject {
             case .scripts: self.scripts.stop()
             case .commandBar: self.commandBar.stop()
             case .explain: self.answerCapture?.cancel(); self.answers.close(); self.selectionWatcher.stop()
-            case .windows: if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.windowLayout.stop()
+            case .windows: if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.windowLayout?.stop()
             case .cleaner: self.cleanerModel?.stop()
             case .plugins: self.pluginRuntime?.configure(enabled: false)
             default: break
@@ -607,7 +598,7 @@ final class AppModel: ObservableObject {
         invalidateHistoryRecovery()
         dictation.cancel(); localModels.shutdown(); shortcutPanel.hide()
         started = false
-        if registerShortcuts { windowSwitcher.stop() }
+        windowSwitcher?.halt()
         selectionWatcher.stop()
         if registerShortcuts { clipboardHistory.stop() }
         clipboardHistoryStore.configure(enabled: false)
@@ -616,7 +607,7 @@ final class AppModel: ObservableObject {
         applicationTask?.cancel()
         systemActionTask?.cancel()
         windowActionTask?.cancel()
-        windowLayout.stop()
+        windowLayout?.stop()
         hotkeys.unregister()
     }
 
@@ -865,7 +856,7 @@ final class AppModel: ObservableObject {
         if started { configurePlugins(); pluginHost.sync() }
     }
 
-    private func configureWindowLayout() { windowLayout.configure(configuration, active: started && registerShortcuts) }
+    func configureWindowLayout() { windowLayout?.configure(configuration, active: started && registerShortcuts) }
 
     /// The listener, the Bonjour advert and the Bluetooth peripheral exist only while Phone is on, in
     /// the running app. Copies reach the phone through the clipboard history's watch, never a second one.
@@ -1173,7 +1164,7 @@ final class AppModel: ObservableObject {
 
     /// Gives every window layout and command without a shortcut the suggested one, where it is free.
     func applySuggestedWindowShortcuts() throws -> WindowShortcutScheme.Result {
-        let taken = Self.windowSwitcherChords(configuration.preferences)
+        let taken = WindowSwitcherPlugin.chords(configuration.preferences)
         let result = WindowShortcutScheme.apply(to: configuration, groups: [.simple], taken: taken)
         guard !result.added.isEmpty else { return result }
         for key in Set(WindowShortcutScheme.actions.values).union(WindowShortcutScheme.commands.values) {
@@ -1183,14 +1174,6 @@ final class AppModel: ObservableObject {
         registerHotkeys()
         configureWindowSwitcher()
         return result
-    }
-
-    /// The switcher's chord and the same with Shift, which cycles backward, while the switcher is on:
-    /// what `windowSwitcherStep` treats as a conflict, and validation cannot see.
-    static func windowSwitcherChords(_ preferences: Preferences) -> Set<Hotkey> {
-        guard preferences.windowSwitcherEnabled else { return [] }
-        let key = preferences.toolkitSettings.effectiveWindowSwitcherHotkey
-        return [key, Hotkey(keyCode: key.keyCode, modifiers: key.modifiers | 512)]
     }
 
     func useCommandBarShortcut(_ hotkey: Hotkey) throws {
@@ -1339,51 +1322,11 @@ final class AppModel: ObservableObject {
         configureWindowSwitcher()
     }
 
-    /// What configuring the window switcher comes to. The status refresh asks once a second.
-    enum WindowSwitcherStep: Equatable {
-        /// Configure it from the preferences.
-        case configure
-        /// Stop it and say why: another shortcut takes its chord.
-        case stop(String)
-        /// Nothing: it is stopped for that conflict, and Settings says so already.
-        case none
-    }
-
-    static func windowSwitcherStep(_ configuration: Configuration, status: String, ready: Bool) -> WindowSwitcherStep {
-        let preferences = configuration.preferences
-        let switcherHotkey = preferences.toolkitSettings.effectiveWindowSwitcherHotkey
-        func conflicts(_ hotkey: Hotkey) -> Bool {
-            hotkey.keyCode == switcherHotkey.keyCode &&
-                (hotkey.modifiers == switcherHotkey.modifiers || hotkey.modifiers == (switcherHotkey.modifiers | 512))
-        }
-        // Preserve existing shortcuts, including the reverse-cycling combination.
-        let conflict = configuration.rules.contains { rule in
-            guard rule.enabled, preferences.ruleFeatureEnabled(rule), let hotkey = rule.hotkey else { return false }
-            return conflicts(hotkey)
-        }
-        let workflow = preferences.workflowSettings
-        let referenceConflict = ([workflow.shortcutPanelHotkey, preferences.featureEnabled(.dictation) ? workflow.cancelRecordingHotkey : nil, workflow.clipboardHistoryEnabled == true ? workflow.effectiveClipboardHistoryHotkey : nil, preferences.featureEnabled(.commandBar) ? preferences.toolkitSettings.effectiveCommandBarHotkey : nil, preferences.featureEnabled(.menuBar) ? preferences.toolkitSettings.menuBar?.hotkey : nil].compactMap { $0 }
-            + WindowSwitches(preferences).shortcutRules.compactMap(\.hotkey)).contains(where: conflicts)
-        guard preferences.windowSwitcherEnabled && (conflict || referenceConflict) else { return .configure }
-        let message = "A configured shortcut conflicts with \(HotkeyManager.display(switcherHotkey)) — change it to enable window switching"
-        // Stopping again would publish "Off" and then the conflict, redrawing Settings each second.
-        // Once stopped, only switching it on again changes the status, and that stops it here once more.
-        return status == message && !ready ? .none : .stop(message)
-    }
-
-    private func configureWindowSwitcher() {
+    /// Asks the window switcher to follow the configuration, a shortcut being recorded and Accessibility,
+    /// which the status refresh reads once a second.
+    func configureWindowSwitcher() {
         guard started, registerShortcuts else { return }
-        switch Self.windowSwitcherStep(configuration, status: windowSwitcherStatus, ready: windowSwitcherReady) {
-        case .none: return
-        case .stop(let message):
-            windowSwitcher.stop()
-            if windowSwitcherStatus != message { windowSwitcherStatus = message }
-            if windowSwitcherReady { windowSwitcherReady = false }
-        case .configure:
-            windowSwitcher.configure(enabled: configuration.preferences.featureEnabled(.windowSwitcher), suspended: isRecordingShortcut,
-                                     hotkey: configuration.preferences.toolkitSettings.effectiveWindowSwitcherHotkey)
-            windowSwitcher.updateShortcuts(configuration.rules.filter { ruleFeatureEnabled($0) && hotkeyErrors[$0.id] == nil })
-        }
+        windowSwitcher?.refresh()
     }
 
     /// The global shortcuts a configuration registers: its enabled rules and Frog's own.
@@ -1750,7 +1693,7 @@ final class AppModel: ObservableObject {
     }
 
     private func handleShortcut(_ id: UUID, pressed: Bool) {
-        if let command = WindowCommand.command(for: id) { windowLayout.handle(command, pressed: pressed); return }
+        if let command = WindowCommand.command(for: id) { windowLayout?.handle(command, pressed: pressed); return }
         if id == Self.commandBarID { if pressed { showCommandBar() }; return }
         if id == Self.clipboardHistoryID { if !pressed { showClipboardHistory() }; return }
         if id == Self.cancelRecordingID {

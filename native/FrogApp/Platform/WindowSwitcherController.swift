@@ -3,6 +3,47 @@ import ApplicationServices
 import SwiftUI
 import FrogCore
 
+/// What the window switcher is doing, for its page and `frog`.
+enum WindowSwitcherStatus: Equatable, Sendable {
+    case notStarted
+    case off
+    case recordingShortcut
+    case sessionInactive
+    case needsAccessibility
+    case keyboardUnavailable
+    case ready(Hotkey)
+    /// Another app's password field hides the keyboard from every other app.
+    case passwordPrompt(app: String?)
+    /// Another shortcut uses the switcher's chord, or the same with Shift.
+    case conflict(Hotkey)
+    case invalidShortcut(String)
+
+    var isReady: Bool { if case .ready = self { true } else { false } }
+
+    /// Something to tell the person: not a state they chose or a passing one.
+    var isIssue: Bool {
+        switch self {
+        case .notStarted, .off, .recordingShortcut, .ready: false
+        default: true
+        }
+    }
+
+    @MainActor var text: String {
+        switch self {
+        case .notStarted: "Not started"
+        case .off: "Off"
+        case .recordingShortcut: "Paused while recording a shortcut"
+        case .sessionInactive: "Paused while this session is inactive or locked"
+        case .needsAccessibility: "Allow Accessibility to switch windows"
+        case .keyboardUnavailable: "Keyboard access unavailable. Check Accessibility and reopen Frog."
+        case .ready(let key): "Ready: \(HotkeyManager.display(key)) switches windows"
+        case .passwordPrompt(let app): "Paused while \(app ?? "another app") asks for a password"
+        case .conflict(let key): "Another shortcut uses \(HotkeyManager.display(key)). Change it to switch windows."
+        case .invalidShortcut(let issue): issue
+        }
+    }
+}
+
 /// Owns only GUI input eligibility; background jobs and wake-prevention are unrelated.
 @MainActor
 final class WindowSwitcherInputLifecycle {
@@ -14,12 +55,12 @@ final class WindowSwitcherInputLifecycle {
     private let healthy: () -> Bool
     private let startInput: () -> Bool
     private let stopInput: () -> Void
-    private let statusChanged: (String, Bool) -> Void
-    private let readyStatus: () -> String
+    private let statusChanged: (WindowSwitcherStatus) -> Void
+    private let readyStatus: () -> WindowSwitcherStatus
 
     init(active: Bool, trusted: @escaping () -> Bool, healthy: @escaping () -> Bool,
-         start: @escaping () -> Bool, stop: @escaping () -> Void, statusChanged: @escaping (String, Bool) -> Void,
-         readyStatus: @escaping () -> String = { "Ready · ⌘Tab switches windows" }) {
+         start: @escaping () -> Bool, stop: @escaping () -> Void, statusChanged: @escaping (WindowSwitcherStatus) -> Void,
+         readyStatus: @escaping () -> WindowSwitcherStatus = { .ready(WindowSwitchKeyRouter.defaultHotkey) }) {
         self.active = active; self.trusted = trusted; self.healthy = healthy
         startInput = start; stopInput = stop; self.statusChanged = statusChanged; self.readyStatus = readyStatus
     }
@@ -34,15 +75,15 @@ final class WindowSwitcherInputLifecycle {
     func stop() { enabled = false; reconcile() }
 
     private func reconcile() {
-        let reason: String?
-        if !enabled { reason = "Off — macOS app switcher" }
-        else if suspended { reason = "Paused while recording a shortcut" }
-        else if !active { reason = "Paused while this session is inactive or locked" }
-        else if !trusted() { reason = "Allow Accessibility to switch windows" }
+        let reason: WindowSwitcherStatus?
+        if !enabled { reason = .off }
+        else if suspended { reason = .recordingShortcut }
+        else if !active { reason = .sessionInactive }
+        else if !trusted() { reason = .needsAccessibility }
         else { reason = nil }
         if let reason {
             if running { stopInput(); running = false }
-            statusChanged(reason, false)
+            statusChanged(reason)
             return
         }
         if running {
@@ -50,7 +91,7 @@ final class WindowSwitcherInputLifecycle {
             stopInput(); running = false
         }
         running = startInput()
-        statusChanged(running ? readyStatus() : "Keyboard access unavailable — check Accessibility and reopen Frog", running)
+        statusChanged(running ? readyStatus() : .keyboardUnavailable)
     }
 }
 
@@ -60,10 +101,9 @@ final class WindowSwitcherController {
     private let catalog = WindowCatalog()
     private let display = WindowSwitcherDisplay()
     private let cache = WindowSwitcherCache()
-    private var iconCache: [pid_t: NSImage] = [:]
-    private var iconTask: Task<Void, Never>?
+    let icons = WindowSwitcherIcons()
     private var presentation = WindowSwitchPresentation()
-    private let statusChanged: (String, Bool) -> Void
+    private let statusChanged: (WindowSwitcherStatus) -> Void
     var onError: ((String) -> Void)?
     private var shortcutRules: [Rule] = []
     func updateShortcuts(_ rules: [Rule]) {
@@ -122,7 +162,7 @@ final class WindowSwitcherController {
     private var keyboardHolder: SecureInput.Holder?
     private var keyboardNotice = SecureInputNotice()
     private let keyboardNoticePanel = SecureInputNoticePanel()
-    private var lifecycleStatus = ("Not started", false)
+    private var lifecycleStatus = WindowSwitcherStatus.notStarted
     private lazy var inputLifecycle = WindowSwitcherInputLifecycle(
         active: sessionOnConsole && !screenLocked,
         trusted: { SelectionService.isTrusted },
@@ -131,10 +171,10 @@ final class WindowSwitcherController {
             return CFMachPortIsValid(tap) && CGEvent.tapIsEnabled(tap: tap)
         }, start: { [weak self] in self?.startInput() ?? false },
         stop: { [weak self] in self?.stopInput() },
-        statusChanged: { [weak self] message, ready in self?.lifecycleStatus = (message, ready); self?.publishStatus() },
-        readyStatus: { [weak self] in "Ready · \(HotkeyManager.display(self?.hotkey ?? WindowSwitchKeyRouter.defaultHotkey)) switches windows" })
+        statusChanged: { [weak self] status in self?.lifecycleStatus = status; self?.publishStatus() },
+        readyStatus: { [weak self] in .ready(self?.hotkey ?? WindowSwitchKeyRouter.defaultHotkey) })
 
-    init(statusChanged: @escaping (String, Bool) -> Void) {
+    init(statusChanged: @escaping (WindowSwitcherStatus) -> Void) {
         self.statusChanged = statusChanged
         let workspace = NSWorkspace.shared.notificationCenter
         observe(workspace, NSWorkspace.activeSpaceDidChangeNotification) { controller in
@@ -205,8 +245,8 @@ final class WindowSwitcherController {
     }
 
     private func publishStatus() {
-        if lifecycleStatus.1, let keyboardHolder { statusChanged(SecureInput.status(keyboardHolder), false) }
-        else { statusChanged(lifecycleStatus.0, lifecycleStatus.1) }
+        if lifecycleStatus.isReady, let keyboardHolder { statusChanged(.passwordPrompt(app: keyboardHolder.name)) }
+        else { statusChanged(lifecycleStatus) }
     }
 
     private func checkKeyboard() {
@@ -225,7 +265,7 @@ final class WindowSwitcherController {
     func configure(enabled: Bool, suspended: Bool, hotkey: Hotkey = WindowSwitchKeyRouter.defaultHotkey) {
         if enabled, let issue = HotkeyManager.validationError(hotkey, purpose: .windowSwitcher) {
             inputLifecycle.configure(enabled: false, suspended: suspended)
-            statusChanged(issue, false)
+            statusChanged(.invalidShortcut(issue))
             return
         }
         if self.hotkey != hotkey {
@@ -322,6 +362,18 @@ final class WindowSwitcherController {
         inputLifecycle.stop()
     }
 
+    /// The event tap is installed.
+    var running: Bool { tap != nil }
+
+    /// Opens the list with no key held, as for the command bar or an agent: Return or a click chooses,
+    /// Escape closes. False while the switcher is not running.
+    @discardableResult
+    func showList() -> Bool {
+        guard tap != nil, let session = input?.beginSticky() else { return false }
+        handle(.begin(backwards: false), sessionID: session)
+        return true
+    }
+
     private func stopInput() {
         eventEpoch = UUID()
         input?.stop()
@@ -333,8 +385,7 @@ final class WindowSwitcherController {
         frontReading?.cancel(); frontReading = nil; released = nil
         frontRequests = WindowSwitchFrontRequests()
         keyboardHolder = nil; keyboardNotice = SecureInputNotice(); keyboardNoticePanel.hide()
-        cache.clear(); iconCache = [:]
-        iconTask?.cancel(); iconTask = nil
+        cache.clear(); icons.clear()
         display.windows = []; display.icons = [:]
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
         workspaceObserver = nil
@@ -345,7 +396,7 @@ final class WindowSwitcherController {
 
     isolated deinit {
         discovery?.cancel(); focusMonitor?.cancel(); activation?.cancel()
-        iconTask?.cancel(); frontReading?.cancel()
+        frontReading?.cancel()
         cache.cancelRefresh()
         input?.stop()
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
@@ -472,25 +523,11 @@ final class WindowSwitcherController {
         let snapshot = await cache.update { [catalog] in await catalog.snapshot(applications: applications, frontPID: front) }
         guard !Task.isCancelled, eventEpoch == epoch, let snapshot else { return nil }
         refreshShortcuts()
-        let pids = Set(snapshot.windows.map(\.pid))
-        iconCache = iconCache.filter { pids.contains($0.key) }
-        let missing = pids.filter { iconCache[$0] == nil }
-        iconTask?.cancel()
-        if !missing.isEmpty {
-            iconTask = Task { [weak self] in
-                let load = Task.detached(priority: .utility) {
-                    var icons: [pid_t: NSImage] = [:]
-                    for pid in missing {
-                        guard !Task.isCancelled else { break }
-                        icons[pid] = NSRunningApplication(processIdentifier: pid)?.icon
-                    }
-                    return icons
-                }
-                let icons = await withTaskCancellationHandler { await load.value } onCancel: { load.cancel() }
-                guard !Task.isCancelled, let self, self.eventEpoch == epoch else { return }
-                self.iconCache.merge(icons) { _, new in new }
-                self.display.icons = self.iconCache
-            }
+        // In list order, so the windows on top get their icons first and keep them longest.
+        var seen = Set<pid_t>()
+        icons.request(snapshot.windows.map(\.pid).filter { seen.insert($0).inserted }) { [weak self] loaded in
+            guard let self, self.eventEpoch == epoch else { return }
+            self.display.icons = loaded
         }
         if generation == nil, activation == nil { display.preload(snapshot, in: panel) }
         return snapshot
@@ -504,7 +541,7 @@ final class WindowSwitcherController {
         if display.windows != snapshot.windows { display.windows = snapshot.windows }
         display.selected = session.selected
         display.loading = false
-        display.icons = iconCache
+        display.icons = icons.images
         if !display.query.isEmpty { filterWindows() }
         presentation.loaded(token)
         if commitOnLoad { commit() }
@@ -536,7 +573,7 @@ final class WindowSwitcherController {
         let ordered = session.windows.compactMap { byID[$0] }
         if display.windows != ordered { display.windows = ordered }
         display.selected = session.selected
-        display.icons = iconCache
+        display.icons = icons.images
         showPanelIfReady()
     }
 
@@ -555,46 +592,50 @@ final class WindowSwitcherController {
         // The next Command-Tab can retire this activation before its focus is recorded.
         cache.noteChosen(selected.id)
         activation = Task { [weak self, catalog] in
-            defer {
-                if self?.activationSpaceTransition == activationToken { self?.activationSpaceTransition = nil }
-                if self?.activationID == activationToken { self?.activation = nil; self?.activationID = nil; self?.activationPID = nil; self?.activationWindowID = nil }
-            }
-            guard !Task.isCancelled, self?.input?.isActivationPending(activationToken) == true else { return }
+            // Held for the few hundred milliseconds an activation takes, so the steps below need no weak reference.
+            guard let self else { return }
+            defer { self.activationEnded(activationToken) }
+            guard !Task.isCancelled, let input = self.input, input.isActivationPending(activationToken) else { return }
             guard let app = NSRunningApplication(processIdentifier: selected.pid), !app.isTerminated else {
-                self?.onError?("That window closed. Open the window switcher again to refresh the list."); return
+                self.onError?("That window closed. Open the window switcher again to refresh the list."); return
             }
-            guard let input = self?.input else { return }
             let isCurrent: @Sendable () -> Bool = { input.isActivationPending(activationToken) }
+            let spaceChanges: @Sendable () async -> Void = { [weak self] in await self?.spaceTransitionBegan(activationToken) }
             let activated = await WindowActivation.perform(raise: { await catalog.raise(id: selected.id, isCurrent: isCurrent) }, request: {
                 guard isCurrent() else { return false }
                 if selected.hidden { _ = app.unhide() }
                 guard isCurrent(), app.activate(options: []) else { return false }
-                self?.frontRequests.requested(selected.pid)
+                self.frontRequests.requested(selected.pid)
                 return true
             }, bringForward: { await catalog.bringApplicationForward(id: selected.id, isCurrent: isCurrent) }, isFrontmost: {
                 NSWorkspace.shared.frontmostApplication?.processIdentifier == selected.pid
-            }, expectsAnother: { self.map { $0.frontRequests.front(selected.pid) != selected.pid } ?? false }, prepare: {
-                let ready = await catalog.prepareActivation(id: selected.id, isCurrent: isCurrent, willChangeSpace: { [weak self] in
-                    await MainActor.run {
-                        if self?.activationID == activationToken { self?.activationSpaceTransition = activationToken }
-                    }
-                })
-                return ready
+            }, expectsAnother: { self.frontRequests.front(selected.pid) != selected.pid }, prepare: {
+                await catalog.prepareActivation(id: selected.id, isCurrent: isCurrent, willChangeSpace: spaceChanges)
             }, isCurrent: isCurrent, raiseAfterRequest: {
                 // The app comes forward whatever input follows its request; so must the window chosen in it.
                 let raised = await catalog.raise(id: selected.id, isCurrent: isCurrent, requested: true)
                 // Otherwise the app arrives showing another window than the one chosen.
-                if !raised { self?.cache.forgetChosen(selected.id) }
+                if !raised { self.cache.forgetChosen(selected.id) }
                 return raised
             })
             guard activated else {
                 guard !Task.isCancelled, isCurrent() else { return }
-                self?.frontRequests.withdraw(selected.pid)
-                self?.cache.forgetChosen(selected.id)
-                self?.onError?("macOS could not bring the selected window to the front. It may have closed or become unavailable."); return
+                self.frontRequests.withdraw(selected.pid)
+                self.cache.forgetChosen(selected.id)
+                self.onError?("macOS could not bring the selected window to the front. It may have closed or become unavailable."); return
             }
-            if !Task.isCancelled, isCurrent() { self?.cache.noteFocused(selected.id) }
+            if !Task.isCancelled, isCurrent() { self.cache.noteFocused(selected.id) }
         }
+    }
+
+    /// The activation is about to change the Desktop; one the person then leaves for another is not followed.
+    private func spaceTransitionBegan(_ token: UUID) {
+        if activationID == token { activationSpaceTransition = token }
+    }
+
+    private func activationEnded(_ token: UUID) {
+        if activationSpaceTransition == token { activationSpaceTransition = nil }
+        if activationID == token { activation = nil; activationID = nil; activationPID = nil; activationWindowID = nil }
     }
 
     private func cancel(session token: UInt64) {

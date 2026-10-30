@@ -38,7 +38,6 @@ import SwiftUI
     private lazy var providers: [any CommandBarRowProviding] = [
         CalculationRows(),
         EmojiRows(),
-        WindowCommandRows(),
         CleanerCommandRows(applications: { [unowned self] in self.cleanerApplications() }),
         PhoneCommandRows(),
         PluginCommandRows(),

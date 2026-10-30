@@ -23,7 +23,7 @@ public struct WindowPreferences: Codable, Equatable, Sendable {
     public var zoneOverlay = false
     /// The zones the overlay shows, a `ZoneGrid` raw value.
     public var zoneGrid = ZoneGrid.default.rawValue
-    /// What the first-run card recorded, a `WindowSetupChoice` raw value; nil while the card shows.
+    /// What the old first-run card recorded (`snap` or `manual`). Kept so existing files round-trip; nothing reads it.
     /// A string, so a choice from a newer version still decodes and keeps the card hidden.
     public var setupChoice: String?
 
