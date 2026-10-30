@@ -161,6 +161,27 @@ import FrogUsage
         XCTAssertEqual(again.settings.menuBarReadings, .cpuMemory)
     }
 
+    func testASeedThatCouldNotBeWrittenStillKeepsTheOldChoices() async throws {
+        var preferences = model.configuration.preferences
+        preferences.ensureToolkit()
+        preferences.toolkit?.systemMonitor = SystemMonitorPreferences(menuBarItem: false, menuBarStyle: "bars")
+        try model.savePreferences(preferences)
+        // config.toml changed outside Frog into something that does not read: nothing can be written.
+        let file = directory.appendingPathComponent("config.toml")
+        let valid = configText
+        try "[system-monitor\n".write(to: file, atomically: true, encoding: .utf8)
+        try? await model.setPlugin("system-monitor", enabled: true)
+        await model.pluginHost.syncAndWait()
+        let plugin = try XCTUnwrap(model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)
+        XCTAssertEqual(plugin.settings.menuBarStyle, .bars, "The old choice is used although it could not be written")
+
+        // Once the file reads again, the next choice saves the old ones with it.
+        try valid.write(to: file, atomically: true, encoding: .utf8)
+        _ = try await model.pluginHost.run("system-monitor.menu-bar-item", ActionInput(values: ["on": "true"], source: .agent))
+        XCTAssertTrue(configText.contains("menu-bar-style = \"bars\""), configText)
+        XCTAssertTrue(configText.contains("menu-bar-item = true"), configText)
+    }
+
     // MARK: LLM usage
 
     func testLLMUsageOffBuildsNoModelAndReadsNothing() async throws {

@@ -85,6 +85,10 @@ final class LLMUsagePlugin: FrogPlugin, ObservableObject {
                                  category: .system, summary: "Claude and Codex limits at a glance")
     /// How long reading goes on after the last surface closed, so a scan that just began can finish.
     static var linger: Duration = .seconds(60)
+    /// Limits older than this make `llm-usage.status` ask for a new reading first.
+    static var freshness: TimeInterval = 60
+    /// How long `llm-usage.status` waits for that reading before it answers with what it has.
+    static var freshWait: Duration = .seconds(5)
 
     private let context: PluginContext
     @Published private(set) var settings = LLMUsageSettings()
@@ -99,8 +103,8 @@ final class LLMUsagePlugin: FrogPlugin, ObservableObject {
     func start() async {
         let usage = context.legacy.toolkit.makeUsage()
         self.usage = usage
-        seedSettings(from: usage)
-        settings = context.settings(LLMUsageSettings.self)
+        // A seed that could not be written is still used, so the next choice saves the old ones with it.
+        settings = seedSettings(from: usage) ?? context.settings(LLMUsageSettings.self)
         usage.applyPreferences(settings.dashboard)
         usage.onPreferencesChange = { [weak self] in self?.adopt($0) }
         usage.onPresentedChange = { [weak self] _ in self?.updateDemand() }
@@ -162,7 +166,10 @@ final class LLMUsagePlugin: FrogPlugin, ObservableObject {
                          surfaces: .agent) { [weak self] input in
                 guard let self, let usage = self.usage else { throw ActionError.pluginOff(Self.info.name) }
                 let only = input.value("provider").flatMap(LLMUsageSettings.Provider.init(rawValue:))
-                await self.whileHeld { await self.waitForReadings(usage) }
+                await self.whileHeld {
+                    await self.waitForReadings(usage)
+                    await self.waitForFreshLimits(usage, only: only?.name)
+                }
                 let report = LLMUsageReport.providers(usage, only: only?.name)
                 return ActionResult(report, text: report.map(\.text).joined(separator: "\n\n"))
             },
@@ -205,6 +212,23 @@ final class LLMUsagePlugin: FrogPlugin, ObservableObject {
         }
     }
 
+    /// Limits kept from before reading paused are refreshed, and waited for up to `freshWait`.
+    /// A provider never read has nothing to refresh and does not hold the answer up.
+    private func waitForFreshLimits(_ usage: UsageDashboardModel, only: String?) async {
+        let oldest = Date().addingTimeInterval(-Self.freshness)
+        var stale: [String: Date] = [:]
+        for provider in usage.providers where only == nil || provider == only {
+            if let at = usage.planUpdatedAt(provider: provider), at < oldest { stale[provider] = at }
+        }
+        guard !stale.isEmpty else { return }
+        usage.refresh()
+        let deadline = ContinuousClock.now + Self.freshWait
+        while stale.contains(where: { (usage.planUpdatedAt(provider: $0.key) ?? $0.value) <= $0.value }),
+              ContinuousClock.now < deadline, !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
     private var needed: Bool { item != nil || usage?.isPresented == true || holds > 0 }
 
     private func updateDemand() {
@@ -226,9 +250,10 @@ final class LLMUsagePlugin: FrogPlugin, ObservableObject {
     // MARK: Settings and the menu-bar item
 
     /// The table is written once, from the choices made before config.toml, with every key and its comment.
-    private func seedSettings(from usage: UsageDashboardModel) {
+    /// Returns the seed when it could not be written; a later start tries again.
+    private func seedSettings(from usage: UsageDashboardModel) -> LLMUsageSettings? {
         let id = Self.info.id
-        guard context.legacy.settingsFile.document.value(at: [id]) == nil else { return }
+        guard context.legacy.settingsFile.document.value(at: [id]) == nil else { return nil }
         var seeded = LLMUsageSettings(usage.preferences, menuBarItem: true)
         if let legacy = context.legacy.configuration.preferences.toolkitSettings.usage {
             seeded = LLMUsageSettings(UsageDashboardPreferences(
@@ -237,8 +262,8 @@ final class LLMUsagePlugin: FrogPlugin, ObservableObject {
                 claudeAccountsMenuBar: legacy.claudeAccountsMenuBar, menuBarStyle: legacy.menuBarStyle,
                 menuBarPalette: legacy.menuBarPalette), menuBarItem: true)
         }
-        do { try context.legacy.settingsFile.edit { try $0.update(id, seeded, all: true) } }
-        catch { context.report(error) }
+        do { try context.legacy.settingsFile.edit { try $0.update(id, seeded, all: true) }; return nil }
+        catch { context.report(error); return seeded }
     }
 
     private func configureItem() {
