@@ -178,11 +178,108 @@ final class PhoneControllerTests: XCTestCase {
         XCTAssertEqual(phone.recents.first?.status, .waitingForWiFi)
     }
 
+    func testSentTextReachesThePhoneButPasswordsDoNot() throws {
+        var (client, pipe) = try pairedPhone()
+        XCTAssertEqual(phone.send(text: "Fixture note"), "Sent to your phone.")
+        guard case let .clip(_, body)? = try client.messages(pipe.takeSent()).first else { return XCTFail("Expected a clip") }
+        XCTAssertEqual(String(data: body, encoding: .utf8), "Fixture note")
+
+        XCTAssertEqual(phone.send(text: "Tr0ub4dor&3"), "Frog does not send passwords and keys.")
+        XCTAssertTrue(pipe.sent.isEmpty)
+    }
+
     func testUnpairTellsThePhoneAndForgetsIt() throws {
         var (client, pipe) = try pairedPhone()
         phone.unpair(try XCTUnwrap(phone.phones.first))
         XCTAssertEqual(try client.messages(pipe.takeSent()), [.unpair])
         XCTAssertTrue(pipe.closed)
+        XCTAssertTrue(phone.phones.isEmpty)
+    }
+}
+
+/// The Phone plugin: nothing exists while it is off; its actions, run as `frog run` runs them.
+@MainActor
+final class PhonePluginTests: XCTestCase {
+    private var directory: URL!
+    private var pasteboard: NSPasteboard!
+    private var history: ClipboardHistoryStore!
+    private var model: AppModel!
+
+    override func setUp() async throws {
+        directory = FileManager.default.temporaryDirectory.appendingPathComponent("frog-phone-plugin-\(UUID().uuidString)", isDirectory: true)
+        try ConfigurationStore(directory: directory).save(Configuration())
+        pasteboard = NSPasteboard.withUniqueName()
+        history = ClipboardHistoryStore(pasteboard: pasteboard, gate: ClipboardHistoryCaptureGate())
+        model = AppModel(dataDirectory: directory, registerShortcuts: false, complete: { text, _, _, _ in text }, readKey: { _ in nil },
+                         writeClipboard: { _ in }, clipboardHistoryStore: history)
+        model.start()
+        await model.pluginHost.syncAndWait()
+    }
+
+    override func tearDown() async throws {
+        await model.pluginHost.stopAll()
+        model.shutdown()
+        pasteboard.releaseGlobally()
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    private var plugin: PhonePlugin? { model.pluginHost.running["phone"] as? PhonePlugin }
+
+    private func run(_ id: String, _ values: [String: String] = [:], text: String? = nil) async throws -> ActionResult {
+        try await model.pluginHost.run(id, ActionInput(values: values, text: text, source: .agent))
+    }
+
+    func testOffHoldsNothingAndOnSeedsItsTable() async throws {
+        try await model.pluginHost.setEnabled("phone", false)
+        XCTAssertNil(plugin)
+        XCTAssertFalse(history.forwardsCopies)
+        do { _ = try await run("phone.status"); XCTFail("Phone is off") } catch ActionError.pluginOff {}
+
+        try await model.pluginHost.setEnabled("phone", true)
+        XCTAssertNotNil(plugin?.phone)
+        XCTAssertTrue(history.forwardsCopies, "Auto-send is on by default")
+        XCTAssertEqual(model.settingsFile.document.value(at: ["phone", "auto-send"]), .bool(true))
+
+        plugin?.setAutoSend(false)
+        XCTAssertFalse(history.forwardsCopies)
+        XCTAssertEqual(model.settingsFile.document.value(at: ["phone", "auto-send"]), .bool(false))
+
+        try await model.pluginHost.setEnabled("phone", false)
+        XCTAssertNil(plugin)
+        XCTAssertFalse(history.forwardsCopies)
+        XCTAssertNil(history.onCopy)
+    }
+
+    func testActions() async throws {
+        try await model.pluginHost.setEnabled("phone", true)
+        let phone = try XCTUnwrap(plugin?.phone)
+        do { let text = try await run("phone.status").text; XCTAssertEqual(text, "No phone paired") }
+
+        let shown = try await run("phone.pair")
+        let url = try XCTUnwrap(CompanionPairingURL(string: try XCTUnwrap(phone.pairing?.url)))
+        XCTAssertFalse(shown.text.contains(url.string) || shown.json.contains(url.string), "The code's secret is never printed")
+        let pipe = TestPipe()
+        phone.accept(pipe)
+        var client = TestPhone(secret: url.secret)
+        try client.connect(pipe)
+        _ = try client.messages(pipe.takeSent())
+
+        let status = try await run("phone.status")
+        XCTAssertTrue(status.text.hasPrefix("Connected\nTest phone  Wi-Fi  "), status.text)
+        XCTAssertTrue(status.json.contains("\"name\" : \"Test phone\""), status.json)
+
+        do { let text = try await run("phone.send", text: "Fixture from stdin").text; XCTAssertEqual(text, "Sent to your phone.") }
+        do { let text = try await run("phone.send", ["text": "Fixture option"]).text; XCTAssertEqual(text, "Sent to your phone.") }
+        let bodies = try client.messages(pipe.takeSent()).compactMap { message -> String? in
+            if case let .clip(_, body) = message { return String(data: body, encoding: .utf8) }
+            return nil
+        }
+        XCTAssertEqual(bodies, ["Fixture from stdin", "Fixture option"])
+        do { _ = try await run("phone.send", ["text": "Tr0ub4dor&3"]); XCTFail("A password is refused") } catch ActionError.failed {}
+        do { _ = try await run("phone.send", ["file": "relative.txt"]); XCTFail("A relative path is refused") } catch ActionError.invalid {}
+
+        do { _ = try await run("phone.unpair", ["phone": "Other phone"]); XCTFail("Unknown phone") } catch ActionError.failed {}
+        do { let text = try await run("phone.unpair", ["phone": "test phone"]).text; XCTAssertEqual(text, "Unpaired Test phone.") }
         XCTAssertTrue(phone.phones.isEmpty)
     }
 }
