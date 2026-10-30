@@ -12,6 +12,16 @@ import FrogCore
         return (model, directory)
     }
 
+    private func enableCleaner(_ model: AppModel) async throws -> AppCleanerPlugin {
+        try await model.setFeature(.cleaner, enabled: true)
+        await model.pluginHost.syncAndWait()
+        return try XCTUnwrap(model.cleanerPlugin)
+    }
+
+    private func object(_ json: String) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+    }
+
     func testTheRouteExistsOnlyWhileTheFeatureIsOn() async throws {
         let fixture = try CleanerFixture()
         defer { fixture.remove() }
@@ -30,27 +40,29 @@ import FrogCore
         XCTAssertNotEqual(model.toolkit.route, .feature(.cleaner))
     }
 
-    func testTurningTheFeatureOffStopsTheCleaner() async throws {
+    func testTurningThePluginOffStopsAndDropsTheCleaner() async throws {
         let fixture = try CleanerFixture()
         defer { fixture.remove() }
         let app = try fixture.app("Chatter", bundleID: "com.example.chatter")
         let cache = try fixture.item(.caches, "com.example.chatter", bytes: 64)
         let (model, directory) = try makeModel(fixture: fixture)
         defer { model.shutdown(); try? FileManager.default.removeItem(at: directory) }
-        try await model.setFeature(.cleaner, enabled: true)
+        let cleaner = try await enableCleaner(model).cleaner
 
-        await model.cleaner.open(app)
-        await model.cleaner.prepareRemoval()
-        XCTAssertNotNil(model.cleaner.pending, "The confirmation is open")
-        model.cleaner.issue = "Something to say."
+        await cleaner.open(app)
+        await cleaner.prepareRemoval()
+        XCTAssertNotNil(cleaner.pending, "The confirmation is open")
+        cleaner.issue = "Something to say."
 
         try await model.setFeature(.cleaner, enabled: false)
+        await model.pluginHost.syncAndWait()
 
-        XCTAssertNil(model.cleaner.issue)
-        XCTAssertNil(model.cleaner.pending)
-        XCTAssertNil(model.cleaner.review)
-        XCTAssertTrue(model.cleaner.apps.isEmpty)
-        XCTAssertEqual(model.cleaner.phase, .idle)
+        XCTAssertNil(model.cleanerPlugin)
+        XCTAssertNil(cleaner.issue)
+        XCTAssertNil(cleaner.pending)
+        XCTAssertNil(cleaner.review)
+        XCTAssertTrue(cleaner.apps.isEmpty)
+        XCTAssertEqual(cleaner.phase, .idle)
         XCTAssertTrue(FileManager.default.fileExists(atPath: app.path), "Nothing moved")
         XCTAssertTrue(FileManager.default.fileExists(atPath: cache.path), "Nothing moved")
     }
@@ -152,69 +164,149 @@ import FrogCore
         XCTAssertNil(review.nothingElseFound(showPossible: true))
     }
 
-    func testUpdatingCleanerSettingsKeepsTheRestOfTheToolkit() throws {
+    func testSettingsAreSeededOnceFromTheOldPreferences() async throws {
         let fixture = try CleanerFixture()
         defer { fixture.remove() }
         var configuration = Configuration()
-        configuration.preferences.setFeature(.scripts, enabled: true)
+        configuration.preferences.ensureToolkit()
+        configuration.preferences.toolkit?.cleaner = { var value = CleanerPreferences(); value.possibleMatches = true; return value }()
         let (model, directory) = try makeModel(configuration, fixture: fixture)
         defer { model.shutdown(); try? FileManager.default.removeItem(at: directory) }
 
-        try model.updateCleanerSettings { $0.possibleMatches = true }
+        let plugin = try await enableCleaner(model)
+        XCTAssertTrue(plugin.settings.possibleMatches)
+        XCTAssertTrue(plugin.cleaner.showPossibleMatches)
+        let text = try String(contentsOf: model.settingsFile.fileURL, encoding: .utf8)
+        XCTAssertTrue(text.contains("[app-cleaner]") && text.contains("possible-matches = true"), text)
 
-        XCTAssertTrue(model.configuration.preferences.featureEnabled(.scripts))
-        XCTAssertTrue(model.configuration.preferences.cleanerSettings.possibleMatches)
-        let saved = try ConfigurationStore(directory: directory).load()
-        XCTAssertTrue(saved.preferences.featureEnabled(.scripts))
-        XCTAssertTrue(saved.preferences.cleanerSettings.possibleMatches)
-        XCTAssertTrue(try String(contentsOf: ConfigurationStore(directory: directory).textFile, encoding: .utf8)
-            .contains("cleaner.possible-matches = true"))
-
-        // Without a toolkit, the change creates one the way Features does.
-        var bare = Configuration()
-        bare.preferences.toolkit = nil
-        let (other, otherDirectory) = try makeModel(bare, fixture: fixture)
-        defer { other.shutdown(); try? FileManager.default.removeItem(at: otherDirectory) }
-        var expected = other.configuration.preferences
-        expected.ensureToolkit()
-        expected.toolkit?.cleaner = { var value = CleanerPreferences(); value.possibleMatches = true; return value }()
-        try other.updateCleanerSettings { $0.possibleMatches = true }
-        XCTAssertEqual(other.configuration.preferences, expected)
+        // From now on config.toml alone decides.
+        plugin.update { $0.possibleMatches = false }
+        XCTAssertFalse(plugin.cleaner.showPossibleMatches)
+        try await model.setFeature(.cleaner, enabled: false)
+        await model.pluginHost.syncAndWait()
+        let again = try await enableCleaner(model)
+        XCTAssertFalse(again.settings.possibleMatches, "The old preference is not read a second time")
+        XCTAssertEqual(try model.settingsFile.section("app-cleaner", as: AppCleanerSettings.self).value, AppCleanerSettings())
     }
 
-    func testTheCleanerUsesTheInjectedDependencies() throws {
+    func testTheCleanerUsesTheInjectedDependenciesAndWaitsForFirstUse() async throws {
         let fixture = try CleanerFixture()
         defer { fixture.remove() }
         let (model, directory) = try makeModel(fixture: fixture)
         defer { model.shutdown(); try? FileManager.default.removeItem(at: directory) }
+        var made = 0
+        model.cleanerDependencies = { made += 1; return .fake(root: fixture.root) }
+        let plugin = try await enableCleaner(model)
+        XCTAssertEqual(made, 0, "Starting the plugin reads nothing")
 
-        XCTAssertEqual(model.cleaner.dependencies.store.directory.standardizedFileURL,
+        XCTAssertEqual(plugin.cleaner.dependencies.store.directory.standardizedFileURL,
                        fixture.root.appendingPathComponent("data/Cleaner", isDirectory: true).standardizedFileURL)
-        XCTAssertEqual(model.cleaner.dependencies.roots.home.path,
+        XCTAssertEqual(plugin.cleaner.dependencies.roots.home.path,
                        CleanerRoots(home: fixture.home, system: fixture.system).home.path)
-        XCTAssertTrue(model.cleaner === model.cleaner, "The model is made once")
+        XCTAssertTrue(plugin.cleaner === plugin.cleaner, "The model is made once")
+        XCTAssertEqual(made, 1)
     }
 
-    func testSavingPreferencesUpdatesTheCleaner() async throws {
+    func testScanListsLeftoversAndMovesNothing() async throws {
         let fixture = try CleanerFixture()
         defer { fixture.remove() }
-        var configuration = Configuration()
-        configuration.preferences.setFeature(.cleaner, enabled: true)
-        let (model, directory) = try makeModel(configuration, fixture: fixture)
+        let app = try fixture.app("Chatter", bundleID: "com.example.chatter")
+        let cache = try fixture.item(.caches, "com.example.chatter", bytes: 64)
+        let (model, directory) = try makeModel(fixture: fixture)
         defer { model.shutdown(); try? FileManager.default.removeItem(at: directory) }
-        XCTAssertFalse(model.cleaner.showPossibleMatches)
+        _ = try await enableCleaner(model)
 
-        try model.updateCleanerSettings { $0.possibleMatches = true }
-        XCTAssertTrue(model.cleaner.showPossibleMatches)
+        let result = try await model.pluginHost.run("app-cleaner.scan", ActionInput(values: ["app": "Chatter"], source: .agent))
+        let json = try object(result.json)
+        XCTAssertEqual(json["bundleID"] as? String, "com.example.chatter")
+        let items = try XCTUnwrap(json["items"] as? [[String: Any]])
+        let paths = items.compactMap { $0["path"] as? String }.map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+        XCTAssertTrue(paths.contains(cache.standardizedFileURL.path), "\(paths)")
+        XCTAssertTrue(paths.contains(app.standardizedFileURL.path), "\(paths)")
+        XCTAssertTrue(result.text.contains("com.example.chatter"), result.text)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: app.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cache.path))
 
-        try await model.setFeature(.cleaner, enabled: false)
-        XCTAssertFalse(model.cleaner.showPossibleMatches, "Sub-switches count only while the cleaner is on")
-        XCTAssertEqual(model.cleaner.tab, .apps)
+        // By bundle ID too; an unknown app says so.
+        let byID = try await model.pluginHost.run("app-cleaner.scan", ActionInput(values: ["app": "com.example.chatter"], source: .agent))
+        XCTAssertEqual(try object(byID.json)["app"] as? String, "Chatter")
+        do {
+            _ = try await model.pluginHost.run("app-cleaner.scan", ActionInput(values: ["app": "Nothing Here"], source: .agent))
+            XCTFail("No such app")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("Nothing Here"), error.localizedDescription) }
+        do {
+            _ = try await model.pluginHost.run("app-cleaner.scan", ActionInput(source: .agent))
+            XCTFail("--app is required")
+        } catch ActionError.missing(let name) { XCTAssertEqual(name, "app") }
+    }
 
-        // A model made after the save starts from the saved switch.
-        try await model.setFeature(.cleaner, enabled: true)
-        let (other, otherDirectory) = try makeModel(model.configuration, fixture: fixture)
-        defer { other.shutdown(); try? FileManager.default.removeItem(at: otherDirectory) }
-        XCTAssertTrue(other.cleaner.showPossibleMatches)
+    func testUninstallNeedsConfirmAndOnlyEverMovesToTheTrash() async throws {
+        let fixture = try CleanerFixture()
+        defer { fixture.remove() }
+        let app = try fixture.app("Chatter", bundleID: "com.example.chatter")
+        let cache = try fixture.item(.caches, "com.example.chatter", bytes: 64)
+        let (model, directory) = try makeModel(fixture: fixture)
+        defer { model.shutdown(); try? FileManager.default.removeItem(at: directory) }
+        let trash = fixture.root.appendingPathComponent("Trash", isDirectory: true)
+        let log = CleanerCallLog()
+        model.cleanerDependencies = { .fake(root: fixture.root, trash: FakeCleanerTrash(folder: trash, log: log)) }
+        _ = try await enableCleaner(model)
+
+        do {
+            _ = try await model.pluginHost.run("app-cleaner.uninstall", ActionInput(values: ["app": "Chatter"], source: .agent))
+            XCTFail("Uninstalling needs --confirm")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("--confirm"), error.localizedDescription) }
+        XCTAssertTrue(log.entries.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: app.path))
+
+        let result = try await model.pluginHost.run("app-cleaner.uninstall",
+                                                    ActionInput(values: ["app": "Chatter", "confirm": "true"], source: .agent))
+        let json = try object(result.json)
+        XCTAssertEqual((json["moved"] as? [String])?.count, 2, result.json)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: app.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cache.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: trash.appendingPathComponent("Chatter.app").path), "In the fake Trash")
+        XCTAssertTrue(log.entries.allSatisfy { $0.hasPrefix("trash") || $0.hasPrefix("finder") }, "\(log.entries)")
+    }
+
+    func testUninstallRefusesARunningApp() async throws {
+        let fixture = try CleanerFixture()
+        defer { fixture.remove() }
+        let app = try fixture.app("Chatter", bundleID: "com.example.chatter")
+        let (model, directory) = try makeModel(fixture: fixture)
+        defer { model.shutdown(); try? FileManager.default.removeItem(at: directory) }
+        let system = FakeCleanerSystem()
+        await system.setRunning([RunningAppInfo(pid: 42, bundleID: "com.example.chatter", name: "Chatter", bundlePath: app.path)])
+        model.cleanerDependencies = { .fake(root: fixture.root, system: system) }
+        _ = try await enableCleaner(model)
+
+        do {
+            _ = try await model.pluginHost.run("app-cleaner.uninstall",
+                                               ActionInput(values: ["app": "Chatter", "confirm": "true"], source: .agent))
+            XCTFail("A running app stays")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("running"), error.localizedDescription) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: app.path))
+    }
+
+    /// `cleaner-list-*.png` and `cleaner-review-*.png`: the fixture's apps, and the review of one of them.
+    func testPageShotsOfTheListAndAReview() async throws {
+        guard ProcessInfo.processInfo.environment["FROG_PAGE_SHOTS"] != nil else { throw XCTSkip("Set FROG_PAGE_SHOTS") }
+        let fixture = try CleanerFixture()
+        defer { fixture.remove() }
+        let app = try fixture.app("Chatter", bundleID: "com.example.chatter", payload: 4_000_000)
+        _ = try fixture.app("Sketchbook", bundleID: "com.example.sketchbook", payload: 9_000_000)
+        _ = try fixture.app("Notebook", bundleID: "com.example.notebook", payload: 600_000)
+        _ = try fixture.item(.caches, "com.example.chatter", bytes: 2_000_000)
+        _ = try fixture.item(.applicationSupport, "Chatter", bytes: 800_000)
+        _ = try fixture.item(.preferences, "com.example.chatter.plist", bytes: 4_000)
+        let (model, directory) = try makeModel(fixture: fixture)
+        defer { model.shutdown(); try? FileManager.default.removeItem(at: directory) }
+        let plugin = try await enableCleaner(model)
+        await plugin.cleaner.loadApps()
+        await plugin.cleaner.measureAppSizes()
+        try await savePluginPageShot("cleaner-list", model: model) { plugin.page()! }
+        await plugin.cleaner.open(app)
+        await plugin.cleaner.waitForSizes()
+        try await savePluginPageShot("cleaner-review", model: model) { plugin.page()! }
     }
 }

@@ -302,36 +302,35 @@ import XCTest
         XCTAssertFalse(model.isProcessing)
     }
 
-    func testStayAwakeReportsAndSwitchesThePretendSetting() async throws {
+    func testStayAwakeHoldsTheMacAwakeWithoutTouchingTheSleepSetting() async throws {
+        await model.pluginHost.syncAndWait()
         let status = try object(await run("awake", "status", json: true))
         XCTAssertEqual(status["on"] as? Bool, false)
-        XCTAssertEqual(status["access"] as? String, "ready")
+        XCTAssertEqual(status["lidClosed"] as? Bool, false)
         let text = await run("awake", "status")
-        XCTAssertTrue(text.output.contains("off"), text.output)
+        XCTAssertEqual(text.output, "Off")
 
         let on = await run("awake", "on", "--for", "1h")
         XCTAssertEqual(on.exitCode, 0, on.error)
-        XCTAssertTrue(on.output.hasPrefix("Stay awake is on until"), on.output)
-        XCTAssertEqual(model.power.duration, .fourHours, "--for leaves the page's own choice alone")
+        XCTAssertTrue(on.output.hasPrefix("On until"), on.output)
+        XCTAssertEqual(model.power.duration, .untilOff, "--for leaves the page's own choice alone")
         let deadline = try XCTUnwrap(model.power.deadline)
         XCTAssertEqual(deadline.timeIntervalSinceNow, 3600, accuracy: 60)
         let onStatus = try object(await run("awake", "status", json: true))
         XCTAssertNotNil(onStatus["until"])
-        let again = await run("awake", "on", "--for", "30m")
-        XCTAssertTrue(again.output.hasPrefix("Stay awake is already on until"), again.output)
-        XCTAssertTrue(again.error.contains("frog awake off"), again.error)
-        XCTAssertEqual(model.power.deadline, deadline)
+        let longer = await run("run", "stay-awake.on", "--for", "90")
+        XCTAssertEqual(longer.exitCode, 0, longer.error)
+        XCTAssertEqual(try XCTUnwrap(model.power.deadline).timeIntervalSinceNow, 5400, accuracy: 60)
         let off = await run("awake", "off")
-        XCTAssertEqual(off.output, "Stay awake is off.")
+        XCTAssertEqual(off.output, "Off")
+        XCTAssertFalse(model.power.isEnabled)
         let writes = await power.writes
-        XCTAssertEqual(writes, [true, false])
+        XCTAssertEqual(writes, [], "Only the lid-closed mode changes the sleep setting")
 
-        let wrong = await run("awake", "on", "--for", "2h")
-        XCTAssertEqual(wrong.exitCode, AgentExit.usage)
-        await power.deny()
-        let denied = await run("awake", "on")
-        XCTAssertEqual(denied.exitCode, AgentExit.failure)
-        XCTAssertTrue(denied.error.contains("frog open stay-awake"), denied.error)
+        let wrong = await run("awake", "on", "--for", "soon")
+        XCTAssertNotEqual(wrong.exitCode, 0)
+        XCTAssertTrue(wrong.error.contains("--for"), wrong.error)
+        XCTAssertFalse(model.power.isEnabled)
     }
 
     func testUsageListsEachProvider() async throws {

@@ -22,7 +22,7 @@ final class StayAwakeAccessTests: XCTestCase {
 
     func testAccessCheckReflectsPolicyChangesWithoutChangingSleep() async throws {
         let system = AccessPowerFixture()
-        let power = StayAwakeController(system: system, directory: try folder())
+        let power = LidClosedSleep(system: system, directory: try folder())
         await power.refreshAccess()
         XCTAssertEqual(power.accessState, .needsSetup)
         await system.allowAccess(true)
@@ -38,7 +38,7 @@ final class StayAwakeAccessTests: XCTestCase {
 
     func testPopupAndActivationCheckOnlyAccessThatIsNotReady() async throws {
         let system = AccessPowerFixture()
-        let power = StayAwakeController(system: system, directory: try folder())
+        let power = LidClosedSleep(system: system, directory: try folder())
         await power.refreshAccessUnlessReady()
         XCTAssertEqual(power.accessState, .needsSetup)
         await system.allowAccess(true)
@@ -59,7 +59,7 @@ final class StayAwakeAccessTests: XCTestCase {
     func testSuccessfulGuideIsVerifiedAndNeverEnablesStayAwake() async throws {
         let system = AccessPowerFixture()
         let completed = try session(.success)
-        let power = StayAwakeController(system: system, directory: try folder(), openGuide: { mode in
+        let power = LidClosedSleep(system: system, directory: try folder(), openGuide: { mode in
             XCTAssertEqual(mode, .setup)
             await system.allowAccess(true)
             return completed
@@ -82,7 +82,7 @@ final class StayAwakeAccessTests: XCTestCase {
 
     func testGuideCompletionCannotPretendMissingAccessIsReady() async throws {
         let completed = try session(.success)
-        let power = StayAwakeController(system: AccessPowerFixture(), directory: try folder(), openGuide: { _ in completed })
+        let power = LidClosedSleep(system: AccessPowerFixture(), directory: try folder(), openGuide: { _ in completed })
         power.configureAccess(); await power.waitForAccessGuide()
         XCTAssertEqual(power.accessState, .needsSetup)
         XCTAssertTrue(power.accessNotice?.contains("not yet allowed") == true)
@@ -92,7 +92,7 @@ final class StayAwakeAccessTests: XCTestCase {
     func testResetRestoresSleepBeforeTheGuideCanClearPermission() async throws {
         let system = AccessPowerFixture(allowed: true)
         let completed = try session(.success)
-        let power = StayAwakeController(system: system, directory: try folder(), openGuide: { mode in
+        let power = LidClosedSleep(system: system, directory: try folder(), openGuide: { mode in
             XCTAssertEqual(mode, .reset)
             let awake = try await system.sleepDisabled()
             XCTAssertFalse(awake, "Existing access must restore sleep before reset removes it")
@@ -113,7 +113,7 @@ final class StayAwakeAccessTests: XCTestCase {
 
     func testRestoreFailureDoesNotLaunchTheResetGuide() async throws {
         let system = AccessPowerFixture(allowed: true)
-        let power = StayAwakeController(system: system, directory: try folder(), openGuide: { _ in
+        let power = LidClosedSleep(system: system, directory: try folder(), openGuide: { _ in
             XCTFail("Must keep permission until sleep can be restored")
             throw StayAwakeError.command
         })
@@ -130,7 +130,7 @@ final class StayAwakeAccessTests: XCTestCase {
     func testFailedAndCancelledGuidesCanBeRetried() async throws {
         for result in [StayAwakeSetup.Result.failed, .cancelled] {
             let completed = try session(result)
-            let power = StayAwakeController(system: AccessPowerFixture(), directory: try folder(), openGuide: { _ in completed })
+            let power = LidClosedSleep(system: AccessPowerFixture(), directory: try folder(), openGuide: { _ in completed })
             power.configureAccess(); await power.waitForAccessGuide()
             XCTAssertFalse(power.isConfiguringAccess)
             XCTAssertEqual(power.accessState, .needsSetup)
@@ -142,18 +142,18 @@ final class StayAwakeAccessTests: XCTestCase {
         let system = AccessPowerFixture()
         let closedEarly = try session(.failed)
         // The rule was saved, then the guide ended before it could verify and report it.
-        let power = StayAwakeController(system: system, directory: try folder(), openGuide: { _ in
+        let power = LidClosedSleep(system: system, directory: try folder(), openGuide: { _ in
             await system.allowAccess(true)
             return closedEarly
         })
         power.configureAccess(); await power.waitForAccessGuide()
         XCTAssertEqual(power.accessState, .ready)
-        XCTAssertEqual(power.accessNotice, "Setup did not finish, but both power commands are allowed. You can use Stay awake from the menu bar.",
+        XCTAssertEqual(power.accessNotice, "Setup did not finish, but both power commands are allowed.",
             "Settings shows Ready to use, so the notice next to it must not say that setup has to be repeated")
 
         // A reset that fails has not removed the access it was asked to remove.
         let failedReset = try session(.failed)
-        let reset = StayAwakeController(system: AccessPowerFixture(allowed: true), directory: try folder(), openGuide: { _ in failedReset })
+        let reset = LidClosedSleep(system: AccessPowerFixture(allowed: true), directory: try folder(), openGuide: { _ in failedReset })
         await reset.refresh()
         reset.configureAccess(.reset); await reset.waitForAccessGuide()
         XCTAssertEqual(reset.accessState, .ready)
@@ -163,7 +163,7 @@ final class StayAwakeAccessTests: XCTestCase {
     func testCancellingAResetSaysThatSleepWasAlreadyRestored() async throws {
         let system = AccessPowerFixture(allowed: true)
         let declined = try session(.cancelled)
-        let power = StayAwakeController(system: system, directory: try folder(), openGuide: { _ in declined })
+        let power = LidClosedSleep(system: system, directory: try folder(), openGuide: { _ in declined })
         await power.refresh()
         power.setEnabled(true); await power.waitForOperation()
         XCTAssertTrue(power.isEnabled)
@@ -174,13 +174,13 @@ final class StayAwakeAccessTests: XCTestCase {
         XCTAssertEqual(power.accessNotice, "Sleep restored. Access guide cancelled.", "Answering no in Terminal does not bring the session back, so Frog says that it ended")
 
         let idleDeclined = try session(.cancelled)
-        let idle = StayAwakeController(system: AccessPowerFixture(allowed: true), directory: try folder(), openGuide: { _ in idleDeclined })
+        let idle = LidClosedSleep(system: AccessPowerFixture(allowed: true), directory: try folder(), openGuide: { _ in idleDeclined })
         await idle.refresh()
         idle.configureAccess(.reset); await idle.waitForAccessGuide()
         XCTAssertEqual(idle.accessNotice, "Access guide cancelled.", "Nothing was on, so nothing was restored")
 
         let setupDeclined = try session(.cancelled)
-        let running = StayAwakeController(system: AccessPowerFixture(allowed: true), directory: try folder(), openGuide: { _ in setupDeclined })
+        let running = LidClosedSleep(system: AccessPowerFixture(allowed: true), directory: try folder(), openGuide: { _ in setupDeclined })
         await running.refresh()
         running.setEnabled(true); await running.waitForOperation()
         running.configureAccess(.setup); await running.waitForAccessGuide()
@@ -194,7 +194,7 @@ final class StayAwakeAccessTests: XCTestCase {
         let system = AccessPowerFixture(allowed: true)
         // Closing the Terminal window or pressing Control-C ends the guide as failed.
         let closed = try session(.failed)
-        let power = StayAwakeController(system: system, directory: try folder(), openGuide: { _ in closed })
+        let power = LidClosedSleep(system: system, directory: try folder(), openGuide: { _ in closed })
         await power.refresh()
         power.setEnabled(true); await power.waitForOperation()
         XCTAssertTrue(power.isEnabled)
@@ -283,7 +283,7 @@ final class StayAwakeAccessTests: XCTestCase {
         var sessions: [StayAwakeSetup.Session] = []
         for _ in 0..<2 { sessions.append(StayAwakeSetup.Session(folder: try folder())) }
         let pending = sessions
-        let power = StayAwakeController(system: system, directory: try folder(), openGuide: { _ in pending[await system.noteGuide()] })
+        let power = LidClosedSleep(system: system, directory: try folder(), openGuide: { _ in pending[await system.noteGuide()] })
         await power.refresh()
         for (index, session) in sessions.enumerated() {
             power.configureAccess()
@@ -307,7 +307,7 @@ final class StayAwakeAccessTests: XCTestCase {
     func testARunningSessionCanBeSwitchedOffWhileAGuideIsOpen() async throws {
         let system = AccessPowerFixture(allowed: true)
         let pending = StayAwakeSetup.Session(folder: try folder())
-        let power = StayAwakeController(system: system, directory: try folder(), openGuide: { _ in _ = await system.noteGuide(); return pending })
+        let power = LidClosedSleep(system: system, directory: try folder(), openGuide: { _ in _ = await system.noteGuide(); return pending })
         XCTAssertFalse(power.canSwitch, "Nothing is known before the first read")
         await power.refresh()
         XCTAssertTrue(power.canSwitch)
@@ -330,7 +330,7 @@ final class StayAwakeAccessTests: XCTestCase {
 
     func testCancellingAResetBeforeItsGuideOpensOpensNoGuide() async throws {
         let system = AccessPowerFixture(allowed: true)
-        let power = StayAwakeController(system: system, directory: try folder(), openGuide: { _ in
+        let power = LidClosedSleep(system: system, directory: try folder(), openGuide: { _ in
             _ = await system.noteGuide()
             throw StayAwakeError.command
         })
@@ -351,7 +351,7 @@ final class StayAwakeAccessTests: XCTestCase {
 
     func testUnavailablePolicyCheckDoesNotShowReady() async throws {
         let system = AccessPowerFixture(allowed: true)
-        let power = StayAwakeController(system: system, directory: try folder())
+        let power = LidClosedSleep(system: system, directory: try folder())
         await power.refreshAccess()
         XCTAssertEqual(power.accessState, .ready)
         await system.failChecks()
@@ -363,7 +363,7 @@ final class StayAwakeAccessTests: XCTestCase {
         let system = AccessPowerFixture()
         let gate = AccessCheckGate()
         await system.holdNextCheck(gate)
-        let power = StayAwakeController(system: system, directory: try folder())
+        let power = LidClosedSleep(system: system, directory: try folder())
         let old = Task { await power.refreshAccess() }
         await gate.waitUntilStarted()
         await system.allowAccess(true)

@@ -17,7 +17,7 @@ final class StayAwakeSessionTests: XCTestCase {
 
     func testASettingSwitchedOffOutsideFrogIsNoticedWithoutOpeningThePopup() async throws {
         let system = SessionPowerFixture(enabled: true)
-        let power = StayAwakeController(system: system, directory: directory(), monitorInterval: .milliseconds(5))
+        let power = LidClosedSleep(system: system, directory: directory(), monitorInterval: .milliseconds(5))
         power.start(); await power.waitForOperation()
         XCTAssertTrue(power.isEnabled)
         XCTAssertFalse(power.ownsSession)
@@ -37,7 +37,7 @@ final class StayAwakeSessionTests: XCTestCase {
 
     func testSwitchingTheFeatureOffDropsAStateThatIsNoLongerRead() async {
         let system = SessionPowerFixture(enabled: true)
-        let power = StayAwakeController(system: system, directory: directory())
+        let power = LidClosedSleep(system: system, directory: directory())
         power.start(); await power.waitForOperation()
         XCTAssertTrue(power.isEnabled)
 
@@ -58,7 +58,7 @@ final class StayAwakeSessionTests: XCTestCase {
 
     func testAReadThatTheFeatureSwitchOvertookIsDropped() async {
         let system = SessionPowerFixture(enabled: true)
-        let power = StayAwakeController(system: system, directory: directory())
+        let power = LidClosedSleep(system: system, directory: directory())
         let gate = ReadGate()
         await system.holdNextRead(gate)
         let read = Task { await power.refresh() }
@@ -74,7 +74,7 @@ final class StayAwakeSessionTests: XCTestCase {
         let system = SessionPowerFixture(enabled: true)
         let folder = directory()
         try leaveMarker("{}", in: folder)
-        let power = StayAwakeController(system: system, directory: folder)
+        let power = LidClosedSleep(system: system, directory: folder)
         let gate = ReadGate()
         await system.holdNextRead(gate)
         power.start()
@@ -97,7 +97,7 @@ final class StayAwakeSessionTests: XCTestCase {
 
     func testQuittingDuringAResetWaitsForItsRestoreAndOpensNoGuide() async throws {
         let system = SessionPowerFixture()
-        let power = StayAwakeController(system: system, directory: directory(), openGuide: { _ in
+        let power = LidClosedSleep(system: system, directory: directory(), openGuide: { _ in
             await system.noteGuide()
             throw StayAwakeError.command
         })
@@ -125,7 +125,7 @@ final class StayAwakeSessionTests: XCTestCase {
 
     func testDisablingTheFeatureDuringAResetWaitsForItsRestore() async throws {
         let system = SessionPowerFixture()
-        let power = StayAwakeController(system: system, directory: directory(), openGuide: { _ in throw StayAwakeError.command })
+        let power = LidClosedSleep(system: system, directory: directory(), openGuide: { _ in throw StayAwakeError.command })
         await power.refresh()
         power.setEnabled(true); await power.waitForOperation()
         let gate = ReadGate()
@@ -146,11 +146,11 @@ final class StayAwakeSessionTests: XCTestCase {
         // The process that launched this test run stands in for the other Frog: it runs, and
         // it is not this process.
         let other = getppid()
-        let started = try XCTUnwrap(StayAwakeController.processStart(other))
+        let started = try XCTUnwrap(LidClosedSleep.processStart(other))
         let system = SessionPowerFixture(enabled: true)
         let folder = directory()
         try leaveMarker(#"{"pid":\#(other),"started":\#(started)}"#, in: folder)
-        let power = StayAwakeController(system: system, directory: folder)
+        let power = LidClosedSleep(system: system, directory: folder)
         power.start(); await power.waitForOperation()
         XCTAssertTrue(power.isEnabled, "The session of the other Frog goes on and shows as on outside this one")
         XCTAssertFalse(power.ownsSession)
@@ -163,8 +163,8 @@ final class StayAwakeSessionTests: XCTestCase {
 
     func testAMarkerWhoseOwnerIsNotProvenToRunIsStillCleanedUp() async throws {
         let parent = getppid()
-        let parentStart = try XCTUnwrap(StayAwakeController.processStart(parent))
-        let ownStart = try XCTUnwrap(StayAwakeController.processStart(getpid()))
+        let parentStart = try XCTUnwrap(LidClosedSleep.processStart(parent))
+        let ownStart = try XCTUnwrap(LidClosedSleep.processStart(getpid()))
         let leftovers = [
             #"{"pid":\#(parent),"started":\#(parentStart + 1)}"#, // the process id was reused, for example after a restart
             #"{"pid":\#(parent)}"#, // no start time that could prove it
@@ -176,7 +176,7 @@ final class StayAwakeSessionTests: XCTestCase {
             let system = SessionPowerFixture(enabled: true)
             let folder = directory()
             try leaveMarker(marker, in: folder)
-            let power = StayAwakeController(system: system, directory: folder)
+            let power = LidClosedSleep(system: system, directory: folder)
             power.start(); await power.waitForOperation()
             XCTAssertFalse(power.isEnabled, marker)
             XCTAssertFalse(power.ownsSession, marker)
@@ -193,7 +193,7 @@ final class StayAwakeSessionTests: XCTestCase {
             let system = SessionPowerFixture(enabled: awake)
             let folder = directory()
             try leaveMarker(contents, in: folder)
-            let power = StayAwakeController(system: system, directory: folder)
+            let power = LidClosedSleep(system: system, directory: folder)
             power.start(); await power.waitForOperation()
             XCTAssertFalse(power.isEnabled, "A marker means that Frog started a session, readable or not: \(contents)")
             XCTAssertTrue(power.hasReadState, contents)
@@ -208,11 +208,11 @@ final class StayAwakeSessionTests: XCTestCase {
     }
 
     func testTheMarkerNamesTheProcessThatOwnsTheSession() async throws {
-        let ownStart = try XCTUnwrap(StayAwakeController.processStart(getpid()))
-        XCTAssertEqual(StayAwakeController.processStart(getpid()), ownStart, "One process has one start time")
-        XCTAssertNil(StayAwakeController.processStart(Int32.max))
+        let ownStart = try XCTUnwrap(LidClosedSleep.processStart(getpid()))
+        XCTAssertEqual(LidClosedSleep.processStart(getpid()), ownStart, "One process has one start time")
+        XCTAssertNil(LidClosedSleep.processStart(Int32.max))
         let folder = directory()
-        let power = StayAwakeController(system: SessionPowerFixture(), directory: folder)
+        let power = LidClosedSleep(system: SessionPowerFixture(), directory: folder)
         await power.refresh()
         power.setEnabled(true); await power.waitForOperation()
         XCTAssertTrue(power.ownsSession)
@@ -226,7 +226,7 @@ final class StayAwakeSessionTests: XCTestCase {
 
     func testAReadErrorLeavesOnceTheSettingCanBeReadAgain() async {
         let system = SessionPowerFixture()
-        let power = StayAwakeController(system: system, directory: directory())
+        let power = LidClosedSleep(system: system, directory: directory())
         await power.refresh()
         XCTAssertNil(power.error)
         await system.failReads(true)
@@ -260,27 +260,26 @@ final class StayAwakeSessionTests: XCTestCase {
 
     func testAReadErrorDoesNotKeepHidingTheNoticeOfARestoredSession() async {
         let system = SessionPowerFixture()
-        var now = Date(timeIntervalSince1970: 1000)
-        let power = StayAwakeController(system: system, directory: directory(), now: { now })
+        let power = LidClosedSleep(system: system, directory: directory())
         await power.refresh()
         power.setEnabled(true); await power.waitForOperation()
-        now.addTimeInterval(4 * 3600)
+        await system.setBattery(PowerBattery(onBattery: true, percent: 10))
         await power.refresh()
         XCTAssertFalse(power.isEnabled)
-        XCTAssertEqual(power.notice, "Timer finished · Sleep restored")
+        XCTAssertEqual(power.notice, "Low battery · Sleep restored")
         await system.failReads(true)
         await power.refresh()
         XCTAssertNotNil(power.error)
         await system.failReads(false)
         await power.refresh()
         XCTAssertNil(power.error, "The views show an error in place of the notice")
-        XCTAssertEqual(power.notice, "Timer finished · Sleep restored")
+        XCTAssertEqual(power.notice, "Low battery · Sleep restored")
     }
 
     func testAnErrorFromAChangeStaysAfterASuccessfulRead() async {
         let system = SessionPowerFixture()
         await system.setBattery(PowerBattery(onBattery: true, percent: 10))
-        let power = StayAwakeController(system: system, directory: directory())
+        let power = LidClosedSleep(system: system, directory: directory())
         await power.refresh()
         power.setEnabled(true); await power.waitForOperation()
         XCTAssertFalse(power.isEnabled)

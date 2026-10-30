@@ -13,7 +13,7 @@ import XCTest
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("frog-plugin-commands-\(UUID().uuidString)", isDirectory: true)
         try ConfigurationStore(directory: directory).save(Configuration())
         model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil }, writeClipboard: { _ in },
-                         toolkit: Toolkit(showsUsageStatusItem: false, showsMenuBarOrganizer: false))
+                         toolkit: Toolkit(showsUsageStatusItem: false))
         model.plugins.directoryURL = nil
         model.plugins.trash = { try FileManager.default.removeItem(at: $0) }
     }
