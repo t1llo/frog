@@ -5,49 +5,32 @@ import XCTest
 final class HistoryEmptyStateTests: XCTestCase {
     private let saved = HistoryEntry(originalText: "Original", processedText: "Result words", ruleName: "Proofread", providerName: "Local", model: "fixture")
 
-    private func state(saved: [HistoryEntry], clipboard: [ClipboardHistoryEntry], filter: HistoryFilter?, search: String = "", clipboardEnabled: Bool = true) -> HistoryEmptyState? {
-        let all = HistoryFeed.items(saved: saved, clipboard: clipboard)
-        return .describing(all: all, shown: HistoryFeed.narrowed(all, filter: filter, search: search, revealed: []), filter: filter, search: search, clipboardEnabled: clipboardEnabled)
-    }
-
-    func testClipboardFilterWithoutCopiedTextExplainsItselfAlthoughSavedHistoryExists() {
-        XCTAssertEqual(state(saved: [saved], clipboard: [], filter: .clipboard), .noCopiedText)
-        XCTAssertEqual(state(saved: [saved], clipboard: [], filter: .clipboard, search: "  \n"), .noCopiedText, "The feed trims the search, so spaces alone are no search")
-        XCTAssertEqual(state(saved: [saved], clipboard: [], filter: .clipboard, search: "words"), .noMatches)
-    }
-
-    func testClipboardFilterSaysClipboardIsOffInsteadOfAskingForACopyThatWouldNotAppear() {
-        XCTAssertEqual(state(saved: [saved], clipboard: [], filter: .clipboard, clipboardEnabled: false), .clipboardOff)
-        XCTAssertEqual(state(saved: [], clipboard: [], filter: .clipboard, clipboardEnabled: false), .clipboardOff)
-        XCTAssertEqual(state(saved: [saved], clipboard: [], filter: .clipboard, search: "words", clipboardEnabled: false), .clipboardOff)
-        XCTAssertNil(state(saved: [saved], clipboard: [], filter: nil, clipboardEnabled: false))
-        XCTAssertEqual(state(saved: [saved], clipboard: [], filter: .audio, clipboardEnabled: false), .noMatches)
-        XCTAssertEqual(state(saved: [], clipboard: [], filter: nil, clipboardEnabled: false), .noHistory)
+    private func state(_ entries: [HistoryEntry], filter: HistoryFilter?, search: String = "") -> HistoryEmptyState? {
+        let all = HistoryFeed.items(entries)
+        return .describing(all: all, shown: HistoryFeed.narrowed(all, filter: filter, search: search), filter: filter, search: search)
     }
 
     func testNoMatchesIsForAFilterOrSearchThatLeavesNothingOfAnExistingFeed() {
-        let copied = ClipboardHistoryEntry(text: "Ordinary copied text")
-        XCTAssertNil(state(saved: [saved], clipboard: [copied], filter: nil))
-        XCTAssertNil(state(saved: [saved], clipboard: [copied], filter: .clipboard))
-        XCTAssertEqual(state(saved: [saved], clipboard: [copied], filter: nil, search: "no such text"), .noMatches)
-        XCTAssertEqual(state(saved: [saved], clipboard: [copied], filter: .clipboard, search: "no such text"), .noMatches)
-        XCTAssertEqual(state(saved: [saved], clipboard: [copied], filter: .audio), .noMatches)
+        XCTAssertNil(state([saved], filter: nil))
+        XCTAssertNil(state([saved], filter: .text, search: "  words "))
+        XCTAssertEqual(state([saved], filter: nil, search: "no such text"), .noMatches)
+        XCTAssertEqual(state([saved], filter: .audio), .noMatches)
     }
 
     func testTheAnswersFilterWithoutAnswersSaysHowTheyAppear() {
-        XCTAssertEqual(state(saved: [saved], clipboard: [], filter: .answers), .noAnswers)
-        XCTAssertEqual(state(saved: [saved], clipboard: [], filter: .answers, search: " "), .noAnswers)
-        XCTAssertEqual(state(saved: [saved], clipboard: [], filter: .answers, search: "words"), .noMatches)
-        XCTAssertEqual(state(saved: [], clipboard: [], filter: .answers), .noAnswers)
+        XCTAssertEqual(state([saved], filter: .answers), .noAnswers)
+        XCTAssertEqual(state([saved], filter: .answers, search: " "), .noAnswers, "The feed trims the search, so spaces alone are no search")
+        XCTAssertEqual(state([saved], filter: .answers, search: "words"), .noMatches)
+        XCTAssertEqual(state([], filter: .answers), .noAnswers)
         var answer = HistoryEntry(originalText: "bank", processedText: "Land along a river.", ruleName: "Explain", providerName: "", model: "")
         answer.answer = AnswerRecord(context: nil, application: nil, source: nil, followUps: [])
-        XCTAssertNil(state(saved: [saved, answer], clipboard: [], filter: .answers))
-        XCTAssertEqual(state(saved: [saved, answer], clipboard: [], filter: .answers, search: "no such text"), .noMatches)
+        XCTAssertNil(state([saved, answer], filter: .answers))
+        XCTAssertEqual(state([saved, answer], filter: .answers, search: "no such text"), .noMatches)
     }
 
     func testAnEmptyFeedSaysWhatWillAppear() {
-        XCTAssertEqual(state(saved: [], clipboard: [], filter: nil), .noHistory)
-        XCTAssertEqual(state(saved: [], clipboard: [], filter: .text, search: "words"), .noHistory)
-        XCTAssertEqual(state(saved: [], clipboard: [], filter: .clipboard), .noCopiedText)
+        XCTAssertEqual(state([], filter: nil), .noHistory)
+        XCTAssertEqual(state([], filter: .text, search: "words"), .noHistory)
+        XCTAssertEqual(state([], filter: .audio), .noHistory)
     }
 }

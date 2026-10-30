@@ -66,9 +66,9 @@ extension AgentCommands {
         ]
     }
 
-    /// The rules on the Writing page: text rules that replace the selection, not Explain's answers.
+    /// The Writing rules that return their result, as `writing.run` runs them too; rules that show it answer there.
     private static func writingRules(_ model: AppModel) -> [Rule] {
-        model.configuration.rules.filter { $0.category == .text && !$0.answersInPanel }
+        model.configuration.rules.filter { $0.isWritingRule && !$0.answersInPanel }
     }
 
     /// The time for today, the day and time before.

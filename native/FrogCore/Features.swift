@@ -275,7 +275,7 @@ extension Preferences {
     /// Window arrangement belongs to Shortcuts, independently of the switcher overlay.
     public func ruleFeatureEnabled(_ rule: Rule) -> Bool {
         switch rule.category {
-        case .text: rule.answersInPanel ? featureEnabled(.explain) : featureEnabled(.writing)
+        case .text: rule.isExplainRule ? featureEnabled(.explain) : featureEnabled(.writing)
         case .audio: featureEnabled(.dictation)
         case .application, .system: featureEnabled(.applicationShortcuts)
         case .window: windowActionsEnabled

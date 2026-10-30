@@ -88,16 +88,3 @@ private struct ClipboardPageRow: View {
         }
     }
 }
-
-/// The shortcut in History's clipboard view, until History stops showing copied text: the Clipboard plugin's.
-struct ClipboardShortcutControl: View {
-    @EnvironmentObject private var model: AppModel
-    var body: some View {
-        if let plugin = model.pluginHost.running[ClipboardPlugin.info.id] as? ClipboardPlugin {
-            HotkeyRecorder(hotkey: Binding(get: { plugin.state.settings.shortcut.hotkey },
-                                           set: { if let value = $0 { plugin.setShortcut(value) } }),
-                           showsClearButton: false, purpose: .clipboardHistory)
-                .controlSize(.small).fixedSize()
-        }
-    }
-}

@@ -37,7 +37,10 @@ final class SelectionBubblePolicyTests: XCTestCase {
         context.bubbleEnabled = true
         context.explainEnabled = false
         context.writingEnabled = true
-        XCTAssertEqual(SelectionBubblePolicy.mayRead(context, options: options), .off, "the bubble needs Explain")
+        XCTAssertEqual(SelectionBubblePolicy.mayRead(context, options: options), .needsAccessibility,
+                       "Writing rules alone give the bubble something to show")
+        context.writingEnabled = false
+        XCTAssertEqual(SelectionBubblePolicy.mayRead(context, options: options), .off)
     }
 
     func testExcludedAppsComeFromTheOptions() {
@@ -104,12 +107,10 @@ final class SelectionBubblePolicyTests: XCTestCase {
     }
 
     func testStatus() {
-        XCTAssertNil(SelectionBubblePolicy.status(explainEnabled: true, bubbleEnabled: false, accessibilityTrusted: true))
-        XCTAssertEqual(SelectionBubblePolicy.status(explainEnabled: false, bubbleEnabled: true, accessibilityTrusted: false),
-                       "Turn on Explain to use the bubble")
-        XCTAssertEqual(SelectionBubblePolicy.status(explainEnabled: true, bubbleEnabled: true, accessibilityTrusted: false),
+        XCTAssertNil(SelectionBubblePolicy.status(bubbleEnabled: false, accessibilityTrusted: false))
+        XCTAssertEqual(SelectionBubblePolicy.status(bubbleEnabled: true, accessibilityTrusted: false),
                        "Needs Accessibility to see what you select")
-        XCTAssertNil(SelectionBubblePolicy.status(explainEnabled: true, bubbleEnabled: true, accessibilityTrusted: true),
+        XCTAssertNil(SelectionBubblePolicy.status(bubbleEnabled: true, accessibilityTrusted: true),
                      "the switch already says the bubble is on")
     }
 

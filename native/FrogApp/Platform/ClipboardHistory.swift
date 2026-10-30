@@ -422,12 +422,3 @@ enum ClipboardSearch {
         }
     }
 }
-
-/// What History's clipboard filter still reads, until History stops showing copied text. Nothing in
-/// clipboard history is ever hidden, since secrets are never kept.
-extension ClipboardHistoryEntry {
-    func displayPreview(revealed: Bool) -> String { revealed || !isSensitive ? preview : Self.mask }
-    var sensitivityLabel: String { "" }
-    var sensitiveTitle: String { "Copied text" }
-    static let mask = String(repeating: "•", count: 12)
-}

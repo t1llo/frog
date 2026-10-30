@@ -120,15 +120,16 @@ final class SelectionBubbleShotsTests: XCTestCase {
         controller.hide()
     }
 
-    /// The Explain page with the bubble on, drawn without a window: the rule left out of the bubble marked in its row,
-    /// in light and dark.
-    func testTheExplainPageWithTheBubbleOn() async throws {
+    /// The Writing page with the bubble on, drawn without a window, in light and dark.
+    func testTheWritingPageWithTheBubbleOn() async throws {
         let folder = try Self.folder()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let model = try await Self.explainModel(directory: directory, accessibility: true)
+        defer { model.shutdown() }
+        let writing = try XCTUnwrap(model.pluginHost.running["writing"] as? WritingPlugin)
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
-            let host = NSHostingView(rootView: ExplainView().environmentObject(model).frame(width: 760, height: 2_400)
+            let host = NSHostingView(rootView: WritingView(plugin: writing).environmentObject(model).frame(width: 760, height: 2_400)
                 .background(FrogStyle.opaqueCanvas))
             host.appearance = NSAppearance(named: appearance)
             host.frame = NSRect(x: 0, y: 0, width: 760, height: 2_400)
@@ -138,7 +139,7 @@ final class SelectionBubbleShotsTests: XCTestCase {
             host.cacheDisplay(in: host.bounds, to: bitmap)
             let name = appearance == .aqua ? "light" : "dark"
             try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
-                .write(to: URL(fileURLWithPath: "\(folder)/\(name)-explain-page.png"))
+                .write(to: URL(fileURLWithPath: "\(folder)/\(name)-writing-page.png"))
         }
     }
 
@@ -202,18 +203,23 @@ final class SelectionBubbleShotsTests: XCTestCase {
         }
     }
 
-    /// The Explain page with the bubble on, with and without Accessibility and with its Options open, drawn without a
-    /// window in light and dark. Runs only with `FROG_EXPLAIN_SHOTS` set to the folder for the pictures.
+    /// The Explain page, and the Writing page with and without Accessibility, drawn without a window in light and
+    /// dark. Runs only with `FROG_EXPLAIN_SHOTS` set to the folder for the pictures.
     func testTheExplainPage() async throws {
         let folder = try Self.folder("FROG_EXPLAIN_SHOTS")
-        for (state, trusted, options) in [("page", true, false), ("page-no-access", false, false), ("page-options", true, true)] {
+        for (state, trusted) in [("page", true), ("page-no-access", false)] {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
             defer { try? FileManager.default.removeItem(at: directory) }
             let model = try await Self.explainModel(directory: directory, accessibility: trusted)
+            defer { model.shutdown() }
+            let explain = try XCTUnwrap(model.pluginHost.running["explain"] as? ExplainPlugin)
+            let writing = try XCTUnwrap(model.pluginHost.running["writing"] as? WritingPlugin)
             for appearance in [NSAppearance.Name.aqua, .darkAqua] {
                 let name = appearance == .aqua ? "light" : "dark"
-                let page = ExplainView(showsBubbleOptions: options).environmentObject(model)
-                let png = try await render(page, width: 760, height: options ? 940 : 620, appearance: appearance)
+                let page = Group {
+                    if trusted { ExplainView(plugin: explain) } else { WritingView(plugin: writing) }
+                }.environmentObject(model)
+                let png = try await render(page, width: 760, height: 940, appearance: appearance)
                 try png.write(to: URL(fileURLWithPath: "\(folder)/\(state)-\(name).png"))
             }
         }
@@ -226,12 +232,13 @@ final class SelectionBubbleShotsTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let model = try await Self.explainModel(directory: directory, accessibility: true)
-        let hidden = try XCTUnwrap(model.configuration.preferences.explainSettings.bubbleHiddenRules.first)
-        let rule = try XCTUnwrap(model.configuration.rules.first { $0.id == hidden })
+        defer { model.shutdown() }
+        let rule = try XCTUnwrap(model.configuration.rules.first { !$0.showsInBubble })
         XCTAssertTrue(model.ruleLeftOutOfBubble(rule))
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             let name = appearance == .aqua ? "light" : "dark"
-            let png = try await render(RuleEditor(rule: rule).environmentObject(model), width: 520, height: 460, appearance: appearance)
+            let editor = WritingRuleEditor(rule: rule, bubble: true) { _ in }.environmentObject(model)
+            let png = try await render(editor, width: 540, height: 610, appearance: appearance)
             try png.write(to: URL(fileURLWithPath: "\(folder)/editor-\(name).png"))
         }
     }
@@ -250,12 +257,14 @@ final class SelectionBubbleShotsTests: XCTestCase {
         define.action = RuleAction(category: .text)
         define.action?.textOutput = .panel
         try model.saveRule(define)
-        let writing = model.configuration.rules.filter { $0.enabled && $0.category == .text && !$0.answersInPanel }
-        try model.updateToolkit { toolkit in
-            var settings = toolkit.explain ?? ExplainSettings()
-            settings.selectionBubble = true
-            settings.bubbleHiddenRules = Array(writing.prefix(1).map(\.id))
-            toolkit.explain = settings
+        await model.pluginHost.syncAndWait()
+        let plugin = try XCTUnwrap(model.pluginHost.running["writing"] as? WritingPlugin)
+        var settings = plugin.settings
+        settings.bubble.on = true
+        try plugin.save(settings)
+        if var writing = plugin.rules.first(where: { $0.enabled && !$0.answersInPanel }) {
+            writing.showsInBubble = false
+            try model.saveRule(writing)
         }
         return model
     }
