@@ -229,6 +229,26 @@ final class PhonePluginTests: XCTestCase {
         try await model.pluginHost.run(id, ActionInput(values: values, text: text, source: .agent))
     }
 
+    func testSecretLookingFilesAreKnownByNameFolderAndContents() throws {
+        let home = directory.appendingPathComponent("home", isDirectory: true)
+        for folder in [".ssh", "Library/Keychains", "Documents"] {
+            try FileManager.default.createDirectory(at: home.appendingPathComponent(folder), withIntermediateDirectories: true)
+        }
+        func file(_ path: String, _ contents: String = "fixture") throws -> URL {
+            let url = home.appendingPathComponent(path)
+            try contents.write(to: url, atomically: true, encoding: .utf8)
+            return url
+        }
+        for path in [".ssh/config", "Library/Keychains/login.keychain-db", "Documents/AuthKey.p8", "Documents/release.jks",
+                     "Documents/upload.keystore", "Documents/cert.p12", "Documents/.env", "Documents/tls.key"] {
+            XCTAssertTrue(PhoneController.looksSecret(try file(path), home: home), path)
+        }
+        let block = "-----BEGIN " + "PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC\n-----END " + "PRIVATE KEY-----\n"
+        XCTAssertTrue(PhoneController.looksSecret(try file("Documents/backup.txt", block), home: home), "A key inside an ordinary name")
+        XCTAssertFalse(PhoneController.looksSecret(try file("Documents/photo-notes.txt", "Holiday photos, day two."), home: home))
+        XCTAssertFalse(PhoneController.looksSecret(home.appendingPathComponent("Documents/missing.txt"), home: home))
+    }
+
     func testOffHoldsNothingAndOnSeedsItsTable() async throws {
         try await model.pluginHost.setEnabled("phone", false)
         XCTAssertNil(plugin)
@@ -243,11 +263,20 @@ final class PhonePluginTests: XCTestCase {
         plugin?.setAutoSend(false)
         XCTAssertFalse(history.forwardsCopies)
         XCTAssertEqual(model.settingsFile.document.value(at: ["phone", "auto-send"]), .bool(false))
+        XCTAssertEqual(model.configuration.preferences.toolkitSettings.phoneAutoSend, false, "The preferences keep a copy")
+        // Reload and Import follow the old key.
+        try model.updateToolkit { $0.phoneAutoSend = true }
+        PhonePlugin.adoptLegacySettings(model)
+        XCTAssertEqual(model.settingsFile.document.value(at: ["phone", "auto-send"]), .bool(true))
+        XCTAssertTrue(history.forwardsCopies)
+        let stale = try XCTUnwrap(plugin?.phone)
 
         try await model.pluginHost.setEnabled("phone", false)
         XCTAssertNil(plugin)
         XCTAssertFalse(history.forwardsCopies)
         XCTAssertNil(history.onCopy)
+        stale.beginPairing()
+        XCTAssertNil(stale.pairing, "A Phone page left open after Phone was turned off pairs nothing")
     }
 
     func testActions() async throws {
@@ -277,6 +306,17 @@ final class PhonePluginTests: XCTestCase {
         XCTAssertEqual(bodies, ["Fixture from stdin", "Fixture option"])
         do { _ = try await run("phone.send", ["text": "Tr0ub4dor&3"]); XCTFail("A password is refused") } catch ActionError.failed {}
         do { _ = try await run("phone.send", ["file": "relative.txt"]); XCTFail("A relative path is refused") } catch ActionError.invalid {}
+        do { _ = try await run("phone.send", ["text": String(repeating: "x", count: PhoneController.textLimit + 1)]); XCTFail("Too long") } catch ActionError.failed {}
+
+        // Files an agent asks to send: keys and secrets stay, an ordinary file goes.
+        let token = "gh" + "p_" + String(repeating: "aB3x", count: 9)
+        let files: [(String, String)] = [("server.pem", "fixture"), (".env.local", "fixture"), ("notes.txt", "Shopping list\nGITHUB_TOKEN=\(token)\n"),
+                                         ("readme.txt", "An ordinary fixture file.")]
+        for (name, contents) in files { try contents.write(to: directory.appendingPathComponent(name), atomically: true, encoding: .utf8) }
+        for name in ["server.pem", ".env.local", "notes.txt"] {
+            do { _ = try await run("phone.send", ["file": directory.appendingPathComponent(name).path]); XCTFail(name) } catch ActionError.failed {}
+        }
+        do { let text = try await run("phone.send", ["file": directory.appendingPathComponent("readme.txt").path]).text; XCTAssertEqual(text, "Sending 1 file to your phone.") }
 
         do { _ = try await run("phone.unpair", ["phone": "Other phone"]); XCTFail("Unknown phone") } catch ActionError.failed {}
         do { let text = try await run("phone.unpair", ["phone": "test phone"]).text; XCTAssertEqual(text, "Unpaired Test phone.") }
