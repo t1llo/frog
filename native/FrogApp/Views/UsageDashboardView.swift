@@ -359,10 +359,8 @@ private struct UsageProviderControls: View {
             Spacer(minLength: 0)
             // Each Claude account is read through its own folders while Frog shows each.
             if usage.preferences.provider == "Claude", !usage.claudeAccountsEnabled {
-                CompactMenu(value: usage.loginSource, width: 180) {
-                    ForEach(usage.loginSources, id: \.self) { source in
-                        Button(source) { usage.selectLoginSource(source) }
-                    }
+                FrogDropdown(selected: usage.loginSource, options: usage.loginSources, width: 180, title: { $0 }) {
+                    usage.selectLoginSource($0)
                 }.accessibilityLabel("Claude login source").help("Where Claude plan limits are read from")
             }
         }
@@ -666,21 +664,15 @@ private struct UsageActivityView: View {
                 }
                 Spacer()
                 if !compact {
-                    CompactMenu(value: settings.metric, width: 130) {
-                        ForEach(usage.metrics, id: \.self) { metric in
-                            Button(metric == "Input" ? "Uncached input" : metric) {
-                                var next = usage.preferences; next.metric = metric; usage.updatePreferences(next)
-                            }
-                        }
-                    }.accessibilityLabel("Activity metric")
+                    FrogDropdown(selected: settings.metric, options: usage.metrics, width: 130,
+                                 title: { $0 == "Input" ? "Uncached input" : $0 }) { metric in
+                        var next = usage.preferences; next.metric = metric; usage.updatePreferences(next)
+                    }.buttonTitle { $0 }.accessibilityLabel("Activity metric")
                 }
-                CompactMenu(value: compact ? settings.range : rangeTitle(settings.range), width: compact ? 70 : 150,
-                            height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight) {
-                    ForEach(usage.ranges, id: \.self) { range in
-                        Button(rangeTitle(range)) { var next = usage.preferences; next.range = range; usage.updatePreferences(next) }
-                            .help(rangeSpan(range))
-                    }
-                }.accessibilityLabel("Activity period")
+                FrogDropdown(selected: settings.range, options: usage.ranges, width: compact ? 70 : 150, compact: compact,
+                             title: rangeTitle) { range in
+                    var next = usage.preferences; next.range = range; usage.updatePreferences(next)
+                }.buttonTitle { compact ? $0 : rangeTitle($0) }.accessibilityLabel("Activity period")
             }
             if !usage.loaded {
                 HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Reading token activity…").font(FrogType.small).foregroundStyle(FrogStyle.muted) }

@@ -30,14 +30,10 @@ struct MicrophoneRow: View {
     let choose: (String?) -> Void
     var body: some View {
         CompactRow(title: "Microphone") {
-            CompactMenu(value: dictation.microphones.first { String($0.id) == selection }?.name ?? "System default") {
-                Button("System default") { choose(nil) }
-                    .compactChoice(selected: selection == nil)
-                ForEach(dictation.microphones, id: \.id) { device in
-                    Button(device.name) { choose(String(device.id)) }
-                        .compactChoice(selected: selection == String(device.id))
-                }
-            }
+            FrogDropdown(selected: selection, options: [nil] + dictation.microphones.map { String($0.id) },
+                         searchPrompt: dictation.microphones.count > 6 ? "Find a microphone" : nil,
+                         title: { id in id.flatMap { id in dictation.microphones.first { String($0.id) == id }?.name } ?? "System default" },
+                         symbol: { $0 == nil ? "mic" : "mic.fill" }, choose: choose)
         }
         // Read before the first frame, so the row does not show the default first.
         .onAppear { dictation.refreshMicrophones() }

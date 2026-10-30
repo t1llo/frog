@@ -163,12 +163,9 @@ struct ProviderEditor: View {
                 VStack(alignment: .leading, spacing: 20) {
                     if step == 0 {
                     SettingsSection(title: "Service") {
-                        FrogMenu(title: "Service", value: provider.kind.title) {
-                            ForEach(ProviderKind.allCases) { kind in
-                                Button { provider.kind = kind } label: {
-                                    Label(kind.title, systemImage: kind.isLocal ? "desktopcomputer" : "cloud")
-                                }.compactChoice(selected: provider.kind == kind)
-                            }
+                        CompactRow(title: "Service") {
+                            FrogDropdown(selection: $provider.kind, options: ProviderKind.allCases, title: { $0.title },
+                                         symbol: { $0.isLocal ? "desktopcomputer" : "cloud" })
                         }.onChange(of: provider.kind) { old, new in
                             if provider.name == old.title || provider.name == "OpenAI" { provider.name = new.title }
                             provider.endpoint = new.endpoint; provider.model = new.defaultModel

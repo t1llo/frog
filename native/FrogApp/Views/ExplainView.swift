@@ -128,12 +128,8 @@ struct ExplainView: View {
                     .help(L10n.text("Chrome, Arc, Helium, Slack and similar apps hide their text from other apps, so the bubble offers your answer rules without reading it. Editors built on VS Code show no bubble."))
             }
             CompactRow(title: "Longest selection") {
-                CompactMenu(value: characters(settings.bubbleMaxCharacters), width: 150) {
-                    ForEach(Self.characterChoices(including: settings.bubbleMaxCharacters), id: \.self) { count in
-                        Button(characters(count)) { update { $0.bubbleMaxCharacters = count } }
-                            .compactChoice(selected: count == settings.bubbleMaxCharacters)
-                    }
-                }
+                FrogDropdown(selected: settings.bubbleMaxCharacters, options: Self.characterChoices(including: settings.bubbleMaxCharacters),
+                             width: 150, title: characters) { count in update { $0.bubbleMaxCharacters = count } }
             }
             CompactRow(title: "Never show in") {
                 IconMenu(title: "Add an app", symbol: "plus") {

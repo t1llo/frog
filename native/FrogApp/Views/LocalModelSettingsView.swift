@@ -15,12 +15,8 @@ struct LocalModelSettingsView: View {
         VStack(alignment: .leading, spacing: 20) {
             SettingsSection(title: "Memory") {
                 CompactRow(title: "Unload idle models") {
-                    CompactMenu(value: LocalModelSettings.idleTitle(seconds: prefs.idleUnloadSeconds)) {
-                        Button("Immediately") { update { $0.idleUnloadSeconds = 0 } }.compactChoice(selected: prefs.idleUnloadSeconds == 0)
-                        ForEach(LocalModelSettingsView.idleUnloadChoices, id: \.self) { seconds in
-                            Button(LocalModelSettings.idleTitle(seconds: seconds)) { update { $0.idleUnloadSeconds = seconds } }.compactChoice(selected: prefs.idleUnloadSeconds == seconds)
-                        }
-                    }
+                    FrogDropdown(selected: prefs.idleUnloadSeconds, options: [0] + LocalModelSettingsView.idleUnloadChoices,
+                                 title: { LocalModelSettings.idleTitle(seconds: $0) }) { seconds in update { $0.idleUnloadSeconds = seconds } }
                 }
                 CompactRow(title: model.localModels.loaded.isEmpty ? "No models loaded" : "Models in memory", detail: LocalModelSettings.inMemory(model.localModels.loaded, catalog: model.configuration.modelCatalog)) {
                     Button("Unload now") { Task { await model.localModels.unload() } }.disabled(model.localModels.loaded.isEmpty || model.localModels.busy || model.dictation.active)

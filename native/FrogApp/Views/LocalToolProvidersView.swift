@@ -33,19 +33,14 @@ struct LocalToolProvidersView: View {
                 }
             }
             CompactRow(title: "Tool") {
-                CompactMenu(value: selected.title) {
-                    ForEach(LocalToolKind.allCases) { kind in
-                        Button(kind.title) { selected = kind }.compactChoice(selected: kind == selected)
-                    }
-                }
+                FrogDropdown(selection: $selected, options: LocalToolKind.allCases, title: { $0.title })
             }
             HStack {
                 TextField("Tool default, or model ID", text: $model)
                     .textFieldStyle(.plain).font(FrogType.body).padding(.horizontal, 8).frogControlSurface()
                     .accessibilityLabel("Coding-tool model")
-                CompactMenu(value: "Models", width: 105) {
-                    ForEach(models) { item in Button(item.name) { model = item.id } }
-                }
+                FrogDropdown(selection: $model, options: models.map(\.id), width: 105, searchPrompt: "Find a model",
+                             title: { id in models.first { $0.id == id }?.name ?? id }).buttonTitle { _ in "Models" }
                 Button("Use model") { onSelect(selected, model.trimmingCharacters(in: .whitespacesAndNewlines)) }
                     .buttonStyle(.frog(.primary)).disabled(!canSelect)
             }

@@ -392,12 +392,9 @@ struct RuleEditor: View {
     private var audioOptions: some View {
         Group {
             CompactRow(title: "Language") {
-                CompactMenu(value: languageName(rule.action?.transcriptionLanguage ?? languageChoices.first ?? "auto")) {
-                    ForEach(languageChoices, id: \.self) { language in
-                        Button(languageName(language)) { rule.action?.transcriptionLanguage = language }
-                            .compactChoice(selected: language == (rule.action?.transcriptionLanguage ?? languageChoices.first ?? "auto"))
-                    }
-                }
+                FrogDropdown(selected: rule.action?.transcriptionLanguage ?? languageChoices.first ?? "auto", options: languageChoices,
+                             searchPrompt: languageChoices.count > 8 ? "Find a language" : nil,
+                             title: languageName) { rule.action?.transcriptionLanguage = $0 }
             }
             CompactRow(title: "Recording") { CompactSegments(values: RecordingMode.allCases, selected: rule.action?.recordingMode ?? .toggle, title: { $0.title }) { rule.action?.recordingMode = $0 } }
             CompactRow(title: "Output") { CompactSegments(values: TranscriptOutput.allCases, selected: rule.action?.output ?? .copy, title: { $0.title }) { rule.action?.output = $0 } }
