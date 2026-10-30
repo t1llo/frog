@@ -196,11 +196,12 @@ final class StayAwakeTests: XCTestCase {
 
     func testPopupSizesToItsRowsWithoutGraphOrVerticalSpacers() async throws {
         _ = NSApplication.shared
-        let model = AppModel(dataDirectory: directory(), registerShortcuts: false)
-        defer { model.shutdown() }
         let power = StayAwakeController(system: PowerFixture(), directory: directory())
+        let model = AppModel(dataDirectory: directory(), registerShortcuts: false, powerController: power)
+        defer { model.shutdown() }
+        await model.pluginHost.syncAndWait()
         await power.refresh()
-        let host = NSHostingView(rootView: FrogStatusMenu(model: model, power: power))
+        let host = NSHostingView(rootView: FrogStatusMenu(model: model))
         let size = host.fittingSize
         XCTAssertEqual(size.width, 292, accuracy: 1)
         XCTAssertLessThan(size.height, 275, "The default popup must hug its rows rather than expand into empty gaps")
@@ -209,12 +210,13 @@ final class StayAwakeTests: XCTestCase {
 
     func testNativePopupToggleStartsAndStopsAnExplicitSession() async throws {
         _ = NSApplication.shared
-        let model = AppModel(dataDirectory: directory(), registerShortcuts: false)
-        defer { model.shutdown() }
         let system = PowerFixture()
         let power = StayAwakeController(system: system, directory: directory())
+        let model = AppModel(dataDirectory: directory(), registerShortcuts: false, powerController: power)
+        defer { model.shutdown() }
+        await model.pluginHost.syncAndWait()
         await power.refresh()
-        let host = NSHostingView(rootView: FrogStatusMenu(model: model, power: power))
+        let host = NSHostingView(rootView: FrogStatusMenu(model: model))
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: host.fittingSize), styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host; window.makeKeyAndOrderFront(nil)
         defer { window.orderOut(nil); window.contentView = nil }
@@ -242,19 +244,20 @@ final class StayAwakeTests: XCTestCase {
 
     func testLongErrorKeepsMenuCompactAndRecoversAfterDismissal() async throws {
         _ = NSApplication.shared
-        let model = AppModel(dataDirectory: directory(), registerShortcuts: false)
-        defer { model.shutdown() }
         let power = StayAwakeController(system: PowerFixture(), directory: directory())
+        let model = AppModel(dataDirectory: directory(), registerShortcuts: false, powerController: power)
+        defer { model.shutdown() }
+        await model.pluginHost.syncAndWait()
         await power.refresh()
-        let initial = NSHostingView(rootView: FrogStatusMenu(model: model, power: power)).fittingSize
+        let initial = NSHostingView(rootView: FrogStatusMenu(model: model)).fittingSize
         let error = Array(repeating: "Synthetic provider diagnostic with enough words to wrap on the menu.", count: 80).joined(separator: "\n")
         model.report(FrogError.message(error))
-        let expanded = NSHostingView(rootView: FrogStatusMenu(model: model, power: power)).fittingSize
+        let expanded = NSHostingView(rootView: FrogStatusMenu(model: model)).fittingSize
         XCTAssertEqual(expanded.width, initial.width, accuracy: 1)
         XCTAssertLessThan(expanded.height, initial.height + 90, "A long diagnostic must not push Open/Quit off the menu")
         XCTAssertEqual(model.recentErrors.first?.message, error, "The full diagnostic must remain available in Logs")
         model.dismissError()
-        let recovered = NSHostingView(rootView: FrogStatusMenu(model: model, power: power)).fittingSize
+        let recovered = NSHostingView(rootView: FrogStatusMenu(model: model)).fittingSize
         XCTAssertEqual(recovered.height, initial.height, accuracy: 1)
     }
 

@@ -140,7 +140,8 @@ final class CommandBarPlugin: LegacyPlugin, FrogPlugin {
     var menu: [MenuContribution] {
         [MenuContribution(id: "command-bar.open", order: 20) { [model] in
             AnyView(MenuActionRow(title: "Command bar", symbol: "magnifyingglass",
-                                  key: HotkeyManager.display(model.configuration.preferences.toolkitSettings.effectiveCommandBarHotkey)) {
+                                  key: HotkeyManager.display(model.configuration.preferences.toolkitSettings.effectiveCommandBarHotkey),
+                                  closes: true) {
                 model.showCommandBar()
             })
         }]
@@ -177,6 +178,15 @@ final class ClipboardPlugin: LegacyPlugin, FrogPlugin {
             model.showClipboardHistory(); return .done()
         }]
     }
+    var menu: [MenuContribution] {
+        [MenuContribution(id: "clipboard.open", order: 21) { [model] in
+            AnyView(MenuActionRow(title: "Clipboard history", symbol: "clipboard",
+                                  key: HotkeyManager.display(model.configuration.preferences.workflowSettings.effectiveClipboardHistoryHotkey),
+                                  closes: true) {
+                model.showClipboardHistory()
+            })
+        }]
+    }
 }
 
 final class NotesPlugin: LegacyPlugin, FrogPlugin {
@@ -204,6 +214,14 @@ final class WindowsPlugin: LegacyPlugin, FrogPlugin {
                 model.runWindowAction(action); return .done()
             }
         }
+    }
+    var menu: [MenuContribution] {
+        [MenuContribution(id: "windows.arrange", order: 40) { [model] in
+            guard model.windowLayout.pickerAvailable else { return AnyView(EmptyView()) }
+            return AnyView(MenuActionRow(title: "Arrange window…", symbol: "rectangle.split.2x1", closes: true) {
+                model.windowLayout.handle(.layoutPicker, pressed: true)
+            })
+        }]
     }
 }
 
@@ -234,6 +252,13 @@ final class LLMUsagePlugin: LegacyPlugin, FrogPlugin {
         guard let usage = model.toolkit.usage() else { return nil }
         return legacyPage(UsageDashboardView(usage: usage))
     }
+    var menu: [MenuContribution] {
+        [MenuContribution(id: "llm-usage.tab", placement: .tab(title: "Usage", symbol: "chart.bar.xaxis"), order: 20) { [model, context] in
+            guard let usage = model.toolkit.usage() else { return AnyView(EmptyView()) }
+            return AnyView(UsageStatusPopover(usage: usage, openDashboard: { context.openPage() },
+                                              signIn: { ClaudeSignIn.start(usage) }))
+        }]
+    }
 }
 
 final class StayAwakePlugin: LegacyPlugin, FrogPlugin {
@@ -247,6 +272,9 @@ final class StayAwakePlugin: LegacyPlugin, FrogPlugin {
             return .done(model.power.isEnabled ? "Stay awake is on." : "Stay awake is off.")
         }]
     }
+    var menu: [MenuContribution] {
+        [MenuContribution(id: "stay-awake.switch", order: 0) { [model] in AnyView(StayAwakeMenuRow(power: model.power)) }]
+    }
 }
 
 final class HiddenBarPlugin: LegacyPlugin, FrogPlugin {
@@ -258,6 +286,11 @@ final class HiddenBarPlugin: LegacyPlugin, FrogPlugin {
             set: { [model] value in
                 do { try model.updateToolkit { $0.menuBar = value.normalized } } catch { model.report(error) }
             })))
+    }
+    var menu: [MenuContribution] {
+        [MenuContribution(id: "hidden-bar.notice", order: 50) { [model] in
+            AnyView(MenuBarOrganizerNotice(organizer: model.toolkit.menuBarOrganizer))
+        }]
     }
 }
 
@@ -274,6 +307,12 @@ final class PhonePlugin: LegacyPlugin, FrogPlugin {
                                  summary: "Share the clipboard with your phone",
                                  permissions: [.localNetwork, .bluetooth, .notifications])
     func page() -> AnyView? { legacyPage(PhoneView()) }
+    var menu: [MenuContribution] {
+        [MenuContribution(id: "phone.status", order: 30) { [model, context] in
+            guard let phone = model.phone else { return AnyView(EmptyView()) }
+            return AnyView(PhoneMenuRow(phone: phone) { context.openPage() })
+        }]
+    }
 }
 
 final class CommunityPlugin: LegacyPlugin, FrogPlugin {

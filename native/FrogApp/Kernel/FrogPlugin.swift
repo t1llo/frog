@@ -38,6 +38,11 @@ struct MenuContribution: Identifiable {
     /// Lower comes first.
     var order = 100
     let content: @MainActor () -> AnyView
+
+    var tabTitle: String? {
+        if case .tab(let title, _) = placement { return title }
+        return nil
+    }
 }
 
 /// How a built-in plugin is made, so the host can list it before it exists.

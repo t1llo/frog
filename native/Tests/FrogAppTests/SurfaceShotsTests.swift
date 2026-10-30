@@ -36,6 +36,7 @@ final class SurfaceShotsTests: XCTestCase {
                              toolkit: toolkit, clipboardHistoryStore: history,
                              systemStatusTick: { try await Task.sleep(for: .seconds(3_600)) })
         defer { model.shutdown() }
+        await model.pluginHost.syncAndWait()
 
         let bar = CommandBar(model: model, pasteboard: pasteboard, captureTarget: { nil }, waitForRelease: {},
                              fileSearch: NoFileSearch(), loadSettings: { [] }, loadApplications: { [] })
@@ -58,7 +59,7 @@ final class SurfaceShotsTests: XCTestCase {
                       BubbleItem(id: UUID(), title: "Shorter", symbol: "arrow.down.right.and.arrow.up.left", answers: false)]
 
         let surfaces: [(String, AnyView)] = [
-            ("menu", AnyView(FrogStatusMenu(model: model, power: model.power).environment(\.locale, L10n.locale))),
+            ("menu", AnyView(FrogStatusMenu(model: model).environment(\.locale, L10n.locale))),
             ("command-bar", AnyView(CommandBarView(bar: bar))),
             ("clipboard", AnyView(ClipboardHistoryView(history: history, state: clipboardState, paste: { _, _ in }, copy: { _ in },
                                                        close: {}, clear: {}, resize: { _ in }))),

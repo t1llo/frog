@@ -12,29 +12,47 @@ struct FrogMenuLabel: View {
     }
 }
 
+/// The Frog menu-bar popup: Frog's own rows and the rows plugins add, with a tab for each plugin that adds one,
+/// such as System or Usage.
 struct FrogStatusMenu: View {
     @ObservedObject var model: AppModel
-    @ObservedObject var power: StayAwakeController
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedTab: SystemMonitorMenuTab = .frog
-    @State private var choosingDuration = false
+    @State private var selectedTab = Self.frogTab
 
     static let popupName = "Frog"
-    private var systemMonitorEnabled: Bool { model.configuration.preferences.featureEnabled(.systemMonitor) }
+    private static let frogTab = "frog"
 
     var body: some View {
+        let host = model.pluginHost
+        let tabs = host.menuTabs
+        let shown = tabs.contains { $0.id == selectedTab } ? selectedTab : Self.frogTab
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
                 Image(nsImage: FrogMenuIcon.image).renderingMode(.template)
-                Text("Frog").font(FrogType.section)
+                // With tabs, the first tab names Frog.
+                if tabs.isEmpty { Text("Frog").font(FrogType.section) }
                 Spacer()
-                if systemMonitorEnabled { SystemMonitorMenuSelector(selection: $selectedTab) }
+                if !tabs.isEmpty {
+                    CompactSegments(values: [Self.frogTab] + tabs.map(\.id), selected: shown,
+                                    width: min(232, CGFloat(64 * (tabs.count + 1))), compact: true,
+                                    title: { id in tabs.first { $0.id == id }?.tabTitle ?? "Frog" }) { selectedTab = $0 }
+                        .accessibilityElement(children: .contain).accessibilityLabel("Menu view")
+                }
             }.padding(.horizontal, 8).frame(height: 40)
 
-            if systemMonitorEnabled && selectedTab == .system {
-                SystemMonitorView(monitor: model.systemMonitor, presenter: .frogMenu)
+            if let tab = tabs.first(where: { $0.id == shown }) {
+                tab.content()
             } else {
-                frogControls
+                ForEach(host.menuRows) { $0.content() }
+                if model.isProcessing { action("Cancel processing", symbol: "xmark") { model.cancelProcessing() } }
+                if let error = model.errorMessage {
+                    HStack(alignment: .top) {
+                        Text(String(error.prefix(500))).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
+                            .lineLimit(3).help("Full details are in Settings → Logs.")
+                        Spacer(minLength: 0)
+                        IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)
+                    }.padding(8)
+                }
             }
             UpdateReadyRow { dismiss(); UpdateService.shared.installReadyUpdate() }
             action(model.setupPresented ? "Set up Frog…" : "Open Frog", symbol: "arrow.up.forward.app", key: "⌘,") {
@@ -45,52 +63,25 @@ struct FrogStatusMenu: View {
             .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()
             .background(MenuWindowSizing())
-            .task { model.refreshSystemStatus(); await power.refresh(); await power.refreshAccessUnlessReady() }
+            .task { model.refreshSystemStatus() }
             .onAppear { NotificationCenter.default.post(name: .frogMenuPopupWillOpen, object: Self.popupName) }
             .onReceive(NotificationCenter.default.publisher(for: .frogMenuPopupWillOpen)) { note in
                 if note.object as? String != Self.popupName { dismiss() }
             }
-            .onChange(of: systemMonitorEnabled) { _, enabled in
-                if !enabled { selectedTab = .frog; model.systemMonitor.setPresented(false, for: .frogMenu) }
-            }
-            .onChange(of: power.isEnabled) { _, _ in choosingDuration = false }
     }
 
-    private var frogControls: some View {
-        Group {
-            if model.configuration.preferences.featureEnabled(.stayAwake) { stayAwake }
-
-            if model.dictation.active {
-                if model.dictation.phase == .recording {
-                    action("Stop recording", symbol: "stop.fill") { model.dictation.stop(models: model.localModels) }
-                }
-                action("Cancel recording", symbol: "xmark") { model.dictation.interrupt() }
-            }
-            if model.isProcessing { action("Cancel processing", symbol: "xmark") { model.cancelProcessing() } }
-            if let error = model.errorMessage {
-                HStack(alignment: .top) {
-                    Text(String(error.prefix(500))).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
-                        .lineLimit(3).help("Full details are in Settings → Logs.")
-                    Spacer(minLength: 0)
-                    IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)
-                }.padding(8)
-            }
-            MenuBarOrganizerNotice(organizer: model.toolkit.menuBarOrganizer)
-            if model.configuration.preferences.featureEnabled(.commandBar) {
-                action("Command bar", symbol: "magnifyingglass", key: HotkeyManager.display(model.configuration.preferences.toolkitSettings.effectiveCommandBarHotkey)) { dismiss(); model.showCommandBar() }
-            }
-            if model.configuration.preferences.workflowSettings.clipboardHistoryEnabled == true {
-                action("Clipboard history", symbol: "clipboard", key: HotkeyManager.display(model.configuration.preferences.workflowSettings.effectiveClipboardHistoryHotkey)) { dismiss(); model.showClipboardHistory() }
-            }
-            if let phone = model.phone {
-                PhoneMenuRow(phone: phone) { dismiss(); model.openFeature(.phone) }
-            }
-            if model.windowLayout.pickerAvailable { action("Arrange window…", symbol: "rectangle.split.2x1") { dismiss(); model.windowLayout.handle(.layoutPicker, pressed: true) } }
-        }
+    private func action(_ title: String, symbol: String, key: String? = nil, perform: @escaping () -> Void) -> some View {
+        MenuActionRow(title: title, symbol: symbol, key: key, action: perform)
     }
+}
 
-    /// One row: the duration is chosen before switching on; while on, its place shows when the session ends.
-    private var stayAwake: some View {
+/// Stay awake in the popup: the duration is chosen before switching on; while on, its place shows when the session ends.
+struct StayAwakeMenuRow: View {
+    @ObservedObject var power: StayAwakeController
+    @Environment(\.dismiss) private var dismiss
+    @State private var choosingDuration = false
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
                 Label("Stay awake", systemImage: power.isEnabled ? "cup.and.saucer.fill" : "cup.and.saucer")
@@ -110,7 +101,7 @@ struct FrogStatusMenu: View {
                 }
                 Toggle("Stay awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
                     .labelsHidden().toggleStyle(.switch).disabled(!power.canSwitch)
-                    .accessibilityHint("Keep this Mac awake, including with the lid closed")
+                    .accessibilityHint("Keep this Mac and its screen awake")
             }.frame(height: FrogStyle.compactHeight)
             if choosingDuration && !power.isEnabled {
                 VStack(spacing: 1) {
@@ -144,15 +135,13 @@ struct FrogStatusMenu: View {
             }
         }.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
             .padding(.horizontal, 2).padding(.bottom, 4)
-    }
-
-    private func action(_ title: String, symbol: String, key: String? = nil, perform: @escaping () -> Void) -> some View {
-        MenuActionRow(title: title, symbol: symbol, key: key, action: perform)
+            .task { await power.refresh(); await power.refreshAccessUnlessReady() }
+            .onChange(of: power.isEnabled) { _, _ in choosingDuration = false }
     }
 }
 
 /// The organizer takes its arrow out of the menu bar when it cannot run, so this menu says why.
-private struct MenuBarOrganizerNotice: View {
+struct MenuBarOrganizerNotice: View {
     @ObservedObject var organizer: MenuBarOrganizer
     var body: some View {
         if let notice = organizer.menuNotice {
@@ -171,13 +160,13 @@ extension Notification.Name {
 }
 
 /// Phone at a glance: a green dot while the phone is connected, and the way to its page.
-private struct PhoneMenuRow: View {
+struct PhoneMenuRow: View {
     @ObservedObject var phone: PhoneController
     let open: () -> Void
     var body: some View {
         let connected = phone.overall != .offline
         MenuActionRow(title: "Phone", symbol: connected ? "iphone" : "iphone.slash",
-                      key: L10n.text(phone.statusText), dot: connected ? FrogStyle.good : nil, action: open)
+                      key: L10n.text(phone.statusText), dot: connected ? FrogStyle.good : nil, closes: true, action: open)
     }
 }
 
@@ -188,9 +177,12 @@ struct MenuActionRow: View {
     var key: String? = nil
     /// A status dot before `key`, such as green for a connected phone.
     var dot: Color? = nil
+    /// Closes the popup first, for rows that open something else.
+    var closes = false
     let action: () -> Void
+    @Environment(\.dismiss) private var dismiss
     var body: some View {
-        Button(action: action) {
+        Button { if closes { dismiss() }; action() } label: {
             HStack(spacing: 8) {
                 Image(systemName: symbol).frame(width: 16).foregroundStyle(FrogStyle.muted)
                 Text(L10n.text(title))

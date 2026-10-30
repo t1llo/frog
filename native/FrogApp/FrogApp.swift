@@ -7,7 +7,7 @@ struct FrogApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            FrogStatusMenu(model: delegate.model, power: delegate.power)
+            FrogStatusMenu(model: delegate.model)
                 .environment(\.locale, L10n.locale)
         } label: {
             FrogMenuLabel(power: delegate.power)
