@@ -128,7 +128,7 @@ struct DesignGallery: View {
                                  item: { FrogDropdownItem($0) }, width: 170) { theme = $0 }
                     .modifier(GalleryPopup())
                 FrogDropdownList(sections: Self.modelSections, selected: model, item: Self.modelItem,
-                                 searchPrompt: "Find a model", width: 250) { model = $0 }
+                                 searchPrompt: "Find a model", width: 290) { model = $0 }
                     .modifier(GalleryPopup())
             }.padding(.vertical, 12)
         }

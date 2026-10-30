@@ -77,7 +77,8 @@ extension View {
     }
 }
 
-/// Mark the option that is chosen with `.compactChoice(selected:)`.
+/// v1 dropdown, kept for code not moved yet: new code uses `FrogDropdown`. Mark the option that is chosen with
+/// `.compactChoice(selected:)`.
 struct CompactMenu<Content: View>: View {
     let value: String
     var width: CGFloat = 220
@@ -97,7 +98,7 @@ struct CompactMenu<Content: View>: View {
                         .buttonStyle(CompactOptionStyle { showing = false })
                         .padding(6)
                 }.frame(width: 280).frame(maxHeight: 280).fixedSize(horizontal: false, vertical: true)
-                    .foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
+                    .foregroundStyle(FrogStyle.ink).frogSurface(.popover)
                     // The options are not controls of the row.
                     .environment(\.compactRowTitle, nil)
             }

@@ -577,7 +577,7 @@ struct LabeledField<Content: View>: View {
     }
 }
 
-/// Full-width menu controls with the same inset surface as editable fields.
+/// v1, kept for code not moved yet: new code puts a `FrogDropdown` in a `FrogRow`.
 struct FrogMenu<Content: View>: View {
     let title: String
     let value: String
