@@ -183,7 +183,7 @@ public struct UsagePlanPeriod: Identifiable {
 }
 
 /// The places that show usage on screen.
-public enum UsagePresenter: Hashable, Sendable { case dashboard, popup }
+public enum UsagePresenter: Hashable, Sendable { case dashboard, popup, menu }
 
 /// One Claude account while Frog shows each: its limits as its own store reads them.
 public struct UsageAccountSummary: Identifiable {
@@ -240,6 +240,11 @@ extension ClaudeAccountsCombination.Combined: Identifiable {
     @Published public private(set) var active = false
     @Published public private(set) var preferences: UsageDashboardPreferences
     public var onPreferencesChange: ((UsageDashboardPreferences) -> Void)?
+    /// Called when the first surface appears (true) or the last one goes (false), so the owner can
+    /// collect only while something shows the readings.
+    public var onPresentedChange: ((Bool) -> Void)?
+    /// Whether a dashboard or popup shows the readings now.
+    public var isPresented: Bool { !presenters.isEmpty }
     private var available = true
     public var providers: [String] { Provider.allCases.map(\.rawValue) }
     public var ranges: [String] { preferences.provider == "OpenAI" ? ["7d", "30d"] : TokenRange.allCases.map(\.rawValue) }
@@ -293,9 +298,10 @@ extension ClaudeAccountsCombination.Combined: Identifiable {
                 return store
             })
         tokens = TokenStore(fixtureRoot: fixtureRoot, claudeDirectory: ClaudePaths.directory(defaults: defaults))
-        var saved = defaults.data(forKey: "dashboardPreferences").flatMap { try? JSONDecoder().decode(UsageDashboardPreferences.self, from: $0) } ?? UsageDashboardPreferences()
-        saved.loginSource = claude.loginSource.rawValue
-        preferences = Self.validated(saved)
+        // The owner applies the saved choices; until then the defaults, with the login source this Mac uses.
+        var initial = UsageDashboardPreferences()
+        initial.loginSource = claude.loginSource.rawValue
+        preferences = Self.validated(initial)
         claude.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         claudeAccountsModel.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         // While each account is shown, the activity also counts the calls in their Claude Code
@@ -357,10 +363,12 @@ extension ClaudeAccountsCombination.Combined: Identifiable {
     /// "hidden" on every change of its state, also in the middle of a view update.
     public func setPresented(_ presented: Bool, for presenter: UsagePresenter) {
         guard presented != presenters.contains(presenter) else { return }
+        let wasPresented = isPresented
         if presented { presenters.insert(presenter) } else { presenters.remove(presenter) }
         tokens.setShown(!presenters.isEmpty)
         // One leaving while another still shows changes nothing for the one that stays.
         if presented || presenters.isEmpty { updateVisiblePolling() }
+        if isPresented != wasPresented { onPresentedChange?(isPresented) }
     }
     private func updateVisiblePolling() {
         visibleTimer?.invalidate(); visibleTimer = nil
@@ -409,7 +417,6 @@ extension ClaudeAccountsCombination.Combined: Identifiable {
         let value = Self.validated(value)
         guard value != preferences else { return }
         preferences = value
-        defaults.set(try? JSONEncoder().encode(value), forKey: "dashboardPreferences")
         if let source = ClaudeLoginSource(rawValue: value.loginSource) { claude.setLoginSource(source) }
         updateClaudeAccounts()
     }
@@ -443,7 +450,7 @@ extension ClaudeAccountsCombination.Combined: Identifiable {
         return windows
     }
     public func status(provider: String) -> String {
-        if !active { return "Mr. Usage is disabled. Collection is paused." }
+        if !active { return "Not reading limits right now." }
         if provider == Provider.claude.rawValue { return primary.status }
         if let error = tokens.liveError { return error }
         if tokens.checkingLive { return "Refreshing plan limits…" }

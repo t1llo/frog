@@ -336,7 +336,11 @@ import XCTest
 
     func testUsageListsEachProvider() async throws {
         try await enable(.usage)
-        let providers = try array(await run("usage", json: true))
+        // The test model is never started, so the plugin starts here rather than at launch.
+        await model.pluginHost.syncAndWait()
+        let response = await run("usage", json: true)
+        XCTAssertEqual(response.exitCode, 0, response.error)
+        let providers = try array(response)
         XCTAssertEqual(providers.compactMap { $0["provider"] as? String }, ["Claude", "OpenAI"])
         let text = await run("usage")
         XCTAssertTrue(text.output.contains("Claude") && text.output.contains("OpenAI"), text.output)
@@ -344,11 +348,12 @@ import XCTest
 
     func testMonitorTakesOneReading() async throws {
         let reading = try object(await run("monitor", json: true))
-        XCTAssertGreaterThan(((reading["memory"] as? [String: Any])?["total"] as? Int) ?? 0, 0)
-        XCTAssertNotNil(reading["power"])
+        XCTAssertGreaterThan(((reading["memory"] as? [String: Any])?["totalBytes"] as? Int) ?? 0, 0)
+        XCTAssertNotNil(reading["powerSource"])
+        XCTAssertNil(reading["disk"], "Disk is no longer read")
         let text = await run("monitor")
         let total = ByteCountFormatter.string(fromByteCount: Int64(ProcessInfo.processInfo.physicalMemory), countStyle: .memory)
-        XCTAssertTrue(text.output.contains("of \(total) in use"), "Memory as macOS shows it: \(text.output)")
+        XCTAssertTrue(text.output.contains("of \(total)"), "Memory as macOS shows it: \(text.output)")
     }
 
     func testCommandsOfAFeatureThatIsOffSayHowToTurnItOn() async throws {

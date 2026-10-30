@@ -56,7 +56,8 @@ import XCTest
         var selected = imported; selected.provider = "Claude"
         model.updatePreferences(selected)
         XCTAssertEqual(changes, [selected])
-        XCTAssertEqual(UsageDashboardModel(defaults: defaults, fixtureRoot: root).preferences, selected)
+        // The owner keeps the choices (LLM usage writes them to config.toml); a new model starts from the defaults.
+        XCTAssertEqual(UsageDashboardModel(defaults: defaults, fixtureRoot: root).preferences.range, UsageDashboardPreferences().range)
         XCTAssertEqual(try JSONDecoder().decode(UsageDashboardPreferences.self, from: JSONEncoder().encode(selected)), selected)
     }
     func testVisibleRefreshFollowsWhoIsShowingNotHowOftenTheySaidSo() {
@@ -86,7 +87,7 @@ import XCTest
         XCTAssertFalse(model.isVisiblePolling, "One hidden report ends what repeated shown reports started")
         model.setPresented(true, for: .dashboard)
         model.setAvailable(false)
-        XCTAssertFalse(model.isVisiblePolling, "Nothing refreshes while Mr. Usage is off")
+        XCTAssertFalse(model.isVisiblePolling, "Nothing refreshes while LLM usage is off")
     }
     func testRepeatingRefreshesLetTheSystemGroupTheirWakeUps() throws {
         let defaults = temporaryDefaults()

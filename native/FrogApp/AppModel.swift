@@ -74,14 +74,11 @@ final class AppModel: ObservableObject {
     let injectedDictationController: DictationController?
     let power: StayAwakeController
     let toolkit: Toolkit
-    let systemMonitor = SystemMonitor()
     /// Answers the `frog` tool while agent access is on.
     private(set) lazy var agentServer = AgentServer(socket: historyStore.directory.appendingPathComponent(AgentSocketPath.fileName)) { [weak self] request in
         guard let self else { return .failure("Frog is quitting.") }
         return await AgentCommands.run(request, model: self)
     }
-    /// CPU and GPU in the menu bar, while System monitor and its menu-bar item are on.
-    private(set) var systemMonitorItem: SystemMonitorStatusItemController?
     /// The cup in the menu bar while Stay awake is on, when its icon is chosen.
     private(set) var stayAwakeItem: StayAwakeStatusItemController?
     let statistics: ActivityStatisticsStore
@@ -288,9 +285,6 @@ final class AppModel: ObservableObject {
     /// Changes when History is cleared or turned off, so work started before saves nothing after.
     private(set) var historyEpoch = UUID()
     private var configurationLoadError: Error?
-    private lazy var usagePreferenceWriter = UsagePreferenceWriter(store: configurationStore, initial: configuration)
-    private var usagePreferenceRevision = 0
-    private var legacyUsagePreferences = UsageDashboardPreferences()
     private(set) var isRecordingShortcut = false
     /// The recorders that are recording now.
     private var shortcutRecorders = Set<UUID>()
@@ -329,7 +323,7 @@ final class AppModel: ObservableObject {
         self.power = powerController ?? StayAwakeController(directory: dataDirectory)
         self.clipboardHistoryStore = clipboardHistoryStore ?? ClipboardHistoryStore()
         self.errorDisplayDuration = errorDisplayDuration
-        self.systemStatusTick = systemStatusTick ?? { try await Task.sleep(for: .seconds(1)) }
+        self.systemStatusTick = systemStatusTick ?? { try await SystemStatusWake.wait() }
         let localModels = modelService ?? LocalModels(directory: dataDirectory)
         self.localModels = localModels
         self.answerStream = answerStream ?? AnswerStreams.live(localModels: localModels, localTools: localTools)
@@ -403,8 +397,6 @@ final class AppModel: ObservableObject {
         localModels.idleSeconds = configuration.preferences.workflowSettings.idleUnloadSeconds
         if registerShortcuts { localModels.unloadUnderMemoryPressure() }
         localModels.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
-        applyUsagePreferences(configuration.preferences)
-        toolkit.onOpenUsage = { [weak self] in self?.showSettings() }
         toolkit.onOpenMenuBar = { [weak self] in self?.showSettings() }
         toolkit.menuBarOrganizer.onSettingsChange = { [weak self] value in
             guard let self else { return }
@@ -415,36 +407,8 @@ final class AppModel: ObservableObject {
             catch { self.report(error) }
         }
         scripts.onSuccessfulRun = { [weak self] in self?.statistics.recordToolUse(.scriptRun) }
-        toolkit.onUsagePreferencesChange = { [weak self] value in
-            guard let self else { return }
-            var preferences = self.configuration.preferences
-            var toolkit = preferences.toolkitSettings
-            toolkit.usage = UsageDisplayPreferences(provider: value.provider, range: value.range, metric: value.metric, allDevices: value.allDevices, loginSource: value.loginSource,
-                                                    claudeAccounts: value.claudeAccounts, claudeAccountsView: value.claudeAccountsView, claudeAccountsMenuBar: value.claudeAccountsMenuBar,
-                                                    menuBarStyle: value.menuBarStyle, menuBarPalette: value.menuBarPalette)
-            preferences.toolkit = toolkit
-            // Display choices do not change collectors, shortcuts, appearance or history.
-            do {
-                if let error = self.configurationLoadError { throw FrogError.message(error.localizedDescription) }
-                let writer = self.usagePreferenceWriter
-                var candidate = self.configuration; candidate.preferences = preferences
-                self.usagePreferenceRevision += 1
-                let revision = self.usagePreferenceRevision
-                self.configuration = candidate
-                writer.save(candidate) { [weak self] error, saved in
-                    Task { @MainActor [weak self] in
-                        guard let self, self.usagePreferenceRevision == revision else { return }
-                        self.restoreUsagePreferences(saved)
-                        self.report(error)
-                    }
-                }
-            }
-            catch { self.applyUsagePreferences(self.configuration.preferences); self.report(error) }
-        }
         toolkit.apply(configuration.preferences)
         commandChoices.configure(enabled: Self.learnsCommandChoices(configuration.preferences))
-        systemMonitor.configure(enabled: configuration.preferences.featureEnabled(.systemMonitor))
-        legacyUsagePreferences = toolkit.usage()?.preferences ?? UsageDashboardPreferences()
         power.configureFeature(enabled: configuration.preferences.featureEnabled(.stayAwake))
         toolkit.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         toolkit.onDisable = { [weak self] feature in
@@ -469,7 +433,6 @@ final class AppModel: ObservableObject {
 
     func openConfiguration() {
         do {
-            drainUsagePreferences()
             if !FileManager.default.fileExists(atPath: configurationFileURL.path) {
                 try configurationStore.save(configuration)
             }
@@ -481,10 +444,8 @@ final class AppModel: ObservableObject {
         guard !isProcessing, !isTestingProvider, !dictating else {
             throw FrogError.message("Finish or cancel the current request before reloading configuration.")
         }
-        drainUsagePreferences()
         let candidate = try configurationStore.load { try self.validateForThisMac($0, change: .reload) }
         applyConfiguration(candidate)
-        usagePreferenceWriter.didSave(candidate)
         configurationLoadError = nil
         localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds
         if !candidate.preferences.historyEnabled { invalidateHistoryRecovery() }
@@ -522,13 +483,10 @@ final class AppModel: ObservableObject {
 
     func shutdown() {
         settingsFile.stopWatching()
-        drainUsagePreferences()
         statistics.waitForWrites()
         commandChoices.waitForWrites()
         if agentServerCreated { agentServer.configure(enabled: false) }
-        systemMonitorItem?.stop(); systemMonitorItem = nil
         stayAwakeItem?.stop(); stayAwakeItem = nil
-        systemMonitor.stop()
         commandBar.stop()
         toolkit.stop()
         cleanerModel?.stop()
@@ -556,12 +514,6 @@ final class AppModel: ObservableObject {
     }
 
     func showSettings() { refreshSystemStatus(); openSettings?() }
-    private func applyUsagePreferences(_ preferences: Preferences) {
-        guard let value = preferences.toolkitSettings.usage else { return }
-        toolkit.applyUsagePreferences(UsageDashboardPreferences(provider: value.provider, range: value.range, metric: value.metric, allDevices: value.allDevices, loginSource: value.loginSource,
-                                                                claudeAccounts: value.claudeAccounts, claudeAccountsView: value.claudeAccountsView, claudeAccountsMenuBar: value.claudeAccountsMenuBar,
-                                                                menuBarStyle: value.menuBarStyle, menuBarPalette: value.menuBarPalette))
-    }
 
     func openFeature(_ feature: FeatureID) { toolkit.select(.feature(feature)); showSettings() }
     func openPlugin(_ id: String) { toolkit.select(.plugin(id)); showSettings() }
@@ -765,31 +717,15 @@ final class AppModel: ObservableObject {
         if let error = configurationLoadError {
             throw FrogError.message("Settings could not be loaded, so they have not been overwritten. Repair the file in \(configurationStore.directory.path) and use Settings → Configuration → Reload, or import a valid configuration. \(error.localizedDescription)")
         }
-        drainUsagePreferences()
         try ConfigurationFile.validate(candidate)
         try configurationStore.save(candidate)
-        usagePreferenceWriter.didSave(candidate)
         applyConfiguration(candidate)
-    }
-
-    private func drainUsagePreferences() {
-        let failure = usagePreferenceWriter.drain()
-        usagePreferenceRevision += 1
-        if let failure { restoreUsagePreferences(failure.saved); report(failure.error) }
-    }
-    private func restoreUsagePreferences(_ saved: UsageDisplayPreferences?) {
-        configuration.preferences.toolkit?.usage = saved
-        if saved == nil { toolkit.applyUsagePreferences(legacyUsagePreferences) }
-        else { applyUsagePreferences(configuration.preferences) }
     }
 
     private func applyConfiguration(_ candidate: Configuration) {
         configuration = candidate
-        applyUsagePreferences(candidate.preferences)
         toolkit.apply(candidate.preferences)
-        systemMonitor.configure(enabled: candidate.preferences.featureEnabled(.systemMonitor))
         cleanerModel?.apply(candidate.preferences)
-        if candidate.preferences.toolkit?.usage == nil, let usage = toolkit.usage() { legacyUsagePreferences = usage.preferences }
         if candidate.preferences.featureEnabled(.commandBar) { commandBar.warm() }
         // Turning the switch or the Command bar off, here or in the configuration file, forgets what was learned.
         commandChoices.configure(enabled: Self.learnsCommandChoices(candidate.preferences))
@@ -837,20 +773,11 @@ final class AppModel: ObservableObject {
         agentServer.configure(enabled: enabled)
     }
 
-    /// The optional System monitor and Stay awake items, each only while its feature and its
-    /// menu-bar choice are on. Created once Frog has started, never by tests that register nothing.
+    /// The optional Stay awake item, only while its feature and its menu-bar choice are on.
+    /// Created once Frog has started, never by tests that register nothing.
     private func configureStatusItems() {
         let preferences = configuration.preferences
         let active = started && registerShortcuts
-        let monitor = preferences.toolkitSettings.systemMonitor ?? SystemMonitorPreferences()
-        if active, preferences.featureEnabled(.systemMonitor), monitor.menuBarItem {
-            if let item = systemMonitorItem { item.apply(monitor) }
-            else {
-                systemMonitorItem = SystemMonitorStatusItemController(monitor: systemMonitor, preferences: monitor) { [weak self] in
-                    self?.openFeature(.systemMonitor)
-                }
-            }
-        } else { systemMonitorItem?.stop(); systemMonitorItem = nil }
         let awake = preferences.toolkitSettings.stayAwake ?? StayAwakePreferences()
         let showsAwake = preferences.featureEnabled(.stayAwake) && awake.menuBarItem
         if active, showsAwake {
@@ -1212,7 +1139,6 @@ final class AppModel: ObservableObject {
 
     func exportConfiguration(to url: URL) throws {
         guard configurationLoadError == nil else { throw FrogError.message("Repair the saved settings before exporting them.") }
-        drainUsagePreferences()
         try ConfigurationFile.write(configuration, to: url)
     }
 
@@ -1236,9 +1162,7 @@ final class AppModel: ObservableObject {
         }
         candidate.remapProviderIDs(remapped)
         candidate.adoptExplicitRuleSettings(installed: localModels.installed)
-        drainUsagePreferences()
         try configurationStore.replaceFromImport(candidate)
-        usagePreferenceWriter.didSave(candidate)
         applyConfiguration(candidate)
         configurationLoadError = nil
         localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds

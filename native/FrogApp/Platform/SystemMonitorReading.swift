@@ -14,16 +14,22 @@ enum SystemMonitorMetric: Equatable, Sendable {
 struct SystemMonitorSnapshot: Equatable, Sendable {
     var cpu: SystemMonitorMetric = .measuring
     var gpu: SystemMonitorMetric = .measuring
-    var diskCapacity: SystemMonitorCapacity?
-    var diskRead: SystemMonitorMetric = .measuring
-    var diskWrite: SystemMonitorMetric = .measuring
+    var memory: SystemMonitorMemory?
     var power = SystemMonitorPower()
 }
 
-/// The newest CPU and GPU load, as the menu-bar item shows it.
+/// Memory in use as Activity Monitor counts it: app memory, wired and compressed.
+struct SystemMonitorMemory: Equatable, Sendable {
+    let used: Int64
+    let total: Int64
+    var fraction: Double { total > 0 ? min(1, max(0, Double(used) / Double(total))) : 0 }
+}
+
+/// The newest load, as the menu-bar item shows it.
 struct SystemMonitorReading: Equatable, Sendable {
     let cpu: SystemMonitorMetric
     let gpu: SystemMonitorMetric
+    var memory: SystemMonitorMetric = .measuring
 }
 
 /// One recorded moment of the CPU/GPU graph. A missing reading stays a gap.
@@ -64,12 +70,6 @@ struct SystemMonitorRun: Identifiable, Equatable {
     }
 }
 
-struct SystemMonitorCapacity: Equatable, Sendable {
-    let total: Int64
-    let available: Int64
-    var usedFraction: Double { total > 0 ? Double(total - available) / Double(total) : 0 }
-}
-
 struct SystemMonitorPower: Equatable, Sendable {
     var source = "Unavailable"
     var batteryPercent: Int?
@@ -87,11 +87,6 @@ enum SystemMonitorDelta {
         let system: UInt32
         let idle: UInt32
         let nice: UInt32
-    }
-
-    struct Disk: Equatable, Sendable {
-        let read: UInt64
-        let written: UInt64
     }
 
     static func cpu(previous: [CPU], current: [CPU], elapsed: TimeInterval) -> Double? {
@@ -115,24 +110,12 @@ enum SystemMonitorDelta {
         return total > 0 ? Double(busy) / Double(total) : nil
     }
 
-    static func disk(previous: [UInt64: Disk], current: [UInt64: Disk], elapsed: TimeInterval) -> (read: Double, write: Double)? {
-        guard validInterval(elapsed), !current.isEmpty, previous.keys.sorted() == current.keys.sorted() else { return nil }
-        var read = 0.0
-        var write = 0.0
-        for (id, next) in current {
-            guard let old = previous[id], next.read >= old.read, next.written >= old.written else { return nil }
-            read += Double(next.read - old.read)
-            write += Double(next.written - old.written)
-        }
-        return (read / elapsed, write / elapsed)
-    }
-
     static func gpu(percent: Double) -> Double? {
         guard percent.isFinite, (0...100).contains(percent) else { return nil }
         return percent / 100
     }
 
-    private static func validInterval(_ elapsed: TimeInterval, limit: TimeInterval = 10) -> Bool {
+    private static func validInterval(_ elapsed: TimeInterval, limit: TimeInterval) -> Bool {
         elapsed.isFinite && elapsed > 0 && elapsed <= limit
     }
 }

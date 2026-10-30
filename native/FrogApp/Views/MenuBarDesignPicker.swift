@@ -55,57 +55,6 @@ struct MenuBarPreviewStrip: View {
     }
 }
 
-/// The colours of a meter, below its design tiles.
-struct MenuBarPaletteRow: View {
-    let selected: MenuBarMeterPalette
-    let choose: (MenuBarMeterPalette) -> Void
-    var body: some View {
-        CompactRow(title: "Colors") {
-            CompactSegments(values: MenuBarMeterPalette.allCases, selected: selected, width: 270, title: { $0.title }, choose: choose)
-                .accessibilityLabel("Menu bar colors")
-        }
-    }
-}
-
-/// The CPU and GPU item's switch and looks, on the System monitor page.
-struct SystemMonitorMenuBarSettings: View {
-    @EnvironmentObject private var model: AppModel
-    /// What the previews show, so that every design can be compared on the same load.
-    private static let sample = SystemMonitorReading(cpu: .value(0.42), gpu: .value(0.78))
-    private var settings: SystemMonitorPreferences {
-        model.configuration.preferences.toolkitSettings.systemMonitor ?? SystemMonitorPreferences()
-    }
-
-    var body: some View {
-        let settings = settings
-        SettingsSection(title: "Menu bar") {
-            CompactRow(title: "Show CPU and GPU in the menu bar") {
-                Toggle("Show CPU and GPU in the menu bar", isOn: Binding(get: { settings.menuBarItem }, set: { on in save { $0.menuBarItem = on } }))
-                    .labelsHidden().toggleStyle(.switch)
-            }
-            if settings.menuBarItem {
-                MenuBarDesignTiles(choices: MenuBarMeterStyle.allCases, selected: MenuBarMeterStyle(choice: settings.menuBarStyle),
-                                   title: { $0.title }, image: { style, dark in
-                    var preview = settings; preview.menuBarStyle = style.rawValue
-                    return MenuBarMeter.image(SystemMonitorStatusItemController.face(Self.sample, preferences: preview, dark: dark))
-                }) { style in save { $0.menuBarStyle = style.rawValue } }
-                MenuBarPaletteRow(selected: MenuBarMeterPalette(choice: settings.menuBarPalette)) { palette in
-                    save { $0.menuBarPalette = palette.rawValue }
-                }
-            }
-        }
-    }
-
-    private func save(_ change: (inout SystemMonitorPreferences) -> Void) {
-        var preferences = model.configuration.preferences
-        var value = settings
-        change(&value)
-        preferences.ensureToolkit()
-        preferences.toolkit?.systemMonitor = value
-        do { try model.savePreferences(preferences) } catch { model.report(error) }
-    }
-}
-
 /// The Stay awake page's menu-bar choices.
 struct StayAwakeMenuBarSettings: View {
     @EnvironmentObject private var model: AppModel
