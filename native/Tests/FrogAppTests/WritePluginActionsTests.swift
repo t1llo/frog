@@ -60,6 +60,34 @@ final class WritePluginActionsTests: XCTestCase {
         }
     }
 
+    func testRulesRunByDisplayNameSayWhenTheyAreOffAndClashingNamesAreReported() async throws {
+        var rule = try XCTUnwrap(writing.rules.first { $0.enabled })
+        let result = try await run("writing.run", ["rule": rule.name.uppercased()], text: "teh")
+        XCTAssertEqual(result.text, "Rewritten: teh")
+        rule.enabled = false
+        try model.saveRule(rule)
+        do {
+            _ = try await run("writing.run", ["rule": rule.name], text: "teh")
+            XCTFail("Ran a rule that is off")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("is off"), error.localizedDescription)
+        }
+
+        var twin = model.configuration.newRule(category: .text, installed: [])
+        twin.name = rule.name + "!"
+        try model.saveRule(twin)
+        let list = try await run("writing.list")
+        XCTAssertTrue(list.text.contains("Several rules are called “\(WritingPlugin.slug(rule.name))”"), list.text)
+        let listed = try JSONSerialization.jsonObject(with: Data(list.json.utf8)) as? [[String: Any]]
+        XCTAssertEqual(listed?.filter { $0["clashes"] as? Bool == true }.count, 2)
+        do {
+            _ = try await run("writing.run", ["rule": rule.name], text: "teh")
+            XCTFail("Ran one of two rules with the same name")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Several"), error.localizedDescription)
+        }
+    }
+
     func testAShowRuleAnswersInsteadOfRewriting() async throws {
         var define = model.configuration.newRule(category: .text, installed: [])
         define.name = "Define"; define.instructions = "Define the term."

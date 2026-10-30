@@ -19,7 +19,8 @@ final class WritePluginSettingsTests: XCTestCase {
         legacy.bubbleKeyboard = false
         legacy.bubbleMaxCharacters = 900
         legacy.bubbleExcludedApps = ["com.example.secret"]
-        XCTAssertTrue(try store.seedSection("writing") { WritingConfig(legacy: legacy) })
+        XCTAssertFalse(WritingConfig(legacy: legacy, explainOn: false).bubble.on, "the bubble ran only while Explain was on")
+        XCTAssertTrue(try store.seedSection("writing") { WritingConfig(legacy: legacy, explainOn: true) })
         let seeded = try store.section("writing", as: WritingConfig.self).value
         XCTAssertTrue(seeded.bubble.on)
         XCTAssertFalse(seeded.bubble.keyboard)
@@ -32,7 +33,7 @@ final class WritePluginSettingsTests: XCTestCase {
         // A table the person turned off is never seeded again.
         var off = seeded; off.bubble.on = false
         try store.update("writing", off)
-        XCTAssertFalse(try store.seedSection("writing") { WritingConfig(legacy: legacy) })
+        XCTAssertFalse(try store.seedSection("writing") { WritingConfig(legacy: legacy, explainOn: true) })
         XCTAssertFalse(try store.section("writing", as: WritingConfig.self).value.bubble.on)
     }
 
@@ -50,8 +51,15 @@ final class WritePluginSettingsTests: XCTestCase {
         XCTAssertEqual(seeded.notes.folder, "~/Notes")
         XCTAssertEqual(seeded.notes.mode, .append)
         XCTAssertTrue(store.document.text.contains("mode = \"append\""))
-        var broken = seeded; broken.notes.folder = "Notes"
+        var broken = seeded; broken.notes.folder = "Notes"; broken.notes.file = "../outside.md"
         XCTAssertThrowsError(try broken.validate())
+        // An edit made outside Frog keeps what is valid and drops the rest, with the reason.
+        let (kept, issue) = broken.sanitized()
+        XCTAssertNil(kept.notes.folder)
+        XCTAssertEqual(kept.notes.file, ExplainConfig.Notes().file)
+        XCTAssertNoThrow(try kept.validate())
+        XCTAssertNotNil(issue)
+        XCTAssertNil(seeded.sanitized().issue)
     }
 
     func testMaxCharactersStayInRange() {

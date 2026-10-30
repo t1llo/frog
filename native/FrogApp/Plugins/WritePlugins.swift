@@ -9,47 +9,26 @@ final class WritingPlugin: LegacyPlugin, FrogPlugin, ObservableObject {
                                  summary: "Rewrite selected text with your rules", enabledByDefault: true,
                                  permissions: [.accessibility], recommended: true)
     @Published private(set) var settings = WritingConfig()
-    private(set) var bubble: WritingBubble?
 
     func start() async {
-        seed()
+        // Seeds `[writing]` before it is read.
+        model.useSelectionBubble(by: Self.info.id)
         settings = context.settings(WritingConfig.self)
-        let bubble = WritingBubble(model: model, settings: settings.bubble)
-        self.bubble = bubble
-        bubble.start()
     }
 
-    func stop() async {
-        bubble?.stop()
-        bubble = nil
-    }
+    func stop() async { model.releaseSelectionBubble(by: Self.info.id) }
 
     func settingsChanged() {
         let read = context.settings(WritingConfig.self)
-        guard read != settings else { return }
-        settings = read
-        bubble?.update(read.bubble)
+        if read != settings { settings = read }
+        model.reloadSelectionBubble()
     }
 
     func save(_ new: WritingConfig) throws {
         try new.validate()
         try context.save(new)
         settings = new
-        bubble?.update(new.bubble)
-    }
-
-    /// The first start writes `[writing]` from what Explain kept for the bubble, and rules left out of the bubble
-    /// say so themselves from then on.
-    private func seed() {
-        let legacy = model.configuration.preferences.explainSettings
-        do {
-            guard try model.settingsFile.seedSection(Self.info.id, { WritingConfig(legacy: legacy) }) else { return }
-            let hidden = Set(legacy.bubbleHiddenRules)
-            guard !hidden.isEmpty else { return }
-            try model.updateRules { rules in
-                for index in rules.indices where hidden.contains(rules[index].id) { rules[index].showsInBubble = false }
-            }
-        } catch { context.report(error) }
+        model.selectionBubble?.update(new.bubble)
     }
 
     // MARK: Actions
@@ -58,9 +37,10 @@ final class WritingPlugin: LegacyPlugin, FrogPlugin, ObservableObject {
     var rules: [Rule] { model.configuration.rules.filter(\.isWritingRule) }
 
     var actions: [PluginAction] {
-        let names = rules.filter(\.enabled).map { Self.slug($0.name) }
-        let rule = ActionParameter(name: "rule", kind: names.isEmpty ? .text : .choice(names), required: true,
-                                   help: "The rule's name, as `writing.list` shows it")
+        let names = rules.map { Self.slug($0.name) }
+        // Text, so a display name works too and a rule that is off says so.
+        let rule = ActionParameter(name: "rule", required: true,
+                                   help: "The rule's name or slug" + (names.isEmpty ? "" : ": " + names.joined(separator: ", ")))
         return [
             PluginAction(id: "writing.run", title: "Run a writing rule on text", symbol: "text.cursor", keywords: "rewrite rule",
                          parameters: [rule, ActionParameter(name: "text", help: "The text; standard input when left out")],
@@ -83,9 +63,11 @@ final class WritingPlugin: LegacyPlugin, FrogPlugin, ObservableObject {
                 return .done("Running \(rule.name) on the selected text.")
             },
             PluginAction(id: "writing.list", title: "List writing rules", symbol: "list.bullet", surfaces: [.agent]) { [unowned self] _ in
-                let listed = self.rules.map { ListedRule($0, model: self.model.ruleModelLabel($0)) }
-                let text = listed.map { "\($0.name)\t\($0.then)\t\($0.on ? "on" : "off")\t\($0.model)" }.joined(separator: "\n")
-                return ActionResult(listed, text: text.isEmpty ? "No writing rules." : text)
+                let clashes = Self.clashingSlugs(self.rules)
+                let listed = self.rules.map { ListedRule($0, model: self.model.ruleModelLabel($0), clashes: clashes.contains(Self.slug($0.name))) }
+                var lines = listed.map { "\($0.name)\t\($0.then)\t\($0.on ? "on" : "off")\t\($0.model)" }
+                lines += clashes.sorted().map { "Several rules are called “\($0)”; rename one to run it by name." }
+                return ActionResult(listed, text: lines.isEmpty ? "No writing rules." : lines.joined(separator: "\n"))
             },
             PluginAction(id: "writing.bubble", title: settings.bubble.on ? "Turn off the selection bubble" : "Turn on the selection bubble",
                          symbol: "text.bubble", keywords: "selection bubble popup",
@@ -101,11 +83,20 @@ final class WritingPlugin: LegacyPlugin, FrogPlugin, ObservableObject {
     /// A rule by its name or the slug `writing.list` shows, ignoring case.
     private func rule(named name: String) throws -> Rule {
         let wanted = Self.slug(name)
-        guard let rule = rules.first(where: { Self.slug($0.name) == wanted }) else {
+        let matches = rules.filter { Self.slug($0.name) == wanted }
+        guard let rule = matches.first else {
             throw ActionError.failed("No writing rule “\(name)”. Run `frog run writing.list` for the list.")
+        }
+        guard matches.count == 1 else {
+            throw ActionError.failed("Several writing rules are called “\(name)”. Rename one on the Writing page.")
         }
         guard rule.enabled else { throw ActionError.failed("“\(rule.name)” is off. Turn it on on the Writing page first.") }
         return rule
+    }
+
+    /// Slugs more than one rule shares; none of those rules can be run by name.
+    static func clashingSlugs(_ rules: [Rule]) -> Set<String> {
+        Set(Dictionary(grouping: rules) { slug($0.name) }.filter { $0.value.count > 1 }.keys)
     }
 
     nonisolated static func slug(_ name: String) -> String {
@@ -128,8 +119,10 @@ final class WritingPlugin: LegacyPlugin, FrogPlugin, ObservableObject {
         let bubble: Bool
         let commandBar: Bool
         let model: String
-        init(_ rule: Rule, model: String) {
-            name = rule.name; slug = WritingPlugin.slug(rule.name); on = rule.enabled
+        /// Another rule has the same slug, so neither runs by name.
+        let clashes: Bool
+        init(_ rule: Rule, model: String, clashes: Bool) {
+            name = rule.name; slug = WritingPlugin.slug(rule.name); on = rule.enabled; self.clashes = clashes
             then = rule.textOutput.rawValue == "panel" ? "show" : rule.textOutput.rawValue
             shortcut = rule.hotkey.flatMap { (try? Shortcut($0))?.description }
             bubble = rule.showsInBubble; commandBar = rule.showsInCommandBar; self.model = model
@@ -146,17 +139,25 @@ final class ExplainPlugin: LegacyPlugin, FrogPlugin, ObservableObject {
     @Published private(set) var settings = ExplainConfig()
 
     func start() async {
-        let legacy = model.configuration.preferences.explainSettings
-        do { try model.settingsFile.seedSection(Self.info.id) { ExplainConfig(legacy: legacy) } } catch { context.report(error) }
-        settings = context.settings(ExplainConfig.self)
+        model.seedExplainSettings()
+        settings = read()
         model.adoptExplainPresetIfNeeded()
+        model.useSelectionBubble(by: Self.info.id)
     }
 
-    func stop() async {}
+    func stop() async { model.releaseSelectionBubble(by: Self.info.id) }
 
     func settingsChanged() {
-        let read = context.settings(ExplainConfig.self)
+        let read = read()
         if read != settings { settings = read }
+        model.reloadSelectionBubble()
+    }
+
+    /// `[explain]` as config.toml has it, without a folder or file pattern that an outside edit made invalid.
+    private func read() -> ExplainConfig {
+        let (kept, issue) = context.settings(ExplainConfig.self).sanitized()
+        if let issue { context.report(FrogError.message(issue)) }
+        return kept
     }
 
     func save(_ new: ExplainConfig) throws {

@@ -20,7 +20,7 @@ struct WritingView: View {
             WritingBubbleSection(plugin: plugin)
         }
         .sheet(item: $editing) { rule in
-            WritingRuleEditor(rule: rule, bubble: plugin.settings.bubble.on) { copy in editing = copy }.environmentObject(model)
+            WritingRuleEditor(rule: rule) { copy in editing = copy }.environmentObject(model)
         }
         .sheet(item: $trying) { rule in WritingTryView(rule: rule).environmentObject(model) }
         .onChange(of: model.ruleEditRequest, initial: true) { _, id in openRequested(id) }
@@ -200,11 +200,14 @@ struct WritingRuleEditor: View {
     @State private var rule: Rule
     @State private var issue: String?
     @State private var deleting = false
-    /// The selection bubble is on, so the rule can choose whether it offers itself there.
-    private let bubble: Bool
+    /// Set by screenshots; otherwise the bubble's switch as it is now.
+    private let bubbleShown: Bool?
     private let onSaveCopy: (Rule) -> Void
+    /// The selection bubble is on, so the rule can choose whether it offers itself there. Follows the switch while
+    /// the editor is open.
+    private var bubble: Bool { bubbleShown ?? model.offersBubbleChoice }
 
-    init(rule: Rule, bubble: Bool, onSaveCopy: @escaping (Rule) -> Void) {
+    init(rule: Rule, bubble: Bool? = nil, onSaveCopy: @escaping (Rule) -> Void) {
         var draft = rule
         if !draft.targetLanguage.isEmpty {
             draft.instructions = draft.instructions.replacingOccurrences(of: "{{language}}", with: draft.targetLanguage)
@@ -212,7 +215,7 @@ struct WritingRuleEditor: View {
         }
         if draft.action == nil { draft.action = RuleAction(category: .text) }
         _rule = State(initialValue: draft)
-        self.bubble = bubble
+        self.bubbleShown = bubble
         self.onSaveCopy = onSaveCopy
     }
 

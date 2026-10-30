@@ -28,9 +28,10 @@ public struct WritingConfig: ConfigSection {
     public var bubble = Bubble()
     public init() {}
 
-    /// The settings Explain kept for the bubble before Writing had its own table.
-    public init(legacy: ExplainSettings) {
-        bubble.on = legacy.selectionBubble
+    /// The settings Explain kept for the bubble before Writing had its own table. The bubble ran only while Explain
+    /// was on too, so it starts on only then.
+    public init(legacy: ExplainSettings, explainOn: Bool) {
+        bubble.on = legacy.selectionBubble && explainOn
         bubble.doubleClick = legacy.bubbleDoubleClick
         bubble.keyboard = legacy.bubbleKeyboard
         bubble.chromiumApps = legacy.bubbleExposeText
@@ -85,12 +86,28 @@ public struct ExplainConfig: ConfigSection {
     }
 
     public func validate() throws {
-        if let folder = notes.folder {
-            guard folder.hasPrefix("/") || folder.hasPrefix("~/"),
-                  !folder.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
-            else { throw FrogError.message(ExplainSettings.invalidNotesFolder) }
-        }
+        if let folder = notes.folder, !Self.validFolder(folder) { throw FrogError.message(ExplainSettings.invalidNotesFolder) }
         _ = try AnswerNote.expand(pattern: notes.file, date: Date(), calendar: Calendar(identifier: .gregorian))
+    }
+
+    /// The folder must be absolute; `~/` stands for the home folder.
+    static func validFolder(_ folder: String) -> Bool {
+        (folder.hasPrefix("/") || folder.hasPrefix("~/"))
+            && !folder.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
+    }
+
+    /// These settings as read from a file edited outside Frog: an invalid folder is dropped and an invalid file
+    /// pattern goes back to the default, so notes never go somewhere unintended. `issue` says what was dropped.
+    public func sanitized() -> (settings: ExplainConfig, issue: String?) {
+        var kept = self
+        var issues: [String] = []
+        if let folder = notes.folder, !Self.validFolder(folder) {
+            kept.notes.folder = nil; issues.append(ExplainSettings.invalidNotesFolder)
+        }
+        do { _ = try AnswerNote.expand(pattern: notes.file, date: Date(), calendar: Calendar(identifier: .gregorian)) } catch {
+            kept.notes.file = Notes().file; issues.append(error.localizedDescription)
+        }
+        return (kept, issues.isEmpty ? nil : "[explain.notes]: " + issues.joined(separator: " "))
     }
 
     public static let comments = [

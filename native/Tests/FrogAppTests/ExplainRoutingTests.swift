@@ -322,12 +322,12 @@ final class ExplainRoutingTests: XCTestCase {
 
     // MARK: Selection bubble
 
-    func testTheSelectionBubbleRunsWithWritingItsSwitchAndAccessibility() async throws {
+    func testTheSelectionBubbleRunsWithWritingOrExplainItsSwitchAndAccessibility() async throws {
         let watcher = FakeSelectionWatcher()
         let setup = try Setup(test: self, watcher: watcher)
         setup.model.start()
         await setup.model.pluginHost.syncAndWait()
-        let writing = try XCTUnwrap(setup.model.pluginHost.running["writing"] as? WritingPlugin)
+        XCTAssertNotNil(setup.model.pluginHost.running["writing"] as? WritingPlugin)
         XCTAssertFalse(watcher.isRunning, "The bubble is off by default")
         try setup.setBubble(true)
         XCTAssertTrue(watcher.isRunning)
@@ -340,14 +340,19 @@ final class ExplainRoutingTests: XCTestCase {
         setup.model.refreshSystemStatus()
         XCTAssertTrue(watcher.isRunning, "Allowing Accessibility starts it without a restart")
 
-        _ = try await setup.enableExplain()
-        try await setup.model.setFeature(.explain, enabled: false)
-        XCTAssertTrue(watcher.isRunning, "The bubble belongs to Writing")
+        let explain = try await setup.enableExplain()
+        await setup.model.pluginHost.syncAndWait()
         try await setup.model.setFeature(.writing, enabled: false)
         await setup.model.pluginHost.syncAndWait()
-        XCTAssertFalse(watcher.isRunning, "Turning Writing off stops it")
+        XCTAssertNil(setup.model.pluginHost.running["writing"])
+        XCTAssertTrue(watcher.isRunning, "Explain keeps the bubble while Writing is off")
+        let bubble = try XCTUnwrap(setup.model.selectionBubble)
+        let items = bubble.items(for: Self.snapshot("levee", context: nil, element: 1))
+        XCTAssertEqual((items.visible + items.more).map(\.id), [explain.id], "with only Explain's item")
+        try await setup.model.setFeature(.explain, enabled: false)
+        await setup.model.pluginHost.syncAndWait()
+        XCTAssertFalse(watcher.isRunning, "With Writing and Explain off it stops")
         XCTAssertNil(setup.model.selectionBubble)
-        XCTAssertNil(writing.bubble)
         try await setup.model.setFeature(.writing, enabled: true)
         await setup.model.pluginHost.syncAndWait()
         XCTAssertTrue(watcher.isRunning, "Its switch is kept in [writing.bubble]")

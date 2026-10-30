@@ -48,4 +48,46 @@ final class WritingRuleTriggerTests: XCTestCase {
                                                configured: { _ in true })
         XCTAssertEqual(field.visible.map(\.title), ["Proofread", "Translate"])
     }
+
+    func testTheExplainRuleStaysExplainsWhenItsModelGoes() {
+        var config = Configuration()
+        config.rules = []
+        config.adoptExplainPreset(installed: [])
+        let provider = UUID()
+        config.rules[0].providerID = provider; config.rules[0].model = "gone"
+        config.modelsRemoved([RuleModelSelection(providerID: provider, modelID: "gone", category: .text)], installed: [])
+        XCTAssertFalse(config.rules[0].preset, "a model change clears preset")
+        XCTAssertTrue(config.rules[0].isExplainRule)
+        XCTAssertFalse(config.rules[0].isWritingRule)
+        XCTAssertFalse(config.rules[0].copy().isExplainRule, "a copy is the person's own answer rule")
+    }
+
+    func testRulesFromBeforeTheOwnerFlagFindTheirExplainRuleOnce() throws {
+        func older(_ rules: [Rule]) throws -> Configuration {
+            var config = Configuration()
+            config.rules = rules.map { var rule = $0; rule.action?.explain = nil; return rule }
+            var workflow = WorkflowPreferences(); workflow.explainPresetVersion = 2
+            config.preferences.workflows = workflow
+            return config
+        }
+        // The preset rule, as version 2 left it.
+        var config = try older([Rule(name: "Proofread"), Rule.explainPreset])
+        XCTAssertFalse(config.rules[1].isExplainRule)
+        config.adoptExplainPreset(installed: [])
+        XCTAssertTrue(config.rules[1].isExplainRule)
+        XCTAssertEqual(config.rules.count, 2)
+
+        // A provider deleted earlier cleared preset; the answer rule called Explain is still the one.
+        var unmarked = Rule.explainPreset; unmarked.preset = false
+        var define = Rule.explainPreset; define.id = UUID(); define.name = "Define"; define.preset = false
+        config = try older([define, unmarked])
+        config.adoptExplainPreset(installed: [])
+        XCTAssertEqual(config.rules.filter(\.isExplainRule).map(\.id), [unmarked.id])
+        XCTAssertEqual(config.preferences.workflowSettings.explainPresetVersion, Rule.explainPresetVersion)
+
+        // Adopted once: deleting it later does not make Define Explain's.
+        config.rules.removeAll { $0.id == unmarked.id }
+        config.adoptExplainPreset(installed: [])
+        XCTAssertFalse(config.rules.contains(where: \.isExplainRule))
+    }
 }
