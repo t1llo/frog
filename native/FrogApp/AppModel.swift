@@ -552,7 +552,7 @@ final class AppModel: ObservableObject {
         systemActionTask?.cancel()
         windowActionTask?.cancel()
         windowLayout?.stop()
-        hotkeys.unregister()
+        hotkeys.unregisterAll()
     }
 
     func showSettings() { refreshSystemStatus(); openSettings?() }
@@ -1273,8 +1273,9 @@ final class AppModel: ObservableObject {
         if recording { dictation?.cancel() }
         if recording, registerShortcuts { clipboardHistory.cancel() }
         isRecordingShortcut = recording
-        if recording { hotkeys.unregister() }
-        else { registerHotkeys() }
+        // Every group lets go, plugins' too, so the key being recorded reaches the recorder.
+        hotkeys.setSuspended(recording)
+        if !recording { registerHotkeys() }
         configureWindowSwitcher()
     }
 

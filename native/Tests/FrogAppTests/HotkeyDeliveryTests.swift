@@ -32,6 +32,25 @@ final class HotkeyDeliveryTests: XCTestCase {
         XCTAssertEqual(triggers, 1, "Only the matched release may invoke the rule")
     }
 
+    func testRecordingAShortcutSuspendsEveryGroupAndGivesThemBack() {
+        _ = NSApplication.shared
+        let manager = HotkeyManager()
+        defer { manager.unregisterAll() }
+        let modifiers = UInt32(controlKey | optionKey | shiftKey | cmdKey)
+        let frog = Rule(hotkey: Hotkey(keyCode: 105, modifiers: modifiers)), plugin = Rule(hotkey: Hotkey(keyCode: 107, modifiers: modifiers))
+        XCTAssertTrue(manager.register(rules: [frog]) { _ in }.isEmpty)
+        XCTAssertTrue(manager.register(rules: [plugin], group: "plugin") { _ in }.isEmpty)
+        XCTAssertEqual(Set(manager.rulesByID.values), [frog.id, plugin.id])
+        manager.setSuspended(true)
+        XCTAssertTrue(manager.rulesByID.isEmpty, "No group keeps a key while a shortcut is recorded")
+        let late = Rule(hotkey: Hotkey(keyCode: 113, modifiers: modifiers))
+        XCTAssertTrue(manager.register(rules: [late], group: "late") { _ in }.isEmpty)
+        XCTAssertTrue(manager.rulesByID.isEmpty)
+        manager.unregister(group: "plugin")
+        manager.setSuspended(false)
+        XCTAssertEqual(Set(manager.rulesByID.values), [frog.id, late.id], "A group that let go meanwhile stays gone")
+    }
+
     private func send(id: UInt32, pressed: Bool) async throws {
         var event: EventRef?
         XCTAssertEqual(CreateEvent(nil, OSType(kEventClassKeyboard), UInt32(pressed ? kEventHotKeyPressed : kEventHotKeyReleased),

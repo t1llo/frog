@@ -22,6 +22,16 @@ final class HotkeyManager {
     private(set) var rulesByID: [UInt32: UUID] = [:]
     private var groupByID: [UInt32: String] = [:]
     private var generation: UInt64 = 0
+    /// What each group asked for, so a suspension can give every group its keys back.
+    private struct Request {
+        let rules: [Rule]
+        let purposes: [UUID: ShortcutPurpose]
+        let onPress: ((UUID) -> Void)?
+        let onTrigger: (UUID) -> Void
+    }
+    private var requests: [String: Request] = [:]
+    /// While a shortcut is being recorded no group holds a key, so the key being recorded reaches the recorder.
+    private(set) var suspended = false
 
     /// Whether a shortcut of `group` is down; registering that group again now would lose its release.
     func isHolding(_ group: String = "") -> Bool { !(groups[group]?.pressed.isEmpty ?? true) }
@@ -30,7 +40,9 @@ final class HotkeyManager {
     /// Registers `rules` as `group`, replacing what that group held before. Other groups keep their shortcuts.
     func register(rules: [Rule], group: String = "", purposes: [UUID: ShortcutPurpose] = [:], onPress: ((UUID) -> Void)? = nil,
                   onTrigger: @escaping (UUID) -> Void) -> [UUID: String] {
-        unregister(group: group)
+        release(group)
+        requests[group] = Request(rules: rules, purposes: purposes, onPress: onPress, onTrigger: onTrigger)
+        guard !suspended else { return [:] }
         let candidates = rules.filter { $0.enabled && $0.hotkey != nil }
         guard !candidates.isEmpty else { return [:] }
         var errors: [UUID: String] = [:]
@@ -66,12 +78,33 @@ final class HotkeyManager {
             }
         }
         groups[group] = entry
-        if entry.references.isEmpty { unregister(group: group) }
+        if entry.references.isEmpty { release(group) }
         return errors
     }
 
     /// Unregisters one group; the handler goes when no group is left.
     func unregister(group: String = "") {
+        requests[group] = nil
+        release(group)
+    }
+
+    /// Unregisters every group, as Frog quits.
+    func unregisterAll() {
+        requests = [:]
+        for group in Array(groups.keys) { release(group) }
+    }
+
+    /// Takes every group's keys away, or gives them back; a group registered meanwhile registers on resuming.
+    func setSuspended(_ value: Bool) {
+        guard value != suspended else { return }
+        suspended = value
+        if value { for group in Array(groups.keys) { release(group) }; return }
+        for (group, request) in requests {
+            _ = register(rules: request.rules, group: group, purposes: request.purposes, onPress: request.onPress, onTrigger: request.onTrigger)
+        }
+    }
+
+    private func release(_ group: String) {
         if let entry = groups.removeValue(forKey: group) { entry.references.forEach { UnregisterEventHotKey($0) } }
         for (id, owner) in groupByID where owner == group { groupByID[id] = nil; rulesByID[id] = nil }
         if groups.isEmpty, let handler { RemoveEventHandler(handler); self.handler = nil }

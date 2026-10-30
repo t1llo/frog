@@ -184,7 +184,8 @@ struct RulesView: View {
                                 do { try model.saveRule(updated) } catch { model.report(error) }
                             }), showsClearButton: false)
                             // An answer needs a selection and a panel, so answer rules run from their shortcut or the command bar.
-                            if !rule.answersInPanel {
+                            // Recording needs Dictation on; its own page records otherwise.
+                            if !rule.answersInPanel, rule.category != .audio || model.dictationFeature != nil {
                                 Button(rule.category == .audio ? "Record" : "Try") {
                                     if rule.category == .audio { model.dictationFeature?.start(rule) }
                                     else { trying = rule }

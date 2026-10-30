@@ -28,10 +28,7 @@ struct DictationPage: View {
                 }
                 FrogRow("Cancel shortcut", caption: "Escape always cancels.") {
                     HotkeyRecorder(hotkey: Binding(get: { feature.settings.cancelShortcut?.hotkey }, set: { value in
-                        do {
-                            let shortcut = try value.map { try Shortcut($0) }
-                            feature.update { $0.cancelShortcut = shortcut }
-                        } catch { model.report(error) }
+                        do { try feature.setCancelShortcut(value) } catch { model.report(error) }
                     }), purpose: .recordingCancel)
                 }
             }
