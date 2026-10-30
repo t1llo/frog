@@ -293,7 +293,7 @@ import XCTest
         let model = accountsModel(world)
         let usage = UsageDashboardModel(defaults: defaults, fixtureRoot: home, claudeAccounts: model)
         usage.applyPreferences(UsageDashboardPreferences(claudeAccounts: true))
-        XCTAssertFalse(usage.searchingClaudeAccounts, "Nothing is looked for before Mr. Usage is on")
+        XCTAssertFalse(usage.searchingClaudeAccounts, "Nothing is looked for before LLM usage is on")
         usage.setAvailable(true)
         defer { usage.setAvailable(false) }
         XCTAssertTrue(usage.searchingClaudeAccounts, "The empty list says it is still looking")

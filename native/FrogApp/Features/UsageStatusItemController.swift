@@ -3,8 +3,8 @@ import Combine
 import SwiftUI
 import FrogUsage
 
-/// A second, independently positioned status item owned by the optional Usage feature.
-/// It presents Frog's existing model; no helper app or second collector is launched.
+/// LLM usage's own menu-bar item, positioned on its own; it shows the plugin's model.
+/// The autosave name is kept from the Mr. Usage days, so the item stays where it was put.
 @MainActor final class UsageStatusItemController: NSObject {
     private let usage: UsageDashboardModel
     private let openDashboard: () -> Void
@@ -110,14 +110,14 @@ import FrogUsage
     isolated deinit { stop() }
 }
 
-/// Matches standalone Mr. Usage's two-window template readout, including its tiny tracks, or
+/// Two plan windows as a template readout with tiny tracks, or
 /// draws the limits as one of the shared menu-bar meters.
 enum UsageStatusReadout {
     /// Shown in place of plan windows: the selected period and its API-equivalent value.
     struct Estimate { let range: String; let value: String }
 
     /// Each Claude account side by side or combined, when Frog shows several; otherwise the one
-    /// account or provider as always. Drawn in the design chosen on the Mr. Usage page.
+    /// account or provider as always. Drawn in the look chosen on the LLM usage page.
     @MainActor static func readout(_ usage: UsageDashboardModel, dark: Bool) -> (Face, String) {
         var (face, description) = readout(usage)
         face.style = MenuBarMeterStyle(choice: usage.preferences.menuBarStyle)
@@ -259,7 +259,7 @@ enum UsageStatusReadout {
         return image
     }
     static func description(provider: String, windows: [UsageWindow], estimate: Estimate? = nil) -> String {
-        (["Mr. Usage · \(provider)"] + windows.map {
+        (["LLM usage · \(provider)"] + windows.map {
             !$0.percentage.isFinite ? "\($0.title): no reading since it renewed"
                 : "\($0.title): \($0.usedText) used" + ($0.resetsAt.map { " · resets \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "")
         } + (windows.isEmpty ? [estimate.map { "API estimate, last \($0.range): \($0.value)" }].compactMap { $0 } : [])).joined(separator: "\n")
@@ -281,7 +281,7 @@ enum UsageStatusReadout {
             }
             if let basis = combined.first?.basisDescription { lines.append(basis) }
         } else {
-            lines = ["Mr. Usage · Claude"]
+            lines = ["LLM usage · Claude"]
         }
         for account in accounts {
             let origin = [account.readingSource, account.age.map { UsageStatusPopover.age(of: $0, at: now) }]
