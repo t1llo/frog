@@ -112,6 +112,11 @@ import SwiftUI
         return try await action.run(input)
     }
 
+    /// The command bar row sources of the plugins that are on, in catalog order.
+    var commandBarProviders: [any CommandBarRowProviding] {
+        descriptors.flatMap { running[$0.id]?.commandBarRows ?? [] }
+    }
+
     var menuRows: [MenuContribution] {
         contributions.filter { $0.placement == .row }
     }
