@@ -25,11 +25,13 @@ struct PluginsCatalogView: View {
                 FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another word.")
             } else {
                 ForEach(groups, id: \.category) { group in
-                    VStack(alignment: .leading, spacing: 6) {
-                        SectionCaption(text: group.category.title).padding(.leading, 4)
-                        VStack(spacing: 2) {
+                    // Captioned like a `FrogSection`, so this page reads like the others.
+                    VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                        Text(L10n.text(group.category.title)).font(FrogType.section).foregroundStyle(FrogStyle.ink)
+                            .accessibilityAddTraits(.isHeader).frame(minHeight: 20).padding(.horizontal, FrogStyle.space2)
+                        VStack(spacing: FrogStyle.space2) {
                             ForEach(group.plugins) { row($0) }
-                        }.padding(6).frogTableSurface()
+                        }.padding(FrogStyle.listInset).frogTableSurface()
                     }
                 }
             }
@@ -57,6 +59,6 @@ struct PluginsCatalogView: View {
                     do { try await host.setEnabled(plugin.id, on) } catch { model.report(error) }
                 }
             })).labelsHidden().toggleStyle(.switch).controlSize(.small).disabled(pending.contains(plugin.id))
-        }.padding(.horizontal, 8).padding(.vertical, 6).frogHoverRow()
+        }.padding(.horizontal, FrogStyle.rowPadding).padding(.vertical, FrogStyle.space6).frogHoverRow()
     }
 }

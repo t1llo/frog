@@ -58,7 +58,7 @@ struct HistoryView: View {
                                             hasAnswers: all.contains { $0.kind == .answers })
         return FrogPage(width: FrogStyle.wideWidth) {
             FrogPageHeader(title: "History") {
-                IconMenu(title: "History actions") {
+                IconMenu(title: "History actions", bordered: false) {
                     Button("Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }.disabled(all.isEmpty)
                 }
             }

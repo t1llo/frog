@@ -187,7 +187,7 @@ private struct OverviewCard: ViewModifier {
     let wide: Bool
     func body(content: Content) -> some View {
         if wide {
-            content.padding(12).frame(maxWidth: .infinity, alignment: .topLeading).frogTableSurface()
+            content.padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .topLeading).frogTableSurface()
         } else {
             content.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
         }

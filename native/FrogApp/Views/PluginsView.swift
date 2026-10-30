@@ -30,7 +30,7 @@ struct PluginsView: View {
                 if let host = plugins.downloading {
                     ProgressView().controlSize(.small).help("Downloading from \(host)")
                 }
-                IconAction(title: "Install a plugin file", symbol: "square.and.arrow.down", bordered: true) { chooseFile() }
+                IconAction(title: "Install a plugin file", symbol: "square.and.arrow.down") { chooseFile() }
             }
             HStack(spacing: 8) {
                 CompactSegments(values: PluginsTab.allCases, selected: tab, width: 320, title: \.title) { tab = $0 }
@@ -339,7 +339,7 @@ struct PluginReviewSheet: View {
             try? await Task.sleep(for: .seconds(1))
             armed = true
         }
-        .padding(20).frame(width: 480)
+        .padding(FrogStyle.sheetPadding).frame(width: 480)
         .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
     }
 
