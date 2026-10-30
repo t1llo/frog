@@ -1,11 +1,13 @@
 import Combine
 import FrogCore
 
-/// The selection bubble, owned by the Writing plugin: it watches while the plugin runs, its bubble is on and
-/// Accessibility is allowed, and offers the Writing rules plus Explain while Explain is on.
+/// The selection bubble. It runs while Writing or Explain runs, its switch in `[writing.bubble]` is on and
+/// Accessibility is allowed, and offers the Writing rules while Writing is on and Explain while Explain is on.
 @MainActor
-final class WritingBubble {
-    private(set) var settings: WritingConfig.Bubble
+final class WritingBubble: ObservableObject {
+    @Published private(set) var settings: WritingConfig.Bubble
+    /// The plugins that asked for the bubble; it stops when the last one lets go.
+    fileprivate var users: Set<String> = []
     private weak var model: AppModel?
     private var accessibility: AnyCancellable?
     private lazy var watcher: any SelectionWatching = model?.injectedSelectionWatcher ?? makeWatcher()
@@ -19,7 +21,6 @@ final class WritingBubble {
 
     func start() {
         guard let model else { return }
-        model.selectionBubble = self
         // `$accessibilityGranted` publishes before the property changes, so the value comes along.
         accessibility = model.$accessibilityGranted.removeDuplicates().sink { [weak self] granted in
             self?.configure(accessibility: granted)
@@ -29,10 +30,12 @@ final class WritingBubble {
     func stop() {
         accessibility = nil
         if watcher.isRunning { watcher.stop() }
-        if model?.selectionBubble === self { model?.selectionBubble = nil }
     }
 
+    /// New settings, from the Writing page or an edit to config.toml. Pages that show them redraw.
     func update(_ settings: WritingConfig.Bubble) {
+        guard settings != self.settings else { return }
+        model?.objectWillChange.send()
         self.settings = settings
         configure(accessibility: model?.accessibilityGranted ?? false)
     }
@@ -49,9 +52,10 @@ final class WritingBubble {
     /// Built from the rules as they are when the bubble shows, so a rule changed since appears as it is now.
     func items(for snapshot: SelectionSnapshot) -> (visible: [BubbleItem], more: [BubbleItem]) {
         guard let model else { return ([], []) }
+        let preferences = model.configuration.preferences
         return SelectionBubbleItems.items(rules: model.configuration.rules,
-                                          explainEnabled: model.configuration.preferences.featureEnabled(.explain),
-                                          writingEnabled: true, editable: snapshot.isEditable,
+                                          explainEnabled: preferences.featureEnabled(.explain),
+                                          writingEnabled: preferences.featureEnabled(.writing), editable: snapshot.isEditable,
                                           configured: { (try? model.resolved($0)) != nil })
     }
 
@@ -59,8 +63,10 @@ final class WritingBubble {
         guard let model else {
             return BubbleState(explainEnabled: false, bubbleEnabled: false, writingEnabled: false, accessibilityTrusted: false, busy: true)
         }
-        return BubbleState(explainEnabled: model.configuration.preferences.featureEnabled(.explain), bubbleEnabled: settings.on,
-                           writingEnabled: true, accessibilityTrusted: model.accessibilityGranted, busy: model.bubbleBusy)
+        let preferences = model.configuration.preferences
+        return BubbleState(explainEnabled: preferences.featureEnabled(.explain), bubbleEnabled: settings.on,
+                           writingEnabled: preferences.featureEnabled(.writing), accessibilityTrusted: model.accessibilityGranted,
+                           busy: model.bubbleBusy)
     }
 
     private func makeWatcher() -> any SelectionWatching {
@@ -74,5 +80,76 @@ final class WritingBubble {
             },
             items: { [weak self] in self?.items(for: $0) ?? ([], []) },
             run: { [weak self] item, snapshot in self?.model?.runBubbleItem(item, snapshot: snapshot) }))
+    }
+}
+
+/// Where Writing and Explain share the bubble. Its settings live in `[writing.bubble]` whichever of them runs.
+@MainActor
+extension AppModel {
+    /// Called from a plugin's `start`: the bubble runs from the first call until the last `releaseSelectionBubble`.
+    func useSelectionBubble(by plugin: String) {
+        seedWritingSettings()
+        let bubble = selectionBubble ?? {
+            let bubble = WritingBubble(model: self, settings: storedBubbleSettings())
+            selectionBubble = bubble
+            bubble.start()
+            return bubble
+        }()
+        bubble.users.insert(plugin)
+    }
+
+    /// Called from a plugin's `stop`.
+    func releaseSelectionBubble(by plugin: String) {
+        guard let bubble = selectionBubble else { return }
+        bubble.users.remove(plugin)
+        guard bubble.users.isEmpty else { return }
+        bubble.stop()
+        selectionBubble = nil
+    }
+
+    /// Follows `[writing.bubble]` after config.toml changed.
+    func reloadSelectionBubble() { selectionBubble?.update(storedBubbleSettings()) }
+
+    private func storedBubbleSettings() -> WritingConfig.Bubble {
+        (try? settingsFile.section(WritingPlugin.info.id, as: WritingConfig.self).value.bubble) ?? WritingConfig.Bubble()
+    }
+
+    /// Moves the bubble settings Explain kept into `[writing]`, once. Skipped while the settings could not be read,
+    /// so defaults never stand in for them. Rules left out of the bubble say so first, so a failed table write
+    /// repeats the move instead of losing it.
+    func seedWritingSettings() {
+        guard configurationLoaded, configuration.preferences.workflowSettings.writingSettingsMoved != true else { return }
+        let legacy = configuration.preferences.explainSettings
+        do {
+            if settingsFile.document.value(at: [WritingPlugin.info.id]) == nil {
+                let hidden = Set(legacy.bubbleHiddenRules)
+                if !hidden.isEmpty {
+                    try updateRules { rules in
+                        for index in rules.indices where hidden.contains(rules[index].id) { rules[index].showsInBubble = false }
+                    }
+                }
+                let explainOn = configuration.preferences.featureEnabled(.explain)
+                try settingsFile.seedSection(WritingPlugin.info.id) { WritingConfig(legacy: legacy, explainOn: explainOn) }
+            }
+            try updateConfiguration { configuration in
+                var workflow = configuration.preferences.workflowSettings
+                workflow.writingSettingsMoved = true
+                configuration.preferences.workflows = workflow
+            }
+        } catch { report(error) }
+    }
+
+    /// The same for `[explain]`.
+    func seedExplainSettings() {
+        guard configurationLoaded, configuration.preferences.workflowSettings.explainSettingsMoved != true else { return }
+        let legacy = configuration.preferences.explainSettings
+        do {
+            try settingsFile.seedSection(ExplainPlugin.info.id) { ExplainConfig(legacy: legacy) }
+            try updateConfiguration { configuration in
+                var workflow = configuration.preferences.workflowSettings
+                workflow.explainSettingsMoved = true
+                configuration.preferences.workflows = workflow
+            }
+        } catch { report(error) }
     }
 }

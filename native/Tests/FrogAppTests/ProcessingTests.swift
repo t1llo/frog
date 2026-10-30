@@ -98,7 +98,7 @@ final class ProcessingTests: XCTestCase {
         var answer = Rule.explainPreset
         answer.id = UUID(); answer.providerID = model.configuration.providers[0].id
         try model.saveRule(answer)
-        let message = "This rule answers in a panel. Turn on Explain in Features."
+        let message = "This rule shows its result in a panel. Run it on selected text."
         // With Explain off its shortcut does nothing at all; answer rules never go through Writing.
         model.processSelection(ruleID: answer.id)
         try await waitUntilFinished(model)

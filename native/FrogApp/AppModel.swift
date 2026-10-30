@@ -214,8 +214,8 @@ final class AppModel: ObservableObject {
     private var answerCapture: Task<Void, Never>?
     /// The watcher tests hand in; the Writing plugin's bubble uses it instead of its own.
     let injectedSelectionWatcher: (any SelectionWatching)?
-    /// The selection bubble while the Writing plugin runs it.
-    weak var selectionBubble: WritingBubble?
+    /// The selection bubble. It runs while Writing or Explain runs; see `useSelectionBubble`.
+    @Published var selectionBubble: WritingBubble?
     /// History as it was when the running answer started: clearing or turning it off since stops saving the answer.
     private var answerHistory = HistoryTicket(epoch: nil)
     /// Answer rules: one answer and its follow-ups at a time, in the answer panel.
@@ -743,8 +743,13 @@ final class AppModel: ObservableObject {
 
     /// Changes several rules in one save, such as when settings move into a rule.
     func updateRules(_ change: (inout [Rule]) -> Void) throws {
+        try updateConfiguration { change(&$0.rules) }
+    }
+
+    /// Saves a change to the configuration; nothing is written when it changes nothing.
+    func updateConfiguration(_ change: (inout Configuration) -> Void) throws {
         var candidate = configuration
-        change(&candidate.rules)
+        change(&candidate)
         guard candidate != configuration else { return }
         try persist(candidate)
     }
@@ -1279,10 +1284,15 @@ final class AppModel: ObservableObject {
 
     /// `[explain]` in config.toml. Until Explain first runs and writes it, the settings it kept before.
     var explainConfig: ExplainConfig {
+        if let plugin = pluginHost.running[ExplainPlugin.info.id] as? ExplainPlugin { return plugin.settings }
         guard settingsFile.document.value(at: [ExplainPlugin.info.id]) != nil,
               let table = try? settingsFile.section(ExplainPlugin.info.id, as: ExplainConfig.self).value
-        else { return ExplainConfig(legacy: configuration.preferences.explainSettings) }
-        return table
+        else {
+            // Once moved, a removed table means defaults, never the old values again.
+            return configuration.preferences.workflowSettings.explainSettingsMoved == true
+                ? ExplainConfig() : ExplainConfig(legacy: configuration.preferences.explainSettings)
+        }
+        return table.sanitized().settings
     }
 
     /// The longest selection an answer reads through Accessibility, in UTF-16 units.

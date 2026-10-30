@@ -268,7 +268,7 @@ final class TextSelection: CapturedTextSelection {
     func replace(with text: String) async throws {
         let pasteboard = NSPasteboard.general
         // Taken before the result goes onto the clipboard, so the paste below can put it back.
-        let original = PasteboardSnapshot(pasteboard)
+        let original = ClipboardRestore.shared.snapshot(of: pasteboard)
         pasteboard.clearContents()
         guard pasteboard.setString(text, forType: .string) else {
             throw FrogError.message("The result could not be copied to the clipboard.")
