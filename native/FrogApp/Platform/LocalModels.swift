@@ -652,7 +652,7 @@ enum ModelFiles {
     static func required(_ model: LocalModelDescriptor) -> [String] {
         switch model.backend {
         case .mlx: ["config.json", "tokenizer.json", "tokenizer_config.json"]
-        case .parakeet: ["Preprocessor", "Encoder", "Decoder", "JointDecision"].map { "\($0).mlmodelc/coremldata.bin" } + ["parakeet_vocab.json"]
+        case .parakeet: model.parakeetComponents.map { "\($0).mlmodelc/coremldata.bin" } + ["parakeet_vocab.json"]
         case .whisperKit: ["AudioEncoder", "TextDecoder", "MelSpectrogram"].map { "\($0).mlmodelc/coremldata.bin" }
         }
     }
@@ -849,7 +849,7 @@ actor LocalInference: LocalInferenceEngine {
                 await parakeet?.unload(); parakeet = nil; speechID = nil
                 await residency(loadedIDs); try Task.checkCancellation()
                 let engine = ParakeetRuntime()
-                try await engine.load(from: url, version: model.variant == "v2" ? .v2 : .v3)
+                try await engine.load(from: url, model: model)
                 parakeet = engine; speechID = id
                 await residency(loadedIDs)
             }

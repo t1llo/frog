@@ -15,8 +15,10 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
-        .package(url: "https://github.com/argmaxinc/WhisperKit.git", exact: "1.1.0"),
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.12.4"),
+        .package(url: "https://github.com/argmaxinc/WhisperKit.git", exact: "1.1.1"),
+        // Parakeet Ultra needs 0.17.3 or later. Frog uses its speech recognition only:
+        // no traits leaves out text-to-speech, diarization and the text normalizer.
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.18.0", traits: []),
         .package(url: "https://github.com/ml-explore/mlx-swift-lm.git", exact: "2.31.3"),
         .package(url: "https://github.com/huggingface/swift-transformers", exact: "1.2.1"),
         // Newer collections emits borrowing runtime symbols unavailable on macOS 14–26.
