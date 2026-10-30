@@ -54,4 +54,27 @@ final class PageShotsTests: XCTestCase {
             }
         }
     }
+
+    /// The design gallery, in light and dark: `design-gallery-light.png` and `design-gallery-dark.png`.
+    func testDesignGallery() async throws {
+        guard let folder = ProcessInfo.processInfo.environment["FROG_PAGE_SHOTS"] else {
+            throw XCTSkip("Set FROG_PAGE_SHOTS to a folder to take these pictures")
+        }
+        try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let name = appearance == .aqua ? "light" : "dark"
+            let size = NSSize(width: 1_180, height: 1_130)
+            let host = NSHostingView(rootView: DesignGallery().frame(width: size.width, height: size.height)
+                .background(FrogStyle.opaqueCanvas))
+            host.appearance = NSAppearance(named: appearance)
+            host.frame = NSRect(origin: .zero, size: size)
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(400))
+            host.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                .write(to: URL(fileURLWithPath: "\(folder)/design-gallery-\(name).png"))
+        }
+    }
 }
