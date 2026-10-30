@@ -24,6 +24,8 @@ final class RulesWorkflowTests: XCTestCase {
         try store.save(configuration)
         let model = AppModel(dataDirectory: directory, registerShortcuts: false)
         defer { model.shutdown() }
+        // The app starts its plugins at launch; their pages exist only once they run.
+        await model.pluginHost.syncAndWait()
         let host = NSHostingView(rootView: MainView().environmentObject(model))
         let window = NSWindow(contentRect: NSRect(x: 50, y: 50, width: 800, height: 580),
                               styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
@@ -35,43 +37,46 @@ final class RulesWorkflowTests: XCTestCase {
         host.layoutSubtreeIfNeeded()
         try await Task.sleep(for: .milliseconds(150))
         if audio {
-            try await click(host, x: 80, top: 140)
-            XCTAssertEqual(model.toolkit.route, .feature(.dictation), "The Dictation sidebar item must open its rule editor page")
+            try await click("Dictation", in: host)
+            XCTAssertEqual(model.toolkit.route, .feature(.dictation), "The Dictation sidebar item must open its page")
+            // A dictation rule is a section of the page: New rule adds one there, with no editor to fill in first.
+            try await click("New rule", in: host)
+            XCTAssertNil(window.attachedSheet)
+            let saved = try XCTUnwrap(store.load().rules.first, "The new rule must be persisted")
+            XCTAssertEqual(saved.name, "Dictation")
+            XCTAssertEqual(saved.category, .audio)
+            XCTAssertEqual(model.configuration.rules.count, 1)
+            let section = try await AccessibleControls.element("Enable Dictation", in: host)
+            XCTAssertNotNil(section, "The page must show the new rule's section")
+            return
         }
-        // The centre of the page header's New rule button.
-        try await click(host, x: host.bounds.maxX - 100, top: 66)
+        XCTAssertEqual(model.toolkit.route, .feature(.writing), "The window opens on Writing")
+        try await click("New rule", in: host)
         let sheet = try XCTUnwrap(window.attachedSheet, "Clicking New rule must open the editor")
         let content = try XCTUnwrap(sheet.contentView)
-        let name = try XCTUnwrap(descendants(content).compactMap { $0 as? NSTextField }.first {
-            $0.stringValue == (audio ? "New audio rule" : "New text rule")
-        })
+        let name = try XCTUnwrap(descendants(content).compactMap { $0 as? NSTextField }.first { $0.stringValue == "New text rule" })
         sheet.makeFirstResponder(name)
         let editor = try XCTUnwrap(name.currentEditor() as? NSTextView)
         editor.selectAll(nil)
         editor.insertText("Created from the UI", replacementRange: NSRange(location: NSNotFound, length: 0))
         sheet.makeFirstResponder(nil)
-        try await click(content, x: content.bounds.maxX - 48, top: content.bounds.height - 29)
+        try await click("Save", in: content)
         XCTAssertNil(window.attachedSheet, "Saving must dismiss the editor")
         let saved = try XCTUnwrap(store.load().rules.first, "The new rule must be persisted")
         XCTAssertEqual(saved.name, "Created from the UI")
-        XCTAssertEqual(saved.category, audio ? .audio : .text)
+        XCTAssertEqual(saved.category, .text)
         XCTAssertEqual(model.configuration.rules.count, 1)
     }
 
     private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
 
-    private func click(_ view: NSView, x: CGFloat, top: CGFloat) async throws {
-        let window = try XCTUnwrap(view.window)
-        let location = NSPoint(x: x, y: view.isFlipped ? top : view.bounds.height - top)
-        let target = view.hitTest(view.convert(location, to: view.superview))
+    /// Clicks the control labelled `label`, after checking that no window-drag area lies over it.
+    private func click(_ label: String, in view: NSView) async throws {
+        let element = try await AccessibleControls.require(label, in: view)
+        let frame = try AccessibleControls.frame(of: element, in: view)
+        let target = view.hitTest(view.convert(NSPoint(x: frame.midX, y: frame.midY), to: view.superview))
         XCTAssertFalse(target is WindowDragRegion.DragView, "Window dragging must not cover a control")
         guard !(target is WindowDragRegion.DragView) else { return }
-        let point = view.convert(location, to: nil)
-        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-            window.sendEvent(try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
-                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-                context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
-        }
-        try await Task.sleep(for: .milliseconds(150))
+        try await AccessibleControls.click(label, in: view)
     }
 }

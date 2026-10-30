@@ -6,7 +6,7 @@ import FrogCore
 
 @MainActor
 final class RuleEditorTests: XCTestCase {
-    func testModelSourceSwitcherInsideSheetAfterDeletingSelectedDownload() async throws {
+    func testModelPickerInsideSheetAfterDeletingSelectedDownload() async throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -38,19 +38,22 @@ final class RuleEditorTests: XCTestCase {
         XCTAssertNotNil(window.attachedSheet)
         try await model.deleteLocalModel(try XCTUnwrap(LocalModelDescriptor.find("whisper-base")))
         try await Task.sleep(for: .milliseconds(100))
-        for source in [false, true] {
+        // One list holds both kinds: first an external provider's speech model, then a downloaded one.
+        let parakeet = try XCTUnwrap(LocalModelDescriptor.find("parakeet-v3")).name
+        for local in [false, true] {
             let sheet = try XCTUnwrap(window.attachedSheet)
             let content = try XCTUnwrap(sheet.contentView)
-            try await click(content, x: content.bounds.maxX - 140, top: 162)
+            try await AccessibleControls.click("Speech model", role: .button, in: content)
             let popup = try XCTUnwrap(NSApplication.shared.windows.first { $0 != window && $0 != sheet && $0.isVisible })
-            let picker = try XCTUnwrap(popup.contentView)
-            try await click(picker, x: picker.bounds.midX + (source ? -95 : 95), top: 79)
-            try await click(picker, x: picker.bounds.midX, top: 130)
-            XCTAssertFalse(popup.isVisible, "The source switch must expose a selectable model")
-            try await click(content, x: content.bounds.maxX - 48, top: 431)
-            XCTAssertEqual(model.configuration.rules[0].action?.audioModelID, source ? "parakeet-v3" : "remote-speech")
-            XCTAssertEqual(model.configuration.rules[0].action?.audioProviderID, source ? nil : provider.id)
-            if !source {
+            let search = try XCTUnwrap(popup.firstResponder as? NSTextView, "The list opens with the cursor in its search field")
+            search.insertText(local ? parakeet : "remote-speech", replacementRange: NSRange(location: NSNotFound, length: 0))
+            try await Task.sleep(for: .milliseconds(100))
+            try await press(popup, key: 36, characters: "\r")
+            XCTAssertFalse(popup.isVisible, "The picker must still offer a selectable model")
+            try await AccessibleControls.click("Save", in: content)
+            XCTAssertEqual(model.configuration.rules[0].action?.audioModelID, local ? "parakeet-v3" : "remote-speech")
+            XCTAssertEqual(model.configuration.rules[0].action?.audioProviderID, local ? nil : provider.id)
+            if !local {
                 rule = model.configuration.rules[0]
                 presented = true
                 host.rootView = Color.clear.frame(width: 720, height: 600)
@@ -108,12 +111,12 @@ final class RuleEditorTests: XCTestCase {
 
     private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
 
-    private func click(_ view: NSView, x: CGFloat, top: CGFloat) async throws {
-        let window = try XCTUnwrap(view.window)
-        let point = view.convert(NSPoint(x: x, y: view.isFlipped ? top : view.bounds.height - top), to: nil)
-        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-            window.sendEvent(try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+    private func press(_ window: NSWindow, key: UInt16, characters: String) async throws {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            window.sendEvent(try XCTUnwrap(NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                            windowNumber: window.windowNumber, context: nil, characters: characters,
+                                                            charactersIgnoringModifiers: characters, isARepeat: false, keyCode: key)))
         }
-        try await Task.sleep(for: .milliseconds(100))
+        try await Task.sleep(for: .milliseconds(150))
     }
 }
