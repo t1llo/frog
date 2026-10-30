@@ -44,10 +44,10 @@ private struct ShortcutReferenceView: View {
 private struct ShortcutReferenceContent: View {
     let groups: ShortcutReferencePanel.Groups
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: FrogStyle.space16) {
             Text("Frog shortcuts").font(FrogType.section).accessibilityAddTraits(.isHeader)
             ForEach(groups, id: \.group) { section in
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: FrogStyle.space6) {
                     SectionCaption(text: section.group.title)
                     ForEach(section.items) { item in
                         HStack(spacing: 10) {
@@ -65,7 +65,7 @@ private struct ShortcutReferenceContent: View {
                 Text("No shortcuts yet. Give a Writing or Dictation action a shortcut, or add one in Shortcuts.")
                     .font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             }
-        }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
+        }.padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

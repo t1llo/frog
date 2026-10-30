@@ -92,12 +92,13 @@ struct WindowSwitcherOverlay: View {
 
     /// What has been typed to narrow the list; Backspace takes it back a character at a time.
     private var queryLine: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").font(FrogType.body).foregroundStyle(FrogStyle.muted)
+        // The magnifier as wide as a row icon, so the query starts where the window titles do.
+        HStack(spacing: FrogStyle.space12) {
+            Image(systemName: "magnifyingglass").font(FrogType.body).foregroundStyle(FrogStyle.muted).frame(width: 20)
             Text(model.query).font(FrogType.body).lineLimit(1).truncationMode(.head)
             Spacer(minLength: 8)
             KeyCap("⌫")
-        }.padding(.horizontal, 14).frame(height: WindowSwitcherLayout.queryLineHeight)
+        }.padding(.horizontal, FrogStyle.cardPadding).frame(height: WindowSwitcherLayout.queryLineHeight)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(L10n.text("Search"))
             .accessibilityValue(model.query)

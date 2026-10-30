@@ -122,8 +122,11 @@ struct StayAwakePopupRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                Label("Stay awake", systemImage: power.isEnabled ? "cup.and.saucer.fill" : "cup.and.saucer")
-                    .font(FrogType.bodyMedium).fixedSize()
+                // Icon and title placed as in the menu rows below, so their titles line up.
+                HStack(spacing: FrogStyle.space8) {
+                    Image(systemName: power.isEnabled ? "cup.and.saucer.fill" : "cup.and.saucer").frame(width: 16)
+                    Text("Stay awake").font(FrogType.bodyMedium)
+                }.fixedSize().accessibilityElement(children: .combine)
                 Spacer(minLength: 0)
                 if power.isBusy { ProgressView().controlSize(.mini) }
                 if power.isEnabled {
@@ -159,8 +162,8 @@ struct StayAwakePopupRow: View {
                     .foregroundStyle(power.error == nil ? FrogStyle.muted : FrogStyle.warning).lineLimit(2)
                     .help("Open Stay awake for details.")
             }
-        }.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-            .padding(.horizontal, 2).padding(.bottom, 4)
+        }.padding(FrogStyle.rowPadding).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+            .padding(.bottom, FrogStyle.space4)
             .task { await power.refresh() }
             .onChange(of: power.isEnabled) { _, _ in choosingDuration = false }
     }

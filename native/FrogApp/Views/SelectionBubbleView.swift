@@ -119,7 +119,7 @@ struct SelectionBubbleView: View {
     }
 
     private func listRow(_ item: BubbleItem) -> some View {
-        HStack(spacing: 9) {
+        HStack(spacing: FrogStyle.space8) {
             Image(systemName: item.symbol).font(.system(size: 11, weight: .medium))
                 .foregroundStyle(item.answers ? FrogStyle.accent : FrogStyle.muted)
                 .frame(width: 22, height: 22)
