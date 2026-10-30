@@ -12,107 +12,82 @@ struct PreferencesView: View {
     private var prefs: WorkflowPreferences { model.configuration.preferences.workflowSettings }
     var body: some View {
         ScrollViewReader { proxy in
-        PageScroll {
-            PageHeader(title: "Settings")
-            SettingsSection(title: "General") {
-                CompactRow(title: "Setup assistant") {
-                    Button("Open setup…") { model.showSetup() }
-                }
-                CompactRow(title: "Start at login") { Toggle("Start at login", isOn: Binding(get: { model.startAtLogin }, set: model.setStartAtLogin)).labelsHidden() }
+        FrogPage {
+            FrogPageHeader(title: "Settings")
+            FrogSection("General") {
+                FrogRow("Start at login") { Toggle("Start at login", isOn: Binding(get: { model.startAtLogin }, set: model.setStartAtLogin)).labelsHidden() }
                 if model.loginNeedsAttention {
-                    HStack(spacing: 8) {
-                        Text(model.loginStatus).font(FrogType.caption).foregroundStyle(FrogStyle.warning).fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 8)
-                        Button("Open Login Items") { LoginService.openLoginItems() }
-                    }
+                    FrogRow(model.loginStatus) { Button("Open Login Items") { LoginService.openLoginItems() } }
                 }
-                CompactRow(title: "Writing indicator") { Toggle("Writing indicator", isOn: preference(\.showProcessingIndicator)).labelsHidden() }
-                CompactRow(title: "Show rule shortcuts", detail: "Hold to see your rules.") {
+                FrogRow("Writing indicator") { Toggle("Writing indicator", isOn: preference(\.showProcessingIndicator)).labelsHidden() }
+                FrogRow("Show rule shortcuts", caption: "Hold to see your rules.") {
                     HotkeyRecorder(hotkey: Binding(get: { prefs.shortcutPanelHotkey }, set: { value in update { $0.shortcutPanelHotkey = value } }))
                 }
-                if let issue = model.hotkeyErrors[AppModel.shortcutPanelID] { Text(issue).font(FrogType.caption).foregroundStyle(FrogStyle.warning) }
-                CompactRow(title: "Statistics") {
-                    Button("View statistics") { model.toolkit.select(.statistics) }
-                }
+                if let issue = model.hotkeyErrors[AppModel.shortcutPanelID] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
+                FrogRow("Setup") { Button("Open…") { model.showSetup() } }
+                FrogRow("Statistics") { Button("View") { model.toolkit.select(.statistics) } }
             }
             SettingsSection(title: "Appearance") { AppearanceSettingsView(model: model) }
-            SettingsSection(title: "Permissions") {
+            FrogSection("Permissions") {
                 permission("Accessibility", allowed: model.accessibilityGranted) { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() }
                 permission("Microphone", allowed: DictationController.microphoneGranted) {
                     Task { if !DictationController.microphoneGranted { _ = await DictationController.requestMicrophone() }; DictationController.openMicrophoneSettings(); model.objectWillChange.send() }
                 }
             }.id("permissions")
             AgentSettingsView(server: model.agentServer)
-            SettingsSection(title: "History") {
-                CompactRow(title: "Save history on this Mac") { Toggle("Save history on this Mac", isOn: preference(\.historyEnabled)).labelsHidden() }
-                CompactRow(title: "Hide history text", detail: "Masked until you reveal it.") {
+            FrogSection("History") {
+                FrogRow("Save history on this Mac") { Toggle("Save history on this Mac", isOn: preference(\.historyEnabled)).labelsHidden() }
+                FrogRow("Hide history text", caption: "Masked until you reveal it.") {
                     Toggle("Hide history text", isOn: preference(\.hideHistoryText)).labelsHidden()
                 }
                 HistoryLimitsView(model: model)
-                Text(model.historyFileURL.path).font(FrogType.caption).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
             }
-            SettingsSection(title: "Configuration") {
-                CompactRow(title: "Configuration file", detail: "Edit, save, then Reload.") {
-                    HStack {
-                        Button("Open config") { model.openConfiguration() }
-                        Button("Reload") { do { try model.reloadConfiguration() } catch { model.report(error) } }
-                            .disabled(model.isProcessing || model.isTestingProvider || model.dictating)
+            FrogSection("Settings file") {
+                FrogRow("config.toml", caption: "Changes apply when you save.") {
+                    HStack(spacing: 8) {
+                        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.settingsFile.fileURL]) }
+                            .buttonStyle(.frog(.ghost))
+                        Button("Open") { openSettingsFile() }
                     }
                 }
-                HStack(spacing: 8) {
-                    Text(model.configurationFileURL.path).font(FrogType.caption).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
-                    Spacer(minLength: 8)
-                    Button("Show configuration folder") { NSWorkspace.shared.activateFileViewerSelecting([model.configurationFileURL]) }
-                        .buttonStyle(.frog(.ghost))
-                }
-                CompactRow(title: "Import / export", detail: "API keys stay in Keychain.") {
-                    HStack {
+                FrogRow("Import or export", caption: "API keys stay in Keychain.") {
+                    HStack(spacing: 8) {
                         Button("Import…") { chooseConfiguration() }.disabled(model.isProcessing || model.isTestingProvider || model.dictating)
                         Button("Export…") { exportConfiguration() }
                     }
                 }
             }
             SettingsSection(title: "Updates") { UpdateSettingsView() }
-            SettingsSection(title: "Logs") {
-                HStack {
-                    CopyAction(title: "Copy log", labeled: true) {
-                        ViewActions.copy(model.recentErrors.map { "\($0.timestamp.ISO8601Format())  \($0.message)" }.joined(separator: "\n"))
+            FrogSection("Errors") {
+                FrogRow(model.recentErrors.isEmpty ? "None recorded" : "\(model.recentErrors.count) recorded") {
+                    if !model.recentErrors.isEmpty {
+                        HStack(spacing: 8) {
+                            Button("Clear") { model.clearRecentErrors() }.buttonStyle(.frog(.ghost))
+                            CopyAction(title: "Copy log", labeled: true) {
+                                ViewActions.copy(model.recentErrors.map { "\($0.timestamp.ISO8601Format())  \($0.message)" }.joined(separator: "\n"))
+                            }
+                        }
                     }
-                    Spacer()
-                    Button("Clear log") { model.clearRecentErrors() }.buttonStyle(.frog(.destructive))
-                }.disabled(model.recentErrors.isEmpty)
-                DisclosureGroup("Recent errors (\(model.recentErrors.count))") {
-                    if model.recentErrors.isEmpty {
-                        Text("No errors recorded.").font(FrogType.small).foregroundStyle(FrogStyle.muted).padding(.vertical, 8)
-                    } else {
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 10) {
-                                ForEach(model.recentErrors) { issue in
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        HStack {
-                                            Text(issue.timestamp.formatted(date: .omitted, time: .standard))
-                                                .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                                            Spacer()
-                                            CopyAction(title: "Copy error") { ViewActions.copy("\(issue.timestamp.ISO8601Format())  \(issue.message)") }
-                                        }
-                                        Text(issue.message).font(FrogType.small).textSelection(.enabled)
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }.frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                            }.padding(.vertical, 8).minimalScrollbars()
-                        }.frame(maxHeight: 200)
-                    }
-                }.font(FrogType.body)
-            }
-            SettingsSection(title: "About") {
-                CompactRow(title: "Frog") { Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")").font(FrogType.body).foregroundStyle(FrogStyle.muted) }
-                CompactRow(title: "Source code") { Link("GitHub ↗", destination: URL(string: "https://github.com/t1llo/frog")!) }
-                ForEach(LegalDocument.allCases.filter { $0.url() != nil }) { document in
-                    CompactRow(title: document.title, detail: document.summary) { Button("View") { legalDocument = document } }
                 }
-                CompactRow(title: "Made by Tillo") { Link("beffa.xyz ↗", destination: URL(string: "https://beffa.xyz")!) }
-                CompactRow(title: "Contact") { Link("frog@beffa.xyz", destination: URL(string: "mailto:frog@beffa.xyz")!) }
-                Text("Build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                ForEach(model.recentErrors.suffix(5).reversed()) { issue in
+                    FrogRow(issue.message, caption: issue.timestamp.formatted(date: .abbreviated, time: .shortened)) {
+                        CopyAction(title: "Copy error") { ViewActions.copy("\(issue.timestamp.ISO8601Format())  \(issue.message)") }
+                    }.textSelection(.enabled)
+                }
+            }
+            FrogSection("About") {
+                FrogRow("Frog \(Self.version)", caption: "Build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")") {
+                    Link("Source code ↗", destination: URL(string: "https://github.com/t1llo/frog")!)
+                }
+                ForEach(LegalDocument.allCases.filter { $0.url() != nil }) { document in
+                    FrogRow(document.title) { Button("View") { legalDocument = document }.buttonStyle(.frog(.ghost)) }
+                }
+                FrogRow("Made by Tillo") {
+                    HStack(spacing: 12) {
+                        Link("frog@beffa.xyz", destination: URL(string: "mailto:frog@beffa.xyz")!)
+                        Link("beffa.xyz ↗", destination: URL(string: "https://beffa.xyz")!)
+                    }
+                }
             }.sheet(item: $legalDocument) { LegalDocumentView(document: $0) }
         }.toggleStyle(.switch).controlSize(.small)
             .onAppear { model.refreshSystemStatus(forceLoginStatus: true) }
@@ -128,8 +103,15 @@ struct PreferencesView: View {
             } message: { Text("The current settings are backed up. Provider keys may need to be re-entered.") }
         }
     }
+    private static var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0" }
+    /// Opens config.toml, which Frog writes at its first start, in the app the user picked for it, or TextEdit.
+    private func openSettingsFile() {
+        let url = model.settingsFile.fileURL
+        let editor = NSWorkspace.shared.urlForApplication(toOpen: url) ?? URL(fileURLWithPath: "/System/Applications/TextEdit.app")
+        NSWorkspace.shared.open([url], withApplicationAt: editor, configuration: NSWorkspace.OpenConfiguration())
+    }
     private func permission(_ title: String, allowed: Bool, action: @escaping () -> Void) -> some View {
-        CompactRow(title: title) {
+        FrogRow(title) {
             HStack(spacing: 10) {
                 Label(allowed ? "Allowed" : "Permission needed", systemImage: allowed ? "checkmark.circle.fill" : "exclamationmark.circle")
                     .font(FrogType.small).foregroundStyle(allowed ? FrogStyle.accent : FrogStyle.warning)

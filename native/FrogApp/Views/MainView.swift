@@ -56,7 +56,7 @@ struct MainView: View {
                         HStack(alignment: .center, spacing: 10) {
                             Image(systemName: "exclamationmark.circle.fill").foregroundStyle(FrogStyle.critical)
                             Text(error).font(FrogType.body).textSelection(.enabled)
-                                .lineLimit(3).help("Full details are in Settings → Logs.")
+                                .lineLimit(3).help("Full details are in Settings → Errors.")
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             CopyAction(title: "Copy error") { ViewActions.copy(error) }
                             IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)

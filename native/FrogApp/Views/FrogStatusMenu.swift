@@ -48,7 +48,7 @@ struct FrogStatusMenu: View {
                 if let error = model.errorMessage {
                     HStack(alignment: .top) {
                         Text(String(error.prefix(500))).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
-                            .lineLimit(3).help("Full details are in Settings → Logs.")
+                            .lineLimit(3).help("Full details are in Settings → Errors.")
                         Spacer(minLength: 0)
                         IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)
                     }.padding(8)
