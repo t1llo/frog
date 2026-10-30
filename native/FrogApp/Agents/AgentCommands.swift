@@ -6,11 +6,11 @@ import FrogCore
 /// file per area (`AgentCommands+Core.swift` and its siblings); `all` lists them in the order
 /// `frog help` shows them.
 @MainActor enum AgentCommands {
-    static var all: [AgentCommand] { core + windows + tools + plugins }
+    static var all: [AgentCommand] { core + actions + windows + tools + plugins }
 
     /// The heading each command's first word is listed under in `frog help`.
     static let groups: [String: String] = [
-        "status": "Frog", "version": "Frog", "features": "Frog", "open": "Frog",
+        "status": "Frog", "version": "Frog", "features": "Frog", "open": "Frog", "actions": "Actions", "run": "Actions",
         "windows": "Windows", "apps": "Windows",
         "scripts": "Scripts", "notes": "Notes",
         "clipboard": "Clipboard", "rules": "Writing rules", "awake": "Stay awake",
@@ -83,6 +83,10 @@ import FrogCore
                 guard index < tokens.count else { throw AgentCommandError.usage("--\(body) needs a value. Usage: \(command.usage)") }
                 options[String(body)] = tokens[index]
                 index += 1
+            } else if command.anyOption {
+                // `--name value`, or `--name` alone as true when no value follows.
+                if index < tokens.count, !tokens[index].hasPrefix("--") { options[String(body)] = tokens[index]; index += 1 }
+                else { options[String(body)] = "true" }
             } else {
                 throw unknownOption(String(body), command)
             }

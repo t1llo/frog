@@ -129,6 +129,35 @@ final class AppModel: ObservableObject {
         guard configuration.preferences.featureEnabled(.plugins), let pluginRuntime else { return [] }
         return pluginRuntime.items.filter { $0.runs && $0.hasPage }
     }
+    /// Every built-in plugin. Plugins still keep their switch in the feature preferences, and History in
+    /// `historyEnabled`, until each keeps its own config section.
+    lazy var pluginHost: PluginHost = {
+        let host = PluginHost(descriptors: BuiltinPlugins.all,
+                              isEnabled: { [unowned self] in self.pluginEnabled($0) },
+                              setEnabled: { [unowned self] in try await self.setPlugin($0, enabled: $1) })
+        host.attach { [unowned self, unowned host] in PluginContext(info: $0, host: host, legacy: self) }
+        host.openPage = { [unowned self] in self.openPluginPage($0) }
+        return host
+    }()
+    func pluginEnabled(_ id: String) -> Bool {
+        let preferences = configuration.preferences
+        if id == "history" { return preferences.historyEnabled }
+        return BuiltinPlugins.legacyFeatures[id].map(preferences.featureEnabled) ?? false
+    }
+    func setPlugin(_ id: String, enabled: Bool) async throws {
+        if id == "history" {
+            var preferences = configuration.preferences
+            preferences.historyEnabled = enabled
+            return try savePreferences(preferences)
+        }
+        guard let feature = BuiltinPlugins.legacyFeatures[id] else { throw ActionError.unknown(id) }
+        try await setFeature(feature, enabled: enabled)
+    }
+    func openPluginPage(_ id: String) {
+        if id == "history" { toolkit.select(.history) }
+        else if let feature = BuiltinPlugins.legacyFeatures[id] { toolkit.select(.feature(feature)) }
+        showSettings()
+    }
     var hasPendingDocumentWrites: Bool { documentsModel?.needsFlush == true }
     func flushDocuments() async -> Bool { await documentsModel?.flush() ?? true }
     private lazy var commandBar: CommandBar = {
@@ -501,6 +530,7 @@ final class AppModel: ObservableObject {
         configureAgentServer()
         configurePhone()
         configurePlugins()
+        pluginHost.sync()
     }
 
     func shutdown() {
@@ -779,7 +809,7 @@ final class AppModel: ObservableObject {
         configureWindowLayout()
         configureAgentServer()
         configurePhone()
-        if started { configurePlugins() }
+        if started { configurePlugins(); pluginHost.sync() }
     }
 
     private func configureWindowLayout() { windowLayout.configure(configuration, active: started && registerShortcuts) }

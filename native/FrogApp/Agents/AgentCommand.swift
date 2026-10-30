@@ -16,6 +16,8 @@ struct AgentCommand {
     var options: [String] = []
     /// Options that stand alone, without the leading "--".
     var flags: [String] = []
+    /// Takes any `--name value` option, for commands whose options come from elsewhere, such as an action's parameters.
+    var anyOption = false
     /// A feature that must be on; the command says how to turn it on otherwise.
     var feature: FeatureID?
     let run: @MainActor (AgentCall) async throws -> AgentResult
@@ -83,6 +85,12 @@ struct AgentResult {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .iso8601
         json = (try? encoder.encode(value)).flatMap { String(data: $0, encoding: .utf8) } ?? "null"
+    }
+
+    /// An answer whose JSON is already encoded, such as a plugin action's.
+    init(text: String, json: String) {
+        self.text = text
+        self.json = json
     }
 
     /// A command that did something and has nothing more to show.
