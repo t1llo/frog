@@ -14,11 +14,12 @@ struct ShortcutsSettingsView: View {
         let actions = bindings.indices.filter { bindings[$0].app == nil }
         FrogPage {
             FrogPageHeader(title: "Shortcuts", subtitle: "Keys that open apps and run actions from anywhere")
+            if let unreadable = plugin.unreadable { FrogRowNote(text: unreadable, tone: FrogStyle.warning) }
             FrogSection("Apps", accessory: { addApp }) {
                 if apps.isEmpty { FrogRowNote(text: catalog.scanned ? "Add an app, then record its keys." : "Looking for apps…") }
                 ForEach(apps, id: \.self) { index in
                     row(index) {
-                        if let url = bindings[index].app.flatMap(ShortcutsPlugin.applicationURL) {
+                        if let app = bindings[index].app, let url = ShortcutsPlugin.applicationURL(app, path: bindings[index].with["path"]) {
                             Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 20, height: 20)
                         } else {
                             Image(systemName: "questionmark.app").frame(width: 20, height: 20).foregroundStyle(FrogStyle.muted)
@@ -40,14 +41,11 @@ struct ShortcutsSettingsView: View {
 
     private func row<Icon: View>(_ index: Int, @ViewBuilder icon: () -> Icon) -> some View {
         let binding = plugin.bindings[index]
-        let issue = binding.key.flatMap { plugin.issues[$0] }
+        let issue = plugin.issue(at: index)
         return FrogRow(plugin.title(of: binding), caption: issue ?? caption(of: binding), icon: icon) {
             HStack(spacing: 6) {
                 HotkeyRecorder(hotkey: Binding(get: { binding.key?.hotkey }, set: { hotkey in
-                    var next = plugin.bindings
-                    guard next.indices.contains(index) else { return }
-                    next[index].key = hotkey.flatMap { try? Shortcut($0) }
-                    save(next)
+                    do { try plugin.setKey(hotkey.flatMap { try? Shortcut($0) }, at: index) } catch { model.report(error) }
                 }), showsClearButton: false)
                 Button { save(plugin.bindings.enumerated().filter { $0.offset != index }.map(\.element)) } label: {
                     Image(systemName: "minus")
@@ -80,7 +78,9 @@ struct ShortcutsSettingsView: View {
                             emptyMessage: "Looking for apps…",
                             item: { path in FrogDropdownItem(path.flatMap { byPath[$0]?.name } ?? "") }) { path in
             guard let path, let rule = byPath[path] else { return }
-            save(plugin.bindings + [ShortcutBinding(key: nil, action: ShortcutBinding.openApp, with: ["app": rule.action?.applicationBundleID ?? path])])
+            // The path tells apart copies that share a bundle ID, such as Xcode and Xcode-beta.
+            let with = rule.action?.applicationBundleID.map { ["app": $0, "path": path] } ?? ["app": path]
+            save(plugin.bindings + [ShortcutBinding(key: nil, action: ShortcutBinding.openApp, with: with)])
         }
     }
 

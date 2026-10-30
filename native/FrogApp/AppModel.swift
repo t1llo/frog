@@ -668,6 +668,7 @@ final class AppModel: ObservableObject {
     }
 
     private func applyConfiguration(_ candidate: Configuration) {
+        let previous = configuration
         configuration = candidate
         toolkit.apply(candidate.preferences)
         // Turning the switch or the Command bar off, here or in the configuration file, forgets what was learned.
@@ -677,6 +678,8 @@ final class AppModel: ObservableObject {
         if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
         configureWindowLayout()
         configureAgentServer()
+        // `frog config set shortcut.command-bar` and imports still write the old preferences.
+        CommandBarPlugin.adoptLegacy(self, previous: previous.preferences)
         if started { pluginHost.sync() }
     }
 
@@ -717,6 +720,9 @@ final class AppModel: ObservableObject {
         if rule.enabled, let hotkey = rule.hotkey,
            let conflict = configuration.rules.first(where: { $0.id != rule.id && $0.enabled && $0.hotkey == hotkey }) {
             throw FrogError.message("That hotkey is already assigned to \(conflict.name).")
+        }
+        if rule.enabled, let hotkey = rule.hotkey, let owner = pluginShortcuts.first(where: { $0.value.hotkey == hotkey })?.value.name {
+            throw FrogError.message("That hotkey is already assigned to \(owner).")
         }
         rule = configuration.reconcilingModels(in: rule, installed: localModels.installed)
         var candidate = configuration
@@ -949,7 +955,7 @@ final class AppModel: ObservableObject {
 
     /// Gives every window layout and command without a shortcut the suggested one, where it is free.
     func applySuggestedWindowShortcuts() throws -> WindowShortcutScheme.Result {
-        let taken = WindowSwitcherPlugin.chords(configuration.preferences)
+        let taken = WindowSwitcherPlugin.chords(configuration.preferences).union(pluginShortcuts.values.map(\.hotkey))
         let result = WindowShortcutScheme.apply(to: configuration, groups: [.simple], taken: taken)
         guard !result.added.isEmpty else { return result }
         for key in Set(WindowShortcutScheme.actions.values).union(WindowShortcutScheme.commands.values) {
@@ -1133,6 +1139,41 @@ final class AppModel: ObservableObject {
         if let hotkey { pluginShortcuts[id] = (name, hotkey, action) } else { pluginShortcuts[id] = nil }
         if previous != hotkey || hotkeyErrors[id] != nil { registerHotkeys() }
         return hotkeyErrors[id]
+    }
+
+    /// Replaces the plugin shortcuts `owned` held with `shortcuts`, registering once. A plugin with many keys,
+    /// such as Shortcuts, uses it instead of one `setPluginShortcut` per key. Returns why keys failed, by ID.
+    @discardableResult
+    func setPluginShortcuts(replacing owned: Set<UUID>, with shortcuts: [UUID: (name: String, hotkey: Hotkey, action: () -> Void)]) -> [UUID: String] {
+        var changed = false
+        for id in owned where shortcuts[id] == nil {
+            if pluginShortcuts.removeValue(forKey: id) != nil { changed = true }
+        }
+        for (id, shortcut) in shortcuts {
+            if pluginShortcuts[id]?.hotkey != shortcut.hotkey || hotkeyErrors[id] != nil { changed = true }
+            pluginShortcuts[id] = shortcut
+        }
+        if changed { registerHotkeys(); configureWindowSwitcher() }
+        return hotkeyErrors.filter { shortcuts[$0.key] != nil }
+    }
+
+    /// What already answers to `hotkey`: a rule or Frog shortcut registered here, a plugin's shortcut, or the
+    /// window switcher's chord. `except` are the asker's own keys. The one check the plugins' recorders and
+    /// `shortcuts.bind` make, since macOS would only say the key is taken.
+    func shortcutOwner(of hotkey: Hotkey, except: Set<UUID> = []) -> String? {
+        if let rule = Self.hotkeyRules(for: configuration).first(where: { !except.contains($0.id) && $0.enabled && $0.hotkey == hotkey }) {
+            return rule.action?.systemAction?.title ?? rule.name
+        }
+        if let plugin = pluginShortcuts.first(where: { !except.contains($0.key) && $0.value.hotkey == hotkey }) { return plugin.value.name }
+        if WindowSwitcherPlugin.chords(configuration.preferences).contains(hotkey) { return "Window switcher" }
+        return nil
+    }
+
+    /// `shortcutOwner` as the error a recorder shows.
+    func checkShortcutFree(_ hotkey: Hotkey, except: Set<UUID> = []) throws {
+        if let owner = shortcutOwner(of: hotkey, except: except) {
+            throw FrogError.message("\(HotkeyManager.display(hotkey)) is already used by \(owner).")
+        }
     }
 
     private func registerHotkeys() {
@@ -1405,9 +1446,16 @@ final class AppModel: ObservableObject {
     func cancelProcessing() { processingTask?.cancel(); status = "Cancelling…" }
 
     func showShortcuts() {
-        let items = ShortcutReference.items(configuration: configuration, ruleEnabled: configuration.preferences.ruleFeatureEnabled,
-                                            extraRules: WindowSwitches(configuration.preferences).shortcutRules,
+        let preferences = configuration.preferences
+        // App and Mac command keys are the Shortcuts plugin's bindings now, listed with the other plugins' keys.
+        var items = ShortcutReference.items(configuration: configuration,
+                                            ruleEnabled: { preferences.ruleFeatureEnabled($0) && ![.application, .system].contains($0.category) },
+                                            extraRules: WindowSwitches(preferences).shortcutRules,
                                             answersInPanel: \.isExplainRule)
+        let listed = Set(items.map(\.hotkey))
+        for (id, shortcut) in pluginShortcuts.sorted(by: { $0.value.name < $1.value.name }) where !listed.contains(shortcut.hotkey) {
+            items.append(ShortcutReferenceItem(id: id.uuidString, title: shortcut.name, hotkey: shortcut.hotkey, group: .shortcuts))
+        }
         shortcutPanel.show(groups: ShortcutReference.grouped(items))
     }
 

@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 import SwiftUI
 import FrogCore
 
@@ -26,14 +25,19 @@ struct ShortcutsSettings: ConfigSection {
         "bindings": "key, the action to run (`frog actions` lists them) and its parameters in `with`."
     ]
 
-    /// The app and Mac command shortcuts the rules held before this table existed.
+    /// The app and Mac command shortcuts the rules held before this table existed. A rule that was off, or had
+    /// no key Frog can write, keeps its app or command without a key.
     static func seed(from rules: [Rule]) -> [ShortcutBinding] {
         rules.compactMap { rule in
-            guard rule.enabled, let hotkey = rule.hotkey, let key = try? Shortcut(hotkey) else { return nil }
+            let key = rule.enabled ? rule.hotkey.flatMap { try? Shortcut($0) } : nil
             switch rule.category {
             case .application:
-                guard let app = rule.action?.applicationBundleID ?? rule.action?.applicationPath else { return nil }
-                return ShortcutBinding(key: key, action: ShortcutBinding.openApp, with: ["app": app])
+                let path = rule.action?.applicationPath, bundleID = rule.action?.applicationBundleID
+                guard let app = bundleID ?? path else { return nil }
+                // The path tells apart copies that share a bundle ID, such as Xcode and Xcode-beta.
+                var with = ["app": app]
+                if bundleID != nil, let path { with["path"] = path }
+                return ShortcutBinding(key: key, action: ShortcutBinding.openApp, with: with)
             case .system:
                 guard let command = rule.action?.systemAction else { return nil }
                 return ShortcutBinding(key: key, action: ShortcutBinding.system, with: ["command": command.rawValue])
@@ -43,32 +47,29 @@ struct ShortcutsSettings: ConfigSection {
     }
 }
 
-/// Global shortcuts that open apps or run any plugin action. They are registered while the plugin runs and let
-/// go while a shortcut is being recorded elsewhere in Frog.
+/// Global shortcuts that open apps or run any plugin action. They register through Frog's own shortcuts, so
+/// recording a shortcut anywhere lets them go and the end of recording brings back the latest bindings.
 final class ShortcutsPlugin: LegacyPlugin, FrogPlugin {
     static let info = PluginInfo(id: "shortcuts", name: "Shortcuts", symbol: "command", tint: .blue, category: .navigate,
                                  summary: "Keys that open apps and run actions", enabledByDefault: true, recommended: true)
 
     private(set) var bindings: [ShortcutBinding] = []
-    /// Why a binding's key could not be registered, by key.
-    private(set) var issues: [Shortcut: String] = [:]
-    private let hotkeys = HotkeyManager()
-    private var registered: [UUID: ShortcutBinding] = [:]
-    private var recording: AnyCancellable?
+    /// The registration ID of each binding, in the same order; kept for a binding that did not change.
+    private(set) var ids: [UUID] = []
+    /// Set when `[shortcuts]` could not be read: the bindings are the last good ones, and nothing is saved over the table.
+    private(set) var unreadable: String?
+    /// The IDs this plugin has registered with Frog's shortcuts.
+    private var registered = Set<UUID>()
     private var running: Task<Void, Never>?
     private lazy var systemRows = SystemCommandRows { [weak self] in self?.runSystem($0) }
 
     func start() async {
         load()
-        recording = model.$isRecordingShortcut.dropFirst().removeDuplicates().sink { [weak self] recording in
-            if recording { self?.hotkeys.unregister() } else { self?.register() }
-        }
         register()
     }
 
     func stop() async {
-        recording = nil
-        hotkeys.unregister(); registered = [:]
+        model.setPluginShortcuts(replacing: registered, with: [:]); registered = []
         running?.cancel(); running = nil
     }
 
@@ -82,28 +83,71 @@ final class ShortcutsPlugin: LegacyPlugin, FrogPlugin {
 
     // MARK: Bindings
 
+    /// Why the binding at `index` could not be registered.
+    func issue(at index: Int) -> String? { ids.indices.contains(index) ? model.hotkeyErrors[ids[index]] : nil }
+
+    /// Reads `[shortcuts]`. Only a config.toml without `bindings` is seeded from the old app rules, and not while
+    /// Frog's settings could not be loaded; a table that does not decode keeps the bindings Frog has.
     private func load() {
-        var settings = context.settings(ShortcutsSettings.self)
-        if settings.bindings == nil {
-            settings.bindings = ShortcutsSettings.seed(from: model.configuration.rules)
-            do { try context.save(settings) } catch { context.report(error) }
+        let file = model.settingsFile
+        if file.document.value(at: [info.id, "bindings"]) == nil {
+            let seeded = ShortcutsSettings.seed(from: model.configuration.rules)
+            if model.configurationLoaded {
+                var settings = ShortcutsSettings(); settings.bindings = seeded
+                do { try context.save(settings) } catch { context.report(error) }
+            }
+            adopt(seeded); unreadable = nil
+            return
         }
-        bindings = settings.bindings ?? []
+        do {
+            let result = try file.section(info.id, as: ShortcutsSettings.self)
+            for warning in result.warnings { context.report(FrogError.message("config.toml line \(warning.line): \(warning.message)")) }
+            adopt(result.value.bindings ?? []); unreadable = nil
+        } catch {
+            unreadable = "config.toml [shortcuts] could not be read, so the shortcuts are the last ones that could: \(error.localizedDescription)"
+            context.report(error)
+        }
     }
 
-    /// Replaces the bindings and saves them. A key bound twice keeps its last binding.
+    private func adopt(_ next: [ShortcutBinding]) {
+        var free = Dictionary(grouping: zip(bindings, ids), by: \.0).mapValues { $0.map(\.1) }
+        ids = next.map { binding in
+            guard var reused = free[binding], !reused.isEmpty else { return UUID() }
+            let id = reused.removeFirst(); free[binding] = reused
+            return id
+        }
+        bindings = next
+    }
+
+    /// Replaces the bindings and saves them. A key may be bound once; `setKey` moves a key from one binding to another.
     func save(_ next: [ShortcutBinding]) throws {
-        var seen = Set<Shortcut>()
-        let unique = next.reversed().filter { binding in binding.key.map { seen.insert($0).inserted } ?? true }.reversed()
+        let keys = next.compactMap(\.key)
+        if let twice = keys.first(where: { key in keys.filter { $0 == key }.count > 1 }) {
+            throw FrogError.message("\(HotkeyManager.display(twice.hotkey)) is bound twice.")
+        }
         var settings = ShortcutsSettings()
-        settings.bindings = Array(unique)
+        settings.bindings = next
         try context.save(settings)
-        bindings = settings.bindings ?? []
+        adopt(next); unreadable = nil
         register()
         model.objectWillChange.send()
     }
 
-    /// Binds `key` to `action`, replacing what the key ran before.
+    /// Gives the binding at `index` a key. A key another binding had moves here and leaves that one without a
+    /// key; a key something else in Frog uses is refused.
+    func setKey(_ key: Shortcut?, at index: Int) throws {
+        guard bindings.indices.contains(index) else { return }
+        var next = bindings
+        if let key {
+            if let issue = HotkeyManager.validationError(key.hotkey) { throw FrogError.message(issue) }
+            try model.checkShortcutFree(key.hotkey, except: Set(ids))
+            for other in next.indices where other != index && next[other].key == key { next[other].key = nil }
+        }
+        next[index].key = key
+        try save(next)
+    }
+
+    /// Binds `key` to `action`, replacing what the key ran before. Checks the action's parameters as running it would.
     func bind(_ key: Shortcut, to action: String, with values: [String: String] = [:]) throws {
         guard let found = context.host.action(action) else { throw ActionError.unknown(action) }
         guard found.surfaces.contains(.shortcut) else { throw ActionError.failed("\(found.title) cannot run from a shortcut.") }
@@ -111,25 +155,45 @@ final class ShortcutsPlugin: LegacyPlugin, FrogPlugin {
         if let unknown = values.keys.first(where: { name in !found.parameters.contains { $0.name == name } }) {
             throw ActionError.failed("\(action) has no parameter “\(unknown)”.")
         }
+        let input = ActionInput(values: values, source: .shortcut)
+        for parameter in found.parameters where values[parameter.name] != nil {
+            switch parameter.kind {
+            case .integer: _ = try input.integer(parameter.name)
+            case .boolean: _ = try input.boolean(parameter.name)
+            case .choice(let options):
+                guard options.contains(values[parameter.name]!) else { throw ActionError.invalid(parameter.name, "one of \(options.joined(separator: ", "))") }
+            case .text: break
+            }
+        }
         if let issue = HotkeyManager.validationError(key.hotkey) { throw ActionError.failed(issue) }
+        try model.checkShortcutFree(key.hotkey, except: Set(ids))
         try save(bindings.filter { $0.key != key } + [ShortcutBinding(key: key, action: action, with: values)])
     }
 
     private func register() {
-        guard model.registerShortcuts, !model.isRecordingShortcut else { return }
-        registered = [:]
-        var rules: [Rule] = []
-        for binding in bindings {
+        var shortcuts: [UUID: (name: String, hotkey: Hotkey, action: () -> Void)] = [:]
+        for (binding, id) in zip(bindings, ids) {
             guard let key = binding.key else { continue }
-            let rule = Rule(id: UUID(), name: binding.action, hotkey: key.hotkey)
-            rules.append(rule); registered[rule.id] = binding
+            shortcuts[id] = (title(of: binding), key.hotkey, { [weak self] in self?.trigger(binding) })
         }
-        let errors = hotkeys.register(rules: rules, onPress: { [weak self] id in self?.trigger(id) }) { _ in }
-        issues = Dictionary(errors.compactMap { id, issue in registered[id]?.key.map { ($0, issue) } }, uniquingKeysWith: { first, _ in first })
+        model.setPluginShortcuts(replacing: registered, with: shortcuts)
+        registered = Set(shortcuts.keys)
     }
 
-    private func trigger(_ id: UUID) {
-        guard let binding = registered[id] else { return }
+    /// The app bindings with a key as app rules, for the window switcher's key badges.
+    var applicationRules: [Rule] {
+        zip(bindings, ids).compactMap { binding, id in
+            guard let key = binding.key, let app = binding.app else { return nil }
+            let url = Self.applicationURL(app, path: binding.with["path"])
+            guard let bundleID = url.flatMap({ Bundle(url: $0)?.bundleIdentifier }) ?? (app.contains(".") && !app.hasPrefix("/") ? app : nil) else { return nil }
+            var rule = Rule(id: id, name: title(of: binding), hotkey: key.hotkey)
+            rule.action = RuleAction(category: .application)
+            rule.action?.applicationBundleID = bundleID; rule.action?.applicationPath = url?.path
+            return rule
+        }
+    }
+
+    private func trigger(_ binding: ShortcutBinding) {
         running?.cancel()
         running = Task { [weak self, host = context.host] in
             do { _ = try await host.run(binding.action, ActionInput(values: binding.with, source: .shortcut)) }
@@ -142,13 +206,19 @@ final class ShortcutsPlugin: LegacyPlugin, FrogPlugin {
 
     /// What a binding shows: the app's or the action's name.
     func title(of binding: ShortcutBinding) -> String {
-        if let app = binding.app { return Self.applicationURL(app).map { FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "") } ?? app }
+        if let app = binding.app { return Self.applicationURL(app, path: binding.with["path"]).map { FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "") } ?? app }
         if binding.action == ShortcutBinding.system, let command = binding.with["command"].flatMap(SystemAction.init(rawValue:)) { return command.title }
         return context.host.action(binding.action)?.title ?? binding.action
     }
 
-    /// An app by path, bundle ID or name.
-    static func applicationURL(_ app: String) -> URL? {
+    /// An app by path, bundle ID or name. With `path`, the copy there while it is still the app `app` names,
+    /// otherwise the one the bundle ID finds: copies such as Xcode and Xcode-beta share an ID, and
+    /// `ApplicationLauncher.launch` picks between them the same way.
+    static func applicationURL(_ app: String, path: String? = nil) -> URL? {
+        if let path, FileManager.default.fileExists(atPath: path) {
+            let stored = URL(fileURLWithPath: path)
+            if Bundle(url: stored)?.bundleIdentifier == app || app == path { return stored }
+        }
         if app.hasPrefix("/") { return FileManager.default.fileExists(atPath: app) ? URL(fileURLWithPath: app) : nil }
         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app) { return url }
         let name = app.hasSuffix(".app") ? app : app + ".app"
@@ -168,10 +238,11 @@ final class ShortcutsPlugin: LegacyPlugin, FrogPlugin {
     var actions: [PluginAction] {
         [
             PluginAction(id: ShortcutBinding.openApp, title: "Open an app", symbol: "app",
-                         parameters: [ActionParameter(name: "app", required: true, help: "The app's name, bundle ID or path")],
+                         parameters: [ActionParameter(name: "app", required: true, help: "The app's name, bundle ID or path"),
+                                      ActionParameter(name: "path", help: "Which copy, when several share the bundle ID")],
                          surfaces: [.agent, .shortcut]) { input in
                 let name = try input.required("app")
-                guard let url = Self.applicationURL(name) else { throw ActionError.failed("No app named \(name).") }
+                guard let url = Self.applicationURL(name, path: input.value("path")) else { throw ActionError.failed("No app named \(name).") }
                 try await ApplicationLauncher().open(url)
                 return .done("Opened \(url.deletingPathExtension().lastPathComponent).")
             },

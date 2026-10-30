@@ -67,6 +67,10 @@ import SwiftUI
     /// The providers of this open, and the rows each gave last.
     private var providers: [any CommandBarRowProviding] = []
     private var providerRows: [ObjectIdentifier: [CommandBarRow]] = [:]
+    /// False for a bar that never shows, such as `command-bar.search`'s: it lists the plugins' rows as they are
+    /// but never opens or closes their providers, which the visible bar shares.
+    var opensPluginProviders = true
+    private var pluginProviders = Set<ObjectIdentifier>()
     private var context: CommandBarContext?
 
     /// The catalogue: every provider's rows, a row listed twice in the place it was first listed.
@@ -243,7 +247,9 @@ import SwiftUI
                 guard let self else { return false }
                 if event.type != .keyDown { if event.window !== self.panel { self.hide() }; return false }
                 guard event.window === self.panel else { return false }
-                if event.keyCode == 51, self.argument != nil, self.query.isEmpty { self.leaveArgument(); return true }
+                // Backspace in an empty prompt goes back, unless an input method is composing there.
+                if event.keyCode == 51, self.argument != nil, self.query.isEmpty,
+                   (self.panel?.firstResponder as? NSTextInputClient)?.hasMarkedText() != true { self.leaveArgument(); return true }
                 guard Self.handlesKey(event.keyCode, firstResponder: self.panel?.firstResponder) else { return false }
                 switch event.keyCode {
                 case 53: if self.argument != nil { self.leaveArgument() } else { self.hide() }; return true
@@ -302,13 +308,17 @@ import SwiftUI
         selectionWasMoved = false
         addPickedFiles()
         for file in recentFiles { addFile(file) }
-        providers = builtin + model.pluginHost.commandBarProviders + [clipboardRows, macSettings, documentRows]
+        let shared = model.pluginHost.commandBarProviders
+        pluginProviders = opensPluginProviders ? [] : Set(shared.map { ObjectIdentifier($0) })
+        providers = builtin + shared + [clipboardRows, macSettings, documentRows]
         providerRows = [:]
-        for provider in providers {
+        for provider in providers where !pluginProviders.contains(ObjectIdentifier(provider)) {
             provider.open(in: context) { [weak self, weak provider] in
                 guard let self, let provider else { return }
                 self.reload(provider)
             }
+        }
+        for provider in providers {
             providerRows[ObjectIdentifier(provider)] = provider.rows(in: context)
         }
         rebuildCatalogue()
@@ -347,7 +357,7 @@ import SwiftUI
         showsPositionReset = false
         generation = UUID(); delivery?.cancel(); delivery = nil
         for load in iconLoads.values { load.task.cancel() }; iconLoads = [:]
-        for provider in providers { provider.close() }
+        for provider in providers where !pluginProviders.contains(ObjectIdentifier(provider)) { provider.close() }
         providers = []; providerRows = [:]
         fileRevision += 1
         fileSearch.stop()
