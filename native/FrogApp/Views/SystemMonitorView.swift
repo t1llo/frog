@@ -1,50 +1,73 @@
 import Charts
 import SwiftUI
 
-enum SystemMonitorMenuTab: String, CaseIterable, Identifiable {
-    case frog = "Frog"
-    case system = "System"
-    var id: Self { self }
-}
-
-struct SystemMonitorMenuSelector: View {
-    @Binding var selection: SystemMonitorMenuTab
-
-    var body: some View {
-        CompactSegments(values: SystemMonitorMenuTab.allCases, selected: selection, width: 132, compact: true, title: { $0.rawValue }) { selection = $0 }
-            .accessibilityElement(children: .contain).accessibilityLabel("Menu view")
-    }
-}
-
+/// The overview wherever it shows; it says when it is on screen, so sampling runs only then.
 struct SystemMonitorView: View {
     @ObservedObject var monitor: SystemMonitor
     let presenter: SystemMonitorPresenter
+    var wide = false
 
     var body: some View {
-        SystemMonitorOverview(snapshot: monitor.snapshot, history: monitor.history)
+        SystemMonitorOverview(snapshot: monitor.snapshot, history: monitor.history, wide: wide)
             .background(FeatureVisibility { monitor.setPresented($0, for: presenter) })
     }
 }
 
-/// System monitor's own page: the overview at full width, then the menu-bar item's settings.
+/// System monitor's page: the overview, then the menu-bar item.
 struct SystemMonitorPage: View {
-    @ObservedObject var monitor: SystemMonitor
+    @ObservedObject var plugin: SystemMonitorPlugin
+    let monitor: SystemMonitor
 
     var body: some View {
-        PageScroll {
-            PageHeader(title: "System monitor")
-            SystemMonitorOverview(snapshot: monitor.snapshot, history: monitor.history, wide: true)
-            SystemMonitorMenuBarSettings()
-        }.background(FeatureVisibility { monitor.setPresented($0, for: .page) })
+        FrogPage {
+            FrogPageHeader(title: "System monitor")
+            SystemMonitorView(monitor: monitor, presenter: .page, wide: true)
+            SystemMonitorMenuBarSection(settings: plugin.settings) { plugin.update($0) }
+        }
     }
 }
 
-/// Value-only content also makes synthetic native previews independent of the
-/// user's machine, settings, power source and current workload.
+/// The menu-bar item's switch, a preview and its looks.
+struct SystemMonitorMenuBarSection: View {
+    let settings: SystemMonitorSettings
+    let save: (SystemMonitorSettings) -> Void
+    /// What the preview shows, so every look can be judged on the same load.
+    static let sample = SystemMonitorReading(cpu: .value(0.42), gpu: .value(0.78), memory: .value(0.61))
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        FrogSection("Menu bar") {
+            FrogRow("Show in the menu bar") {
+                Toggle("Show in the menu bar", isOn: binding(\.menuBarItem)).labelsHidden().toggleStyle(.switch)
+            }
+            if settings.menuBarItem {
+                MenuBarPreviewStrip(image: MenuBarMeter.image(SystemMonitorStatusItemController.face(Self.sample, settings: settings, dark: scheme == .dark)))
+                    .padding(.vertical, 6)
+                FrogRow("Readings") {
+                    FrogDropdown(selection: binding(\.menuBarReadings), options: SystemMonitorSettings.Readings.allCases, width: 180) { $0.title }
+                }
+                FrogRow("Style") {
+                    FrogDropdown(selection: binding(\.menuBarStyle), options: MenuBarMeterStyle.allCases, width: 180) { $0.title }
+                }
+                FrogRow("Colors") {
+                    FrogDropdown(selection: binding(\.menuBarPalette), options: MenuBarMeterPalette.allCases, width: 180) { $0.title }
+                }
+            }
+        }
+    }
+
+    private func binding<Value>(_ key: WritableKeyPath<SystemMonitorSettings, Value>) -> Binding<Value> {
+        Binding(get: { settings[keyPath: key] }, set: { value in
+            var next = settings; next[keyPath: key] = value; save(next)
+        })
+    }
+}
+
+/// Value-only content, so previews and tests are independent of the Mac's own load and power.
 struct SystemMonitorOverview: View {
     let snapshot: SystemMonitorSnapshot
     var history: [SystemMonitorSample] = []
-    /// The page's layout: a taller graph, Disk and Power side by side.
+    /// The page's layout: a taller graph and larger figures.
     var wide = false
     /// Seconds from the newest sample to the moment under the pointer.
     @State private var inspected: Double?
@@ -59,10 +82,11 @@ struct SystemMonitorOverview: View {
         VStack(spacing: 6) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top, spacing: 8) {
-                    usage("CPU", color: FrogStyle.series, text: sample.map { percent($0.cpu) } ?? percent(snapshot.cpu))
+                    legend("CPU", color: FrogStyle.series, text: sample.map { percent($0.cpu) } ?? percent(snapshot.cpu))
                         .help("Busy time across all CPU cores.")
-                    usage("GPU", color: FrogStyle.seriesSecondary, text: sample.map { percent($0.gpu) } ?? percent(snapshot.gpu))
+                    legend("GPU", color: FrogStyle.seriesSecondary, text: sample.map { percent($0.gpu) } ?? percent(snapshot.gpu))
                         .help("The busiest GPU, when its driver reports it.")
+                    memory
                 }.overlay(alignment: .topTrailing) {
                     if let sample, let end = history.last?.time {
                         Text(GraphStyle.ago(end.timeIntervalSince(sample.time)))
@@ -71,85 +95,73 @@ struct SystemMonitorOverview: View {
                 }
                 SystemMonitorGraph(history: history, inspected: $inspected, sample: sample).frame(height: wide ? 150 : 54)
                 GraphAxis(leading: GraphStyle.ago(SystemMonitor.historyWindow), trailing: "Now")
-            }.modifier(card)
-            let cards = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 6)) : AnyLayout(VStackLayout(spacing: 6))
-            cards {
-            VStack(alignment: .leading, spacing: 6) {
-                heading("Disk", symbol: "internaldrive")
-                if let capacity = snapshot.diskCapacity {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(bytes(capacity.available)).font(GraphStyle.figure).monospacedDigit()
-                        Text("free").foregroundStyle(FrogStyle.muted)
-                        Spacer(minLength: 0)
-                        Text("of \(bytes(capacity.total))").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                    }
-                    meter(capacity.usedFraction, color: FrogStyle.level(capacity.usedFraction, warning: 0.85, critical: 0.95))
-                } else {
-                    Text("Capacity unavailable").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                }
-                HStack {
-                    Label(rate(snapshot.diskRead), systemImage: "arrow.down")
-                    Spacer(minLength: 4)
-                    Label(rate(snapshot.diskWrite), systemImage: "arrow.up")
-                }.font(FrogType.caption).monospacedDigit().foregroundStyle(FrogStyle.muted)
-            }.modifier(card)
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    heading("Power", symbol: "bolt")
-                    Spacer(minLength: 4)
-                    Text(snapshot.power.source).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                }
-                if let percent = snapshot.power.batteryPercent {
-                    HStack {
-                        Text("\(percent)%").font(GraphStyle.figure).monospacedDigit()
-                        Text(snapshot.power.charging ? "Charging" : "Battery charge")
-                            .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                        Spacer()
-                    }
-                    meter(Double(percent) / 100, color: snapshot.power.charging ? FrogStyle.good
-                        : percent <= 10 ? FrogStyle.critical : percent <= 20 ? FrogStyle.warning : FrogStyle.accent)
-                }
-                if let flow = snapshot.power.batteryFlow {
-                    detail(flow.title, value: flow.watts < 0.1 ? "<0.1 W" : flow.watts.formatted(.number.precision(.fractionLength(1))) + " W")
-                        .help("Power into or out of the battery, not the whole Mac.")
-                } else {
-                    detail("Battery power", value: "Unavailable")
-                }
-                detail("Thermal state", value: snapshot.power.thermal)
-                detail("Low Power Mode", value: snapshot.power.lowPower.map { $0 ? "On" : "Off" } ?? "Measuring…")
-            }.modifier(card)
-            }.fixedSize(horizontal: false, vertical: wide)
+            }.modifier(OverviewCard(wide: wide))
+            if let power = powerLine {
+                power.modifier(OverviewCard(wide: wide))
+            }
         }.padding(.horizontal, wide ? 0 : 2).padding(.bottom, wide ? 0 : 4)
             .accessibilityElement(children: .contain).accessibilityLabel("System overview")
     }
 
-    private var card: OverviewCard { OverviewCard(wide: wide) }
-
-    private func heading(_ title: String, symbol: String) -> some View {
-        Label(title, systemImage: symbol).font(FrogType.label)
+    private var memory: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Memory").font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
+            if let memory = snapshot.memory {
+                Text(percent(.value(memory.fraction))).font(GraphStyle.legendValue(page: wide)).monospacedDigit()
+                    .frame(height: wide ? 34 : 24, alignment: .leading)
+                meter(memory.fraction, color: FrogStyle.level(memory.fraction, warning: 0.8, critical: 0.92))
+            } else {
+                Text(percent(.measuring)).font(FrogType.small).frame(height: wide ? 34 : 24, alignment: .leading)
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            .help(snapshot.memory.map { "\(bytes($0.used)) of \(bytes($0.total)) in use" } ?? "")
     }
 
-    private func usage(_ title: String, color: Color, text: String) -> some View {
+    /// The battery, and the thermal state or Low Power Mode only while they say something.
+    private var powerLine: AnyView? {
+        let power = snapshot.power
+        var notes: [String] = []
+        if power.thermal != "Normal", power.thermal != "Unavailable" { notes.append(power.thermal) }
+        if power.lowPower == true { notes.append("Low Power Mode") }
+        guard power.batteryPercent != nil || !notes.isEmpty else { return nil }
+        return AnyView(VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Label("Battery", systemImage: power.charging ? "battery.100.bolt" : "battery.75").font(FrogType.label)
+                if let percent = power.batteryPercent {
+                    Text("\(percent)%").font(GraphStyle.figure).monospacedDigit()
+                }
+                Spacer(minLength: 4)
+                Text(([flowText].compactMap { $0 } + notes).joined(separator: " · "))
+                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                    .help("Power into or out of the battery, not the whole Mac.")
+            }
+            if let percent = power.batteryPercent {
+                meter(Double(percent) / 100, color: power.charging ? FrogStyle.good
+                      : percent <= 10 ? FrogStyle.critical : percent <= 20 ? FrogStyle.warning : FrogStyle.accent)
+            }
+        })
+    }
+
+    private var flowText: String? {
+        guard let flow = snapshot.power.batteryFlow else { return snapshot.power.charging ? "Charging" : nil }
+        let watts = flow.watts < 0.1 ? "<0.1 W" : flow.watts.formatted(.number.precision(.fractionLength(1))) + " W"
+        if case .charging = flow { return "Charging · " + watts }
+        return watts
+    }
+
+    private func legend(_ title: String, color: Color, text: String) -> some View {
         GraphLegend(color: color, title: title) {
             Text(text).font(text.hasSuffix("%") ? GraphStyle.legendValue(page: wide) : FrogType.small)
                 .monospacedDigit().frame(height: wide ? 34 : 24, alignment: .leading)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func meter(_ value: Double, color: Color = FrogStyle.accent) -> some View {
+    private func meter(_ value: Double, color: Color) -> some View {
         GeometryReader { geometry in
             Capsule().fill(FrogStyle.muted.opacity(0.15))
             Capsule().fill(color).frame(width: geometry.size.width * min(1, max(0, value)))
         }.frame(height: 4).accessibilityHidden(true)
-    }
-
-    private func detail(_ label: String, value: String) -> some View {
-        HStack {
-            Text(label).foregroundStyle(FrogStyle.muted)
-            Spacer(minLength: 6)
-            Text(value)
-        }.font(FrogType.caption)
     }
 
     private func percent(_ metric: SystemMonitorMetric) -> String {
@@ -166,24 +178,16 @@ struct SystemMonitorOverview: View {
     }
 
     private func bytes(_ count: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: count, countStyle: .decimal)
-    }
-
-    private func rate(_ metric: SystemMonitorMetric) -> String {
-        switch metric {
-        case .measuring: return "Measuring…"
-        case .unavailable: return "Unavailable"
-        case .value(let value): return bytes(Int64(min(Double(Int64.max / 2), max(0, value)))) + "/s"
-        }
+        ByteCountFormatter.string(fromByteCount: count, countStyle: .memory)
     }
 }
 
-/// A block of the overview: inset in the menu, a table surface filling its share of the row on the page.
+/// A block of the overview: inset in the menu, a table surface on the page.
 private struct OverviewCard: ViewModifier {
     let wide: Bool
     func body(content: Content) -> some View {
         if wide {
-            content.padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).frogTableSurface()
+            content.padding(12).frame(maxWidth: .infinity, alignment: .topLeading).frogTableSurface()
         } else {
             content.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
         }
@@ -229,7 +233,6 @@ private struct SystemMonitorGraph: View {
         .chartYScale(domain: 0...1, range: .plotDimension(startPadding: 1, endPadding: 1))
         .chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
         .chartXSelection(value: $inspected)
-        .background(alignment: .bottom) { Rectangle().fill(FrogStyle.muted.opacity(0.15)).frame(height: 1) }
         .accessibilityHidden(true)
     }
 }

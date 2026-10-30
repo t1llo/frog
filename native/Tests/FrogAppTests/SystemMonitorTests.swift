@@ -3,79 +3,63 @@ import XCTest
 @testable import FrogApp
 
 @MainActor final class SystemMonitorTests: XCTestCase {
-    func testDisabledMonitorDoesNoWorkEvenWhenShown() async throws {
+    func testNothingSamplesWhileNothingShowsTheReadings() async throws {
         let sampler = MonitorFixture()
-        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5), backgroundInterval: .milliseconds(5))
-        monitor.setPresented(true, for: .page)
+        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5))
         try await Task.sleep(for: .milliseconds(25))
         let calls = await sampler.calls
-        XCTAssertTrue(calls.isEmpty, "Default-off monitor must not sample even if a view asks")
+        XCTAssertTrue(calls.isEmpty, "With every overview closed and no menu-bar item, nothing is read")
         XCTAssertFalse(monitor.isSampling)
     }
 
-    func testEnabledMonitorRecordsOutOfSightAndHasItsHistoryReadyWhenShown() async throws {
+    func testAShownOverviewSamplesInFullAndStopsOnceHidden() async throws {
         let sampler = MonitorFixture()
-        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5), backgroundInterval: .milliseconds(5))
-        monitor.configure(enabled: true)
+        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5))
         defer { monitor.stop() }
+        monitor.setPresented(true, for: .page)
         try await waitUntil { await sampler.calls.count >= 3 }
         var calls = await sampler.calls
-        XCTAssertEqual(calls.first, .init(reset: true, full: false))
-        XCTAssertTrue(calls.dropFirst().allSatisfy { $0 == .init(reset: false, full: false) }, "Out of sight only CPU and GPU are read")
-        XCTAssertTrue(monitor.isSampling)
-        XCTAssertTrue(monitor.history.isEmpty, "Recording out of sight must not redraw a menu that stays mounted")
-        XCTAssertEqual(monitor.snapshot, SystemMonitorSnapshot())
-
-        monitor.setPresented(true, for: .page)
-        XCTAssertGreaterThanOrEqual(monitor.history.count, 3, "The graph has its data on the first frame")
+        XCTAssertEqual(calls.first, .init(reset: true, full: true), "The first reading starts a new baseline")
+        XCTAssertTrue(calls.dropFirst().allSatisfy { $0 == .init(reset: false, full: true) })
         XCTAssertEqual(monitor.snapshot.cpu, .value(0.25))
-        try await waitUntil { await sampler.calls.last?.full == true }
+        XCTAssertGreaterThanOrEqual(monitor.history.count, 3)
 
         monitor.setPresented(false, for: .page)
-        let shown = monitor.history.count
+        XCTAssertFalse(monitor.isSampling, "Hidden, the task ends at once")
         let hidden = await sampler.calls.count
-        try await waitUntil { await sampler.calls.count >= hidden + 3 }
-        calls = await sampler.calls
-        XCTAssertTrue(calls.suffix(2).allSatisfy { !$0.full })
-        XCTAssertFalse(calls.dropFirst().contains { $0.reset }, "Opening and closing the view must keep the baselines")
-        XCTAssertEqual(monitor.history.count, shown)
-        monitor.setPresented(true, for: .page)
-        XCTAssertGreaterThan(monitor.history.count, shown)
-
-        monitor.configure(enabled: false)
-        let disabled = await sampler.calls.count
         try await Task.sleep(for: .milliseconds(25))
-        let afterDisabled = await sampler.calls.count
-        XCTAssertEqual(afterDisabled, disabled)
-        XCTAssertFalse(monitor.isSampling)
-        XCTAssertTrue(monitor.history.isEmpty)
-        monitor.configure(enabled: true)
-        try await waitUntil { await sampler.calls.count > disabled }
+        let later = await sampler.calls.count
+        XCTAssertEqual(later, hidden, "Nothing is read while nothing is shown")
+
+        // Back within half a minute: the recorded graph shows on the first frame and the baseline holds.
+        let shown = monitor.history.count
+        monitor.setPresented(true, for: .page)
+        XCTAssertEqual(monitor.history.count, shown)
+        try await waitUntil { await sampler.calls.count > hidden }
         calls = await sampler.calls
-        XCTAssertEqual(calls[disabled], .init(reset: true, full: true), "Switching back on must not average load over the time spent off")
+        XCTAssertEqual(calls[hidden], .init(reset: false, full: true), "A recent sample keeps the CPU baseline valid")
     }
 
     func testTheMenuBarItemGetsLiveReadingsWithoutRedrawingTheClosedMenu() async throws {
-        let sampler = MonitorFixture(snapshot: .init(cpu: .value(0.25), gpu: .value(0.5)))
-        // Out of sight the monitor would wait a minute; the menu-bar item asks for the shown pace.
-        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5), backgroundInterval: .seconds(60))
-        monitor.configure(enabled: true)
+        let sampler = MonitorFixture(snapshot: .init(cpu: .value(0.25), gpu: .value(0.5),
+                                                     memory: SystemMonitorMemory(used: 4, total: 16)))
+        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5))
         defer { monitor.stop() }
-        try await waitUntil { await sampler.calls.count >= 1 }
         monitor.setLiveReadout(true)
-        try await waitUntil { await sampler.calls.count >= 4 }
-        XCTAssertEqual(monitor.readings.value, SystemMonitorReading(cpu: .value(0.25), gpu: .value(0.5)))
+        try await waitUntil { await sampler.calls.count >= 3 }
+        XCTAssertEqual(monitor.readings.value, SystemMonitorReading(cpu: .value(0.25), gpu: .value(0.5), memory: .value(0.25)))
         XCTAssertTrue(monitor.history.isEmpty, "The item reads its own subject; the overview stays untouched")
+        XCTAssertEqual(monitor.snapshot, SystemMonitorSnapshot())
         let full = await sampler.calls.contains { $0.full }
-        XCTAssertFalse(full, "The item needs only CPU and GPU")
-        monitor.configure(enabled: false)
-        XCTAssertNil(monitor.readings.value, "Switched off, the item shows no stale load")
+        XCTAssertFalse(full, "The item needs no power reading")
+        monitor.setLiveReadout(false)
+        XCTAssertNil(monitor.readings.value, "Without the item, no stale load stays around")
+        XCTAssertFalse(monitor.isSampling)
     }
 
     func testHidingTheViewPublishesNothing() async throws {
         let sampler = MonitorFixture()
-        let monitor = SystemMonitor(sampler: sampler, interval: .seconds(60), backgroundInterval: .seconds(60))
-        monitor.configure(enabled: true)
+        let monitor = SystemMonitor(sampler: sampler, interval: .seconds(60))
         monitor.setPresented(true, for: .page)
         defer { monitor.stop() }
         try await waitUntil { monitor.snapshot.cpu == .value(0.25) }
@@ -85,38 +69,42 @@ import XCTest
         // The view reports this while it is taken down, when nothing may be published.
         monitor.setPresented(false, for: .page)
         XCTAssertEqual(changes, 0, "A view that is going away has nothing to redraw")
-        XCTAssertTrue(monitor.isSampling, "Recording goes on out of sight")
         monitor.setPresented(true, for: .page)
         XCTAssertGreaterThan(changes, 0, "Showing it again brings the recorded history")
     }
 
     func testAPopupClosingLeavesTheOpenPageLive() async throws {
         let sampler = MonitorFixture()
-        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5), backgroundInterval: .seconds(60))
-        monitor.configure(enabled: true)
+        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5))
         defer { monitor.stop() }
         monitor.setPresented(true, for: .page)
-        monitor.setPresented(true, for: .statusItem)
-        monitor.setPresented(false, for: .statusItem)
+        monitor.setPresented(true, for: .statusPopup)
+        monitor.setPresented(false, for: .statusPopup)
         let shown = await sampler.calls.count
         try await waitUntil { await sampler.calls.count >= shown + 3 }
-        let calls = await sampler.calls
-        XCTAssertTrue(calls.suffix(3).allSatisfy(\.full), "The page is still on screen")
-        try await waitUntil { monitor.history.count >= shown + 2 }
+        XCTAssertTrue(monitor.isSampling, "The page is still on screen")
         monitor.setPresented(false, for: .page)
         let hidden = monitor.history.count
         try await Task.sleep(for: .milliseconds(25))
         XCTAssertEqual(monitor.history.count, hidden, "With nothing on screen the graph stops redrawing")
     }
 
-    func testCancellationRejectsLateSamplerCompletionAcrossReenable() async throws {
+    func testAnAgentReadingTakesTwoSamplesAndLeavesNothingRunning() async {
+        let sampler = MonitorFixture()
+        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5))
+        let snapshot = await monitor.current()
+        XCTAssertEqual(snapshot.cpu, .value(0.25))
+        let calls = await sampler.calls
+        XCTAssertEqual(calls, [.init(reset: true, full: true), .init(reset: false, full: true)])
+        XCTAssertFalse(monitor.isSampling)
+    }
+
+    func testCancellationRejectsLateSamplerCompletionAcrossReopening() async throws {
         let sampler = GatedMonitorFixture()
         let monitor = SystemMonitor(sampler: sampler, interval: .seconds(60))
-        monitor.configure(enabled: true)
         monitor.setPresented(true, for: .page)
         try await waitUntil { await sampler.pendingCount == 1 }
         monitor.stop()
-        monitor.configure(enabled: true)
         monitor.setPresented(true, for: .page)
         try await waitUntil { await sampler.pendingCount == 2 }
         await sampler.finish(index: 1, cpu: 0.25)
@@ -132,8 +120,7 @@ import XCTest
     func testHistoryCoversOnlyTheGraphsWindowAndMissingReadingsRemainGaps() async throws {
         let sampler = MonitorFixture(snapshot: .init(cpu: .value(0.4), gpu: .unavailable))
         let clock = ClockFixture(step: 60)
-        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(1), backgroundInterval: .milliseconds(1)) { clock.next() }
-        monitor.configure(enabled: true)
+        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(1)) { clock.next() }
         monitor.setPresented(true, for: .page)
         defer { monitor.stop() }
         try await waitUntil { await sampler.calls.count > 20 }
@@ -146,8 +133,7 @@ import XCTest
     func testHistoryIsBoundedAndAClockSetBackLeavesNoSampleAheadOfTheNewest() async throws {
         let sampler = MonitorFixture()
         let clock = ClockFixture(step: 0.01)
-        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(1), backgroundInterval: .milliseconds(1)) { clock.next() }
-        monitor.configure(enabled: true)
+        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(1)) { clock.next() }
         monitor.setPresented(true, for: .page)
         defer { monitor.stop() }
         try await waitUntil { await sampler.calls.count > SystemMonitor.historyLimit + 4 }
@@ -243,18 +229,6 @@ final class SystemMonitorDeltaTests: XCTestCase {
         let before = SystemMonitorDelta.CPU(user: UInt32.max - 4, system: 0, idle: 5, nice: 0)
         let after = SystemMonitorDelta.CPU(user: 5, system: 0, idle: 15, nice: 0)
         XCTAssertEqual(SystemMonitorDelta.cpu(previous: [before], current: [after], elapsed: 2), 0.5)
-    }
-
-    func testDiskRatesRejectCounterResetHotplugAndSleepGaps() throws {
-        let before: [UInt64: SystemMonitorDelta.Disk] = [1: .init(read: 100, written: 300), 2: .init(read: 0, written: 0)]
-        let after: [UInt64: SystemMonitorDelta.Disk] = [1: .init(read: 500, written: 500), 2: .init(read: 200, written: 400)]
-        let rate = try XCTUnwrap(SystemMonitorDelta.disk(previous: before, current: after, elapsed: 2))
-        XCTAssertEqual(rate.read, 300)
-        XCTAssertEqual(rate.write, 300)
-        XCTAssertNil(SystemMonitorDelta.disk(previous: after, current: before, elapsed: 2))
-        XCTAssertNil(SystemMonitorDelta.disk(previous: before, current: after, elapsed: 11))
-        XCTAssertNil(SystemMonitorDelta.disk(previous: before, current: [1: after[1]!], elapsed: 2))
-        XCTAssertNil(SystemMonitorDelta.disk(previous: [:], current: [:], elapsed: 2))
     }
 
     func testUnsupportedOrInvalidGPUStatsAreNotInvented() {

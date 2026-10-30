@@ -6,46 +6,33 @@ import IOKit
 /// thread. No process inventory, subprocesses, privileged helpers or disk scans.
 actor NativeSystemMonitorSampler: SystemMonitorSampling {
     private var cpu = SystemMonitorCPUMeter()
-    private var previousDisk: [UInt64: SystemMonitorDelta.Disk]?
-    private var previousDiskTime: TimeInterval?
-    private var capacity: SystemMonitorCapacity?
-    private var capacityTime: TimeInterval?
 
     func sample(reset: Bool, full: Bool) async -> SystemMonitorSnapshot {
-        if reset {
-            cpu.reset()
-            previousDisk = nil
-            previousDiskTime = nil
-        }
+        if reset { cpu.reset() }
         guard !Task.isCancelled else { return SystemMonitorSnapshot() }
-        let now = ProcessInfo.processInfo.systemUptime
         var result = SystemMonitorSnapshot()
-        result.cpu = cpu.reading(readCPU(), at: now)
+        result.cpu = cpu.reading(readCPU(), at: ProcessInfo.processInfo.systemUptime)
         guard !Task.isCancelled else { return result }
         result.gpu = readGPU().map(SystemMonitorMetric.value) ?? .unavailable
-        // Disk and power are shown, not graphed, so only the visible view reads them.
-        guard full else { return result }
-        let disks = readDiskCounters()
-        if let disks {
-            if let previousDisk, let previousDiskTime,
-               let rates = SystemMonitorDelta.disk(previous: previousDisk, current: disks, elapsed: now - previousDiskTime) {
-                result.diskRead = .value(rates.read)
-                result.diskWrite = .value(rates.write)
-            }
-        } else {
-            result.diskRead = .unavailable
-            result.diskWrite = .unavailable
-        }
-        previousDisk = disks
-        previousDiskTime = now
-        guard !Task.isCancelled else { return result }
-        if capacityTime == nil || now - (capacityTime ?? 0) >= 30 {
-            capacity = readCapacity()
-            capacityTime = now
-        }
-        result.diskCapacity = capacity
+        result.memory = Self.readMemory()
+        // Power is shown, not graphed, so only a visible overview reads it.
+        guard full, !Task.isCancelled else { return result }
         result.power = readPower()
         return result
+    }
+
+    /// Memory in use as Activity Monitor counts it: app memory, wired and compressed.
+    static func readMemory() -> SystemMonitorMemory? {
+        var info = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.stride / MemoryLayout<integer_t>.stride)
+        let host = mach_host_self()
+        defer { mach_port_deallocate(mach_task_self_, host) }
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { host_statistics64(host, HOST_VM_INFO64, $0, &count) }
+        }
+        guard result == KERN_SUCCESS else { return nil }
+        let pages = Int64(info.internal_page_count) - Int64(info.purgeable_count) + Int64(info.wire_count) + Int64(info.compressor_page_count)
+        return SystemMonitorMemory(used: max(0, pages) * Int64(getpagesize()), total: Int64(ProcessInfo.processInfo.physicalMemory))
     }
 
     private func readCPU() -> [SystemMonitorDelta.CPU]? {
@@ -81,29 +68,6 @@ actor NativeSystemMonitorSampler: SystemMonitorSampling {
         }
         // Multi-GPU systems show the busiest supported device, not a made-up sum.
         return values.max()
-    }
-
-    private func readDiskCounters() -> [UInt64: SystemMonitorDelta.Disk]? {
-        var counters: [UInt64: SystemMonitorDelta.Disk] = [:]
-        withServices("IOBlockStorageDriver", limit: 128) { service in
-            var id: UInt64 = 0
-            guard IORegistryEntryGetRegistryEntryID(service, &id) == KERN_SUCCESS,
-                  let stats = property(service, key: "Statistics") as? [String: Any],
-                  let read = stats["Bytes (Read)"] as? NSNumber,
-                  let written = stats["Bytes (Write)"] as? NSNumber,
-                  read.doubleValue >= 0, written.doubleValue >= 0 else { return }
-            counters[id] = .init(read: read.uint64Value, written: written.uint64Value)
-        }
-        return counters.isEmpty ? nil : counters
-    }
-
-    private func readCapacity() -> SystemMonitorCapacity? {
-        // The writable startup volume, not the read-only sealed OS snapshot.
-        let url = URL(fileURLWithPath: "/System/Volumes/Data", isDirectory: true)
-        guard let values = try? url.resourceValues(forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityKey]),
-              let total = values.volumeTotalCapacity, let free = values.volumeAvailableCapacity,
-              total > 0, free >= 0 else { return nil }
-        return SystemMonitorCapacity(total: Int64(total), available: Int64(min(total, free)))
     }
 
     private func readPower() -> SystemMonitorPower {

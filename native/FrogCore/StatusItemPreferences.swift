@@ -1,6 +1,6 @@
 import Foundation
 
-/// The looks a menu-bar meter can take. Mr. Usage and System monitor share them.
+/// The looks a menu-bar meter can take. LLM usage and System monitor share them.
 public enum MenuBarMeterChoices {
     /// "numbers" keeps the readout as text; "segments" lights one of five steps per 20%;
     /// "bars" fills a smooth track; "columns" stands the bars side by side.
@@ -10,7 +10,7 @@ public enum MenuBarMeterChoices {
     public static let palettes = ["clean", "level", "spectrum"]
 }
 
-/// The optional CPU and GPU item in the menu bar.
+/// The System monitor menu-bar item as `config` kept it, read once to seed `[system-monitor]`.
 public struct SystemMonitorPreferences: Codable, Equatable, Sendable {
     public var menuBarItem = false
     public var menuBarStyle = "segments"
