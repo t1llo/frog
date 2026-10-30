@@ -23,8 +23,8 @@ final class CommandChoicesTests: XCTestCase {
         XCTAssertEqual(choices.count, 2)
     }
 
-    func testStrengthHalvesEveryTwoWeeksIsCappedAndFadesAway() {
-        XCTAssertEqual(CommandChoices.decayed(4, since: start, now: start.addingTimeInterval(14 * day)), 2, accuracy: 1e-9)
+    func testStrengthHalvesEveryWeekIsCappedAndFadesAway() {
+        XCTAssertEqual(CommandChoices.decayed(4, since: start, now: start.addingTimeInterval(7 * day)), 2, accuracy: 1e-9)
         XCTAssertEqual(CommandChoices.decayed(4, since: start, now: start.addingTimeInterval(-day)), 4)
         var choices = CommandChoices()
         for _ in 0..<12 { choices.record(typed: "cal", id: "app:Calendar", now: start) }
@@ -32,9 +32,9 @@ final class CommandChoicesTests: XCTestCase {
         XCTAssertEqual(choices.items.first?.strength, 10)
         var once = CommandChoices()
         once.record(typed: "cal", id: "app:Calendar", now: start)
-        once.prune(now: start.addingTimeInterval(46 * day))
+        once.prune(now: start.addingTimeInterval(23 * day))
         XCTAssertEqual(once.count, 1)
-        once.prune(now: start.addingTimeInterval(47 * day))
+        once.prune(now: start.addingTimeInterval(24 * day))
         XCTAssertEqual(once.count, 0)
         XCTAssertTrue(once.items.isEmpty)
     }
@@ -120,8 +120,9 @@ final class CommandChoicesTests: XCTestCase {
         XCTAssertEqual(choices.index(now: start.addingTimeInterval(10 * minute)).suggestions(for: "ca").latched, "app:Calendar")
         XCTAssertNil(choices.index(now: start.addingTimeInterval(day)).suggestions(for: "ca").latched, "Two picks fade within hours")
         choices.record(typed: "ca", id: "app:Calendar", now: start.addingTimeInterval(day))
-        XCTAssertEqual(choices.index(now: start.addingTimeInterval(7 * day)).suggestions(for: "ca").latched, "app:Calendar",
-                       "A third keeps it for about a week")
+        XCTAssertEqual(choices.index(now: start.addingTimeInterval(3 * day)).suggestions(for: "ca").latched, "app:Calendar",
+                       "A third keeps it for a few days")
+        XCTAssertNil(choices.index(now: start.addingTimeInterval(7 * day)).suggestions(for: "ca").latched, "and a week lets it go")
 
         // Two picks a week apart are not a habit yet.
         var apart = CommandChoices()
