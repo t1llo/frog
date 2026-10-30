@@ -22,14 +22,25 @@ final class ScrollAppearanceTests: XCTestCase {
         let window = NSWindow(contentRect: NSRect(x: 50, y: 50, width: 320, height: 100), styleMask: [.borderless], backing: .buffered, defer: false)
         defer { window.orderOut(nil); window.contentView = nil }
         window.contentView = host; host.layoutSubtreeIfNeeded()
-        let effect = try XCTUnwrap(descendants(host).compactMap { $0 as? NSVisualEffectView }.first)
-        XCTAssertEqual(effect.blendingMode, .behindWindow)
-        XCTAssertEqual(effect.material, .popover)
-        XCTAssertEqual(effect.state, .active)
         XCTAssertFalse(window.isOpaque)
         XCTAssertEqual(window.backgroundColor, .clear)
         XCTAssertEqual(host.layer?.cornerRadius, 12, "The native host must clip system-added background siblings to the popup outline")
         XCTAssertEqual(host.layer?.masksToBounds, true)
+        let effects = descendants(host).compactMap { $0 as? NSVisualEffectView }
+        let effect: NSVisualEffectView
+        if FrogSurfaceRendering.glassAvailable {
+            // macOS 26 draws a translucent popup as one Liquid Glass surface; a material behind it would blur twice.
+            XCTAssertTrue(effects.isEmpty, "A glass popup has no second backdrop")
+            // The material popups use before macOS 26, drawn on its own.
+            let material = NSHostingView(rootView: FrogWindowMaterial(popup: true, cornerRadius: FrogStyle.panelRadius).frame(width: 320, height: 100))
+            window.contentView = material; material.layoutSubtreeIfNeeded()
+            effect = try XCTUnwrap(descendants(material).compactMap { $0 as? NSVisualEffectView }.first)
+        } else {
+            effect = try XCTUnwrap(effects.first)
+        }
+        XCTAssertEqual(effect.blendingMode, .behindWindow)
+        XCTAssertEqual(effect.material, .popover)
+        XCTAssertEqual(effect.state, .active)
         let mask = try XCTUnwrap(effect.maskImage)
         XCTAssertEqual(mask.size, effect.bounds.size, "The native blur mask must track the rendered popup size")
         let bitmap = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(mask.tiffRepresentation)))
