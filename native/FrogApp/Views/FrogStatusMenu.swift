@@ -75,71 +75,6 @@ struct FrogStatusMenu: View {
     }
 }
 
-/// Stay awake in the popup: the duration is chosen before switching on; while on, its place shows when the session ends.
-struct StayAwakeMenuRow: View {
-    @ObservedObject var power: StayAwakeController
-    @Environment(\.dismiss) private var dismiss
-    @State private var choosingDuration = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 6) {
-                Label("Stay awake", systemImage: power.isEnabled ? "cup.and.saucer.fill" : "cup.and.saucer")
-                    .font(FrogType.bodyMedium).fixedSize()
-                Spacer(minLength: 0)
-                if power.isBusy { ProgressView().controlSize(.mini) }
-                if !power.hasReadState {
-                    Text("Checking…").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                } else if power.isEnabled {
-                    Text(power.deadline.map { "Until \($0.formatted(date: .omitted, time: .shortened))" } ?? (power.ownsSession ? "Until Frog quits" : "On outside Frog"))
-                        .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                } else {
-                    Button { choosingDuration.toggle() } label: {
-                        CompactDropdownLabel(value: L10n.text(power.duration.title), width: 98, height: FrogStyle.compactHeight)
-                    }.buttonStyle(.plain).disabled(power.isBusy)
-                        .accessibilityLabel("Stay-awake duration").accessibilityValue(power.duration.title)
-                }
-                Toggle("Stay awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
-                    .labelsHidden().toggleStyle(.switch).disabled(!power.canSwitch)
-                    .accessibilityHint("Keep this Mac and its screen awake")
-            }.frame(height: FrogStyle.compactHeight)
-            if choosingDuration && !power.isEnabled {
-                VStack(spacing: 1) {
-                    ForEach(StayAwakeController.DurationChoice.allCases) { duration in
-                        Button { power.duration = duration; choosingDuration = false } label: {
-                            HStack {
-                                Text(L10n.text(duration.title))
-                                Spacer()
-                                if power.duration == duration {
-                                    Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(FrogStyle.accent)
-                                }
-                            }.font(FrogType.small).padding(.horizontal, 8).frame(height: FrogStyle.compactHeight).contentShape(Rectangle())
-                        }.buttonStyle(MenuRowStyle()).accessibilityAddTraits(power.duration == duration ? .isSelected : [])
-                    }
-                }
-            }
-            if let error = power.error {
-                Text(String(error.prefix(500))).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
-                    .lineLimit(3).help("Open Stay awake for details.")
-            } else if let notice = power.notice {
-                Text(String(notice.prefix(500))).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(3)
-            }
-            if power.isConfiguringAccess {
-                Text("Finish in Terminal…").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-            } else if power.accessState != .ready && power.accessState != .checking {
-                HStack {
-                    Text(power.accessState.title).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                    Spacer()
-                    Button("Set up access…") { power.configureAccess(); dismiss() }.buttonStyle(.frog(compact: true))
-                }
-            }
-        }.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-            .padding(.horizontal, 2).padding(.bottom, 4)
-            .task { await power.refresh(); await power.refreshAccessUnlessReady() }
-            .onChange(of: power.isEnabled) { _, _ in choosingDuration = false }
-    }
-}
-
 /// The organizer takes its arrow out of the menu bar when it cannot run, so this menu says why.
 struct MenuBarOrganizerNotice: View {
     @ObservedObject var organizer: MenuBarOrganizer
@@ -147,7 +82,7 @@ struct MenuBarOrganizerNotice: View {
         if let notice = organizer.menuNotice {
             HStack(alignment: .top) {
                 Text(notice).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                    .lineLimit(3).help("Open Menu bar for details.")
+                    .lineLimit(3).help("Open Hidden bar for details.")
                 Spacer(minLength: 0)
             }.padding(8)
         }
