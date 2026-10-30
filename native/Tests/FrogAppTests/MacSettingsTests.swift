@@ -63,6 +63,8 @@ import FrogCore
                              loadIcon: { iconPaths.append($0); return NSImage(size: NSSize(width: 16, height: 16)) },
                              loadSettings: { SystemSettingsCatalog.defaults }, loadApplications: { [] })
         defer { bar.stop() }
+        // Mac commands come from the Shortcuts plugin.
+        await model.pluginHost.syncAndWait()
         bar.show()
         for query in ["display", "displays", "display settings", "wifi", "bluetooth", "sound", "keyboard", "trackpad", "accessibility", "notifications", "storage", "privacy"] {
             bar.query = query

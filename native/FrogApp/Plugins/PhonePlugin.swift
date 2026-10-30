@@ -39,6 +39,7 @@ final class PhonePlugin: LegacyPlugin, FrogPlugin {
                                     downloads: live ? nil : model.dataDirectory.appendingPathComponent("Downloads", isDirectory: true),
                                     startsTransports: live)
         phone.autoSend = context.settings(PhoneSettings.self).autoSend
+        mirror(phone.autoSend)
         phone.start()
         self.phone = phone
         clipboard.onCopy = { [weak phone] in phone?.clipboardDidCopy($0) }
@@ -57,6 +58,7 @@ final class PhonePlugin: LegacyPlugin, FrogPlugin {
         let autoSend = context.settings(PhoneSettings.self).autoSend
         guard autoSend != phone.autoSend else { return }
         phone.autoSend = autoSend
+        mirror(autoSend)
         forwardCopies()
     }
 
@@ -65,7 +67,29 @@ final class PhonePlugin: LegacyPlugin, FrogPlugin {
         settings.autoSend = enabled
         do { try context.save(settings) } catch { return context.report(error) }
         phone?.autoSend = enabled
+        mirror(enabled)
         forwardCopies()
+    }
+
+    /// `[phone]` decides; the preferences keep a copy of `auto-send`, which a Reload or Import of the old
+    /// `config` reads as `phone.auto-send`.
+    private func mirror(_ autoSend: Bool) {
+        guard (model.configuration.preferences.toolkitSettings.phoneAutoSend ?? true) != autoSend else { return }
+        do { try model.updateToolkit { $0.phoneAutoSend = autoSend } } catch { context.report(error) }
+    }
+
+    /// Reload and Import write the old `config`, whose `phone.auto-send` key `[phone]` then follows, whether
+    /// the plugin runs or not.
+    static func adoptLegacySettings(_ model: AppModel) {
+        let file = model.settingsFile
+        let autoSend = model.configuration.preferences.toolkitSettings.phoneAutoSend ?? true
+        do {
+            var settings = (try? file.section(info.id, as: PhoneSettings.self).value) ?? PhoneSettings()
+            guard settings.autoSend != autoSend else { return }
+            settings.autoSend = autoSend
+            try file.update(info.id, settings)
+        } catch { model.report(error) }
+        model.pluginHost.running[info.id]?.settingsChanged()
     }
 
     private func forwardCopies() {
@@ -110,7 +134,12 @@ final class PhonePlugin: LegacyPlugin, FrogPlugin {
                 if let path = input.value("file") {
                     let path = (path as NSString).expandingTildeInPath
                     guard path.hasPrefix("/") else { throw ActionError.invalid("file", "a full path") }
-                    outcome = phone.sendFiles([URL(fileURLWithPath: path)])
+                    let url = URL(fileURLWithPath: path)
+                    // What an agent asks to send is checked first: keys and files holding secrets stay on the Mac.
+                    if input.source == .agent, PhoneController.looksSecret(url) {
+                        throw ActionError.failed("Frog does not send keys or files with passwords or keys in them.")
+                    }
+                    outcome = phone.sendFiles([url])
                 } else if let text = input.value("text") ?? input.text.flatMap({ $0.isEmpty ? nil : $0 }) {
                     outcome = phone.send(text: text)
                 } else {

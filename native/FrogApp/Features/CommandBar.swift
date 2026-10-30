@@ -3,11 +3,14 @@ import Combine
 import FrogCore
 import SwiftUI
 
+/// The command bar: a keyboard panel that lists rows from its providers, ranked as you type, and Spotlight's files.
+/// It opens in one frame with no animation; everything slow (scans, snapshots, Spotlight) arrives after it.
 @MainActor final class CommandBar: ObservableObject {
     @Published var query = "" {
         didSet {
             guard query != oldValue else { return }
             disarm()
+            if argument != nil { updateResults(preserveSelection: false); return }
             if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 removeFiles()
                 addPickedFiles()
@@ -25,54 +28,80 @@ import SwiftUI
             if let armed = armedRecord, !(results.indices.contains(selection) && results[selection].id == armed.id) { disarm() }
         }
     }
-    private var selectionWasMoved = false
+    /// The action that asks for a value, while the search field takes it.
+    @Published private(set) var argument: CommandArgument?
+    /// Published so that rows already drawn switch to their own icon, even when nothing else about them changed.
+    @Published private(set) var iconPaths: [String: String] = [:]
     @Published private(set) var showsPositionReset = false
+    @Published private(set) var invocation = UUID()
+    var onToolUse: ((ActivityToolKind) -> Void)?
+    /// How long the last open took: building the rows, and from the key press until the panel was on screen.
+    private(set) var lastOpen: (rows: Duration, shown: Duration)?
+
+    private var selectionWasMoved = false
     /// Set by a drag that left the bar away from the middle of its display, until it is centred again.
     private var userPlaced = false
-    var onToolUse: ((ActivityToolKind) -> Void)?
     private weak var model: AppModel?
-    private var records: [SearchRecord] = []
-    private var recordsByID: [String: SearchRecord] = [:]
-    private var fileRecords: [SearchRecord] = []
-    /// Every source of rows besides the bar's own. Each feature adds its provider below its own slot.
-    private lazy var providers: [any CommandBarRowProviding] = [
+
+    // MARK: Rows
+
+    let applications: ApplicationCommandRows
+    let macSettings: MacSettingsCommandRows
+    private let windowRows = WindowSwitchCommandRows()
+    /// The bar's own sources, in the order equally good matches are listed. Plugins add theirs after these.
+    private lazy var builtin: [any CommandBarRowProviding] = [
+        applications,
+        windowRows,
+        FrogPageRows(),
+        RuleCommandRows(),
+        WindowLayoutCommandRows(),
+        TextToolRows(),
         CalculationRows(),
         EmojiRows(),
-        CleanerCommandRows(applications: { [unowned self] in self.cleanerApplications() }),
+        CleanerCommandRows(applications: { [unowned self] in self.applications.cleanerApplications }),
         PluginCommandRows(),
         PluginActionRows(),
     ] + extraProviders
     private let extraProviders: [any CommandBarRowProviding]
+    private let clipboardRows = ClipboardCommandRows(), documentRows = DocumentRowsProvider()
+    /// The providers of this open, and the rows each gave last.
+    private var providers: [any CommandBarRowProviding] = []
+    private var providerRows: [ObjectIdentifier: [CommandBarRow]] = [:]
+    /// False for a bar that never shows, such as `command-bar.search`'s: it lists the plugins' rows as they are
+    /// but never opens or closes their providers, which the visible bar shares.
+    var opensPluginProviders = true
+    private var pluginProviders = Set<ObjectIdentifier>()
     private var context: CommandBarContext?
+
+    /// The catalogue: every provider's rows, a row listed twice in the place it was first listed.
+    private var records: [SearchRecord] = []
+    private var rows: [String: CommandBarRow] = [:]
     /// The rows the providers built for the typed text, which are listed but not part of the catalogue.
-    private var queryRowIDs: [String] = []
-    /// The text a row shows while its action waits for a second Return.
-    private var confirmations: [String: String] = [:]
+    private var queryRows: [String: CommandBarRow] = [:]
+    private var fileRecords: [SearchRecord] = []
+    private var fileIDs = Set<String>()
+    private var recentSelections: [String] = []
+    private var recentFiles: [SearchRecord] = []
+    private var selectedFiles: [SearchRecord] = []
+
     private var confirmation = CommandConfirmation()
     /// The armed row as it is listed when it is not waiting.
     private var armedRecord: SearchRecord?
     private var disarming: Task<Void, Never>?
-    private var actions: [String: () async throws -> Void] = [:]
-    private var copyActions: [String: () async throws -> Void] = [:]
-    private var sourceObservation: AnyCancellable?
-    private var pasteTarget: (any ClipboardHistoryPasteTarget)?
-    private let windows = WindowCatalog()
+    private var prompt: CommandRowPrompt?
+    /// What was typed before the prompt took the field, for going back.
+    private var typedBeforeArgument = ""
+
+    // MARK: Panel and services
+
     private var panel: NSPanel?
     private var monitor: Any?
     private var outside: Any?
     private var activation: NSObjectProtocol?
-    private var indexing: Task<Void, Never>?
-    private var documentIndexing: Task<Void, Never>?
-    private var windowIndexing: Task<Void, Never>?
     private var warming: Task<Void, Never>?
-    private var settingsIndexing: Task<Void, Never>?
-    private var settingsLoaded = false
-    private var cachedSettings = SystemSettingsCatalog.defaults
-    /// Published so that rows already drawn switch to their pane's own icon, even when nothing else about them changed.
-    @Published private var settingIconKeys: [String: String] = [:]
-    private var cachedApplications: [Rule] = []
-    private var applicationRecords: [String: SearchRecord] = [:]
-    private var cachedWindows: [SwitcherWindow] = []
+    private var delivery: Task<Void, Never>?
+    private var generation = UUID()
+    private var pasteTarget: (any ClipboardHistoryPasteTarget)?
     private let icons: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>(); cache.countLimit = 256; return cache
     }()
@@ -82,23 +111,12 @@ import SwiftUI
         var readers: Set<UUID> = []
     }
     private var iconLoads: [String: IconLoad] = [:]
-    private var windowIconPaths: [String: String] = [:]
-    private var recentSelections: [String] = []
-    private var recentFiles: [SearchRecord] = []
-    private var selectedFiles: [SearchRecord] = []
-    @Published private(set) var invocation = UUID()
-    private var delivery: Task<Void, Never>?
-    private var generation = UUID()
     private let fileSearch: any CommandFileSearching
     private var fileRevision = 0
     private var fileDelay: Task<Void, Never>?
     private let pasteboard: NSPasteboard
-    private let loadApplications: @MainActor () async -> [Rule]
-    private let applicationNames: @MainActor (String) -> [String]
     private let iconReader: CommandIconReader
     private let openFile: @MainActor (URL) -> Bool
-    private let loadSettings: @Sendable () async -> [SystemSetting]
-    private let openSetting: @MainActor (SystemSetting) throws -> Void
     private let fileScopes: [Any]
     private let captureTarget: @MainActor () -> (any ClipboardHistoryPasteTarget)?
     private let waitForRelease: () async throws -> Void
@@ -114,23 +132,26 @@ import SwiftUI
          loadApplications: @escaping @MainActor () async -> [Rule] = { await ApplicationCatalogStore.shared.load() },
          applicationNames: @escaping @MainActor (String) -> [String] = { ApplicationCatalogStore.shared.alternativeNames[$0] ?? [] },
          extraProviders: [any CommandBarRowProviding] = []) {
-        self.model = model; self.extraProviders = extraProviders; self.pasteboard = pasteboard; self.loadApplications = loadApplications
-        self.applicationNames = applicationNames
-        self.iconReader = CommandIconReader(load: loadIcon); self.openFile = openFile
-        self.loadSettings = loadSettings; self.openSetting = openSetting
+        self.model = model; self.extraProviders = extraProviders; self.pasteboard = pasteboard
+        applications = ApplicationCommandRows(load: loadApplications, alternativeNames: applicationNames)
+        macSettings = MacSettingsCommandRows(load: loadSettings, open: openSetting)
+        iconReader = CommandIconReader(load: loadIcon); self.openFile = openFile
         self.fileSearch = fileSearch ?? MetadataCommandFileSearch()
         self.captureTarget = captureTarget; self.waitForRelease = waitForRelease
         self.fileScopes = fileScopes ?? [NSMetadataQueryUserHomeScope, NSMetadataQueryLocalComputerScope]
     }
+
+    private var enabled: Bool { model?.configuration.preferences.featureEnabled(.commandBar) == true }
+
+    /// Builds the panel and reads the applications and settings panes, so the first open is as fast as the rest.
     func warm() {
-        guard warming == nil, model?.configuration.preferences.featureEnabled(.commandBar) == true else { return }
+        guard warming == nil, enabled else { return }
         preparePanel()
         refreshSettings()
         warming = Task { [weak self] in
             guard let self else { return }
-            let installed = await self.loadApplications()
+            await self.applications.warm()
             guard !Task.isCancelled else { return }
-            self.cacheApplications(installed)
             await self.preloadIcons()
             guard !Task.isCancelled else { return }
             self.warming = nil
@@ -138,68 +159,27 @@ import SwiftUI
     }
     /// The rows listed before anything is typed then show their icons from the first frame of the first open.
     func preloadIcons() async {
-        for record in suggestedApplications where !Task.isCancelled { _ = await icon(for: record) }
+        for record in applications.suggested where !Task.isCancelled { _ = await icon(for: record) }
     }
     func stop() {
         hide(); warming?.cancel(); warming = nil
-        settingsIndexing?.cancel(); settingsIndexing = nil; settingsLoaded = false
-        cachedSettings = SystemSettingsCatalog.defaults; settingIconKeys = [:]
-        cachedApplications = []; applicationRecords = [:]; cachedWindows = []; icons.removeAllObjects()
-        windowIconPaths = [:]
+        macSettings.reset(); applications.clear(); windowRows.clear()
+        icons.removeAllObjects()
         recentSelections = []; recentFiles = []; selectedFiles = []
         panel?.contentView = nil; panel = nil
     }
-    /// An application is found under the name Finder shows, under its bundle and file names and under the last part
-    /// of its identifier. The rest of the identifier, `com.` and the like, would match every application.
-    func cacheApplications(_ installed: [Rule]) {
-        guard installed != cachedApplications else { return }
-        cachedApplications = installed
-        applicationRecords = [:]
-        for rule in installed {
-            guard let path = rule.action?.applicationPath else { continue }
-            let identifier = rule.action?.applicationBundleID?.split(separator: ".").last.map(String.init) ?? ""
-            applicationRecords[path] = SearchRecord(id: "app:\(path)", title: rule.name, subtitle: "App", keywords: identifier, symbol: "app", aliases: applicationNames(path), prominent: true)
-        }
-    }
-    /// The applications listed before anything is typed.
-    private var suggestedApplications: [SearchRecord] {
-        cachedApplications.prefix(8).compactMap { $0.action?.applicationPath.flatMap { applicationRecords[$0] } }
-    }
-    /// Discovers the installed panes once. Rows already listed take the panes' names and icons where they are.
-    func refreshSettings() {
-        guard !settingsLoaded, settingsIndexing == nil else { return }
-        settingsIndexing = Task { [weak self] in
-            guard let self else { return }
-            let settings = await self.loadSettings()
-            guard !Task.isCancelled else { return }
-            self.cachedSettings = settings; self.settingsLoaded = true; self.settingsIndexing = nil
-            let keys = Dictionary(settings.compactMap { setting in setting.icon.map { (setting.record.id, $0.key) } },
-                                  uniquingKeysWith: { first, _ in first })
-            if keys != self.settingIconKeys { self.settingIconKeys = keys }
-            // Only while rows are listed: hiding clears the context.
-            guard self.context != nil else { return }
-            // Replaced in place, the rows keep their order among equally good matches, so the selection and the
-            // scroll position stay on the same rows.
-            let listed = Set(settings.map(\.record.id))
-            for record in self.records where record.id.hasPrefix("mac-setting:") && !listed.contains(record.id) {
-                self.recordsByID[record.id] = nil; self.actions[record.id] = nil
-            }
-            self.records.removeAll { $0.id.hasPrefix("mac-setting:") && !listed.contains($0.id) }
-            self.addSettings()
-            self.updateResults()
-        }
-    }
-    private func addSettings() {
-        let open = openSetting
-        for setting in cachedSettings { add(setting.record) { try open(setting) } }
-    }
+    func cacheApplications(_ installed: [Rule]) { applications.cache(installed) }
+    func refreshSettings() { macSettings.discover() }
+
+    // MARK: Icons
+
     /// The key a row's icon is cached and read under, or nil for a row that shows its symbol.
     func iconPath(for result: SearchRecord) -> String? {
+        // A pane's icon can arrive with discovery while the bar is closed.
+        if result.id.hasPrefix("mac-setting:") { return macSettings.iconPath(for: result.id) }
+        if let path = iconPaths[result.id] { return path }
         if result.id.hasPrefix("app:") { return String(result.id.dropFirst(4)) }
         if let path = CleanerCommand.path(fromRowID: result.id) { return path }
-        if let windowPath = windowIconPaths[result.id] { return windowPath }
-        // A pane shows its own icon once discovery found it, and the System Settings icon until then.
-        if result.id.hasPrefix("mac-setting:") { return settingIconKeys[result.id] ?? MacSettingsDiscovery.fallbackIconPath }
         return nil
     }
     /// What a row draws first. It only looks in the cache, so it never waits for a read.
@@ -234,45 +214,17 @@ import SwiftUI
         }
         return Task.isCancelled ? nil : image
     }
-    private func addApplications(_ installed: [Rule]) {
-        for rule in installed {
-            guard let path = rule.action?.applicationPath else { continue }
-            guard let record = applicationRecords[path] else { continue }
-            add(record) { [weak self] in
-                try await ApplicationLauncher().launch(rule)
-                try Task.checkCancellation()
-                self?.onToolUse?(.applicationCommand)
-            }
-        }
-    }
-    private func addWindows(_ items: [SwitcherWindow]) {
-        windowIconPaths = [:]
-        for item in items {
-            windowIconPaths["window:\(item.id)"] = NSRunningApplication(processIdentifier: item.pid)?.bundleURL?.path
-            add(SearchRecord(id: "window:\(item.id)", title: item.title, subtitle: item.appName, keywords: "window switch", symbol: "macwindow")) { [weak self] in
-                guard let self else { return }
-                try Task.checkCancellation()
-                guard let app = NSRunningApplication(processIdentifier: item.pid), !app.isTerminated else {
-                    throw FrogError.message("That window is no longer available.")
-                }
-                if app.isHidden { app.unhide() }
-                let activated = await WindowActivation.perform(
-                    raise: { await self.windows.raise(id: item.id) },
-                    request: { app.activate(options: []) },
-                    bringForward: { await self.windows.bringApplicationForward(id: item.id) },
-                    isFrontmost: { NSWorkspace.shared.frontmostApplication?.processIdentifier == item.pid })
-                try Task.checkCancellation()
-                guard activated else { throw FrogError.message("Could not bring that window to the front. Try again.") }
-                self.onToolUse?(.windowCommand)
-            }
-        }
-    }
+
+    // MARK: Opening and closing
+
     private func preparePanel() {
         guard panel == nil else { return }
-        let created = CommandBarPanel(contentRect: NSRect(origin: .zero, size: NSSize(width: 600, height: 390)), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let created = CommandBarPanel(contentRect: NSRect(origin: .zero, size: CommandBarView.size), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         created.title = "Frog command bar"; created.isReleasedWhenClosed = false; created.isRestorable = false
         created.isOpaque = false; created.backgroundColor = .clear; created.hasShadow = true
         created.level = .floating; created.hidesOnDeactivate = false
+        // A keyboard surface opens and closes in one frame: no fade or zoom from AppKit.
+        created.animationBehavior = .none
         created.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         let host = NSHostingView(rootView: CommandBarView(bar: self))
         host.sizingOptions = []; created.contentView = host; panel = created
@@ -280,11 +232,13 @@ import SwiftUI
         host.layoutSubtreeIfNeeded()
     }
     func show() {
-        guard let model, model.configuration.preferences.featureEnabled(.commandBar) else { return }
+        guard let model, enabled else { return }
         if panel?.isVisible == true { hide(); return }
         hide()
+        let clock = ContinuousClock(), start = clock.now
         let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         prepareResults(model, frontPID: frontPID)
+        let built = clock.now
         preparePanel()
         guard let panel else { return }
         invocation = UUID()
@@ -292,9 +246,13 @@ import SwiftUI
             let consumed = MainActor.assumeIsolated {
                 guard let self else { return false }
                 if event.type != .keyDown { if event.window !== self.panel { self.hide() }; return false }
-                guard event.window === self.panel, Self.handlesKey(event.keyCode, firstResponder: self.panel?.firstResponder) else { return false }
+                guard event.window === self.panel else { return false }
+                // Backspace in an empty prompt goes back, unless an input method is composing there.
+                if event.keyCode == 51, self.argument != nil, self.query.isEmpty,
+                   (self.panel?.firstResponder as? NSTextInputClient)?.hasMarkedText() != true { self.leaveArgument(); return true }
+                guard Self.handlesKey(event.keyCode, firstResponder: self.panel?.firstResponder) else { return false }
                 switch event.keyCode {
-                case 53: self.hide(); return true
+                case 53: if self.argument != nil { self.leaveArgument() } else { self.hide() }; return true
                 case 125: self.selection = min(max(0, self.results.count - 1), self.selection + 1); return true
                 case 126: self.selection = max(0, self.selection - 1); return true
                 case 36, 76: self.choose(copyOnly: event.modifierFlags.contains(.command)); return true
@@ -318,40 +276,12 @@ import SwiftUI
         let inUse = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         let origin = Self.openingOrigin(of: panel.frame, dragged: userPlaced, displays: NSScreen.screens.map(\.visibleFrame), inUse: inUse?.visibleFrame)
         if origin != panel.frame.origin { panel.setFrameOrigin(origin); userPlaced = false }
+        // The rows are drawn before the panel is ordered in, so its first frame already lists them.
+        panel.contentView?.layoutSubtreeIfNeeded()
         panel.makeKeyAndOrderFront(nil)
+        lastOpen = (built - start, clock.now - start)
         searchFiles()
-        refreshSettings()
-        let token = generation
-        let shownApplications = cachedApplications
-        indexing = Task { [weak self] in
-            guard let self else { return }
-            let installed = await self.loadApplications()
-            guard self.generation == token, !Task.isCancelled else { return }
-            if installed != shownApplications {
-                self.cacheApplications(installed)
-                for record in self.records where record.id.hasPrefix("app:") {
-                    self.recordsByID[record.id] = nil; self.actions[record.id] = nil
-                }
-                self.records.removeAll { $0.id.hasPrefix("app:") }
-                self.addApplications(installed)
-                self.updateResults()
-            }
-        }
-        if model.configuration.preferences.featureEnabled(.windowSwitcher) {
-            let applications = NSWorkspace.shared.runningApplications.compactMap(SwitcherApplication.running)
-            windowIndexing = Task { [weak self] in
-                guard let self else { return }
-                let snapshot = await self.windows.snapshot(applications: applications, frontPID: frontPID)
-                guard self.generation == token, !Task.isCancelled, snapshot.isPublishable else { return }
-                self.cachedWindows = snapshot.windows
-                for record in self.records where record.id.hasPrefix("window:") {
-                    self.recordsByID[record.id] = nil; self.actions[record.id] = nil
-                }
-                self.records.removeAll { $0.id.hasPrefix("window:") }
-                self.addWindows(snapshot.windows)
-                self.updateResults()
-            }
-        }
+        applications.rescan()
     }
     /// Escape, the arrow keys and Return act on the results before the search field sees them. An input method
     /// that is composing there needs them itself, to cancel, pick or confirm a candidate.
@@ -367,190 +297,94 @@ import SwiftUI
         let pastes = preferences.featureEnabled(.clipboard) || preferences.featureEnabled(.scratchpad)
             && (!model.documents.loaded || model.documents.items.contains(where: \.pastes))
         pasteTarget = pastes ? captureTarget() : nil
-        context = CommandBarContext(model: model, frontPID: frontPID, pasteboard: pasteboard, pasteTarget: pasteTarget,
-                                    waitForRelease: waitForRelease, copy: { [weak self] in self?.copy($0) })
+        let context = CommandBarContext(model: model, frontPID: frontPID, pasteboard: pasteboard, pasteTarget: pasteTarget,
+                                        waitForRelease: waitForRelease, copy: { [weak self] in self?.copy($0) },
+                                        toolUse: { [weak self] in self?.onToolUse?($0) })
+        self.context = context
         if learning { model.commandChoices.refreshIfStale() }
-        records = []; recordsByID = [:]; fileRecords = []; actions = [:]; copyActions = [:]; confirmations = [:]; queryRowIDs = []
+        argument = nil; prompt = nil
+        fileRecords = []; fileIDs = []; queryRows = [:]
         query = ""; selection = 0
         selectionWasMoved = false
-        addApplications(cachedApplications)
         addPickedFiles()
         for file in recentFiles { addFile(file) }
-        if model.configuration.preferences.featureEnabled(.windowSwitcher) { addWindows(cachedWindows) }
-        addRoutes(model, frontPID: frontPID)
-        addSettings()
-        // Notes and scripts are in memory once the store has been read. Only that first read is waited for, and
-        // on its own: a note that pastes must not be missing while the applications are rescanned.
-        if [.scratchpad, .scripts].contains(where: model.configuration.preferences.featureEnabled) {
-            if model.documents.loaded { addDocuments(model) }
-            else {
-                let token = generation
-                documentIndexing = Task { [weak self, weak model] in
-                    guard let model else { return }
-                    await model.documents.load()
-                    guard let self, self.generation == token, !Task.isCancelled else { return }
-                    self.addDocuments(model)
-                    self.updateResults()
-                }
+        let shared = model.pluginHost.commandBarProviders
+        pluginProviders = opensPluginProviders ? [] : Set(shared.map { ObjectIdentifier($0) })
+        providers = builtin + shared + [clipboardRows, macSettings, documentRows]
+        providerRows = [:]
+        for provider in providers where !pluginProviders.contains(ObjectIdentifier(provider)) {
+            provider.open(in: context) { [weak self, weak provider] in
+                guard let self, let provider else { return }
+                self.reload(provider)
             }
         }
+        for provider in providers {
+            providerRows[ObjectIdentifier(provider)] = provider.rows(in: context)
+        }
+        rebuildCatalogue()
         updateResults()
-        // A copy made while the bar is open lists its entry; clear, delete and eviction take their rows away. The
-        // publisher emits before the store changes, so the rows come from the value it passes.
-        sourceObservation = model.clipboardHistoryStore.$entries.dropFirst().sink { [weak self, weak model] entries in
-            guard let self, let model else { return }
-            // Later rows keep their place, so equally good matches do not change order under the selection.
-            let start = self.records.firstIndex { $0.id.hasPrefix("clipboard:") } ?? self.records.endIndex
-            for record in self.records where record.id.hasPrefix("clipboard:") {
-                self.recordsByID[record.id] = nil; self.actions[record.id] = nil; self.copyActions[record.id] = nil
-            }
-            self.records.removeAll { $0.id.hasPrefix("clipboard:") }
-            let later = Array(self.records[start...]); self.records.removeSubrange(start...)
-            self.addClipboard(entries, model: model)
-            self.records += later
-            self.updateResults()
-        }
     }
-    private func addDocuments(_ model: AppModel) {
-        guard let context else { return }
-        for row in DocumentCommandRows.rows(in: context) { add(row) }
+    /// A provider's rows changed while the bar lists rows.
+    private func reload(_ provider: any CommandBarRowProviding) {
+        let key = ObjectIdentifier(provider)
+        guard let context, let listed = providerRows[key] else { return }
+        let next = provider.rows(in: context)
+        // Rows from a provider that listed none yet go last, so equally good rows keep their lines under the selection.
+        if listed.isEmpty, !next.isEmpty, let index = providers.firstIndex(where: { ObjectIdentifier($0) == key }) {
+            providers.append(providers.remove(at: index))
+        }
+        providerRows[key] = next
+        rebuildCatalogue()
+        updateResults()
     }
-    private func addRoutes(_ model: AppModel, frontPID: pid_t?) {
-        // Record IDs keep the feature names they had before plugins, so learned choices still count.
-        for plugin in model.pluginHost.sidebar.flatMap(\.plugins) {
-            let id = BuiltinPlugins.legacyFeatures[plugin.id].map { "feature:\($0.rawValue)" } ?? "plugin-page:\(plugin.id)"
-            add(SearchRecord(id: id, title: plugin.name, subtitle: "Frog", keywords: "frog plugin \(plugin.summary)", symbol: plugin.symbol)) { [weak model] in
-                model?.pluginHost.open(plugin.id)
+    /// Every provider's rows in provider order. A row listed again replaces the first in its place, so what it
+    /// shows is what its action acts on.
+    private func rebuildCatalogue() {
+        var records: [SearchRecord] = [], rows: [String: CommandBarRow] = [:], positions: [String: Int] = [:]
+        var paths: [String: String] = [:]
+        for provider in providers {
+            for row in providerRows[ObjectIdentifier(provider)] ?? [] {
+                let id = row.record.id
+                if let position = positions[id] { records[position] = row.record } else { positions[id] = records.count; records.append(row.record) }
+                rows[id] = row
+                if let path = row.iconPath { paths[id] = path } else { paths[id] = nil }
             }
         }
-        add(SearchRecord(id: "features", title: "Plugins", subtitle: "Turn Frog's plugins on and off", keywords: "frog features manage", symbol: "puzzlepiece.extension")) { [weak model] in
-            model?.toolkit.select(.features); model?.showSettings()
-        }
-        for (route, title, symbol) in [(ToolkitRoute.settings, "Settings", "gearshape"), (.models, "Models", "cpu"), (.history, "History", "clock.arrow.circlepath")] {
-            add(SearchRecord(id: "route:\(title)", title: title, subtitle: "Frog", keywords: "frog preferences configuration", symbol: symbol)) { [weak model] in
-                model?.toolkit.select(route); model?.showSettings()
-            }
-        }
-        // A text rule can stay out of the command bar; it still runs from its shortcut and the bubble.
-        for rule in model.configuration.rules where rule.enabled && model.ruleFeatureEnabled(rule) && (rule.category != .text || rule.showsInCommandBar) {
-            add(SearchRecord(id: "rule:\(rule.id)", title: rule.action?.systemAction?.title ?? rule.name, subtitle: rule.answersInPanel ? "Shows the answer in a panel" : "Run \(rule.category.title.lowercased()) rule", symbol: rule.category == .audio ? "waveform" : "command")) { [weak model] in
-                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message("The target application changed. Open the command bar again.") }
-                model?.runRuleFromCommandBar(rule.id)
-            }
-        }
-        if model.configuration.preferences.windowActionsEnabled {
-            for action in WindowAction.allCases {
-                add(SearchRecord(id: "layout:\(action.rawValue)", title: action.title, subtitle: "Arrange front window", keywords: "window layout", symbol: "macwindow")) { [weak model] in
-                    guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message("The target application changed. Open the command bar again.") }
-                    model?.runWindowAction(action)
-                }
-            }
-        }
-        if model.configuration.preferences.featureEnabled(.applicationShortcuts) {
-            // Settings panes are listed once, from the System Settings catalogue.
-            for action in SystemAction.allCases where SystemActionController.destination(for: action)?.scheme != "x-apple.systempreferences" {
-                add(SearchRecord(id: "system:\(action.rawValue)", title: action.title, subtitle: action.scope, keywords: "frog command shortcut", symbol: action.symbol)) { [weak model] in
-                    guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message("The target application changed. Open the command bar again.") }
-                    model?.runSystemAction(action)
-                }
-            }
-        }
-        addTextTools()
-        // Provider rows sit where the emoji rows always have, so equally good matches keep their order.
-        if let context { for provider in providers { for row in provider.rows(in: context) { add(row) } } }
-        addClipboard(model.clipboardHistoryStore.entries, model: model)
+        self.records = records; self.rows = rows
+        if paths != iconPaths { iconPaths = paths }
     }
-    /// Small tools that work on the clipboard and copy their result.
-    private func addTextTools() {
-        add(SearchRecord(id: "quick:uuid", title: "Generate UUID", subtitle: "Copy a new UUID", symbol: "number")) { [weak self] in self?.copy(UUID().uuidString) }
-        add(SearchRecord(id: "quick:url", title: "Clean clipboard URL", subtitle: "Remove tracking parameters and copy", symbol: "link")) { [weak self] in
-            guard let self, let cleaned = LinkCleaning.clean(self.pasteboard.string(forType: .string) ?? "") else { throw FrogError.message("Copy an HTTP or HTTPS URL first.") }
-            self.copy(cleaned)
-        }
-        add(SearchRecord(id: "quick:base64-encode", title: "Base64 encode clipboard", subtitle: "Copy the clipboard text as Base64", symbol: "lock.doc")) { [weak self] in
-            guard let self, let text = self.pasteboard.string(forType: .string), !text.isEmpty else { throw FrogError.message("Copy some text first.") }
-            guard !self.pasteboard.holdsSensitiveText else { throw FrogError.message("The clipboard holds text marked as sensitive.") }
-            self.copy(Base64Text.encoded(text))
-        }
-        add(SearchRecord(id: "quick:base64-decode", title: "Base64 decode clipboard", subtitle: "Copy the decoded text", symbol: "lock.open")) { [weak self] in
-            guard let self, let decoded = Base64Text.decoded(self.pasteboard.string(forType: .string) ?? ""), !decoded.isEmpty else {
-                throw FrogError.message("The clipboard does not hold Base64 text.")
-            }
-            self.copy(decoded)
-        }
+    func hide() {
+        showsPositionReset = false
+        generation = UUID(); delivery?.cancel(); delivery = nil
+        for load in iconLoads.values { load.task.cancel() }; iconLoads = [:]
+        for provider in providers where !pluginProviders.contains(ObjectIdentifier(provider)) { provider.close() }
+        providers = []; providerRows = [:]
+        fileRevision += 1
+        fileSearch.stop()
+        fileDelay?.cancel(); fileDelay = nil; pasteTarget = nil
+        panel?.orderOut(nil)
+        if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil
+        if let outside { NSEvent.removeMonitor(outside) }; outside = nil
+        if let activation { NSWorkspace.shared.notificationCenter.removeObserver(activation) }; activation = nil
+        confirmation.disarm(); armedRecord = nil; disarming?.cancel(); disarming = nil
+        argument = nil; prompt = nil
+        records = []; rows = [:]; fileRecords = []; fileIDs = []; results = []
+        queryRows = [:]; context = nil
     }
-    /// Paste only goes ahead in the history generation its row was built in, which the store renews before it
-    /// changes its entries. The rows are therefore rebuilt whenever the entries change.
-    private func addClipboard(_ entries: [ClipboardHistoryEntry], model: AppModel) {
-        guard model.configuration.preferences.featureEnabled(.clipboard) else { return }
-        let target = pasteTarget, retention = model.clipboardHistoryStore.retentionGeneration
-        for entry in entries where !entry.isSensitive {
-            let copy: () async throws -> Void = { [weak model] in
-                guard let model, model.configuration.preferences.featureEnabled(.clipboard), model.clipboardHistoryStore.copy(entry) else {
-                    throw FrogError.message("The clipboard item is no longer available.")
-                }
-            }
-            add(SearchRecord(id: "clipboard:\(entry.id)", title: String(entry.text.prefix(100)), subtitle: "Clipboard · Paste · ⌘↩ Copy", keywords: String(entry.text.prefix(512)), symbol: "clipboard"), copy: copy) { [weak self, weak model] in
-                guard let self, let model else { return }
-                try await ClipboardHistoryDelivery.paste(entry, plainText: false, pasteboard: self.pasteboard, target: target, isCurrent: {
-                    model.configuration.preferences.featureEnabled(.clipboard) && model.clipboardHistoryStore.retentionGeneration == retention && model.clipboardHistoryStore.entries.contains(where: { $0.id == entry.id })
-                }, waitForRelease: self.waitForRelease)
-                self.onToolUse?(.clipboardPaste)
-            }
-        }
-    }
-    private func add(_ row: CommandBarRow) {
-        add(row.record, copy: row.secondary?.run, action: row.primary?.run)
-        confirmations[row.record.id] = row.primary?.confirm
-    }
-    /// A record without an action is listed but choosing it does nothing.
-    private func add(_ record: SearchRecord, copy: (() async throws -> Void)? = nil, action: (() async throws -> Void)?) {
-        if recordsByID.updateValue(record, forKey: record.id) == nil { records.append(record) }
-        else if let index = records.firstIndex(where: { $0.id == record.id }) { records[index] = record }
-        actions[record.id] = action
-        copyActions[record.id] = copy
+
+    // MARK: Ranking
+
+    private var learning: Bool { model?.commandChoices.isActive == true }
+    private func record(_ id: String) -> SearchRecord? {
+        rows[id]?.record ?? (fileIDs.contains(id) ? fileRecords.first { $0.id == id } : nil)
     }
     private func updateResults(preserveSelection: Bool = true) {
         let preserveChoice = preserveSelection && selectionWasMoved
         let selectedID = preserveChoice && results.indices.contains(selection) ? results[selection].id : nil
-        let typed = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        // Learned rows lead their bucket, those picked for this text first; one may be latched above every bucket.
-        // Off, the rows picked in this session only break ties.
-        var preferred: [SearchRecord], latched: String?
-        if learning, let index = model?.commandChoices.index {
-            let suggestions = index.suggestions(for: query)
-            var listed = Set<String>()
-            preferred = (suggestions.leading + index.frequentItems(limit: 40)).compactMap { id in listed.insert(id).inserted ? recordsByID[id] : nil }
-            latched = suggestions.latched
-        } else {
-            preferred = recentSelections.compactMap { recordsByID[$0] }
-        }
-        if !typed {
-            let files = fileRecords.prefix(4)
-            let commands = records.lazy.filter { $0.id.hasPrefix("feature:") || $0.id.hasPrefix("rule:") }.prefix(4)
-            preferred += files + commands
-            preferred += suggestedApplications
-        }
-        // Late Spotlight results must not bury an equally good app or Frog command.
-        var next = CommandSearch.results(records, query: query, preferred: preferred, trailing: typed ? fileRecords : [], latched: latched)
-        for id in queryRowIDs { actions[id] = nil; copyActions[id] = nil; confirmations[id] = nil }
-        queryRowIDs = []
-        var leading: [SearchRecord] = [], trailing: [SearchRecord] = []
-        if let context {
-            for provider in providers {
-                for row in provider.queryRows(for: query, in: context) where recordsByID[row.record.id] == nil && !queryRowIDs.contains(row.record.id) {
-                    actions[row.record.id] = row.primary?.run
-                    copyActions[row.record.id] = row.secondary?.run
-                    confirmations[row.record.id] = row.primary?.confirm
-                    queryRowIDs.append(row.record.id)
-                    if row.placement == .leading { leading.append(row.record) } else { trailing.append(row.record) }
-                }
-            }
-        }
-        next = leading + next + trailing
+        var next = argument != nil ? argumentResults() : rankedResults()
         // A row that waits for a second Return keeps saying so while the list around it changes.
         if let armed = armedRecord {
-            if let index = next.firstIndex(where: { $0.id == armed.id }), let confirm = confirmations[armed.id] {
+            if let index = next.firstIndex(where: { $0.id == armed.id }), let confirm = row(armed.id)?.primary?.confirm {
                 armedRecord = next[index]; next[index] = Self.asking(next[index], confirm)
             } else { confirmation.disarm(); armedRecord = nil; disarming?.cancel(); disarming = nil }
         }
@@ -559,80 +393,99 @@ import SwiftUI
         if selection != nextSelection { selection = nextSelection }
         selectionWasMoved = preserveChoice
     }
-    private func searchFiles() {
-        fileRevision += 1
-        fileDelay?.cancel(); fileDelay = nil
-        fileSearch.stop()
-        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard panel?.isVisible == true, text.isEmpty || text.count >= 2 else { return }
-        let revision = fileRevision
-        if text.isEmpty { startFileSearch(text, revision: revision); return }
-        fileDelay = Task { [weak self] in
-            do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
-            guard let self, self.fileRevision == revision else { return }
-            self.startFileSearch(text, revision: revision)
+    /// Learned rows lead, those picked for this text with their frecency; one may be latched above everything.
+    /// With learning off, the rows picked in this session only break ties.
+    private func rankedResults() -> [SearchRecord] {
+        let typed = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        var preferred: [SearchRecord], latched: String?, boosts: [String: Double] = [:]
+        if learning, let index = model?.commandChoices.index {
+            let suggestions = index.suggestions(for: query)
+            var listed = Set<String>()
+            preferred = (suggestions.leading + index.frequentItems(limit: 40)).compactMap { id in listed.insert(id).inserted ? record(id) : nil }
+            latched = suggestions.latched
+            if typed { boosts = index.frecency(for: query) }
+        } else {
+            preferred = recentSelections.compactMap { record($0) }
         }
-    }
-    private func startFileSearch(_ text: String, revision: Int) {
-        fileSearch.start(text: text, scopes: fileScopes) { [weak self] files in
-            guard let self, self.fileRevision == revision else { return }
-            self.listFiles(files, recent: text.isEmpty)
+        if !typed {
+            let files = fileRecords.prefix(4)
+            let commands = records.lazy.filter { $0.id.hasPrefix("feature:") || $0.id.hasPrefix("rule:") }.prefix(4)
+            preferred += files + commands
+            preferred += applications.suggested
         }
-    }
-    /// Lists what the file search reports now in place of what it reported before.
-    func listFiles(_ files: [SearchRecord], recent: Bool) {
-        // Spotlight reports its first rows as they stand while it gathers. A file the choice was moved to keeps its
-        // row while it is chosen, so that a report without it does not hand Return to whatever is listed first.
-        let chosen = selectionWasMoved && results.indices.contains(selection)
-            ? fileRecords.firstIndex { $0.id == results[selection].id } : nil
-        let kept = chosen.map { fileRecords[$0] }
-        removeFiles()
-        addPickedFiles()
-        for file in files { addFile(file) }
-        if let chosen, let kept, recordsByID[kept.id] == nil {
-            addFile(kept)
-            let record = fileRecords.removeLast()
-            fileRecords.insert(record, at: min(chosen, fileRecords.count))
-        }
-        if recent { recentFiles = Array(files.prefix(8)) }
-        updateResults()
-    }
-    /// Files picked before are listed before Spotlight answers: those of this session, and with learning on the
-    /// learned ones that still exist.
-    private func addPickedFiles() {
-        for file in selectedFiles { addFile(file) }
-        if learning, let learned = model?.commandChoices.learnedFiles { for file in learned { addFile(file) } }
-    }
-    private var learning: Bool { model?.commandChoices.isActive == true }
-    private func addFile(_ record: SearchRecord) {
-        guard record.id.hasPrefix("file:") else { return }
-        let url = URL(fileURLWithPath: String(record.id.dropFirst(5)))
-        if let previous = recordsByID.updateValue(record, forKey: record.id) {
-            if previous != record, let index = fileRecords.firstIndex(where: { $0.id == record.id }) { fileRecords[index] = record }
-        } else { fileRecords.append(record) }
-        let open = openFile
-        actions[record.id] = { [weak self] in
-            guard open(url) else {
-                // A learned file that has gone is not suggested again.
-                self?.model?.commandChoices.forget(id: record.id)
-                throw FrogError.message("The file could not be opened.")
+        // Late Spotlight results must not bury an equally good app or Frog command.
+        let ranked = CommandSearch.results(records, query: query, preferred: preferred, trailing: typed ? fileRecords : [], latched: latched, boosts: boosts)
+        queryRows = [:]
+        var leading: [SearchRecord] = [], trailing: [SearchRecord] = []
+        if let context {
+            for provider in providers {
+                for row in provider.queryRows(for: query, in: context) where rows[row.record.id] == nil && queryRows[row.record.id] == nil {
+                    queryRows[row.record.id] = row
+                    if row.placement == .leading { leading.append(row.record) } else { trailing.append(row.record) }
+                }
             }
         }
+        return leading + ranked + trailing
+    }
+
+    // MARK: Asking for a value
+
+    /// The options that match what was typed, or the typed text itself, as the rows Return submits.
+    private func argumentResults() -> [SearchRecord] {
+        guard let argument, let prompt else { return [] }
+        if prompt.options.isEmpty {
+            let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? [] : [SearchRecord(id: "argument:\(text)", title: text, subtitle: argument.title, symbol: argument.symbol)]
+        }
+        let options = prompt.options.map { SearchRecord(id: "argument:\($0)", title: $0, subtitle: argument.title, symbol: argument.symbol) }
+        return CommandSearch.results(options, query: query)
+    }
+    private func enterArgument(_ record: SearchRecord, _ prompt: CommandRowPrompt) {
+        typedBeforeArgument = query
+        self.prompt = prompt
+        argument = CommandArgument(id: record.id, title: record.title, symbol: record.symbol, placeholder: prompt.placeholder)
+        selectionWasMoved = false
+        if query.isEmpty { updateResults(preserveSelection: false) } else { query = "" }
+    }
+    /// Back to the list the prompt was chosen from.
+    func leaveArgument() {
+        guard argument != nil else { return }
+        argument = nil; prompt = nil
+        let typed = typedBeforeArgument
+        if query == typed { updateResults(preserveSelection: false) } else { query = typed }
+    }
+
+    // MARK: Choosing
+
+    private func row(_ id: String) -> CommandBarRow? { rows[id] ?? queryRows[id] }
+    private func action(for record: SearchRecord, copyOnly: Bool) -> (() async throws -> Void)? {
+        if record.id.hasPrefix("argument:"), let prompt {
+            let value = String(record.id.dropFirst("argument:".count))
+            return { try await prompt.submit(value) }
+        }
+        if fileIDs.contains(record.id) { return fileAction(record) }
+        guard let row = row(record.id) else { return nil }
+        return (copyOnly ? row.secondary?.run : nil) ?? row.primary?.run
     }
     func choose(_ index: Int? = nil, copyOnly: Bool = false) {
         let index = index ?? selection
-        guard let model, model.configuration.preferences.featureEnabled(.commandBar), results.indices.contains(index) else { return }
-        let copyAction = copyOnly ? copyActions[results[index].id] : nil
-        guard let action = copyAction ?? actions[results[index].id] else { return }
-        let selected = results[index], selectedID = results[index].id
-        if copyAction == nil, let confirm = confirmations[selectedID], !confirmation.press(selectedID, now: Date()) {
+        guard enabled, results.indices.contains(index) else { return }
+        let selected = results[index]
+        if argument == nil, let prompt = row(selected.id)?.primary?.prompt {
+            enterArgument(selected, prompt); return
+        }
+        let copies = copyOnly && row(selected.id)?.secondary != nil
+        guard let action = action(for: selected, copyOnly: copyOnly) else { return }
+        if !copies, argument == nil, let confirm = row(selected.id)?.primary?.confirm, !confirmation.press(selected.id, now: Date()) {
             arm(index, confirm: confirm)
             return
         }
+        // A value typed for a prompt is a pick of the action it was asked for, after the text that found it.
+        let pickedID = argument?.id ?? selected.id
         // A calculation answers only its own query and is never listed again as a suggestion.
-        let suggestible = recordsByID[selectedID] != nil
+        let suggestible = argument != nil || rows[pickedID] != nil || fileIDs.contains(pickedID)
+        let typed = argument != nil ? typedBeforeArgument : query
         // Hiding and the next open clear the query.
-        let typed = query
         hide()
         let token = generation
         delivery = Task { [weak self] in
@@ -643,14 +496,14 @@ import SwiftUI
                 try await action()
                 try Task.checkCancellation()
                 if suggestible {
-                    self.recentSelections.removeAll { $0 == selectedID }
-                    self.recentSelections.insert(selectedID, at: 0)
+                    self.recentSelections.removeAll { $0 == pickedID }
+                    self.recentSelections.insert(pickedID, at: 0)
                     self.recentSelections = Array(self.recentSelections.prefix(40))
                     // Recorded only while learning is still on; a copy is a pick of the same row.
-                    self.model?.commandChoices.record(typed: typed, id: selectedID)
+                    self.model?.commandChoices.record(typed: typed, id: pickedID)
                 }
-                if selectedID.hasPrefix("file:") {
-                    self.selectedFiles.removeAll { $0.id == selectedID }
+                if pickedID.hasPrefix("file:") {
+                    self.selectedFiles.removeAll { $0.id == pickedID }
                     self.selectedFiles.insert(selected, at: 0)
                     self.selectedFiles = Array(self.selectedFiles.prefix(8))
                 }
@@ -683,23 +536,72 @@ import SwiftUI
     private static func asking(_ record: SearchRecord, _ confirm: String) -> SearchRecord {
         SearchRecord(id: record.id, title: record.title, subtitle: confirm, keywords: record.keywords, symbol: record.symbol)
     }
-    func hide() {
-        showsPositionReset = false
-        generation = UUID(); indexing?.cancel(); delivery?.cancel(); indexing = nil; delivery = nil
-        for load in iconLoads.values { load.task.cancel() }; iconLoads = [:]
-        windowIndexing?.cancel(); windowIndexing = nil
-        documentIndexing?.cancel(); documentIndexing = nil
+
+    // MARK: Files
+
+    private func searchFiles() {
         fileRevision += 1
+        fileDelay?.cancel(); fileDelay = nil
         fileSearch.stop()
-        fileDelay?.cancel(); fileDelay = nil; sourceObservation = nil; pasteTarget = nil
-        panel?.orderOut(nil)
-        if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil
-        if let outside { NSEvent.removeMonitor(outside) }; outside = nil
-        if let activation { NSWorkspace.shared.notificationCenter.removeObserver(activation) }; activation = nil
-        confirmation.disarm(); armedRecord = nil; disarming?.cancel(); disarming = nil
-        records = []; recordsByID = [:]; fileRecords = []; actions = [:]; copyActions = [:]; results = []
-        queryRowIDs = []; confirmations = [:]; context = nil
+        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard panel?.isVisible == true, argument == nil, text.isEmpty || text.count >= 2 else { return }
+        let revision = fileRevision
+        if text.isEmpty { startFileSearch(text, revision: revision); return }
+        fileDelay = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
+            guard let self, self.fileRevision == revision else { return }
+            self.startFileSearch(text, revision: revision)
+        }
     }
+    private func startFileSearch(_ text: String, revision: Int) {
+        fileSearch.start(text: text, scopes: fileScopes) { [weak self] files in
+            guard let self, self.fileRevision == revision else { return }
+            self.listFiles(files, recent: text.isEmpty)
+        }
+    }
+    /// Lists what the file search reports now in place of what it reported before.
+    func listFiles(_ files: [SearchRecord], recent: Bool) {
+        // Spotlight reports its first rows as they stand while it gathers. A file the choice was moved to keeps its
+        // row while it is chosen, so that a report without it does not hand Return to whatever is listed first.
+        let chosen = selectionWasMoved && results.indices.contains(selection)
+            ? fileRecords.firstIndex { $0.id == results[selection].id } : nil
+        let kept = chosen.map { fileRecords[$0] }
+        removeFiles()
+        addPickedFiles()
+        for file in files { addFile(file) }
+        if let chosen, let kept, !fileIDs.contains(kept.id) {
+            addFile(kept)
+            let record = fileRecords.removeLast()
+            fileRecords.insert(record, at: min(chosen, fileRecords.count))
+        }
+        if recent { recentFiles = Array(files.prefix(8)) }
+        updateResults()
+    }
+    /// Files picked before are listed before Spotlight answers: those of this session, and with learning on the
+    /// learned ones that still exist.
+    private func addPickedFiles() {
+        for file in selectedFiles { addFile(file) }
+        if learning, let learned = model?.commandChoices.learnedFiles { for file in learned { addFile(file) } }
+    }
+    private func addFile(_ record: SearchRecord) {
+        guard record.id.hasPrefix("file:"), rows[record.id] == nil else { return }
+        if fileIDs.insert(record.id).inserted { fileRecords.append(record) }
+        else if let index = fileRecords.firstIndex(where: { $0.id == record.id }), fileRecords[index] != record { fileRecords[index] = record }
+    }
+    private func fileAction(_ record: SearchRecord) -> () async throws -> Void {
+        let url = URL(fileURLWithPath: String(record.id.dropFirst(5))), open = openFile
+        return { [weak self] in
+            guard open(url) else {
+                // A learned file that has gone is not suggested again.
+                self?.model?.commandChoices.forget(id: record.id)
+                throw FrogError.message("The file could not be opened.")
+            }
+        }
+    }
+    private func removeFiles() { fileRecords = []; fileIDs = [] }
+
+    // MARK: Position
+
     /// Where the bar opens: where it was dragged to while a display still shows all of it, otherwise in the middle
     /// of the display in use.
     static func openingOrigin(of frame: NSRect, dragged: Bool, displays: [NSRect], inUse: NSRect?) -> NSPoint {
@@ -718,22 +620,16 @@ import SwiftUI
         panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - panel.frame.width / 2, y: screen.visibleFrame.midY - panel.frame.height / 2))
         showsPositionReset = false; userPlaced = false
     }
-    private func removeFiles() {
-        for record in fileRecords { recordsByID[record.id] = nil; actions[record.id] = nil }
-        fileRecords = []
-    }
     private func copy(_ value: String) { pasteboard.clearContents(); pasteboard.setString(value, forType: .string) }
     isolated deinit { stop() }
+}
 
-    // MARK: - Cleaner
-
-    /// The listed applications, for the App cleaner's "Uninstall" rows.
-    private func cleanerApplications() -> [CleanerCommandApp] {
-        cachedApplications.compactMap { rule in
-            guard let path = rule.action?.applicationPath, let record = applicationRecords[path] else { return nil }
-            return CleanerCommandApp(record: record, path: path, bundleID: rule.action?.applicationBundleID)
-        }
-    }
+/// An action asking for its value in the search field.
+struct CommandArgument: Equatable {
+    let id: String
+    let title: String
+    let symbol: String
+    let placeholder: String
 }
 
 /// Serial reads keep a fast scroll from flooding the cooperative pool with blocking icon I/O.
@@ -765,6 +661,12 @@ private actor CommandIconReader {
 @MainActor protocol CommandFileSearching: AnyObject {
     func start(text: String, scopes: [Any], receive: @escaping @MainActor ([SearchRecord]) -> Void)
     func stop()
+}
+
+/// No files, for a bar that only ranks its rows.
+@MainActor final class NoCommandFileSearch: CommandFileSearching {
+    func start(text: String, scopes: [Any], receive: @escaping @MainActor ([SearchRecord]) -> Void) {}
+    func stop() {}
 }
 
 @MainActor final class MetadataCommandFileSearch: CommandFileSearching {
@@ -859,14 +761,20 @@ private final class CommandBarPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 struct CommandBarView: View {
+    static let size = NSSize(width: 600, height: 390)
     @ObservedObject var bar: CommandBar
     @FocusState private var focused: Bool
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(FrogStyle.muted)
                     .frame(width: 24, height: 40).overlay { WindowDragRegion(onDragEnd: bar.finishDragging).help("Drag to move") }
-                TextField("Search anything…", text: $bar.query)
+                if let argument = bar.argument {
+                    Label(argument.title, systemImage: argument.symbol).font(FrogType.label).lineLimit(1)
+                        .foregroundStyle(FrogStyle.accent).padding(.horizontal, 8).frame(height: FrogStyle.compactHeight)
+                        .background(FrogStyle.accentSoft, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                }
+                TextField(bar.argument?.placeholder ?? "Search", text: $bar.query)
                     .textFieldStyle(.plain).font(FrogType.lead).focused($focused)
                 if bar.showsPositionReset {
                     IconAction(title: "Center command bar", symbol: "scope") { bar.center() }
@@ -881,15 +789,18 @@ struct CommandBarView: View {
                                 .equatable().id(result.id)
                         }
                         if bar.results.isEmpty {
-                            Text("No matching results").font(FrogType.body).foregroundStyle(FrogStyle.muted).padding(28)
+                            Text(bar.argument == nil ? "No results" : "Type, then press Return")
+                                .font(FrogType.body).foregroundStyle(FrogStyle.muted).padding(28)
                         }
                     }.padding(6)
                 }.onChange(of: bar.selection) { _, value in
                     if bar.results.indices.contains(value) { proxy.scrollTo(bar.results[value].id) }
                 }
             }
-         }.frame(width: 600, height: 390).frogPanel().environment(\.frogKeyboardSurface, true)
-             .onAppear { focused = true }.onChange(of: bar.invocation) { focused = true }
+        }.frame(width: Self.size.width, height: Self.size.height).frogPanel().environment(\.frogKeyboardSurface, true)
+            // Opening, typing and the arrow keys are instant: nothing inside the bar animates.
+            .transaction { $0.animation = nil }
+            .onAppear { focused = true }.onChange(of: bar.invocation) { focused = true }
     }
 }
 
@@ -909,13 +820,14 @@ private struct CommandResultRow: View, Equatable {
         Button {
             if let index = bar.results.firstIndex(where: { $0.id == result.id }) { bar.choose(index) }
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 CommandResultIcon(bar: bar, result: result, key: iconKey)
                 Text(result.title).font(FrogType.body).lineLimit(1)
                 Spacer(minLength: 10)
-                Text(result.subtitle).font(FrogType.caption).foregroundStyle(result.isFrogCommand ? FrogStyle.accent : FrogStyle.muted).lineLimit(1).frame(maxWidth: 160, alignment: .trailing)
-                if selected { Image(systemName: "return").font(.system(size: 11, weight: .medium)).foregroundStyle(FrogStyle.accent) }
-            }.padding(.horizontal, 8).frame(height: 40)
+                Text(result.subtitle).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1).frame(maxWidth: 180, alignment: .trailing)
+                Image(systemName: "return").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.muted)
+                    .frame(width: 12).opacity(selected ? 1 : 0)
+            }.padding(.horizontal, 8).frame(height: 36)
                 .frogRowHighlight(hovering: hovering, selected: selected)
         }.buttonStyle(.plain).onHover { hovering = $0 }
     }
@@ -951,7 +863,7 @@ private struct CommandResultIcon: View {
 
 private extension SearchRecord {
     /// Frog's own pages, commands and answers, set apart from apps, windows, files and system destinations.
-    var isFrogCommand: Bool { id == "features" || ["feature:", "route:", "rule:", "quick:", "layout:", "system:", "calculation:"].contains { id.hasPrefix($0) } }
+    var isFrogCommand: Bool { id == "features" || ["feature:", "plugin-page:", "route:", "rule:", "quick:", "layout:", "system:", "calculation:", "action:", "argument:"].contains { id.hasPrefix($0) } }
 }
 
 private extension URL {

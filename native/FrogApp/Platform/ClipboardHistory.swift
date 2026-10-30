@@ -330,13 +330,21 @@ final class ClipboardHistoryStore: ObservableObject {
         changeCount = pasteboard.changeCount
     }
 
+    /// The shortest start of an ID that `entries(id:)` looks up.
+    static let shortestID = 4
+
     /// The entry with this ID, or with an ID that starts with these characters (at least four).
     func entry(id text: String) -> ClipboardHistoryEntry? {
-        let key = text.trimmingCharacters(in: .whitespaces).lowercased()
-        if let id = UUID(uuidString: key) { return entries.first { $0.id == id } }
-        guard key.count >= 4 else { return nil }
-        let matches = entries.filter { $0.id.uuidString.lowercased().hasPrefix(key) }
+        let matches = entries(id: text)
         return matches.count == 1 ? matches[0] : nil
+    }
+
+    /// Every entry whose ID is this one or starts with these characters; more than one when the start is too short.
+    func entries(id text: String) -> [ClipboardHistoryEntry] {
+        let key = text.trimmingCharacters(in: .whitespaces).lowercased()
+        if let id = UUID(uuidString: key) { return entries.filter { $0.id == id } }
+        guard key.count >= Self.shortestID else { return [] }
+        return entries.filter { $0.id.uuidString.lowercased().hasPrefix(key) }
     }
 
     /// Writing through the store keeps the item's row, also as plain text, and the next

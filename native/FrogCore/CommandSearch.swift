@@ -10,8 +10,10 @@ public struct SearchRecord: Identifiable, Equatable, Sendable {
     fileprivate let searchTitle: String
     fileprivate let searchText: String
     fileprivate let aliases: [String]
+    fileprivate let fuzzyTitle: FuzzyMatch.Text
+    fileprivate let fuzzyAliases: [FuzzyMatch.Text]
     fileprivate let queryStyle: QueryStyle
-    /// Applications: what a search is usually for, so a title match ranks one bucket higher. Their subtitle names
+    /// Applications: what a search is usually for, so a title match ranks one tier higher. Their subtitle names
     /// the kind they all share and is not searched, or two of its letters would list every one of them.
     fileprivate let prominent: Bool
     public init(id: String, title: String, subtitle: String = "", keywords: String = "", symbol: String = "command", aliases: [String] = [], queryStyle: QueryStyle = .literal, prominent: Bool = false) {
@@ -23,14 +25,32 @@ public struct SearchRecord: Identifiable, Equatable, Sendable {
         }.filter { !$0.isEmpty }
         self.queryStyle = queryStyle
         searchTitle = CommandSearch.normalized(title)
+        fuzzyTitle = FuzzyMatch.Text(folded: searchTitle, original: title.trimmingCharacters(in: .whitespacesAndNewlines))
+        fuzzyAliases = self.aliases.map { FuzzyMatch.Text(folded: $0) }
         searchText = searchTitle + " " + CommandSearch.normalized((prominent ? "" : subtitle + " ") + keywords) + (aliases.isEmpty ? "" : " " + self.aliases.joined(separator: " "))
     }
 }
 
 public enum CommandSearch {
-    /// Within one relevance bucket `preferred` records lead, then applications, then the catalogue; `trailing` records come last.
-    /// A `latched` record that matches leads every bucket; one that does not match is not listed.
-    public static func results(_ records: [SearchRecord], query: String, limit: Int = 80, preferred: [SearchRecord] = [], trailing: [SearchRecord] = [], latched: String? = nil) -> [SearchRecord] {
+    /// How the parts of a row's score add up. Each tier of title match is worth more than any fuzzy difference
+    /// within one, applications rank a tier higher, and frecency moves a row at most a tier and a half.
+    public enum Weights {
+        public static let tier: [Double] = [0, 100, 200, 300]
+        public static let application = 120.0
+        public static let leading = 5.0
+        public static let trailing = 15.0
+        public static let frecency = 15.0
+        public static let frecencyCap = 150.0
+        /// A word found only in a row's keywords, subtitle or aliases' text, per character.
+        public static let keyword: Int32 = 8
+    }
+
+    /// Rows that match every typed word, best first. A word matches a title or alias fuzzily (fzf v2 scoring) or the
+    /// rest of the row's text as written. Within the score, `preferred` rows win ties and are never `trailing`,
+    /// `trailing` rows lose them, and `boosts` (frecency, in learned strength) add up to `Weights.frecencyCap`.
+    /// A `latched` record that matches leads every other; one that does not match is not listed.
+    /// Without text, `preferred` rows lead in their order, then the catalogue.
+    public static func results(_ records: [SearchRecord], query: String, limit: Int = 80, preferred: [SearchRecord] = [], trailing: [SearchRecord] = [], latched: String? = nil, boosts: [String: Double] = [:]) -> [SearchRecord] {
         let query = normalized(query)
         guard limit > 0 else { return [] }
         var preferredIDs = Set<String>()
@@ -51,27 +71,52 @@ public enum CommandSearch {
         // "open safari" asks for Safari. Alone, such a word is looked for in the names.
         let named = words.filter { !applicationContext.contains($0) }
         let applicationWords = named.isEmpty ? words : named
-        // Stable rank buckets avoid sorting the entire catalogue on every keystroke: five relevance levels
-        // (the fifth holds exact application titles), each with its leading records ahead of the rest, and above
-        // them the one latched record.
-        var ranked = [[SearchRecord]](repeating: [], count: 11)
-        func append(_ record: SearchRecord, leading: Bool = false) {
-            let title = record.searchTitle
+        let applicationQuery = applicationWords.joined(separator: " ")
+        let patterns = Dictionary((words + commandWords + applicationWords).map { ($0, FuzzyMatch.scalars($0)) }, uniquingKeysWith: { first, _ in first })
+        let scratch = FuzzyMatch.Scratch()
+        var scored: [(record: SearchRecord, score: Double)] = []
+        var listed = Set<String>()
+        func consider(_ record: SearchRecord, leading: Bool = false, trailing: Bool = false) {
+            guard listed.insert(record.id).inserted else { return }
             if record.queryStyle == .command && !canMatchCommand { return }
             let words = record.queryStyle == .command ? commandWords : record.prominent ? applicationWords : words
-            let effectiveQuery = record.queryStyle == .command ? commandQuery : query
-            guard words.allSatisfy({ record.searchText.contains($0) }) else { return }
-            let match = title == query || title == effectiveQuery || record.aliases.contains(effectiveQuery) ? 3
+            let effectiveQuery = record.queryStyle == .command ? commandQuery : record.prominent ? applicationQuery : query
+            var fuzzy: Int32 = 0
+            for word in words {
+                guard let found = match(word, patterns[word] ?? FuzzyMatch.scalars(word), in: record, scratch: scratch) else { return }
+                fuzzy += found
+            }
+            let title = record.searchTitle
+            let tier = title == query || title == effectiveQuery || record.aliases.contains(effectiveQuery) ? 3
                 : title.hasPrefix(effectiveQuery) || record.aliases.contains(where: { $0.hasPrefix(effectiveQuery) }) ? 2
                 : title.contains(effectiveQuery) ? 1 : 0
-            let rank = record.id == latched ? 10 : (record.prominent && match > 0 ? match + 1 : match) * 2 + (leading || record.prominent ? 1 : 0)
-            if ranked[rank].count < limit { ranked[rank].append(record) }
+            var score = Double(fuzzy) + Weights.tier[tier]
+            // An app leads equal letters elsewhere; a scattered match earns it half the lift.
+            if record.prominent { score += tier > 0 ? Weights.application : Weights.application / 2 }
+            if leading { score += Weights.leading } else if trailing { score -= Weights.trailing }
+            if let boost = boosts[record.id] { score += min(boost * Weights.frecency, Weights.frecencyCap) }
+            if record.id == latched { score = .infinity }
+            scored.append((record, score))
         }
-        for record in preferred { append(record, leading: true) }
-        for record in records where !preferredIDs.contains(record.id) { append(record) }
-        for record in trailing where !preferredIDs.contains(record.id) { append(record) }
-        return Array(ranked.reversed().joined().prefix(limit))
+        for record in preferred { consider(record, leading: true) }
+        for record in records { consider(record) }
+        for record in trailing { consider(record, trailing: true) }
+        // A stable sort: equal scores keep the order the rows were offered in.
+        let order = scored.indices.sorted { scored[$0].score != scored[$1].score ? scored[$0].score > scored[$1].score : $0 < $1 }
+        return order.prefix(limit).map { scored[$0].record }
     }
+
+    /// The best score of one typed word in a row: fuzzily in its title or aliases, else as written in the rest.
+    private static func match(_ word: String, _ pattern: [UInt32], in record: SearchRecord, scratch: FuzzyMatch.Scratch) -> Int32? {
+        var best = FuzzyMatch.score(pattern, in: record.fuzzyTitle, scratch: scratch)
+        for alias in record.fuzzyAliases {
+            if let score = FuzzyMatch.score(pattern, in: alias, scratch: scratch), score > (best ?? 0) { best = score }
+        }
+        // Scattered letters in a long title are noise: each character must earn most of a plain match.
+        if let found = best, found >= Int32(pattern.count) * (FuzzyMatch.scoreMatch - 4) { return found }
+        return record.searchText.contains(word) ? Int32(pattern.count) * Weights.keyword : nil
+    }
+
     private static let applicationContext: Set<String> = ["open", "launch", "app"]
     private static let commandContext: Set<String> = ["change", "set", "adjust", "configure", "open", "show", "find", "enable", "disable", "turn", "on", "off", "my", "the", "a", "an", "please", "how", "do", "i", "to", "me", "mac", "macos", "system", "settings", "preferences", "and", "can", "where", "is", "are", "all"]
     fileprivate static func commandSubject(_ query: String) -> [String] {
