@@ -372,7 +372,7 @@ extension WindowSwitcherSettings {
     /// Accessibility. Called by the app model after each change and once a second.
     func refresh() {
         let configuration = model.configuration
-        switch Self.step(configuration, status: status) {
+        switch Self.step(configuration, status: status, pluginShortcuts: model.unmirroredPluginShortcuts.map(\.hotkey)) {
         case .none: return
         case .stop(let reason):
             controller?.stop()
@@ -425,7 +425,7 @@ extension WindowSwitcherSettings {
         case none
     }
 
-    static func step(_ configuration: Configuration, status: WindowSwitcherStatus) -> Step {
+    static func step(_ configuration: Configuration, status: WindowSwitcherStatus, pluginShortcuts: [Hotkey] = []) -> Step {
         let preferences = configuration.preferences
         let switcherHotkey = preferences.toolkitSettings.effectiveWindowSwitcherHotkey
         func conflicts(_ hotkey: Hotkey) -> Bool {
@@ -443,7 +443,7 @@ extension WindowSwitcherSettings {
                         workflow.clipboardHistoryEnabled == true ? workflow.effectiveClipboardHistoryHotkey : nil,
                         preferences.featureEnabled(.commandBar) ? preferences.toolkitSettings.effectiveCommandBarHotkey : nil,
                         preferences.featureEnabled(.menuBar) ? preferences.toolkitSettings.menuBar?.hotkey : nil].compactMap { $0 }
-            + WindowSwitches(preferences).shortcutRules.compactMap(\.hotkey)
+            + WindowSwitches(preferences).shortcutRules.compactMap(\.hotkey) + pluginShortcuts
         guard preferences.windowSwitcherEnabled && (ruleConflict || frogKeys.contains(where: conflicts)) else { return .configure }
         let reason = WindowSwitcherStatus.conflict(switcherHotkey)
         // Stopping again would publish Off and then the conflict, redrawing the page each second.

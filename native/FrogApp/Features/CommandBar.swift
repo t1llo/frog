@@ -59,7 +59,6 @@ import SwiftUI
         CalculationRows(),
         EmojiRows(),
         CleanerCommandRows(applications: { [unowned self] in self.applications.cleanerApplications }),
-        PhoneCommandRows(),
         PluginCommandRows(),
         PluginActionRows(),
     ] + extraProviders

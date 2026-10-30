@@ -79,9 +79,9 @@ final class ClipboardHistoryPastePipelineTests: XCTestCase {
         try await exerciseNativeEditor(exposesRange: false, expectedPaste: false, afterClose: { $0.editor.isEditable = false })
     }
 
-    func testRichPlainAndSensitiveDeliveryIntoOriginalNativeField() async throws {
+    func testRichAndPlainDeliveryIntoOriginalNativeField() async throws {
         for plain in [false, true] {
-            try await exerciseNativeEditor(exposesRange: false, plain: plain, richSensitive: true)
+            try await exerciseNativeEditor(exposesRange: false, plain: plain, rich: true)
         }
     }
 
@@ -136,7 +136,7 @@ final class ClipboardHistoryPastePipelineTests: XCTestCase {
     }
 
     private func exerciseNativeEditor(exposesRange: Bool, expectedPaste: Bool = true,
-                                      plain: Bool = false, richSensitive: Bool = false,
+                                      plain: Bool = false, rich: Bool = false,
                                       expectedEditorText: String? = nil, expectedOtherText: String = "unrelated field",
                                       configure: (ClipboardEditorFixture) -> Void = { _ in },
                                       whilePresented: (ClipboardEditorFixture) -> Void = { _ in },
@@ -147,9 +147,9 @@ final class ClipboardHistoryPastePipelineTests: XCTestCase {
         configure(fixture)
         let history = ClipboardHistoryStore(pasteboard: fixture.pasteboard)
         history.configure(enabled: true, automaticallyPoll: false)
-        let rich = NSAttributedString(string: "chosen fixture", attributes: [.font: NSFont.boldSystemFont(ofSize: 15)])
-        let rtf = try rich.data(from: NSRange(location: 0, length: rich.length), documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
-        let entry = ClipboardHistoryEntry(text: "chosen fixture", formatting: richSensitive ? [NSPasteboard.PasteboardType.rtf.rawValue: rtf] : [:], isSensitive: richSensitive)
+        let styled = NSAttributedString(string: "chosen fixture", attributes: [.font: NSFont.boldSystemFont(ofSize: 15)])
+        let rtf = try styled.data(from: NSRange(location: 0, length: styled.length), documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf])
+        let entry = ClipboardHistoryEntry(text: "chosen fixture", formatting: rich ? [NSPasteboard.PasteboardType.rtf.rawValue: rtf] : [:])
         XCTAssertTrue(entry.write(to: fixture.pasteboard, plainText: false))
         await history.poll()
         let controller = ClipboardHistoryController(pasteboard: fixture.pasteboard, history: history,
@@ -166,7 +166,6 @@ final class ClipboardHistoryPastePipelineTests: XCTestCase {
         // Exercise actual popup search focus, then select using its real event monitor.
         let search = try XCTUnwrap(descendants(try XCTUnwrap(panel.contentView)).compactMap { $0 as? NSTextField }.first)
         panel.makeFirstResponder(search)
-        controller.state.revealedIDs = Set(history.entries.map(\.id))
         controller.state.query = "chosen"
         whilePresented(fixture)
         let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: plain ? .shift : [],
@@ -178,8 +177,7 @@ final class ClipboardHistoryPastePipelineTests: XCTestCase {
         XCTAssertEqual(fixture.editor.string, expectedEditorText ?? (expectedPaste ? "before chosen fixture after" : "before replace after"), errors.joined(separator: "; "))
         XCTAssertEqual(fixture.other.string, expectedOtherText)
         XCTAssertEqual(errors.isEmpty, expectedPaste, errors.joined(separator: "; "))
-        if richSensitive {
-            XCTAssertTrue(fixture.pasteboard.types?.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) == true)
+        if rich {
             let font = fixture.editor.textStorage?.attribute(.font, at: 7, effectiveRange: nil) as? NSFont
             XCTAssertEqual(font.map { NSFontManager.shared.traits(of: $0).contains(.boldFontMask) } ?? false, !plain)
         }

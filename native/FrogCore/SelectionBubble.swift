@@ -226,7 +226,8 @@ public enum BubbleBlock: Equatable, Sendable {
 public enum SelectionBubblePolicy {
     /// Checked before any Accessibility call, first block wins.
     public static func mayRead(_ context: BubbleContext, options: SelectionBubbleOptions) -> BubbleBlock? {
-        if !context.explainEnabled || !context.bubbleEnabled { return .off }
+        // The bubble belongs to Writing and offers Explain too, so either one gives it something to show.
+        if !(context.explainEnabled || context.writingEnabled) || !context.bubbleEnabled { return .off }
         if !context.accessibilityTrusted { return .needsAccessibility }
         if context.frogFrontmost { return .frogFrontmost }
         if context.secureInput { return .secureInput }
@@ -304,12 +305,9 @@ public enum SelectionBubblePolicy {
         return nil
     }
 
-    /// The status line on the Explain page.
-    public static func status(explainEnabled: Bool, bubbleEnabled: Bool, accessibilityTrusted: Bool) -> String? {
-        guard bubbleEnabled else { return nil }
-        guard explainEnabled else { return "Turn on Explain to use the bubble" }
-        guard accessibilityTrusted else { return "Needs Accessibility to see what you select" }
-        return nil
+    /// The note under the bubble switch on the Writing page.
+    public static func status(bubbleEnabled: Bool, accessibilityTrusted: Bool) -> String? {
+        bubbleEnabled && !accessibilityTrusted ? "Needs Accessibility to see what you select" : nil
     }
 }
 
@@ -318,7 +316,7 @@ public struct BubbleItem: Equatable, Identifiable, Sendable {
     public var id: UUID
     public var title: String
     public var symbol: String
-    /// An answer rule, shown in the answer panel; otherwise a Writing rule that replaces the selection.
+    /// A rule shown in the answer panel; otherwise one that replaces the selection or copies its result.
     public var answers: Bool
     /// The rule's own shortcut, shown beside it in the full list.
     public var hotkey: Hotkey?
@@ -332,28 +330,22 @@ public enum SelectionBubbleItems {
     public static let answerSymbol = "questionmark.bubble"
     public static let writingSymbol = "text.alignleft"
 
-    /// Every rule the bubble can offer, in its order: answer rules with Explain leading, then Writing rules. The
-    /// Explain page lists these to choose which ones the bubble shows. Explain is the one answer rule Frog adds
-    /// itself, so it leads under any name the person gives it.
+    /// Every rule the bubble can offer, in its order: the Explain rule while Explain is on, then the Writing rules.
+    /// The Writing page lists these to choose which ones the bubble shows.
     public static func candidates(rules: [Rule], explainEnabled: Bool, writingEnabled: Bool) -> [Rule] {
         var all: [Rule] = []
-        if explainEnabled {
-            let answers = rules.filter { $0.enabled && $0.answersInPanel }
-            all += answers.filter(\.preset) + answers.filter { !$0.preset }
-        }
-        if writingEnabled {
-            all += rules.filter { $0.enabled && $0.category == .text && !$0.answersInPanel }
-        }
+        if explainEnabled { all += rules.filter { $0.enabled && $0.isExplainRule } }
+        if writingEnabled { all += rules.filter { $0.enabled && $0.isWritingRule } }
         return all
     }
 
-    /// The candidates the person did not hide, Writing rules only in an editable field. Past `visibleLimit` items,
-    /// one slot goes to More and the rest wait behind it.
+    /// The candidates that show in the bubble; a rule that replaces the selection only in an editable field. Past
+    /// `visibleLimit` items, one slot goes to More and the rest wait behind it.
     public static func items(rules: [Rule], explainEnabled: Bool, writingEnabled: Bool, editable: Bool,
-                             hidden: Set<UUID> = [], configured: (Rule) -> Bool,
+                             configured: (Rule) -> Bool,
                              visibleLimit: Int = 4) -> (visible: [BubbleItem], more: [BubbleItem]) {
         let all = candidates(rules: rules, explainEnabled: explainEnabled, writingEnabled: writingEnabled)
-            .filter { !hidden.contains($0.id) && ($0.answersInPanel || editable) && configured($0) }
+            .filter { $0.showsInBubble && ($0.textOutput != .replace || editable) && configured($0) }
             .map { BubbleItem(id: $0.id, title: $0.name.trimmingCharacters(in: .whitespacesAndNewlines),
                               symbol: $0.answersInPanel ? answerSymbol : writingSymbol, answers: $0.answersInPanel,
                               hotkey: $0.hotkey) }

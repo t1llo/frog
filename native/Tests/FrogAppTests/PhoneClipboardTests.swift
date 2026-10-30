@@ -82,38 +82,3 @@ final class PhoneClipboardTests: XCTestCase {
         XCTAssertTrue(forwarded.isEmpty)
     }
 }
-
-/// Phone is created only while its feature is on.
-@MainActor
-final class PhoneFeatureTests: XCTestCase {
-    func testPhoneRunsOnlyWhileItsFeatureIsOn() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("frog-phone-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        try ConfigurationStore(directory: directory).save(Configuration())
-        let pasteboard = NSPasteboard.withUniqueName()
-        defer { pasteboard.releaseGlobally() }
-        let history = ClipboardHistoryStore(pasteboard: pasteboard, gate: ClipboardHistoryCaptureGate())
-        let model = AppModel(dataDirectory: directory, registerShortcuts: false, complete: { text, _, _, _ in text }, readKey: { _ in nil },
-                             writeClipboard: { _ in }, clipboardHistoryStore: history)
-        model.phoneFactory = {
-            PhoneController(store: PhonePairingStore(fileURL: PhonePairingStore.defaultFile(in: directory), secrets: InMemoryPhoneSecretStore()),
-                            clipboard: history, downloads: directory, macName: "Test Mac", startsTransports: false)
-        }
-        model.start()
-        defer { model.shutdown() }
-        XCTAssertNil(model.phone, "Off by default")
-        XCTAssertFalse(history.forwardsCopies)
-
-        try await model.setFeature(.phone, enabled: true)
-        XCTAssertNotNil(model.phone)
-        XCTAssertTrue(history.forwardsCopies, "Auto-send is on by default")
-
-        model.setPhoneAutoSend(false)
-        XCTAssertFalse(history.forwardsCopies)
-        XCTAssertEqual(model.configuration.preferences.toolkitSettings.phoneAutoSend, false)
-
-        try await model.setFeature(.phone, enabled: false)
-        XCTAssertNil(model.phone)
-        XCTAssertFalse(history.forwardsCopies)
-    }
-}

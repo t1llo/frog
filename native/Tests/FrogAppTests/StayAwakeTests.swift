@@ -130,9 +130,11 @@ final class StayAwakeTests: XCTestCase {
         XCTAssertEqual(StayAwakeLength("3H"), .minutes(180))
         XCTAssertEqual(StayAwakeLength("1h30m"), .minutes(90))
         XCTAssertEqual(StayAwakeLength("1h30"), .minutes(90))
+        XCTAssertEqual(StayAwakeLength("168h"), .minutes(7 * 24 * 60), "A week is the longest")
         XCTAssertEqual(StayAwakeLength("until 17:30"), .until(hour: 17, minute: 30))
         XCTAssertEqual(StayAwakeLength("08:05"), .until(hour: 8, minute: 5))
-        for wrong in ["soon", "0", "-5", "25:00", "12:60", "1x", "h", "99999"] {
+        for wrong in ["soon", "0", "-5", "25:00", "12:60", "1x", "h", "99999", "168h1m", "999999999999999999h", "999999999999999999m",
+                      "9223372036854775807", "99999999999999999999h", "1h999999999999999999"] {
             XCTAssertNil(StayAwakeLength(wrong), wrong)
         }
         var calendar = Calendar(identifier: .gregorian)
@@ -183,6 +185,45 @@ final class StayAwakeTests: XCTestCase {
         let writes = await system.writes
         XCTAssertTrue(writes.isEmpty, "Without access nothing is tried")
         power.turnOff(); await power.waitForLid()
+    }
+
+    func testEndingASessionRestoresSleepAlsoAfterAFailedRead() async {
+        let system = PowerFixture()
+        let power = StayAwakeController(system: system, directory: directory())
+        power.configure(keepScreenOn: true, lidClosed: true)
+        power.turnOn(); await power.waitForLid()
+        XCTAssertTrue(power.lid.ownsSession)
+        await system.failReads(); await power.lid.refresh()
+        XCTAssertFalse(power.lid.hasReadState)
+        await system.restoreReads()
+        // As the plugin's stop does: the session ends and lid-closed mode goes off.
+        power.turnOff()
+        power.configure(keepScreenOn: true, lidClosed: false)
+        await power.waitForLid()
+        XCTAssertFalse(power.lid.ownsSession, "Frog's marker said it turned the setting on, so it turns it off")
+        let writes = await system.writes
+        XCTAssertEqual(writes, [true, false])
+    }
+
+    func testFinishingSetupDuringASessionCoversAClosedLid() async {
+        let system = PowerFixture()
+        await system.denyWrites(true)
+        let power = StayAwakeController(system: system, directory: directory())
+        power.configure(keepScreenOn: true, lidClosed: true)
+        power.turnOn(); await power.waitForLid()
+        XCTAssertEqual(power.notice, StayAwakeController.lidNeedsSetup)
+        XCTAssertFalse(power.lid.ownsSession)
+
+        await system.denyWrites(false)
+        await power.lid.refreshAccess(force: true)
+        for _ in 0..<200 where !power.lid.ownsSession {
+            try? await Task.sleep(for: .milliseconds(10)); await power.waitForLid()
+        }
+        XCTAssertTrue(power.lid.ownsSession, "The running session now keeps the Mac awake with the lid closed")
+        XCTAssertNil(power.notice)
+        power.turnOff(); await power.waitForLid()
+        let writes = await system.writes
+        XCTAssertEqual(writes, [true, false])
     }
 
     // MARK: The lid-closed engine
@@ -426,6 +467,7 @@ private actor PowerFixture: StayAwakeSystem {
     func ignoreWrites() { appliesWrites = false }
     func failReadbackAfterWrite() { failAfterWrite = true }
     func restoreReads() { failAfterWrite = false; readsFail = false }
+    func failReads() { readsFail = true }
     func setBattery(onBattery: Bool, percent: Int) { currentBattery = PowerBattery(onBattery: onBattery, percent: percent) }
     private(set) var reads = 0
     func sleepDisabled() async throws -> Bool {

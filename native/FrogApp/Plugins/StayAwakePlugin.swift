@@ -66,12 +66,23 @@ final class StayAwakePlugin: LegacyPlugin, FrogPlugin, ObservableObject {
         change(&value)
         value = value.normalized
         guard value != settings else { return }
+        let recount = (value.duration, value.until) != (settings.duration, settings.until)
         settings = value
         do { try context.save(value) } catch { context.report(error) }
         apply()
+        // A new duration or end time applies to the session that is running, counted from now.
+        if recount, power.isEnabled { power.turnOn() }
+    }
+
+    /// The preferences keep a copy of the cup's two settings, which a Reload or Import of the old `config` reads.
+    private func mirror() {
+        let wanted = StayAwakePreferences(menuBarItem: settings.menuBarItem, menuBarStyle: settings.menuBarStyle)
+        guard model.configuration.preferences.toolkitSettings.stayAwake?.normalized != wanted else { return }
+        do { try model.updateToolkit { $0.stayAwake = wanted } } catch { context.report(error) }
     }
 
     private func apply() {
+        mirror()
         if power.duration != settings.duration { power.duration = settings.duration }
         if power.untilTime != settings.until { power.untilTime = settings.until }
         power.configure(keepScreenOn: settings.keepScreenOn, lidClosed: settings.lidClosed)
@@ -137,8 +148,23 @@ final class StayAwakePlugin: LegacyPlugin, FrogPlugin, ObservableObject {
 }
 
 /// Settings seeded once from the old preferences: the first start after the update writes the plugin's table,
-/// and from then on config.toml alone decides.
+/// and from then on config.toml alone decides. The plugins keep the preferences' copy in step.
 enum MacPluginSettings {
+    /// Reload and Import write the old `config`, whose `menubar.*` and `stay-awake.menu-bar*` keys the plugins'
+    /// tables then follow, whether the plugins run or not. Stay awake's other settings have no old key and stay.
+    @MainActor static func adoptLegacySettings(_ model: AppModel) {
+        let preferences = model.configuration.preferences.toolkitSettings
+        do {
+            let menuBar = HiddenBarSettings(legacy: preferences.menuBar ?? MenuBarPreferences())
+            try model.settingsFile.update(HiddenBarPlugin.info.id, menuBar)
+            var stayAwake = (try? model.settingsFile.section(StayAwakePlugin.info.id, as: StayAwakeSettings.self).value) ?? StayAwakeSettings()
+            let legacy = StayAwakeSettings(legacy: preferences.stayAwake ?? StayAwakePreferences())
+            stayAwake.menuBarItem = legacy.menuBarItem; stayAwake.menuBarStyle = legacy.menuBarStyle
+            try model.settingsFile.update(StayAwakePlugin.info.id, stayAwake)
+        } catch { model.report(error) }
+        for id in [HiddenBarPlugin.info.id, StayAwakePlugin.info.id] { model.pluginHost.running[id]?.settingsChanged() }
+    }
+
     @MainActor static func load<Section: ConfigSection>(_ context: PluginContext, legacy: (Configuration) -> Section) -> Section {
         guard context.legacy.settingsFile.document.value(at: [context.info.id]) == nil else { return context.settings(Section.self) }
         let seeded = legacy(context.legacy.configuration)

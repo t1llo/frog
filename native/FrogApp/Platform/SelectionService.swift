@@ -65,7 +65,7 @@ final class SelectionService {
         }
         // Carbon's key-release event can arrive while Command/Option/Control is
         // still physically held. Wait before either AX capture or Copy/Paste.
-        try await ClipboardSelection.waitForShortcutRelease()
+        let released = try await ClipboardSelection.waitForShortcutRelease()
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier else {
             throw FrogError.message("The selected app changed before reading the selection. Try again.")
         }
@@ -82,14 +82,14 @@ final class SelectionService {
             throw FrogError.message("Select some text before pressing the shortcut.")
         }
         guard let element, let range = AXRead.range(element), range.location >= 0, range.length > 0 else {
-            return try await ClipboardSelection.capture(application: application, pid: app.processIdentifier)
+            return try await ClipboardSelection.capture(application: application, pid: app.processIdentifier, released: released)
         }
         let value = AXRead.string(element, kAXValueAttribute)
         let selected = AXRead.string(element, kAXSelectedTextAttribute)
         let substring = value.flatMap { AXRead.substring($0, range: range) }
         guard let text = selected ?? substring, !text.isEmpty,
                value == nil || substring == text else {
-            return try await ClipboardSelection.capture(application: application, pid: app.processIdentifier)
+            return try await ClipboardSelection.capture(application: application, pid: app.processIdentifier, released: released)
         }
         var pid: pid_t = 0
         guard AXUIElementGetPid(element, &pid) == .success, pid == app.processIdentifier else {
@@ -267,6 +267,8 @@ final class TextSelection: CapturedTextSelection {
 
     func replace(with text: String) async throws {
         let pasteboard = NSPasteboard.general
+        // Taken before the result goes onto the clipboard, so the paste below can put it back.
+        let original = PasteboardSnapshot(pasteboard)
         pasteboard.clearContents()
         guard pasteboard.setString(text, forType: .string) else {
             throw FrogError.message("The result could not be copied to the clipboard.")
@@ -278,7 +280,7 @@ final class TextSelection: CapturedTextSelection {
             // Chromium can report AXSelectedText writes as successful without editing.
             // Use its ordinary Copy/Paste path, with a fresh comparison before paste.
             consumed = true
-            try await pasteTarget.replace(with: text)
+            try await pasteTarget.replace(with: text, restoring: original)
             return
         }
         throw FrogError.message("The app does not expose its active window. The result is on the clipboard.")

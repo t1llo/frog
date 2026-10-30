@@ -5,8 +5,8 @@ import UserNotifications
 import os
 
 /// The Phone feature: pairs Android phones running Frog Companion and moves clipboard items and
-/// files between them and the Mac over Wi-Fi or Bluetooth (docs/companion-protocol.md). AppModel
-/// makes one only while Phone is on, so nothing listens, advertises or asks for a permission before.
+/// files between them and the Mac over Wi-Fi or Bluetooth (docs/companion-protocol.md). The Phone
+/// plugin makes one only while it is on, so nothing listens, advertises or asks for a permission before.
 @MainActor
 final class PhoneController: ObservableObject {
     enum Connection: Equatable {
@@ -44,8 +44,8 @@ final class PhoneController: ObservableObject {
     @Published private(set) var pairing: Pairing?
     @Published private(set) var bluetooth = PhoneBluetoothPeripheral.Availability.unknown
     @Published private(set) var listeningPort: UInt16?
-    /// Sends new copies of text and images; set from `phone.auto-send`.
-    var autoSend = true
+    /// Sends new copies of text and images; set from `auto-send` in `[phone]`.
+    @Published var autoSend = true
 
     let store: PhonePairingStore
     let macName: String
@@ -225,6 +225,14 @@ final class PhoneController: ObservableObject {
         return dispatch(PhoneOutgoingClip(copy)) ? "Sent to your phone." : "No phone is connected."
     }
 
+    /// Sends text, as the phone would get a copy of it. Passwords and keys are refused.
+    @discardableResult
+    func send(text: String) -> String {
+        guard !text.isEmpty else { return "Nothing to send." }
+        guard ClipboardSecret.detect(text) == nil else { return "Frog does not send passwords and keys." }
+        return dispatch(PhoneOutgoingClip(.text(text))) ? "Sent to your phone." : "No phone is connected."
+    }
+
     /// Sends files, one clip each; folders and files over 200 MB are left out.
     @discardableResult
     func sendFiles(_ urls: [URL]) -> String {
@@ -309,7 +317,8 @@ final class PhoneController: ObservableObject {
         case .text:
             guard let text = String(data: body, encoding: .utf8) else { return .failed }
             guard clipboard.writeReceived(.text(text)) else { return .failed }
-            title = ClipboardSecret.detect(text) == nil ? PhoneRecentItem.title(kind: .text, name: nil, text: text) : ClipboardHistoryEntry.mask
+            // A password from the phone goes on the clipboard, but neither into the history nor onto the page.
+            title = ClipboardSecret.detect(text) == nil ? PhoneRecentItem.title(kind: .text, name: nil, text: text) : "Hidden text"
         case .image:
             guard clipboard.writeReceived(.image(body), mime: header.mime) else { return .failed }
         case .file:

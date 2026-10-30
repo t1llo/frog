@@ -137,13 +137,22 @@ actor FakeCleanerTrash: CleanerTrash {
     func fail(_ url: URL) { failing.insert(url.standardizedFileURL.path) }
     func setAutomation(_ status: AutomationStatus) { automation = status }
 
+    private var holding = false
+    private var held: [CheckedContinuation<Void, Never>] = []
+    /// Moves wait until `release`, so a test can act while a removal is under way.
+    func hold() { holding = true }
+    func release() { holding = false; held.forEach { $0.resume() }; held = [] }
+    private func waitWhileHeld() async { if holding { await withCheckedContinuation { held.append($0) } } }
+
     func trash(_ url: URL) async throws -> URL {
+        await waitWhileHeld()
         log.append("trash \(url.lastPathComponent)")
         if failing.contains(url.standardizedFileURL.path) { throw CocoaError(.fileWriteNoPermission) }
         return try move(url)
     }
 
     func trashWithFinder(_ urls: [URL]) async throws -> [URL?] {
+        await waitWhileHeld()
         log.append("finder " + urls.map(\.lastPathComponent).joined(separator: ","))
         return try urls.map { try move($0) }
     }

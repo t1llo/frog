@@ -458,6 +458,106 @@ import FrogCore
         XCTAssertNil(model.pluginShortcuts[AppModel.menuBarID], "Stopping gives the shortcut back")
     }
 
+    func testTheShortcutIsKeptInThePreferencesAndAClashIsRefused() async throws {
+        let fixture = OrganizerFixture()
+        HiddenBarPlugin.makeOrganizer = { fixture.organizer }
+        defer { HiddenBarPlugin.makeOrganizer = nil }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var configuration = Configuration()
+        configuration.preferences.setFeature(.menuBar, enabled: true)
+        configuration.preferences.setFeature(.commandBar, enabled: true)
+        var stale = MenuBarPreferences(); stale.hotkey = Hotkey(keyCode: 3, modifiers: 6144)
+        configuration.preferences.ensureToolkit(); configuration.preferences.toolkit?.menuBar = stale
+        try ConfigurationStore(directory: directory).save(configuration)
+        // config.toml already names another shortcut: the preferences' stale copy follows it at start.
+        let hotkey = Hotkey(keyCode: 11, modifiers: 6144)
+        var written = HiddenBarSettings(); written.shortcut = try Shortcut(hotkey)
+        let seed = ConfigStore(fileURL: directory.appendingPathComponent("config.toml")); try seed.load(); try seed.update("hidden-bar", written)
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil })
+        defer { model.shutdown() }
+        await model.pluginHost.syncAndWait()
+        let plugin = try XCTUnwrap(model.pluginHost.running["hidden-bar"] as? HiddenBarPlugin)
+        XCTAssertEqual(model.configuration.preferences.toolkitSettings.menuBar?.hotkey, hotkey, "No stale shortcut left to clash with")
+        XCTAssertNil(plugin.shortcutError)
+        XCTAssertEqual(model.pluginShortcuts[AppModel.menuBarID]?.hotkey, hotkey)
+
+        let other = Hotkey(keyCode: 3, modifiers: 6144)
+        plugin.update { $0.shortcut = try? Shortcut(other) }
+        XCTAssertEqual(model.configuration.preferences.toolkitSettings.menuBar?.hotkey, other, "The preferences keep a copy")
+        plugin.update { $0.shortcut = try? Shortcut(hotkey) }
+        XCTAssertNil(plugin.shortcutError)
+        XCTAssertEqual(try model.settingsFile.section("hidden-bar", as: HiddenBarSettings.self).value.shortcut?.hotkey, hotkey)
+
+        // The Command bar's keys are refused, and nothing changes.
+        let commandBar = model.configuration.preferences.toolkitSettings.effectiveCommandBarHotkey
+        plugin.update { $0.shortcut = try? Shortcut(commandBar) }
+        XCTAssertNotNil(plugin.shortcutError)
+        XCTAssertEqual(plugin.settings.shortcut?.hotkey, hotkey)
+        XCTAssertEqual(model.configuration.preferences.toolkitSettings.menuBar?.hotkey, hotkey)
+        XCTAssertEqual(model.pluginShortcuts[AppModel.menuBarID]?.hotkey, hotkey)
+        XCTAssertEqual(try model.settingsFile.section("hidden-bar", as: HiddenBarSettings.self).value.shortcut?.hotkey, hotkey)
+
+        // An editor writes the clash into config.toml: it is not registered, and the page says why.
+        var clashing = plugin.settings; clashing.shortcut = try Shortcut(commandBar)
+        try model.settingsFile.update("hidden-bar", clashing)
+        plugin.settingsChanged()
+        XCTAssertNotNil(plugin.shortcutError)
+        XCTAssertNil(model.pluginShortcuts[AppModel.menuBarID])
+        XCTAssertNil(model.configuration.preferences.toolkitSettings.menuBar?.hotkey)
+    }
+
+    func testAReloadOfTheOldConfigurationIsFollowed() async throws {
+        let fixture = OrganizerFixture()
+        HiddenBarPlugin.makeOrganizer = { fixture.organizer }
+        defer { HiddenBarPlugin.makeOrganizer = nil }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var configuration = Configuration()
+        configuration.preferences.setFeature(.menuBar, enabled: true)
+        try ConfigurationStore(directory: directory).save(configuration)
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil })
+        defer { model.shutdown() }
+        await model.pluginHost.syncAndWait()
+        let plugin = try XCTUnwrap(model.pluginHost.running["hidden-bar"] as? HiddenBarPlugin)
+        let stayAwake = try XCTUnwrap(model.pluginHost.running["stay-awake"] as? StayAwakePlugin)
+        stayAwake.update { $0.keepScreenOn = false }
+        plugin.update { $0.autoHideSeconds = 30 }
+        XCTAssertEqual(model.configuration.preferences.toolkitSettings.menuBar?.autoHideSeconds, 30, "Kept in step for a later Reload")
+
+        // `menubar.*` and `stay-awake.menu-bar*` edited in the old configuration, then Reload.
+        var edited = model.configuration
+        edited.preferences.toolkit?.menuBar?.autoHide = false
+        edited.preferences.toolkit?.stayAwake = StayAwakePreferences(menuBarItem: true, menuBarStyle: "time")
+        try ConfigurationStore(directory: directory).save(edited)
+        try model.reloadConfiguration()
+        XCTAssertFalse(plugin.settings.autoHide)
+        XCTAssertEqual(plugin.settings.autoHideSeconds, 30)
+        XCTAssertTrue(stayAwake.settings.menuBarItem)
+        XCTAssertEqual(stayAwake.settings.menuBarStyle, "time")
+        XCTAssertFalse(stayAwake.settings.keepScreenOn, "Settings without an old key stay")
+        XCTAssertFalse(try model.settingsFile.section("hidden-bar", as: HiddenBarSettings.self).value.autoHide)
+    }
+
+    func testAPluginShortcutIsSeenByTheShortcutChecks() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try ConfigurationStore(directory: directory).save(Configuration())
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil })
+        defer { model.shutdown() }
+        let hotkey = Hotkey(keyCode: 4, modifiers: 6144)
+        model.setPluginShortcut(UUID(), name: "Example", hotkey: hotkey)
+        XCTAssertThrowsError(try model.updateToolkit { $0.commandBarHotkey = hotkey; $0.enabled[FeatureID.commandBar.rawValue] = true }) {
+            XCTAssertTrue($0.localizedDescription.contains("Example"), $0.localizedDescription)
+        }
+        var configuration = model.configuration
+        configuration.preferences.windowSwitcherEnabled = true
+        configuration.preferences.ensureToolkit(); configuration.preferences.toolkit?.windowSwitcherHotkey = hotkey
+        guard case .stop = WindowSwitcherPlugin.step(configuration, status: .off, pluginShortcuts: [hotkey]) else {
+            return XCTFail("The window switcher sees the plugin's shortcut")
+        }
+    }
+
     /// `menuBar-arrow-*.png`: the page with its arrow in the bar, the icons hidden and a shortcut.
     func testPageShotWithTheArrowInstalled() async throws {
         guard ProcessInfo.processInfo.environment["FROG_PAGE_SHOTS"] != nil else { throw XCTSkip("Set FROG_PAGE_SHOTS") }

@@ -1,224 +1,184 @@
 import SwiftUI
 import FrogCore
 
-/// Frog's own activity: rewritten text, answers and dictation.
+/// Frog's saved results: rewritten text, answers and dictation. Producers record through `AppModel.recordHistory`.
 struct HistoryView: View {
     @EnvironmentObject private var model: AppModel
     @StateObject var visibility = HistoryVisibility()
-    var body: some View { HistoryContent(clipboard: model.clipboardHistoryStore, visibility: visibility, scope: .activity) }
-}
-
-/// The Clipboard page: its shortcut and the text copied since Frog started, kept in memory only.
-struct ClipboardView: View {
-    @EnvironmentObject private var model: AppModel
-    @StateObject var visibility = HistoryVisibility()
-    var body: some View { HistoryContent(clipboard: model.clipboardHistoryStore, visibility: visibility, scope: .clipboard) }
-}
-
-/// Which list the page shows: saved activity, or the copied text in memory.
-enum HistoryScope { case activity, clipboard }
-
-/// Reveal state is view-local and never part of saved application preferences.
-@MainActor
-final class HistoryVisibility: ObservableObject {
-    @Published var revealed: Set<UUID> = []
-}
-
-private struct HistoryContent: View {
-    @EnvironmentObject private var model: AppModel
-    @ObservedObject var clipboard: ClipboardHistoryStore
-    @ObservedObject var visibility: HistoryVisibility
-    let scope: HistoryScope
-    private var clipboardSelected: Bool { scope == .clipboard }
-    /// The Clipboard page always shows copied text; History offers its own filters.
-    private var filter: HistoryFilter? { clipboardSelected ? .clipboard : model.historyFilter == .clipboard ? nil : model.historyFilter }
-    @State private var viewing: UUID?
+    @State private var filter: HistoryFilter?
     @State private var search = ""
+    @State private var viewing: UUID?
     @State private var confirmClear = false
-    @State private var deleting: HistoryItem?
+    @State private var deleting: HistoryEntry?
     @State private var note: NoteProgress?
-    init(clipboard: ClipboardHistoryStore, visibility: HistoryVisibility, scope: HistoryScope) {
-        self.clipboard = clipboard; self.visibility = visibility; self.scope = scope
-    }
-    private func hidden(_ entry: HistoryItem) -> Bool { (entry.requiresReveal || model.configuration.preferences.hideHistoryText) && !visibility.revealed.contains(entry.id) }
 
-    private var allEntries: [HistoryItem] {
-        clipboardSelected ? HistoryFeed.items(saved: [], clipboard: clipboard.entries) : HistoryFeed.items(saved: model.history, clipboard: [])
-    }
+    private var preferences: Preferences { model.configuration.preferences }
+    /// With Hide history text on, texts stay masked until revealed, and are masked again when the page closes.
+    private func hidden(_ entry: HistoryEntry) -> Bool { preferences.hideHistoryText && !visibility.revealed.contains(entry.id) }
+    static let mask = String(repeating: "•", count: 12)
 
     var body: some View {
-        // Merged and sorted once per pass; the list shown is narrowed from it.
-        let all = allEntries
-        let displayedEntries = HistoryFeed.narrowed(all, filter: filter, search: search, revealed: visibility.revealed)
-        let emptyState = HistoryEmptyState.describing(all: all, shown: displayedEntries, filter: filter, search: search,
-                                                      clipboardEnabled: model.configuration.preferences.featureEnabled(.clipboard))
-        VStack(alignment: .leading, spacing: 14) {
-            if let viewing = all.first(where: { $0.id == self.viewing }) {
-                HStack {
-                    Button { self.viewing = nil } label: { Label(clipboardSelected ? "Clipboard" : "History", systemImage: "chevron.left") }
-                        .buttonStyle(.frog(.ghost)).keyboardShortcut(.cancelAction)
-                        // ⌘[ goes back too, through a button that is not drawn.
-                        .background { Button("Back to history") { self.viewing = nil }.keyboardShortcut("[", modifiers: .command).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true) }
-                    Spacer()
-                    if viewing.requiresReveal || model.configuration.preferences.hideHistoryText { revealButton(viewing) }
-                    // Actions for an answer entry go here, before Delete.
-                    if let saved = viewing.savedEntry, saved.answer != nil, model.answerNotesEnabled, !hidden(viewing) { noteButton(saved) }
-                    IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = viewing }
-                }.frame(height: FrogStyle.controlHeight)
-                PageHeader(title: viewing.title, subtitle: viewing.timestamp.formatted(date: .abbreviated, time: .shortened))
-                if let saved = viewing.savedEntry { interruptionStatus(saved) }
-                ScrollView {
-                    if hidden(viewing) {
-                        VStack(spacing: 12) {
-                            Image(systemName: "eye.slash").foregroundStyle(FrogStyle.muted)
-                            Text("History text is hidden").font(FrogType.body)
-                            Button("Reveal text") { visibility.revealed.insert(viewing.id) }
-                        }.frame(maxWidth: .infinity).padding(32)
-                    } else if let saved = viewing.savedEntry { HistoryDetail(entry: saved).padding(14).minimalScrollbars() }
-                    else if let entry = viewing.clipboardEntry {
-                        VStack(alignment: .leading, spacing: 14) {
-                            HStack {
-                                SectionCaption(text: entry.isSensitive ? entry.sensitiveTitle : "Copied text")
-                                Spacer()
-                                CopyAction(labeled: true) { copy(viewing) }.buttonStyle(.frog(compact: true))
-                            }
-                            HistoryLongText(text: entry.text)
-                        }.padding(14).minimalScrollbars()
-                    }
-                }.frogTableSurface()
-                    .onCopyCommand {
-                        guard !hidden(viewing) else { return [] }
-                        if viewing.clipboardEntry != nil { copy(viewing); return [] }
-                        return [NSItemProvider(object: viewing.text as NSString)]
-                    }
-                if note?.id == viewing.id, case .failed(let message) = note?.state {
-                    Text(message).font(FrogType.small).foregroundStyle(FrogStyle.warning)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            } else {
-                PageHeader(title: clipboardSelected ? "Clipboard" : "History") {
-                    HStack {
-                        if clipboardSelected {
-                            ClipboardShortcutControl()
-                        } else if !model.configuration.preferences.historyEnabled {
-                            Button("Enable saved history") {
-                                var preferences = model.configuration.preferences
-                                preferences.historyEnabled = true
-                                do { try model.savePreferences(preferences) } catch { model.report(error) }
-                            }.buttonStyle(.frog(compact: true))
-                        }
-                        IconMenu(title: clipboardSelected ? "Clipboard actions" : "History actions") {
-                            Button(clipboardSelected ? "Clear clipboard" : "Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }
-                                .disabled(clipboardSelected ? clipboard.entries.isEmpty : all.isEmpty)
-                        }
-                    }
-                }
-                if clipboardSelected, let issue = model.hotkeyErrors[AppModel.clipboardHistoryID] { InlineIssue(message: issue) }
-                ListToolbar(placeholder: clipboardSelected ? "Search copied text" : "Search history", search: $search) {
-                    if !clipboardSelected {
-                        FilterTag(title: "All", selected: filter == nil) { model.historyFilter = nil }
-                        ForEach(HistoryFilter.visible(explainEnabled: model.configuration.preferences.featureEnabled(.explain),
-                                                      hasAnswers: all.contains { $0.filter == .answers })) { value in
-                            FilterTag(title: value.title, selected: filter == value) { model.historyFilter = value }
-                        }
-                    }
-                }
-
-            if emptyState == .noMatches {
-                FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another filter or clear your search.")
-                Spacer(minLength: 0)
-            } else if emptyState == .noAnswers {
-                FrogEmptyState(symbol: "questionmark.bubble", title: "No answers yet",
-                               message: "With History on, answers from Explain and your other answer rules appear here.")
-                Spacer(minLength: 0)
-            } else if emptyState == .clipboardOff {
-                FrogEmptyState(symbol: "clipboard", title: "Clipboard is off", message: "Turn on Clipboard in Features.")
-                Spacer(minLength: 0)
-            } else if let emptyState {
-                let copied = emptyState == .noCopiedText
-                FrogEmptyState(symbol: copied ? "clipboard" : "clock.arrow.circlepath", title: copied ? "No copied text yet" : "No history yet",
-                               message: copied ? "Text you copy shows here until Frog quits." : model.configuration.preferences.historyEnabled
-                                ? "Rewritten text, answers and recordings show here."
-                                 : "Turn on Save history to keep them on this Mac.")
-                Spacer(minLength: 0)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 2) {
-                        ForEach(displayedEntries) { item in historyRow(item) }
-                    }.padding(6).minimalScrollbars()
-                }
-                .frogTableSurface()
+        // Built once per pass; the list shown is narrowed from it.
+        let all = HistoryFeed.items(model.history)
+        Group {
+            if let entry = all.first(where: { $0.id == viewing }) { detail(entry) }
+            else { list(all) }
+        }
+        .buttonStyle(FrogButtonStyle())
+        .onAppear { model.refreshHistory() }
+        .onChange(of: preferences.hideHistoryText) { _, _ in visibility.revealed = [] }
+        .onChange(of: filter) { _, _ in visibility.revealed = [] }
+        .onDisappear { visibility.revealed = []; deleting = nil }
+        .background(WindowClosing { visibility.revealed = []; deleting = nil })
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in visibility.revealed = [] }
+        .onChange(of: all.map(\.id)) { _, ids in
+            visibility.revealed.formIntersection(ids)
+            if let viewing, !ids.contains(viewing) { self.viewing = nil }
+        }
+        .confirmationDialog("Clear all history?", isPresented: $confirmClear) {
+            Button("Clear all history", role: .destructive) {
+                do { try model.clearHistory() } catch { model.report(error) }
             }
+        } message: { Text("Saved originals and results are deleted from this Mac.") }
+        .confirmationDialog("Delete this entry?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible) {
+            Button("Delete entry", role: .destructive) {
+                if let deleting { do { try model.deleteHistory(id: deleting.id) } catch { model.report(error) } }
+                deleting = nil
             }
-        }.padding(20).frame(maxWidth: 1080).frame(maxWidth: .infinity, alignment: .top)
-            .buttonStyle(FrogButtonStyle())
-            .onAppear { model.refreshHistory() }
-            .onChange(of: model.configuration.preferences.hideHistoryText) { _, _ in visibility.revealed = [] }
-            .onChange(of: model.historyFilter) { _, _ in viewing = nil; visibility.revealed = []; search = "" }
-            .onDisappear { visibility.revealed = []; deleting = nil }
-            .background(WindowClosing { visibility.revealed = []; deleting = nil })
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in visibility.revealed = [] }
-            .onChange(of: all.map(\.id)) { _, ids in
-                visibility.revealed.formIntersection(ids)
-                if let viewing, !ids.contains(viewing) { self.viewing = nil }
-                if let deleting, deleting.clipboardEntry != nil, !ids.contains(deleting.id) { self.deleting = nil }
-            }
-            .confirmationDialog(clipboardSelected ? "Clear clipboard history?" : "Clear all local history?", isPresented: $confirmClear) {
-                Button(clipboardSelected ? "Clear clipboard history" : "Clear all history", role: .destructive) {
-                    if clipboardSelected { clipboard.clear() }
-                    else { do { try model.clearHistory() } catch { model.report(error) } }
-                }
-            } message: { Text(clipboardSelected ? "Copied items will be removed from memory." : "Saved originals and results will be deleted, and copied text will be forgotten.") }
-            .confirmationDialog("Delete this history entry?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
-                Button("Delete entry", role: .destructive) {
-                    if let deleting {
-                        do { try model.deleteHistory(id: deleting.id) } catch { model.report(error) }
-                    }
-                    deleting = nil
-                }
-            } message: { Text(deleting?.clipboardEntry != nil ? "The copied item will be removed from memory." : "The saved original and result will be permanently deleted from this Mac.") }
+        }
     }
 
-    private func historyRow(_ item: HistoryItem) -> some View {
+    // MARK: List
+
+    private func list(_ all: [HistoryEntry]) -> some View {
+        let shown = HistoryFeed.narrowed(all, filter: filter, search: search)
+        let empty = HistoryEmptyState.describing(all: all, shown: shown, filter: filter, search: search)
+        let filters = HistoryFilter.visible(explainEnabled: preferences.featureEnabled(.explain),
+                                            hasAnswers: all.contains { $0.kind == .answers })
+        return FrogPage(width: FrogStyle.wideWidth) {
+            FrogPageHeader(title: "History") {
+                IconMenu(title: "History actions") {
+                    Button("Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }.disabled(all.isEmpty)
+                }
+            }
+            if !preferences.historyEnabled, all.isEmpty {
+                FrogEmptyState(symbol: "clock.arrow.circlepath", title: "History is off", message: "Turn it on to keep results on this Mac.") {
+                    Button("Turn on") { setHistoryEnabled() }.buttonStyle(.frog(.primary))
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    if !all.isEmpty {
+                        ListToolbar(placeholder: "Search history", search: $search) {
+                            CompactSegments(values: [nil] + filters.map(Optional.some), selected: filter, width: 70 * CGFloat(filters.count + 1),
+                                            title: { $0?.title ?? "All" }) { filter = $0 }
+                        }
+                    }
+                    if !preferences.historyEnabled {
+                        HStack(spacing: 8) {
+                            FrogRowNote(text: "History is off. New results are not kept.")
+                            Button("Turn on") { setHistoryEnabled() }.buttonStyle(.frog(compact: true))
+                        }
+                    }
+                    switch empty {
+                    case .noMatches?:
+                        FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another word or filter.")
+                    case .noAnswers?:
+                        FrogEmptyState(symbol: "questionmark.bubble", title: "No answers yet", message: "Answers from Explain show here.")
+                    case _?:
+                        FrogEmptyState(symbol: "clock.arrow.circlepath", title: "No history yet",
+                                       message: "Rewritten text, answers and recordings show here.")
+                    case nil:
+                        LazyVStack(spacing: 2) { ForEach(shown) { entry in row(entry) } }.padding(6).frogTableSurface()
+                    }
+                }
+            }
+        }
+    }
+
+    private func row(_ entry: HistoryEntry) -> some View {
         HStack(spacing: 10) {
-            Button { if item.requiresReveal { visibility.revealed.insert(item.id) }; viewing = item.id } label: {
+            Button { viewing = entry.id } label: {
                 HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: rowSymbol(item.filter))
+                    Image(systemName: Self.symbol(entry.kind))
                         .font(.system(size: 13)).foregroundStyle(FrogStyle.muted).frame(width: 18, height: 18)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 10) {
-                            Text(item.clipboardEntry.map { $0.isSensitive ? $0.sensitiveTitle : "Copied text" } ?? item.title)
-                                .font(FrogType.bodyMedium).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                            Text(entry.ruleName).font(FrogType.bodyMedium).foregroundStyle(FrogStyle.ink).lineLimit(1)
                             Spacer(minLength: 8)
-                            Text(item.timestamp.formatted(date: .abbreviated, time: .shortened))
+                            Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
                                 .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                         }
-                        Text(hidden(item) ? "\(ClipboardHistoryEntry.mask) · Click to reveal" : item.text.isEmpty ? L10n.text("No transcript available") : HistoryPreview.text(item.text)).font(FrogType.body).foregroundStyle(FrogStyle.ink)
+                        Text(hidden(entry) ? "\(Self.mask) · Click to reveal"
+                             : entry.processedText.isEmpty ? L10n.text("No transcript available") : HistoryPreview.text(entry.processedText))
+                            .font(FrogType.body).foregroundStyle(FrogStyle.ink)
                             .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-                        Text(metadata(item)).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                        if let saved = item.savedEntry { interruptionStatus(saved) }
+                        Text(Self.metadata(entry.kind, entry)).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                        interruptionStatus(entry)
                     }
                 }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
-            }.buttonStyle(.plain).help("Open full entry")
-            if item.requiresReveal || model.configuration.preferences.hideHistoryText { revealButton(item) }
-            CopyAction(title: "Copy result") { copy(item) }.disabled(item.text.isEmpty)
+            }.buttonStyle(.plain).help("Open entry")
+            if preferences.hideHistoryText { revealButton(entry) }
+            CopyAction(title: "Copy result") { ViewActions.copy(entry.processedText) }.disabled(entry.processedText.isEmpty || hidden(entry))
         }.padding(.horizontal, 8).padding(.vertical, 8).frogHoverRow()
             .contextMenu {
-                Button("Open full entry") { if item.requiresReveal { visibility.revealed.insert(item.id) }; viewing = item.id }
-                Button("Copy", systemImage: "doc.on.doc") { copy(item) }.disabled(item.text.isEmpty)
-                Button("Delete entry", systemImage: "trash", role: .destructive) { deleting = item }
+                Button("Open entry") { viewing = entry.id }
+                Button("Copy", systemImage: "doc.on.doc") { ViewActions.copy(entry.processedText) }.disabled(entry.processedText.isEmpty || hidden(entry))
+                Button("Delete entry", systemImage: "trash", role: .destructive) { deleting = entry }
             }
     }
-    private func rowSymbol(_ filter: HistoryFilter) -> String {
-        switch filter { case .text: "text.alignleft"; case .answers: "questionmark.bubble"; case .audio: "waveform"; case .clipboard: "clipboard" }
-    }
-    private func metadata(_ item: HistoryItem) -> String {
-        if let saved = item.savedEntry {
-            return [item.filter.title, saved.providerName, saved.model].filter { !$0.isEmpty }.joined(separator: " · ")
+
+    // MARK: Detail
+
+    private func detail(_ entry: HistoryEntry) -> some View {
+        FrogPage(width: FrogStyle.wideWidth) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Button { viewing = nil } label: { Label("History", systemImage: "chevron.left") }
+                        .buttonStyle(.frog(.ghost)).keyboardShortcut(.cancelAction)
+                        // ⌘[ goes back too, through a button that is not drawn.
+                        .background {
+                            Button("Back to history") { viewing = nil }.keyboardShortcut("[", modifiers: .command)
+                                .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+                        }
+                    Spacer()
+                    if preferences.hideHistoryText { revealButton(entry) }
+                    if entry.answer != nil, model.answerNotesEnabled, !hidden(entry) { noteButton(entry) }
+                    IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = entry }
+                }.frame(height: FrogStyle.controlHeight)
+                FrogPageHeader(title: entry.ruleName, subtitle: entry.timestamp.formatted(date: .abbreviated, time: .shortened))
+                interruptionStatus(entry)
+                Group {
+                    if hidden(entry) {
+                        VStack(spacing: 12) {
+                            Image(systemName: "eye.slash").foregroundStyle(FrogStyle.muted)
+                            Button("Reveal text") { visibility.revealed.insert(entry.id) }
+                        }.frame(maxWidth: .infinity).padding(32)
+                    } else {
+                        HistoryDetail(entry: entry).padding(14)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
+                    .onCopyCommand { hidden(entry) ? [] : [NSItemProvider(object: entry.processedText as NSString)] }
+                if note?.id == entry.id, case .failed(let message) = note?.state { InlineIssue(message: message) }
+            }
         }
-        return "Clipboard · Memory only"
     }
+
+    private func setHistoryEnabled() {
+        var preferences = model.configuration.preferences
+        preferences.historyEnabled = true
+        do { try model.savePreferences(preferences) } catch { model.report(error) }
+    }
+
+    static func symbol(_ filter: HistoryFilter) -> String {
+        switch filter { case .text: "text.alignleft"; case .answers: "questionmark.bubble"; case .audio: "waveform" }
+    }
+
+    static func metadata(_ filter: HistoryFilter, _ entry: HistoryEntry) -> String {
+        [filter.title, entry.providerName, entry.model].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
     @ViewBuilder
     private func interruptionStatus(_ entry: HistoryEntry) -> some View {
         if let label = entry.interruptionLabel {
@@ -235,6 +195,7 @@ private struct HistoryContent: View {
             }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
         }
     }
+
     /// Saves the answer and its follow-ups as a note; "Saved" shows for two seconds.
     private func noteButton(_ entry: HistoryEntry) -> some View {
         let state = note?.id == entry.id ? note?.state : nil
@@ -255,16 +216,18 @@ private struct HistoryContent: View {
             }
         }.disabled(state == .saving)
     }
-    private func revealButton(_ entry: HistoryItem) -> some View {
+
+    private func revealButton(_ entry: HistoryEntry) -> some View {
         IconAction(title: hidden(entry) ? "Reveal text" : "Hide text", symbol: hidden(entry) ? "eye" : "eye.slash") {
             if visibility.revealed.contains(entry.id) { visibility.revealed.remove(entry.id) } else { visibility.revealed.insert(entry.id) }
         }
     }
-    private func copy(_ item: HistoryItem) {
-        if let entry = item.clipboardEntry {
-            if !clipboard.copy(entry) { model.report(FrogError.message("Could not copy the clipboard item.")) }
-        } else { ViewActions.copy(item.text) }
-    }
+}
+
+/// Reveal state is view-local and never part of saved application preferences.
+@MainActor
+final class HistoryVisibility: ObservableObject {
+    @Published var revealed: Set<UUID> = []
 }
 
 /// A line limit clips drawing, but does not bound text layout work. Detail/search/copy
@@ -308,19 +271,15 @@ struct WindowClosing: NSViewRepresentable {
 
 /// What the page says in place of an empty list.
 enum HistoryEmptyState: Equatable {
-    case noHistory, noCopiedText, clipboardOff, noMatches, noAnswers
+    case noHistory, noMatches, noAnswers
 
-    /// "No matches" is for a filter or search that leaves nothing of an existing feed. The
-    /// Clipboard filter without copied items has nothing to match, also when saved history
-    /// exists, and while Clipboard is off nothing copied can appear. The Answers filter without
+    /// "No matches" is for a filter or search that leaves nothing of an existing feed. The Answers filter without
     /// saved answers says how they get there. The feed trims the search, so spaces alone are no search.
-    static func describing(all: [HistoryItem], shown: [HistoryItem], filter: HistoryFilter?, search: String, clipboardEnabled: Bool) -> Self? {
+    static func describing(all: [HistoryEntry], shown: [HistoryEntry], filter: HistoryFilter?, search: String) -> Self? {
         guard shown.isEmpty else { return nil }
-        if filter == .clipboard, !clipboardEnabled { return .clipboardOff }
         let searching = !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        if filter == .answers, !searching, !all.contains(where: { $0.filter == .answers }) { return .noAnswers }
-        if all.isEmpty { return filter == .clipboard ? .noCopiedText : .noHistory }
-        return filter == .clipboard && !searching ? .noCopiedText : .noMatches
+        if filter == .answers, !searching, !all.contains(where: { $0.kind == .answers }) { return .noAnswers }
+        return all.isEmpty ? .noHistory : .noMatches
     }
 }
 
@@ -351,7 +310,7 @@ enum HistoryPages {
     }
 }
 
-private struct HistoryLongText: View {
+struct HistoryLongText: View {
     let text: String
     var lineSpacing: CGFloat = 0
     @State private var shown = 1

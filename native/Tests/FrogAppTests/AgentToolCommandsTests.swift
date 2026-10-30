@@ -63,22 +63,21 @@ import XCTest
         XCTAssertTrue(shelf.error.contains("notes now"), shelf.error)
     }
 
-    func testClipboardListHidesSensitiveTextAndCopyWritesThePasteboard() async throws {
+    func testClipboardListLeavesSecretsOutAndCopyWritesThePasteboard() async throws {
         try await enable(.clipboard)
+        await model.pluginHost.syncAndWait()
         let history = model.clipboardHistoryStore
-        history.configure(enabled: true, automaticallyPoll: false)
         history.recordCopiedText("Visible text")
         XCTAssertTrue(ClipboardHistoryEntry(text: "hunter2", isSensitive: true).write(to: pasteboard, plainText: true))
         await history.poll()
-        XCTAssertEqual(history.entries.count, 2)
+        XCTAssertEqual(history.entries.map(\.text), ["Visible text"], "A concealed copy is never kept")
 
         let text = await run("clipboard", "list")
-        XCTAssertTrue(text.output.contains("Visible text") && text.output.contains("Sensitive text, hidden"), text.output)
-        let json = await run("clipboard", "list", json: true)
-        XCTAssertFalse(text.output.contains("hunter2") || json.output.contains("hunter2"))
-        let items = try array(json)
-        XCTAssertEqual(items.first?["sensitive"] as? Bool, true)
-        XCTAssertNil(items.first?["text"])
+        XCTAssertTrue(text.output.contains("Visible text") && text.output.contains(history.entries[0].shortID), text.output)
+        let items = try array(await run("clipboard", "list", json: true))
+        XCTAssertEqual(items.first?["text"] as? String, "Visible text")
+        XCTAssertEqual(items.first?["id"] as? String, history.entries[0].id.uuidString.lowercased())
+        history.recordCopiedText("Second text")
         let limited = try array(await run("clipboard", "list", "--limit", "1", json: true))
         XCTAssertEqual(limited.count, 1)
 
@@ -169,6 +168,23 @@ import XCTest
         XCTAssertNotEqual(wrong.exitCode, 0)
         XCTAssertTrue(wrong.error.contains("--for"), wrong.error)
         XCTAssertFalse(model.power.isEnabled)
+
+        // A number that would overflow when counted in minutes is refused, not a crash.
+        let huge = await run("run", "stay-awake.on", "--for", "999999999999999999h")
+        XCTAssertNotEqual(huge.exitCode, 0)
+        XCTAssertTrue(huge.error.contains("for"), huge.error)
+        XCTAssertFalse(model.power.isEnabled)
+    }
+
+    func testChangingTheEndTimeRecountsARunningSession() async throws {
+        await model.pluginHost.syncAndWait()
+        let plugin = try XCTUnwrap(model.pluginHost.running["stay-awake"] as? StayAwakePlugin)
+        plugin.update { $0.duration = .untilTime; $0.until = "10:00" }
+        model.power.turnOn(); await model.power.waitForLid()
+        XCTAssertEqual(model.power.deadline.map { Calendar.current.dateComponents([.hour, .minute], from: $0) }, DateComponents(hour: 10, minute: 0))
+        plugin.update { $0.until = "11:30" }
+        XCTAssertEqual(model.power.deadline.map { Calendar.current.dateComponents([.hour, .minute], from: $0) }, DateComponents(hour: 11, minute: 30))
+        model.power.turnOff(); await model.power.waitForLid()
     }
 
     func testUsageListsEachProvider() async throws {

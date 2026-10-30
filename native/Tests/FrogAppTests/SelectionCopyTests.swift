@@ -165,4 +165,54 @@ final class SelectionCopyTests: XCTestCase {
         try ClipboardSelection.putBack("result", on: board)
         XCTAssertEqual(board.changeCount, count)
     }
+
+    func testReplaceGivesTheClipboardBackOnceTheAppHasPasted() async throws {
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        board.setString("my clipboard", forType: .string)
+        board.setData(Data([4, 5, 6]), forType: .rtf)
+        let original = PasteboardSnapshot(board)
+        board.clearContents(); board.setString("result", forType: .string)
+        let restore = original.restore(on: board, after: .milliseconds(20))
+        // The app reads the result during the delay.
+        XCTAssertEqual(board.string(forType: .string), "result")
+        await restore.value
+        XCTAssertEqual(board.string(forType: .string), "my clipboard")
+        XCTAssertEqual(board.data(forType: .rtf), Data([4, 5, 6]))
+        // Clipboard history does not take the restore for a new copy.
+        XCTAssertTrue(ClipboardHistoryCaptureGate.shared.ignores(name: board.name, count: board.changeCount))
+    }
+
+    func testCopyMadeDuringTheDelayIsKeptInsteadOfTheOldClipboard() async throws {
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        board.setString("my clipboard", forType: .string)
+        let original = PasteboardSnapshot(board)
+        board.clearContents(); board.setString("result", forType: .string)
+        let restore = original.restore(on: board, after: .milliseconds(40))
+        board.clearContents(); board.setString("copied meanwhile", forType: .string)
+        await restore.value
+        XCTAssertEqual(board.string(forType: .string), "copied meanwhile")
+    }
+
+    func testEmptyClipboardIsGivenBackEmpty() async throws {
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        let original = PasteboardSnapshot(board)
+        board.setString("result", forType: .string)
+        await original.restore(on: board, after: .zero).value
+        XCTAssertNil(board.string(forType: .string))
+    }
+
+    func testShortcutWaitEndsOnceTheKeysAreReleased() async throws {
+        var checks = 0
+        // A capture needs the proof this returns, so it never waits a second time.
+        let _: ReleasedShortcut = try await ClipboardSelection.waitForShortcutRelease(released: { checks += 1; return checks == 3 })
+        XCTAssertEqual(checks, 3)
+        do {
+            try await ClipboardSelection.waitForShortcutRelease(message: "held", released: { false })
+            XCTFail("Expected the held keys to fail the wait")
+        } catch { XCTAssertEqual(error.localizedDescription, "held") }
+    }
 }

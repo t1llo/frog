@@ -78,23 +78,45 @@ final class HiddenBarPlugin: LegacyPlugin, FrogPlugin, ObservableObject {
         apply()
     }
 
+    /// A change from the page. One that clashes with another shortcut is refused, and the page says why.
     func update(_ change: (inout HiddenBarSettings) -> Void) {
         var value = settings
         change(&value)
+        do { try save(value) } catch { shortcutError = error.localizedDescription }
+    }
+
+    /// Saves `[hidden-bar]` after the preferences' copy, so a shortcut that clashes is refused before anything is written.
+    func save(_ value: HiddenBarSettings) throws {
+        var value = value
         value.autoHideSeconds = value.organizer.autoHideSeconds
         guard value != settings else { return }
+        try mirror(value)
         settings = value
-        do { try context.save(value) } catch { context.report(error) }
+        try context.save(value)
         apply()
     }
 
+    /// `[hidden-bar]` is the source of truth; the preferences keep a copy in step, since Frog's shortcut conflict
+    /// checks, the shortcut reference, the window switcher and a Reload or Import read it there.
+    private func mirror(_ value: HiddenBarSettings) throws {
+        guard model.configuration.preferences.toolkitSettings.menuBar?.normalized != value.organizer else { return }
+        try model.updateToolkit { $0.menuBar = value.organizer }
+    }
+
     private func apply() {
+        // config.toml may name a shortcut another one already uses, after an edit in an editor: then it is not registered.
+        var hotkey = settings.shortcut?.hotkey, clash: String?
+        do { try mirror(settings) } catch {
+            clash = error.localizedDescription; hotkey = nil
+            var free = settings; free.shortcut = nil
+            do { try mirror(free) } catch { context.report(error) }
+        }
         guard let organizer else { return }
         organizer.configure(enabled: true, settings: settings.organizer)
-        let error = model.setPluginShortcut(AppModel.menuBarID, name: "Hidden bar", hotkey: settings.shortcut?.hotkey) { [weak organizer] in
+        let error = model.setPluginShortcut(AppModel.menuBarID, name: "Hidden bar", hotkey: hotkey) { [weak organizer] in
             organizer?.toggle()
         }
-        if shortcutError != error { shortcutError = error }
+        if shortcutError != clash ?? error { shortcutError = clash ?? error }
     }
 
     func page() -> AnyView? { legacyPage(HiddenBarPage(plugin: self)) }

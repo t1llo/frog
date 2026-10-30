@@ -34,12 +34,13 @@ final class ClipboardSelection: CapturedTextSelection {
         if let workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver) }
     }
 
-    static func capture(application: AXUIElement, pid: pid_t) async throws -> ClipboardSelection {
+    /// `released` proves the caller already waited for the shortcut keys, so the capture waits only once.
+    static func capture(application: AXUIElement, pid: pid_t, released: ReleasedShortcut) async throws -> ClipboardSelection {
         guard let window = AXRead.element(application, kAXFocusedWindowAttribute, timeout: AXRead.selectionTimeout) else {
             throw FrogError.message("The app does not expose its active window. Copy your selection into Try text.")
         }
         let focused = AXRead.element(application, kAXFocusedUIElementAttribute, timeout: AXRead.selectionTimeout)
-        try await waitForShortcutRelease()
+        // A modifier pressed again since the wait fails at once instead of waiting a second time.
         guard modifiersReleased, sameTarget(application, window: window, focused: focused, pid: pid) else {
             throw FrogError.message("Release the shortcut keys and keep the selected app focused, then try again.")
         }
@@ -63,6 +64,12 @@ final class ClipboardSelection: CapturedTextSelection {
     }
 
     func replace(with result: String) async throws {
+        try await replace(with: result, restoring: PasteboardSnapshot(.general))
+    }
+
+    /// Pastes `result` over the selection, then puts `original` back on the clipboard. When the replace fails the
+    /// result stays on the clipboard, as the error says.
+    func replace(with result: String, restoring original: PasteboardSnapshot) async throws {
         // Set before validation. FreshSelectionCopy restores this result on failure,
         // also when the app answers Copy late; do not clear the pasteboard again
         // while Paste is consuming it.
@@ -91,6 +98,7 @@ final class ClipboardSelection: CapturedTextSelection {
         try Task.checkCancellation()
         try Self.putBack(result, on: .general)
         try Self.command("v", keyCode: 9, menu: menu, pid: pid)
+        original.restore(on: .general, after: PasteboardSnapshot.pasteDelay)
     }
 
     private static var modifiersReleased: Bool {
@@ -98,10 +106,12 @@ final class ClipboardSelection: CapturedTextSelection {
         ![54, 55, 56, 60, 58, 61, 59, 62].contains { CGEventSource.keyState(.hidSystemState, key: CGKeyCode($0)) }
     }
 
-    static func waitForShortcutRelease(message: String = "Release the shortcut keys before Frog copies the selection, then try again.") async throws {
+    @discardableResult
+    static func waitForShortcutRelease(message: String = "Release the shortcut keys before Frog copies the selection, then try again.",
+                                       released: (() -> Bool)? = nil) async throws -> ReleasedShortcut {
         for _ in 0..<80 {
             try Task.checkCancellation()
-            if modifiersReleased { return }
+            if released?() ?? modifiersReleased { return ReleasedShortcut() }
             try await Task.sleep(for: .milliseconds(25))
         }
         throw FrogError.message(message)
@@ -168,6 +178,45 @@ final class ClipboardSelection: CapturedTextSelection {
         }
         down.flags = .maskCommand; up.flags = .maskCommand
         down.postToPid(pid); up.postToPid(pid)
+    }
+}
+
+/// Proof that the shortcut keys were released. Only `waitForShortcutRelease` makes one, and a capture asks for it
+/// instead of waiting again.
+struct ReleasedShortcut: Sendable {
+    fileprivate init() {}
+}
+
+/// What the clipboard held before a replace put the result on it. A replace pastes through the clipboard, so
+/// the person's own clipboard comes back once the app has read the result.
+@MainActor
+struct PasteboardSnapshot {
+    /// How long an app gets to read the result after Paste before the clipboard is put back.
+    static let pasteDelay: Duration = .milliseconds(500)
+    private let items: [NSPasteboardItem]
+
+    init(_ pasteboard: NSPasteboard) {
+        items = pasteboard.pasteboardItems?.map { item in
+            let saved = NSPasteboardItem()
+            for type in item.types { if let data = item.data(forType: type) { saved.setData(data, forType: type) } }
+            return saved
+        } ?? []
+    }
+
+    /// Puts the saved items back after `delay`, unless something else was copied meanwhile. Clipboard history
+    /// does not record the restore as a new copy.
+    @discardableResult
+    func restore(on pasteboard: NSPasteboard, after delay: Duration) -> Task<Void, Never> {
+        let count = pasteboard.changeCount
+        let items = items
+        return Task { @MainActor in
+            try? await Task.sleep(for: delay)
+            guard pasteboard.changeCount == count else { return }
+            ClipboardHistoryCaptureGate.shared.begin()
+            defer { ClipboardHistoryCaptureGate.shared.end(pasteboard: pasteboard) }
+            pasteboard.clearContents()
+            if !items.isEmpty { pasteboard.writeObjects(items) }
+        }
     }
 }
 

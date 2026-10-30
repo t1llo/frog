@@ -269,6 +269,36 @@ import FrogCore
         XCTAssertTrue(log.entries.allSatisfy { $0.hasPrefix("trash") || $0.hasPrefix("finder") }, "\(log.entries)")
     }
 
+    func testAnUninstallUnderWayRefusesAnotherAndShowsOnThePage() async throws {
+        let fixture = try CleanerFixture()
+        defer { fixture.remove() }
+        let app = try fixture.app("Chatter", bundleID: "com.example.chatter")
+        _ = try fixture.item(.caches, "com.example.chatter", bytes: 64)
+        let (model, directory) = try makeModel(fixture: fixture)
+        defer { model.shutdown(); try? FileManager.default.removeItem(at: directory) }
+        let trash = FakeCleanerTrash(folder: fixture.root.appendingPathComponent("Trash", isDirectory: true))
+        model.cleanerDependencies = { .fake(root: fixture.root, trash: trash) }
+        _ = try await enableCleaner(model)
+        let cleaner = try XCTUnwrap(model.cleanerPlugin?.cleaner)
+        func removing() -> Bool { if case .removing = cleaner.phase { return true }; return false }
+
+        await trash.hold()
+        let input = ActionInput(values: ["app": "Chatter", "confirm": "true"], source: .agent)
+        let first = Task { try await model.pluginHost.run("app-cleaner.uninstall", input) }
+        for _ in 0..<500 where !removing() { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(removing(), "The page shows the agent's removal and starts none of its own")
+        do {
+            _ = try await model.pluginHost.run("app-cleaner.uninstall", input)
+            XCTFail("A second removal waits for the first")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("Finish the removal"), error.localizedDescription) }
+
+        await trash.release()
+        let result = try await first.value
+        XCTAssertEqual((try object(result.json)["moved"] as? [String])?.count, 2, result.json)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: app.path))
+        XCTAssertFalse(removing(), "The page is free again")
+    }
+
     func testUninstallRefusesARunningApp() async throws {
         let fixture = try CleanerFixture()
         defer { fixture.remove() }

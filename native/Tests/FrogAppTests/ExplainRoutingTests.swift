@@ -52,11 +52,7 @@ final class ExplainRoutingTests: XCTestCase {
     func testWithoutSurroundingTextTheContextIsNotSent() async throws {
         let setup = try Setup(test: self)
         let rule = try await setup.enableExplain()
-        try setup.model.updateToolkit { toolkit in
-            var settings = toolkit.explain ?? ExplainSettings()
-            settings.includeContext = false
-            toolkit.explain = settings
-        }
+        try setup.explain { $0.context = false }
         setup.model.processSelection(ruleID: rule.id)
         try await waitUntil { setup.streams.requests.count == 1 }
         let first = try XCTUnwrap(setup.streams.requests.first?.messages.first?.text)
@@ -217,7 +213,7 @@ final class ExplainRoutingTests: XCTestCase {
             _ = try await setup.model.saveAnswerNote(content)
             XCTFail("Saved with notes off")
         } catch {
-            XCTAssertEqual(error.localizedDescription, "Turn on Save answers to notes on the Explain page.")
+            XCTAssertEqual(error.localizedDescription, AppModel.notesOff)
         }
         XCTAssertEqual(setup.folderChoices, 0)
 
@@ -225,7 +221,7 @@ final class ExplainRoutingTests: XCTestCase {
         XCTAssertFalse(setup.model.configuration.preferences.historyEnabled)
         let first = try await setup.model.saveAnswerNote(content)
         XCTAssertEqual(setup.folderChoices, 1)
-        XCTAssertEqual(setup.model.configuration.preferences.explainSettings.notesFolderURL?.resolvingSymlinksInPath().path,
+        XCTAssertEqual(setup.model.explainConfig.notes.folderURL?.resolvingSymlinksInPath().path,
                        setup.notesFolder.resolvingSymlinksInPath().path)
         XCTAssertEqual(first.lastPathComponent, "river bank.md")
         let second = try await setup.model.saveAnswerNote(content)
@@ -270,7 +266,7 @@ final class ExplainRoutingTests: XCTestCase {
         } catch {
             XCTAssertTrue(error is CancellationError)
         }
-        XCTAssertNil(setup.model.configuration.preferences.explainSettings.notesFolder)
+        XCTAssertNil(setup.model.explainConfig.notes.folder)
         XCTAssertTrue(setup.model.recentErrors.isEmpty)
     }
 
@@ -326,19 +322,16 @@ final class ExplainRoutingTests: XCTestCase {
 
     // MARK: Selection bubble
 
-    func testTheSelectionBubbleRunsOnlyWithExplainTheBubbleAndAccessibility() async throws {
+    func testTheSelectionBubbleRunsWithWritingItsSwitchAndAccessibility() async throws {
         let watcher = FakeSelectionWatcher()
         let setup = try Setup(test: self, watcher: watcher)
         setup.model.start()
-        XCTAssertFalse(watcher.isRunning)
-        _ = try await setup.enableExplain()
+        await setup.model.pluginHost.syncAndWait()
+        let writing = try XCTUnwrap(setup.model.pluginHost.running["writing"] as? WritingPlugin)
         XCTAssertFalse(watcher.isRunning, "The bubble is off by default")
-        try setup.model.updateToolkit { toolkit in
-            var settings = toolkit.explain ?? ExplainSettings()
-            settings.selectionBubble = true
-            toolkit.explain = settings
-        }
+        try setup.setBubble(true)
         XCTAssertTrue(watcher.isRunning)
+        XCTAssertTrue(setup.model.offersBubbleChoice)
 
         setup.trusted = false
         setup.model.refreshSystemStatus()
@@ -347,10 +340,17 @@ final class ExplainRoutingTests: XCTestCase {
         setup.model.refreshSystemStatus()
         XCTAssertTrue(watcher.isRunning, "Allowing Accessibility starts it without a restart")
 
+        _ = try await setup.enableExplain()
         try await setup.model.setFeature(.explain, enabled: false)
-        XCTAssertFalse(watcher.isRunning)
-        try await setup.model.setFeature(.explain, enabled: true)
-        XCTAssertTrue(watcher.isRunning)
+        XCTAssertTrue(watcher.isRunning, "The bubble belongs to Writing")
+        try await setup.model.setFeature(.writing, enabled: false)
+        await setup.model.pluginHost.syncAndWait()
+        XCTAssertFalse(watcher.isRunning, "Turning Writing off stops it")
+        XCTAssertNil(setup.model.selectionBubble)
+        XCTAssertNil(writing.bubble)
+        try await setup.model.setFeature(.writing, enabled: true)
+        await setup.model.pluginHost.syncAndWait()
+        XCTAssertTrue(watcher.isRunning, "Its switch is kept in [writing.bubble]")
         setup.model.shutdown()
         XCTAssertFalse(watcher.isRunning)
         XCTAssertEqual(watcher.starts, 3)
@@ -383,6 +383,8 @@ final class ExplainRoutingTests: XCTestCase {
     func testRunningARuleFromItsShortcutHidesTheBubble() async throws {
         let watcher = FakeSelectionWatcher()
         let setup = try Setup(test: self, watcher: watcher)
+        setup.model.start()
+        await setup.model.pluginHost.syncAndWait()
         let rule = try await setup.enableExplain()
         setup.model.processSelection(ruleID: rule.id)
         XCTAssertEqual(watcher.dismissals, 1)
@@ -435,66 +437,60 @@ final class ExplainRoutingTests: XCTestCase {
     func testTheBubbleOffersTheRulesAsTheyAreWhenItShows() async throws {
         let setup = try Setup(test: self)
         var explain = try await setup.enableExplain()
+        let bubble = WritingBubble(model: setup.model, settings: WritingConfig.Bubble())
         let field = Self.snapshot("levee", context: nil, element: 1)
-        func offered() -> [BubbleItem] { let items = setup.model.bubbleItems(for: field); return items.visible + items.more }
-        let writing = setup.model.configuration.rules.filter { $0.enabled && $0.category == .text && !$0.answersInPanel }
+        func offered() -> [BubbleItem] { let items = bubble.items(for: field); return items.visible + items.more }
+        let writing = setup.model.configuration.rules.filter { $0.enabled && $0.isWritingRule }
         XCTAssertEqual(offered().map(\.id), [explain.id] + writing.map(\.id))
-        XCTAssertEqual(setup.model.bubbleItems(for: field).visible.count, 3, "past four, More holds the rest")
+        XCTAssertEqual(bubble.items(for: field).visible.count, 3, "past four, More holds the rest")
 
         // Renamed since the last bubble: the next one shows the new name, without a restart.
         explain.name = "Erklären"
         try setup.model.saveRule(explain)
         XCTAssertEqual(offered().first?.title, "Erklären")
 
-        let proofread = try XCTUnwrap(writing.first)
-        try setup.model.updateToolkit { toolkit in
-            var settings = toolkit.explain ?? ExplainSettings()
-            settings.bubbleHiddenRules = [proofread.id]
-            toolkit.explain = settings
-        }
+        var proofread = try XCTUnwrap(writing.first)
+        proofread.showsInBubble = false
+        try setup.model.saveRule(proofread)
         XCTAssertFalse(offered().contains { $0.id == proofread.id })
-        try setup.model.deleteRule(id: proofread.id)
-        XCTAssertEqual(setup.model.configuration.preferences.explainSettings.bubbleHiddenRules, [],
-                       "a deleted rule leaves the hidden list too")
 
-        try await setup.model.setFeature(.writing, enabled: false)
-        XCTAssertEqual(offered().map(\.id), [explain.id])
+        try await setup.model.setFeature(.explain, enabled: false)
+        XCTAssertFalse(offered().contains { $0.id == explain.id }, "Explain leaves the bubble while it is off")
+        try await setup.model.setFeature(.explain, enabled: true)
         explain.providerID = nil
         try setup.model.saveRule(explain)
-        XCTAssertTrue(offered().isEmpty, "a rule without a model is left out")
+        XCTAssertFalse(offered().contains { $0.id == explain.id }, "a rule without a model is left out")
     }
 
     func testARuleIsLeftOutOfTheBubbleFromItsEditorAndSavedWithIt() async throws {
         let setup = try Setup(test: self)
+        setup.model.start()
+        await setup.model.pluginHost.syncAndWait()
         let explain = try await setup.enableExplain()
-        let proofread = try XCTUnwrap(setup.model.configuration.rules.first { $0.enabled && $0.category == .text && !$0.answersInPanel })
+        let proofread = try XCTUnwrap(setup.model.configuration.rules.first { $0.enabled && $0.isWritingRule })
         XCTAssertFalse(setup.model.offersBubbleChoice, "without the bubble the editor offers no choice")
-        try setup.model.saveRule(proofread, inBubble: false)
         XCTAssertFalse(setup.model.ruleLeftOutOfBubble(proofread))
 
-        try setup.model.updateToolkit { toolkit in
-            var settings = toolkit.explain ?? ExplainSettings()
-            settings.selectionBubble = true
-            settings.bubbleHiddenRules = []
-            toolkit.explain = settings
-        }
+        try setup.setBubble(true)
         XCTAssertTrue(setup.model.offersBubbleChoice)
         var renamed = proofread
         renamed.name = "Check"
         try setup.model.saveRule(renamed, inBubble: false)
-        XCTAssertEqual(setup.model.configuration.rules.first { $0.id == proofread.id }?.name, "Check")
-        XCTAssertEqual(setup.model.configuration.preferences.explainSettings.bubbleHiddenRules, [proofread.id])
-        XCTAssertTrue(setup.model.ruleLeftOutOfBubble(renamed))
+        let saved = try XCTUnwrap(setup.model.configuration.rules.first { $0.id == proofread.id })
+        XCTAssertEqual(saved.name, "Check")
+        XCTAssertFalse(saved.showsInBubble)
+        XCTAssertTrue(setup.model.ruleLeftOutOfBubble(saved))
         XCTAssertFalse(setup.model.ruleLeftOutOfBubble(explain))
-        let field = Self.snapshot("levee", context: nil, element: 1)
-        let items = setup.model.bubbleItems(for: field)
+        let bubble = try XCTUnwrap(setup.model.selectionBubble)
+        let items = bubble.items(for: Self.snapshot("levee", context: nil, element: 1))
         XCTAssertFalse((items.visible + items.more).contains { $0.id == proofread.id })
 
-        try setup.model.saveRule(renamed)
-        XCTAssertEqual(setup.model.configuration.preferences.explainSettings.bubbleHiddenRules, [proofread.id],
-                       "saving without a choice keeps the place")
-        try setup.model.saveRule(renamed, inBubble: true)
-        XCTAssertEqual(setup.model.configuration.preferences.explainSettings.bubbleHiddenRules, [])
+        try setup.model.saveRule(saved)
+        XCTAssertFalse(try XCTUnwrap(setup.model.configuration.rules.first { $0.id == proofread.id }).showsInBubble,
+                       "the place travels with the rule")
+        try setup.model.saveRule(saved, inBubble: true)
+        XCTAssertTrue(try XCTUnwrap(setup.model.configuration.rules.first { $0.id == proofread.id }).showsInBubble)
+        setup.model.shutdown()
     }
 
     private static func snapshot(_ text: String, context: String?, element: Int) -> SelectionSnapshot {
@@ -576,12 +572,22 @@ private final class Setup {
         try model.saveProvider(ProviderConfiguration(kind: .ollama), apiKey: nil, clearKey: false)
     }
 
-    func turnOnNotes() throws {
-        try model.updateToolkit { toolkit in
-            var settings = toolkit.explain ?? ExplainSettings()
-            settings.notes = true
-            toolkit.explain = settings
-        }
+    func turnOnNotes() throws { try explain { $0.notes.on = true } }
+
+    /// Changes `[explain]` in the test's own config.toml.
+    func explain(_ change: (inout ExplainConfig) -> Void) throws {
+        var settings = model.explainConfig
+        change(&settings)
+        if let plugin = model.pluginHost.running["explain"] as? ExplainPlugin { try plugin.save(settings) }
+        else { try model.settingsFile.update("explain", settings) }
+    }
+
+    /// Switches the selection bubble through the running Writing plugin.
+    func setBubble(_ on: Bool) throws {
+        let plugin = try XCTUnwrap(model.pluginHost.running["writing"] as? WritingPlugin)
+        var settings = plugin.settings
+        settings.bubble.on = on
+        try plugin.save(settings)
     }
 
     func setHistory(_ enabled: Bool) throws {
