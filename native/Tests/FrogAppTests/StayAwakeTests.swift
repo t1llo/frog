@@ -261,6 +261,17 @@ final class StayAwakeTests: XCTestCase {
         XCTAssertEqual(recovered.height, initial.height, accuracy: 1)
     }
 
+    func testAFrogSessionKeepsTheDisplayOnAndReleasesIt() async throws {
+        let display = DisplayProbe()
+        let power = StayAwakeController(system: PowerFixture(), directory: directory(), display: display)
+        await power.refresh()
+        power.setEnabled(true); await power.waitForOperation()
+        XCTAssertTrue(power.isEnabled)
+        XCTAssertEqual(display.held, true)
+        power.setEnabled(false); await power.waitForOperation()
+        XCTAssertEqual(display.held, false)
+    }
+
     private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
 }
 
@@ -290,4 +301,9 @@ private actor PowerFixture: StayAwakeSystem {
         if appliesWrites { enabled = value }
         if failAfterWrite { readsFail = true }
     }
+}
+
+@MainActor private final class DisplayProbe: DisplayAwakeHolding {
+    var held: Bool?
+    func hold(_ on: Bool) { held = on }
 }

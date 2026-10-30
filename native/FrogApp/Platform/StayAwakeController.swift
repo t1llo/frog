@@ -22,7 +22,7 @@ final class StayAwakeController: ObservableObject {
             switch self { case .halfHour: "30 minutes"; case .hour: "1 hour"; case .fourHours: "4 hours"; case .untilQuit: "Until quit" }
         }
     }
-    @Published private(set) var isEnabled = false
+    @Published private(set) var isEnabled = false { didSet { holdDisplay() } }
     @Published private(set) var isBusy = false
     @Published private(set) var hasReadState = false
     @Published private(set) var accessState: AccessState = .checking
@@ -34,8 +34,9 @@ final class StayAwakeController: ObservableObject {
     @Published var duration: DurationChoice = .fourHours
     /// The cup has a menu-bar item of its own, so Frog's icon leaves out its small one.
     @Published var hasOwnMenuBarIcon = false
-    private(set) var ownsSession = false
+    private(set) var ownsSession = false { didSet { holdDisplay() } }
     private let system: any StayAwakeSystem
+    private let display: (any DisplayAwakeHolding)?
     private let sessionFile: URL
     private let now: () -> Date
     private let monitorInterval: Duration
@@ -67,15 +68,20 @@ final class StayAwakeController: ObservableObject {
     }
 
     init(system: any StayAwakeSystem = NativeStayAwakeSystem(), directory: URL? = nil, now: @escaping () -> Date = Date.init,
-         monitorInterval: Duration = .seconds(60),
+         monitorInterval: Duration = .seconds(60), display: (any DisplayAwakeHolding)? = nil,
          openGuide: @escaping (StayAwakeSetup.Mode) async throws -> StayAwakeSetup.Session = { try await StayAwakeSetup.open($0) }) {
         self.system = system; self.now = now; self.monitorInterval = monitorInterval; self.openGuide = openGuide
+        // Test systems never touch the real display.
+        self.display = display ?? (system is NativeStayAwakeSystem ? AwakeAssertion() : nil)
         let directory = directory ?? ProcessInfo.processInfo.environment["FROG_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Frog")
         sessionFile = directory.appendingPathComponent("stay-awake-session.json")
     }
 
     var needsQuitCleanup: Bool { ownsSession || isBusy }
+
+    /// The display stays on for as long as Frog's own session keeps the Mac awake.
+    private func holdDisplay() { display?.hold(isEnabled && ownsSession) }
     var needsSetup: Bool { accessState == .needsSetup }
     /// An open guide keeps the switch from being turned on, never from being turned off.
     var canSwitch: Bool { !isBusy && hasReadState && (isEnabled || !isConfiguringAccess) }

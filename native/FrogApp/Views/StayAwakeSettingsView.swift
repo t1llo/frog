@@ -25,8 +25,6 @@ struct StayAwakeView: View {
                 if let error = power.error { InlineIssue(message: error) }
                 else if let notice = power.notice { Text(notice).font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
             }
-            Text("The screen can lock while background work continues.")
-                .font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             StayAwakeMenuBarSettings()
             StayAwakeSettingsView(power: power)
         }.task { await power.refresh() }
