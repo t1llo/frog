@@ -65,7 +65,13 @@ final class AppModel: ObservableObject {
     /// Whether `agentServer` exists, so turning everything off does not create it.
     private var agentServerCreated = false
     let localModels: LocalModels
-    let dictation: DictationController
+    /// Dictation while its plugin is on; the plugin sets it as it starts and clears it as it stops.
+    var dictationFeature: DictationFeature?
+    var dictation: DictationController? { dictationFeature?.controller }
+    /// Whether Frog records or transcribes right now.
+    var dictating: Bool { dictation?.active == true }
+    /// The controller a test gives the Dictation plugin instead of a new one.
+    let injectedDictationController: DictationController?
     let power: StayAwakeController
     let toolkit: Toolkit
     let systemMonitor = SystemMonitor()
@@ -206,11 +212,8 @@ final class AppModel: ObservableObject {
     }()
     let clipboardHistoryStore: ClipboardHistoryStore
     private var observations = Set<AnyCancellable>()
-    private var dictationHistoryEpoch: UUID?
-    private var recoveryHistoryEpochs: [UUID: UUID] = [:]
     static let localProviderID = UUID(uuidString: "7C05FB97-5BEF-48FD-9C28-A67605107251")!
     static let shortcutPanelID = UUID(uuidString: "85F8DE80-89BC-4506-B82D-DCFB71AFE292")!
-    static let cancelRecordingID = UUID(uuidString: "E4A8A2D5-7F72-42CA-924C-9100A213D030")!
     static let clipboardHistoryID = UUID(uuidString: "E7A2D4E5-1CBC-41DB-8B3A-7114DC77943D")!
     static let commandBarID = UUID(uuidString: "76B6A364-18CC-4779-9552-9885FCE778B8")!
     static let menuBarID = UUID(uuidString: "426A0C79-8785-4B2A-96E1-5880E7853209")!
@@ -282,7 +285,8 @@ final class AppModel: ObservableObject {
     private var windowActionTask: Task<Void, Never>?
     /// The Windows plugin's panels and drag monitor while it runs.
     weak var windowLayout: WindowLayoutController?
-    private var historyEpoch = UUID()
+    /// Changes when History is cleared or turned off, so work started before saves nothing after.
+    private(set) var historyEpoch = UUID()
     private var configurationLoadError: Error?
     private lazy var usagePreferenceWriter = UsagePreferenceWriter(store: configurationStore, initial: configuration)
     private var usagePreferenceRevision = 0
@@ -321,7 +325,7 @@ final class AppModel: ObservableObject {
         self.commandChoices = CommandChoiceStore(directory: dataDirectory)
         let localTools = localToolClient ?? LocalToolClient()
         self.localTools = localTools
-        self.dictation = dictationController ?? DictationController()
+        self.injectedDictationController = dictationController
         self.power = powerController ?? StayAwakeController(directory: dataDirectory)
         self.clipboardHistoryStore = clipboardHistoryStore ?? ClipboardHistoryStore()
         self.errorDisplayDuration = errorDisplayDuration
@@ -399,54 +403,6 @@ final class AppModel: ObservableObject {
         localModels.idleSeconds = configuration.preferences.workflowSettings.idleUnloadSeconds
         if registerShortcuts { localModels.unloadUnderMemoryPressure() }
         localModels.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
-        // Pages read only whether Frog dictates and which History entries it recovers. The timer, the
-        // preview text and the microphones are drawn by views that observe the controller, so a tick
-        // of the recording does not redraw every page.
-        dictation.$phase.removeDuplicates().dropFirst().sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
-        dictation.$recoveringHistoryIDs.removeDuplicates().dropFirst().sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
-        dictation.onError = { [weak self] in self?.report($0) }
-        dictation.onHandoff = { handoff, outcome in NSWorkspace.shared.open(handoff.reply(outcome)) }
-        dictation.onCopy = { [weak self] in self?.clipboardHistoryStore.recordCopiedText($0) }
-        dictation.onMicrophoneChange = { [weak self] id in
-            guard let self else { return }
-            var preferences = self.configuration.preferences.workflowSettings
-            preferences.microphoneID = id
-            do { try self.saveWorkflowPreferences(preferences) } catch { self.report(error) }
-        }
-        dictation.externalTranscription = { [weak self] audio, rule in
-            guard let self, let provider = self.configuration.providers.first(where: { $0.id == rule.action?.audioProviderID }),
-                  let id = rule.action?.audioModelID, provider.models.contains(where: { $0.id == id && $0.category == .audio }) else {
-                throw FrogError.message("Choose a configured speech-to-text model for this rule.")
-            }
-            return try await SpeechClient().transcribe(samples: audio, provider: provider, model: id, language: rule.action?.transcriptionLanguage, apiKey: self.readKey(provider.id))
-        }
-        dictation.cleanup = { [weak self] text, rule in
-            guard let self else { throw CancellationError() }
-            let provider = try self.resolved(rule)
-            if provider.id != Self.localProviderID {
-                return try await self.complete(text, rule, provider, provider.kind.localTool == nil ? self.readKey(provider.id) : nil)
-            }
-            return try await self.localModels.complete(text, instructions: rule.expandedInstructions(), modelID: provider.model)
-        }
-        dictation.localCleanupModel = { [weak self] rule in
-            guard let self else { throw CancellationError() }
-            let provider = try self.resolved(rule)
-            return provider.id == Self.localProviderID ? provider.model : nil
-        }
-        dictation.onSuccessfulDelivery = { [weak self] seconds, text in
-            self?.statistics.recordDictation(recordingSeconds: seconds, text: text, rule: .dictation)
-        }
-        dictation.onTranscript = { [weak self] id, rule, original, result in
-            guard let self else { return }
-            if self.configuration.preferences.historyEnabled, self.dictationHistoryEpoch == self.historyEpoch {
-                var entry = HistoryEntry(id: id, originalText: original, processedText: result, ruleName: rule.name, providerName: "Transcription", model: rule.action?.audioModelID ?? self.configuration.preferences.workflowSettings.audioModelID)
-                entry.category = .audio
-                do { if let retained = try self.historyStore.append(entry, preferences: self.configuration.preferences) { self.adoptHistory(retained) } }
-                catch { self.report(error) }
-            }
-        }
-        dictation.onInterruption = { [weak self] in self?.saveInterruption($0) ?? false }
-        dictation.onHistoryRecovered = { [weak self] in self?.finishHistoryRecovery(id: $0, result: $1) }
         applyUsagePreferences(configuration.preferences)
         toolkit.onOpenUsage = { [weak self] in self?.showSettings() }
         toolkit.onOpenMenuBar = { [weak self] in self?.showSettings() }
@@ -496,7 +452,6 @@ final class AppModel: ObservableObject {
             self.commandBar.hide()
             switch feature {
             case .writing: self.processingTask?.cancel(); self.processingIndicator.hide()
-            case .dictation: self.dictation.cancel(); self.invalidateHistoryRecovery()
             case .applicationShortcuts: self.applicationTask?.cancel(); self.systemActionTask?.cancel(); if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.shortcutPanel.hide()
             case .scripts: self.scripts.stop()
             case .commandBar: self.commandBar.stop()
@@ -523,7 +478,7 @@ final class AppModel: ObservableObject {
     }
 
     func reloadConfiguration() throws {
-        guard !isProcessing, !isTestingProvider, !dictation.active else {
+        guard !isProcessing, !isTestingProvider, !dictating else {
             throw FrogError.message("Finish or cancel the current request before reloading configuration.")
         }
         drainUsagePreferences()
@@ -546,18 +501,6 @@ final class AppModel: ObservableObject {
     func start() {
         started = true
         startSystemStatusMonitoring()
-        if registerShortcuts, configurationLoadError == nil,
-           !configuration.rules.contains(where: { $0.category == .audio }), configuration.preferences.workflows == nil {
-            var candidate = configuration
-            candidate.rules.append(.dictationPreset)
-            candidate.preferences.workflows = WorkflowPreferences()
-            do { try persist(candidate) } catch { report(error) }
-        }
-        if registerShortcuts, configurationLoadError == nil, configuration.preferences.workflowSettings.dictationDefaultsVersion == nil {
-            var candidate = configuration
-            candidate.adoptClipboardDictationDefaults()
-            do { try persist(candidate) } catch { report(error) }
-        }
         if registerShortcuts, configurationLoadError == nil { adoptExplainPresetIfNeeded() }
         if registerShortcuts { ChromiumAccessibilityReset.runOnce() }
         configureStatusItems()
@@ -596,7 +539,7 @@ final class AppModel: ObservableObject {
         loginWriteTask?.cancel(); loginWriteTask = nil
         loginStatusUpdatedAt = nil
         invalidateHistoryRecovery()
-        dictation.cancel(); localModels.shutdown(); shortcutPanel.hide()
+        dictation?.cancel(); localModels.shutdown(); shortcutPanel.hide()
         started = false
         windowSwitcher?.halt()
         selectionWatcher.stop()
@@ -642,7 +585,10 @@ final class AppModel: ObservableObject {
     /// Opens the plugin's review; nothing installs without the user's yes.
     func openLink(_ link: URL) {
         do {
-            if let request = try DictationHandoff.parse(link) { dictate(for: request); return }
+            if let request = try DictationHandoff.parse(link) {
+                guard let dictationFeature else { NSWorkspace.shared.open(request.reply(.failed("Turn on Dictation in Frog first."))); return }
+                dictationFeature.open(request); return
+            }
         } catch { report(error); return }
         guard link.scheme?.lowercased() == "frog", link.host?.lowercased() == "plugins", link.path == "/install",
               let query = URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems,
@@ -721,7 +667,7 @@ final class AppModel: ObservableObject {
         guard let rule = configuration.rules.first(where: { $0.id == id && $0.enabled }), ruleFeatureEnabled(rule) else { return }
         switch rule.category {
         case .text: processSelection(ruleID: id)
-        case .audio: startDictation(rule)
+        case .audio: dictationFeature?.start(rule)
         case .application: launchApplication(rule)
         case .window: manageWindow(rule)
         case .system: performSystemAction(rule)
@@ -1194,10 +1140,6 @@ final class AppModel: ObservableObject {
     private func adoptHistory(_ retained: [HistoryEntry]) {
         // Publishing an equal array would still redraw every view that observes the model.
         if history != retained { history = retained }
-        let ids = Set(retained.map(\.id))
-        for id in Array(recoveryHistoryEpochs.keys) where !ids.contains(id) {
-            recoveryHistoryEpochs[id] = nil; dictation.cancelHistoryRecovery(id: id)
-        }
     }
     var historyFileURL: URL { historyStore.directory.appendingPathComponent("history.json") }
     /// How many saved entries saving these preferences would delete. A history that cannot be read loses nothing.
@@ -1214,45 +1156,57 @@ final class AppModel: ObservableObject {
     }
 
     private func invalidateHistoryRecovery() {
-        historyEpoch = UUID(); recoveryHistoryEpochs = [:]
-        dictation.cancelHistoryRecovery()
+        historyEpoch = UUID()
+        dictation?.cancelHistoryRecovery()
     }
 
-    private func saveInterruption(_ interruption: DictationInterruption) -> Bool {
-        guard configuration.preferences.historyEnabled, dictationHistoryEpoch == historyEpoch else { return false }
-        do {
-            if interruption.transcriptPublished {
-                // Delivery may be interrupted after the completed result was already saved.
-                if var entry = history.first(where: { $0.id == interruption.id }) {
-                    entry.interruption = interruption.reason; entry.transcriptState = .complete
-                    try historyStore.update(entry, preferences: configuration.preferences)
-                    refreshHistory()
-                }
-                return false
-            }
-            var entry = HistoryEntry(id: interruption.id, originalText: interruption.text, processedText: interruption.text,
-                                     ruleName: interruption.rule.name, providerName: "Transcription",
-                                     model: interruption.rule.action?.audioModelID ?? configuration.preferences.workflowSettings.audioModelID)
-            entry.category = .audio; entry.interruption = interruption.reason; entry.transcriptState = .partial
-            guard let retained = try historyStore.append(entry, preferences: configuration.preferences) else { return false }
-            recoveryHistoryEpochs[entry.id] = historyEpoch
-            adoptHistory(retained)
-            return recoveryHistoryEpochs[entry.id] != nil
-        } catch { report(error); return false }
-    }
+    var registersShortcuts: Bool { registerShortcuts }
+    /// Frog's global shortcuts. A plugin registers its own in a group of its own.
+    var sharedHotkeys: HotkeyManager { hotkeys }
+    /// Whether Frog may change its configuration on its own, which it does not while the saved one failed to load.
+    var configurationLoaded: Bool { configurationLoadError == nil }
 
-    private func finishHistoryRecovery(id: UUID, result: Result<String, Error>) {
-        guard recoveryHistoryEpochs.removeValue(forKey: id) == historyEpoch,
-              configuration.preferences.historyEnabled, var entry = history.first(where: { $0.id == id }) else { return }
-        switch result {
-        case .success(let text):
-            entry.originalText = text; entry.processedText = text; entry.transcriptState = .complete
-        case .failure(let error):
-            entry.transcriptState = .failed
-            report(FrogError.message("Interrupted recording transcription failed. \(error.localizedDescription)"))
+    /// Adds dictation's first rule, once, and the one-time change of its old factory default.
+    func adoptDictationDefaults() {
+        guard configurationLoadError == nil else { return }
+        var candidate = configuration
+        if !candidate.rules.contains(where: { $0.category == .audio }), candidate.preferences.workflows == nil {
+            candidate.rules.append(.dictationPreset)
+            candidate.preferences.workflows = WorkflowPreferences()
         }
-        do { try historyStore.update(entry, preferences: configuration.preferences); refreshHistory() }
-        catch { report(error) }
+        if candidate.preferences.workflowSettings.dictationDefaultsVersion == nil { candidate.adoptClipboardDictationDefaults() }
+        if candidate != configuration { do { try persist(candidate) } catch { report(error) } }
+    }
+
+    /// Runs a text rule on `text` with the rule's own model, local or from a provider.
+    func complete(_ text: String, with rule: Rule) async throws -> String {
+        let provider = try resolved(rule)
+        if provider.id != Self.localProviderID {
+            return try await complete(text, rule, provider, provider.kind.localTool == nil ? readKey(provider.id) : nil)
+        }
+        return try await localModels.complete(text, instructions: rule.expandedInstructions(), modelID: provider.model)
+    }
+
+    /// Speech to text through the provider a dictation rule names.
+    func transcribeWithProvider(_ audio: [Float], rule: Rule) async throws -> String {
+        guard let provider = configuration.providers.first(where: { $0.id == rule.action?.audioProviderID }),
+              let id = rule.action?.audioModelID, provider.models.contains(where: { $0.id == id && $0.category == .audio }) else {
+            throw FrogError.message("Choose a configured speech-to-text model for this rule.")
+        }
+        return try await SpeechClient().transcribe(samples: audio, provider: provider, model: id,
+                                                   language: rule.action?.transcriptionLanguage, apiKey: readKey(provider.id))
+    }
+
+    /// Adds an entry to History. False when History did not keep it, for its limit or because it is off.
+    func appendHistory(_ entry: HistoryEntry) throws -> Bool {
+        guard let retained = try historyStore.append(entry, preferences: configuration.preferences) else { return false }
+        adoptHistory(retained)
+        return retained.contains { $0.id == entry.id }
+    }
+
+    func updateHistory(_ entry: HistoryEntry) throws {
+        try historyStore.update(entry, preferences: configuration.preferences)
+        refreshHistory()
     }
 
     func exportConfiguration(to url: URL) throws {
@@ -1262,7 +1216,7 @@ final class AppModel: ObservableObject {
     }
 
     func importConfiguration(_ imported: Configuration) throws {
-        guard !isProcessing, !isTestingProvider, !dictation.active else { throw FrogError.message("Finish or cancel the current request before importing a configuration.") }
+        guard !isProcessing, !isTestingProvider, !dictating else { throw FrogError.message("Finish or cancel the current request before importing a configuration.") }
         // As when saving: the Mac's check first, so a shortcut is refused in the words Settings uses.
         try validateForThisMac(imported, change: .import)
         try ConfigurationFile.validate(imported)
@@ -1314,7 +1268,7 @@ final class AppModel: ObservableObject {
     private func setShortcutRecording(_ recording: Bool) {
         toolkit.menuBarOrganizer.setShortcutRecording(recording)
         if recording { commandBar.hide() }
-        if recording { dictation.cancel() }
+        if recording { dictation?.cancel() }
         if recording, registerShortcuts { clipboardHistory.cancel() }
         isRecordingShortcut = recording
         if recording { hotkeys.unregister() }
@@ -1336,7 +1290,6 @@ final class AppModel: ObservableObject {
         if let key = preferences.workflowSettings.shortcutPanelHotkey {
             rules.append(Rule(id: Self.shortcutPanelID, name: "Show shortcuts", hotkey: key))
         }
-        if preferences.featureEnabled(.dictation), let key = preferences.workflowSettings.cancelRecordingHotkey { rules.append(Rule(id: Self.cancelRecordingID, name: "Cancel recording", hotkey: key)) }
         if preferences.workflowSettings.clipboardHistoryEnabled == true {
             rules.append(Rule(id: Self.clipboardHistoryID, name: "Clipboard history", hotkey: preferences.workflowSettings.effectiveClipboardHistoryHotkey))
         }
@@ -1497,7 +1450,7 @@ final class AppModel: ObservableObject {
         let preferences = configuration.preferences
         return BubbleState(explainEnabled: preferences.featureEnabled(.explain), bubbleEnabled: preferences.explainSettings.selectionBubble,
                            writingEnabled: preferences.featureEnabled(.writing), accessibilityTrusted: accessibilityGranted,
-                           busy: isProcessing || dictation.active || isRecordingShortcut || answerPresenter.isKey)
+                           busy: isProcessing || dictating || isRecordingShortcut || answerPresenter.isKey)
     }
 
     /// Built from the rules as they are when the bubble shows, so a rule changed since appears as it is now.
@@ -1610,7 +1563,7 @@ final class AppModel: ObservableObject {
     /// `historyIssue`: why History could not keep it. Cancelling the caller cancels the rule.
     func runRule(_ ruleID: UUID, on text: String) async throws -> (result: String, historyIssue: String?) {
         guard configuration.preferences.featureEnabled(.writing) else { throw FrogError.message("Writing is off.") }
-        guard !isProcessing, !dictation.active else { throw FrogError.message("A rule is already running. Try again when it has finished.") }
+        guard !isProcessing, !dictating else { throw FrogError.message("A rule is already running. Try again when it has finished.") }
         var ended: (outcome: RuleOutcome, result: String?)?
         let run = begin(ruleID: ruleID, manualText: text) { ended = ($0, $1) }
         await withTaskCancellationHandler { await run?.value } onCancel: { run?.cancel() }
@@ -1648,58 +1601,10 @@ final class AppModel: ObservableObject {
         try savePreferences(prefs)
     }
 
-    func startDictation(_ rule: Rule, shortcutHeld: Bool = false, handoff: DictationHandoff? = nil) {
-        guard configuration.preferences.featureEnabled(.dictation) else { return }
-        guard !isProcessing else { report(FrogError.message("Wait for the current request to finish.")); return }
-        guard !dictation.active else { return }
-        dictationHistoryEpoch = configuration.preferences.historyEnabled ? historyEpoch : nil
-        dictation.start(rule: rule, preferences: configuration.preferences.workflowSettings, models: localModels,
-                        shortcutHeld: shortcutHeld, handoff: handoff)
-    }
-
-    /// `frog://dictate` from another app: records with the person's usual transcription rule, or the one the
-    /// link names, and sends the transcript back to the app. The same link stops the recording it started.
-    private func dictate(for request: DictationHandoff) {
-        let current = dictation.handoff.flatMap { $0.sameCaller(request) ? $0 : nil }
-        switch request.command {
-        case .cancel:
-            if current != nil { dictation.interrupt() }
-            return
-        case .stop:
-            if current != nil { dictation.requestStop() }
-            return
-        case .toggle:
-            if current != nil { dictation.requestStop(); return }
-        }
-        func refuse(_ message: String) { NSWorkspace.shared.open(request.reply(.failed(message))) }
-        guard NSWorkspace.shared.urlForApplication(toOpen: request.reply) != nil else {
-            report(FrogError.message("No app opens \(request.caller)'s reply link, so Frog did not record.")); return
-        }
-        guard configuration.preferences.featureEnabled(.dictation) else { return refuse("Turn on Dictation in Frog first.") }
-        guard !dictation.active, !isProcessing else { return refuse("Frog is busy with another recording.") }
-        let rules = configuration.rules.filter { $0.enabled && $0.category == .audio && ruleFeatureEnabled($0) }
-        let rule: Rule?
-        if let name = request.rule {
-            rule = rules.first { $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame }
-            guard rule != nil else { return refuse("Frog has no transcription rule named \(name).") }
-        } else {
-            // The rule with a shortcut is the one the person dictates with every day.
-            rule = rules.first { $0.hotkey != nil } ?? rules.first
-        }
-        guard let rule else { return refuse("Add a transcription rule in Frog first.") }
-        startDictation(rule, handoff: request)
-        // A rule that cannot start says why in Frog; the app learns that nothing is recording.
-        if dictation.handoff == nil { refuse("Frog could not start \(rule.name). Open Frog to see why.") }
-    }
-
     private func handleShortcut(_ id: UUID, pressed: Bool) {
         if let command = WindowCommand.command(for: id) { windowLayout?.handle(command, pressed: pressed); return }
         if id == Self.commandBarID { if pressed { showCommandBar() }; return }
         if id == Self.clipboardHistoryID { if !pressed { showClipboardHistory() }; return }
-        if id == Self.cancelRecordingID {
-            if pressed { dictation.interrupt(reason: configuration.preferences.workflowSettings.cancelRecordingHotkey?.keyCode == 53 ? .escape : .cancelled) }
-            return
-        }
         if id == Self.shortcutPanelID { if pressed { showShortcuts() } else { shortcutPanel.hide() }; return }
         guard let rule = configuration.rules.first(where: { $0.id == id && $0.enabled }), ruleFeatureEnabled(rule) else { return }
         switch rule.category {
@@ -1710,22 +1615,14 @@ final class AppModel: ObservableObject {
             if pressed { manageWindow(rule) }
         case .system:
             if pressed && configuration.preferences.shortcutsEnabled { performSystemAction(rule) }
-        case .audio:
-            let mode = rule.action?.recordingMode ?? configuration.preferences.workflowSettings.recordingMode
-            switch RecordingShortcut.action(mode: mode, pressed: pressed, target: id, active: dictation.ruleID, finishing: dictation.finishing) {
-            case .start: startDictation(rule, shortcutHeld: true)
-            case .stop: dictation.stop(models: localModels)
-            case .busy: showPressWhileFinishing()
-            case nil: break
-            }
+        case .audio: dictationFeature?.handleShortcut(rule, pressed: pressed)
         }
     }
 
-    /// A recording starts only after the last one was delivered. Without its popup, the processing
-    /// indicator says why the press did nothing.
-    private func showPressWhileFinishing() {
-        guard !dictation.showPressWhileFinishing(), registerShortcuts, configuration.preferences.showProcessingIndicator else { return }
-        processingIndicator.note(dictation.phase == .correcting ? "Still cleaning up…" : "Still transcribing…")
+    /// A short note in the processing indicator, when it is on.
+    func note(_ message: String) {
+        guard registerShortcuts, configuration.preferences.showProcessingIndicator else { return }
+        processingIndicator.note(message)
     }
 
     private func launchApplication(_ rule: Rule) {
@@ -1780,7 +1677,7 @@ final class AppModel: ObservableObject {
     @discardableResult
     private func begin(ruleID: UUID, manualText: String?, providerID: UUID? = nil, modelID: String? = nil,
                        agentReply: ((RuleOutcome, String?) -> Void)? = nil) -> Task<Void, Never>? {
-        guard !isProcessing, !dictation.active else {
+        guard !isProcessing, !dictating else {
             // A shortcut press is answered by the indicator or popup of what is running. An agent's run has neither.
             if manualText != nil {
                 let error = FrogError.message("A rule is already running. Wait or cancel it from the menu.")

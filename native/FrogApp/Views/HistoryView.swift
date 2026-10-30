@@ -224,7 +224,7 @@ private struct HistoryContent: View {
         if let label = entry.interruptionLabel {
             HStack(spacing: 8) {
                 FrogBadge(text: label)
-                if model.dictation.recoveringHistoryIDs.contains(entry.id) {
+                if model.dictation?.recoveringHistoryIDs.contains(entry.id) == true {
                     ProgressView().controlSize(.mini)
                     Text("Transcribing…")
                 } else if entry.transcriptState == .failed {

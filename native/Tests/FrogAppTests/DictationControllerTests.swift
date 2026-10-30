@@ -10,6 +10,7 @@ final class DictationControllerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let controller = DictationController(monitorKeys: false)
         let model = AppModel(dataDirectory: directory, registerShortcuts: false, dictationController: controller)
+        model.attachDictation()
         var updates = 0
         let observation = model.objectWillChange.sink { updates += 1 }
         for _ in 0..<10 { controller.refreshRecordingFeedback(elapsed: 0) }
@@ -26,6 +27,7 @@ final class DictationControllerTests: XCTestCase {
         let controller = DictationController(makeRecorder: { FixtureRecording() }, authorize: { true }, copy: { _ in },
                                              monitorKeys: false, inputDevices: { [] }, presentsPopup: false)
         let model = AppModel(dataDirectory: directory, registerShortcuts: false, dictationController: controller)
+        model.attachDictation()
         controller.externalTranscription = { _, _ in "Recovered words." }
         // Recover without History, so only the controller's own state reaches the model.
         controller.onInterruption = { _ in true }
@@ -165,7 +167,7 @@ final class DictationControllerTests: XCTestCase {
             inputDevices: { [] }, paste: { throw FrogError.message("Fixture target unavailable") })
         controller.externalTranscription = { _, _ in "Retained transcript" }
         controller.onSuccessfulDelivery = { _, _ in successes += 1 }
-        controller.onFinish = { _, _, _, delivery in finished = delivery }
+        controller.onTranscript = { _, _, _, result in finished = result }
         controller.onError = { _ in issues += 1 }
         var rule = Rule.dictationPreset
         rule.action?.audioModelID = "fixture"; rule.action?.audioProviderID = UUID()
@@ -173,7 +175,7 @@ final class DictationControllerTests: XCTestCase {
         controller.start(rule: rule, preferences: WorkflowPreferences(), models: models)
         await controller.waitForWork(); controller.requestStop(); await controller.waitForWork()
         XCTAssertEqual(copied, "Retained transcript")
-        XCTAssertEqual(finished, "Copied")
+        XCTAssertEqual(finished, "Retained transcript")
         XCTAssertEqual(issues, 1)
         XCTAssertEqual(successes, 0)
     }
@@ -211,6 +213,7 @@ final class DictationControllerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let controller = DictationController(makeRecorder: { FixtureRecording() }, authorize: { true }, copy: { _ in }, monitorKeys: false)
         let model = AppModel(dataDirectory: directory, registerShortcuts: false, dictationController: controller)
+        model.attachDictation()
         var prefs = model.configuration.preferences; prefs.historyEnabled = true
         try model.savePreferences(prefs)
         var rule = Rule.dictationPreset
@@ -239,8 +242,9 @@ final class DictationControllerTests: XCTestCase {
             activeController?.cancel()
         }, monitorKeys: false)
         activeController = controller
-        controller.onSuccessfulDelivery = { _, _ in successfulDeliveries += 1 }
         let model = AppModel(dataDirectory: directory, registerShortcuts: false, dictationController: controller)
+        model.attachDictation()
+        controller.onSuccessfulDelivery = { _, _ in successfulDeliveries += 1 }
         var prefs = model.configuration.preferences; prefs.historyEnabled = true
         try model.savePreferences(prefs)
         var rule = Rule.dictationPreset
@@ -272,7 +276,7 @@ final class DictationControllerTests: XCTestCase {
         var cleanupCalls = 0
         let controller = DictationController(makeRecorder: { FixtureRecording() }, authorize: { true }, copy: { copied.append($0) }, monitorKeys: false)
         controller.cleanup = { _, _ in cleanupCalls += 1; return "LLM output" }
-        controller.onFinish = { _, _, result, delivery in completed.append(result); XCTAssertEqual(delivery, "Copied") }
+        controller.onTranscript = { _, _, _, result in completed.append(result) }
         var prefs = WorkflowPreferences(); prefs.showDictationPopup = false; prefs.audioModelID = descriptor.id
         var rule = Rule.dictationPreset; rule.action?.audioModelID = descriptor.id; rule.action?.showRecordingPopup = false
         controller.start(rule: rule, preferences: prefs, models: models)

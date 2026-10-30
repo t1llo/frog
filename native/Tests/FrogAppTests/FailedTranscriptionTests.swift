@@ -18,7 +18,7 @@ final class FailedTranscriptionTests: XCTestCase {
             return "Recovered speech."
         }
         controller.onError = { issues.append($0.localizedDescription) }
-        controller.onFinish = { _, _, _, _ in finished += 1 }
+        controller.onTranscript = { _, _, _, _ in finished += 1 }
         controller.start(rule: externalRule, preferences: WorkflowPreferences(), models: models)
         await controller.waitForWork()
         controller.stop(models: models)

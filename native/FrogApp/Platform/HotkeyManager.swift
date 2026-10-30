@@ -7,53 +7,39 @@ final class HotkeyManager {
     enum ShortcutPurpose { case rule, clipboardHistory, windowSwitcher, recordingCancel }
     private static let signature: OSType = 0x46524F47 // FROG
     private static var nextRegistrationID: UInt32 = 1
+    /// One set of shortcuts that registers and unregisters on its own, so a plugin's keys come and go without
+    /// touching the rest. Registering a group again would forget a key of that group held down right now.
+    private struct Group {
+        var references: [EventHotKeyRef] = []
+        var onTrigger: ((UUID) -> Void)?
+        var onPress: ((UUID) -> Void)?
+        var pressed = Set<UUID>()
+        var generation: UInt64 = 0
+    }
     private var handler: EventHandlerRef?
-    private var registrations: [EventHotKeyRef] = []
+    private var groups: [String: Group] = [:]
     /// Readable so that a test can drive the installed Carbon callback with a real registration.
     private(set) var rulesByID: [UInt32: UUID] = [:]
-    private var onTrigger: ((UUID) -> Void)?
-    private var onPress: ((UUID) -> Void)?
-    private var pressed = Set<UUID>()
-    /// Whether a registered shortcut is down; registering again now would lose its release.
-    var isHolding: Bool { !pressed.isEmpty }
+    private var groupByID: [UInt32: String] = [:]
     private var generation: UInt64 = 0
 
-    func register(rules: [Rule], purposes: [UUID: ShortcutPurpose] = [:], onPress: ((UUID) -> Void)? = nil, onTrigger: @escaping (UUID) -> Void) -> [UUID: String] {
-        unregister()
-        self.onTrigger = onTrigger
-        self.onPress = onPress
+    /// Whether a shortcut of `group` is down; registering that group again now would lose its release.
+    func isHolding(_ group: String = "") -> Bool { !(groups[group]?.pressed.isEmpty ?? true) }
+    var isHolding: Bool { isHolding("") }
+
+    /// Registers `rules` as `group`, replacing what that group held before. Other groups keep their shortcuts.
+    func register(rules: [Rule], group: String = "", purposes: [UUID: ShortcutPurpose] = [:], onPress: ((UUID) -> Void)? = nil,
+                  onTrigger: @escaping (UUID) -> Void) -> [UUID: String] {
+        unregister(group: group)
         let candidates = rules.filter { $0.enabled && $0.hotkey != nil }
         guard !candidates.isEmpty else { return [:] }
         var errors: [UUID: String] = [:]
-        var eventTypes = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)), EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))]
-        let callback: EventHandlerUPP = { _, event, context in
-            guard let event, let context else { return OSStatus(eventNotHandledErr) }
-            var hotkeyID = EventHotKeyID()
-            let status = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
-                                           nil, MemoryLayout<EventHotKeyID>.size, nil, &hotkeyID)
-            guard status == noErr, hotkeyID.signature == 0x46524F47 else { return OSStatus(eventNotHandledErr) }
-            return MainActor.assumeIsolated {
-                let manager = Unmanaged<HotkeyManager>.fromOpaque(context).takeUnretainedValue()
-                guard let ruleID = manager.rulesByID[hotkeyID.id] else { return OSStatus(eventNotHandledErr) }
-                let down = GetEventKind(event) == UInt32(kEventHotKeyPressed)
-                if down && !manager.pressed.insert(ruleID).inserted { return noErr }
-                // Carbon can deliver a release after registration/focus changes
-                // without a corresponding press. Never treat that as a shortcut.
-                if !down && manager.pressed.remove(ruleID) == nil { return noErr }
-                let generation = manager.generation
-                Task { @MainActor [weak manager] in
-                    guard let manager, manager.generation == generation else { return }
-                    if down { manager.onPress?(ruleID) } else { manager.onTrigger?(ruleID) }
-                }
-                return noErr
-            }
-        }
-        let status = InstallEventHandler(GetApplicationEventTarget(), callback, 2, &eventTypes,
-                                         Unmanaged.passUnretained(self).toOpaque(), &handler)
-        guard status == noErr else {
-            for rule in candidates { errors[rule.id] = "Could not install the keyboard handler (\(status))." }
+        guard installHandler() else {
+            for rule in candidates { errors[rule.id] = "Could not install the keyboard handler." }
             return errors
         }
+        generation &+= 1
+        var entry = Group(onTrigger: onTrigger, onPress: onPress, generation: generation)
         let counts = Dictionary(grouping: candidates, by: { $0.hotkey! }).mapValues(\.count)
         let idCounts = Dictionary(grouping: candidates, by: \.id).mapValues(\.count)
         for rule in candidates {
@@ -71,30 +57,62 @@ final class HotkeyManager {
                                              EventHotKeyID(signature: Self.signature, id: id),
                                              GetApplicationEventTarget(), 0, &reference)
             if result == noErr, let reference {
-                registrations.append(reference)
-                rulesByID[id] = rule.id
+                entry.references.append(reference)
+                rulesByID[id] = rule.id; groupByID[id] = group
             } else {
                 errors[rule.id] = result == OSStatus(eventHotKeyExistsErr)
                     ? "This shortcut is already registered by another application or macOS."
                     : "macOS could not register this shortcut (\(result)). Choose another combination."
             }
         }
+        groups[group] = entry
+        if entry.references.isEmpty { unregister(group: group) }
         return errors
     }
 
-    func unregister() {
-        generation &+= 1
-        registrations.forEach { UnregisterEventHotKey($0) }
-        registrations.removeAll()
-        rulesByID.removeAll()
-        if let handler { RemoveEventHandler(handler) }
-        handler = nil
-        onTrigger = nil
-        onPress = nil; pressed = []
+    /// Unregisters one group; the handler goes when no group is left.
+    func unregister(group: String = "") {
+        if let entry = groups.removeValue(forKey: group) { entry.references.forEach { UnregisterEventHotKey($0) } }
+        for (id, owner) in groupByID where owner == group { groupByID[id] = nil; rulesByID[id] = nil }
+        if groups.isEmpty, let handler { RemoveEventHandler(handler); self.handler = nil }
+    }
+
+    private func installHandler() -> Bool {
+        if handler != nil { return true }
+        var eventTypes = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
+                          EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))]
+        let callback: EventHandlerUPP = { _, event, context in
+            guard let event, let context else { return OSStatus(eventNotHandledErr) }
+            var hotkeyID = EventHotKeyID()
+            let status = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                                           nil, MemoryLayout<EventHotKeyID>.size, nil, &hotkeyID)
+            guard status == noErr, hotkeyID.signature == 0x46524F47 else { return OSStatus(eventNotHandledErr) }
+            return MainActor.assumeIsolated {
+                let manager = Unmanaged<HotkeyManager>.fromOpaque(context).takeUnretainedValue()
+                return manager.deliver(hotkeyID.id, down: GetEventKind(event) == UInt32(kEventHotKeyPressed))
+            }
+        }
+        return InstallEventHandler(GetApplicationEventTarget(), callback, 2, &eventTypes,
+                                   Unmanaged.passUnretained(self).toOpaque(), &handler) == noErr
+    }
+
+    private func deliver(_ id: UInt32, down: Bool) -> OSStatus {
+        guard let ruleID = rulesByID[id], let name = groupByID[id], var entry = groups[name] else { return OSStatus(eventNotHandledErr) }
+        if down && !entry.pressed.insert(ruleID).inserted { return noErr }
+        // Carbon can deliver a release after registration/focus changes
+        // without a corresponding press. Never treat that as a shortcut.
+        if !down && entry.pressed.remove(ruleID) == nil { return noErr }
+        groups[name] = entry
+        let generation = entry.generation
+        Task { @MainActor [weak self] in
+            guard let self, let entry = self.groups[name], entry.generation == generation else { return }
+            if down { entry.onPress?(ruleID) } else { entry.onTrigger?(ruleID) }
+        }
+        return noErr
     }
 
     isolated deinit {
-        registrations.forEach { UnregisterEventHotKey($0) }
+        for entry in groups.values { entry.references.forEach { UnregisterEventHotKey($0) } }
         if let handler { RemoveEventHandler(handler) }
     }
 
