@@ -490,6 +490,7 @@ final class AppModel: ObservableObject {
         if !candidate.preferences.historyEnabled { invalidateHistoryRecovery() }
         if !candidate.preferences.showProcessingIndicator { processingIndicator.hide() }
         registerHotkeys(); shortcutPanel.hide()
+        WindowsPlugin.adoptLegacySettings(self)
         configureWindowSwitcher(); configureSelectionWatcher(); configureClipboardHistory(); refreshHistory()
         dismissError()
     }
@@ -1244,6 +1245,7 @@ final class AppModel: ObservableObject {
         errorMessage = nil
         invalidateHistoryRecovery()
         registerHotkeys()
+        WindowsPlugin.adoptLegacySettings(self)
         configureWindowSwitcher()
         configureSelectionWatcher()
         if registerShortcuts { clipboardHistory.stop() }

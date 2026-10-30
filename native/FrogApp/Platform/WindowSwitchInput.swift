@@ -41,7 +41,7 @@ final class WindowSwitchInput: @unchecked Sendable {
         }
     }
     /// A session opened without the chord; nil once stopped.
-    func beginSticky() -> UInt64? { lock.withLock { stopped ? nil : router.beginSticky() } }
+    func beginSticky() -> UInt64? { lock.withLock { stopped ? nil : router.beginSticky(held: CGEventSource.flagsState(.combinedSessionState)) } }
     func cancelActivation(_ id: UUID?) { lock.withLock { if activation == id { activation = nil } } }
     func isActivationPending(_ id: UUID) -> Bool { lock.withLock { activation == id } }
     func shouldDeferBackgroundWork(at now: ContinuousClock.Instant = .now) -> Bool {
