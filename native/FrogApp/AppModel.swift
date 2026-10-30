@@ -1881,6 +1881,8 @@ final class AppModel: ObservableObject {
                 self.isProcessing = false; self.processingForAgent = false; self.processingTask = nil
             }
             do {
+                // A local model loads while the selection is read.
+                if provider.id == Self.localProviderID { self.localModels.prewarm(provider.model) }
                 let selection: (any CapturedTextSelection)?
                 let text: String
                 if let manualText { selection = nil; text = manualText }

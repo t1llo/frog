@@ -2,15 +2,48 @@ import XCTest
 @testable import FrogCore
 
 final class LocalModelCatalogTests: XCTestCase {
-    func testFreshInventoryOffersFourSpeechModelsAndTheRecommendedDefault() {
-        let configuration = Configuration()
-        let audio = configuration.modelInventory(installed: []).filter { $0.kind == .audio }
-        XCTAssertEqual(audio.count, 4)
-        XCTAssertEqual(Set(audio.map(\.id)).count, 4)
-        XCTAssertEqual(audio.filter { $0.backend == .whisperKit }.count, 3)
-        XCTAssertEqual(audio.filter { $0.backend == .parakeet }.count, 1)
-        XCTAssertEqual(audio.filter(\.isRecommended).map(\.id), ["parakeet-v3", configuration.preferences.workflowSettings.audioModelID])
-        XCTAssertEqual(configuration.modelInventory(installed: []).filter { $0.kind == .text }, LocalModelDescriptor.catalog.filter { $0.kind == .text })
+    func testFreshInventoryShowsTheRecommendedModelsAndOneAlternativeOfEachKind() {
+        let inventory = Configuration().modelInventory(installed: [])
+        XCTAssertEqual(inventory.filter { $0.kind == .audio }.map(\.id), ["parakeet-ultra", "whisper-large-v3-turbo-626mb"])
+        XCTAssertEqual(inventory.filter { $0.kind == .text }.map(\.id), ["qwen3.5-2b", "qwen3.5-0.8b"])
+        XCTAssertEqual(inventory.filter(\.isRecommended).map(\.id), ["parakeet-ultra", "qwen3.5-2b"])
+        XCTAssertTrue(inventory.allSatisfy { $0.recommendationSummary != nil }, "Every shown model says what it is for")
+    }
+    func testExactlyOneRecommendedModelOfEachKind() throws {
+        for kind in [LocalModelDescriptor.Kind.audio, .text] {
+            let recommended = LocalModelDescriptor.catalog.filter { $0.kind == kind && $0.isRecommended }
+            XCTAssertEqual(recommended.count, 1, "\(kind)")
+            XCTAssertEqual(recommended.first, LocalModelDescriptor.recommended(kind))
+            XCTAssertTrue(LocalModelDescriptor.defaultCatalog.contains(LocalModelDescriptor.recommended(kind)), "The recommended model is shown")
+        }
+        XCTAssertEqual(LocalModelDescriptor.recommendedPair.map(\.id), ["parakeet-ultra", "qwen3.5-2b"])
+        let speech = LocalModelDescriptor.recommended(.audio), text = LocalModelDescriptor.recommended(.text)
+        XCTAssertEqual(speech.backend, .parakeet)
+        XCTAssertEqual(speech.repository, "FluidInference/parakeet-ultra-coreml")
+        XCTAssertEqual(speech.parakeetComponents.last, "JointDecisionv3", "Ultra ships only the joint with top-K outputs")
+        XCTAssertFalse(speech.englishOnly)
+        XCTAssertEqual(text.backend, .mlx)
+        XCTAssertEqual(text.repository, "mlx-community/Qwen3.5-2B-4bit")
+        XCTAssertEqual(speech.downloadSize, "632.2 MB")
+        XCTAssertEqual(text.downloadSize, "1.75 GB")
+    }
+    func testCatalogIDsAndSourcesAreWellFormed() throws {
+        let ids = LocalModelDescriptor.catalog.map(\.id)
+        XCTAssertEqual(Set(ids).count, ids.count)
+        // An ID is a folder name in the model folder and a key in configuration files.
+        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789.-")
+        for model in LocalModelDescriptor.catalog {
+            XCTAssertFalse(model.id.isEmpty)
+            XCTAssertTrue(model.id.allSatisfy(allowed.contains), model.id)
+            XCTAssertTrue(model.id.first!.isLetter, model.id)
+            XCTAssertFalse(model.id.contains(".."), model.id)
+            XCTAssertEqual(try HuggingFaceSource(model.repository).repository, model.repository, model.id)
+            XCTAssertEqual(model.backend == .mlx, model.kind == .text, model.id)
+            if model.backend == .parakeet { XCTAssertNotNil(model.variant, model.id) }
+            if model.backend == .whisperKit { XCTAssertNotNil(model.variant, model.id) }
+        }
+        XCTAssertTrue(LocalModelDescriptor.shownModelIDs.isSubset(of: Set(ids)))
+        XCTAssertEqual(LocalModelDescriptor.find(LocalModelDescriptor.defaultAudioModelID)?.kind, .audio)
     }
     func testOlderConfigurationsFallBackToTheSameCatalogTextModel() {
         // Configurations saved before per-rule model choices migrate with this exact model.
@@ -58,6 +91,10 @@ final class LocalModelCatalogTests: XCTestCase {
         let models = try HuggingFaceModels.descriptors(source: source, metadata: data(["siblings": files.map { ["rfilename": $0] }]), textConfig: nil)
         XCTAssertEqual(models.map(\.id), ["parakeet-v3"])
         XCTAssertThrowsError(try HuggingFaceModels.descriptors(source: source, metadata: data(["siblings": []]), textConfig: nil))
+        let ultra = try HuggingFaceSource("https://huggingface.co/FluidInference/parakeet-ultra-coreml")
+        let ultraFiles = ["Preprocessor", "Encoder", "Decoder", "JointDecisionv3"].map { "\($0).mlmodelc/coremldata.bin" } + ["parakeet_vocab.json"]
+        XCTAssertEqual(try HuggingFaceModels.descriptors(source: ultra, metadata: data(["siblings": ultraFiles.map { ["rfilename": $0] }]), textConfig: nil).map(\.id), ["parakeet-ultra"])
+        XCTAssertThrowsError(try HuggingFaceModels.descriptors(source: ultra, metadata: data(["siblings": files.map { ["rfilename": $0] }]), textConfig: nil), "Ultra needs its own joint")
     }
     func testHuggingFaceLinksCanonicalizeAndRejectUnsupportedLocations() throws {
         let id = try HuggingFaceSource("mlx-community/Qwen3-4B-4bit")
