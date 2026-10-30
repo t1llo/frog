@@ -85,6 +85,7 @@ final class StayAwakeController: ObservableObject {
     private var timer: Task<Void, Never>?
     private var lidTask: Task<Void, Never>?
     private var lidObservation: AnyCancellable?
+    private var accessObservation: AnyCancellable?
 
     /// The app's controller: assertions only for the real system, so test systems never touch the display.
     init(system: any StayAwakeSystem = NativeStayAwakeSystem(), directory: URL? = nil, now: @escaping () -> Date = Date.init,
@@ -96,6 +97,15 @@ final class StayAwakeController: ObservableObject {
         lidClosed = lidEnabled
         // The popup and the page show the lid's state through this object.
         lidObservation = lid.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        // Setup finished in Terminal while a session runs: the session now also covers a closed lid.
+        accessObservation = lid.$accessState.removeDuplicates().dropFirst().sink { [weak self] state in
+            guard state == .ready else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.isEnabled, self.lidClosed, !self.lid.ownsSession else { return }
+                if self.notice == Self.lidNeedsSetup { self.notice = nil }
+                self.syncLid()
+            }
+        }
     }
 
     /// What `duration` and `untilTime` choose.
@@ -171,6 +181,8 @@ final class StayAwakeController: ObservableObject {
         }
     }
 
+    static let lidNeedsSetup = "Lid closed needs setup"
+
     /// The lid-closed setting is on exactly while a session runs in lid-closed mode.
     private func syncLid() {
         let wanted = isEnabled && lidClosed
@@ -183,10 +195,10 @@ final class StayAwakeController: ObservableObject {
                 if !self.lid.hasReadState { await self.lid.refresh() }
                 await self.lid.refreshAccessUnlessReady()
                 guard self.isEnabled, self.lidClosed else { return }
-                if self.lid.accessState != .ready { self.notice = "Lid closed needs setup"; return }
+                if self.lid.accessState != .ready { self.notice = Self.lidNeedsSetup; return }
                 if !self.lid.isEnabled { self.lid.setEnabled(true); await self.lid.waitForOperation() }
             } else if self.lid.ownsSession {
-                self.lid.setEnabled(false); await self.lid.waitForOperation()
+                await self.lid.restoreOwnSession()
             }
         }
     }
