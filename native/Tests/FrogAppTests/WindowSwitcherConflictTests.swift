@@ -3,8 +3,8 @@ import FrogCore
 @testable import FrogApp
 
 /// The status loop asks every second what the window switcher should do. While a
-/// shortcut takes its chord, stopping it again would publish "Off" and then the
-/// conflict once more, so Settings would redraw twice a second for nothing.
+/// shortcut takes its chord, stopping it again would publish Off and then the
+/// conflict once more, so the page would redraw every second for nothing.
 @MainActor
 final class WindowSwitcherConflictTests: XCTestCase {
     private let commandTab = Hotkey(keyCode: 48, modifiers: 256)
@@ -18,48 +18,50 @@ final class WindowSwitcherConflictTests: XCTestCase {
         return configuration
     }
 
-    private func message(_ configuration: Configuration) throws -> String {
-        guard case .stop(let message) = AppModel.windowSwitcherStep(configuration, status: "Ready", ready: true) else {
-            XCTFail("A conflicting shortcut stops the switcher"); return ""
+    private let ready = WindowSwitcherStatus.ready(Hotkey(keyCode: 48, modifiers: 256))
+
+    private func message(_ configuration: Configuration) throws -> WindowSwitcherStatus {
+        guard case .stop(let reason) = WindowSwitcherPlugin.step(configuration, status: ready) else {
+            XCTFail("A conflicting shortcut stops the switcher"); return .off
         }
-        return message
+        return reason
     }
 
     func testConflictStopsTheSwitcherOnceAndThenLeavesItAlone() throws {
         let configuration = conflicting(commandTab)
         let message = try message(configuration)
-        XCTAssertTrue(message.contains("change it to enable window switching"))
-        XCTAssertEqual(AppModel.windowSwitcherStep(configuration, status: message, ready: false), .none,
+        XCTAssertEqual(message, .conflict(commandTab))
+        XCTAssertTrue(message.isIssue)
+        XCTAssertEqual(WindowSwitcherPlugin.step(configuration, status: message), .none,
                        "A conflict already shown is not stopped and published again on every tick")
     }
 
     func testConflictStopsTheSwitcherAgainWhenTheStatusSaysSomethingElse() throws {
         let configuration = conflicting(commandTab)
         let message = try message(configuration)
-        XCTAssertEqual(AppModel.windowSwitcherStep(configuration, status: "Off — macOS app switcher", ready: false), .stop(message))
-        XCTAssertEqual(AppModel.windowSwitcherStep(configuration, status: message, ready: true), .stop(message))
+        XCTAssertEqual(WindowSwitcherPlugin.step(configuration, status: .off), .stop(message))
     }
 
     func testReverseCyclingChordCountsAsAConflict() throws {
         let configuration = conflicting(Hotkey(keyCode: 48, modifiers: 256 | 512))
-        XCTAssertNotEqual(try message(configuration), "")
+        XCTAssertEqual(try message(configuration), .conflict(commandTab))
     }
 
     func testWithoutAConflictOrWithTheSwitcherOffItIsConfigured() {
         var configuration = conflicting(Hotkey(keyCode: 8, modifiers: 256))
-        XCTAssertEqual(AppModel.windowSwitcherStep(configuration, status: "Ready", ready: true), .configure)
+        XCTAssertEqual(WindowSwitcherPlugin.step(configuration, status: ready), .configure)
         configuration = conflicting(commandTab)
         configuration.preferences.windowSwitcherEnabled = false
-        XCTAssertEqual(AppModel.windowSwitcherStep(configuration, status: "Off — macOS app switcher", ready: false), .configure)
+        XCTAssertEqual(WindowSwitcherPlugin.step(configuration, status: .off), .configure)
     }
 
     func testDisabledRuleOrFeatureDoesNotConflict() {
         var configuration = conflicting(commandTab)
         configuration.rules[0].enabled = false
-        XCTAssertEqual(AppModel.windowSwitcherStep(configuration, status: "Ready", ready: true), .configure)
+        XCTAssertEqual(WindowSwitcherPlugin.step(configuration, status: ready), .configure)
         configuration = conflicting(commandTab)
         configuration.preferences.setFeature(.writing, enabled: false)
         XCTAssertTrue(configuration.preferences.windowSwitcherEnabled)
-        XCTAssertEqual(AppModel.windowSwitcherStep(configuration, status: "Ready", ready: true), .configure)
+        XCTAssertEqual(WindowSwitcherPlugin.step(configuration, status: ready), .configure)
     }
 }

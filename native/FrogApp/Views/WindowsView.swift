@@ -1,111 +1,35 @@
 import SwiftUI
 import FrogCore
 
-/// The Windows page: layout shortcuts for the front window, and the way to the window switcher.
+/// The Windows page: layout shortcuts in a compact grid, then snapping, panels and sizes.
 struct WindowsView: View {
     @EnvironmentObject private var model: AppModel
-    /// What the last "Use suggested shortcuts" did, until the page closes.
+    let plugin: WindowsPlugin
+    /// What the last "Suggested shortcuts" did, until the page closes.
     @State private var suggestion: String?
-    @State private var voiceOverNote = false
     /// macOS's own window tiling, read when the page opens and whenever Frog comes to the front.
     @State private var macOS = MacWindowManagerSettings()
 
+    private var settings: WindowsSettings { plugin.settings }
+
     var body: some View {
-        let rows = WindowAction.shortcutRows(configured: model.configuration.rules)
-        PageScroll {
-            PageHeader(title: "Windows")
+        FrogPage {
+            FrogPageHeader(title: "Windows", subtitle: "Snap and tile windows with keys.") {
+                Button("Suggested shortcuts", action: useSuggestedShortcuts)
+                    .help("Gives every layout without a shortcut one with ⌃⌥, where it is free.")
+            }
             if !model.accessibilityGranted {
-                InlineIssue(message: "Frog needs Accessibility access to move and resize windows.")
-                Button("Allow Accessibility") { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() }
-            }
-            WindowSetupCard(macOS: macOS)
-            SettingsSection(title: "Sizes") {
-                CompactRow(title: "Gap between windows") {
-                    FrogDropdown(selected: settings.gap, options: Self.gapChoices(including: settings.gap), width: 180,
-                                 title: points) { gap in update { $0.gap = gap } }
-                }
-                CompactRow(title: "Cycle sizes when pressed again", detail: "½, ⅔ and ⅓ of the screen.") {
-                    Toggle("Cycle sizes when pressed again", isOn: binding(\.cycleSizes)).labelsHidden().toggleStyle(.switch)
-                }
-                CompactRow(title: "Thirds run top to bottom on tall displays") {
-                    Toggle("Thirds run top to bottom on tall displays", isOn: binding(\.portraitThirds)).labelsHidden().toggleStyle(.switch)
-                }
-                CompactRow(title: "Leave room for Stage Manager") {
-                    Toggle("Leave room for Stage Manager", isOn: binding(\.respectStageManager)).labelsHidden().toggleStyle(.switch)
-                }
-            }
-            SettingsSection(title: "Snap") {
-                CompactRow(title: "Drag to screen edges") {
-                    Toggle("Drag to screen edges", isOn: binding(\.dragToSnap)).labelsHidden().toggleStyle(.switch)
-                }
-                if macOS.edgeTiling || macOS.topEdgeTiling {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(nativeTilingNote)
-                            .font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Button("Open Desktop & Dock") { MacWindowManagerReader.openDesktopAndDock() }
-                            .buttonStyle(.frog(.ghost, compact: true))
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                }
-                CompactRow(title: "Restore size when dragged away") {
-                    Toggle("Restore size when dragged away", isOn: binding(\.restoreOnDrag)).labelsHidden().toggleStyle(.switch)
-                        .disabled(!settings.dragToSnap)
-                }
-                CompactRow(title: "Show zones while holding Shift") {
-                    Toggle("Show zones while holding Shift", isOn: binding(\.zoneOverlay)).labelsHidden().toggleStyle(.switch)
-                }
-                CompactRow(title: "Zones") {
-                    FrogDropdown(selected: WindowSwitches(model.configuration.preferences).zoneGrid, options: ZoneGrid.allCases,
-                                 width: 180, title: { $0.title }) { grid in update { $0.zoneGrid = grid.rawValue } }.disabled(!settings.zoneOverlay)
-                }
-                CompactRow(title: "Layout picker") {
-                    HStack(alignment: .top, spacing: 10) {
-                        VStack(alignment: .trailing, spacing: 4) {
-                            HotkeyRecorder(hotkey: commandShortcut(.layoutPicker)).disabled(!settings.layoutPicker)
-                            if let issue = model.hotkeyErrors[WindowCommand.layoutPicker.id] {
-                                Text(issue).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
-                            }
-                        }
-                        Toggle("Layout picker", isOn: binding(\.layoutPicker)).labelsHidden().toggleStyle(.switch)
+                FrogSection {
+                    FrogRow("Accessibility", caption: "Needed to move and resize windows") {
+                        Button("Allow") { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() }
+                            .buttonStyle(.frog(.primary))
                     }
                 }
             }
-            SettingsSection(title: "Layout shortcuts") {
-                VStack(alignment: .leading, spacing: 6) {
-                    Button("Use suggested shortcuts", action: useSuggestedShortcuts).buttonStyle(.frog())
-                    if let suggestion {
-                        Text(suggestion).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if voiceOverNote {
-                        Text("VoiceOver uses Control-Option. These shortcuts work, but VoiceOver users may prefer others.")
-                            .font(FrogType.small).foregroundStyle(FrogStyle.warning)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }.frame(maxWidth: .infinity, alignment: .leading)
-                // A list in the card: each row's highlight reaches past the card's padding, so the row's content
-                // lines up with the rows above.
-                VStack(spacing: 2) {
-                    ForEach(rows) { rule in
-                        ShortcutRuleRow(rule: rule, model: model) {
-                            if let action = rule.action?.windowAction {
-                                WindowLayoutGlyph(action: action).frame(width: 28, height: 28)
-                            } else { ShortcutRuleSymbol() }
-                        }
-                            .padding(.horizontal, 8).padding(.vertical, 6).frogHoverRow()
-                    }
-                }.padding(.horizontal, -8)
-            }
-            SettingsSection(title: "Cheat sheet") {
-                CompactRow(title: "Show window shortcuts while holding") {
-                    VStack(alignment: .trailing, spacing: 4) {
-                        HotkeyRecorder(hotkey: commandShortcut(.cheatSheet))
-                        if let issue = model.hotkeyErrors[WindowCommand.cheatSheet.id] {
-                            Text(issue).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
-                        }
-                    }
-                }
-            }
+            layouts
+            snap
+            panels
+            sizes
         }
         .onAppear { macOS = MacWindowManagerReader.read() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -113,17 +37,86 @@ struct WindowsView: View {
         }
     }
 
-    /// Why Frog's edges, or only its top edge and corners, are paused, and the ways around it.
-    private var nativeTilingNote: String {
-        let fill = "\"Drag windows to menu bar to fill screen\""
-        guard macOS.edgeTiling else {
-            return "macOS fills the screen with a window dragged to the menu bar, so Frog's top edge and corners are paused. To use them, turn off \(fill) in Desktop & Dock."
+    // MARK: Sections
+
+    private var layouts: some View {
+        let rules = Dictionary(uniqueKeysWithValues: WindowAction.shortcutRows(configured: model.configuration.rules)
+            .compactMap { rule in rule.action?.windowAction.map { ($0, rule) } })
+        return FrogSection("Layouts") {
+            if let suggestion { FrogRowNote(text: suggestion) }
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24)], spacing: 0) {
+                ForEach(Self.layoutOrder) { action in
+                    if let rule = rules[action] { LayoutShortcutCell(rule: rule, issue: model.hotkeyErrors[rule.id], model: model) }
+                }
+            }
         }
-        let zones = settings.zoneOverlay ? "Hold Shift while dragging to use Frog's zones,"
-            : "Turn on \"Show zones while holding Shift\" to use Frog's zones,"
-        let tile = "\"Drag windows to screen edges to tile\""
-        let off = macOS.topEdgeTiling ? "\(tile), and for the top edge \(fill)," : tile
-        return "macOS already tiles windows dragged to screen edges, so Frog's edges are paused. \(zones) or turn off \(off) in Desktop & Dock."
+    }
+
+    private var snap: some View {
+        FrogSection("Snap") {
+            FrogRow("Drag to screen edges") { Toggle("Drag to screen edges", isOn: binding(\.dragToSnap)).labelsHidden().toggleStyle(.switch) }
+            FrogRow("Restore size when dragged away") {
+                Toggle("Restore size when dragged away", isOn: binding(\.restoreOnDrag)).labelsHidden().toggleStyle(.switch)
+            }.disabled(!settings.dragToSnap)
+            FrogRow("Zones while holding Shift") {
+                FrogDropdown(selected: settings.zoneOverlay ? Optional(settings.zones) : nil,
+                             options: [nil] + WindowsSettings.Zones.allCases.map(Optional.some), width: 180,
+                             title: { $0.map(Self.zonesTitle) ?? "Off" }) { zones in
+                    plugin.update { settings in
+                        settings.zoneOverlay = zones != nil
+                        if let zones { settings.zones = zones }
+                    }
+                }
+            }
+            if let note = nativeTilingNote {
+                FrogRow(note) {
+                    Button("Open Desktop & Dock") { MacWindowManagerReader.openDesktopAndDock() }.buttonStyle(.frog(.ghost))
+                }
+            }
+        }
+    }
+
+    private var panels: some View {
+        FrogSection("Panels") {
+            FrogRow("Layout picker", caption: "Every layout as a picture") {
+                HStack(spacing: 10) {
+                    commandRecorder(.layoutPicker).disabled(!settings.layoutPicker)
+                    Toggle("Layout picker", isOn: binding(\.layoutPicker)).labelsHidden().toggleStyle(.switch)
+                }
+            }
+            FrogRow("Cheat sheet", caption: "Hold to see every window shortcut") { commandRecorder(.cheatSheet) }
+        }
+    }
+
+    private var sizes: some View {
+        FrogSection("Sizes") {
+            FrogRow("Gap between windows") {
+                FrogDropdown(selected: settings.gap, options: Self.gapChoices(including: settings.gap), width: 180,
+                             title: { "\($0) pt" }) { gap in plugin.update { $0.gap = gap } }
+            }
+            FrogRow("Cycle sizes when pressed again", caption: "½, ⅔ and ⅓") {
+                Toggle("Cycle sizes when pressed again", isOn: binding(\.cycleSizes)).labelsHidden().toggleStyle(.switch)
+            }
+            FrogRow("Thirds top to bottom on tall displays") {
+                Toggle("Thirds top to bottom on tall displays", isOn: binding(\.portraitThirds)).labelsHidden().toggleStyle(.switch)
+            }
+            FrogRow("Leave room for Stage Manager") {
+                Toggle("Leave room for Stage Manager", isOn: binding(\.respectStageManager)).labelsHidden().toggleStyle(.switch)
+            }
+        }
+    }
+
+    // MARK: Pieces
+
+    /// Halves, quarters, thirds, sizes, displays and Restore, as the cheat sheet groups them.
+    static let layoutOrder: [WindowAction] = WindowAction.allCases.enumerated().sorted { first, second in
+        let a = WindowCheatSheet.order.firstIndex(of: WindowCheatSheet.group(for: first.element)) ?? .max
+        let b = WindowCheatSheet.order.firstIndex(of: WindowCheatSheet.group(for: second.element)) ?? .max
+        return (a, first.offset) < (b, second.offset)
+    }.map(\.element)
+
+    static func zonesTitle(_ zones: WindowsSettings.Zones) -> String {
+        ZoneGrid(rawValue: zones.rawValue)?.title ?? zones.rawValue
     }
 
     /// The gaps the menu offers, with the saved one when it is not among them.
@@ -131,42 +124,67 @@ struct WindowsView: View {
         Set([0, 2, 4, 6, 8, 10, 12, 16, 20, 24, 32, 40, current]).filter { WindowPreferences.gapRange.contains($0) }.sorted()
     }
 
-    private func points(_ gap: Int) -> String { "\(gap) pt" }
+    /// Why Frog's edges, or its top edge, are paused; nil while they are not.
+    private var nativeTilingNote: String? {
+        if macOS.edgeTiling { return settings.zoneOverlay ? "macOS tiles at the edges: hold Shift for Frog's zones" : "macOS tiles at the edges, so Frog's are paused" }
+        if macOS.topEdgeTiling { return "macOS fills the screen at the top edge" }
+        return nil
+    }
 
-    /// The saved Windows settings, or their defaults.
-    private var settings: WindowPreferences { model.configuration.preferences.toolkitSettings.windows ?? WindowPreferences() }
-
-    private func binding<Value>(_ field: WritableKeyPath<WindowPreferences, Value>) -> Binding<Value> {
-        Binding(get: { settings[keyPath: field] }, set: { value in update { $0[keyPath: field] = value } })
+    private func binding(_ field: WritableKeyPath<WindowsSettings, Bool>) -> Binding<Bool> {
+        Binding(get: { settings[keyPath: field] }, set: { value in plugin.update { $0[keyPath: field] = value } })
     }
 
     /// A command's shortcut. One the window switcher uses is refused, so the switcher keeps working.
-    private func commandShortcut(_ command: WindowCommand) -> Binding<Hotkey?> {
-        Binding(get: { settings.shortcuts[command.rawValue] }, set: { value in
-            if let value, AppModel.windowSwitcherChords(model.configuration.preferences).contains(value) {
-                model.report(FrogError.message("The window shortcut for \(command.title) conflicts with another shortcut."))
-                return
+    private func commandRecorder(_ command: WindowCommand) -> some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            HotkeyRecorder(hotkey: Binding(get: { settings.shortcut(command)?.hotkey }, set: { value in
+                if let value, WindowSwitcherPlugin.chords(model.configuration.preferences).contains(value) {
+                    model.report(FrogError.message("The window shortcut for \(command.title) conflicts with another shortcut."))
+                    return
+                }
+                do {
+                    let shortcut = try value.map { try Shortcut($0) }
+                    plugin.update { $0.setShortcut(shortcut, for: command) }
+                } catch { model.report(error) }
+            }))
+            if let issue = model.hotkeyErrors[command.id] {
+                Text(issue).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
             }
-            update { $0.shortcuts[command.rawValue] = value }
-        })
+        }
     }
 
     private func useSuggestedShortcuts() {
         do {
             let result = try model.applySuggestedWindowShortcuts()
             suggestion = result.summary(display: HotkeyManager.display)
-            voiceOverNote = NSWorkspace.shared.isVoiceOverEnabled
+            // The suggestions write the preferences directly; config.toml follows.
+            plugin.adoptLegacyCommands()
         } catch { model.report(error) }
     }
+}
 
-    /// Saves a change to the Windows settings. Every control on this page saves through it.
-    private func update(_ change: (inout WindowPreferences) -> Void) {
-        do {
-            try model.updateToolkit { toolkit in
-                var windows = toolkit.windows ?? WindowPreferences()
-                change(&windows)
-                toolkit.windows = windows.normalized
+/// One layout in the grid: its picture, its name and its shortcut. Recording a shortcut turns the layout on,
+/// clearing it turns it off.
+private struct LayoutShortcutCell: View {
+    let rule: Rule
+    let issue: String?
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if let action = rule.action?.windowAction { WindowLayoutGlyph(action: action).frame(width: 22, height: 22) }
+            Text(L10n.text(rule.name)).font(FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                .opacity(rule.hotkey != nil && !rule.enabled ? 0.5 : 1)
+            if let issue {
+                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10)).foregroundStyle(FrogStyle.warning).help(issue)
             }
-        } catch { model.report(error) }
+            Spacer(minLength: 8)
+            HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: { value in
+                var updated = rule; updated.hotkey = value; updated.enabled = value != nil
+                do { try model.saveRule(updated) } catch { model.report(error) }
+            }), emptyTitle: "Add")
+        }
+        .frame(minHeight: FrogStyle.rowHeight)
     }
 }

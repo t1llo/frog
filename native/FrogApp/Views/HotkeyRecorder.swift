@@ -8,6 +8,8 @@ struct HotkeyRecorder: View {
     @Binding var hotkey: Hotkey?
     var showsClearButton = true
     var purpose: HotkeyManager.ShortcutPurpose = .rule
+    /// What the button says while there is no shortcut; a grid of many says less.
+    var emptyTitle = "Record shortcut"
     @State private var recording = false
     /// Why the last key press was refused. Not private, so that a layout test can show one without pressing a key.
     @State var hint: String?
@@ -17,7 +19,7 @@ struct HotkeyRecorder: View {
         // One view: a second one would land beside the recorder in the row that holds it.
         VStack(alignment: .trailing, spacing: 4) {
             HStack(spacing: 6) {
-                let text = recording ? L10n.text("Press shortcut…") : hotkey.map(HotkeyManager.display) ?? L10n.text("Record shortcut")
+                let text = recording ? L10n.text("Press shortcut…") : hotkey.map(HotkeyManager.display) ?? L10n.text(emptyTitle)
                 // A secondary control in the sans font, like every other button beside it.
                 Button {
                     recording.toggle(); hint = nil

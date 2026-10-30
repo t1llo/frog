@@ -45,6 +45,43 @@ final class WindowSwitcherLatencyTests: XCTestCase {
         XCTAssertLessThan(samples[18], .milliseconds(100), "Warm native presentation must not acquire a discovery-sized stall")
     }
 
+    /// The owner's measure: about 30 windows of a dozen apps, icons in, from the chord to the first frame.
+    func testThirtyWindowsShowWithoutAStall() async {
+        let model = WindowSwitcherDisplay()
+        let rows = (0..<30).map { index in
+            SwitcherWindow(id: UUID(), pid: pid_t(1000 + index % 12), appName: "Fixture \(index % 12)",
+                           title: "Synthetic document \(index)", minimized: false, hidden: false)
+        }
+        let icons = WindowSwitcherIcons(load: { _ in NSImage(size: NSSize(width: 512, height: 512), flipped: false) { rect in
+            NSColor.systemBlue.setFill(); rect.fill(); return true
+        } })
+        model.icons = await withCheckedContinuation { continuation in
+            icons.request(Array(Set(rows.map(\.pid)))) { continuation.resume(returning: $0) }
+        }
+        let host = NSHostingView(rootView: WindowSwitcherOverlay(model: model, choose: { _ in }, hover: { _ in }))
+        host.sizingOptions = []
+        let panel = NSPanel(contentRect: NSRect(origin: .zero, size: WindowSwitcherLayout.size(windowCount: rows.count)),
+                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.contentView = host
+        defer { panel.orderOut(nil); panel.close() }
+        model.preload(.init(windows: rows, current: rows[0].id), in: panel)
+        var samples: [Duration] = []
+        for index in 0..<21 {
+            let start = ContinuousClock.now
+            model.selected = rows[(index + 1) % rows.count].id
+            panel.orderFrontRegardless()
+            host.layoutSubtreeIfNeeded()
+            host.displayIfNeeded()
+            samples.append(start.duration(to: .now))
+            panel.orderOut(nil)
+        }
+        let first = samples.removeFirst()
+        samples.sort()
+        print("SWITCHER LATENCY 30 windows, 12 apps: first frame \(first), warm p50 \(samples[10]), p95 \(samples[18]); icon cache \(icons.byteCount) bytes")
+        XCTAssertLessThan(samples[18], .milliseconds(100), "A prewarmed list of 30 windows, icons drawn, shows without a stall")
+    }
+
     func testTypingAgedInventoryStillPresentsSynchronously() async {
         let cache = WindowSwitcherCache()
         let window = SwitcherWindow(id: UUID(), pid: 10, appName: "Fixture", title: "Synthetic", minimized: false, hidden: false)

@@ -47,6 +47,8 @@ import XCTest
     private func makeModel(_ configuration: Configuration) throws {
         model?.shutdown()
         try ConfigurationStore(directory: directory).save(configuration)
+        // config.toml decides which plugins are on once it exists; start from the configuration given.
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent("config.toml"))
         model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil })
     }
 
@@ -234,6 +236,66 @@ import XCTest
         let refused = await run("windows", "focus", "--window", "4512")
         XCTAssertEqual(refused.exitCode, AgentExit.failure)
         XCTAssertEqual(access.writes, [])
+    }
+
+    // MARK: Plugin actions
+
+    private func startWindowsPlugin() async throws {
+        var configuration = Configuration()
+        configuration.preferences.ensureToolkit()
+        configuration.preferences.setFeature(.windows, enabled: true)
+        try makeModel(configuration)
+        await model.pluginHost.syncAndWait()
+    }
+
+    private func action(_ id: String, _ values: [String: String] = [:]) async throws -> ActionResult {
+        try await model.pluginHost.run(id, ActionInput(values: values, source: .agent))
+    }
+
+    func testWindowsListActionGivesTheWindowsAsJSON() async throws {
+        try await startWindowsPlugin()
+        let all = try await action("windows.list")
+        let windows = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(all.json.utf8)) as? [[String: Any]])
+        XCTAssertEqual(Set(windows.compactMap { $0["id"] as? Int }), [4512, 4513, 7001])
+        let safari = try await action("windows.list", ["app": "safari"])
+        XCTAssertTrue(safari.text.contains("4512\tSafari"), safari.text)
+        XCTAssertFalse(safari.text.contains("7001"), safari.text)
+        trusted = false
+        do { _ = try await action("windows.list"); XCTFail("Without Accessibility the list fails") } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Accessibility"), error.localizedDescription)
+        }
+    }
+
+    func testWindowsFocusActionFindsTheWindowByAppOrTitle() async throws {
+        try await startWindowsPlugin()
+        let byTitle = try await action("windows.focus", ["title": "mail"])
+        XCTAssertEqual(byTitle.text, "Brought Safari — “Mail” to the front.")
+        _ = try await action("windows.focus", ["app": "Terminal"])
+        XCTAssertEqual(focused, [4513, 7001])
+        do { _ = try await action("windows.focus", ["title": "nowhere"]); XCTFail("An unknown title fails") } catch {}
+        XCTAssertEqual(access.writes, [])
+    }
+
+    func testWindowsMoveActionAppliesTheLayoutToTheChosenWindow() async throws {
+        try await startWindowsPlugin()
+        let moved = try await action("windows.move", ["to": "left-half", "app": "Safari"])
+        XCTAssertEqual(moved.text, "Moved Safari — “Docs” to the left half.")
+        XCTAssertEqual(access.frame(of: WindowHandle(key: docs, element: nil)), CGRect(x: 0, y: 25, width: 720, height: 875))
+        _ = try await action("windows.move", ["to": "right-half", "title": "Mail"])
+        XCTAssertEqual(access.frame(of: WindowHandle(key: mail, element: nil)), CGRect(x: 720, y: 25, width: 720, height: 875))
+        do { _ = try await action("windows.move", ["to": "sideways"]); XCTFail("An unknown layout is refused") } catch ActionError.invalid {}
+        do { _ = try await action("windows.move"); XCTFail("--to is required") } catch ActionError.missing("to") {}
+    }
+
+    func testLayoutActionsExistAndTheSwitcherSaysWhyItCannotShow() async throws {
+        try await startWindowsPlugin()
+        let ids = Set(model.pluginHost.actions.map(\.id))
+        XCTAssertTrue(ids.isSuperset(of: ["windows.left-half", "windows.maximize-on-display", "windows.move-to-next-display", "windows.list",
+                                          "windows.focus", "windows.move"]), "\(ids.sorted())")
+        // Shortcuts are not registered in tests, so the switcher holds no event tap and cannot show.
+        if ids.contains("window-switcher.show") {
+            do { _ = try await action("window-switcher.show"); XCTFail("No tap, no list") } catch ActionError.failed {}
+        }
     }
 
     func testAppsAreListedAndOpened() async throws {

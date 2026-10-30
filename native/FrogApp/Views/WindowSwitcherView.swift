@@ -1,26 +1,27 @@
 import SwiftUI
 import FrogCore
 
+/// The Window switcher page: its shortcut, and what stops it when something does.
 struct WindowSwitcherView: View {
     @EnvironmentObject private var model: AppModel
+    let plugin: WindowSwitcherPlugin
 
     var body: some View {
-        PageScroll {
-            PageHeader(title: "Window switcher")
-            SettingsSection(title: "Shortcut") {
-                CompactRow(title: "Switch windows", detail: "Hold the modifiers to keep switching. Add Shift to go back.") {
-                    HotkeyRecorder(hotkey: Binding(get: {
-                        model.configuration.preferences.toolkitSettings.effectiveWindowSwitcherHotkey
-                    }, set: { value in
-                        var preferences = model.configuration.preferences
-                        preferences.ensureToolkit()
-                        preferences.toolkit?.windowSwitcherHotkey = value
-                        do { try model.savePreferences(preferences) } catch { model.report(error) }
+        FrogPage {
+            FrogPageHeader(title: "Window switcher", subtitle: "Every window, not every app. Type to search.")
+            FrogSection {
+                FrogRow("Shortcut", caption: "Hold to keep switching, add Shift to go back") {
+                    HotkeyRecorder(hotkey: Binding(get: { plugin.settings.shortcut.hotkey }, set: { value in
+                        guard let value else { return }
+                        do { try plugin.setShortcut(value) } catch { model.report(error) }
                     }), showsClearButton: false, purpose: .windowSwitcher)
                 }
-                if !model.windowSwitcherReady,
-                   !["Not started", "Paused while recording a shortcut"].contains(model.windowSwitcherStatus) {
-                    InlineIssue(message: model.windowSwitcherStatus)
+                if plugin.status == .needsAccessibility {
+                    FrogRow("Accessibility", caption: "Needed to read and switch windows") {
+                        Button("Allow") { SelectionService.requestAccess(); SelectionService.openAccessibilitySettings() }
+                    }
+                } else if plugin.status.isIssue {
+                    FrogRowNote(text: plugin.status.text, tone: FrogStyle.warning)
                 }
             }
         }

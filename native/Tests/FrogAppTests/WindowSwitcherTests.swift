@@ -39,6 +39,30 @@ final class WindowSwitcherTests: XCTestCase {
         XCTAssertTrue(router.key(code: 48, down: false, command: false, shift: false, otherModifiers: false).consume)
     }
 
+    /// `window-switcher.show` opens the list with no key held: Tab moves, typing searches, a modifier
+    /// change does not choose, Return does; the chord itself closes it.
+    func testStickyListStepsSearchesAndCommitsOnlyOnReturn() {
+        var router = WindowSwitchKeyRouter()
+        let session = router.beginSticky()
+        XCTAssertTrue(router.active)
+        XCTAssertEqual(router.key(code: 48, down: true, flags: []).action, .step(backwards: false))
+        XCTAssertEqual(router.key(code: 48, down: true, flags: .maskShift).action, .step(backwards: true))
+        XCTAssertEqual(router.key(code: 2, down: true, flags: [], text: "d").action, .search("d"))
+        XCTAssertNil(router.modifiers(flags: []).action, "Nothing was held, so nothing is released")
+        let commit = router.key(code: 36, down: true, flags: [])
+        XCTAssertEqual(commit.action, .commit)
+        XCTAssertEqual(commit.sessionID, session)
+        XCTAssertFalse(router.active)
+        XCTAssertFalse(router.sticky)
+
+        _ = router.beginSticky()
+        XCTAssertEqual(router.key(code: 48, down: true, flags: .maskCommand).action, .cancel, "A chord closes the list")
+        XCTAssertFalse(router.sticky)
+        XCTAssertEqual(router.key(code: 48, down: true, flags: .maskCommand).action, .begin(backwards: false),
+                       "The next chord is an ordinary held session again")
+        XCTAssertEqual(router.modifiers(flags: []).action, .commit)
+    }
+
     func testEscapeCancelsAndDoesNotCommitOnRelease() {
         var router = WindowSwitchKeyRouter()
         _ = router.key(code: 48, down: true, command: true, shift: false, otherModifiers: false)

@@ -89,8 +89,10 @@ struct WindowSwitchKeyRouter: Sendable {
 
     func acceptsSearch(flags: CGEventFlags) -> Bool { active && matchesBaseModifiers(flags) }
 
+    /// The chord's modifiers are held; in a list opened without the chord, no modifier is held.
     private func matchesBaseModifiers(_ flags: CGEventFlags) -> Bool {
-        !requiredFlags.isEmpty && flags.intersection(Self.baseFlags) == requiredFlags
+        if sticky { return flags.intersection(Self.baseFlags).isEmpty }
+        return !requiredFlags.isEmpty && flags.intersection(Self.baseFlags) == requiredFlags
     }
 
     enum Action: Equatable, Sendable { case begin(backwards: Bool), step(backwards: Bool), commit, cancel, search(String), deleteSearch }
@@ -101,7 +103,11 @@ struct WindowSwitchKeyRouter: Sendable {
         // Suppressed repeats from a committed chord must not abort its activation.
         var cancelsPendingActivation: Bool { action != nil || !consume }
     }
-    private(set) var active = false
+    private(set) var active = false {
+        didSet { if !active { sticky = false } }
+    }
+    /// The list was opened without the chord, by `beginSticky`: releasing a modifier does not choose.
+    private(set) var sticky = false
     private(set) var sessionID: UInt64?
     private var nextSessionID: UInt64 = 0
     private var swallowed = Set<UInt16>()
@@ -155,8 +161,17 @@ struct WindowSwitchKeyRouter: Sendable {
         return Result(consume: true, action: action, sessionID: id)
     }
 
+    /// Opens the list with no key held, for the command bar, a shortcut or an agent. Tab and the arrows
+    /// move, typing searches, Return chooses, Escape or any chord closes it.
+    mutating func beginSticky() -> UInt64 {
+        nextSessionID &+= 1
+        sessionID = nextSessionID
+        active = true; sticky = true
+        return nextSessionID
+    }
+
     mutating func modifiers(flags: CGEventFlags) -> Result {
-        guard active, flags.intersection(requiredFlags) != requiredFlags else { return Result() }
+        guard active, !sticky, flags.intersection(requiredFlags) != requiredFlags else { return Result() }
         active = false
         return Result(action: .commit, sessionID: sessionID)
     }
