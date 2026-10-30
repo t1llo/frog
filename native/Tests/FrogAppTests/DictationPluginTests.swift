@@ -219,6 +219,65 @@ final class DictationPluginTests: XCTestCase {
         XCTAssertEqual(model.dictationFeature?.settings, edited)
     }
 
+    func testTheCancelShortcutIsCheckedForConflictsAndKeptWhereFrogsChecksReadIt() async throws {
+        let fixture = try await Fixture(directory: directory())
+        defer { fixture.model.shutdown() }
+        await fixture.model.pluginHost.syncAndWait()
+        let feature = try XCTUnwrap(fixture.model.dictationFeature)
+        let panel = Hotkey(keyCode: 35, modifiers: 0x1000 | 0x800), cancel = Hotkey(keyCode: 2, modifiers: 0x1000 | 0x800)
+        var preferences = fixture.model.configuration.preferences.workflowSettings
+        preferences.shortcutPanelHotkey = panel
+        try fixture.model.saveWorkflowPreferences(preferences)
+
+        try feature.setCancelShortcut(cancel)
+        XCTAssertEqual(fixture.model.configuration.preferences.workflowSettings.cancelRecordingHotkey, cancel)
+        XCTAssertEqual(try savedSettings(fixture.model).cancelShortcut?.hotkey, cancel)
+        XCTAssertThrowsError(try feature.setCancelShortcut(panel), "Another global shortcut's keys are refused")
+        XCTAssertEqual(fixture.model.configuration.preferences.workflowSettings.cancelRecordingHotkey, cancel)
+        XCTAssertEqual(try savedSettings(fixture.model).cancelShortcut?.hotkey, cancel)
+
+        // An edit of config.toml reaches the preferences too, so the old key blocks nothing.
+        var edited = try savedSettings(fixture.model); edited.cancelShortcut = nil
+        try fixture.model.settingsFile.update("dictation", edited)
+        fixture.model.pluginHost.settingsChanged()
+        XCTAssertNil(fixture.model.configuration.preferences.workflowSettings.cancelRecordingHotkey)
+        try feature.setCancelShortcut(nil)
+    }
+
+    func testADeletedWritingRuleNoLongerCleansUpAndSaysSo() async throws {
+        let fixture = try await Fixture(directory: directory())
+        defer { fixture.model.shutdown() }
+        await fixture.model.pluginHost.syncAndWait()
+        var writing = Rule(name: "Polish", instructions: "Polish this.")
+        writing.action = RuleAction(category: .text)
+        try fixture.model.saveRule(writing)
+        var rule = fixture.rule
+        CleanupChoice.rule(writing.id).apply(to: &rule)
+        try fixture.model.saveRule(rule)
+        try fixture.model.deleteRule(id: writing.id)
+        for _ in 0..<50 where fixture.model.configuration.rules.first(where: { $0.id == rule.id })?.action?.cleanupRuleID != nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertNil(fixture.model.configuration.rules.first { $0.id == rule.id }?.action?.cleanupRuleID)
+        XCTAssertEqual(fixture.model.errorMessage, "Notes no longer cleans up its transcript: its Writing rule was deleted.")
+    }
+
+    func testALongFileIsReadOneWindowAtATime() async throws {
+        let fixture = try await Fixture(directory: directory())
+        defer { fixture.model.shutdown() }
+        await fixture.model.pluginHost.syncAndWait()
+        let feature = try XCTUnwrap(fixture.model.dictationFeature)
+        let url = fixture.directory.appendingPathComponent("lecture.wav")
+        try writeTone(to: url, seconds: 70, sampleRate: 16_000, channels: 1)
+        let reader = try AudioFileSamples(url: url)
+        XCTAssertEqual(reader.seconds, 70, accuracy: 0.01)
+        XCTAssertEqual(try reader.read(1_000).count, 1_000)
+        XCTAssertEqual(try reader.read(.max).count, 70 * 16_000 - 1_000)
+        XCTAssertEqual(try reader.read(10).count, 0)
+        let text = try await feature.transcribe(file: url, rule: fixture.rule)
+        XCTAssertEqual(text, "Heard 480000 samples. Heard 480000 samples. Heard 160000 samples.")
+    }
+
     func testCleanupGoesThroughTheChosenWritingRule() async throws {
         let fixture = try await Fixture(directory: directory())
         defer { fixture.model.shutdown() }

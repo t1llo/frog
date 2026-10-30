@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import FrogCore
 
@@ -11,6 +12,8 @@ final class DictationPlugin: FrogPlugin {
     let context: PluginContext
     private var model: AppModel { context.legacy }
     private(set) var feature: DictationFeature?
+    /// Set while `[dictation]` waits to be seeded from a configuration that did not load.
+    private var seeding: AnyCancellable?
 
     init(context: PluginContext) { self.context = context }
 
@@ -24,11 +27,15 @@ final class DictationPlugin: FrogPlugin {
             do { try self?.context.save($0) } catch { self?.context.report(error) }
         }
         escape?.extraKey = { [weak feature] in feature?.settings.cancelShortcut?.hotkey }
+        escape?.onIssue = { [weak self] in self?.context.report(FrogError.message($0)) }
         self.feature = feature
         model.dictationFeature = feature
+        // config.toml may name another cancel shortcut than the preferences, after an edit while Frog was closed.
+        feature.apply(settings)
     }
 
     func stop() async {
+        seeding = nil
         feature?.shutdown()
         if model.dictationFeature === feature { model.dictationFeature = nil }
         feature = nil
@@ -38,7 +45,14 @@ final class DictationPlugin: FrogPlugin {
 
     /// `[dictation]` from config.toml. Without the table, Frog writes it once from the settings it kept before.
     private func seededSettings() -> DictationSettings {
-        guard model.configurationLoaded, model.settingsFile.document.value(at: [Self.info.id]) == nil else {
+        guard model.settingsFile.document.value(at: [Self.info.id]) == nil else { return context.settings(DictationSettings.self) }
+        guard model.configurationLoaded else {
+            // The settings Frog kept before are unknown until the configuration loads; seed once it does.
+            seeding = model.$configuration.dropFirst().receive(on: DispatchQueue.main).sink { [weak self] _ in
+                guard let self, self.model.configurationLoaded else { return }
+                self.seeding = nil
+                self.feature?.apply(self.seededSettings())
+            }
             return context.settings(DictationSettings.self)
         }
         let seeded = DictationSettings(legacy: model.configuration.preferences.workflowSettings)

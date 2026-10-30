@@ -60,7 +60,32 @@ final class DictationFeature: ObservableObject {
         observations = []
     }
 
-    func apply(_ settings: DictationSettings) { self.settings = settings }
+    /// `[dictation]` as config.toml says now, also after an edit in an editor.
+    func apply(_ settings: DictationSettings) {
+        self.settings = settings
+        do { try syncCancelShortcut(settings.cancelShortcut?.hotkey) } catch { model.report(error) }
+    }
+
+    /// The cancel shortcut lives in `[dictation]`; the preferences keep a copy, since Frog's shortcut conflict
+    /// checks, the shortcut reference and the window switcher read it there. A conflicting shortcut is refused.
+    func setCancelShortcut(_ hotkey: Hotkey?) throws {
+        let shortcut = try hotkey.map { try Shortcut($0) }
+        try syncCancelShortcut(hotkey)
+        update { $0.cancelShortcut = shortcut }
+    }
+
+    private func syncCancelShortcut(_ hotkey: Hotkey?) throws {
+        guard model.configurationLoaded else { return }
+        var preferences = model.configuration.preferences.workflowSettings
+        guard preferences.cancelRecordingHotkey != hotkey else { return }
+        preferences.cancelRecordingHotkey = hotkey
+        try model.saveWorkflowPreferences(preferences)
+    }
+
+    /// The model History names for a recording made with `rule`.
+    private func modelName(_ rule: Rule) -> String {
+        rule.action?.audioModelID ?? model.configuration.preferences.workflowSettings.audioModelID
+    }
 
     // MARK: Rules
 
@@ -85,10 +110,23 @@ final class DictationFeature: ObservableObject {
     /// The Writing rule that cleans up a recording made with `rule`; the rule itself for one with its own
     /// cleanup instructions; nil when the transcript goes out as recognised.
     func cleanupRule(for rule: Rule) -> Rule? {
-        if let id = rule.action?.cleanupRuleID {
-            return model.configuration.rules.first { $0.id == id && $0.category == .text }
+        if let id = rule.action?.cleanupRuleID, let writing = model.configuration.rules.first(where: { $0.id == id && $0.category == .text }) {
+            return writing
         }
         return rule.action?.cleanup == true ? rule : nil
+    }
+
+    /// A dictation rule whose Writing rule was deleted no longer names it, and says so once.
+    private func forgetDeletedCleanup(_ rules: [Rule]) {
+        let writing = Set(rules.filter { $0.category == .text }.map(\.id))
+        for var rule in rules where rule.category == .audio {
+            guard let id = rule.action?.cleanupRuleID, !writing.contains(id) else { continue }
+            rule.action?.cleanupRuleID = nil
+            do {
+                try model.saveRule(rule)
+                model.report(FrogError.message("\(rule.name) no longer cleans up its transcript: its Writing rule was deleted."))
+            } catch { model.report(error) }
+        }
     }
 
     // MARK: Recording
@@ -170,32 +208,42 @@ final class DictationFeature: ObservableObject {
 
     // MARK: Files
 
-    /// The transcript of an audio file, as a recording with `rule` would deliver it, cleanup included.
+    /// The transcript of an audio file, as a recording with `rule` would deliver it, cleanup included. A downloaded
+    /// model reads the file one 30-second window at a time, so a long file never sits in memory whole.
     func transcribe(file: URL, rule: Rule, language: String? = nil) async throws -> String {
-        let samples = try await Task.detached(priority: .userInitiated) { try Self.samples(from: file) }.value
-        guard samples.count >= 3200 else { throw ActionError.failed("The file holds less than a fifth of a second of sound.") }
+        let reader = try await Task.detached(priority: .userInitiated) { try AudioFileSamples(url: file) }.value
+        guard reader.seconds <= Self.longestFile else { throw ActionError.failed("Files up to four hours long can be transcribed.") }
         var rule = rule
         if let language { rule.action?.transcriptionLanguage = language }
         let raw: String
         if rule.action?.audioProviderID != nil {
+            // A provider takes the recording in one request.
+            guard reader.seconds <= Self.longestUpload else {
+                throw ActionError.failed("A provider takes files up to 30 minutes. Choose a downloaded speech model for longer ones.")
+            }
+            let samples = try await Task.detached(priority: .userInitiated) { try reader.read(.max) }.value
+            guard samples.count >= 3200 else { throw ActionError.failed("The file holds less than a fifth of a second of sound.") }
             raw = try await model.transcribeWithProvider(samples, rule: rule)
         } else {
             guard let modelID = rule.action?.audioModelID else { throw ActionError.failed("Choose a speech model for \(rule.name).") }
             guard model.localModels.installed.contains(modelID) else { throw ActionError.failed("Download \(modelID) in Models first.") }
-            let models = model.localModels
+            let models = model.localModels, language = rule.action?.transcriptionLanguage
             let hold = models.holdResidency()
             defer { models.releaseResidency(hold) }
-            var pieces: [String] = [], offset = 0
+            var pieces: [String] = [], pending: [Float] = [], total = 0
             // The windows recording reads in, so a file and a recording of the same speech read alike.
-            while samples.count - offset >= DictationTranscript.samplesCompletingWindow {
-                pieces.append(try await models.transcribe(Array(samples[offset..<offset + DictationTranscript.window]),
-                                                          modelID: modelID, language: rule.action?.transcriptionLanguage, waiting: true))
-                offset += DictationTranscript.window
+            while true {
+                let wanted = DictationTranscript.samplesCompletingWindow - pending.count
+                let more = try await Task.detached(priority: .userInitiated) { try reader.read(wanted) }.value
+                pending += more; total += more.count
+                guard pending.count >= DictationTranscript.samplesCompletingWindow else { break }
+                pieces.append(try await models.transcribe(Array(pending[..<DictationTranscript.window]), modelID: modelID,
+                                                          language: language, waiting: true))
+                pending.removeFirst(DictationTranscript.window)
             }
-            let rest = Array(samples[offset...])
-            for pass in DictationTranscript.passes(endingSamples: rest.count) {
-                pieces.append(try await models.transcribe(Array(rest[pass]), modelID: modelID,
-                                                          language: rule.action?.transcriptionLanguage, waiting: true))
+            guard total >= 3200 else { throw ActionError.failed("The file holds less than a fifth of a second of sound.") }
+            for pass in DictationTranscript.passes(endingSamples: pending.count) {
+                pieces.append(try await models.transcribe(Array(pending[pass]), modelID: modelID, language: language, waiting: true))
             }
             raw = DictationTranscript.join(pieces)
         }
@@ -204,43 +252,11 @@ final class DictationFeature: ObservableObject {
         return try await model.complete(raw, with: cleanup)
     }
 
-    /// 16 kHz mono samples of any file Core Audio reads: WAV, AIFF, CAF, M4A, MP3.
-    nonisolated static func samples(from url: URL) throws -> [Float] {
-        let file: AVAudioFile
-        do { file = try AVAudioFile(forReading: url) }
-        catch { throw ActionError.failed("Frog cannot read \(url.lastPathComponent) as audio.") }
-        guard file.length <= 4 * 3600 * Int64(file.processingFormat.sampleRate) else {
-            throw ActionError.failed("Files up to four hours long can be transcribed.")
-        }
-        let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
-        guard let converter = AVAudioConverter(from: file.processingFormat, to: target),
-              let input = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 32_768),
-              let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: 32_768) else {
-            throw ActionError.failed("Frog cannot convert \(url.lastPathComponent) for transcription.")
-        }
-        var samples: [Float] = []
-        samples.reserveCapacity(Int(Double(file.length) * 16000 / file.processingFormat.sampleRate) + 1)
-        var ended = false
-        while true {
-            output.frameLength = 0
-            var failure: NSError?
-            let status = converter.convert(to: output, error: &failure) { _, state in
-                if ended { state.pointee = .endOfStream; return nil }
-                do {
-                    try file.read(into: input)
-                    if input.frameLength == 0 { ended = true; state.pointee = .endOfStream; return nil }
-                } catch { ended = true; state.pointee = .endOfStream; return nil }
-                state.pointee = .haveData
-                return input
-            }
-            if let channel = output.floatChannelData?[0], output.frameLength > 0 {
-                samples.append(contentsOf: UnsafeBufferPointer(start: channel, count: Int(output.frameLength)))
-            }
-            if status == .error { throw ActionError.failed("Converting \(url.lastPathComponent) failed: \(failure?.localizedDescription ?? "unknown error").") }
-            if status == .endOfStream || (status == .inputRanDry && ended) { break }
-        }
-        return samples
-    }
+    static let longestFile: TimeInterval = 4 * 3600
+    static let longestUpload: TimeInterval = 30 * 60
+
+    /// All of a file's 16 kHz mono samples; for short files and tests.
+    nonisolated static func samples(from url: URL) throws -> [Float] { try AudioFileSamples(url: url).read(.max) }
 
     // MARK: Wiring
 
@@ -258,6 +274,9 @@ final class DictationFeature: ObservableObject {
                 self.recoveries[id] = nil; self.controller.cancelHistoryRecovery(id: id)
             }
         }.store(in: &observations)
+        // After the change is stored: @Published sends before it sets the new value.
+        model.$configuration.map(\.rules).removeDuplicates().dropFirst().receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.forgetDeletedCleanup($0) }.store(in: &observations)
         controller.onError = { [weak self] in self?.model.report($0) }
         controller.onHandoff = { handoff, outcome in NSWorkspace.shared.open(handoff.reply(outcome)) }
         controller.onCopy = { [weak self] in self?.model.clipboardHistoryStore.recordCopiedText($0) }
@@ -284,7 +303,7 @@ final class DictationFeature: ObservableObject {
             self.lastTranscript = result
             guard self.model.configuration.preferences.historyEnabled, self.historyEpoch == self.model.historyEpoch else { return }
             var entry = HistoryEntry(id: id, originalText: original, processedText: result, ruleName: rule.name,
-                                     providerName: "Transcription", model: rule.action?.audioModelID ?? "")
+                                     providerName: "Transcription", model: self.modelName(rule))
             entry.category = .audio
             do { _ = try self.model.appendHistory(entry) } catch { self.model.report(error) }
         }
@@ -306,7 +325,7 @@ final class DictationFeature: ObservableObject {
             }
             var entry = HistoryEntry(id: interruption.id, originalText: interruption.text, processedText: interruption.text,
                                      ruleName: interruption.rule.name, providerName: "Transcription",
-                                     model: interruption.rule.action?.audioModelID ?? "")
+                                     model: modelName(interruption.rule))
             entry.category = .audio; entry.interruption = interruption.reason; entry.transcriptState = .partial
             recoveries[entry.id] = model.historyEpoch
             guard try model.appendHistory(entry) else { recoveries[entry.id] = nil; return false }
@@ -325,5 +344,60 @@ final class DictationFeature: ObservableObject {
             model.report(FrogError.message("Interrupted recording transcription failed. \(error.localizedDescription)"))
         }
         do { try model.updateHistory(entry) } catch { model.report(error) }
+    }
+}
+
+/// 16 kHz mono samples of any file Core Audio reads (WAV, AIFF, CAF, M4A, MP3), converted a piece at a time.
+/// One reader is used by one task at a time.
+final class AudioFileSamples: @unchecked Sendable {
+    let seconds: TimeInterval
+    private let file: AVAudioFile
+    private let converter: AVAudioConverter
+    private let input: AVAudioPCMBuffer
+    private let output: AVAudioPCMBuffer
+    private let name: String
+    private var leftover: [Float] = []
+    private var inputEnded = false
+    private var finished = false
+
+    init(url: URL) throws {
+        name = url.lastPathComponent
+        do { file = try AVAudioFile(forReading: url) }
+        catch { throw ActionError.failed("Frog cannot read \(url.lastPathComponent) as audio.") }
+        seconds = Double(file.length) / file.processingFormat.sampleRate
+        let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
+        guard let converter = AVAudioConverter(from: file.processingFormat, to: target),
+              let input = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 32_768),
+              let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: 32_768) else {
+            throw ActionError.failed("Frog cannot convert \(url.lastPathComponent) for transcription.")
+        }
+        self.converter = converter; self.input = input; self.output = output
+    }
+
+    /// Up to `count` more samples; fewer only at the end of the file, none after it.
+    func read(_ count: Int) throws -> [Float] {
+        var samples = leftover
+        leftover = []
+        if count != .max { samples.reserveCapacity(count) }
+        while samples.count < count, !finished {
+            output.frameLength = 0
+            var failure: NSError?
+            let status = converter.convert(to: output, error: &failure) { [self] _, state in
+                if inputEnded { state.pointee = .endOfStream; return nil }
+                do {
+                    try file.read(into: input)
+                    if input.frameLength == 0 { inputEnded = true; state.pointee = .endOfStream; return nil }
+                } catch { inputEnded = true; state.pointee = .endOfStream; return nil }
+                state.pointee = .haveData
+                return input
+            }
+            if let channel = output.floatChannelData?[0], output.frameLength > 0 {
+                samples.append(contentsOf: UnsafeBufferPointer(start: channel, count: Int(output.frameLength)))
+            }
+            if status == .error { throw ActionError.failed("Converting \(name) failed: \(failure?.localizedDescription ?? "unknown error").") }
+            if status == .endOfStream || (status == .inputRanDry && inputEnded) { finished = true }
+        }
+        if samples.count > count { leftover = Array(samples[count...]); samples.removeLast(samples.count - count) }
+        return samples
     }
 }
