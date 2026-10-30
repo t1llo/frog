@@ -91,7 +91,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
         window?.makeKeyAndOrderFront(nil)
     }
 
-    /// `frog://plugins/install?…` links from the plugin directory.
+    /// `frog://plugins/install?…` links from the plugin directory, and `frog://dictate` from apps that dictate through Frog.
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls.prefix(1) { model.openLink(url) }
     }

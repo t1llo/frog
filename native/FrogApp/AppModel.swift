@@ -334,6 +334,7 @@ final class AppModel: ObservableObject {
         dictation.$phase.removeDuplicates().dropFirst().sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         dictation.$recoveringHistoryIDs.removeDuplicates().dropFirst().sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         dictation.onError = { [weak self] in self?.report($0) }
+        dictation.onHandoff = { handoff, outcome in NSWorkspace.shared.open(handoff.reply(outcome)) }
         dictation.onCopy = { [weak self] in self?.clipboardHistoryStore.recordCopiedText($0) }
         dictation.onMicrophoneChange = { [weak self] id in
             guard let self else { return }
@@ -566,6 +567,9 @@ final class AppModel: ObservableObject {
     /// `frog://plugins/install?url=<https link to a .frogplugin>&sha256=<its hash>`, as the plugin directory links.
     /// Opens the plugin's review; nothing installs without the user's yes.
     func openLink(_ link: URL) {
+        do {
+            if let request = try DictationHandoff.parse(link) { dictate(for: request); return }
+        } catch { report(error); return }
         guard link.scheme?.lowercased() == "frog", link.host?.lowercased() == "plugins", link.path == "/install",
               let query = URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems,
               let target = query.first(where: { $0.name == "url" })?.value.flatMap(URL.init(string:)) else {
@@ -1618,12 +1622,48 @@ final class AppModel: ObservableObject {
         try savePreferences(prefs)
     }
 
-    func startDictation(_ rule: Rule, shortcutHeld: Bool = false) {
+    func startDictation(_ rule: Rule, shortcutHeld: Bool = false, handoff: DictationHandoff? = nil) {
         guard configuration.preferences.featureEnabled(.dictation) else { return }
         guard !isProcessing else { report(FrogError.message("Wait for the current request to finish.")); return }
         guard !dictation.active else { return }
         dictationHistoryEpoch = configuration.preferences.historyEnabled ? historyEpoch : nil
-        dictation.start(rule: rule, preferences: configuration.preferences.workflowSettings, models: localModels, shortcutHeld: shortcutHeld)
+        dictation.start(rule: rule, preferences: configuration.preferences.workflowSettings, models: localModels,
+                        shortcutHeld: shortcutHeld, handoff: handoff)
+    }
+
+    /// `frog://dictate` from another app: records with the person's usual transcription rule, or the one the
+    /// link names, and sends the transcript back to the app. The same link stops the recording it started.
+    private func dictate(for request: DictationHandoff) {
+        let current = dictation.handoff.flatMap { $0.sameCaller(request) ? $0 : nil }
+        switch request.command {
+        case .cancel:
+            if current != nil { dictation.interrupt() }
+            return
+        case .stop:
+            if current != nil { dictation.requestStop() }
+            return
+        case .toggle:
+            if current != nil { dictation.requestStop(); return }
+        }
+        func refuse(_ message: String) { NSWorkspace.shared.open(request.reply(.failed(message))) }
+        guard NSWorkspace.shared.urlForApplication(toOpen: request.reply) != nil else {
+            report(FrogError.message("No app opens \(request.caller)'s reply link, so Frog did not record.")); return
+        }
+        guard configuration.preferences.featureEnabled(.dictation) else { return refuse("Turn on Dictation in Frog first.") }
+        guard !dictation.active, !isProcessing else { return refuse("Frog is busy with another recording.") }
+        let rules = configuration.rules.filter { $0.enabled && $0.category == .audio && ruleFeatureEnabled($0) }
+        let rule: Rule?
+        if let name = request.rule {
+            rule = rules.first { $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame }
+            guard rule != nil else { return refuse("Frog has no transcription rule named \(name).") }
+        } else {
+            // The rule with a shortcut is the one the person dictates with every day.
+            rule = rules.first { $0.hotkey != nil } ?? rules.first
+        }
+        guard let rule else { return refuse("Add a transcription rule in Frog first.") }
+        startDictation(rule, handoff: request)
+        // A rule that cannot start says why in Frog; the app learns that nothing is recording.
+        if dictation.handoff == nil { refuse("Frog could not start \(rule.name). Open Frog to see why.") }
     }
 
     private func handleShortcut(_ id: UUID, pressed: Bool) {

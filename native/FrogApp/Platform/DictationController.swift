@@ -67,6 +67,10 @@ final class DictationController: ObservableObject {
     private weak var models: LocalModels?
     private var residencyHold: UUID?
     var onFinish: ((Rule, String, String, String) -> Void)?
+    /// The app this recording is for, when another app started it with `frog://dictate`.
+    private(set) var handoff: DictationHandoff?
+    /// Sends a handoff's outcome back to its app. Called once per handoff.
+    var onHandoff: ((DictationHandoff, DictationHandoff.Outcome) -> Void)?
     /// Raw transcript and frozen microphone-session duration, only after successful delivery.
     var onSuccessfulDelivery: ((_ recordingSeconds: Double, _ text: String) -> Void)?
     var onTranscript: ((UUID, Rule, String, String) -> Void)?
@@ -85,7 +89,7 @@ final class DictationController: ObservableObject {
         switch phase {
         case .preparing: preparationMessage
         // The capture session starts after the microphone opens; words spoken before it runs are lost.
-        case .recording: microphoneDelivering ? "Listening…" : "Starting microphone…"
+        case .recording: !microphoneDelivering ? "Starting microphone…" : handoff.map { "Listening for \($0.caller)…" } ?? "Listening…"
         case .transcribing: pressedWhileFinishing ? "Still transcribing…" : "Transcribing…"
         case .correcting: pressedWhileFinishing ? "Still cleaning up transcript…" : "Cleaning up transcript…"
         case .failed: "Transcription failed"
@@ -123,12 +127,15 @@ final class DictationController: ObservableObject {
 
     /// `shortcutHeld` is true when the rule's own shortcut started the recording and is still down.
     /// Only then does releasing it end a hold-to-record session.
-    func start(rule: Rule, preferences: WorkflowPreferences, models: LocalModels, shortcutHeld: Bool = false) {
+    /// With `handoff`, the transcript goes to the app that asked for it instead of the clipboard.
+    func start(rule: Rule, preferences: WorkflowPreferences, models: LocalModels, shortcutHeld: Bool = false,
+               handoff: DictationHandoff? = nil) {
         guard !active else { return }
         guard let modelID = rule.action?.audioModelID else { onError?(FrogError.message("Choose a speech model in this audio rule. Add one in Models first.")); return }
         let external = rule.action?.audioProviderID != nil
         guard external || models.installed.contains(modelID) else { onError?(FrogError.message("Download this speech model in Models first.")); return }
         let token = UUID(); self.token = token
+        self.handoff = handoff
         self.preferences = preferences; self.models = models; activeRule = rule; ruleID = rule.id
         residencyHold = models.holdResidency()
         self.preferences.showDictationPopup = rule.action?.showRecordingPopup ?? true
@@ -145,7 +152,8 @@ final class DictationController: ObservableObject {
         let shortcut = rule.hotkey.map(HotkeyManager.display) ?? "Stop button"
         // A hold recording that its key did not start ends when the key is pressed and released.
         let holding = shortcutHeld && (rule.action?.recordingMode ?? preferences.recordingMode) == .hold
-        let recordingHint = rule.hotkey == nil ? "Stop to finish · Esc to cancel" : holding ? "Release \(shortcut) to stop · Esc to cancel" : "\(shortcut) to stop · Esc to cancel"
+        let recordingHint = handoff.map { "Stop in \($0.caller) · Esc to cancel" }
+            ?? (rule.hotkey == nil ? "Stop to finish · Esc to cancel" : holding ? "Release \(shortcut) to stop · Esc to cancel" : "\(shortcut) to stop · Esc to cancel")
         hint = "Esc to cancel"
         if self.preferences.showDictationPopup { showPanel() }
         installEscape()
@@ -416,6 +424,14 @@ final class DictationController: ObservableObject {
                 // A completed transcript belongs in history even if delivery is subsequently cancelled.
                 self.transcriptPublished = true
                 self.onTranscript?(token, rule, raw, output)
+                if let handoff = self.handoff {
+                    // The app that asked takes the text; the clipboard and the focused field stay as they were.
+                    self.endHandoff(.text(output))
+                    self.onSuccessfulDelivery?(recordingSeconds, raw)
+                    self.onFinish?(rule, raw, output, "Sent to \(handoff.caller)")
+                    self.cancel()
+                    return
+                }
                 self.copy(output)
                 self.onCopy?(output)
                 var insertion: (() async throws -> Void)?
@@ -523,6 +539,7 @@ final class DictationController: ObservableObject {
         else if active { showPanel() }
     }
     func cancel() {
+        endHandoff(.cancelled)
         token = nil; work?.cancel(); finalTranscription?.cancel(); preview?.cancel(); previewInference?.cancel(); ticker?.cancel()
         work = nil; finalTranscription = nil; preview = nil; previewInference = nil; previewSnapshot = nil; ticker = nil
         recorder?.stop(); recorder = nil; samples.clear()
@@ -535,6 +552,11 @@ final class DictationController: ObservableObject {
         panel?.orderOut(nil)
         removeEscape()
     }
+    private func endHandoff(_ outcome: DictationHandoff.Outcome) {
+        guard let handoff else { return }
+        self.handoff = nil
+        onHandoff?(handoff, outcome)
+    }
     private func removeEscape() {
         cancelKey?.unregister()
         if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }; escapeMonitor = nil
@@ -543,6 +565,7 @@ final class DictationController: ObservableObject {
     private func fail(_ error: Error, token: UUID) {
         guard self.token == token else { return }
         if !Task.isCancelled { onError?(error) }
+        endHandoff(.failed(error.localizedDescription))
         cancel()
     }
     private func installEscape() {

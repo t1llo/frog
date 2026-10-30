@@ -376,3 +376,53 @@ private actor SuspendedSpeech: LocalInferenceEngine {
     func complete(_ text: String, instructions: String, id: String, url: URL, residency: @Sendable (Set<String>) async -> Void) async throws -> String { text }
     func unload(keepingMetadata: Bool) { loadedIDs = [] }
 }
+
+/// `FixtureRecording` is private to this file.
+@MainActor
+extension DictationControllerTests {
+    func testHandoffGetsTheTranscriptInsteadOfTheClipboardAndPaste() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var copied: String?, pastes = 0, outcomes: [DictationHandoff.Outcome] = [], delivered = 0
+        let controller = DictationController(makeRecorder: { FixtureRecording() }, authorize: { true }, copy: { copied = $0 },
+                                             monitorKeys: false, inputDevices: { [] }, paste: { pastes += 1 }, presentsPopup: false)
+        controller.externalTranscription = { _, _ in "raw words" }
+        controller.cleanup = { _, _ in "Cleaned words." }
+        controller.onHandoff = { _, outcome in outcomes.append(outcome) }
+        controller.onSuccessfulDelivery = { _, _ in delivered += 1 }
+        var rule = Rule.dictationPreset
+        rule.action?.audioModelID = "fixture"; rule.action?.audioProviderID = UUID()
+        rule.action?.output = .paste; rule.action?.cleanup = true
+        let handoff = try XCTUnwrap(DictationHandoff.parse(URL(string: "frog://dictate?reply=yappa://frog&caller=Yappa")!))
+        controller.start(rule: rule, preferences: WorkflowPreferences(), models: LocalModels(directory: directory), handoff: handoff)
+        await controller.waitForWork()
+        XCTAssertEqual(controller.phase, .recording)
+        XCTAssertEqual(controller.handoff, handoff)
+        controller.requestStop()
+        await controller.waitForWork()
+        XCTAssertEqual(outcomes, [.text("Cleaned words.")], "The rule's cleanup runs, then the app gets the text once")
+        XCTAssertNil(copied)
+        XCTAssertEqual(pastes, 0)
+        XCTAssertEqual(delivered, 1)
+        XCTAssertNil(controller.handoff)
+        XCTAssertEqual(controller.phase, .idle)
+    }
+
+    func testCancelledRecordingTellsTheAppThatAskedOnce() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var outcomes: [DictationHandoff.Outcome] = []
+        let controller = DictationController(makeRecorder: { FixtureRecording() }, authorize: { true }, copy: { _ in },
+                                             monitorKeys: false, inputDevices: { [] }, presentsPopup: false)
+        controller.externalTranscription = { _, _ in "words" }
+        controller.onHandoff = { _, outcome in outcomes.append(outcome) }
+        var rule = Rule.dictationPreset
+        rule.action?.audioModelID = "fixture"; rule.action?.audioProviderID = UUID()
+        let handoff = try XCTUnwrap(DictationHandoff.parse(URL(string: "frog://dictate?reply=yappa://frog")!))
+        controller.start(rule: rule, preferences: WorkflowPreferences(), models: LocalModels(directory: directory), handoff: handoff)
+        await controller.waitForWork()
+        controller.interrupt()
+        controller.cancel()
+        XCTAssertEqual(outcomes, [.cancelled])
+    }
+}
