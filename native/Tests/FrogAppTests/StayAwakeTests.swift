@@ -130,9 +130,11 @@ final class StayAwakeTests: XCTestCase {
         XCTAssertEqual(StayAwakeLength("3H"), .minutes(180))
         XCTAssertEqual(StayAwakeLength("1h30m"), .minutes(90))
         XCTAssertEqual(StayAwakeLength("1h30"), .minutes(90))
+        XCTAssertEqual(StayAwakeLength("168h"), .minutes(7 * 24 * 60), "A week is the longest")
         XCTAssertEqual(StayAwakeLength("until 17:30"), .until(hour: 17, minute: 30))
         XCTAssertEqual(StayAwakeLength("08:05"), .until(hour: 8, minute: 5))
-        for wrong in ["soon", "0", "-5", "25:00", "12:60", "1x", "h", "99999"] {
+        for wrong in ["soon", "0", "-5", "25:00", "12:60", "1x", "h", "99999", "168h1m", "999999999999999999h", "999999999999999999m",
+                      "9223372036854775807", "99999999999999999999h", "1h999999999999999999"] {
             XCTAssertNil(StayAwakeLength(wrong), wrong)
         }
         var calendar = Calendar(identifier: .gregorian)

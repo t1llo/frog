@@ -17,20 +17,29 @@ enum StayAwakeLength: Equatable, Sendable {
         if clock.count == 2, let hour = Int(clock[0]), let minute = Int(clock[1]), (0..<24).contains(hour), (0..<60).contains(minute) {
             self = .until(hour: hour, minute: minute); return
         }
+        // At most a week; every part is checked against that before it is added, so a huge number cannot overflow.
+        let cap = 7 * 24 * 60
         var minutes = 0, number = ""
+        func add(_ value: Int, times unit: Int) -> Bool {
+            guard value <= cap / unit else { return false }
+            minutes += value * unit
+            return minutes <= cap
+        }
         for character in text {
             if character.isNumber { number.append(character); continue }
             guard let value = Int(number) else { return nil }
             switch character {
-            case "h": minutes += value * 60
-            case "m": minutes += value
+            case "h": guard add(value, times: 60) else { return nil }
+            case "m": guard add(value, times: 1) else { return nil }
             default: return nil
             }
             number = ""
         }
         // A bare number, or what follows "1h", is minutes.
-        if let value = Int(number) { minutes += value }
-        guard minutes > 0, minutes <= 7 * 24 * 60 else { return nil }
+        if !number.isEmpty {
+            guard let value = Int(number), add(value, times: 1) else { return nil }
+        }
+        guard minutes > 0 else { return nil }
         self = .minutes(minutes)
     }
 

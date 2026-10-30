@@ -331,6 +331,12 @@ import XCTest
         XCTAssertNotEqual(wrong.exitCode, 0)
         XCTAssertTrue(wrong.error.contains("--for"), wrong.error)
         XCTAssertFalse(model.power.isEnabled)
+
+        // A number that would overflow when counted in minutes is refused, not a crash.
+        let huge = await run("run", "stay-awake.on", "--for", "999999999999999999h")
+        XCTAssertNotEqual(huge.exitCode, 0)
+        XCTAssertTrue(huge.error.contains("for"), huge.error)
+        XCTAssertFalse(model.power.isEnabled)
     }
 
     func testUsageListsEachProvider() async throws {
