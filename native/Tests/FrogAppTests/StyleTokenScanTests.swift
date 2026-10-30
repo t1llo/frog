@@ -7,8 +7,9 @@ final class StyleTokenScanTests: XCTestCase {
     /// `"File.swift: pattern"` entries a view may keep, each with a comment that says why.
     private let allowed: Set<String> = []
 
+    /// A plugin's `tint: .orange` is a `PluginTint`, not a colour, so it is not matched.
     func testViewsUseThemeColoursInsteadOfRawOrangeAndRed() throws {
-        try assertNoMatch(#"\.orange\b|Color\.red\b|\.red\.opacity|foregroundStyle\(\.red\)"#,
+        try assertNoMatch(#"(?<!tint: |case )\.orange\b|Color\.red\b|\.red\.opacity|foregroundStyle\(\.red\)"#,
                           "use FrogStyle.warning or FrogStyle.critical")
     }
 

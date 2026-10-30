@@ -190,8 +190,7 @@ private struct RenameSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Rename").font(FrogType.section)
-            TextField("Name", text: $name).textFieldStyle(.roundedBorder).onSubmit(done)
+            LabeledField(title: "Rename") { TextField("Name", text: $name).labelsHidden().onSubmit(done) }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.buttonStyle(.frog()).keyboardShortcut(.cancelAction)

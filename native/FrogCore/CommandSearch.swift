@@ -33,11 +33,13 @@ public struct SearchRecord: Identifiable, Equatable, Sendable {
 
 public enum CommandSearch {
     /// How the parts of a row's score add up. Each tier of title match is worth more than any fuzzy difference
-    /// within one, applications rank a tier higher, and frecency moves a row at most a tier and a half.
+    /// within one, and frecency moves a row at most a tier and a half. An application ranks a tier higher and then
+    /// leads that tier by `lead`, as a recent row leads its own: more than a word-start match gains over a mid-word one.
     public enum Weights {
         public static let tier: [Double] = [0, 100, 200, 300]
-        public static let application = 120.0
-        public static let leading = 5.0
+        public static let lead = 40.0
+        public static let application = 100.0 + lead
+        public static let leading = lead
         public static let trailing = 15.0
         public static let frecency = 15.0
         public static let frecencyCap = 150.0

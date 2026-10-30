@@ -99,7 +99,7 @@ final class StayAwakePlugin: LegacyPlugin, FrogPlugin, ObservableObject {
 
     var menu: [MenuContribution] {
         [MenuContribution(id: "stay-awake.switch", order: 0) { [power, weak self] in
-            AnyView(StayAwakePopupRow(power: power) { choice in self?.update { $0.duration = choice } })
+            AnyView(StayAwakePopupRow(power: power) { choice in self?.update { settings in settings.duration = choice } })
         }]
     }
 

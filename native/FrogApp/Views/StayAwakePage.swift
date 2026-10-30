@@ -18,7 +18,7 @@ struct StayAwakePage: View {
                 }
                 FrogRow("Duration") {
                     FrogDropdown(selected: settings.duration, options: StayAwakeController.DurationChoice.allCases, title: { $0.title }) { choice in
-                        change(reveal: true) { $0.duration = choice }
+                        change(reveal: true) { settings in settings.duration = choice }
                     }
                 }
                 if settings.duration == .untilTime {
