@@ -1,39 +1,14 @@
 import Foundation
 
-/// What a copied text looks like when it is a credential. Clipboard history shows such text masked, like a
-/// password field, keeps it out of search, the command bar and `frog clipboard list`, and still pastes and
-/// copies it. A copy that its app marks as concealed is masked without looking at it.
+/// What a copied text looks like when it is a credential. Clipboard history never keeps such text, and Phone
+/// never sends it; a copy that its app marks as concealed is skipped without looking at it.
 ///
 /// The checks run in order: keys with a known shape (a provider's prefix, a private key block, a token
 /// format), a name that says what follows (`API_KEY=…`, `"password": "…"`), then a lone word that reads like
-/// a password or a random key. Masking a little too much costs a hidden preview; too little shows a key.
+/// a password or a random key. Skipping a little too much costs one item of history; too little keeps a key.
 /// All of it runs on this Mac and nothing about it is recorded.
 enum ClipboardSecret: Sendable, Equatable {
     case apiKey, token, privateKey, password, credentials
-
-    /// What the masked row says it holds.
-    var label: String {
-        switch self {
-        case .apiKey: "API key"
-        case .token: "Token"
-        case .privateKey: "Private key"
-        case .password: "Password"
-        case .credentials: "Credentials"
-        }
-    }
-
-    /// The title of its row in History.
-    var title: String {
-        switch self {
-        case .apiKey: "Copied API key"
-        case .token: "Copied token"
-        case .privateKey: "Copied private key"
-        case .password: "Copied password"
-        case .credentials: "Copied credentials"
-        }
-    }
-
-    var symbol: String { self == .password ? "lock" : "key" }
 
     /// A credential is short. Of a longer text only the start is read, which keeps a copied log from
     /// holding up the next copy.

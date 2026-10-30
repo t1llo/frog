@@ -63,22 +63,21 @@ import XCTest
         XCTAssertTrue(shelf.error.contains("notes now"), shelf.error)
     }
 
-    func testClipboardListHidesSensitiveTextAndCopyWritesThePasteboard() async throws {
+    func testClipboardListLeavesSecretsOutAndCopyWritesThePasteboard() async throws {
         try await enable(.clipboard)
+        await model.pluginHost.syncAndWait()
         let history = model.clipboardHistoryStore
-        history.configure(enabled: true, automaticallyPoll: false)
         history.recordCopiedText("Visible text")
         XCTAssertTrue(ClipboardHistoryEntry(text: "hunter2", isSensitive: true).write(to: pasteboard, plainText: true))
         await history.poll()
-        XCTAssertEqual(history.entries.count, 2)
+        XCTAssertEqual(history.entries.map(\.text), ["Visible text"], "A concealed copy is never kept")
 
         let text = await run("clipboard", "list")
-        XCTAssertTrue(text.output.contains("Visible text") && text.output.contains("Sensitive text, hidden"), text.output)
-        let json = await run("clipboard", "list", json: true)
-        XCTAssertFalse(text.output.contains("hunter2") || json.output.contains("hunter2"))
-        let items = try array(json)
-        XCTAssertEqual(items.first?["sensitive"] as? Bool, true)
-        XCTAssertNil(items.first?["text"])
+        XCTAssertTrue(text.output.contains("Visible text") && text.output.contains(history.entries[0].shortID), text.output)
+        let items = try array(await run("clipboard", "list", json: true))
+        XCTAssertEqual(items.first?["text"] as? String, "Visible text")
+        XCTAssertEqual(items.first?["id"] as? String, history.entries[0].id.uuidString.lowercased())
+        history.recordCopiedText("Second text")
         let limited = try array(await run("clipboard", "list", "--limit", "1", json: true))
         XCTAssertEqual(limited.count, 1)
 

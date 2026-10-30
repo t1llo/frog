@@ -96,9 +96,6 @@ final class AppModel: ObservableObject {
         cleanerDependencies?() ?? .live(dataDirectory: historyStore.directory,
                                         protectedPaths: [Bundle.main.bundleURL, historyStore.directory, configurationStore.directory])
     }
-    /// Phone runs only while its feature is on, in the running app; tests may make one with `phoneFactory`.
-    private(set) var phone: PhoneController?
-    var phoneFactory: (@MainActor () -> PhoneController)?
     private(set) var pluginRuntime: PluginRuntime?
     /// Installed plugins and their pages, created when first needed.
     var plugins: PluginRuntime {
@@ -206,15 +203,9 @@ final class AppModel: ObservableObject {
     private var observations = Set<AnyCancellable>()
     static let localProviderID = UUID(uuidString: "7C05FB97-5BEF-48FD-9C28-A67605107251")!
     static let shortcutPanelID = UUID(uuidString: "85F8DE80-89BC-4506-B82D-DCFB71AFE292")!
-    static let clipboardHistoryID = UUID(uuidString: "E7A2D4E5-1CBC-41DB-8B3A-7114DC77943D")!
+    static let clipboardHistoryID = ClipboardPlugin.shortcutID
     static let commandBarID = UUID(uuidString: "76B6A364-18CC-4779-9552-9885FCE778B8")!
     static let menuBarID = UUID(uuidString: "426A0C79-8785-4B2A-96E1-5880E7853209")!
-    private lazy var clipboardHistory: ClipboardHistoryController = {
-        let controller = ClipboardHistoryController(pasteboard: clipboardHistoryStore.pasteboard, history: clipboardHistoryStore)
-        controller.onError = { [weak self] in self?.report($0) }
-        controller.onSuccessfulPaste = { [weak self] in self?.statistics.recordToolUse(.clipboardPaste) }
-        return controller
-    }()
     private let shortcutPanel = ShortcutReferencePanel()
     private let captureSelection: () async throws -> any CapturedTextSelection
     /// Reads an answer's selection through Accessibility before `captureSelection` is tried. Nil when a test
@@ -280,7 +271,8 @@ final class AppModel: ObservableObject {
     /// Changes when History is cleared or turned off, so work started before saves nothing after.
     private(set) var historyEpoch = UUID()
     private var configurationLoadError: Error?
-    private(set) var isRecordingShortcut = false
+    /// Plugins with their own shortcuts let go of them while this is on.
+    @Published private(set) var isRecordingShortcut = false
     /// The recorders that are recording now.
     private var shortcutRecorders = Set<UUID>()
 
@@ -433,7 +425,7 @@ final class AppModel: ObservableObject {
         if !candidate.preferences.showProcessingIndicator { processingIndicator.hide() }
         registerHotkeys(); shortcutPanel.hide()
         WindowsPlugin.adoptLegacySettings(self)
-        configureWindowSwitcher(); configureSelectionWatcher(); configureClipboardHistory(); refreshHistory()
+        configureWindowSwitcher(); configureSelectionWatcher(); refreshHistory()
         dismissError()
     }
     func finishSetup() {
@@ -450,11 +442,9 @@ final class AppModel: ObservableObject {
         registerHotkeys()
         configureWindowSwitcher()
         configureSelectionWatcher()
-        configureClipboardHistory()
         if configuration.preferences.featureEnabled(.commandBar) { commandBar.warm() }
         configureWindowLayout()
         configureAgentServer()
-        configurePhone()
         pluginHost.sync()
         settingsFile.onChange = { [weak self] _ in self?.settingsFileChanged() }
         settingsFile.onError = { [weak self] in self?.report($0) }
@@ -468,7 +458,6 @@ final class AppModel: ObservableObject {
         if agentServerCreated { agentServer.configure(enabled: false) }
         commandBar.stop()
         toolkit.stop()
-        phone?.stop(); phone = nil
         clipboardHistoryStore.configure(forwardingCopies: false)
         pluginRuntime?.stop()
         systemStatusTask?.cancel(); systemStatusTask = nil
@@ -480,7 +469,6 @@ final class AppModel: ObservableObject {
         started = false
         windowSwitcher?.halt()
         selectionWatcher.stop()
-        if registerShortcuts { clipboardHistory.stop() }
         clipboardHistoryStore.configure(enabled: false)
         processingIndicator.hide()
         processingTask?.cancel()
@@ -700,35 +688,10 @@ final class AppModel: ObservableObject {
         if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
         configureWindowLayout()
         configureAgentServer()
-        configurePhone()
         if started { pluginHost.sync() }
     }
 
     func configureWindowLayout() { windowLayout?.configure(configuration, active: started && registerShortcuts) }
-
-    /// The listener, the Bonjour advert and the Bluetooth peripheral exist only while Phone is on, in
-    /// the running app. Copies reach the phone through the clipboard history's watch, never a second one.
-    private func configurePhone() {
-        let preferences = configuration.preferences
-        let enabled = started && (registerShortcuts || phoneFactory != nil) && preferences.featureEnabled(.phone)
-        if enabled, phone == nil {
-            let controller = phoneFactory?() ?? PhoneController(
-                store: PhonePairingStore(fileURL: PhonePairingStore.defaultFile(in: historyStore.directory), secrets: KeychainPhoneSecretStore()),
-                clipboard: clipboardHistoryStore)
-            phone = controller
-            controller.start()
-        } else if !enabled, let phone {
-            phone.stop()
-            self.phone = nil
-        }
-        phone?.autoSend = preferences.toolkitSettings.phoneAutoSend ?? true
-        clipboardHistoryStore.onCopy = { [weak self] copy in self?.phone?.clipboardDidCopy(copy) }
-        clipboardHistoryStore.configure(forwardingCopies: phone?.autoSend == true, automaticallyPoll: registerShortcuts)
-    }
-
-    func setPhoneAutoSend(_ enabled: Bool) {
-        do { try updateToolkit { $0.phoneAutoSend = enabled } } catch { report(error) }
-    }
 
     /// The socket is open only in the running app, never in tests, and only while agent access is on.
     private func configureAgentServer() {
@@ -965,7 +928,6 @@ final class AppModel: ObservableObject {
         if !preferences.showProcessingIndicator { processingIndicator.hide() }
         configureWindowSwitcher()
         configureSelectionWatcher()
-        configureClipboardHistory()
         localModels.idleSeconds = preferences.workflowSettings.idleUnloadSeconds
         if Self.registersShortcutsAgain(previous: previous, current: configuration, failed: !hotkeyErrors.isEmpty, holding: hotkeys.isHolding) { registerHotkeys(); shortcutPanel.hide() }
         // Only these settings decide what is kept; any other save need not read the history file.
@@ -1023,6 +985,10 @@ final class AppModel: ObservableObject {
         if history != retained { history = retained }
     }
     var historyFileURL: URL { historyStore.directory.appendingPathComponent("history.json") }
+    /// Frog's data folder: history, pairings, plugins.
+    var dataDirectory: URL { historyStore.directory }
+    /// Whether this is the running app, which registers shortcuts and opens listeners, rather than a test.
+    var runsLiveServices: Bool { registerShortcuts }
     /// How many saved entries saving these preferences would delete. A history that cannot be read loses nothing.
     func historyEntriesDropped(by preferences: Preferences) -> Int {
         (try? historyStore.droppedCount(changing: configuration.preferences, to: preferences)) ?? 0
@@ -1125,9 +1091,6 @@ final class AppModel: ObservableObject {
         WindowsPlugin.adoptLegacySettings(self)
         configureWindowSwitcher()
         configureSelectionWatcher()
-        if registerShortcuts { clipboardHistory.stop() }
-        clipboardHistoryStore.configure(enabled: false)
-        configureClipboardHistory()
         refreshHistory()
     }
 
@@ -1147,7 +1110,6 @@ final class AppModel: ObservableObject {
     private func setShortcutRecording(_ recording: Bool) {
         if recording { commandBar.hide() }
         if recording { dictation?.cancel() }
-        if recording, registerShortcuts { clipboardHistory.cancel() }
         isRecordingShortcut = recording
         // Every group lets go, plugins' too, so the key being recorded reaches the recorder.
         hotkeys.setSuspended(recording)
@@ -1168,9 +1130,6 @@ final class AppModel: ObservableObject {
         var rules = configuration.rules.filter { preferences.ruleFeatureEnabled($0) }
         if let key = preferences.workflowSettings.shortcutPanelHotkey {
             rules.append(Rule(id: Self.shortcutPanelID, name: "Show shortcuts", hotkey: key))
-        }
-        if preferences.workflowSettings.clipboardHistoryEnabled == true {
-            rules.append(Rule(id: Self.clipboardHistoryID, name: "Clipboard history", hotkey: preferences.workflowSettings.effectiveClipboardHistoryHotkey))
         }
         if preferences.featureEnabled(.commandBar) {
             rules.append(Rule(id: Self.commandBarID, name: "Command bar", hotkey: preferences.toolkitSettings.effectiveCommandBarHotkey))
@@ -1201,7 +1160,7 @@ final class AppModel: ObservableObject {
     private func registerHotkeys() {
         guard registerShortcuts, !isRecordingShortcut else { return }
         let plugins = pluginShortcuts.map { Rule(id: $0.key, name: $0.value.name, hotkey: $0.value.hotkey) }
-        hotkeyErrors = hotkeys.register(rules: Self.hotkeyRules(for: configuration) + plugins, purposes: [Self.clipboardHistoryID: .clipboardHistory], onPress: { [weak self] id in self?.handleShortcut(id, pressed: true) }) { [weak self] id in self?.handleShortcut(id, pressed: false) }
+        hotkeyErrors = hotkeys.register(rules: Self.hotkeyRules(for: configuration) + plugins, onPress: { [weak self] id in self?.handleShortcut(id, pressed: true) }) { [weak self] id in self?.handleShortcut(id, pressed: false) }
     }
 
     func resolved(_ rule: Rule) throws -> ProviderConfiguration {
@@ -1476,18 +1435,6 @@ final class AppModel: ObservableObject {
         shortcutPanel.show(groups: ShortcutReference.grouped(items))
     }
 
-    private func configureClipboardHistory() {
-        guard started else { return }
-        let enabled = configuration.preferences.workflowSettings.clipboardHistoryEnabled == true
-        if registerShortcuts { clipboardHistory.configure(enabled: enabled) }
-        else { clipboardHistoryStore.configure(enabled: enabled, automaticallyPoll: false) }
-    }
-
-    func showClipboardHistory() {
-        guard !isRecordingShortcut else { return }
-        clipboardHistory.show()
-    }
-
     func saveWorkflowPreferences(_ value: WorkflowPreferences) throws {
         var prefs = configuration.preferences; prefs.workflows = value
         try savePreferences(prefs)
@@ -1497,7 +1444,6 @@ final class AppModel: ObservableObject {
         if let shortcut = pluginShortcuts[id] { if pressed { shortcut.action() }; return }
         if let command = WindowCommand.command(for: id) { windowLayout?.handle(command, pressed: pressed); return }
         if id == Self.commandBarID { if pressed { showCommandBar() }; return }
-        if id == Self.clipboardHistoryID { if !pressed { showClipboardHistory() }; return }
         if id == Self.shortcutPanelID { if pressed { showShortcuts() } else { shortcutPanel.hide() }; return }
         guard let rule = configuration.rules.first(where: { $0.id == id && $0.enabled }), ruleFeatureEnabled(rule) else { return }
         switch rule.category {

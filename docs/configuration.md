@@ -275,7 +275,7 @@ Enable with `feature.plugins = true`. Installed plugins, what each one may do an
 
 Enable with `feature.phone = true`. Frog then listens for paired Android phones running Frog Companion on Wi-Fi (TCP port 47321, Bonjour `_frogcompanion._tcp`) and Bluetooth LE; nothing listens, advertises or asks for a permission while it is off. Portable settings:
 
-- `phone.auto-send`: boolean, default `true`. Sends text and images you copy to a connected phone. Items an app marks as concealed, transient or auto-generated, text that looks like a key or password, and files copied in Finder are never sent on their own; files go with **Send clipboard to phone** in the command bar or **Send files…** on the Phone page.
+- `phone.auto-send`: boolean, default `true`. Sends text and images you copy to a connected phone. Items an app marks as concealed, transient or auto-generated, text that looks like a key or password, and files copied in Finder are never sent on their own; files go with **Send clipboard to phone** in the command bar, **Choose…** on the Phone page or `frog run phone.send --file <path>`.
 
 Paired phones and this Mac's companion ID stay on each Mac in `~/Library/Application Support/Frog/phone.json`, and each pairing secret in the login Keychain, never in this folder. See the [protocol](companion-protocol.md).
 
