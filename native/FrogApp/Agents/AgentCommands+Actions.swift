@@ -42,7 +42,10 @@ extension AgentCommands {
                 }
                 let input = ActionInput(values: call.options, text: call.input, source: .agent)
                 let result = try await call.model.pluginHost.run(id, input)
-                return AgentResult(text: result.text, json: result.json)
+                var reply = AgentResult(text: result.text, json: result.json)
+                reply.exitCode = result.exitCode
+                reply.notice = result.notice
+                return reply
             }
         ]
     }

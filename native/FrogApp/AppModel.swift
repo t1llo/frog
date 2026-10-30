@@ -392,7 +392,6 @@ final class AppModel: ObservableObject {
         localModels.idleSeconds = configuration.preferences.workflowSettings.idleUnloadSeconds
         if registerShortcuts { localModels.unloadUnderMemoryPressure() }
         localModels.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
-        scripts.onSuccessfulRun = { [weak self] in self?.statistics.recordToolUse(.scriptRun) }
         toolkit.apply(configuration.preferences)
         commandChoices.configure(enabled: Self.learnsCommandChoices(configuration.preferences))
         toolkit.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
@@ -402,11 +401,9 @@ final class AppModel: ObservableObject {
             switch feature {
             case .writing: self.processingTask?.cancel(); self.processingIndicator.hide()
             case .applicationShortcuts: self.applicationTask?.cancel(); self.systemActionTask?.cancel(); if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.shortcutPanel.hide()
-            case .scripts: self.scripts.stop()
             case .commandBar: self.commandBar.stop()
             case .explain: self.answerCapture?.cancel(); self.answers.close(); self.selectionWatcher.stop()
             case .windows: if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.windowLayout?.stop()
-            case .plugins: self.pluginRuntime?.configure(enabled: false)
             default: break
             }
         }
@@ -458,7 +455,6 @@ final class AppModel: ObservableObject {
         configureWindowLayout()
         configureAgentServer()
         configurePhone()
-        configurePlugins()
         pluginHost.sync()
         settingsFile.onChange = { [weak self] _ in self?.settingsFileChanged() }
         settingsFile.onError = { [weak self] in self?.report($0) }
@@ -499,11 +495,6 @@ final class AppModel: ObservableObject {
 
     func openFeature(_ feature: FeatureID) { toolkit.select(.feature(feature)); showSettings() }
     func openPlugin(_ id: String) { toolkit.select(.plugin(id)); showSettings() }
-
-    private func configurePlugins() {
-        let enabled = configuration.preferences.featureEnabled(.plugins)
-        if enabled || pluginRuntime != nil { plugins.configure(enabled: enabled) }
-    }
 
     /// The user approved a plugin, maybe from a link while Plugins was off: Plugins turns on and the plugin opens.
     private func pluginApproved(_ id: String) {
@@ -584,16 +575,6 @@ final class AppModel: ObservableObject {
     }
     func ruleFeatureEnabled(_ rule: Rule) -> Bool {
         configuration.preferences.ruleFeatureEnabled(rule)
-    }
-    func openDocument(_ document: UtilityDocument) {
-        let feature: FeatureID = switch document.kind { case .note: .scratchpad; case .script: .scripts }
-        guard configuration.preferences.featureEnabled(feature) else { return }
-        documents.selection[document.kind] = document.id
-        openFeature(feature)
-    }
-    func runScript(_ document: UtilityDocument) {
-        guard configuration.preferences.featureEnabled(.scripts), documents.items.contains(document) else { return }
-        scripts.run(document)
     }
     func runRuleFromCommandBar(_ id: UUID) {
         guard let rule = configuration.rules.first(where: { $0.id == id && $0.enabled }), ruleFeatureEnabled(rule) else { return }
@@ -720,7 +701,7 @@ final class AppModel: ObservableObject {
         configureWindowLayout()
         configureAgentServer()
         configurePhone()
-        if started { configurePlugins(); pluginHost.sync() }
+        if started { pluginHost.sync() }
     }
 
     func configureWindowLayout() { windowLayout?.configure(configuration, active: started && registerShortcuts) }

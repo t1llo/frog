@@ -16,4 +16,4 @@ Counting happens in the page; nothing leaves your Mac.
 - `index.html`: the page, styled with Frog's `/_frog/frog.css`.
 - `app.js`: counting with `Intl.Segmenter`, `frog.clipboard.readText()`, and `frog.storage` for the last text.
 
-Install it from this folder with `frog plugins install plugins/word-counter`, then approve it in Frog → Plugins. See [docs/plugins.md](../../docs/plugins.md) for the plugin contract.
+Install it from this folder with `frog plugin install plugins/word-counter`, then approve it in Frog → Community plugins. See [docs/plugins.md](../../docs/plugins.md) for the plugin contract.

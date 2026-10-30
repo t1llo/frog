@@ -46,13 +46,13 @@ Switch on **Settings → Agents**, then ask:
 The agent uses the `frog` command that ships with the app:
 
 ```sh
-frog plugins new ~/frog-plugins/hacker-news       # start from a template
-frog plugins check ~/frog-plugins/hacker-news     # validate manifest and files
-frog plugins install ~/frog-plugins/hacker-news   # waits for your review
-frog plugins snapshot io.github.you.hacker-news   # looks at its own work
+frog plugin new ~/frog-plugins/hacker-news        # start from a template
+frog plugin validate ~/frog-plugins/hacker-news   # validate manifest and files
+frog plugin install ~/frog-plugins/hacker-news    # waits for your review
+frog plugin snapshot io.github.you.hacker-news    # looks at its own work
 ```
 
-The first install waits for you in **Frog → Plugins**, with every permission listed. After that, the agent's updates apply at once while they ask for nothing new. Share a plugin as one `.frogplugin` file.
+The first install waits for you in **Frog → Community plugins**, with every permission listed. After that, the agent's updates apply at once while they ask for nothing new. `frog plugin publish` packs a plugin into one `.frogplugin` file and prints its entry for the signed directory, which Frog installs from in one click.
 
 Examples in [`plugins/`](plugins/): [Hacker News](plugins/hacker-news), [Focus timer](plugins/focus-timer), [Word counter](plugins/word-counter). The full contract is in [docs/plugins.md](docs/plugins.md).
 
