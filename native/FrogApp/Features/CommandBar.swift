@@ -42,6 +42,7 @@ import SwiftUI
         CleanerCommandRows(applications: { [unowned self] in self.cleanerApplications() }),
         PhoneCommandRows(),
         PluginCommandRows(),
+        PluginActionRows(),
     ] + extraProviders
     private let extraProviders: [any CommandBarRowProviding]
     private var context: CommandBarContext?
@@ -446,12 +447,14 @@ import SwiftUI
         }
     }
     private func addRoutes(_ model: AppModel, frontPID: pid_t?) {
-        for feature in model.configuration.preferences.sidebarFeatures {
-            add(SearchRecord(id: "feature:\(feature.rawValue)", title: feature.title, subtitle: "Frog", keywords: "frog command \(feature.detail)", symbol: feature.symbol)) { [weak model] in
-                model?.openFeature(feature)
+        // Record IDs keep the feature names they had before plugins, so learned choices still count.
+        for plugin in model.pluginHost.sidebar.flatMap(\.plugins) {
+            let id = BuiltinPlugins.legacyFeatures[plugin.id].map { "feature:\($0.rawValue)" } ?? "plugin-page:\(plugin.id)"
+            add(SearchRecord(id: id, title: plugin.name, subtitle: "Frog", keywords: "frog plugin \(plugin.summary)", symbol: plugin.symbol)) { [weak model] in
+                model?.pluginHost.open(plugin.id)
             }
         }
-        add(SearchRecord(id: "features", title: "Manage features", subtitle: "Enable the tools you use", symbol: "square.grid.2x2")) { [weak model] in
+        add(SearchRecord(id: "features", title: "Plugins", subtitle: "Turn Frog's plugins on and off", keywords: "frog features manage", symbol: "puzzlepiece.extension")) { [weak model] in
             model?.toolkit.select(.features); model?.showSettings()
         }
         for (route, title, symbol) in [(ToolkitRoute.settings, "Settings", "gearshape"), (.models, "Models", "cpu"), (.history, "History", "clock.arrow.circlepath")] {

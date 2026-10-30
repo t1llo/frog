@@ -61,7 +61,7 @@ final class WritingPlugin: LegacyPlugin, FrogPlugin {
     var actions: [PluginAction] {
         model.configuration.rules.filter { $0.enabled && $0.category == .text && !$0.answersInPanel }.map { rule in
             PluginAction(id: "writing.\(Self.slug(rule.name))", title: rule.name, symbol: "text.cursor",
-                         keywords: "writing rule", surfaces: [.commandBar, .agent]) { [model] _ in
+                         keywords: "writing rule", surfaces: [.agent]) { [model] _ in
                 model.runRuleFromCommandBar(rule.id)
                 return .done("Running \(rule.name) on the selected text.")
             }
@@ -210,7 +210,7 @@ final class WindowsPlugin: LegacyPlugin, FrogPlugin {
     var actions: [PluginAction] {
         WindowAction.allCases.map { action in
             PluginAction(id: "windows.\(WritingPlugin.slug(action.title))", title: action.title, symbol: "rectangle.split.2x1",
-                         keywords: "window layout move resize") { [model] _ in
+                         keywords: "window layout move resize", surfaces: [.shortcut, .agent]) { [model] _ in
                 model.runWindowAction(action); return .done()
             }
         }
