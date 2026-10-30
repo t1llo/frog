@@ -40,6 +40,10 @@ struct WindowsSettings: ConfigSection {
 }
 
 extension WindowsSettings {
+    init(legacy preferences: Preferences) {
+        self.init(legacy: preferences.toolkitSettings.windows ?? WindowPreferences())
+    }
+
     /// The settings Frog kept before config.toml.
     init(legacy: WindowPreferences) {
         let value = legacy.normalized
@@ -127,19 +131,19 @@ extension WindowsSettings {
         next.gap = min(WindowPreferences.gapRange.upperBound, max(WindowPreferences.gapRange.lowerBound, next.gap))
         guard next != settings else { return }
         let previous = settings
+        // config.toml first: when it refuses, say an edit in an editor, the preferences keep their value too.
+        do { try context.save(next) } catch { return context.report(error) }
         settings = next
-        do {
-            try mirrorThrowing()
-            try context.save(next)
-        } catch {
+        do { try mirrorThrowing() } catch {
             settings = previous
+            try? context.save(previous)
             context.report(error)
         }
     }
 
     /// Takes the command shortcuts the suggestions just wrote into the preferences into config.toml.
     func adoptLegacyCommands() {
-        let legacy = WindowsSettings(legacy: model.configuration.preferences.toolkitSettings.windows ?? WindowPreferences())
+        let legacy = WindowsSettings(legacy: model.configuration.preferences)
         var next = settings
         for command in WindowCommand.allCases { next.setShortcut(legacy.shortcut(command), for: command) }
         guard next != settings else { return }
@@ -150,9 +154,20 @@ extension WindowsSettings {
     /// The table, or, when config.toml has none yet, the one Frog kept before.
     static func adoptedSettings(_ context: PluginContext) -> WindowsSettings {
         if context.legacy.settingsFile.document.value(at: [info.id]) != nil { return context.settings(WindowsSettings.self) }
-        let seeded = WindowsSettings(legacy: context.legacy.configuration.preferences.toolkitSettings.windows ?? WindowPreferences())
+        let seeded = WindowsSettings(legacy: context.legacy.configuration.preferences)
         do { try context.save(seeded) } catch { context.report(error) }
         return seeded
+    }
+
+    /// Reload and Import write the window settings into the preferences. Both tables follow, whether the
+    /// plugins run or not, so neither puts the old values back on its next change or launch.
+    static func adoptLegacySettings(_ model: AppModel) {
+        let preferences = model.configuration.preferences
+        do {
+            try model.settingsFile.update(WindowsPlugin.info.id, WindowsSettings(legacy: preferences))
+            try model.settingsFile.update(WindowSwitcherPlugin.info.id, WindowSwitcherSettings(legacy: preferences))
+        } catch { model.report(error) }
+        for id in [WindowsPlugin.info.id, WindowSwitcherPlugin.info.id] { model.pluginHost.running[id]?.settingsChanged() }
     }
 
     private func mirror() {
@@ -204,7 +219,7 @@ extension WindowsSettings {
                 return ActionResult(window, text: AgentCommands.sentence(action, window.name))
             }
         ]
-        if controller?.pickerAvailable == true {
+        if pickerAvailable {
             actions.append(PluginAction(id: "windows.arrange", title: "Arrange window…", symbol: "rectangle.split.2x1",
                                         keywords: "layout picker", surfaces: [.commandBar, .agent]) { [weak self] _ in
                 self?.controller?.handle(.layoutPicker, pressed: true)
@@ -214,8 +229,12 @@ extension WindowsSettings {
         return actions
     }
 
+    /// Reads `settings`, which is observed, so the menu and the command bar follow the picker's switch;
+    /// the controller says whether it can open now.
+    private var pickerAvailable: Bool { settings.layoutPicker && controller?.pickerAvailable == true }
+
     var menu: [MenuContribution] {
-        guard let controller, controller.pickerAvailable else { return [] }
+        guard let controller, pickerAvailable else { return [] }
         return [MenuContribution(id: "windows.arrange", order: 40) { [weak controller] in
             AnyView(MenuActionRow(title: "Arrange window…", symbol: "rectangle.split.2x1", closes: true) {
                 controller?.handle(.layoutPicker, pressed: true)
@@ -278,6 +297,13 @@ struct WindowSwitcherSettings: ConfigSection {
     ]
 }
 
+extension WindowSwitcherSettings {
+    init(legacy preferences: Preferences) {
+        self.init()
+        if let shortcut = try? Shortcut(preferences.toolkitSettings.effectiveWindowSwitcherHotkey) { self.shortcut = shortcut }
+    }
+}
+
 /// Switches between windows rather than apps. While it runs it holds one event tap and a small cache of the
 /// window list and app icons; turned off, it holds nothing.
 @MainActor @Observable final class WindowSwitcherPlugin: FrogPlugin {
@@ -333,8 +359,13 @@ struct WindowSwitcherSettings: ConfigSection {
         if let issue = HotkeyManager.validationError(hotkey, purpose: .windowSwitcher) { throw FrogError.message(issue) }
         let next = WindowSwitcherSettings(shortcut: try Shortcut(hotkey))
         let previous = settings
+        try context.save(next)
         settings = next
-        do { try mirrorThrowing(); try context.save(next) } catch { settings = previous; throw error }
+        do { try mirrorThrowing() } catch {
+            settings = previous
+            try? context.save(previous)
+            throw error
+        }
     }
 
     /// Follows the configuration: the chord, a conflict with another shortcut, a shortcut being recorded and
@@ -368,8 +399,7 @@ struct WindowSwitcherSettings: ConfigSection {
 
     static func adoptedSettings(_ context: PluginContext) -> WindowSwitcherSettings {
         if context.legacy.settingsFile.document.value(at: [info.id]) != nil { return context.settings(WindowSwitcherSettings.self) }
-        let hotkey = context.legacy.configuration.preferences.toolkitSettings.effectiveWindowSwitcherHotkey
-        let seeded = (try? Shortcut(hotkey)).map { WindowSwitcherSettings(shortcut: $0) } ?? WindowSwitcherSettings()
+        let seeded = WindowSwitcherSettings(legacy: context.legacy.configuration.preferences)
         do { try context.save(seeded) } catch { context.report(error) }
         return seeded
     }
