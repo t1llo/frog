@@ -1,12 +1,11 @@
 import AppKit
-import ApplicationServices
 
 /// How long Frog waits before it reads Accessibility and the login item again, and checks the
-/// window switcher's event tap. A second while Frog is in front or Accessibility is still missing,
-/// so a grant shows at once. Two seconds while the window switcher is on, because this tick is what
-/// restarts its tap when macOS disables it. Otherwise it waits until Frog becomes active, the
-/// Accessibility list changes, or a minute passes, so an idle Frog in the background wakes about
-/// once a minute instead of every second.
+/// window switcher's event tap. A second while Frog is in front, so a change made in its window shows at
+/// once. Two seconds while the window switcher is on, because this tick is what restarts its tap when
+/// macOS disables it. Otherwise it waits until Frog becomes active, the Accessibility list changes (a
+/// grant in System Settings), or a minute passes, so an idle Frog in the background wakes about once a
+/// minute, with or without Accessibility, instead of every second.
 @MainActor enum SystemStatusWake {
     static let idle: Duration = .seconds(60)
     static let tapCheck: Duration = .seconds(2)
@@ -21,8 +20,8 @@ import ApplicationServices
     /// notification arrives, so the next wait is a short one and the status is read once more.
     private static var readAgain = false
 
-    static func pause(active: Bool, trusted: Bool, watchingTap: Bool, readAgain: Bool) -> Pause {
-        if readAgain || active || !trusted { return .sleep(.seconds(1)) }
+    static func pause(active: Bool, watchingTap: Bool, readAgain: Bool) -> Pause {
+        if readAgain || active { return .sleep(.seconds(1)) }
         if watchingTap { return .sleep(tapCheck) }
         return .untilWake
     }
@@ -31,7 +30,7 @@ import ApplicationServices
     static func wait(watchingTap: Bool = false) async throws {
         let again = readAgain
         readAgain = false
-        switch pause(active: NSApp?.isActive == true, trusted: AXIsProcessTrusted(), watchingTap: watchingTap, readAgain: again) {
+        switch pause(active: NSApp?.isActive == true, watchingTap: watchingTap, readAgain: again) {
         case .sleep(let duration):
             try await Task.sleep(for: duration)
         case .untilWake:
