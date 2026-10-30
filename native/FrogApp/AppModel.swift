@@ -48,7 +48,8 @@ final class AppModel: ObservableObject {
     private let complete: (String, Rule, ProviderConfiguration, String?) async throws -> String
     private let readKey: (UUID) throws -> String?
     private let writeClipboard: (String) -> Void
-    private let registerShortcuts: Bool
+    /// False for test models: they register no global shortcuts and build no panels ahead of use.
+    let registerShortcuts: Bool
     private let readAccessibility: () -> Bool
     private let readLoginStatus: @Sendable () -> LoginService.Snapshot
     private let writeLoginItem: @Sendable (Bool) throws -> Void
@@ -207,11 +208,8 @@ final class AppModel: ObservableObject {
     }
     var hasPendingDocumentWrites: Bool { documentsModel?.needsFlush == true }
     func flushDocuments() async -> Bool { await documentsModel?.flush() ?? true }
-    private lazy var commandBar: CommandBar = {
-        let bar = CommandBar(model: self, pasteboard: clipboardHistoryStore.pasteboard)
-        bar.onToolUse = { [weak self] in self?.statistics.recordToolUse($0) }
-        return bar
-    }()
+    /// The command bar plugin, while it runs; it owns the panel and its shortcut.
+    private var commandBarPlugin: CommandBarPlugin? { pluginHost.running[CommandBarPlugin.info.id] as? CommandBarPlugin }
     let clipboardHistoryStore: ClipboardHistoryStore
     private var observations = Set<AnyCancellable>()
     private var dictationHistoryEpoch: UUID?
@@ -220,7 +218,6 @@ final class AppModel: ObservableObject {
     static let shortcutPanelID = UUID(uuidString: "85F8DE80-89BC-4506-B82D-DCFB71AFE292")!
     static let cancelRecordingID = UUID(uuidString: "E4A8A2D5-7F72-42CA-924C-9100A213D030")!
     static let clipboardHistoryID = UUID(uuidString: "E7A2D4E5-1CBC-41DB-8B3A-7114DC77943D")!
-    static let commandBarID = UUID(uuidString: "76B6A364-18CC-4779-9552-9885FCE778B8")!
     static let menuBarID = UUID(uuidString: "426A0C79-8785-4B2A-96E1-5880E7853209")!
     private lazy var clipboardHistory: ClipboardHistoryController = {
         let controller = ClipboardHistoryController(pasteboard: clipboardHistoryStore.pasteboard, history: clipboardHistoryStore)
@@ -293,7 +290,7 @@ final class AppModel: ObservableObject {
     private lazy var usagePreferenceWriter = UsagePreferenceWriter(store: configurationStore, initial: configuration)
     private var usagePreferenceRevision = 0
     private var legacyUsagePreferences = UsageDashboardPreferences()
-    private(set) var isRecordingShortcut = false
+    @Published private(set) var isRecordingShortcut = false
     /// The recorders that are recording now.
     private var shortcutRecorders = Set<UUID>()
 
@@ -502,13 +499,13 @@ final class AppModel: ObservableObject {
         windowLayout.onToolUse = { [weak self] in self?.statistics.recordToolUse($0) }
         toolkit.onDisable = { [weak self] feature in
             guard let self else { return }
-            self.commandBar.hide()
+            self.commandBarPlugin?.hide()
             switch feature {
             case .writing: self.processingTask?.cancel(); self.processingIndicator.hide()
             case .dictation: self.dictation.cancel(); self.invalidateHistoryRecovery()
             case .applicationShortcuts: self.applicationTask?.cancel(); self.systemActionTask?.cancel(); if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.shortcutPanel.hide()
             case .scripts: self.scripts.stop()
-            case .commandBar: self.commandBar.stop()
+            case .commandBar: break
             case .explain: self.answerCapture?.cancel(); self.answers.close(); self.selectionWatcher.stop()
             case .windows: if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.windowLayout.stop()
             case .cleaner: self.cleanerModel?.stop()
@@ -574,7 +571,6 @@ final class AppModel: ObservableObject {
         configureWindowSwitcher()
         configureSelectionWatcher()
         configureClipboardHistory()
-        if configuration.preferences.featureEnabled(.commandBar) { commandBar.warm() }
         configureWindowLayout()
         configureAgentServer()
         configurePhone()
@@ -594,7 +590,7 @@ final class AppModel: ObservableObject {
         systemMonitorItem?.stop(); systemMonitorItem = nil
         stayAwakeItem?.stop(); stayAwakeItem = nil
         systemMonitor.stop()
-        commandBar.stop()
+        commandBarPlugin?.bar?.stop()
         toolkit.stop()
         cleanerModel?.stop()
         phone?.stop(); phone = nil
@@ -686,10 +682,7 @@ final class AppModel: ObservableObject {
         let key = provider.kind.localTool == nil ? try readKey(provider.id) : nil
         return try await complete(text, rule, provider, key)
     }
-    func showCommandBar() {
-        guard !isRecordingShortcut else { return }
-        commandBar.show()
-    }
+    func showCommandBar() { commandBarPlugin?.show() }
     func setFeature(_ feature: FeatureID, enabled: Bool) async throws {
         if feature == .stayAwake, !enabled {
             await power.waitForOperation()
@@ -852,7 +845,6 @@ final class AppModel: ObservableObject {
         systemMonitor.configure(enabled: candidate.preferences.featureEnabled(.systemMonitor))
         cleanerModel?.apply(candidate.preferences)
         if candidate.preferences.toolkit?.usage == nil, let usage = toolkit.usage() { legacyUsagePreferences = usage.preferences }
-        if candidate.preferences.featureEnabled(.commandBar) { commandBar.warm() }
         // Turning the switch or the Command bar off, here or in the configuration file, forgets what was learned.
         commandChoices.configure(enabled: Self.learnsCommandChoices(candidate.preferences))
         power.configureFeature(enabled: candidate.preferences.featureEnabled(.stayAwake))
@@ -1193,15 +1185,7 @@ final class AppModel: ObservableObject {
         return [key, Hotkey(keyCode: key.keyCode, modifiers: key.modifiers | 512)]
     }
 
-    func useCommandBarShortcut(_ hotkey: Hotkey) throws {
-        var preferences = configuration.preferences
-        preferences.setFeature(.commandBar, enabled: true)
-        preferences.toolkit?.commandBarHotkey = hotkey
-        let unchanged = preferences.toolkit == configuration.preferences.toolkit
-        try savePreferences(preferences)
-        // The user may have just freed this same shortcut in System Settings.
-        if unchanged { registerHotkeys() }
-    }
+    func useCommandBarShortcut(_ hotkey: Hotkey) throws { try CommandBarPlugin.useShortcut(hotkey, model: self) }
 
     func refreshHistory() {
         do { adoptHistory(try historyStore.load(preferences: configuration.preferences)) }
@@ -1330,7 +1314,7 @@ final class AppModel: ObservableObject {
 
     private func setShortcutRecording(_ recording: Bool) {
         toolkit.menuBarOrganizer.setShortcutRecording(recording)
-        if recording { commandBar.hide() }
+        if recording { commandBarPlugin?.hide() }
         if recording { dictation.cancel() }
         if recording, registerShortcuts { clipboardHistory.cancel() }
         isRecordingShortcut = recording
@@ -1389,16 +1373,14 @@ final class AppModel: ObservableObject {
     /// The global shortcuts a configuration registers: its enabled rules and Frog's own.
     static func hotkeyRules(for configuration: Configuration) -> [Rule] {
         let preferences = configuration.preferences
-        var rules = configuration.rules.filter { preferences.ruleFeatureEnabled($0) }
+        // App and Mac command shortcuts belong to the Shortcuts plugin, which registers them from config.toml.
+        var rules = configuration.rules.filter { preferences.ruleFeatureEnabled($0) && ![.application, .system].contains($0.category) }
         if let key = preferences.workflowSettings.shortcutPanelHotkey {
             rules.append(Rule(id: Self.shortcutPanelID, name: "Show shortcuts", hotkey: key))
         }
         if preferences.featureEnabled(.dictation), let key = preferences.workflowSettings.cancelRecordingHotkey { rules.append(Rule(id: Self.cancelRecordingID, name: "Cancel recording", hotkey: key)) }
         if preferences.workflowSettings.clipboardHistoryEnabled == true {
             rules.append(Rule(id: Self.clipboardHistoryID, name: "Clipboard history", hotkey: preferences.workflowSettings.effectiveClipboardHistoryHotkey))
-        }
-        if preferences.featureEnabled(.commandBar) {
-            rules.append(Rule(id: Self.commandBarID, name: "Command bar", hotkey: preferences.toolkitSettings.effectiveCommandBarHotkey))
         }
         rules.append(contentsOf: WindowSwitches(preferences).shortcutRules)
         return rules
@@ -1751,7 +1733,6 @@ final class AppModel: ObservableObject {
 
     private func handleShortcut(_ id: UUID, pressed: Bool) {
         if let command = WindowCommand.command(for: id) { windowLayout.handle(command, pressed: pressed); return }
-        if id == Self.commandBarID { if pressed { showCommandBar() }; return }
         if id == Self.clipboardHistoryID { if !pressed { showClipboardHistory() }; return }
         if id == Self.cancelRecordingID {
             if pressed { dictation.interrupt(reason: configuration.preferences.workflowSettings.cancelRecordingHotkey?.keyCode == 53 ? .escape : .cancelled) }

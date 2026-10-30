@@ -8,11 +8,10 @@ import FrogCore
 final class HotkeyRulesTests: XCTestCase {
     func testSettingsThatRegisterNoShortcutLeaveTheShortcutsAsTheyAre() {
         var configuration = Configuration()
-        var launcher = Rule(name: "Open Notes", hotkey: Hotkey(keyCode: 45, modifiers: 256 | 2048))
-        launcher.action = RuleAction(category: .application)
+        let launcher = Rule(name: "Fix grammar", hotkey: Hotkey(keyCode: 45, modifiers: 256 | 2048))
         configuration.rules = [launcher]
-        // Once the Shortcuts feature has been switched, its setting is written for good.
-        configuration.preferences.setFeature(.applicationShortcuts, enabled: true)
+        // Once the Writing feature has been switched, its setting is written for good.
+        configuration.preferences.setFeature(.writing, enabled: true)
         let registered = AppModel.hotkeyRules(for: configuration)
         XCTAssertEqual(registered.map(\.id).first, launcher.id)
 
@@ -40,16 +39,12 @@ final class HotkeyRulesTests: XCTestCase {
         configuration.preferences.setFeature(.applicationShortcuts, enabled: true)
         let registered = AppModel.hotkeyRules(for: configuration)
 
+        // App shortcuts and the command bar's key are the Shortcuts and Command bar plugins' own.
+        XCTAssertFalse(registered.contains { $0.id == launcher.id })
         var changed = configuration
-        changed.preferences.setFeature(.applicationShortcuts, enabled: false)
-        XCTAssertFalse(AppModel.hotkeyRules(for: changed).contains { $0.id == launcher.id })
-
-        changed = configuration
         changed.preferences.setFeature(.commandBar, enabled: true)
-        let withCommandBar = AppModel.hotkeyRules(for: changed)
-        XCTAssertNotEqual(withCommandBar, registered)
         changed.preferences.toolkit?.commandBarHotkey = Hotkey(keyCode: 49, modifiers: 256 | 512)
-        XCTAssertNotEqual(AppModel.hotkeyRules(for: changed), withCommandBar)
+        XCTAssertEqual(AppModel.hotkeyRules(for: changed), registered)
 
         changed = configuration
         var workflow = changed.preferences.workflowSettings
@@ -82,9 +77,12 @@ final class HotkeyRulesTests: XCTestCase {
         XCTAssertFalse(AppModel.registersShortcutsAgain(previous: configuration, current: changed, failed: false, holding: false), "Menu bar layout")
 
         changed = configuration
-        changed.preferences.toolkit?.commandBarHotkey = Hotkey(keyCode: 49, modifiers: 256 | 512)
-        changed.preferences.setFeature(.commandBar, enabled: true)
+        changed.preferences.workflows = { var workflow = configuration.preferences.workflowSettings; workflow.shortcutPanelHotkey = Hotkey(keyCode: 1, modifiers: 256 | 2048); return workflow }()
         XCTAssertTrue(AppModel.registersShortcutsAgain(previous: configuration, current: changed, failed: false, holding: false), "A new shortcut")
+        // The command bar's is its plugin's to register.
+        changed = configuration
+        changed.preferences.toolkit?.commandBarHotkey = Hotkey(keyCode: 49, modifiers: 256 | 512)
+        XCTAssertFalse(AppModel.registersShortcutsAgain(previous: configuration, current: changed, failed: false, holding: false), "The command bar's shortcut")
 
         XCTAssertTrue(AppModel.registersShortcutsAgain(previous: configuration, current: configuration, failed: true, holding: false), "A shortcut that could not be registered is tried again")
     }
