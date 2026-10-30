@@ -21,12 +21,8 @@ struct WindowsView: View {
             WindowSetupCard(macOS: macOS)
             SettingsSection(title: "Sizes") {
                 CompactRow(title: "Gap between windows") {
-                    CompactMenu(value: points(settings.gap), width: 180) {
-                        ForEach(Self.gapChoices(including: settings.gap), id: \.self) { gap in
-                            Button(points(gap)) { update { $0.gap = gap } }
-                                .compactChoice(selected: gap == settings.gap)
-                        }
-                    }
+                    FrogDropdown(selected: settings.gap, options: Self.gapChoices(including: settings.gap), width: 180,
+                                 title: points) { gap in update { $0.gap = gap } }
                 }
                 CompactRow(title: "Cycle sizes when pressed again", detail: "½, ⅔ and ⅓ of the screen.") {
                     Toggle("Cycle sizes when pressed again", isOn: binding(\.cycleSizes)).labelsHidden().toggleStyle(.switch)
@@ -59,11 +55,8 @@ struct WindowsView: View {
                     Toggle("Show zones while holding Shift", isOn: binding(\.zoneOverlay)).labelsHidden().toggleStyle(.switch)
                 }
                 CompactRow(title: "Zones") {
-                    CompactMenu(value: WindowSwitches(model.configuration.preferences).zoneGrid.title, width: 180) {
-                        ForEach(ZoneGrid.allCases, id: \.self) { grid in
-                            Button(grid.title) { update { $0.zoneGrid = grid.rawValue } }
-                        }
-                    }.disabled(!settings.zoneOverlay)
+                    FrogDropdown(selected: WindowSwitches(model.configuration.preferences).zoneGrid, options: ZoneGrid.allCases,
+                                 width: 180, title: { $0.title }) { grid in update { $0.zoneGrid = grid.rawValue } }.disabled(!settings.zoneOverlay)
                 }
                 CompactRow(title: "Layout picker") {
                     HStack(alignment: .top, spacing: 10) {

@@ -6,7 +6,8 @@ import FrogCore
 
 @MainActor
 final class RuleModelPickerTests: XCTestCase {
-    func testEmptySelectionOpensDownloadedSpeechChoices() async throws {
+    /// The list opens on "No model"; one arrow down is the first downloaded model, and Return chooses it.
+    func testEmptySelectionReachesDownloadedSpeechModelsByKeyboard() async throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -21,33 +22,19 @@ final class RuleModelPickerTests: XCTestCase {
         defer { model.shutdown() }
         var rule = Rule.dictationPreset
         rule.action?.audioModelID = nil
-        let host = NSHostingView(rootView: VStack {
-            CompactRow(title: "Speech model") {
-                RuleModelPicker(rule: Binding(get: { rule }, set: { rule = $0 }), speech: true)
-            }
-        }.padding(20).frame(width: 520, height: 460).environmentObject(model))
-        let window = NSWindow(contentRect: NSRect(x: 50, y: 50, width: 520, height: 460), styleMask: [.titled], backing: .buffered, defer: false)
-        window.contentView = host; window.makeKeyAndOrderFront(nil)
+        let (host, window) = place(rule: Binding(get: { rule }, set: { rule = $0 }), model: model)
         defer { window.orderOut(nil); window.contentView = nil }
-        host.layoutSubtreeIfNeeded()
         try await click(view: host, point: NSPoint(x: host.bounds.maxX - 130, y: host.bounds.midY))
         let popup = try XCTUnwrap(NSApplication.shared.windows.first { $0 != window && $0.isVisible })
-        let view = try XCTUnwrap(popup.contentView)
-        try await click(view: view, point: NSPoint(x: view.bounds.midX, y: view.isFlipped ? 130 : view.bounds.maxY - 130))
+        try await press(popup, key: 125, characters: String(UnicodeScalar(NSDownArrowFunctionKey)!))
+        try await press(popup, key: 36, characters: "\r")
         XCTAssertEqual(rule.action?.audioModelID, "whisper-tiny")
         XCTAssertNil(rule.action?.audioProviderID)
         XCTAssertTrue(model.localModels.loaded.isEmpty)
     }
 
-    func testSwitchingSourceClearsStaleSearchAndShowsLocalModelsWithoutLoadingWeights() async throws {
-        try await switchFromExternalToLocal(offset: -55)
-    }
-
-    func testSourceSegmentRespondsOutsideItsTextLabel() async throws {
-        try await switchFromExternalToLocal(offset: -95)
-    }
-
-    private func switchFromExternalToLocal(offset: CGFloat) async throws {
+    /// Search runs over downloaded and external models at once; Return chooses the first match without loading it.
+    func testSearchFindsADownloadedModelWhileAnExternalOneIsChosen() async throws {
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -63,29 +50,42 @@ final class RuleModelPickerTests: XCTestCase {
         defer { model.shutdown() }
         var rule = Rule.dictationPreset
         rule.action?.audioModelID = "remote-speech"; rule.action?.audioProviderID = provider.id
-        let host = NSHostingView(rootView: VStack {
-            CompactRow(title: "Speech model") {
-                RuleModelPicker(rule: Binding(get: { rule }, set: { rule = $0 }), speech: true)
-            }
-        }.padding(20).frame(width: 520, height: 460).environmentObject(model))
-        let window = NSWindow(contentRect: NSRect(x: 50, y: 50, width: 520, height: 460), styleMask: [.titled], backing: .buffered, defer: false)
-        window.contentView = host; window.makeKeyAndOrderFront(nil)
+        let (host, window) = place(rule: Binding(get: { rule }, set: { rule = $0 }), model: model)
         defer { window.orderOut(nil); window.contentView = nil }
-        host.layoutSubtreeIfNeeded()
         try await click(view: host, point: NSPoint(x: host.bounds.maxX - 130, y: host.bounds.midY))
         let popup = try XCTUnwrap(NSApplication.shared.windows.first { $0 != window && $0.isVisible })
         let view = try XCTUnwrap(popup.contentView)
         let field = try XCTUnwrap(descendants(view).compactMap { $0 as? NSTextField }.first)
         popup.makeFirstResponder(field)
         let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
-        editor.insertText("remote-speech", replacementRange: NSRange(location: NSNotFound, length: 0))
+        editor.insertText(speech.name, replacementRange: NSRange(location: NSNotFound, length: 0))
         try await Task.sleep(for: .milliseconds(100))
-        try await click(view: view, point: NSPoint(x: view.bounds.midX + offset, y: view.isFlipped ? 79 : view.bounds.maxY - 79))
-        try await click(view: view, point: NSPoint(x: view.bounds.midX, y: view.isFlipped ? 130 : view.bounds.maxY - 130))
+        editor.insertNewline(nil)
+        try await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(rule.action?.audioModelID, speech.id)
         XCTAssertNil(rule.action?.audioProviderID)
         XCTAssertTrue(model.localModels.loaded.isEmpty)
         XCTAssertFalse(model.localModels.busy)
+    }
+
+    private func place(rule: Binding<Rule>, model: AppModel) -> (NSHostingView<some View>, NSWindow) {
+        let host = NSHostingView(rootView: VStack {
+            CompactRow(title: "Speech model") { RuleModelPicker(rule: rule, speech: true) }
+        }.padding(20).frame(width: 520, height: 460).environmentObject(model))
+        let window = NSWindow(contentRect: NSRect(x: 50, y: 50, width: 520, height: 460), styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = host; window.makeKeyAndOrderFront(nil)
+        host.layoutSubtreeIfNeeded()
+        return (host, window)
+    }
+
+    private func press(_ window: NSWindow, key: UInt16, characters: String) async throws {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            let event = try XCTUnwrap(NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                       windowNumber: window.windowNumber, context: nil, characters: characters,
+                                                       charactersIgnoringModifiers: characters, isARepeat: false, keyCode: key))
+            window.sendEvent(event)
+        }
+        try await Task.sleep(for: .milliseconds(100))
     }
 
     private func click(view: NSView, point: NSPoint) async throws {

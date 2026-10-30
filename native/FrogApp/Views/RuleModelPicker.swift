@@ -1,14 +1,11 @@
 import SwiftUI
 import FrogCore
 
-/// Search and source filtering share a compact, single-line closed control.
+/// A rule's model: the searchable dropdown, with downloaded models and those of external providers in sections.
 struct RuleModelPicker: View {
     @EnvironmentObject private var model: AppModel
     @Binding var rule: Rule
     var speech = false
-    @State private var showing = false
-    @State private var local = false
-    @State private var search = ""
 
     private var selected: RuleModelSelection? {
         if speech, let id = rule.action?.audioModelID { return .init(providerID: rule.action?.audioProviderID, modelID: id, category: .audio) }
@@ -16,7 +13,7 @@ struct RuleModelPicker: View {
         if !speech, let id = rule.providerID, !rule.model.isEmpty { return .init(providerID: id, modelID: rule.model, category: .text) }
         return nil
     }
-    private func choices(local: Bool) -> [RuleModelSelection] {
+    private func choices(local: Bool) -> [RuleModelSelection?] {
         let kind: ProviderModel.Category = speech ? .audio : .text
         if local {
             return model.configuration.modelCatalog.filter { $0.kind == (speech ? .audio : .text) && model.localModels.installed.contains($0.id) }
@@ -33,68 +30,30 @@ struct RuleModelPicker: View {
     private func source(_ item: RuleModelSelection) -> String {
         if let id = item.providerID { return model.configuration.providers.first { $0.id == id }?.name ?? "External provider" }
         guard let descriptor = model.configuration.localModel(item.modelID) else { return "Downloaded in Frog" }
-        return descriptor.downloadSize + " · " + descriptor.runtimeName
+        let summary = speech ? descriptor.recommendationSummary ?? descriptor.languages : nil
+        return [descriptor.downloadSize, descriptor.runtimeName, summary].compactMap { $0 }.joined(separator: " · ")
     }
-    var body: some View {
-        Button {
-            local = selected.map { $0.providerID == nil } ?? !choices(local: true).isEmpty
-            search = ""; showing.toggle()
-        } label: {
-            CompactDropdownLabel(value: selected.map(name) ?? "Choose a model", symbol: selected?.providerID == nil ? "cpu" : "cloud")
-        }.buttonStyle(.plain).accessibilityLabel(speech ? "Speech model" : "Text model")
-            .popover(isPresented: $showing, arrowEdge: .bottom) {
-                VStack(spacing: 9) {
-                    let choices = choices(local: local)
-                    let matches = choices.filter { search.isEmpty || (name($0) + " " + source($0)).localizedStandardContains(search) }
-                    SearchBox(placeholder: "Find a model", text: $search)
-                    CompactSegments(values: [true, false], selected: local, title: { $0 ? "Local" : "External" }) { local = $0; search = "" }
-                    ScrollView {
-                        VStack(spacing: 2) {
-                            ForEach(matches, id: \.self) { item in
-                                RuleModelOption(selected: selected == item, action: { item.apply(to: &rule); showing = false }) {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        HStack(spacing: 6) {
-                                            Text(name(item)).font(FrogType.bodyMedium).fixedSize(horizontal: false, vertical: true)
-                                            if item.providerID == nil, model.configuration.localModel(item.modelID)?.isRecommended == true { RecommendedModelBadge() }
-                                        }
-                                        Text(source(item)).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                                        if item.providerID == nil, let descriptor = model.configuration.localModel(item.modelID), speech {
-                                            Text(descriptor.recommendationSummary ?? descriptor.languages).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                                        }
-                                    }
-                                }
-                            }
-                            if matches.isEmpty {
-                                Text(choices.isEmpty ? (local ? "No downloaded models. Download one in Models to use it here." : "No external models. Add a compatible model to a provider in Models.") : "No models match this search.")
-                                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true).padding(12)
-                            }
-                        }
-                    }.id(local).frame(height: 280)
-                    Button("No model selected") {
-                        if speech { rule.action?.audioModelID = nil; rule.action?.audioProviderID = nil }
-                        else { rule.providerID = nil; rule.model = ""; rule.action?.localTextModelID = nil }
-                        showing = false
-                    }.buttonStyle(.frog(.ghost, compact: true)).frame(maxWidth: .infinity, alignment: .leading)
-                }.padding(12).frame(width: 420).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
-            }
+    private func item(_ choice: RuleModelSelection?) -> FrogDropdownItem {
+        guard let choice else { return FrogDropdownItem("No model", symbol: "circle.slash") }
+        let local = choice.providerID == nil
+        let recommended = local && model.configuration.localModel(choice.modelID)?.isRecommended == true
+        return FrogDropdownItem(name(choice), detail: source(choice), symbol: local ? "cpu" : "cloud",
+                                badge: recommended ? "Recommended" : nil)
     }
-}
-
-/// A model in the picker's list: highlighted on hover, and when it is the rule's model.
-private struct RuleModelOption<Label: View>: View {
-    let selected: Bool
-    let action: () -> Void
-    @ViewBuilder var label: Label
-    @State private var hovering = false
 
     var body: some View {
-        Button(action: action) {
-            HStack {
-                label
-                Spacer()
-                if selected { Image(systemName: "checkmark").foregroundStyle(FrogStyle.accent) }
-            }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                .frogRowHighlight(hovering: hovering, selected: selected)
-        }.buttonStyle(.plain).onHover { hovering = $0 }
+        let local = choices(local: true), external = choices(local: false)
+        FrogDropdown(selected: selected, sections: [
+            .init(values: [nil]),
+            .init("Downloaded", values: local),
+            .init("External", values: external)
+        ], searchPrompt: "Find a model", listWidth: 380,
+           footnote: local.isEmpty && external.isEmpty ? "Download a model or add a provider in Models to use it here." : nil,
+           item: item) { choice in
+            if let choice { choice.apply(to: &rule) }
+            else if speech { rule.action?.audioModelID = nil; rule.action?.audioProviderID = nil }
+            else { rule.providerID = nil; rule.model = ""; rule.action?.localTextModelID = nil }
+        }
+        .accessibilityLabel(speech ? "Speech model" : "Text model")
     }
 }

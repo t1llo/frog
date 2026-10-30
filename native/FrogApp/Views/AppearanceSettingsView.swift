@@ -5,6 +5,8 @@ import FrogCore
 struct FrogWindowMaterial: NSViewRepresentable {
     var popup = false
     var cornerRadius: CGFloat? = nil
+    /// Overrides the material `popup` picks; `frogSurface` passes its kind's.
+    var material: NSVisualEffectView.Material? = nil
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
     func makeNSView(context: Context) -> NSVisualEffectView {
@@ -13,7 +15,7 @@ struct FrogWindowMaterial: NSViewRepresentable {
         return view
     }
     func updateNSView(_ view: NSVisualEffectView, context: Context) {
-        view.material = popup ? .popover : .sidebar
+        view.material = material ?? (popup ? .popover : .sidebar)
         view.blendingMode = .behindWindow
         // Active even for nonactivating/click-through panels: blur must not depend on focus.
         view.state = .active
@@ -143,14 +145,10 @@ struct AppearanceSettingsView: View {
             CompactSegments(values: AppearancePreferences.Mode.allCases, selected: appearance.mode ?? .system, title: { $0.rawValue.capitalized }) { mode in var value = appearance; value.mode = mode; draft.set(value) }
         }.onDisappear { draft.commit() }
         CompactRow(title: "Theme") {
-            CompactMenu(value: appearance.effectiveTheme.title) {
-                ForEach(AppearancePreferences.Theme.allCases, id: \.self) { theme in
-                    Button(theme.title) {
-                        var value = appearance; value.theme = theme; value.useThemeAccent = true
-                        value.lightPalette = nil; value.darkPalette = nil
-                        draft.set(value)
-                    }.compactChoice(selected: theme == appearance.effectiveTheme)
-                }
+            FrogDropdown(selected: appearance.effectiveTheme, options: AppearancePreferences.Theme.allCases, title: { $0.title }) { theme in
+                var value = appearance; value.theme = theme; value.useThemeAccent = true
+                value.lightPalette = nil; value.darkPalette = nil
+                draft.set(value)
             }
         }
         CompactRow(title: "Accent color") {

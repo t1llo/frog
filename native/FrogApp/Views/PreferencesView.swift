@@ -251,20 +251,12 @@ struct HistoryLimitsView: View {
     }
     var body: some View {
         CompactRow(title: "Maximum entries") {
-            CompactMenu(value: "\(limits.entries)") {
-                ForEach(Self.choices(Self.entryChoices, current: limits.entries), id: \.self) { entries in
-                    Button("\(entries)") { var next = limits; next.entries = entries; choose(next) }
-                        .compactChoice(selected: entries == limits.entries)
-                }
-            }
+            FrogDropdown(selected: limits.entries, options: Self.choices(Self.entryChoices, current: limits.entries),
+                         title: { "\($0)" }) { entries in var next = limits; next.entries = entries; choose(next) }
         }
         CompactRow(title: "Retention") {
-            CompactMenu(value: Self.days(limits.days)) {
-                ForEach(Self.choices(Self.dayChoices, current: limits.days), id: \.self) { days in
-                    Button(Self.days(days)) { var next = limits; next.days = days; choose(next) }
-                        .compactChoice(selected: days == limits.days)
-                }
-            }
+            FrogDropdown(selected: limits.days, options: Self.choices(Self.dayChoices, current: limits.days),
+                         title: Self.days) { days in var next = limits; next.days = days; choose(next) }
         }.onDisappear { draft.cancel() }
             // The window keeps this page when it closes. A step that was not asked about yet is dropped with it.
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { _ in if draft.question == nil { draft.cancel() } }
