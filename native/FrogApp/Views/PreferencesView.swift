@@ -56,7 +56,7 @@ struct PreferencesView: View {
                     HStack {
                         Button("Open config") { model.openConfiguration() }
                         Button("Reload") { do { try model.reloadConfiguration() } catch { model.report(error) } }
-                            .disabled(model.isProcessing || model.isTestingProvider || model.dictation.active)
+                            .disabled(model.isProcessing || model.isTestingProvider || model.dictating)
                     }
                 }
                 HStack(spacing: 8) {
@@ -67,7 +67,7 @@ struct PreferencesView: View {
                 }
                 CompactRow(title: "Import / export", detail: "API keys stay in Keychain.") {
                     HStack {
-                        Button("Import…") { chooseConfiguration() }.disabled(model.isProcessing || model.isTestingProvider || model.dictation.active)
+                        Button("Import…") { chooseConfiguration() }.disabled(model.isProcessing || model.isTestingProvider || model.dictating)
                         Button("Export…") { exportConfiguration() }
                     }
                 }

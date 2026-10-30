@@ -232,7 +232,11 @@ final class InterruptedDictationTests: XCTestCase {
             let recorder = InterruptedRecorder(); recorders.append(recorder); return recorder
         }, authorize: { true }, copy: { [unowned self] in copied.append($0); afterCopy?() }, monitorKeys: monitorKeys,
            cancelKey: UnregisteredCancelKey())
-        lazy var model = AppModel(dataDirectory: directory, registerShortcuts: false, dictationController: controller)
+        lazy var model: AppModel = {
+            let model = AppModel(dataDirectory: directory, registerShortcuts: false, dictationController: controller)
+            model.attachDictation()
+            return model
+        }()
         init(historyEnabled: Bool = true, monitorKeys: Bool = false) throws {
             self.monitorKeys = monitorKeys
             try setHistory(historyEnabled)

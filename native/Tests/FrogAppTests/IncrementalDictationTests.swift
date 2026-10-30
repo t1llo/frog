@@ -13,6 +13,7 @@ final class IncrementalDictationTests: XCTestCase {
         var copied = ""
         let controller = DictationController(makeRecorder: { BufferedRecording(seconds: 2) }, authorize: { true }, copy: { copied = $0 }, monitorKeys: false, previewInterval: .seconds(3600))
         let model = AppModel(dataDirectory: fixture.directory, registerShortcuts: false, dictationController: controller, modelService: fixture.models)
+        model.attachDictation()
         defer { model.shutdown() }
         var preferences = model.configuration.preferences; preferences.historyEnabled = true
         try model.savePreferences(preferences)
@@ -49,6 +50,7 @@ final class IncrementalDictationTests: XCTestCase {
         var copied = ""
         let controller = DictationController(makeRecorder: { BufferedRecording(seconds: 35) }, authorize: { true }, copy: { copied = $0 }, monitorKeys: false, previewInterval: .seconds(3600))
         let model = AppModel(dataDirectory: fixture.directory, registerShortcuts: false, dictationController: controller, modelService: fixture.models)
+        model.attachDictation()
         defer { model.shutdown() }
         var preferences = model.configuration.preferences; preferences.historyEnabled = true
         try model.savePreferences(preferences)
@@ -86,6 +88,7 @@ final class IncrementalDictationTests: XCTestCase {
         var copied = ""
         let controller = DictationController(makeRecorder: { fixture.recorder }, authorize: { true }, copy: { copied = $0 }, monitorKeys: false, previewInterval: .seconds(3600))
         let model = AppModel(dataDirectory: fixture.directory, registerShortcuts: false, dictationController: controller, modelService: fixture.models)
+        model.attachDictation()
         model.startDictation(rule)
         await controller.waitForWork()
         let started = expectation(description: "First recognition started")
@@ -444,7 +447,7 @@ final class IncrementalDictationTests: XCTestCase {
         var dictation = rule
         dictation.instructions = "Clean up and translate into {{language}}."; dictation.targetLanguage = " German "
         dictation.action?.cleanup = true; dictation.action?.localTextModelID = textModel.id
-        let cleanup = try XCTUnwrap(model.dictation.cleanup)
+        let cleanup = try XCTUnwrap(model.attachDictation().controller.cleanup)
         let cleaned = try await cleanup("hallo", dictation)
         XCTAssertEqual(cleaned, "Cleaned: hallo")
         var translate = Rule(name: "Translate", instructions: "Translate into {{language}}.", targetLanguage: " German ")

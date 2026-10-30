@@ -186,10 +186,10 @@ struct RulesView: View {
                             // An answer needs a selection and a panel, so answer rules run from their shortcut or the command bar.
                             if !rule.answersInPanel {
                                 Button(rule.category == .audio ? "Record" : "Try") {
-                                    if rule.category == .audio { model.startDictation(rule) }
+                                    if rule.category == .audio { model.dictationFeature?.start(rule) }
                                     else { trying = rule }
                                 }.buttonStyle(.frog(compact: true))
-                                .disabled(!rule.enabled || model.isProcessing || model.dictation.active)
+                                .disabled(!rule.enabled || model.isProcessing || model.dictating)
                                 .accessibilityLabel(rule.category == .audio ? "Record with \(rule.name)" : "Try \(rule.name)")
                             }
                             IconAction(title: "Edit \(rule.name)", symbol: "pencil") { editing = rule }
@@ -241,7 +241,7 @@ private struct RuleTryView: View {
                     running = model.isProcessing
                     if !running { issue = model.ruleOutcome?.failure }
                 }.buttonStyle(.frog(.primary)).keyboardShortcut(.return, modifiers: .command)
-                    .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isProcessing || model.dictation.active)
+                    .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isProcessing || model.dictating)
             }
         }.padding(20).frame(width: 520, height: 460).foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).background(FrogWindowMaterial())
             .buttonStyle(FrogButtonStyle()).tint(FrogStyle.accent)

@@ -13,19 +13,26 @@ protocol DictationCancelKey: AnyObject {
 
 @MainActor
 final class EscapeHotkey: DictationCancelKey {
-    // Its own manager: registering replaces everything a manager held before.
-    private let manager = HotkeyManager()
+    /// Frog's shared shortcuts; Escape is a group of its own there, so it comes and goes without touching the others.
+    private let manager: HotkeyManager
+    static let group = "dictation.escape"
+    /// The person's own cancel shortcut, registered beside Escape while a recording runs.
+    var extraKey: () -> Hotkey? = { nil }
+
+    init(manager: HotkeyManager) { self.manager = manager }
 
     static func combinations(heldModifiers: UInt32) -> [Hotkey] {
         (heldModifiers == 0 ? [0] : [0, heldModifiers]).map { Hotkey(keyCode: 53, modifiers: $0) }
     }
 
     func register(heldModifiers: UInt32, onPress: @escaping () -> Void) {
-        let keys = Self.combinations(heldModifiers: heldModifiers).map { Rule(name: "Cancel recording", hotkey: $0) }
+        let combinations = Self.combinations(heldModifiers: heldModifiers) + [extraKey()].compactMap { $0 }
+        let keys = Set(combinations).map { Rule(name: "Cancel recording", hotkey: $0) }
         // A combination that macOS refuses stays with the controller's event monitors.
-        _ = manager.register(rules: keys, purposes: Dictionary(uniqueKeysWithValues: keys.map { ($0.id, .recordingCancel) }),
+        _ = manager.register(rules: keys, group: Self.group,
+                             purposes: Dictionary(uniqueKeysWithValues: keys.map { ($0.id, .recordingCancel) }),
                              onPress: { _ in onPress() }) { _ in }
     }
 
-    func unregister() { manager.unregister() }
+    func unregister() { manager.unregister(group: Self.group) }
 }
