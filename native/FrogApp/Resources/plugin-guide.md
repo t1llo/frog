@@ -1,8 +1,8 @@
 # Frog plugins
 
-A plugin adds a feature of your own to Frog: a page in the sidebar, commands in the command bar, or both. You can write one yourself, or ask an AI agent that has the Frog skill to build it for you. Plugins run only on your Mac; sharing one is up to you.
+A community plugin adds a feature of your own to Frog: a page in the sidebar, actions for the command bar, shortcuts and agents, or all of these. You can write one yourself, or ask an AI agent that has the Frog skill to build it for you. Plugins run only on your Mac. You can share one as a file, or list it in the signed directory that Frog installs from.
 
-This file is the contract between Frog and plugins. `frog plugins guide` prints the same reference from the running app.
+This file is the contract between Frog and plugins. `frog plugin guide` prints the same reference from the running app.
 
 ## What a plugin is
 
@@ -33,8 +33,11 @@ word-counter/
   "permissions": ["clipboard-read", "notifications"],
   "hosts": [],
   "scripts": {},
-  "commands": [
-    { "id": "count", "title": "Count words on the clipboard", "keywords": "words length" }
+  "actions": [
+    {
+      "id": "count", "title": "Count words on the clipboard", "effect": "read", "keywords": "words length",
+      "parameters": [{ "name": "unit", "type": "choice", "choices": ["words", "characters"] }]
+    }
   ]
 }
 ```
@@ -53,9 +56,43 @@ word-counter/
 | `permissions` | no | What the plugin may do; see below. |
 | `hosts` | with `network` | The hosts `frog.fetch` may reach, such as `api.github.com` or `*.example.com`. |
 | `scripts` | with `scripts` | Names mapped to shell scripts inside the folder, such as `{"stats": "scripts/stats.sh"}`. |
-| `commands` | no | Command bar rows. `id` is what the page receives; `title` is shown; `keywords` help search; `"show": false` runs the command without opening the page. |
+| `actions` | no | What the command bar, shortcuts and agents can run; see [Actions](#actions). They need a page. |
+| `commands` | no | Older command bar rows. `id` is what the page receives; `title` is shown; `keywords` help search; `"show": false` runs the command without opening the page. New plugins use actions. |
 
 Limits: at most 400 files and 20 MB in all, and no symbolic links. Hidden files and folders, such as `.git` and `.DS_Store`, are left out when a plugin is installed or packed.
+
+## Actions
+
+An action is one thing the plugin does, with typed parameters. Each one appears in the command bar, can get a keyboard shortcut in Frog → Shortcuts, and runs from agents as `frog run community.<plugin id>.<action id>`; `frog actions community` lists them with their parameters. The page answers with `frog.action`, and Frog loads the page in the background first when it is not running.
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `id` | yes | Lowercase letters, digits and hyphens, unique among the plugin's actions and commands. |
+| `title` | yes | Up to 60 characters, shown in the command bar. |
+| `effect` | yes | `read`, `write` or `network`: the most the action may do. The review shows it. |
+| `parameters` | no | Up to 8, each with a `name`, a `type` (`text`, `integer`, `boolean` or `choice`), `required`, `help` and, for a choice, its `choices`. `stdin`, `json` and `help` are reserved names. |
+| `input` | no | `true` when the action reads text given on standard input, such as `frog run … --stdin < notes.txt`. |
+| `keywords` | no | Words that help the command bar find it. |
+
+The effect is enforced while the action runs:
+
+- `read` may call `frog.storage.get`, `frog.storage.keys` and `frog.clipboard.readText`.
+- `write` may also change storage, write the clipboard, notify, open links, run scripts and show the page.
+- `network` may also use `frog.fetch` and `frog.ai`, and needs the `network` or `ai` permission.
+
+A call beyond the action's effect rejects, even when the plugin has the permission for it. Permissions still apply on top: a `write` action can write the clipboard only with `clipboard-write`.
+
+```js
+frog.action("count", async ({ unit }, input) => {
+  const text = input ?? await frog.clipboard.readText() ?? "";
+  const count = unit === "characters" ? text.length : text.split(/\s+/).filter(Boolean).length;
+  return { text: `${count} ${unit ?? "words"}`, count };   // or just a string
+});
+```
+
+The handler receives the parameters, typed, and the text from standard input or `null`. What it returns is the answer: a string, or an object whose `text` is shown and which agents receive as JSON with `--json`. A thrown error fails the action with its message. One action runs at a time per plugin, for at most 60 seconds. Register handlers at startup: an action that arrives first waits up to 5 seconds for its handler.
+
+An action without required parameters is a command bar row of its own. One with required parameters runs from shortcuts and agents, which give its values.
 
 ## Permissions
 
@@ -80,7 +117,7 @@ What the sandbox enforces:
 - Plugins cannot read Frog's settings, notes, history, keys or other plugins' storage.
 - Frog records the permissions, hosts and script contents you approved. An update that asks for more, adds a host or changes a script waits for you to review it again; any other update applies directly. A plugin with scripts also pins all its files, since a script can run any of them: any change to it waits for review.
 - A plugin from somewhere else than the installed one with the same id, such as a file or another author's link, is reviewed as a new install, and the review says that it replaces the installed plugin and gets what that one stored.
-- Only you can approve or turn on a plugin, in Frog's window. The `frog` command can install one for review, but not approve it.
+- Only you can approve or turn on a plugin, in Frog's window, apart from a directory plugin that asks for no permissions. The `frog` command can install one for review, but not approve it.
 
 ## The `frog` object
 
@@ -109,7 +146,8 @@ await frog.ai("Summarize in one sentence:", text)    // ai: the model's answer a
 const result = await frog.run("stats", { args: ["--short"], input: "text" })
                                          // scripts: { output, status, truncated }
 
-const stop = frog.on("command", (id) => { … })   // a command bar row was chosen; stop() unsubscribes
+const off = frog.action("count", async (params, input) => "answer")   // answer an action; off() unregisters
+const stop = frog.on("command", (id) => { … })   // an older command was chosen; stop() unsubscribes
 frog.on("show", () => { … })             // the page came into view, the first time included
 frog.on("hide", () => { … })             // another page took its place
 await frog.show()                        // bring the plugin's page forward, right after a command
@@ -128,7 +166,7 @@ Details:
 - **AI.** One call runs at a time per plugin, with the model your Writing rules use by default.
 - **Scripts.** Scripts run with `/bin/zsh` in the plugin's own data folder. They receive `args` as `$1`, `$2` and so on, `input` in the `FROG_INPUT` environment variable and the plugin's id in `FROG_PLUGIN_ID`. They stop after 60 seconds, and their output is cut at 1 MB. A script runs only while it and every other file of the plugin are byte for byte the ones you approved.
 
-`console.log`, errors and rejected promises go to the plugin's log, which `frog plugins logs <id>` prints.
+`console.log`, errors and rejected promises go to the plugin's log, which `frog plugin logs <id>` prints.
 
 ## Looking like Frog
 
@@ -162,42 +200,49 @@ It styles plain elements (headings, `button`, `input`, `textarea`, `select`, `ta
 With agent access on (Settings → Agents) and the Frog skill installed, ask your agent for the feature you want, such as "build me a Frog plugin that shows my open GitHub pull requests". It uses these commands:
 
 ```
-frog plugins guide                        this reference, from the running Frog
-frog plugins new <folder> [--name N] [--id ID]   start a plugin from a template
-frog plugins check <folder>               check the manifest and files
-frog plugins install <folder>             install or update it for your review
-frog plugins list                         installed plugins and their state
-frog plugins snapshot <id> [--output f.png]      a picture of the page, to check its layout
-frog plugins logs <id>                    the page's console and errors
-frog plugins run <id> <command>           run one of its commands, as the command bar does
-frog plugins open <id>                    show its page in Frog's window
-frog plugins pack <folder|id> [--output f]       a .frogplugin file to share, with its SHA-256
-frog plugins remove <id>                  remove it, to the Trash
+frog plugin guide                         this reference, from the running Frog
+frog plugin new <folder> [--name N] [--id ID]    start a plugin from a template, with one action
+frog plugin validate <folder>             check the manifest and files
+frog plugin install <folder>              install or update it for your review
+frog plugin install <file | https link | id>     open the review of a shared plugin
+frog plugin list [--directory]            installed plugins, or the signed directory's
+frog plugin snapshot <id> [--output f.png]       a picture of the page, to check its layout
+frog plugin logs <id>                     the page's console and errors
+frog plugin open <id>                     show its page in Frog's window
+frog plugin publish <folder|id> [--output f]     a .frogplugin file and its directory entry
+frog plugin remove <id>                   remove it, to the Trash
+frog run community.<id>.<action>          run one of its actions, as the command bar does
 ```
 
-Your first install of a plugin waits for you in Frog → Plugins, which shows its review. After you approve it, the agent's updates apply at once while they ask for nothing new. A plugin with scripts waits for you after every change.
+Your first install of a plugin waits for you in Frog → Community plugins, which shows its review. After you approve it, the agent's updates apply at once while they ask for nothing new. A plugin with scripts waits for you after every change.
 
 ### For agents
 
-1. Plugins must be on: `frog features list` shows it. Ask the user before `frog features enable plugins`.
-2. Start with `frog plugins new <folder>` in a folder of the user's choice, outside Frog's own folders. Give a plugin the user may share an id they own, such as `io.github.<user>.<name>`.
-3. Ask for the fewest permissions that do the job, and only the hosts the plugin needs. Keep everything in the folder: pages cannot load scripts, styles or fonts from the web.
+1. Community plugins must be on: `frog features list` shows it. Ask the user before `frog features enable plugins`.
+2. Start with `frog plugin new <folder>` in a folder of the user's choice, outside Frog's own folders. Give a plugin the user may share an id they own, such as `io.github.<user>.<name>`.
+3. Ask for the fewest permissions that do the job, and only the hosts the plugin needs. Give each action the smallest effect that does its job. Keep everything in the folder: pages cannot load scripts, styles or fonts from the web.
 4. Use Frog's stylesheet and its `frog-*` classes, and keep the page simple and calm like Frog's own pages: a header, then cards.
-5. Run `frog plugins check <folder>`, then `frog plugins install <folder>`. The first install waits for the user: tell them to approve it in Frog's window, and wait until `frog plugins list` shows it `on`. A plugin with scripts waits for the user after every change, so prefer a page without scripts when one can do the job.
-6. Check your work: `frog plugins snapshot <id>` and look at the picture, `frog plugins logs <id>` for errors, and `frog plugins run <id> <command>` for commands. After each change, install again; the page reloads.
+5. Run `frog plugin validate <folder>`, then `frog plugin install <folder>`. The first install waits for the user: tell them to approve it in Frog's window, and wait until `frog plugin list` shows it `on`. A plugin with scripts waits for the user after every change, so prefer a page without scripts when one can do the job.
+6. Check your work: `frog plugin snapshot <id>` and look at the picture, `frog plugin logs <id>` for errors, and `frog run community.<id>.<action>` for actions. After each change, install again; the page reloads.
 7. Never put API keys or tokens in the plugin's files. Let the user paste one into the page, and keep it with `frog.storage`, which only this plugin reads.
-8. To share it, `frog plugins pack <folder>` and give the user the file and its SHA-256.
+8. To share it, run `frog plugin publish <folder>` and give the user the file, its SHA-256 and the directory entry it prints.
 
 ## Sharing
 
-`frog plugins pack` makes a `.frogplugin` file, a zip of the folder, and prints its SHA-256. Publish it where people can download it over `https`, such as a GitHub release.
+`frog plugin publish` makes a `.frogplugin` file, a zip of the folder, and prints its SHA-256 and the entry for the plugin directory.
 
-Anyone can install it from Frog → Plugins → Install from link, or with a link of this form, which opens Frog's review:
+### The directory
+
+Frog → Community plugins → Directory lists the plugins in the directory at <https://frog.beffa.xyz/plugins/>, with search and one-click install. Frog reads `https://frog.beffa.xyz/plugins/registry.json`, which lists for each plugin its id, name, summary, version, author, permissions, the links to its manifest and file, the file's SHA-256 and an Ed25519 signature over all of these. Frog has the directory's public key built in, leaves out every entry whose signature does not check, and installs a file only when its SHA-256 is the signed one and its manifest has the listed id and version. A plugin that asks for no permissions installs at once; one that asks for any opens its review first, like every other install.
+
+To have yours listed, open an issue at <https://github.com/t1llo/frog/issues/new> with the entry `frog plugin publish` printed and the `.frogplugin` file attached. Listed plugins are read before they are signed, but they remain their authors' work: review the permissions before you install one.
+
+### On your own
+
+Publish the file where people can download it over `https`, such as a GitHub release. Anyone can install it from Frog → Community plugins → Build your own → Install from a link, or with a link of this form, which opens Frog's review:
 
 ```
 frog://plugins/install?url=<https URL of the .frogplugin>&sha256=<hex>
 ```
 
-Frog downloads the file over https only, and refuses it when its SHA-256 does not match the link.
-
-The plugin directory at <https://frog.beffa.xyz/plugins/> lists plugins people shared. To have yours listed, open an issue at <https://github.com/t1llo/frog/issues> with the link to its source and its `.frogplugin` file. Listed plugins are read before they are added, and their files are pinned by SHA-256, but they remain their authors' work: review the permissions before you install one.
+Frog downloads the file over https only, and refuses it when its SHA-256 does not match the link. The review says when a file is not in the signed directory.

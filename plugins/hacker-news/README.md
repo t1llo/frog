@@ -15,4 +15,4 @@ The last list is saved and shown at once when the page opens; a new one is fetch
 - `index.html`: the page, styled with Frog's `/_frog/frog.css`.
 - `app.js`: `frog.fetch` with at most six requests at a time, `frog.openURL`, and `frog.storage` for the last list. Text from the network is set with `textContent` only, and only `http` and `https` links are opened.
 
-Install it from this folder with `frog plugins install plugins/hacker-news`, then approve it in Frog → Plugins. See [docs/plugins.md](../../docs/plugins.md) for the plugin contract.
+Install it from this folder with `frog plugin install plugins/hacker-news`, then approve it in Frog → Community plugins. See [docs/plugins.md](../../docs/plugins.md) for the plugin contract.

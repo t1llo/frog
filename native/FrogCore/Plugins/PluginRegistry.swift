@@ -117,8 +117,8 @@ public struct PluginRegistryEntry: Codable, Equatable, Identifiable, Sendable {
 public struct PluginRegistry: Codable, Equatable, Sendable {
     public static let messageHeader = "frog-plugin-registry-entry-v1"
     /// The public halves of the keys that sign the directory at frog.beffa.xyz, as base64 raw Ed25519 keys. The
-    /// private key never leaves its owner's Keychain; see docs/plugins.md. Empty until the first key is made, and
-    /// then nothing in the directory installs.
+    /// private key never leaves its owner's Keychain, and signs entries when the website is built. Empty until the
+    /// first key is made, and until then nothing in the directory installs.
     public static let trustedKeys: [String] = []
 
     public var format: Int

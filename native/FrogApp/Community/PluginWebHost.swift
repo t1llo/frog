@@ -23,6 +23,8 @@ import WebKit
     /// The user asked for no more dialogs from this page.
     private var dialogsStopped = false
     var commandedRecently: Bool { lastCommand.map { Date().timeIntervalSince($0) < 10 } ?? false }
+    /// What the action that is running may do; nil while none runs. The runtime refuses calls beyond it.
+    private(set) var activeEffect: PluginManifestAction.Effect?
 
     /// Whether the page is on screen; the page hears `show` and `hide`.
     var isShowing = false {
@@ -81,6 +83,35 @@ import WebKit
         guard loaded else { pending.append((event, value)); return }
         webView.callAsyncJavaScript("if (window.__frogEmit) window.__frogEmit(event, value);", arguments: ["event": event, "value": value ?? NSNull()],
                                     in: nil, in: .page) { _ in }
+    }
+
+    /// Runs one of the manifest's actions in the page and returns what its handler returned, as JSON, or nil.
+    /// One action runs at a time; it gets `seconds` to answer.
+    func perform(_ action: PluginManifestAction, values: [String: Any], text: String?, seconds: Double = 60) async throws -> String? {
+        guard activeEffect == nil else { throw FrogError.message("\(manifest.name) is still running another action.") }
+        activeEffect = action.effect
+        lastCommand = Date()
+        defer { activeEffect = nil }
+        await waitUntilLoaded()
+        guard loaded else { throw FrogError.message("\(manifest.name)'s page did not load.") }
+        let answer = PerformAnswer()
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String?, Error>) in
+            answer.continuation = continuation
+            webView.callAsyncJavaScript("return await window.__frogPerform(name, params, text);",
+                                        arguments: ["name": action.id, "params": values, "text": text ?? NSNull()],
+                                        in: nil, in: .page) { result in
+                switch result {
+                case .success(let value): answer.finish(.success(value as? String))
+                case .failure(let error):
+                    let message = (error as NSError).userInfo["WKJavaScriptExceptionMessage"] as? String ?? error.localizedDescription
+                    answer.finish(.failure(FrogError.message(message)))
+                }
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(seconds))
+                answer.finish(.failure(FrogError.message("\(manifest.name) did not answer “\(action.title)” within \(Int(seconds)) seconds.")))
+            }
+        }
     }
 
     func refreshTheme() {
@@ -324,5 +355,14 @@ final class PluginSchemeHandler: NSObject, WKURLSchemeHandler {
         task.didReceive(response)
         task.didReceive(data)
         task.didFinish()
+    }
+}
+
+/// The answer to one `perform`: the page's or the timeout's, whichever comes first.
+@MainActor private final class PerformAnswer {
+    var continuation: CheckedContinuation<String?, Error>?
+    func finish(_ result: Result<String?, Error>) {
+        continuation?.resume(with: result)
+        continuation = nil
     }
 }

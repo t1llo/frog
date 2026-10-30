@@ -50,43 +50,31 @@ struct PluginReview: Identifiable {
     }
 }
 
-/// A plugin in the directory at frog.beffa.xyz/plugins.
-struct PluginListing: Decodable, Identifiable, Equatable {
-    let id: String
-    let name: String
-    let version: String
-    let description: String
-    let author: String
-    let homepage: String
-    let symbol: String?
-    let permissions: [String]
-    let hosts: [String]
-    let frog: String?
-    let download: String
-    let sha256: String
-
-    var downloadURL: URL? { URL(string: download).flatMap { $0.scheme == "https" ? $0 : nil } }
-    var isUsable: Bool {
-        PluginManifest.isValidID(id) && downloadURL != nil && sha256.count == 64 && sha256.allSatisfy(\.isHexDigit)
-    }
-}
-
 /// Runs the installed plugins: one sandboxed page each, created when first needed, and the `frog` bridge, which
 /// checks every call against what the user approved.
 @MainActor final class PluginRuntime: NSObject, ObservableObject {
-    /// The plugin directory's index; nil reads none, as in tests.
-    var directoryURL: URL? = URL(string: "https://frog.beffa.xyz/plugins/index.json")
+    /// The signed plugin directory; nil reads none, as in tests.
+    var registryURL: URL? = URL(string: "https://frog.beffa.xyz/plugins/registry.json")
+    /// The keys whose signatures the directory's entries must carry; tests use their own.
+    var registryKeys = PluginRegistry.trustedKeys
+    /// Downloads at most the given number of bytes over https; tests answer from fixtures.
+    lazy var download: @MainActor (URL, Int) async throws -> Data = { [unowned self] url, maximum in try await self.fetch(url, maximum: maximum) }
     /// Where removed plugins go; tests delete them instead of filling the user's Trash.
     var trash: (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
     static let maximumLogLines = 500
 
     @Published private(set) var items: [PluginItem] = []
     @Published var review: PluginReview?
-    @Published private(set) var listings: [PluginListing] = []
-    @Published private(set) var listingsError: String?
-    @Published private(set) var loadingListings = false
+    /// The directory's entries whose signature checked, newest version of each plugin.
+    @Published private(set) var registry: [PluginRegistryEntry] = []
+    /// Entries left out because they were unsigned, signed by another key or malformed.
+    @Published private(set) var registryRejected = 0
+    @Published private(set) var registryError: String?
+    @Published private(set) var loadingRegistry = false
     /// The host a link is being downloaded from.
     @Published private(set) var downloading: String?
+    /// The directory entry being installed.
+    @Published private(set) var installing: String?
     /// Plugins whose page is loaded, shown or not.
     @Published private(set) var running: Set<String> = []
 
@@ -270,7 +258,7 @@ struct PluginListing: Decodable, Identifiable, Equatable {
         review = PluginReview(package: package, source: source, sha256: sha256, approved: sameOrigin ? record?.approved : nil,
                               installed: false, replacing: sameOrigin ? nil : record?.source)
         // The review opens at once; whether the directory lists the file shows once the directory answers.
-        if listings.isEmpty { Task { await loadListings() } }
+        if registry.isEmpty { Task { await loadRegistry() } }
     }
 
     /// Downloads a `.frogplugin` over https, checks it against `sha256` when given, and opens its review.
@@ -279,18 +267,7 @@ struct PluginListing: Decodable, Identifiable, Equatable {
         if let sha256, !(sha256.count == 64 && sha256.allSatisfy(\.isHexDigit)) { throw FrogError.message("The link's SHA-256 is not valid.") }
         downloading = url.host
         defer { downloading = nil }
-        var request = URLRequest(url: url)
-        request.setValue("Frog/\(AppVersion.current)", forHTTPHeaderField: "User-Agent")
-        let (bytes, response) = try await downloads.bytes(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw FrogError.message("The plugin could not be downloaded from \(url.host ?? "the link").")
-        }
-        guard http.url?.scheme?.lowercased() == "https" else { throw FrogError.message("The download left https.") }
-        var data = Data()
-        for try await byte in bytes {
-            data.append(byte)
-            if data.count > PluginArchive.maximumArchiveBytes { throw FrogError.message("A plugin file can be at most 25 MB.") }
-        }
+        let data = try await download(url, PluginArchive.maximumArchiveBytes)
         if let sha256, PluginPackage.sha256(data) != sha256.lowercased() {
             throw FrogError.message("The downloaded file is not the one the link names: its SHA-256 differs. Nothing was installed.")
         }
@@ -303,7 +280,7 @@ struct PluginListing: Decodable, Identifiable, Equatable {
         let record = try store.record(id)
         review = PluginReview(package: package, source: record?.source ?? .folder(package.root.path), sha256: record?.sha256,
                               approved: record?.approved, installed: true)
-        if record?.sha256 != nil, listings.isEmpty { Task { await loadListings() } }
+        if record?.sha256 != nil, registry.isEmpty { Task { await loadRegistry() } }
     }
 
     /// Installs or approves what the review showed, exactly: a plugin that changed since is refused.
@@ -353,28 +330,142 @@ struct PluginListing: Decodable, Identifiable, Equatable {
 
     // MARK: Directory
 
-    /// Whether the directory lists this exact file.
+    /// Whether the signed directory lists this exact file.
     func isListed(_ sha256: String?) -> Bool {
         guard let sha256 = sha256?.lowercased() else { return false }
-        return listings.contains { $0.sha256.lowercased() == sha256 }
+        return registry.contains { $0.sha256.lowercased() == sha256 }
     }
 
-    func loadListings() async {
-        guard !loadingListings, let directoryURL else { return }
-        loadingListings = true
-        defer { loadingListings = false }
-        struct Directory: Decodable { let plugins: [PluginListing] }
+    /// Reads the directory and keeps the entries signed by a trusted key.
+    func loadRegistry() async {
+        guard !loadingRegistry, let registryURL else { return }
+        loadingRegistry = true
+        defer { loadingRegistry = false }
         do {
-            var request = URLRequest(url: directoryURL, timeoutInterval: 15)
-            request.setValue("Frog/\(AppVersion.current)", forHTTPHeaderField: "User-Agent")
-            let (data, response) = try await downloads.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200, data.count <= 2 * 1024 * 1024 else {
-                throw FrogError.message("The plugin directory did not answer.")
-            }
-            listings = try JSONDecoder().decode(Directory.self, from: data).plugins.filter(\.isUsable)
-            listingsError = nil
+            let data = try await download(registryURL, 2 * 1024 * 1024)
+            let verified = try PluginRegistry.verified(data, keys: registryKeys)
+            registry = verified.entries
+            registryRejected = verified.rejected
+            registryError = nil
         } catch {
-            listingsError = "The plugin directory could not be loaded: \(error.localizedDescription)"
+            registryError = "The plugin directory could not be loaded: \(error.localizedDescription)"
+        }
+    }
+
+    /// Downloads a directory entry's file, checks it is the signed one, and installs it at once when it asks for
+    /// nothing: no permission, or nothing beyond what the user approved for it before. Anything else opens its review.
+    /// `oneClick` false always opens the review, as for an agent. Returns whether it was installed.
+    @discardableResult
+    func install(_ entry: PluginRegistryEntry, oneClick: Bool = true) async throws -> Bool {
+        guard registry.contains(entry) else { throw FrogError.message("\(entry.name) is not in the signed plugin directory.") }
+        guard entry.runs(on: AppVersion.current) else { throw FrogError.message("\(entry.name) needs Frog \(entry.frog ?? "") or later. Update Frog first.") }
+        guard let url = entry.downloadURL else { throw FrogError.message("\(entry.name) has no https download.") }
+        installing = entry.id
+        defer { installing = nil }
+        let data = try await download(url, PluginArchive.maximumArchiveBytes)
+        let sha256 = PluginPackage.sha256(data)
+        guard sha256 == entry.sha256.lowercased() else {
+            throw FrogError.message("The downloaded file is not the one the directory signed: its SHA-256 differs. Nothing was installed.")
+        }
+        clearStaging()
+        let package = try store.unpack(data, in: stagingDirectory)
+        guard package.manifest.id == entry.id, package.manifest.version == entry.version else {
+            clearStaging()
+            throw FrogError.message("The file holds \(package.manifest.id) \(package.manifest.version), not the \(entry.id) \(entry.version) the directory lists. Nothing was installed.")
+        }
+        let source = PluginSource.link(url.absoluteString)
+        let record = try store.record(entry.id)
+        let sameOrigin = record?.source.sharesOrigin(with: source) ?? false
+        let review = PluginReview(package: package, source: source, sha256: sha256, approved: sameOrigin ? record?.approved : nil,
+                                  installed: false, replacing: record == nil || sameOrigin ? nil : record?.source)
+        let additions = review.additions
+        if oneClick, review.compatible, review.replacing == nil, additions.permissions.isEmpty, additions.hosts.isEmpty, additions.scripts.isEmpty {
+            try approve(review)
+            return true
+        }
+        self.review = review
+        return false
+    }
+
+    /// Streams a download over https, stopping at `maximum` bytes.
+    private func fetch(_ url: URL, maximum: Int) async throws -> Data {
+        guard url.scheme?.lowercased() == "https" else { throw FrogError.message("Frog downloads plugins over https only.") }
+        var request = URLRequest(url: url, timeoutInterval: 30)
+        request.setValue("Frog/\(AppVersion.current)", forHTTPHeaderField: "User-Agent")
+        let (bytes, response) = try await downloads.bytes(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw FrogError.message("\(url.host ?? "The server") did not answer.")
+        }
+        guard http.url?.scheme?.lowercased() == "https" else { throw FrogError.message("The download left https.") }
+        if http.expectedContentLength > Int64(maximum) { throw FrogError.message("The download is larger than \(maximum / 1024 / 1024) MB.") }
+        var data = Data(), chunk = [UInt8]()
+        chunk.reserveCapacity(64 * 1024)
+        for try await byte in bytes {
+            chunk.append(byte)
+            guard chunk.count == 64 * 1024 else { continue }
+            data.append(contentsOf: chunk)
+            chunk.removeAll(keepingCapacity: true)
+            if data.count > maximum { throw FrogError.message("The download is larger than \(maximum / 1024 / 1024) MB.") }
+        }
+        data.append(contentsOf: chunk)
+        guard data.count <= maximum else { throw FrogError.message("The download is larger than \(maximum / 1024 / 1024) MB.") }
+        return data
+    }
+
+    // MARK: Actions
+
+    /// Runs one of a plugin's actions in its page, loading the page first, and answers with what the handler
+    /// returned: its text, and JSON for agents.
+    func perform(_ actionID: String, of id: String, values: [String: String], text: String?) async throws -> (text: String, json: String) {
+        guard enabled, let item = item(id), item.runs, let manifest = item.manifest,
+              let action = manifest.actions.first(where: { $0.id == actionID }) else {
+            throw FrogError.message("The plugin has no action “\(actionID)” that can run now.")
+        }
+        var typed: [String: Any] = [:]
+        for parameter in action.parameters {
+            guard let raw = values[parameter.name] else { continue }
+            switch parameter.type {
+            case .integer:
+                guard let number = Int(raw) else { throw ActionError.invalid(parameter.name, "a whole number") }
+                typed[parameter.name] = number
+            case .boolean:
+                switch raw.lowercased() {
+                case "true", "yes", "on", "1": typed[parameter.name] = true
+                case "false", "no", "off", "0": typed[parameter.name] = false
+                default: throw ActionError.invalid(parameter.name, "true or false")
+                }
+            case .text, .choice:
+                guard raw.utf8.count <= 100_000 else { throw ActionError.invalid(parameter.name, "at most 100 KB") }
+                typed[parameter.name] = raw
+            }
+        }
+        if let text, text.utf8.count > 1024 * 1024 { throw FrogError.message("An action takes at most 1 MB of text.") }
+        let host = try await host(for: id)
+        let answer = try await host.perform(action, values: typed, text: action.input == true ? text : nil)
+        return Self.result(answer)
+    }
+
+    /// A handler's answer for people and for agents: a string is the text; an object's `text` is the text; anything
+    /// else is shown as JSON.
+    static func result(_ json: String?) -> (text: String, json: String) {
+        guard let json, json.utf8.count <= 1024 * 1024,
+              let value = try? JSONSerialization.jsonObject(with: Data(json.utf8), options: .fragmentsAllowed) else {
+            return ("Done.", #"{"ok":true}"#)
+        }
+        if let text = value as? String { return (text, json) }
+        if let object = value as? [String: Any], let text = object["text"] as? String { return (text, json) }
+        let pretty = (try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys, .fragmentsAllowed]))
+            .map { String(decoding: $0, as: UTF8.self) } ?? json
+        return (pretty, json)
+    }
+
+    /// What a bridge call may change, for the effect an action declares.
+    static func effect(of call: String) -> PluginManifestAction.Effect? {
+        switch call {
+        case "log", "storage.get", "storage.keys", "clipboard.read", "close": .read
+        case "storage.set", "storage.remove", "clipboard.write", "notify", "notify.cancel", "openURL", "run", "show": .write
+        case "fetch", "ai": .network
+        default: nil
         }
     }
 
@@ -385,6 +476,10 @@ struct PluginListing: Decodable, Identifiable, Equatable {
         let id = host.id
         guard enabled, hosts[id] === host, let item = item(id), item.runs, let approved = item.record.approved else {
             throw FrogError.message("The plugin is not running.")
+        }
+        // While an action runs, the page does no more than its declared effect.
+        if let effect = host.activeEffect, let needed = Self.effect(of: name), needed > effect {
+            throw FrogError.message("\(name) goes beyond the “\(effect.rawValue)” effect of the running action in plugin.json.")
         }
         func require(_ permission: PluginPermission) throws {
             guard host.manifest.permissions.contains(permission), approved.permissions.contains(permission) else {

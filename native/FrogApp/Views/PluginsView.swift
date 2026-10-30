@@ -15,25 +15,28 @@ enum PluginsTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// The Plugins feature's page: what is installed, the directory at frog.beffa.xyz, and how to build one.
+/// The Community plugins page: what is installed, the signed directory at frog.beffa.xyz, and how to build one.
 struct PluginsView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var plugins: PluginRuntime
     @State private var tab = PluginsTab.installed
+    @State private var search = ""
     @State private var link = ""
     @State private var removing: PluginItem?
 
     var body: some View {
-        PageScroll {
-            PageHeader(title: "Plugins", subtitle: "Features you build with your AI agent or install from others. Each runs in its own sandbox and can do only what you approve.") {
-                IconAction(title: "Install a plugin file", symbol: "square.and.arrow.down") { chooseFile() }
-            }
-            HStack(spacing: 4) {
-                CompactSegments(values: PluginsTab.allCases, selected: tab, width: 300, title: \.title) { tab = $0 }
-                Spacer()
+        FrogPage {
+            FrogPageHeader(title: "Community plugins", subtitle: "Each runs in its own sandbox, with only the access you approve.") {
                 if let host = plugins.downloading {
-                    ProgressView().controlSize(.small)
-                    Text("Downloading from \(host)…").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    ProgressView().controlSize(.small).help("Downloading from \(host)")
+                }
+                IconAction(title: "Install a plugin file", symbol: "square.and.arrow.down", bordered: true) { chooseFile() }
+            }
+            HStack(spacing: 8) {
+                CompactSegments(values: PluginsTab.allCases, selected: tab, width: 320, title: \.title) { tab = $0 }
+                Spacer()
+                if tab == .browse, !plugins.registry.isEmpty {
+                    SearchBox(placeholder: "Search the directory", text: $search).frame(width: 220)
                 }
             }
             switch tab {
@@ -56,161 +59,155 @@ struct PluginsView: View {
     @ViewBuilder private var installed: some View {
         if plugins.items.isEmpty {
             FrogEmptyState(symbol: "puzzlepiece.extension", title: "No plugins yet",
-                           message: "Ask your AI agent to build one, or install one from the directory.") {
+                           message: "Install one from the directory, or have your AI agent build one.") {
                 HStack(spacing: 8) {
+                    Button("Open the directory") { tab = .browse }.buttonStyle(.frog(.primary))
                     Button("Build your own") { tab = .build }
-                    Button("Open the directory") { tab = .browse }
                 }
-            }
+            }.frogTableSurface()
         } else {
-            VStack(spacing: 8) {
-                ForEach(plugins.items) { item in installedRow(item) }
+            FrogSection {
+                ForEach(plugins.items) { installedRow($0) }
             }
         }
     }
 
     private func installedRow(_ item: PluginItem) -> some View {
-        FrogCard {
-            HStack(alignment: .top, spacing: 12) {
-                SymbolTile(symbol: PluginSymbol.name(item.symbol), size: 36)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(item.name).font(FrogType.bodyMedium)
-                        if let version = item.manifest?.version { Text(version).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
-                        if item.needsReview { FrogBadge(text: "Needs review", active: true) }
-                        else if !item.record.enabled { FrogBadge(text: "Off") }
-                        else if plugins.running.contains(item.id) { FrogBadge(text: "Running") }
-                    }
-                    if let description = item.manifest?.description {
-                        Text(description).font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
-                    }
-                    if let problem = item.problem {
-                        Text(problem).font(FrogType.small).foregroundStyle(FrogStyle.critical).fixedSize(horizontal: false, vertical: true)
-                    }
-                    Text(sourceLine(item)).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-                HStack(spacing: 6) {
-                    if item.needsReview {
-                        Button("Review") {
-                            do { try plugins.reviewInstalled(item.id) } catch { model.report(error) }
-                        }.buttonStyle(.frog(.primary))
-                    } else if item.problem == nil {
-                        if item.runs, item.hasPage { Button("Open") { model.openPlugin(item.id) } }
-                        Toggle("", isOn: Binding(get: { item.record.enabled }, set: { plugins.setEnabled(item.id, $0) }))
-                            .toggleStyle(.switch).controlSize(.small).labelsHidden()
-                            .accessibilityLabel("\(item.name) on")
-                    }
-                    IconAction(title: "Remove \(item.name)", symbol: "trash", destructive: true) { removing = item }
+        FrogRow(item.name, caption: item.problem ?? caption(item)) {
+            PluginIconTile(symbol: PluginSymbol.name(item.symbol), tint: FrogStyle.accent)
+        } control: {
+            HStack(spacing: 6) {
+                if item.needsReview {
+                    Button("Review") {
+                        do { try plugins.reviewInstalled(item.id) } catch { model.report(error) }
+                    }.buttonStyle(.frog(.primary, compact: true))
+                } else if item.problem == nil {
+                    if plugins.running.contains(item.id) { FrogBadge(text: "Running") }
+                    if item.runs, item.hasPage { Button("Open") { model.openPlugin(item.id) }.buttonStyle(.frog(compact: true)) }
+                    Toggle("", isOn: Binding(get: { item.record.enabled }, set: { plugins.setEnabled(item.id, $0) }))
+                        .toggleStyle(.switch).controlSize(.small).labelsHidden()
+                        .accessibilityLabel("\(item.name) on")
+                }
+                IconMenu(title: "More about \(item.name)") {
+                    Text(source(item))
+                    Button("Remove…", systemImage: "trash", role: .destructive) { removing = item }
                 }
             }
         }
     }
 
-    private func sourceLine(_ item: PluginItem) -> String {
+    private func caption(_ item: PluginItem) -> String {
+        let manifest = item.manifest
+        let actions = manifest?.actions.count ?? 0
+        return [manifest?.version, manifest?.description, actions > 0 ? (actions == 1 ? "1 action" : "\(actions) actions") : nil]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    private func source(_ item: PluginItem) -> String {
         switch item.record.source {
         case .folder: "Built on this Mac · \(item.record.source.label)"
-        case .link: "From \(item.record.source.label)"
-        case .file: "From \(item.record.source.label)"
+        case .link, .file: "From \(item.record.source.label)"
         }
     }
 
     // MARK: Directory
 
+    private var shown: [PluginRegistryEntry] { plugins.registry.filter { $0.matches(search) } }
+
     @ViewBuilder private var directory: some View {
-        if plugins.loadingListings && plugins.listings.isEmpty {
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
-        } else if let error = plugins.listingsError, plugins.listings.isEmpty {
-            InlineIssue(message: error)
-            Button("Try again") { Task { await plugins.loadListings() } }
-        } else if plugins.listings.isEmpty {
-            FrogEmptyState(symbol: "square.grid.2x2", title: "The directory is empty so far",
-                           message: "Plugins people share appear here once they are listed on frog.beffa.xyz/plugins.")
-        } else {
-            VStack(spacing: 8) { ForEach(plugins.listings) { listingRow($0) } }
+        Group {
+            if plugins.registryKeys.isEmpty {
+                FrogEmptyState(symbol: "checkmark.seal", title: "The directory opens soon",
+                               message: "Frog installs only plugins the directory signed, and no entry is signed yet.").frogTableSurface()
+            } else if plugins.loadingRegistry, plugins.registry.isEmpty {
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 44)
+            } else if let error = plugins.registryError, plugins.registry.isEmpty {
+                FrogEmptyState(symbol: "wifi.exclamationmark", title: "The directory did not load", message: error) {
+                    Button("Try again") { Task { await plugins.loadRegistry() } }
+                }.frogTableSurface()
+            } else if plugins.registry.isEmpty {
+                FrogEmptyState(symbol: "square.grid.2x2", title: "Nothing listed yet",
+                               message: "Plugins people share appear here once frog.beffa.xyz/plugins lists them.").frogTableSurface()
+            } else if shown.isEmpty {
+                FrogEmptyState(symbol: "magnifyingglass", title: "Nothing matches", message: "Try another word.").frogTableSurface()
+            } else {
+                FrogSection(footer: "Frog checks each file's signature and SHA-256 before installing it. One that asks for access opens its review first.") {
+                    ForEach(shown) { listingRow($0) }
+                    if plugins.registryRejected > 0 {
+                        FrogRowNote(text: "\(plugins.registryRejected) entries were left out: their signature did not check.", tone: FrogStyle.warning)
+                    }
+                }
+            }
         }
-        Text("Every plugin listed was read before it was added, and the file you install must match the one that was read. A listed plugin still runs only with the access you approve.")
-            .font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
-            .task { if plugins.listings.isEmpty { await plugins.loadListings() } }
+        .task { if plugins.registry.isEmpty, !plugins.registryKeys.isEmpty { await plugins.loadRegistry() } }
     }
 
-    private func listingRow(_ listing: PluginListing) -> some View {
-        let installed = plugins.item(listing.id)
-        return FrogCard {
-            HStack(alignment: .top, spacing: 12) {
-                SymbolTile(symbol: PluginSymbol.name(listing.symbol ?? PluginManifest.defaultSymbol), size: 36)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(listing.name).font(FrogType.bodyMedium)
-                        Text(listing.version).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                    }
-                    Text("By \(listing.author)").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                    Text(listing.description).font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
-                    Text(listing.permissions.isEmpty ? "Asks for no permissions" : "Asks to: " + listing.permissions.compactMap { PluginPermission(rawValue: $0)?.title.lowercased() }.joined(separator: ", "))
-                        .font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-                if installed?.record.sha256 == listing.sha256.lowercased() {
-                    FrogBadge(text: "Installed")
-                } else if let url = listing.downloadURL {
-                    Button(installed == nil ? "Install" : "Update") { open(url, sha256: listing.sha256) }
-                        .disabled(plugins.downloading != nil)
-                }
+    private func listingRow(_ entry: PluginRegistryEntry) -> some View {
+        let installed = plugins.item(entry.id)
+        let permissions = entry.permissions.compactMap { PluginPermission(rawValue: $0)?.title.lowercased() }
+        let caption = [entry.summary, "by \(entry.author)", permissions.isEmpty ? nil : "asks to " + permissions.joined(separator: ", ")]
+            .compactMap { $0 }.joined(separator: " · ")
+        return FrogRow("\(entry.name) \(entry.version)", caption: caption) {
+            PluginIconTile(symbol: PluginSymbol.name(entry.displaySymbol), tint: FrogStyle.accent)
+        } control: {
+            if installed?.record.sha256 == entry.sha256.lowercased() {
+                FrogBadge(text: "Installed")
+            } else if plugins.installing == entry.id {
+                ProgressView().controlSize(.small).frame(width: 60)
+            } else if !entry.runs(on: AppVersion.current) {
+                FrogBadge(text: "Needs Frog \(entry.frog ?? "")")
+            } else {
+                Button(installed == nil ? "Install" : "Update") { install(entry) }
+                    .buttonStyle(.frog(installed == nil ? .primary : .secondary, compact: true))
+                    .disabled(plugins.installing != nil || plugins.downloading != nil)
             }
         }
     }
 
     // MARK: Build
 
-    private static let prompt = "Build me a Frog plugin that … Run `frog plugins guide` first and follow it."
+    private static let prompt = "Build me a Frog plugin that … Run `frog plugin guide` first and follow it."
 
     @ViewBuilder private var build: some View {
-        FrogCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Build a plugin with your AI agent").font(FrogType.bodyMedium)
-                Text("A plugin is a small web page with a plugin.json: it gets a page in this sidebar, rows in the command bar, its own storage, and only the access you approve. Your agent reads the guide, writes the files, installs the plugin here and looks at a picture of it, until it does what you asked.")
-                    .font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
-                step(1, "In Settings → Agents, let AI agents use Frog and install the frog command and skill.")
-                step(2, "Ask your agent, for example:")
-                HStack {
-                    Text(Self.prompt).font(FrogType.mono).textSelection(.enabled)
-                    Spacer(minLength: 8)
-                    CopyAction { ViewActions.copy(Self.prompt) }
-                }.padding(10).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-                step(3, "Review it here when it asks for access the first time. Updates that ask for nothing new run at once.")
-                step(4, "To share it, ask your agent to pack it: `frog plugins pack` makes a .frogplugin file anyone can install.")
+        FrogSection("Build one with your AI agent",
+                    footer: "Your agent writes the files, installs the plugin for your review and checks a picture of its page.") {
+            FrogRow("Ask your agent", caption: Self.prompt) {
+                CopyAction { ViewActions.copy(Self.prompt) }
             }
+            FrogRow("Let it use Frog", caption: "Settings → Agents installs the frog command and skill.") {
+                Button("Settings") { model.toolkit.select(.settings) }.buttonStyle(.frog(compact: true))
+            }
+            FrogRow("Share it", caption: "frog plugin publish packs it and prints the entry for the directory.")
         }
-        FrogCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Install from a link").font(FrogType.bodyMedium)
-                Text("Paste an https link to a .frogplugin file. You review what it asks for before anything is installed.")
-                    .font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
-                HStack {
-                    TextField("https://…/plugin.frogplugin", text: $link).textFieldStyle(.plain).font(FrogType.body)
-                        .padding(.horizontal, 8).frogControlSurface()
+        FrogSection("Install from a link") {
+            FrogRow("Link to a .frogplugin file", caption: "You review what it asks for before anything is installed.") {
+                HStack(spacing: 6) {
+                    TextField("https://…", text: $link).textFieldStyle(.plain).font(FrogType.body)
+                        .padding(.horizontal, 8).frame(width: 240).frogControlSurface()
                         .onSubmit(openTypedLink)
-                    Button("Review", action: openTypedLink).disabled(URL(string: link.trimmingCharacters(in: .whitespaces))?.scheme != "https" || plugins.downloading != nil)
+                    Button("Review", action: openTypedLink).buttonStyle(.frog(compact: true))
+                        .disabled(typedLink == nil || plugins.downloading != nil)
                 }
             }
         }
     }
 
-    private func step(_ number: Int, _ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("\(number)").font(FrogType.label).foregroundStyle(FrogStyle.muted).frame(width: 14)
-            Text(.init(text)).font(FrogType.body).fixedSize(horizontal: false, vertical: true)
+    // MARK: Actions
+
+    private var typedLink: URL? {
+        URL(string: link.trimmingCharacters(in: .whitespaces)).flatMap { $0.scheme == "https" && $0.host != nil ? $0 : nil }
+    }
+
+    private func openTypedLink() {
+        guard let url = typedLink else { return }
+        Task {
+            do { try await plugins.openLink(url, sha256: nil); link = "" } catch { model.report(error) }
         }
     }
 
-    // MARK: Actions
-
-    private func openTypedLink() {
-        guard let url = URL(string: link.trimmingCharacters(in: .whitespaces)), url.scheme == "https" else { return }
-        open(url, sha256: nil)
-    }
-
-    private func open(_ url: URL, sha256: String?) {
+    private func install(_ entry: PluginRegistryEntry) {
         Task {
-            do { try await plugins.openLink(url, sha256: sha256); link = "" } catch { model.report(error) }
+            do { try await plugins.install(entry) } catch { model.report(error) }
         }
     }
 
@@ -276,6 +273,17 @@ struct PluginReviewSheet: View {
                             permissionRow(permission, new: review.approved != nil && additions.permissions.contains(permission))
                         }
                     }
+                    if !manifest.actions.isEmpty {
+                        SectionCaption(text: "Actions you and your agents can run")
+                        ForEach(manifest.actions, id: \.id) { action in
+                            HStack(spacing: 6) {
+                                Text(action.title).font(FrogType.body)
+                                Spacer(minLength: 8)
+                                Text(action.effect.title).font(FrogType.small)
+                                    .foregroundStyle(action.effect == .read ? FrogStyle.muted : FrogStyle.ink)
+                            }
+                        }
+                    }
                     if !manifest.hosts.isEmpty {
                         SectionCaption(text: "Sites it can reach")
                         ForEach(manifest.hosts, id: \.self) { host in
@@ -336,7 +344,7 @@ struct PluginReviewSheet: View {
             HStack(spacing: 6) {
                 Text("From \(review.source.label)").font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
                 if plugins.isListed(review.sha256) {
-                    Label("Listed in the Frog directory", systemImage: "checkmark.seal").font(FrogType.small).foregroundStyle(FrogStyle.good)
+                    Label("Signed by the Frog directory", systemImage: "checkmark.seal").font(FrogType.small).foregroundStyle(FrogStyle.good)
                 } else {
                     Label("Not in the Frog directory", systemImage: "exclamationmark.triangle").font(FrogType.small).foregroundStyle(FrogStyle.warning)
                 }
@@ -371,7 +379,7 @@ struct PluginPageView: View {
         VStack(spacing: 0) {
             // The plugin's page has its own title, so this row only leads back and, while building, reloads.
             HStack(spacing: 8) {
-                Button("Plugins", systemImage: "chevron.left") { model.toolkit.select(.feature(.plugins)) }
+                Button("Community plugins", systemImage: "chevron.left") { model.toolkit.select(.feature(.plugins)) }
                     .buttonStyle(.frog(.ghost))
                 Spacer()
                 if case .folder = item?.record.source {
@@ -386,7 +394,7 @@ struct PluginPageView: View {
                     .onDisappear { host.isShowing = false }
             } else if let failure {
                 FrogEmptyState(symbol: "exclamationmark.triangle", title: "This plugin cannot open", message: failure) {
-                    Button("Open Plugins") { model.toolkit.select(.feature(.plugins)) }
+                    Button("Open Community plugins") { model.toolkit.select(.feature(.plugins)) }
                 }
                 Spacer()
             } else {
@@ -423,5 +431,16 @@ struct PluginWebContainer: NSViewRepresentable {
         webView.frame = container.bounds
         webView.autoresizingMask = [.width, .height]
         container.addSubview(webView)
+    }
+}
+
+extension PluginManifestAction.Effect {
+    /// How the review names what an action may do.
+    var title: String {
+        switch self {
+        case .read: "Only reads"
+        case .write: "Changes things"
+        case .network: "Uses the network"
+        }
     }
 }
