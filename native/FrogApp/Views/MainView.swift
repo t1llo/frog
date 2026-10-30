@@ -123,8 +123,8 @@ struct MainView: View {
                                         .id(ToolkitRoute.plugin(item.id))
                                 }
                             }
-                        }.padding(.horizontal, 8).padding(.bottom, 6).minimalScrollbars()
-                    }
+                        }.padding(.horizontal, 8).padding(.bottom, 20).minimalScrollbars()
+                    }.bottomScrollFade()
                     // Reveals a feature opened from elsewhere, such as the command bar, by the least scrolling;
                     // a row already in view stays where it is. A window that opens on a page shows its row too.
                     .onAppear { reveal(section, in: proxy) }
