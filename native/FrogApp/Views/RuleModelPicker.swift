@@ -57,3 +57,21 @@ struct RuleModelPicker: View {
         .accessibilityLabel(speech ? "Speech model" : "Text model")
     }
 }
+
+/// What a rule's model is called on its row and in agent answers.
+@MainActor
+extension AppModel {
+    func localModelLabel(_ id: String) -> String {
+        (configuration.localModel(id)?.name ?? id) + (localModels.installed.contains(id) ? "" : " · Not downloaded")
+    }
+    func ruleModelLabel(_ rule: Rule) -> String {
+        if rule.category == .application { return rule.action?.applicationPath.map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent } ?? "Choose application" }
+        if rule.category == .audio {
+            guard let id = rule.action?.audioModelID else { return "Choose a speech model" }
+            if let provider = configuration.providers.first(where: { $0.id == rule.action?.audioProviderID }) { return provider.name + " · " + provider.modelName(id) }
+            return localModelLabel(id)
+        }
+        guard let provider = try? resolved(rule) else { return "Choose a text model" }
+        return provider.id == Self.localProviderID ? localModelLabel(provider.model) : provider.name + " · " + provider.modelName(provider.model)
+    }
+}
