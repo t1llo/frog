@@ -159,7 +159,9 @@ The Hidden bar plugin (formerly Menu-bar organization) keeps its settings in `[h
 - `start-hidden`: boolean, default `false` (was `menubar.start-collapsed`).
 - `always-hidden-section`: boolean, default `false` (was `menubar.permanently-hidden-section`).
 - `show-on-hover`: boolean, default `false` (was `menubar.hover-to-reveal`).
-- `shortcut`: optional readable shortcut, such as `ctrl+alt+b`; unassigned by default (was `menubar.hotkey`). It is registered with Frog's other global shortcuts.
+- `shortcut`: optional readable shortcut, such as `ctrl+alt+b`; unassigned by default (was `menubar.hotkey`). It is registered with Frog's other global shortcuts, and one that another shortcut already uses is refused on the page and left unregistered when written by hand.
+
+`[hidden-bar]` decides; Frog keeps the `menubar.*` keys in step with it. Editing those keys and choosing **Reload** or **Import** writes them into `[hidden-bar]` again.
 
 Actions: `hidden-bar.toggle`, `hidden-bar.show`, `hidden-bar.hide` and `hidden-bar.arrange`. macOS status-item positions stay on each Mac.
 
@@ -206,7 +208,8 @@ The look of the Mr. Usage menu bar item:
 - `system-monitor.menu-bar-palette`: a `usage.menu-bar-palette` value, default `spectrum`.
 - `stay-awake.menu-bar` and `stay-awake.menu-bar-style` are now `menu-bar-item` and
   `menu-bar-style` in `[stay-awake]` in `config.toml`, with the session's duration, the screen
-  and the lid-closed mode. See [Stay awake](stay-awake.md#settings).
+  and the lid-closed mode. See [Stay awake](stay-awake.md#settings). Frog keeps the two old keys in
+  step, and a **Reload** or **Import** that changes them updates `[stay-awake]`.
 
 ### Explain
 

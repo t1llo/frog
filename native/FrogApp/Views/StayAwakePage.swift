@@ -53,10 +53,7 @@ struct StayAwakePage: View {
     }
 
     private func change(reveal: Bool = false, _ edit: (inout StayAwakeSettings) -> Void) {
-        let previous = settings.duration
         withAnimation(reveal && !reduceMotion ? FrogMotion.reveal : nil) { plugin.update(edit) }
-        // A new duration applies to the session that is running, counted from now.
-        if settings.duration != previous, power.isEnabled { power.turnOn() }
     }
 
     /// Every half hour, and the configured time when config.toml has one in between.

@@ -339,6 +339,17 @@ import XCTest
         XCTAssertFalse(model.power.isEnabled)
     }
 
+    func testChangingTheEndTimeRecountsARunningSession() async throws {
+        await model.pluginHost.syncAndWait()
+        let plugin = try XCTUnwrap(model.pluginHost.running["stay-awake"] as? StayAwakePlugin)
+        plugin.update { $0.duration = .untilTime; $0.until = "10:00" }
+        model.power.turnOn(); await model.power.waitForLid()
+        XCTAssertEqual(model.power.deadline.map { Calendar.current.dateComponents([.hour, .minute], from: $0) }, DateComponents(hour: 10, minute: 0))
+        plugin.update { $0.until = "11:30" }
+        XCTAssertEqual(model.power.deadline.map { Calendar.current.dateComponents([.hour, .minute], from: $0) }, DateComponents(hour: 11, minute: 30))
+        model.power.turnOff(); await model.power.waitForLid()
+    }
+
     func testUsageListsEachProvider() async throws {
         try await enable(.usage)
         let providers = try array(await run("usage", json: true))

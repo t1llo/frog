@@ -522,6 +522,7 @@ final class AppModel: ObservableObject {
         drainUsagePreferences()
         let candidate = try configurationStore.load { try self.validateForThisMac($0, change: .reload) }
         applyConfiguration(candidate)
+        MacPluginSettings.adoptLegacySettings(self)
         usagePreferenceWriter.didSave(candidate)
         configurationLoadError = nil
         localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds
@@ -1100,6 +1101,17 @@ final class AppModel: ObservableObject {
         for (name, key) in toolkit.windows?.shortcuts ?? [:] where WindowCommand(rawValue: name) != nil {
             if let issue = HotkeyManager.validationError(key) { throw FrogError.message(issue) }
         }
+        // A plugin shortcut that the preferences do not mirror is seen here, so a new shortcut cannot take its keys.
+        let configured = Set(Self.hotkeyRules(for: candidate).compactMap(\.hotkey)
+            + [candidate.preferences.featureEnabled(.menuBar) ? toolkit.menuBar?.hotkey : nil].compactMap { $0 })
+        if let clash = unmirroredPluginShortcuts.first(where: { configured.contains($0.hotkey) }) {
+            throw FrogError.message("\(HotkeyManager.display(clash.hotkey)) is already the \(clash.name) shortcut.")
+        }
+    }
+
+    /// Plugin shortcuts that are not also kept in the preferences. Hidden bar's is, under `toolkit.menuBar.hotkey`.
+    private var unmirroredPluginShortcuts: [(name: String, hotkey: Hotkey)] {
+        pluginShortcuts.filter { $0.key != Self.menuBarID }.map { ($0.value.name, $0.value.hotkey) }
     }
 
     func savePreferences(_ preferences: Preferences) throws {
@@ -1267,6 +1279,7 @@ final class AppModel: ObservableObject {
         try configurationStore.replaceFromImport(candidate)
         usagePreferenceWriter.didSave(candidate)
         applyConfiguration(candidate)
+        MacPluginSettings.adoptLegacySettings(self)
         configurationLoadError = nil
         localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds
         errorMessage = nil
@@ -1313,7 +1326,7 @@ final class AppModel: ObservableObject {
         case none
     }
 
-    static func windowSwitcherStep(_ configuration: Configuration, status: String, ready: Bool) -> WindowSwitcherStep {
+    static func windowSwitcherStep(_ configuration: Configuration, status: String, ready: Bool, pluginShortcuts: [Hotkey] = []) -> WindowSwitcherStep {
         let preferences = configuration.preferences
         let switcherHotkey = preferences.toolkitSettings.effectiveWindowSwitcherHotkey
         func conflicts(_ hotkey: Hotkey) -> Bool {
@@ -1327,7 +1340,7 @@ final class AppModel: ObservableObject {
         }
         let workflow = preferences.workflowSettings
         let referenceConflict = ([workflow.shortcutPanelHotkey, preferences.featureEnabled(.dictation) ? workflow.cancelRecordingHotkey : nil, workflow.clipboardHistoryEnabled == true ? workflow.effectiveClipboardHistoryHotkey : nil, preferences.featureEnabled(.commandBar) ? preferences.toolkitSettings.effectiveCommandBarHotkey : nil, preferences.featureEnabled(.menuBar) ? preferences.toolkitSettings.menuBar?.hotkey : nil].compactMap { $0 }
-            + WindowSwitches(preferences).shortcutRules.compactMap(\.hotkey)).contains(where: conflicts)
+            + WindowSwitches(preferences).shortcutRules.compactMap(\.hotkey) + pluginShortcuts).contains(where: conflicts)
         guard preferences.windowSwitcherEnabled && (conflict || referenceConflict) else { return .configure }
         let message = "A configured shortcut conflicts with \(HotkeyManager.display(switcherHotkey)) — change it to enable window switching"
         // Stopping again would publish "Off" and then the conflict, redrawing Settings each second.
@@ -1337,7 +1350,8 @@ final class AppModel: ObservableObject {
 
     private func configureWindowSwitcher() {
         guard started, registerShortcuts else { return }
-        switch Self.windowSwitcherStep(configuration, status: windowSwitcherStatus, ready: windowSwitcherReady) {
+        switch Self.windowSwitcherStep(configuration, status: windowSwitcherStatus, ready: windowSwitcherReady,
+                                       pluginShortcuts: unmirroredPluginShortcuts.map(\.hotkey)) {
         case .none: return
         case .stop(let message):
             windowSwitcher.stop()
