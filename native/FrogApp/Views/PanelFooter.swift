@@ -31,7 +31,7 @@ struct PanelFooter: View {
             }
         }
         .foregroundStyle(FrogStyle.muted)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, FrogStyle.cardPadding)
         .frame(height: 32)
         .frame(maxWidth: .infinity)
         .background(FrogStyle.inset)
