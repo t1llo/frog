@@ -382,7 +382,9 @@ extension WindowSwitcherSettings {
             let controller = self.controller ?? makeController()
             controller.configure(enabled: preferences.featureEnabled(.windowSwitcher), suspended: model.isRecordingShortcut,
                                  hotkey: preferences.toolkitSettings.effectiveWindowSwitcherHotkey)
-            controller.updateShortcuts(configuration.rules.filter { model.ruleFeatureEnabled($0) && model.hotkeyErrors[$0.id] == nil })
+            // The app keys the Shortcuts plugin registered, shown on each running app.
+            let shortcuts = model.pluginHost.running[ShortcutsPlugin.info.id] as? ShortcutsPlugin
+            controller.updateShortcuts(shortcuts?.applicationRules.filter { model.hotkeyErrors[$0.id] == nil } ?? [])
         }
     }
 
@@ -434,7 +436,9 @@ extension WindowSwitcherSettings {
         }
         // Existing shortcuts keep their keys, including the reverse-cycling combination.
         let ruleConflict = configuration.rules.contains { rule in
-            guard rule.enabled, preferences.ruleFeatureEnabled(rule), let hotkey = rule.hotkey else { return false }
+            // App and Mac command rules are no longer registered; the Shortcuts plugin's bindings are in `pluginKeys`.
+            guard rule.enabled, preferences.ruleFeatureEnabled(rule), ![.application, .system].contains(rule.category),
+                  let hotkey = rule.hotkey else { return false }
             return conflicts(hotkey)
         }
         let workflow = preferences.workflowSettings

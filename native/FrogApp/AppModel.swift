@@ -193,17 +193,13 @@ final class AppModel: ObservableObject {
     }
     var hasPendingDocumentWrites: Bool { documentsModel?.needsFlush == true }
     func flushDocuments() async -> Bool { await documentsModel?.flush() ?? true }
-    private lazy var commandBar: CommandBar = {
-        let bar = CommandBar(model: self, pasteboard: clipboardHistoryStore.pasteboard)
-        bar.onToolUse = { [weak self] in self?.statistics.recordToolUse($0) }
-        return bar
-    }()
+    /// The command bar plugin, while it runs; it owns the panel and its shortcut.
+    private var commandBarPlugin: CommandBarPlugin? { pluginHost.running[CommandBarPlugin.info.id] as? CommandBarPlugin }
     let clipboardHistoryStore: ClipboardHistoryStore
     private var observations = Set<AnyCancellable>()
     static let localProviderID = UUID(uuidString: "7C05FB97-5BEF-48FD-9C28-A67605107251")!
     static let shortcutPanelID = UUID(uuidString: "85F8DE80-89BC-4506-B82D-DCFB71AFE292")!
     static let clipboardHistoryID = ClipboardPlugin.shortcutID
-    static let commandBarID = UUID(uuidString: "76B6A364-18CC-4779-9552-9885FCE778B8")!
     static let menuBarID = UUID(uuidString: "426A0C79-8785-4B2A-96E1-5880E7853209")!
     private let shortcutPanel = ShortcutReferencePanel()
     private let captureSelection: () async throws -> any CapturedTextSelection
@@ -388,11 +384,10 @@ final class AppModel: ObservableObject {
         toolkit.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         toolkit.onDisable = { [weak self] feature in
             guard let self else { return }
-            self.commandBar.hide()
+            self.commandBarPlugin?.hide()
             switch feature {
             case .writing: self.processingTask?.cancel(); self.processingIndicator.hide()
             case .applicationShortcuts: self.applicationTask?.cancel(); self.systemActionTask?.cancel(); if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.shortcutPanel.hide()
-            case .commandBar: self.commandBar.stop()
             case .explain: self.answerCapture?.cancel(); self.answers.close()
             case .windows: if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.windowLayout?.stop()
             default: break
@@ -441,7 +436,6 @@ final class AppModel: ObservableObject {
         configureStatusItems()
         registerHotkeys()
         configureWindowSwitcher()
-        if configuration.preferences.featureEnabled(.commandBar) { commandBar.warm() }
         configureWindowLayout()
         configureAgentServer()
         pluginHost.sync()
@@ -455,7 +449,7 @@ final class AppModel: ObservableObject {
         statistics.waitForWrites()
         commandChoices.waitForWrites()
         if agentServerCreated { agentServer.configure(enabled: false) }
-        commandBar.stop()
+        commandBarPlugin?.bar?.stop()
         toolkit.stop()
         clipboardHistoryStore.configure(forwardingCopies: false)
         pluginRuntime?.stop()
@@ -536,10 +530,7 @@ final class AppModel: ObservableObject {
         let key = provider.kind.localTool == nil ? try readKey(provider.id) : nil
         return try await complete(text, rule, provider, key)
     }
-    func showCommandBar() {
-        guard !isRecordingShortcut else { return }
-        commandBar.show()
-    }
+    func showCommandBar() { commandBarPlugin?.show() }
     func setFeature(_ feature: FeatureID, enabled: Bool) async throws {
         if feature == .stayAwake, !enabled {
             power.turnOff(); await power.waitForLid()
@@ -677,9 +668,9 @@ final class AppModel: ObservableObject {
     }
 
     private func applyConfiguration(_ candidate: Configuration) {
+        let previous = configuration
         configuration = candidate
         toolkit.apply(candidate.preferences)
-        if candidate.preferences.featureEnabled(.commandBar) { commandBar.warm() }
         // Turning the switch or the Command bar off, here or in the configuration file, forgets what was learned.
         commandChoices.configure(enabled: Self.learnsCommandChoices(candidate.preferences))
         configureStatusItems()
@@ -687,6 +678,8 @@ final class AppModel: ObservableObject {
         if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
         configureWindowLayout()
         configureAgentServer()
+        // `frog config set shortcut.command-bar` and imports still write the old preferences.
+        CommandBarPlugin.adoptLegacy(self, previous: previous.preferences)
         if started { pluginHost.sync() }
     }
 
@@ -727,6 +720,9 @@ final class AppModel: ObservableObject {
         if rule.enabled, let hotkey = rule.hotkey,
            let conflict = configuration.rules.first(where: { $0.id != rule.id && $0.enabled && $0.hotkey == hotkey }) {
             throw FrogError.message("That hotkey is already assigned to \(conflict.name).")
+        }
+        if rule.enabled, let hotkey = rule.hotkey, let owner = pluginShortcuts.first(where: { $0.value.hotkey == hotkey })?.value.name {
+            throw FrogError.message("That hotkey is already assigned to \(owner).")
         }
         rule = configuration.reconcilingModels(in: rule, installed: localModels.installed)
         var candidate = configuration
@@ -959,7 +955,7 @@ final class AppModel: ObservableObject {
 
     /// Gives every window layout and command without a shortcut the suggested one, where it is free.
     func applySuggestedWindowShortcuts() throws -> WindowShortcutScheme.Result {
-        let taken = WindowSwitcherPlugin.chords(configuration.preferences)
+        let taken = WindowSwitcherPlugin.chords(configuration.preferences).union(pluginShortcuts.values.map(\.hotkey))
         let result = WindowShortcutScheme.apply(to: configuration, groups: [.simple], taken: taken)
         guard !result.added.isEmpty else { return result }
         for key in Set(WindowShortcutScheme.actions.values).union(WindowShortcutScheme.commands.values) {
@@ -971,15 +967,7 @@ final class AppModel: ObservableObject {
         return result
     }
 
-    func useCommandBarShortcut(_ hotkey: Hotkey) throws {
-        var preferences = configuration.preferences
-        preferences.setFeature(.commandBar, enabled: true)
-        preferences.toolkit?.commandBarHotkey = hotkey
-        let unchanged = preferences.toolkit == configuration.preferences.toolkit
-        try savePreferences(preferences)
-        // The user may have just freed this same shortcut in System Settings.
-        if unchanged { registerHotkeys() }
-    }
+    func useCommandBarShortcut(_ hotkey: Hotkey) throws { try CommandBarPlugin.useShortcut(hotkey, model: self) }
 
     func refreshHistory() {
         do { adoptHistory(try historyStore.load(preferences: configuration.preferences)) }
@@ -1106,7 +1094,7 @@ final class AppModel: ObservableObject {
     }
 
     private func setShortcutRecording(_ recording: Bool) {
-        if recording { commandBar.hide() }
+        if recording { commandBarPlugin?.hide() }
         if recording { dictation?.cancel() }
         isRecordingShortcut = recording
         // Every group lets go, plugins' too, so the key being recorded reaches the recorder.
@@ -1125,12 +1113,10 @@ final class AppModel: ObservableObject {
     /// The global shortcuts a configuration registers: its enabled rules and Frog's own.
     static func hotkeyRules(for configuration: Configuration) -> [Rule] {
         let preferences = configuration.preferences
-        var rules = configuration.rules.filter { preferences.ruleFeatureEnabled($0) }
+        // App and Mac command shortcuts belong to the Shortcuts plugin, which registers them from config.toml.
+        var rules = configuration.rules.filter { preferences.ruleFeatureEnabled($0) && ![.application, .system].contains($0.category) }
         if let key = preferences.workflowSettings.shortcutPanelHotkey {
             rules.append(Rule(id: Self.shortcutPanelID, name: "Show shortcuts", hotkey: key))
-        }
-        if preferences.featureEnabled(.commandBar) {
-            rules.append(Rule(id: Self.commandBarID, name: "Command bar", hotkey: preferences.toolkitSettings.effectiveCommandBarHotkey))
         }
         rules.append(contentsOf: WindowSwitches(preferences).shortcutRules)
         return rules
@@ -1153,6 +1139,41 @@ final class AppModel: ObservableObject {
         if let hotkey { pluginShortcuts[id] = (name, hotkey, action) } else { pluginShortcuts[id] = nil }
         if previous != hotkey || hotkeyErrors[id] != nil { registerHotkeys() }
         return hotkeyErrors[id]
+    }
+
+    /// Replaces the plugin shortcuts `owned` held with `shortcuts`, registering once. A plugin with many keys,
+    /// such as Shortcuts, uses it instead of one `setPluginShortcut` per key. Returns why keys failed, by ID.
+    @discardableResult
+    func setPluginShortcuts(replacing owned: Set<UUID>, with shortcuts: [UUID: (name: String, hotkey: Hotkey, action: () -> Void)]) -> [UUID: String] {
+        var changed = false
+        for id in owned where shortcuts[id] == nil {
+            if pluginShortcuts.removeValue(forKey: id) != nil { changed = true }
+        }
+        for (id, shortcut) in shortcuts {
+            if pluginShortcuts[id]?.hotkey != shortcut.hotkey || hotkeyErrors[id] != nil { changed = true }
+            pluginShortcuts[id] = shortcut
+        }
+        if changed { registerHotkeys(); configureWindowSwitcher() }
+        return hotkeyErrors.filter { shortcuts[$0.key] != nil }
+    }
+
+    /// What already answers to `hotkey`: a rule or Frog shortcut registered here, a plugin's shortcut, or the
+    /// window switcher's chord. `except` are the asker's own keys. The one check the plugins' recorders and
+    /// `shortcuts.bind` make, since macOS would only say the key is taken.
+    func shortcutOwner(of hotkey: Hotkey, except: Set<UUID> = []) -> String? {
+        if let rule = Self.hotkeyRules(for: configuration).first(where: { !except.contains($0.id) && $0.enabled && $0.hotkey == hotkey }) {
+            return rule.action?.systemAction?.title ?? rule.name
+        }
+        if let plugin = pluginShortcuts.first(where: { !except.contains($0.key) && $0.value.hotkey == hotkey }) { return plugin.value.name }
+        if WindowSwitcherPlugin.chords(configuration.preferences).contains(hotkey) { return "Window switcher" }
+        return nil
+    }
+
+    /// `shortcutOwner` as the error a recorder shows.
+    func checkShortcutFree(_ hotkey: Hotkey, except: Set<UUID> = []) throws {
+        if let owner = shortcutOwner(of: hotkey, except: except) {
+            throw FrogError.message("\(HotkeyManager.display(hotkey)) is already used by \(owner).")
+        }
     }
 
     private func registerHotkeys() {
@@ -1425,9 +1446,16 @@ final class AppModel: ObservableObject {
     func cancelProcessing() { processingTask?.cancel(); status = "Cancelling…" }
 
     func showShortcuts() {
-        let items = ShortcutReference.items(configuration: configuration, ruleEnabled: configuration.preferences.ruleFeatureEnabled,
-                                            extraRules: WindowSwitches(configuration.preferences).shortcutRules,
+        let preferences = configuration.preferences
+        // App and Mac command keys are the Shortcuts plugin's bindings now, listed with the other plugins' keys.
+        var items = ShortcutReference.items(configuration: configuration,
+                                            ruleEnabled: { preferences.ruleFeatureEnabled($0) && ![.application, .system].contains($0.category) },
+                                            extraRules: WindowSwitches(preferences).shortcutRules,
                                             answersInPanel: \.isExplainRule)
+        let listed = Set(items.map(\.hotkey))
+        for (id, shortcut) in pluginShortcuts.sorted(by: { $0.value.name < $1.value.name }) where !listed.contains(shortcut.hotkey) {
+            items.append(ShortcutReferenceItem(id: id.uuidString, title: shortcut.name, hotkey: shortcut.hotkey, group: .shortcuts))
+        }
         shortcutPanel.show(groups: ShortcutReference.grouped(items))
     }
 
@@ -1439,7 +1467,6 @@ final class AppModel: ObservableObject {
     private func handleShortcut(_ id: UUID, pressed: Bool) {
         if let shortcut = pluginShortcuts[id] { if pressed { shortcut.action() }; return }
         if let command = WindowCommand.command(for: id) { windowLayout?.handle(command, pressed: pressed); return }
-        if id == Self.commandBarID { if pressed { showCommandBar() }; return }
         if id == Self.shortcutPanelID { if pressed { showShortcuts() } else { shortcutPanel.hide() }; return }
         guard let rule = configuration.rules.first(where: { $0.id == id && $0.enabled }), ruleFeatureEnabled(rule) else { return }
         switch rule.category {

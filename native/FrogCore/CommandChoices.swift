@@ -30,7 +30,8 @@ public struct CommandChoices: Codable, Equatable, Sendable {
     public init() {}
 
     public enum Tuning {
-        public static let halfLife: TimeInterval = 14 * 86_400
+        /// Frecency: a pick counts half after a week.
+        public static let halfLife: TimeInterval = 7 * 86_400
         public static let pairCap = 5.0, itemCap = 10.0, competitorFactor = 0.5, dropBelow = 0.1
         public static let prefixWeight = 0.5, latchThreshold = 2.0
         /// Two picks a minute apart give a little less than 2, because the first faded in between. Up to this
@@ -189,6 +190,27 @@ public struct CommandChoiceIndex: Sendable {
         let threshold = CommandChoices.Tuning.latchThreshold - CommandChoices.Tuning.latchTolerance
         let latched = top.value >= threshold && (ranked.count == 1 || top.value > ranked[1].value)
         return (ranked.map(\.id), latched ? top.id : nil)
+    }
+
+    /// Frecency of every row the typed text finds, for `CommandSearch.results(boosts:)`: how often and how lately
+    /// it was picked at all, plus twice its strength for this text (half for longer text that starts with it).
+    public func frecency(for typed: String) -> [String: Double] {
+        var result = Dictionary(items.map { ($0.id, $0.value) }, uniquingKeysWith: max)
+        let query = Array(CommandChoices.key(typed).utf8)
+        guard !query.isEmpty else { return result }
+        var low = 0, high = entries.count
+        while low < high {
+            let middle = (low + high) / 2
+            if entries[middle].text.utf8.lexicographicallyPrecedes(query) { low = middle + 1 } else { high = middle }
+        }
+        var paired: [String: Double] = [:]
+        for entry in entries[low...] {
+            guard entry.text.utf8.starts(with: query) else { break }
+            let value = entry.value * (entry.text.utf8.count == query.count ? 1 : CommandChoices.Tuning.prefixWeight)
+            paired[entry.id] = max(paired[entry.id] ?? 0, value)
+        }
+        for (id, value) in paired { result[id, default: 0] += 2 * value }
+        return result
     }
 
     /// Item ids by decayed strength, then latest pick; for the opening list.

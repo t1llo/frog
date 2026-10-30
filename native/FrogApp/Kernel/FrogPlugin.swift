@@ -15,6 +15,8 @@ import SwiftUI
     func page() -> AnyView?
     /// Rows or a tab for the Frog menu-bar popup.
     var menu: [MenuContribution] { get }
+    /// Command bar rows beyond its actions, such as windows to switch to. Asked each time the bar opens.
+    var commandBarRows: [any CommandBarRowProviding] { get }
     /// Its table in config.toml changed, from Frog or from an editor. Read it again with `context.settings`.
     func settingsChanged()
 }
@@ -25,6 +27,7 @@ extension FrogPlugin {
     var actions: [PluginAction] { [] }
     func page() -> AnyView? { nil }
     var menu: [MenuContribution] { [] }
+    var commandBarRows: [any CommandBarRowProviding] { [] }
     func settingsChanged() {}
     var info: PluginInfo { Self.info }
 }
