@@ -44,6 +44,76 @@ public enum PluginPermission: String, Codable, CaseIterable, Comparable, Sendabl
     }
 }
 
+/// An action a plugin adds: like a built-in plugin's, it joins `frog actions` and `frog run`, the command bar and
+/// shortcuts, as `community.<plugin id>.<id>`. The page answers it with `frog.action(id, handler)`.
+public struct PluginManifestAction: Codable, Equatable, Sendable {
+    /// What running it may change. Frog refuses a call the effect does not cover while the action runs.
+    public enum Effect: String, Codable, CaseIterable, Comparable, Sendable {
+        /// Reads its storage or, with permission, the clipboard. Changes nothing.
+        case read
+        /// Also changes something on this Mac: its storage, the clipboard, a notification, a script, a link.
+        case write
+        /// Also reaches the internet or the AI model.
+        case network
+
+        public static func < (lhs: Self, rhs: Self) -> Bool {
+            allCases.firstIndex(of: lhs)! < allCases.firstIndex(of: rhs)!
+        }
+    }
+
+    public struct Parameter: Codable, Equatable, Sendable {
+        public enum Kind: String, Codable, Sendable { case text, integer, boolean, choice }
+        public var name: String
+        public var type: Kind
+        public var required: Bool?
+        public var help: String?
+        /// The values a `choice` takes.
+        public var choices: [String]?
+
+        public init(name: String, type: Kind = .text, required: Bool? = nil, help: String? = nil, choices: [String]? = nil) {
+            self.name = name; self.type = type; self.required = required; self.help = help; self.choices = choices
+        }
+
+        public init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            name = try values.decode(String.self, forKey: .name)
+            type = try values.decodeIfPresent(Kind.self, forKey: .type) ?? .text
+            required = try values.decodeIfPresent(Bool.self, forKey: .required)
+            help = try values.decodeIfPresent(String.self, forKey: .help)
+            choices = try values.decodeIfPresent([String].self, forKey: .choices)
+        }
+    }
+
+    public var id: String
+    public var title: String
+    public var effect: Effect
+    public var parameters: [Parameter]
+    /// Takes text: from standard input with `frog run --stdin`, or the text selected in the command bar.
+    public var input: Bool?
+    public var keywords: String?
+
+    public init(id: String, title: String, effect: Effect, parameters: [Parameter] = [], input: Bool? = nil, keywords: String? = nil) {
+        self.id = id; self.title = title; self.effect = effect; self.parameters = parameters; self.input = input; self.keywords = keywords
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        title = try values.decode(String.self, forKey: .title)
+        let effect = try values.decode(String.self, forKey: .effect)
+        guard let known = Effect(rawValue: effect) else {
+            throw PluginError.invalid("The action “\(id)” has the effect “\(effect)”. Use read, write or network.")
+        }
+        self.effect = known
+        parameters = try values.decodeIfPresent([Parameter].self, forKey: .parameters) ?? []
+        input = try values.decodeIfPresent(Bool.self, forKey: .input)
+        keywords = try values.decodeIfPresent(String.self, forKey: .keywords)
+    }
+
+    /// Option names `frog run` keeps for itself.
+    static let reservedNames: Set<String> = ["stdin", "json", "help"]
+}
+
 /// A command bar row a plugin adds. Choosing it sends `id` to the plugin's page.
 public struct PluginCommand: Codable, Equatable, Sendable {
     public var id: String
@@ -76,6 +146,7 @@ public struct PluginManifest: Codable, Equatable, Sendable {
     /// Script names mapped to paths inside the plugin's folder.
     public var scripts: [String: String]
     public var commands: [PluginCommand]
+    public var actions: [PluginManifestAction]
 
     public static let fileName = "plugin.json"
     public static let defaultSymbol = "puzzlepiece.extension"
@@ -83,14 +154,14 @@ public struct PluginManifest: Codable, Equatable, Sendable {
 
     public init(id: String, name: String, version: String = "1.0.0", description: String, author: String? = nil, homepage: String? = nil,
                 symbol: String? = nil, entry: String? = "index.html", frog: String? = nil, permissions: [PluginPermission] = [],
-                hosts: [String] = [], scripts: [String: String] = [:], commands: [PluginCommand] = []) {
+                hosts: [String] = [], scripts: [String: String] = [:], commands: [PluginCommand] = [], actions: [PluginManifestAction] = []) {
         self.id = id; self.name = name; self.version = version; self.description = description; self.author = author
         self.homepage = homepage; self.symbol = symbol; self.entry = entry; self.frog = frog; self.permissions = permissions
-        self.hosts = hosts; self.scripts = scripts; self.commands = commands
+        self.hosts = hosts; self.scripts = scripts; self.commands = commands; self.actions = actions
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, version, description, author, homepage, symbol, entry, frog, permissions, hosts, scripts, commands
+        case id, name, version, description, author, homepage, symbol, entry, frog, permissions, hosts, scripts, commands, actions
     }
 
     public init(from decoder: Decoder) throws {
@@ -116,6 +187,7 @@ public struct PluginManifest: Codable, Equatable, Sendable {
         hosts = try values.decodeIfPresent([String].self, forKey: .hosts) ?? []
         scripts = try values.decodeIfPresent([String: String].self, forKey: .scripts) ?? [:]
         commands = try values.decodeIfPresent([PluginCommand].self, forKey: .commands) ?? []
+        actions = try values.decodeIfPresent([PluginManifestAction].self, forKey: .actions) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -133,6 +205,7 @@ public struct PluginManifest: Codable, Equatable, Sendable {
         if !hosts.isEmpty { try values.encode(hosts, forKey: .hosts) }
         if !scripts.isEmpty { try values.encode(scripts, forKey: .scripts) }
         if !commands.isEmpty { try values.encode(commands, forKey: .commands) }
+        if !actions.isEmpty { try values.encode(actions, forKey: .actions) }
     }
 
     /// Reads and checks a manifest's JSON.
@@ -199,8 +272,42 @@ public struct PluginManifest: Codable, Equatable, Sendable {
             try Self.check(command.title, "command title", maximum: 60)
             if let keywords = command.keywords, keywords.count > 120 { throw PluginError.invalid("A command's keywords must be at most 120 characters.") }
         }
+        try validateActions()
         if entry == nil {
-            guard !commands.isEmpty else { throw PluginError.invalid("A plugin needs a page (“entry”) or commands.") }
+            guard !commands.isEmpty || !actions.isEmpty else { throw PluginError.invalid("A plugin needs a page (“entry”), commands or actions.") }
+        }
+    }
+
+    private func validateActions() throws {
+        guard actions.count <= 20 else { throw PluginError.invalid("A plugin can have at most 20 actions.") }
+        if !actions.isEmpty, entry == nil { throw PluginError.invalid("Actions need a page (“entry”) that answers them with frog.action.") }
+        let names = commands.map(\.id) + actions.map(\.id)
+        guard Set(names).count == names.count else { throw PluginError.invalid("Two commands or actions have the same id.") }
+        for action in actions {
+            guard Self.isValidName(action.id) else { throw PluginError.invalid("The action id “\(action.id)” must be lowercase letters, digits and hyphens.") }
+            try Self.check(action.title, "action title", maximum: 60)
+            if let keywords = action.keywords, keywords.count > 120 { throw PluginError.invalid("An action's keywords must be at most 120 characters.") }
+            if action.effect == .network, !permissions.contains(.network), !permissions.contains(.ai) {
+                throw PluginError.invalid("The action “\(action.id)” has the network effect, which needs the network or ai permission.")
+            }
+            guard action.parameters.count <= 8 else { throw PluginError.invalid("The action “\(action.id)” can have at most 8 parameters.") }
+            guard Set(action.parameters.map(\.name)).count == action.parameters.count else {
+                throw PluginError.invalid("The action “\(action.id)” names a parameter twice.")
+            }
+            for parameter in action.parameters {
+                guard Self.isValidName(parameter.name), !PluginManifestAction.reservedNames.contains(parameter.name) else {
+                    throw PluginError.invalid("The parameter “\(parameter.name)” of “\(action.id)” must be lowercase letters, digits and hyphens, and not stdin, json or help.")
+                }
+                if let help = parameter.help { try Self.check(help, "help of “\(parameter.name)”", maximum: 120) }
+                if parameter.type == .choice {
+                    guard let choices = parameter.choices, (1...20).contains(choices.count), Set(choices).count == choices.count,
+                          choices.allSatisfy({ !$0.isEmpty && $0.count <= 40 && !$0.contains(where: \.isNewline) }) else {
+                        throw PluginError.invalid("The choice “\(parameter.name)” of “\(action.id)” needs 1 to 20 different “choices” of up to 40 characters.")
+                    }
+                } else if parameter.choices != nil {
+                    throw PluginError.invalid("Only a parameter of type choice has “choices”; “\(parameter.name)” of “\(action.id)” is \(parameter.type.rawValue).")
+                }
+            }
         }
     }
 
