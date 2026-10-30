@@ -125,11 +125,6 @@ public struct WindowSwitches: Equatable, Sendable {
     /// Window drags are watched: for drag to snap, the zone overlay, or both.
     public var watchesDrags: Bool { dragToSnap || zoneOverlay }
 
-    /// The window commands the command bar lists, in `allCases` order.
-    public var commandBarCommands: [WindowCommand] {
-        WindowCommand.allCases.filter { $0.showsInCommandBar && commandEnabled($0) }
-    }
-
     /// The window commands that run and have a shortcut, as the rules Frog registers, in `allCases` order.
     public var shortcutRules: [Rule] {
         WindowCommand.allCases.compactMap { command in
