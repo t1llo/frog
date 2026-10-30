@@ -60,6 +60,24 @@ enum FrogStyle {
     /// Space around a page's content (`FrogPage`) and between its sections.
     static let pagePadding: CGFloat = 24
     static let sectionSpacing: CGFloat = 24
+    /// The spacing scale for gaps, stacks and paddings: 2 between a title and its caption, 4 inside a label,
+    /// 6 and 8 between controls, 10 between blocks inside a card, 12 between a row's icon, text and control,
+    /// 16 between groups. docs/design.md says which goes where.
+    static let space2: CGFloat = 2
+    static let space4: CGFloat = 4
+    static let space6: CGFloat = 6
+    static let space8: CGFloat = 8
+    static let space10: CGFloat = 10
+    static let space12: CGFloat = 12
+    static let space16: CGFloat = 16
+    /// Where content starts inside a card, a section card, and a popup's header, body and footer: 14 from the
+    /// edge. A popup list adds `listInset` around its rows and `rowPadding` inside them, which together make
+    /// the same 14, so a row's text lines up with the header's.
+    static let cardPadding: CGFloat = 14
+    static let listInset: CGFloat = 6
+    static let rowPadding: CGFloat = 8
+    /// Space around a sheet's content, its header and its buttons.
+    static let sheetPadding: CGFloat = 20
     /// The widest a settings page's column grows (`FrogPage`), so rows stay readable in a wide window.
     static let pageWidth: CGFloat = 720
     /// Dashboards, tables and grids (`FrogPage(width: FrogStyle.wideWidth)`, `PageScroll`).
@@ -452,7 +470,7 @@ private struct FrogButtonBody: View {
 
 /// A padded card. Lists and tables that draw their own rows use `frogTableSurface()`.
 struct FrogCard<Content: View>: View {
-    var padding: CGFloat = 14
+    var padding: CGFloat = FrogStyle.cardPadding
     @ViewBuilder var content: Content
 
     var body: some View {

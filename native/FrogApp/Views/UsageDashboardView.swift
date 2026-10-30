@@ -13,7 +13,7 @@ struct UsageDashboardView: View {
             FrogPageHeader(title: "LLM usage") {
                 FrogDropdown(selected: provider, options: usage.providers, width: 120, title: { $0 }) { usage.selectProvider($0) }
                     .accessibilityLabel("Provider")
-                IconAction(title: "Refresh", symbol: "arrow.clockwise", bordered: true) { usage.refresh() }
+                IconAction(title: "Refresh", symbol: "arrow.clockwise") { usage.refresh() }
             }
             if provider == "Claude", usage.accountsNoticeVisible { UsageAccountsNotice(usage: usage) }
             if UsageStatusPopover.shownAccounts(usage).isEmpty { UsageLimitsSection(usage: usage) }

@@ -24,18 +24,21 @@ struct FrogPageHeader<Actions: View>: View {
     @ViewBuilder var actions: Actions
 
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .center, spacing: FrogStyle.space16) {
+            VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                // As tall as a control, so the title sits at the same height on every page, with or without a
+                // subtitle or actions.
                 Text(L10n.text(title)).font(FrogType.title).tracking(-0.4)
                     .foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
+                    .frame(minHeight: FrogStyle.controlHeight)
                 if let subtitle, !subtitle.isEmpty {
                     Text(L10n.text(subtitle)).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
                 .overlay { WindowDragRegion().accessibilityHidden(true) }
-            actions
-        }.frame(minHeight: FrogStyle.controlHeight)
+            if Actions.self != EmptyView.self { HStack(spacing: FrogStyle.space8) { actions } }
+        }
     }
 }
 
@@ -71,7 +74,7 @@ struct FrogSection<Content: View, Accessory: View>: View {
                 }.frame(minHeight: 20).padding(.horizontal, 2)
             }
             VStack(alignment: .leading, spacing: 0) { content }
-                .padding(.horizontal, 14).padding(.vertical, 4)
+                .padding(.horizontal, FrogStyle.cardPadding).padding(.vertical, FrogStyle.space4)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frogTableSurface()
             if let footer {

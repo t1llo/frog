@@ -52,7 +52,7 @@ struct WindowCheatSheetContent: View {
     let sections: [WindowCheatSheet.Section]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: FrogStyle.space16) {
             Text("Window shortcuts").font(FrogType.section).accessibilityAddTraits(.isHeader)
             if sections.isEmpty {
                 Text("No window shortcuts yet. Add them on the Windows page.")
@@ -60,7 +60,7 @@ struct WindowCheatSheetContent: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(sections) { section in
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: FrogStyle.space6) {
                     SectionCaption(text: section.title)
                     ForEach(section.items) { item in
                         HStack(spacing: 10) {
@@ -82,7 +82,7 @@ struct WindowCheatSheetContent: View {
                 }
             }
         }
-        .padding(18)
+        .padding(FrogStyle.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundStyle(FrogStyle.ink)
     }

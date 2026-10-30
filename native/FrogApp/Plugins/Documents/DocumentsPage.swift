@@ -84,13 +84,13 @@ struct DocumentsPage<Controls: View, Content: View, Footer: View>: View {
                                     .help("Pastes from the command bar")
                             }
                         }
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, FrogStyle.rowPadding)
                         .frame(maxWidth: .infinity, minHeight: FrogStyle.controlHeight, alignment: .leading)
                         .contentShape(Rectangle())
                         .frogHoverRow(selected: item.id == selected)
                     }.buttonStyle(.plain).onDrag { provider(item) }
                 }
-            }.padding(6)
+            }.padding(FrogStyle.listInset)
         }.frogTableSurface()
     }
 

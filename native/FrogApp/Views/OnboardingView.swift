@@ -46,7 +46,7 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     ZStack(alignment: .topLeading) { page.id(step).transition(stepTransition) }
                     if let issue { InlineIssue(message: issue) }
-                }.padding(.horizontal, 28).padding(.bottom, 20).frame(maxWidth: .infinity, alignment: .leading)
+                }.padding(.horizontal, FrogStyle.pagePadding).padding(.bottom, FrogStyle.sheetPadding).frame(maxWidth: .infinity, alignment: .leading)
             }.minimalScrollbars().bottomScrollFade()
             footer
         }
@@ -67,23 +67,26 @@ struct OnboardingView: View {
             FrogMark()
             VStack(alignment: .leading, spacing: 4) {
                 Text(step.title).font(FrogType.title).tracking(-0.4)
-                Text(step.subtitle).font(FrogType.body).foregroundStyle(FrogStyle.muted)
+                Text(step.subtitle).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
             }
             Spacer()
             OnboardingProgress(step: step.rawValue, count: Step.allCases.count).padding(.top, 8)
-        }.padding(.horizontal, 28).padding(.top, 28).padding(.bottom, 20)
+        }.padding([.horizontal, .top], FrogStyle.pagePadding).padding(.bottom, FrogStyle.sectionSpacing)
     }
 
     private var footer: some View {
         HStack(spacing: 10) {
-            if step == .plugins { Button("Import settings…", action: chooseImport).buttonStyle(.frog(.ghost)) }
-            else { Button("Skip setup") { model.finishSetup() }.buttonStyle(.frog(.ghost)) }
+            // The ghost button's text starts at the content edge; its hover fill reaches past it.
+            Group {
+                if step == .plugins { Button("Import settings…", action: chooseImport).buttonStyle(.frog(.ghost)) }
+                else { Button("Skip setup") { model.finishSetup() }.buttonStyle(.frog(.ghost)) }
+            }.padding(.leading, -10)
             Spacer()
             if let previous = Step(rawValue: step.rawValue - 1) { Button("Back") { go(to: previous) } }
             Button(step == Step.allCases.last ? "Open Frog" : "Continue") {
                 if let next = Step(rawValue: step.rawValue + 1) { go(to: next) } else { model.finishSetup() }
             }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
-        }.padding(.horizontal, 28).padding(.vertical, 18)
+        }.padding([.horizontal, .bottom], FrogStyle.pagePadding).padding(.top, FrogStyle.space16)
     }
 
     @ViewBuilder private var page: some View {

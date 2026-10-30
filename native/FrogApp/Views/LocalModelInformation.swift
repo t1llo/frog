@@ -27,7 +27,7 @@ struct LocalModelInformation: View {
             }
             Text("Runs locally after download.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
             HStack { Spacer(); Button("Done") { dismiss() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction) }
-        }.padding(22).frame(width: 450).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
+        }.padding(FrogStyle.sheetPadding).frame(width: 450).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
             .buttonStyle(.frog()).environment(\.locale, L10n.locale)
     }
 }
@@ -77,7 +77,7 @@ struct AddLocalModelView: View {
             Text("Checking reads metadata. Download installs the model separately. Use MLX, WhisperKit or a supported Parakeet conversion.")
                 .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
             HStack { Spacer(); Button("Cancel") { inspection?.cancel(); dismiss() }.keyboardShortcut(.cancelAction) }
-        }.padding(22).frame(width: 520).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
+        }.padding(FrogStyle.sheetPadding).frame(width: 520).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
             .buttonStyle(.frog()).environment(\.locale, L10n.locale)
             .onDisappear { inspection?.cancel() }
     }

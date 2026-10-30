@@ -159,7 +159,7 @@ struct ProviderEditor: View {
                 Text("External provider").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 TextField("Connection name", text: $provider.name).textFieldStyle(.plain).font(FrogType.title)
                 CompactSegments(values: [0, 1, 2], selected: step, title: { ["Service", "Connection", "Models"][$0] }) { step = $0 }.padding(.top, 12)
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(24)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(FrogStyle.sheetPadding)
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if step == 0 {
@@ -249,7 +249,7 @@ struct ProviderEditor: View {
                     }
                     }
                     if let validation { InlineIssue(message: validation) }
-                }.padding(.horizontal, 20).padding(.bottom, 12).minimalScrollbars()
+                }.padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space12).minimalScrollbars()
             }
             HStack {
                 Button("Cancel") { testTask?.cancel(); discoveryTask?.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
@@ -257,7 +257,7 @@ struct ProviderEditor: View {
                 if step > 0 { Button("Back") { step -= 1 } }
                 Button(step < 2 && !isSaved ? "Continue" : "Save") { if step < 2 && !isSaved { step += 1 } else { save() } }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
                     .disabled(((step == 2 || isSaved) && validation != nil) || testing || discovering)
-            }.padding(20)
+            }.padding(FrogStyle.sheetPadding)
         }
         .frame(width: 540, height: 560).background(FrogStyle.canvas).background(FrogWindowMaterial())
         .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(.frog())

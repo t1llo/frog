@@ -27,7 +27,7 @@ struct FrogStatusMenu: View {
         let tabs = host.menuTabs
         let shown = tabs.contains { $0.id == selectedTab } ? selectedTab : Self.frogTab
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 7) {
+            HStack(spacing: FrogStyle.space8) {
                 Image(nsImage: FrogMenuIcon.image).renderingMode(.template)
                 // With tabs, the first tab names Frog.
                 if tabs.isEmpty { Text("Frog").font(FrogType.section) }

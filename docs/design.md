@@ -37,6 +37,14 @@ Circles and capsules are fine for dots, avatars, toggles and progress bars. No o
 - v1 names, for pages not moved yet: `PageScroll` and `PageHeader` now draw `FrogPage` (wide) and `FrogPageHeader`; `SettingsSection` with `CompactRow` (card padding 14, rows 10 apart) still works. Move a page to `FrogSection` and `FrogRow` all at once, never one section of it.
 - Inside a card, a sub-group starts with a `SectionCaption`.
 - List rows are 1–2 apart, highlighted with `frogRowHighlight(hovering:selected:)`, or `frogHoverRow(selected:)` when the row tracks its own hover.
+- Spacing comes from the `FrogStyle.space2`…`space16` scale (2, 4, 6, 8, 10, 12, 16), never an odd value such as 7 or 9: 2 between a title and its caption, 4 inside a label, 6–8 between controls in a row, 10 between blocks inside a card, 12 between a row's icon, text and control, 16 between groups in a popup.
+- One content edge per surface, so text lines up from the header to the footer:
+  - Cards, section cards, popup headers, popup bodies and `PanelFooter` start content `cardPadding` (14) from the edge.
+  - A popup list is inset `listInset` (6) and its rows padded `rowPadding` (8): 6 + 8 = 14, the same edge. A search or query line above the rows gives its icon the rows' icon width and gap, so the query starts where the titles do.
+  - Sheets and setup use `sheetPadding` (20) on every side, header, body and buttons alike; the onboarding window uses `pagePadding` (24) like a page.
+  - A ghost button that starts a line (a back link, Skip setup) puts its text on the content edge with `.padding(.leading, -10)`; only its hover fill reaches past it.
+- `FrogPageHeader`'s title is a control tall, so it sits at the same height on every page whatever the subtitle or actions; actions are 8 apart. Icon actions in a page header are plain (`IconAction`, `IconMenu(bordered: false)`).
+- The sidebar's brand, captions, row icons and the setup card share one edge (16) and one text edge (44).
 
 ## Type
 

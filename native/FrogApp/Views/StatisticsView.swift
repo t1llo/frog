@@ -20,11 +20,14 @@ struct StatisticsView: View {
 
     var body: some View {
         PageScroll {
-            if let onBack {
-                Button("Settings", systemImage: "chevron.left", action: onBack)
-                    .buttonStyle(.frog(.ghost))
+            // The way back sits with the title, its text on the title's edge.
+            VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                if let onBack {
+                    Button("Settings", systemImage: "chevron.left", action: onBack)
+                        .buttonStyle(.frog(.ghost)).padding(.leading, -10)
+                }
+                PageHeader(title: "Statistics")
             }
-            PageHeader(title: "Statistics")
             SettingsSection(title: "Local statistics") {
                 CompactRow(title: "Record statistics", detail: "Counts only, kept on this Mac.") {
                     Toggle("Record statistics", isOn: Binding(get: { statistics.snapshot.recordingEnabled }, set: statistics.setRecordingEnabled))
@@ -36,7 +39,7 @@ struct StatisticsView: View {
                 if let issue = statistics.issue { InlineIssue(message: issue) }
             }
             CompactSegments(values: Period.allCases, selected: period, title: { $0.rawValue }) { period = $0 }
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: FrogStyle.space10), GridItem(.flexible())], spacing: FrogStyle.space10) {
                 metric("Recordings", value: totals.dictations.formatted(), symbol: "mic")
                 metric("Recording time", value: duration(totals.recordingSeconds), symbol: "clock")
                 metric("Words dictated", value: totals.words.formatted(), symbol: "text.word.spacing")
@@ -49,13 +52,11 @@ struct StatisticsView: View {
                     countRow(ruleTitle(kind), count: totals.ruleRuns(kind))
                 }
             }
-            SettingsSection(title: "Tool use") {
+            FrogSection("Tool use", footer: "Only completed actions count. Daily totals are kept for a year.") {
                 ForEach(ActivityToolKind.allCases, id: \.self) { kind in
                     countRow(toolTitle(kind), count: totals.toolUses(kind))
                 }
             }
-            Text("Only completed actions count. Daily totals are kept for a year.")
-                .font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             SettingsSection(title: "Storage") {
                 CompactRow(title: "Reset all statistics") {
                     Button("Reset statistics", role: .destructive) { confirmingReset = true }.buttonStyle(.frog(.destructive))
@@ -71,7 +72,11 @@ struct StatisticsView: View {
     private func metric(_ title: String, value: String, symbol: String) -> some View {
         FrogCard {
             VStack(alignment: .leading, spacing: 8) {
-                Label(title, systemImage: symbol).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                // The symbol in a fixed width, so the four titles start at the same place.
+                HStack(spacing: FrogStyle.space6) {
+                    Image(systemName: symbol).frame(width: 16)
+                    Text(title)
+                }.font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 Text(value).font(FrogType.title).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
             }
         }.accessibilityElement(children: .combine)

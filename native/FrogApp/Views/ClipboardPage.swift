@@ -15,7 +15,7 @@ struct ClipboardPage: View {
     var body: some View {
         FrogPage {
             FrogPageHeader(title: "Clipboard", subtitle: "Kept in memory. Passwords and keys never are.") {
-                IconMenu(title: "Clipboard actions") {
+                IconMenu(title: "Clipboard actions", bordered: false) {
                     Button("Clear history", systemImage: "trash", role: .destructive) { store.clear() }
                         .disabled(store.entries.isEmpty)
                 }

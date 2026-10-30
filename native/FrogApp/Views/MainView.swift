@@ -62,7 +62,7 @@ struct MainView: View {
                             IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)
                         }.padding(.leading, 12).padding(.trailing, 4).padding(.vertical, 4)
                             .background(FrogStyle.critical.opacity(0.08), in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
-                            .padding(.horizontal, 20).padding(.bottom, 16)
+                            .padding(.horizontal, FrogStyle.pagePadding).padding(.bottom, FrogStyle.space16)
                             .transition(.asymmetric(insertion: reduceMotion ? .opacity : .offset(y: 8).combined(with: .opacity), removal: .opacity))
                     }
                 }.animation(model.errorMessage == nil ? FrogMotion.exit : FrogMotion.reveal, value: model.errorMessage)
@@ -96,7 +96,7 @@ struct MainView: View {
                 HStack(spacing: 8) {
                     Image(nsImage: FrogMenuIcon.image).renderingMode(.template).frame(width: 20)
                     Text("Frog").font(FrogType.section).tracking(-0.2)
-                }.padding(.horizontal, 16).padding(.top, 19).padding(.bottom, 23)
+                }.padding(.horizontal, FrogStyle.space16).padding(.top, 19).padding(.bottom, 23)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .overlay { WindowDragRegion().accessibilityHidden(true) }
 
@@ -106,7 +106,7 @@ struct MainView: View {
                             let groups = model.pluginHost.sidebar
                             let numbered = groups.flatMap(\.plugins).prefix(9).map(\.id)
                             ForEach(groups, id: \.category) { group in
-                                SectionCaption(text: group.category.title).padding(.horizontal, 9).padding(.top, 12).padding(.bottom, 4)
+                                SectionCaption(text: group.category.title).padding(.horizontal, FrogStyle.space8).padding(.top, FrogStyle.space12).padding(.bottom, FrogStyle.space4)
                                 ForEach(group.plugins) { plugin in
                                     let route = Self.route(for: plugin.id)
                                     let index = numbered.firstIndex(of: plugin.id)
@@ -117,7 +117,7 @@ struct MainView: View {
                             }
                             let pages = model.pluginPages
                             if !pages.isEmpty {
-                                SectionCaption(text: "Community").padding(.horizontal, 9).padding(.top, 12).padding(.bottom, 4)
+                                SectionCaption(text: "Community").padding(.horizontal, FrogStyle.space8).padding(.top, FrogStyle.space12).padding(.bottom, FrogStyle.space4)
                                 ForEach(pages) { item in
                                     navigationButton(NavigationItem(id: .plugin(item.id), title: item.name, symbol: PluginSymbol.name(item.symbol), tint: PluginTint.purple.color))
                                         .id(ToolkitRoute.plugin(item.id))
@@ -138,14 +138,15 @@ struct MainView: View {
                     model.toolkit.select(.settings); permissionsRequest.ask()
                 } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning)
+                        Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning).frame(width: 20)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Finish setup").font(FrogType.label).foregroundStyle(FrogStyle.ink)
                             Text(L10n.text(!model.accessibilityGranted ? "Allow Accessibility" : "Allow Microphone"))
                                 .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                         }
                         Spacer(minLength: 0)
-                    }.padding(10).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                    }.padding(.horizontal, FrogStyle.space8).padding(.vertical, FrogStyle.space10)
+                        .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
                         .contentShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
                 }.buttonStyle(.plain).padding(.horizontal, 8).padding(.bottom, 10)
             }
@@ -165,7 +166,7 @@ private struct SidebarRow: View {
     @State private var hovering = false
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 9) {
+            HStack(spacing: FrogStyle.space8) {
                 if let tint = item.tint {
                     PluginIconTile(symbol: item.symbol, tint: tint, size: .sidebar)
                 } else {
@@ -175,7 +176,7 @@ private struct SidebarRow: View {
                 Spacer(minLength: 0)
             }
             .foregroundStyle(selected || hovering ? FrogStyle.ink : FrogStyle.muted)
-            .padding(.horizontal, 9).frame(height: FrogStyle.controlHeight)
+            .padding(.horizontal, FrogStyle.space8).frame(height: FrogStyle.controlHeight)
             .frogRowHighlight(hovering: hovering, selected: selected)
         }.buttonStyle(.plain).onHover { hovering = $0 }
             .accessibilityAddTraits(selected ? .isSelected : []).help(item.title)
