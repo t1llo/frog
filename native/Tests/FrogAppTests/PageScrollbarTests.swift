@@ -13,14 +13,17 @@ final class PageScrollbarTests: XCTestCase {
         try assertThinScrollers(in: host)
     }
 
-    func testTheRulesListGetsThinScrollers() throws {
+    func testTheRulePagesGetThinScrollers() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil })
         defer { model.shutdown() }
-        let (host, window) = place(RulesView().environmentObject(model))
-        defer { window.close() }
-        try assertThinScrollers(in: host)
+        await model.pluginHost.syncAndWait()
+        for plugin in ["writing", "dictation"] {
+            let (host, window) = place(try XCTUnwrap(model.pluginHost.page(for: plugin), plugin))
+            defer { window.close() }
+            try assertThinScrollers(in: host)
+        }
     }
 
     func testTheModelsPageAndTheProviderEditorGetThinScrollers() throws {

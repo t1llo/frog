@@ -5,11 +5,6 @@ import FrogCore
 
 /// Where window layouts appear and run while Windows, Shortcuts or both are on, decided without a window.
 @MainActor final class WindowsFeatureRoutingTests: XCTestCase {
-    func testShortcutSegmentsHideWindowsWhileWindowsIsOn() {
-        XCTAssertEqual(RulesView.shortcutCategories(windowsEnabled: false), [.application, .window, .system])
-        XCTAssertEqual(RulesView.shortcutCategories(windowsEnabled: true), [.application, .system])
-    }
-
     func testLayoutRecordsFollowShortcutsOrWindows() throws {
         for (shortcuts, windows) in [(false, true), (false, false), (true, false)] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
