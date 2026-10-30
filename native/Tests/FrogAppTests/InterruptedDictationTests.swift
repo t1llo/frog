@@ -272,7 +272,7 @@ private final class InterruptedRecorder: DictationRecording {
 /// Tests that monitor keys send Escape to a window; they must not take the key from the whole Mac.
 @MainActor
 private final class UnregisteredCancelKey: DictationCancelKey {
-    func register(heldModifiers: UInt32, onPress: @escaping () -> Void) {}
+    func register(heldModifiers: UInt32, onPress: @escaping (HistoryEntry.Interruption) -> Void) {}
     func unregister() {}
 }
 

@@ -576,9 +576,9 @@ final class DictationController: ObservableObject {
         // A registered key works without Accessibility permission and keeps Escape from the focused
         // app. While a hold shortcut is down, Escape arrives together with that shortcut's modifiers.
         let hold = (activeRule?.action?.recordingMode ?? preferences.recordingMode) == .hold
-        cancelKey?.register(heldModifiers: hold ? activeRule?.hotkey?.modifiers ?? 0 : 0) { [weak self] in
+        cancelKey?.register(heldModifiers: hold ? activeRule?.hotkey?.modifiers ?? 0 : 0) { [weak self] reason in
             guard self?.token == token else { return }
-            self?.interrupt(reason: .escape)
+            self?.interrupt(reason: reason)
         }
         guard monitorKeys else { return }
         // The monitors remain for an Escape that macOS would not register for Frog.

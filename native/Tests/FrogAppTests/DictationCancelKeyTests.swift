@@ -21,6 +21,17 @@ final class DictationCancelKeyTests: XCTestCase {
         XCTAssertNil(fixture.key.heldModifiers, "Escape must go back to the focused app once the recording is cancelled")
     }
 
+    func testTheOwnCancelShortcutCancelsWithoutCountingAsEscape() async {
+        let fixture = Fixture()
+        defer { fixture.cleanUp() }
+        var reasons: [HistoryEntry.Interruption] = []
+        fixture.controller.onInterruption = { reasons.append($0.reason); return false }
+        fixture.controller.start(rule: fixture.rule(), preferences: WorkflowPreferences(), models: fixture.models)
+        await fixture.controller.waitForWork()
+        fixture.key.press(.cancelled)
+        XCTAssertEqual(reasons, [.cancelled])
+    }
+
     func testHoldShortcutRegistersEscapeWithItsModifiersToo() async {
         let fixture = Fixture()
         defer { fixture.cleanUp() }
@@ -91,14 +102,14 @@ final class DictationCancelKeyTests: XCTestCase {
 private final class RecordedCancelKey: DictationCancelKey {
     /// Nil while nothing is registered.
     private(set) var heldModifiers: UInt32?
-    private var onPress: (() -> Void)?
-    private var last: (() -> Void)?
-    func register(heldModifiers: UInt32, onPress: @escaping () -> Void) {
+    private var onPress: ((HistoryEntry.Interruption) -> Void)?
+    private var last: ((HistoryEntry.Interruption) -> Void)?
+    func register(heldModifiers: UInt32, onPress: @escaping (HistoryEntry.Interruption) -> Void) {
         self.heldModifiers = heldModifiers; self.onPress = onPress; last = onPress
     }
     func unregister() { heldModifiers = nil; onPress = nil }
-    func press() { onPress?() }
-    func pressLate() { last?() }
+    func press(_ reason: HistoryEntry.Interruption = .escape) { onPress?(reason) }
+    func pressLate() { last?(.escape) }
 }
 
 @MainActor
