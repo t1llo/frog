@@ -23,7 +23,8 @@ final class CompactControlsTests: XCTestCase {
         let host = NSHostingView(rootView: CompactRow(title: "Theme") {
             CompactMenu(value: "Tokyo Night") { Button("Tokyo Night") {}; Button("Frog") {} }
         }.frame(width: 520))
-        XCTAssertEqual(host.fittingSize.height, FrogStyle.controlHeight, "The name is spoken, not drawn")
+        // One line of FrogRow: the control and the row's vertical padding, at least the row height.
+        XCTAssertEqual(host.fittingSize.height, max(FrogStyle.rowHeight, FrogStyle.controlHeight + 12), "The name is spoken, not drawn")
     }
 
     private final class Seen { var titles: [String: String?] = [:] }
