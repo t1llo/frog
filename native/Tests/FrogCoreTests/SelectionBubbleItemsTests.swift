@@ -34,16 +34,16 @@ final class SelectionBubbleItemsTests: XCTestCase {
     func testHiddenRulesStayOutAndShortcutsComeAlong() {
         var proofread = writing("Proofread")
         proofread.hotkey = Hotkey(keyCode: 8, modifiers: 4096 | 512)
-        let define = answer("Define")
+        var define = answer("Define")
+        define.showsInBubble = false
         let rules = [Rule.explainPreset, define, proofread]
-        let result = SelectionBubbleItems.items(rules: rules, explainEnabled: true, writingEnabled: true, editable: true,
-                                                hidden: [define.id], configured: { _ in true })
+        let result = items(rules)
         XCTAssertEqual(titles(result.visible), ["Explain", "Proofread"])
         XCTAssertEqual(result.visible.last?.hotkey, proofread.hotkey)
         XCTAssertEqual(SelectionBubbleItems.candidates(rules: rules, explainEnabled: true, writingEnabled: true).map(\.name),
-                       ["Explain", "Define", "Proofread"], "The Explain page lists hidden rules too, to show them again")
+                       ["Explain", "Define", "Proofread"], "The Writing page lists hidden rules too, to show them again")
         XCTAssertEqual(SelectionBubbleItems.candidates(rules: rules, explainEnabled: true, writingEnabled: false).map(\.name),
-                       ["Explain", "Define"])
+                       ["Explain"])
     }
 
     func testDisabledAndUnconfiguredRulesAreLeftOut() {
@@ -64,10 +64,10 @@ final class SelectionBubbleItemsTests: XCTestCase {
         XCTAssertEqual(titles(items(rules, writing: false).visible), ["Explain"])
     }
 
-    func testExplainOffLeavesOutAnswerRules() {
+    func testExplainOffLeavesOutTheExplainRule() {
         let rules = [Rule.explainPreset, answer("Define"), writing("Proofread")]
-        XCTAssertEqual(titles(items(rules, explain: false).visible), ["Proofread"])
-        XCTAssertTrue(items(rules, explain: false, editable: false).visible.isEmpty)
+        XCTAssertEqual(titles(items(rules, explain: false).visible), ["Define", "Proofread"])
+        XCTAssertEqual(titles(items(rules, explain: false, editable: false).visible), ["Define"])
     }
 
     func testMoreThanFourItemsKeepThreeVisible() {
@@ -96,24 +96,24 @@ final class SelectionBubbleItemsTests: XCTestCase {
         let answers = (1...6).map { answer("Answer \($0)") }
         let writings = (1...20).map { writing("Writing \($0)") }
         let result = items(writings + [Rule.explainPreset] + answers)
-        XCTAssertEqual(titles(result.visible), ["Explain", "Answer 1", "Answer 2"])
-        XCTAssertEqual(titles(result.more), (3...6).map { "Answer \($0)" } + (1...20).map { "Writing \($0)" })
-        XCTAssertEqual(result.more.filter(\.answers).count, 4, "answer rules stay together ahead of Writing rules")
+        XCTAssertEqual(titles(result.visible), ["Explain", "Writing 1", "Writing 2"])
+        XCTAssertEqual(titles(result.more), (3...20).map { "Writing \($0)" } + (1...6).map { "Answer \($0)" },
+                       "the person's own rules keep their order, whatever they do with the result")
     }
 
     func testHidingEveryRuleLeavesNothingToShow() {
-        let rules = [Rule.explainPreset, answer("Define"), writing("Proofread")]
-        let result = SelectionBubbleItems.items(rules: rules, explainEnabled: true, writingEnabled: true, editable: true,
-                                                hidden: Set(rules.map(\.id)), configured: { _ in true })
+        let rules = [Rule.explainPreset, answer("Define"), writing("Proofread")].map { rule -> Rule in
+            var hidden = rule; hidden.showsInBubble = false; return hidden
+        }
+        let result = items(rules)
         XCTAssertTrue(result.visible.isEmpty)
         XCTAssertTrue(result.more.isEmpty)
     }
 
-    func testARuleHiddenOrMissingDoesNotTakeASlotInTheBar() {
-        let rules = [Rule.explainPreset, answer("Define"), answer("Summarize"), writing("Proofread"), writing("Shorten")]
-        let gone = UUID()
-        let result = SelectionBubbleItems.items(rules: rules, explainEnabled: true, writingEnabled: true, editable: true,
-                                                hidden: [rules[1].id, gone], configured: { _ in true })
+    func testARuleHiddenDoesNotTakeASlotInTheBar() {
+        var rules = [Rule.explainPreset, answer("Define"), answer("Summarize"), writing("Proofread"), writing("Shorten")]
+        rules[1].showsInBubble = false
+        let result = items(rules)
         XCTAssertEqual(titles(result.visible), ["Explain", "Summarize", "Proofread", "Shorten"], "four fit without More")
         XCTAssertTrue(result.more.isEmpty)
     }

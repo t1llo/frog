@@ -14,7 +14,6 @@ struct AppIssue: Identifiable {
 final class AppModel: ObservableObject {
     @Published private(set) var configuration = Configuration()
     @Published private(set) var history: [HistoryEntry] = []
-    @Published var historyFilter: HistoryFilter?
     @Published private(set) var hotkeyErrors: [UUID: String] = [:]
     @Published private(set) var isProcessing = false
     /// What the running rule is doing, shown while a rule is tried in Writing or Dictation.
@@ -43,12 +42,12 @@ final class AppModel: ObservableObject {
     /// config.toml: which plugins are on, and each plugin's own table. Frog's other settings are still in `config`,
     /// whose feature switches follow `[plugins]`.
     let settingsFile: ConfigStore
-    private let historyStore: HistoryStore
+    let historyStore: HistoryStore
     private let credentials: any CredentialStore
     private let complete: (String, Rule, ProviderConfiguration, String?) async throws -> String
     private let readKey: (UUID) throws -> String?
     private let writeClipboard: (String) -> Void
-    private let registerShortcuts: Bool
+    let registerShortcuts: Bool
     private let readAccessibility: () -> Bool
     private let readLoginStatus: @Sendable () -> LoginService.Snapshot
     private let writeLoginItem: @Sendable (Bool) throws -> Void
@@ -232,7 +231,7 @@ final class AppModel: ObservableObject {
     private let captureSelection: () async throws -> any CapturedTextSelection
     /// Reads an answer's selection through Accessibility before `captureSelection` is tried. Nil when a test
     /// injects only a capture.
-    private let selectionReader: SelectionReading?
+    let selectionReader: SelectionReading?
     /// The app an answer reads from, after the shortcut keys are released.
     private let selectionTarget: () async throws -> pid_t
     private let answerStream: (AnswerRequest) -> AsyncThrowingStream<AnswerEvent, Error>
@@ -240,12 +239,12 @@ final class AppModel: ObservableObject {
     /// Asks for the notes folder the first time an answer is saved. Nil when cancelled.
     private let chooseNotesFolder: () async -> URL?
     private var answerCapture: Task<Void, Never>?
-    private let injectedSelectionWatcher: (any SelectionWatching)?
-    /// The selection bubble: runs while Explain and the bubble are on and Accessibility is allowed.
-    private(set) lazy var selectionWatcher: any SelectionWatching = injectedSelectionWatcher ?? makeSelectionWatcher()
+    /// The watcher tests hand in; the Writing plugin's bubble uses it instead of its own.
+    let injectedSelectionWatcher: (any SelectionWatching)?
+    /// The selection bubble while the Writing plugin runs it.
+    weak var selectionBubble: WritingBubble?
     /// History as it was when the running answer started: clearing or turning it off since stops saving the answer.
-    private var answerHistoryEpoch: UUID?
-    private var answerHistoryWasEnabled = false
+    private var answerHistory = HistoryTicket(epoch: nil)
     /// Answer rules: one answer and its follow-ups at a time, in the answer panel.
     private(set) lazy var answers: AnswerController = {
         let controller = AnswerController(
@@ -288,7 +287,7 @@ final class AppModel: ObservableObject {
     private let windowManager = WindowManager()
     private var windowActionTask: Task<Void, Never>?
     let windowLayout: WindowLayoutController
-    private var historyEpoch = UUID()
+    private(set) var historyEpoch = UUID()
     private var configurationLoadError: Error?
     private lazy var usagePreferenceWriter = UsagePreferenceWriter(store: configurationStore, initial: configuration)
     private var usagePreferenceRevision = 0
@@ -509,7 +508,7 @@ final class AppModel: ObservableObject {
             case .applicationShortcuts: self.applicationTask?.cancel(); self.systemActionTask?.cancel(); if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.shortcutPanel.hide()
             case .scripts: self.scripts.stop()
             case .commandBar: self.commandBar.stop()
-            case .explain: self.answerCapture?.cancel(); self.answers.close(); self.selectionWatcher.stop()
+            case .explain: self.answerCapture?.cancel(); self.answers.close()
             case .windows: if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.windowLayout.stop()
             case .cleaner: self.cleanerModel?.stop()
             case .plugins: self.pluginRuntime?.configure(enabled: false)
@@ -544,7 +543,7 @@ final class AppModel: ObservableObject {
         if !candidate.preferences.historyEnabled { invalidateHistoryRecovery() }
         if !candidate.preferences.showProcessingIndicator { processingIndicator.hide() }
         registerHotkeys(); shortcutPanel.hide()
-        configureWindowSwitcher(); configureSelectionWatcher(); configureClipboardHistory(); refreshHistory()
+        configureWindowSwitcher(); configureClipboardHistory(); refreshHistory()
         dismissError()
     }
     func finishSetup() {
@@ -572,7 +571,6 @@ final class AppModel: ObservableObject {
         configureStatusItems()
         registerHotkeys()
         configureWindowSwitcher()
-        configureSelectionWatcher()
         configureClipboardHistory()
         if configuration.preferences.featureEnabled(.commandBar) { commandBar.warm() }
         configureWindowLayout()
@@ -608,7 +606,7 @@ final class AppModel: ObservableObject {
         dictation.cancel(); localModels.shutdown(); shortcutPanel.hide()
         started = false
         if registerShortcuts { windowSwitcher.stop() }
-        selectionWatcher.stop()
+        selectionBubble?.stop()
         if registerShortcuts { clipboardHistory.stop() }
         clipboardHistoryStore.configure(enabled: false)
         processingIndicator.hide()
@@ -705,7 +703,7 @@ final class AppModel: ObservableObject {
     }
     /// Turning Explain on creates the Explain rule once, with the newest text model still available. One created by an
     /// earlier version gets newer built-in instructions at the next start, unless they were edited.
-    private func adoptExplainPresetIfNeeded() {
+    func adoptExplainPresetIfNeeded() {
         let version = configuration.preferences.workflowSettings.explainPresetVersion
         if version == nil, !configuration.preferences.featureEnabled(.explain) { return }
         guard (version ?? 0) < Rule.explainPresetVersion else { return }
@@ -748,7 +746,7 @@ final class AppModel: ObservableObject {
     func refreshSystemStatus(forceLoginStatus: Bool = false) {
         let trusted = readAccessibility()
         if accessibilityGranted != trusted { accessibilityGranted = trusted }
-        if started { configureWindowSwitcher(); configureSelectionWatcher() }
+        if started { configureWindowSwitcher() }
         refreshLoginStatus(force: forceLoginStatus)
     }
 
@@ -927,8 +925,10 @@ final class AppModel: ObservableObject {
         if power.hasOwnMenuBarIcon != (active && showsAwake) { power.hasOwnMenuBarIcon = active && showsAwake }
     }
 
-    /// `inBubble` leaves the rule out of the selection bubble or offers it again, saved with the rule; nil keeps it as it is.
+    /// `inBubble` leaves the rule out of the selection bubble or offers it again; nil keeps it as it is.
     func saveRule(_ rule: Rule, inBubble: Bool? = nil) throws {
+        var rule = rule
+        if let inBubble { rule.showsInBubble = inBubble }
         guard !rule.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               rule.category.isShortcut || !rule.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw FrogError.message("Give this rule a name and instructions.")
@@ -946,29 +946,29 @@ final class AppModel: ObservableObject {
            let conflict = configuration.rules.first(where: { $0.id != rule.id && $0.enabled && $0.hotkey == hotkey }) {
             throw FrogError.message("That hotkey is already assigned to \(conflict.name).")
         }
-        let rule = configuration.reconcilingModels(in: rule, installed: localModels.installed)
+        rule = configuration.reconcilingModels(in: rule, installed: localModels.installed)
         var candidate = configuration
         if let index = candidate.rules.firstIndex(where: { $0.id == rule.id }) { candidate.rules[index] = rule }
         else { candidate.rules.append(rule) }
-        if let inBubble, candidate.preferences.explainSettings.bubbleShows(rule.id) != inBubble {
-            var explain = candidate.preferences.explainSettings
-            explain.setBubbleShows(rule.id, inBubble)
-            candidate.preferences.ensureToolkit()
-            candidate.preferences.toolkit?.explain = explain
-        }
         try persist(candidate)
         registerHotkeys()
         configureWindowSwitcher()
     }
 
     /// The selection bubble is on, so a text rule's editor offers to leave the rule out of it.
-    var offersBubbleChoice: Bool {
-        configuration.preferences.featureEnabled(.explain) && configuration.preferences.explainSettings.selectionBubble
-    }
+    var offersBubbleChoice: Bool { selectionBubble?.settings.on == true }
 
     /// A text rule the selection bubble would offer but the person left out of it.
     func ruleLeftOutOfBubble(_ rule: Rule) -> Bool {
-        offersBubbleChoice && rule.category == .text && !configuration.preferences.explainSettings.bubbleShows(rule.id)
+        offersBubbleChoice && rule.category == .text && !rule.showsInBubble
+    }
+
+    /// Changes several rules in one save, such as when settings move into a rule.
+    func updateRules(_ change: (inout [Rule]) -> Void) throws {
+        var candidate = configuration
+        change(&candidate.rules)
+        guard candidate != configuration else { return }
+        try persist(candidate)
     }
 
     func addLocalModel(_ item: LocalModelDescriptor) throws {
@@ -997,11 +997,6 @@ final class AppModel: ObservableObject {
     func deleteRule(id: UUID) throws {
         var candidate = configuration
         candidate.rules.removeAll { $0.id == id }
-        // The bubble's list of hidden rules forgets it too.
-        if var explain = candidate.preferences.toolkit?.explain, explain.bubbleHiddenRules.contains(id) {
-            explain.bubbleHiddenRules.removeAll { $0 == id }
-            candidate.preferences.toolkit?.explain = explain
-        }
         try persist(candidate)
         registerHotkeys()
         configureWindowSwitcher()
@@ -1146,7 +1141,6 @@ final class AppModel: ObservableObject {
         if !preferences.historyEnabled { invalidateHistoryRecovery() }
         if !preferences.showProcessingIndicator { processingIndicator.hide() }
         configureWindowSwitcher()
-        configureSelectionWatcher()
         configureClipboardHistory()
         localModels.idleSeconds = preferences.workflowSettings.idleUnloadSeconds
         if Self.registersShortcutsAgain(previous: previous, current: configuration, failed: !hotkeyErrors.isEmpty, holding: hotkeys.isHolding) { registerHotkeys(); shortcutPanel.hide() }
@@ -1208,7 +1202,7 @@ final class AppModel: ObservableObject {
         catch { report(error) }
     }
     /// Takes over what the store kept after a change, which saves reading the file a second time.
-    private func adoptHistory(_ retained: [HistoryEntry]) {
+    func adoptHistory(_ retained: [HistoryEntry]) {
         // Publishing an equal array would still redraw every view that observes the model.
         if history != retained { history = retained }
         let ids = Set(retained.map(\.id))
@@ -1221,16 +1215,8 @@ final class AppModel: ObservableObject {
     func historyEntriesDropped(by preferences: Preferences) -> Int {
         (try? historyStore.droppedCount(changing: configuration.preferences, to: preferences)) ?? 0
     }
-    func deleteHistory(id: UUID) throws {
-        if clipboardHistoryStore.entries.contains(where: { $0.id == id }) { clipboardHistoryStore.delete(id: id); return }
-        adoptHistory(try historyStore.delete(id: id, preferences: configuration.preferences))
-    }
-    func clearHistory() throws {
-        clipboardHistoryStore.clear(); invalidateHistoryRecovery()
-        try historyStore.clear(); refreshHistory()
-    }
 
-    private func invalidateHistoryRecovery() {
+    func invalidateHistoryRecovery() {
         historyEpoch = UUID(); recoveryHistoryEpochs = [:]
         dictation.cancelHistoryRecovery()
     }
@@ -1308,7 +1294,6 @@ final class AppModel: ObservableObject {
         invalidateHistoryRecovery()
         registerHotkeys()
         configureWindowSwitcher()
-        configureSelectionWatcher()
         if registerShortcuts { clipboardHistory.stop() }
         clipboardHistoryStore.configure(enabled: false)
         configureClipboardHistory()
@@ -1434,24 +1419,25 @@ final class AppModel: ObservableObject {
         return provider
     }
 
+    /// A text rule from its shortcut, the bubble or the command bar. A rule that shows its result answers in the panel;
+    /// the Explain rule belongs to Explain, every other one to Writing.
     func processSelection(ruleID: UUID) {
         if let rule = configuration.rules.first(where: { $0.id == ruleID }), rule.answersInPanel {
-            guard configuration.preferences.featureEnabled(.explain), rule.enabled else { return }
+            guard ruleFeatureEnabled(rule), rule.enabled else { return }
             startAnswer(rule)
             return
         }
         guard configuration.preferences.featureEnabled(.writing) else { return }
-        selectionWatcher.dismiss()
+        selectionBubble?.dismiss()
         begin(ruleID: ruleID, manualText: nil)
     }
 
     /// Reads the selection and answers it in the panel. Nothing is replaced. From the selection bubble, the
     /// selection is the one the bubble was shown for.
     private func startAnswer(_ rule: Rule, from snapshot: SelectionSnapshot? = nil) {
-        selectionWatcher.dismiss()
+        selectionBubble?.dismiss()
         answerCapture?.cancel()
-        answerHistoryEpoch = historyEpoch
-        answerHistoryWasEnabled = configuration.preferences.historyEnabled
+        answerHistory = historyTicket()
         answerCapture = Task { [weak self] in
             guard let self else { return }
             do {
@@ -1471,13 +1457,48 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// An answer rule's answer to `text`, for agents: streamed as the panel streams it, collected, and shown nowhere.
+    func answer(_ text: String, rule: Rule, context: String? = nil) async throws -> String {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message(AnswerController.emptySelection) }
+        let provider = try resolved(rule)
+        let local = provider.id == Self.localProviderID
+        let limit = AnswerPrompt.selectionLimit(local: local, kind: provider.kind)
+        guard text.count <= limit else { throw FrogError.message(AnswerPrompt.selectionTooLong(limit: limit)) }
+        let key = local || provider.kind.localTool != nil ? nil : try readKey(provider.id)
+        let session = AnswerSession(rule: rule, modelName: provider.model, modelLabel: "", selection: text, context: context,
+                                    application: nil, source: nil,
+                                    replyLanguage: AnswerPrompt.replyLanguage(preferred: Locale.preferredLanguages))
+        let request = AnswerRequest(rule: rule, provider: provider, apiKey: key, instructions: session.instructions,
+                                    messages: session.messages, isFrogLocal: local)
+        var filter = ReasoningFilter()
+        var answer = ""
+        for try await event in answerStream(request) {
+            if case .text(let chunk) = event { answer += filter.feed(chunk).visible }
+        }
+        answer += filter.finish()
+        let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw FrogError.message(filter.hidReasoning ? ReasoningFilter.onlyReasoning : "The model returned no answer.")
+        }
+        statistics.recordRuleExecution(kind: local || provider.kind.isLocal ? .local : provider.kind.localTool != nil ? .cli : .remote)
+        return trimmed
+    }
+
     /// Without Accessibility neither the read nor the Copy works, so the panel offers the setting instead.
     private struct AccessibilityMissing: Error {}
 
-    /// The Explain page with the editor of the rule an answer failed for, such as one without a model.
+    /// The page of the rule an answer failed for, such as one without a model, with its editor open.
     func editAnswerRule(_ id: UUID) {
         ruleEditRequest = id
-        openFeature(.explain)
+        openFeature(configuration.rules.first { $0.id == id }?.isExplainRule == true ? .explain : .writing)
+    }
+
+    /// `[explain]` in config.toml. Until Explain first runs and writes it, the settings it kept before.
+    var explainConfig: ExplainConfig {
+        guard settingsFile.document.value(at: [ExplainPlugin.info.id]) != nil,
+              let table = try? settingsFile.section(ExplainPlugin.info.id, as: ExplainConfig.self).value
+        else { return ExplainConfig(legacy: configuration.preferences.explainSettings) }
+        return table
     }
 
     /// The longest selection an answer reads through Accessibility, in UTF-16 units.
@@ -1487,7 +1508,7 @@ final class AppModel: ObservableObject {
     /// it answer without a Copy. Only an app that does not expose it that way gets the compatibility Copy, which
     /// restores the clipboard. A password field, a caret in a text field and a selection that is too long stop here.
     private func answerSelection() async throws -> AnswerCapture {
-        let includeContext = configuration.preferences.explainSettings.includeContext
+        let includeContext = explainConfig.context
         if let selectionReader {
             let pid = try await selectionTarget()
             try Task.checkCancellation()
@@ -1510,7 +1531,7 @@ final class AppModel: ObservableObject {
     /// The bubble's selection, read again with its context through Accessibility only. A selection that changed
     /// since the bubble appeared is answered as the bubble read it, without context.
     private func bubbleSelection(_ snapshot: SelectionSnapshot) async -> AnswerCapture {
-        let includeContext = configuration.preferences.explainSettings.includeContext
+        let includeContext = explainConfig.context
         if includeContext, let selectionReader,
            case let .selection(fresh) = await selectionReader.read(pid: snapshot.pid, maxCharacters: Self.answerReadLimit, includeContext: true),
            fresh.fingerprint == snapshot.fingerprint {
@@ -1523,59 +1544,25 @@ final class AppModel: ObservableObject {
 
     // MARK: Selection bubble
 
-    /// A rule chosen in the selection bubble: an answer rule answers the bubble's selection without the clipboard
-    /// or a shortcut wait; a Writing rule runs exactly as from its shortcut. In an app that keeps its text hidden the
-    /// bubble has no selection, so the answer rule reads it as from its shortcut, with the compatibility Copy.
+    /// A rule chosen in the selection bubble: a rule that shows its result answers the bubble's selection without the
+    /// clipboard or a shortcut wait; any other runs exactly as from its shortcut. In an app that keeps its text hidden
+    /// the bubble has no selection, so the answer reads it as from its shortcut, with the compatibility Copy.
     func runBubbleItem(_ item: BubbleItem, snapshot: SelectionSnapshot) {
         guard let rule = configuration.rules.first(where: { $0.id == item.id }), rule.enabled, ruleFeatureEnabled(rule) else { return }
         if rule.answersInPanel { startAnswer(rule, from: snapshot.textHidden ? nil : snapshot) }
         else { processSelection(ruleID: rule.id) }
     }
 
-    private func configureSelectionWatcher() {
-        let preferences = configuration.preferences
-        let runs = started && preferences.featureEnabled(.explain) && preferences.explainSettings.selectionBubble && accessibilityGranted
-        if runs, !selectionWatcher.isRunning { selectionWatcher.start() }
-        else if !runs, selectionWatcher.isRunning { selectionWatcher.stop() }
-    }
-
-    private func makeSelectionWatcher() -> any SelectionWatching {
-        // Tests without a watcher of their own never install global monitors.
-        guard registerShortcuts else { return SilentSelectionWatcher() }
-        return SelectionWatcher(reader: selectionReader ?? SelectionReader(), presenter: SelectionBubbleController(), hooks: .init(
-            options: { [weak self] in self?.configuration.preferences.explainSettings.bubbleOptions ?? SelectionBubbleOptions() },
-            state: { [weak self] in self?.bubbleState ?? BubbleState(explainEnabled: false, bubbleEnabled: false, writingEnabled: false,
-                                                                    accessibilityTrusted: false, busy: true) },
-            items: { [weak self] in self?.bubbleItems(for: $0) ?? ([], []) },
-            run: { [weak self] in self?.runBubbleItem($0, snapshot: $1) }))
-    }
-
-    private var bubbleState: BubbleState {
-        let preferences = configuration.preferences
-        return BubbleState(explainEnabled: preferences.featureEnabled(.explain), bubbleEnabled: preferences.explainSettings.selectionBubble,
-                           writingEnabled: preferences.featureEnabled(.writing), accessibilityTrusted: accessibilityGranted,
-                           busy: isProcessing || dictation.active || isRecordingShortcut || answerPresenter.isKey)
-    }
-
-    /// Built from the rules as they are when the bubble shows, so a rule changed since appears as it is now.
-    func bubbleItems(for snapshot: SelectionSnapshot) -> (visible: [BubbleItem], more: [BubbleItem]) {
-        let preferences = configuration.preferences
-        return SelectionBubbleItems.items(rules: configuration.rules, explainEnabled: preferences.featureEnabled(.explain),
-                                          writingEnabled: preferences.featureEnabled(.writing), editable: snapshot.isEditable,
-                                          hidden: Set(preferences.explainSettings.bubbleHiddenRules),
-                                          configured: { (try? self.resolved($0)) != nil })
-    }
+    /// Something Frog is doing that the bubble must not interrupt.
+    var bubbleBusy: Bool { isProcessing || dictation.active || isRecordingShortcut || answerPresenter.isKey }
 
     /// Saves an answer whose first reply completed, when History was on as the answer started and still is.
     private func recordAnswer(_ session: AnswerSession) -> UUID? {
-        guard answerHistoryWasEnabled, configuration.preferences.historyEnabled, historyEpoch == answerHistoryEpoch,
-              let provider = answers.provider else { return nil }
+        guard let provider = answers.provider else { return nil }
         let entry = HistoryEntry(answer: session, providerName: provider.id == Self.localProviderID ? "Frog" : provider.name,
                                  model: session.modelName)
         do {
-            guard let retained = try historyStore.append(entry, preferences: configuration.preferences) else { return nil }
-            adoptHistory(retained)
-            return entry.id
+            return try recordHistory(entry, ticket: answerHistory) ? entry.id : nil
         } catch {
             report(FrogError.message("Answer shown, but history could not be saved: \(error.localizedDescription)"))
             return nil
@@ -1584,42 +1571,39 @@ final class AppModel: ObservableObject {
 
     /// Adds the session's follow-ups to its saved entry. False when the entry is gone, so the answer stops updating it.
     private func updateAnswerRecord(_ session: AnswerSession) -> Bool {
-        guard answerHistoryWasEnabled, configuration.preferences.historyEnabled, historyEpoch == answerHistoryEpoch,
-              let id = session.historyEntryID, var entry = history.first(where: { $0.id == id }) else { return false }
+        guard let id = session.historyEntryID, var entry = history.first(where: { $0.id == id }) else { return false }
         entry.updateAnswer(from: session)
         do {
-            let kept = try historyStore.update(entry, preferences: configuration.preferences)
-            refreshHistory()
-            return kept
+            return try updateHistory(entry, ticket: answerHistory)
         } catch {
             report(FrogError.message("Answer shown, but history could not be saved: \(error.localizedDescription)"))
             return false
         }
     }
 
-    static let notesOff = "Turn on Save answers to notes on the Explain page."
+    static let notesOff = "Turn on Save to note on the Explain page."
 
     /// Whether answers offer Save to note.
     var answerNotesEnabled: Bool {
-        configuration.preferences.featureEnabled(.explain) && configuration.preferences.explainSettings.notes
+        configuration.preferences.featureEnabled(.explain) && explainConfig.notes.on
     }
 
     /// Saves an answer and its follow-ups as a Markdown note in the notes folder, asking for the
     /// folder first when none is set. Saving is something the person asks for, so it works with
     /// History off. Returns the file written; a cancelled folder choice throws `CancellationError`.
     func saveAnswerNote(_ content: AnswerNoteContent) async throws -> URL {
-        guard configuration.preferences.explainSettings.notes else { throw FrogError.message(Self.notesOff) }
+        guard explainConfig.notes.on else { throw FrogError.message(Self.notesOff) }
         do {
-            if configuration.preferences.explainSettings.notesFolder == nil {
+            if explainConfig.notes.folder == nil {
                 guard try await chooseAnswerNotesFolder() else { throw CancellationError() }
             }
-            let settings = configuration.preferences.explainSettings
-            guard let folder = settings.notesFolderURL else { throw CancellationError() }
-            let mode = settings.notesMode, pattern = settings.notesFile
+            let settings = explainConfig.notes
+            guard let folder = settings.folderURL else { throw CancellationError() }
+            let mode = settings.mode, pattern = settings.file
             let url = try await Task.detached {
                 try AnswerNoteWriter().save(content, folder: folder, mode: mode, file: pattern, now: Date())
             }.value
-            if settings.notesOpen { NoteOpener.open(url) }
+            if settings.open { NoteOpener.open(url) }
             return url
         } catch is CancellationError {
             throw CancellationError()
@@ -1633,11 +1617,10 @@ final class AppModel: ObservableObject {
     @discardableResult
     func chooseAnswerNotesFolder() async throws -> Bool {
         guard let chosen = await chooseNotesFolder() else { return false }
-        try updateToolkit { toolkit in
-            var settings = toolkit.explain ?? ExplainSettings()
-            settings.notesFolder = (chosen.path as NSString).abbreviatingWithTildeInPath
-            toolkit.explain = settings
-        }
+        var settings = explainConfig
+        settings.notes.folder = (chosen.path as NSString).abbreviatingWithTildeInPath
+        if let explain = pluginHost.running[ExplainPlugin.info.id] as? ExplainPlugin { try explain.save(settings) }
+        else { try settingsFile.update(ExplainPlugin.info.id, settings) }
         return true
     }
 
@@ -1684,7 +1667,7 @@ final class AppModel: ObservableObject {
     func showShortcuts() {
         let items = ShortcutReference.items(configuration: configuration, ruleEnabled: configuration.preferences.ruleFeatureEnabled,
                                             extraRules: WindowSwitches(configuration.preferences).shortcutRules,
-                                            answersInPanel: \.answersInPanel)
+                                            answersInPanel: \.isExplainRule)
         shortcutPanel.show(groups: ShortcutReference.grouped(items))
     }
 
@@ -1853,7 +1836,7 @@ final class AppModel: ObservableObject {
         }
         // An answer belongs in the panel: this path would send the selection and paste over it.
         if rule.answersInPanel {
-            let error = FrogError.message("This rule answers in a panel. Turn on Explain in Features.")
+            let error = FrogError.message("This rule shows its result in a panel. Run it on selected text.")
             report(error); ruleOutcome = .failed(error.localizedDescription); agentReply?(.failed(error.localizedDescription), nil); return nil
         }
         if manualText != nil, agentReply == nil { manualResult = "" }
@@ -1869,8 +1852,7 @@ final class AppModel: ObservableObject {
         processingForAgent = agentReply != nil
         status = "\(rule.name)…"
         if manualText == nil { showIndicatorWorking() }
-        let recordingEpoch = historyEpoch
-        let recordingWasEnabled = configuration.preferences.historyEnabled
+        let historyTicket = historyTicket()
         processingTask = Task { [weak self] in
             guard let self else { return }
             var ended = RuleOutcome.done
@@ -1902,7 +1884,10 @@ final class AppModel: ObservableObject {
                 try Task.checkCancellation()
                 guard !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("The model returned no text. Nothing was replaced.") }
                 var delivered = true
-                if let selection {
+                if selection != nil, rule.textOutput == .copy {
+                    self.writeClipboard(result)
+                    self.clipboardHistoryStore.recordCopiedText(result)
+                } else if let selection {
                     do { try await selection.replace(with: result) }
                     catch is CancellationError { throw CancellationError() }
                     catch {
@@ -1920,13 +1905,11 @@ final class AppModel: ObservableObject {
                 }
                 try Task.checkCancellation()
                 if delivered { self.statistics.recordRuleExecution(kind: provider.id == Self.localProviderID || provider.kind.isLocal ? .local : provider.kind.localTool != nil ? .cli : .remote) }
-                if recordingWasEnabled && self.configuration.preferences.historyEnabled && self.historyEpoch == recordingEpoch {
-                    do {
-                        if let retained = try self.historyStore.append(HistoryEntry(originalText: text, processedText: result, ruleName: rule.name, providerName: provider.name, model: provider.model, targetLanguage: rule.targetLanguage), preferences: self.configuration.preferences) { self.adoptHistory(retained) }
-                    } catch {
-                        let failure = FrogError.message("Text processed, but history could not be saved: \(error.localizedDescription)")
-                        self.report(failure); ended = .failed(failure.localizedDescription)
-                    }
+                do {
+                    try self.recordHistory(HistoryEntry(originalText: text, processedText: result, ruleName: rule.name, providerName: provider.name, model: provider.model, targetLanguage: rule.targetLanguage), ticket: historyTicket)
+                } catch {
+                    let failure = FrogError.message("Text processed, but history could not be saved: \(error.localizedDescription)")
+                    self.report(failure); ended = .failed(failure.localizedDescription)
                 }
             } catch { ended = self.outcome(of: error) }
         }

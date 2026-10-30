@@ -17,8 +17,11 @@ public enum TranscriptOutput: String, Codable, CaseIterable, Sendable {
     public var title: String { self == .copy ? "Copy" : "Copy and paste" }
 }
 
-/// Where a text rule's result goes: over the selection, or into the answer panel.
-public enum TextOutput: String, Codable, CaseIterable, Sendable { case replace, panel }
+/// Where a text rule's result goes: over the selection, onto the clipboard, or into the answer panel (Show).
+public enum TextOutput: String, Codable, CaseIterable, Sendable {
+    case replace, copy, panel
+    public var title: String { switch self { case .replace: "Replace"; case .copy: "Copy"; case .panel: "Show" } }
+}
 
 public struct RuleAction: Codable, Equatable, Sendable {
     public var category: RuleCategory = .text
@@ -36,6 +39,9 @@ public struct RuleAction: Codable, Equatable, Sendable {
     public var cleanup = false
     /// Nil replaces the selection. Meaningful for text rules only; older versions ignore it.
     public var textOutput: TextOutput?
+    /// Text rule triggers besides its shortcut and agents. Nil means on.
+    public var bubble: Bool?
+    public var commandBar: Bool?
     public init(category: RuleCategory = .text) { self.category = category }
 }
 
@@ -77,6 +83,21 @@ extension Rule {
     }
     /// A text rule whose result appears in the answer panel instead of replacing the selection.
     public var answersInPanel: Bool { category == .text && action?.textOutput == .panel }
+    /// What a text rule does with its result.
+    public var textOutput: TextOutput { action?.textOutput ?? .replace }
+    /// The answer rule Frog adds itself. It belongs to Explain; every other text rule is a Writing rule.
+    public var isExplainRule: Bool { preset && answersInPanel }
+    public var isWritingRule: Bool { category == .text && !isExplainRule }
+    /// Whether the selection bubble offers the rule.
+    public var showsInBubble: Bool {
+        get { action?.bubble ?? true }
+        set { if action == nil { action = RuleAction(category: category) }; action?.bubble = newValue ? nil : false }
+    }
+    /// Whether the command bar lists the rule.
+    public var showsInCommandBar: Bool {
+        get { action?.commandBar ?? true }
+        set { if action == nil { action = RuleAction(category: category) }; action?.commandBar = newValue ? nil : false }
+    }
     public static let explainInstructions = """
     Explain the selected text in plain words so the reader understands it without leaving what they are doing. \
     For a word or short phrase, say what it means here; for a sentence or paragraph, what it says; \

@@ -462,8 +462,9 @@ import SwiftUI
                 model?.toolkit.select(route); model?.showSettings()
             }
         }
-        for rule in model.configuration.rules where rule.enabled && model.ruleFeatureEnabled(rule) {
-            add(SearchRecord(id: "rule:\(rule.id)", title: rule.action?.systemAction?.title ?? rule.name, subtitle: rule.answersInPanel ? "Answers in a panel" : "Run \(rule.category.title.lowercased()) rule", symbol: rule.category == .audio ? "waveform" : "command")) { [weak model] in
+        // A text rule can stay out of the command bar; it still runs from its shortcut and the bubble.
+        for rule in model.configuration.rules where rule.enabled && model.ruleFeatureEnabled(rule) && (rule.category != .text || rule.showsInCommandBar) {
+            add(SearchRecord(id: "rule:\(rule.id)", title: rule.action?.systemAction?.title ?? rule.name, subtitle: rule.answersInPanel ? "Shows the answer in a panel" : "Run \(rule.category.title.lowercased()) rule", symbol: rule.category == .audio ? "waveform" : "command")) { [weak model] in
                 guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message("The target application changed. Open the command bar again.") }
                 model?.runRuleFromCommandBar(rule.id)
             }

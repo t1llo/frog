@@ -368,7 +368,7 @@ struct RuleEditor: View {
             }
     }
     /// Whether the bubble offers this rule: the switch as changed, else as saved.
-    private var showsInBubble: Bool { inBubble ?? model.configuration.preferences.explainSettings.bubbleShows(rule.id) }
+    private var showsInBubble: Bool { inBubble ?? rule.showsInBubble }
     /// Saves the draft, edits included, as a new rule and leaves the original as it was saved.
     private func saveCopy() {
         let copy = rule.copy()

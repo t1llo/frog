@@ -1,70 +1,43 @@
 import Foundation
 import FrogCore
 
+/// The kinds History tells apart. Copied text is not one of them: it has the Clipboard page.
 enum HistoryFilter: String, CaseIterable, Identifiable {
-    case text, answers, audio, clipboard
+    case text, answers, audio
     var id: Self { self }
-    var title: String { switch self { case .text: "Text"; case .answers: "Answers"; case .audio: "Audio"; case .clipboard: "Clipboard" } }
+    var title: String { switch self { case .text: "Text"; case .answers: "Answers"; case .audio: "Audio" } }
 
-    /// The filters History offers; copied text has the Clipboard page. Answers appears while Explain is on, and stays
-    /// while saved answers remain.
+    /// Answers appears while Explain is on, and stays while saved answers remain.
     static func visible(explainEnabled: Bool, hasAnswers: Bool) -> [HistoryFilter] {
-        allCases.filter { $0 != .clipboard && ($0 != .answers || explainEnabled || hasAnswers) }
+        allCases.filter { $0 != .answers || explainEnabled || hasAnswers }
     }
 }
 
-/// A display feed, never a persistence payload. Clipboard items remain in their
-/// bounded memory store rather than becoming saved transformation records.
-enum HistoryItem: Identifiable, Equatable {
-    case saved(HistoryEntry)
-    case clipboard(ClipboardHistoryEntry)
-
-    var id: UUID { switch self { case .saved(let entry): entry.id; case .clipboard(let entry): entry.id } }
-    var timestamp: Date { switch self { case .saved(let entry): entry.timestamp; case .clipboard(let entry): entry.timestamp } }
-    var title: String { switch self { case .saved(let entry): entry.ruleName; case .clipboard: "Clipboard history" } }
-    var text: String { switch self { case .saved(let entry): entry.processedText; case .clipboard(let entry): entry.text } }
-    var filter: HistoryFilter {
-        switch self {
-        case .saved(let entry): entry.answer != nil ? .answers : entry.category == .audio ? .audio : .text
-        case .clipboard: .clipboard
-        }
-    }
-    var clipboardEntry: ClipboardHistoryEntry? { if case .clipboard(let entry) = self { entry } else { nil } }
-    var savedEntry: HistoryEntry? { if case .saved(let entry) = self { entry } else { nil } }
-    var requiresReveal: Bool { clipboardEntry?.isSensitive == true }
-
-    func matches(_ query: String, revealed: Bool) -> Bool {
-        guard !query.isEmpty else { return true }
-        switch self {
-        case .saved(let entry):
-            return ([entry.ruleName, entry.originalText, entry.processedText, entry.providerName, entry.model, entry.interruptionLabel ?? ""]
-                    + entry.answerSearchTexts)
-                .contains { $0.localizedStandardContains(query) }
-        case .clipboard(let entry):
-            // Hidden contents must not leak through search results before reveal.
-            return ["Clipboard", "Memory only", entry.isSensitive ? entry.sensitivityLabel : "", !entry.isSensitive || revealed ? entry.text : ""]
-                .contains { $0.localizedStandardContains(query) }
-        }
-    }
-}
-
+/// Saved entries as History lists them: newest first, narrowed by kind and search.
 enum HistoryFeed {
-    static func items(saved: [HistoryEntry], clipboard: [ClipboardHistoryEntry], filter: HistoryFilter? = nil,
-                      search: String = "", revealed: Set<UUID> = []) -> [HistoryItem] {
-        narrowed(saved.map(HistoryItem.saved) + clipboard.map(HistoryItem.clipboard), filter: filter, search: search, revealed: revealed)
-            .sorted { $0.timestamp == $1.timestamp ? $0.id.uuidString < $1.id.uuidString : $0.timestamp > $1.timestamp }
+    static func items(_ entries: [HistoryEntry], filter: HistoryFilter? = nil, search: String = "") -> [HistoryEntry] {
+        narrowed(entries.sorted { $0.timestamp == $1.timestamp ? $0.id.uuidString < $1.id.uuidString : $0.timestamp > $1.timestamp },
+                 filter: filter, search: search)
     }
 
-    /// Narrows a feed that `items` already merged and sorted. The order is kept, so a view
-    /// builds the feed once per pass and derives the list it shows from it.
-    static func narrowed(_ items: [HistoryItem], filter: HistoryFilter?, search: String, revealed: Set<UUID>) -> [HistoryItem] {
+    /// Narrows a feed that `items` already sorted. The order is kept, so a view builds the feed once per pass and
+    /// derives the list it shows from it.
+    static func narrowed(_ items: [HistoryEntry], filter: HistoryFilter?, search: String) -> [HistoryEntry] {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
         guard filter != nil || !query.isEmpty else { return items }
-        return items.filter { (filter == nil || $0.filter == filter) && $0.matches(query, revealed: revealed.contains($0.id)) }
+        return items.filter { (filter == nil || $0.kind == filter) && $0.matches(query) }
     }
 }
 
 extension HistoryEntry {
+    var kind: HistoryFilter { answer != nil ? .answers : category == .audio ? .audio : .text }
+
+    func matches(_ query: String) -> Bool {
+        guard !query.isEmpty else { return true }
+        return ([ruleName, originalText, processedText, providerName, model, interruptionLabel ?? ""] + answerSearchTexts)
+            .contains { $0.localizedStandardContains(query) }
+    }
+
     var interruptionLabel: String? {
         switch interruption { case .escape: "Interrupted · Esc"; case .cancelled: "Interrupted"; case nil: nil }
     }
