@@ -251,12 +251,11 @@ struct PluginReview: Identifiable {
     func openArchive(_ data: Data, source: PluginSource) async throws {
         guard data.count <= PluginArchive.maximumArchiveBytes else { throw FrogError.message("A plugin file can be at most 25 MB.") }
         let sha256 = PluginPackage.sha256(data)
-        clearStaging()
         let package = try store.unpack(data, in: stagingDirectory)
         let record = try store.record(package.manifest.id)
         let sameOrigin = record?.source.sharesOrigin(with: source) ?? false
-        review = PluginReview(package: package, source: source, sha256: sha256, approved: sameOrigin ? record?.approved : nil,
-                              installed: false, replacing: sameOrigin ? nil : record?.source)
+        present(PluginReview(package: package, source: source, sha256: sha256, approved: sameOrigin ? record?.approved : nil,
+                              installed: false, replacing: sameOrigin ? nil : record?.source))
         // The review opens at once; whether the directory lists the file shows once the directory answers.
         if registry.isEmpty { Task { await loadRegistry() } }
     }
@@ -293,17 +292,24 @@ struct PluginReview: Identifiable {
             try store.approve(id, expecting: review.package.grant)
         } else {
             try store.install(review.package, source: review.source, sha256: review.sha256, approving: true)
-            clearStaging()
+            discardStaged(review)
         }
-        self.review = nil
+        // Another review that is open, such as one a Directory install did not need, stays open.
+        if self.review?.id == review.id { self.review = nil }
         unload(id)
         refresh()
         onApproved(id)
     }
 
     func dismissReview() {
-        if review?.installed == false { clearStaging() }
+        if let review { discardStaged(review) }
         review = nil
+    }
+
+    /// Opens a review in place of the one open now, whose unpacked files go.
+    private func present(_ review: PluginReview) {
+        if let open = self.review, open.id != review.id { discardStaged(open) }
+        self.review = review
     }
 
     func setEnabled(_ id: String, _ enabled: Bool) {
@@ -326,7 +332,23 @@ struct PluginReview: Identifiable {
     }
 
     private var stagingDirectory: URL { store.directory.appendingPathComponent("Staging", isDirectory: true) }
-    private func clearStaging() { try? FileManager.default.removeItem(at: stagingDirectory) }
+    /// Removes the folder a review's file was unpacked into; each unpack has its own, so other reviews keep theirs.
+    private func discardStaged(_ review: PluginReview) {
+        guard !review.installed else { return }
+        discardStaged(review.package.root)
+    }
+
+    private func discardStaged(_ folder: URL) {
+        let folder = folder.standardizedFileURL, staging = stagingDirectory.standardizedFileURL
+        guard folder.deletingLastPathComponent() == staging else { return }
+        try? FileManager.default.removeItem(at: folder)
+    }
+
+    /// Actions of `new` that may do more than the same action in `old`. A new action counts unless it only reads.
+    static func raisedEffects(_ new: PluginManifest, over old: PluginManifest?) -> [PluginManifestAction] {
+        let before = Dictionary((old?.actions ?? []).map { ($0.id, $0.effect) }, uniquingKeysWith: { first, _ in first })
+        return new.actions.filter { $0.effect > (before[$0.id] ?? .read) }
+    }
 
     // MARK: Directory
 
@@ -360,6 +382,11 @@ struct PluginReview: Identifiable {
         guard registry.contains(entry) else { throw FrogError.message("\(entry.name) is not in the signed plugin directory.") }
         guard entry.runs(on: AppVersion.current) else { throw FrogError.message("\(entry.name) needs Frog \(entry.frog ?? "") or later. Update Frog first.") }
         guard let url = entry.downloadURL else { throw FrogError.message("\(entry.name) has no https download.") }
+        let current = item(entry.id)?.manifest
+        // An older version never replaces a newer one, so a stale or replayed directory cannot roll a plugin back.
+        if let current, let installed = PluginVersion(current.version), let listed = PluginVersion(entry.version), listed < installed {
+            throw FrogError.message("\(current.name) \(current.version) is installed, newer than the directory's \(entry.version). Nothing was changed.")
+        }
         installing = entry.id
         defer { installing = nil }
         let data = try await download(url, PluginArchive.maximumArchiveBytes)
@@ -367,10 +394,9 @@ struct PluginReview: Identifiable {
         guard sha256 == entry.sha256.lowercased() else {
             throw FrogError.message("The downloaded file is not the one the directory signed: its SHA-256 differs. Nothing was installed.")
         }
-        clearStaging()
         let package = try store.unpack(data, in: stagingDirectory)
         guard package.manifest.id == entry.id, package.manifest.version == entry.version else {
-            clearStaging()
+            discardStaged(package.root)
             throw FrogError.message("The file holds \(package.manifest.id) \(package.manifest.version), not the \(entry.id) \(entry.version) the directory lists. Nothing was installed.")
         }
         let source = PluginSource.link(url.absoluteString)
@@ -379,11 +405,15 @@ struct PluginReview: Identifiable {
         let review = PluginReview(package: package, source: source, sha256: sha256, approved: sameOrigin ? record?.approved : nil,
                                   installed: false, replacing: record == nil || sameOrigin ? nil : record?.source)
         let additions = review.additions
-        if oneClick, review.compatible, review.replacing == nil, additions.permissions.isEmpty, additions.hosts.isEmpty, additions.scripts.isEmpty {
+        // One click only for a newer version, or a first install, that asks for nothing new: no permission, host or
+        // script beyond what was approved, and no action that does more than it did.
+        let newer = current.flatMap { PluginVersion($0.version) }.map { installed in PluginVersion(entry.version).map { $0 > installed } ?? false } ?? true
+        if oneClick, newer, review.compatible, review.replacing == nil, additions.permissions.isEmpty, additions.hosts.isEmpty, additions.scripts.isEmpty,
+           Self.raisedEffects(package.manifest, over: sameOrigin ? current : nil).isEmpty {
             try approve(review)
             return true
         }
-        self.review = review
+        present(review)
         return false
     }
 
@@ -440,9 +470,23 @@ struct PluginReview: Identifiable {
             }
         }
         if let text, text.utf8.count > 1024 * 1024 { throw FrogError.message("An action takes at most 1 MB of text.") }
+        let loadedForIt = hosts[id] == nil
         let host = try await host(for: id)
+        defer { if loadedForIt, action.effect == .read { closeAfterGrace(id, host) } }
         let answer = try await host.perform(action, values: typed, text: action.input == true ? text : nil)
         return Self.result(answer)
+    }
+
+    /// Closes a page Frog loaded only to run a read action once its effect stops holding, so nothing the action left
+    /// running outlives the limit; a page shown, commanded or used by another action since stays.
+    private func closeAfterGrace(_ id: String, _ host: PluginWebHost) {
+        let ended = host.endedActions
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(PluginWebHost.effectGrace))
+            guard let self, self.hosts[id] === host, !host.isShowing, host.runningEffect == nil, host.endedActions == ended,
+                  !host.commandedRecently else { return }
+            self.unload(id)
+        }
     }
 
     /// A handler's answer for people and for agents: a string is the text; an object's `text` is the text; anything
@@ -477,8 +521,8 @@ struct PluginReview: Identifiable {
         guard enabled, hosts[id] === host, let item = item(id), item.runs, let approved = item.record.approved else {
             throw FrogError.message("The plugin is not running.")
         }
-        // While an action runs, the page does no more than its declared effect.
-        if let effect = host.activeEffect, let needed = Self.effect(of: name), needed > effect {
+        // While an action runs, and for a while after, the page does no more than its declared effect.
+        if let effect = host.effectLimit, let needed = Self.effect(of: name), needed > effect {
             throw FrogError.message("\(name) goes beyond the “\(effect.rawValue)” effect of the running action in plugin.json.")
         }
         func require(_ permission: PluginPermission) throws {
@@ -517,7 +561,7 @@ struct PluginReview: Identifiable {
 
         case "clipboard.read":
             try require(.clipboardRead)
-            guard host.isShowing || host.commandedRecently else {
+            guard host.isShowing || host.commandedRecently || host.runningEffect != nil else {
                 throw FrogError.message("A plugin reads the clipboard only while its page is open or right after one of its commands.")
             }
             guard !pasteboard.holdsSensitiveText else { return nil }

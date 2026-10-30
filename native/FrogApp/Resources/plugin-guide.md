@@ -80,7 +80,7 @@ The effect is enforced while the action runs:
 - `write` may also change storage, write the clipboard, notify, open links, run scripts and show the page.
 - `network` may also use `frog.fetch` and `frog.ai`, and needs the `network` or `ai` permission.
 
-A call beyond the action's effect rejects, even when the plugin has the permission for it. Permissions still apply on top: a `write` action can write the clipboard only with `clipboard-write`.
+A call beyond the action's effect rejects, even when the plugin has the permission for it. Permissions still apply on top: a `write` action can write the clipboard only with `clipboard-write`. The limit holds for 30 seconds after the handler answers or times out, so a timer it set stays inside it, and a page Frog loaded only for a `read` action closes then. A `read` action may read the clipboard while it runs, but does not open the window after a command in which a hidden page may write the clipboard or show itself.
 
 ```js
 frog.action("count", async ({ unit }, input) => {
@@ -233,7 +233,7 @@ Your first install of a plugin waits for you in Frog → Community plugins, whic
 
 ### The directory
 
-Frog → Community plugins → Directory lists the plugins in the directory at <https://frog.beffa.xyz/plugins/>, with search and one-click install. Frog reads `https://frog.beffa.xyz/plugins/registry.json`, which lists for each plugin its id, name, summary, version, author, permissions, the links to its manifest and file, the file's SHA-256 and an Ed25519 signature over all of these. Frog has the directory's public key built in, leaves out every entry whose signature does not check, and installs a file only when its SHA-256 is the signed one and its manifest has the listed id and version. A plugin that asks for no permissions installs at once; one that asks for any opens its review first, like every other install.
+Frog → Community plugins → Directory lists the plugins in the directory at <https://frog.beffa.xyz/plugins/>, with search and one-click install. Frog reads `https://frog.beffa.xyz/plugins/registry.json`, which lists for each plugin its id, name, summary, version, author, permissions, the links to its manifest and file, the file's SHA-256 and an Ed25519 signature over all of these. Frog has the directory's public key built in, leaves out every entry whose signature does not check, and installs a file only when its SHA-256 is the signed one and its manifest has the listed id and version. A plugin that asks for no permissions installs at once, and so does a newer version that asks for nothing new: no permission, host or script beyond what you approved, and no action with a larger effect than before. Anything else opens its review first, like every other install. The Directory never installs a version older than the one you have.
 
 To have yours listed, open an issue at <https://github.com/t1llo/frog/issues/new> with the entry `frog plugin publish` printed and the `.frogplugin` file attached. Listed plugins are read before they are signed, but they remain their authors' work: review the permissions before you install one.
 

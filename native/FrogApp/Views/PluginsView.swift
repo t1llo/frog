@@ -150,7 +150,7 @@ struct PluginsView: View {
         return FrogRow("\(entry.name) \(entry.version)", caption: caption) {
             PluginIconTile(symbol: PluginSymbol.name(entry.displaySymbol), tint: FrogStyle.accent)
         } control: {
-            if installed?.record.sha256 == entry.sha256.lowercased() {
+            if let installed, installed.record.sha256 == entry.sha256.lowercased() || !Self.isNewer(entry, than: installed) {
                 FrogBadge(text: "Installed")
             } else if plugins.installing == entry.id {
                 ProgressView().controlSize(.small).frame(width: 60)
@@ -162,6 +162,13 @@ struct PluginsView: View {
                     .disabled(plugins.installing != nil || plugins.downloading != nil)
             }
         }
+    }
+
+    /// Whether the entry is a newer version than the one installed; the Directory never offers an older one.
+    private static func isNewer(_ entry: PluginRegistryEntry, than installed: PluginItem) -> Bool {
+        guard let listed = PluginVersion(entry.version) else { return false }
+        guard let version = installed.manifest?.version, let current = PluginVersion(version) else { return true }
+        return listed > current
     }
 
     // MARK: Build

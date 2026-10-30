@@ -23,8 +23,21 @@ import WebKit
     /// The user asked for no more dialogs from this page.
     private var dialogsStopped = false
     var commandedRecently: Bool { lastCommand.map { Date().timeIntervalSince($0) < 10 } ?? false }
-    /// What the action that is running may do; nil while none runs. The runtime refuses calls beyond it.
-    private(set) var activeEffect: PluginManifestAction.Effect?
+    /// The effect of the action that is running; nil while none runs.
+    private(set) var runningEffect: PluginManifestAction.Effect?
+    /// The effect of the last action that ended, and until when it still holds: work its handler left behind, such
+    /// as a timer, stays inside it for a while after the handler answers or times out.
+    private var endedEffect: (effect: PluginManifestAction.Effect, until: Date)?
+    static let effectGrace: TimeInterval = 30
+    /// How many actions have ended, so a page loaded for one is closed only when no other ran since.
+    private(set) var endedActions = 0
+    /// What the page may do now: the running action's effect or, without one, a recent action's. nil is no limit.
+    /// The runtime refuses calls beyond it.
+    var effectLimit: PluginManifestAction.Effect? {
+        if let runningEffect { return runningEffect }
+        guard let endedEffect, endedEffect.until > Date() else { return nil }
+        return endedEffect.effect
+    }
 
     /// Whether the page is on screen; the page hears `show` and `hide`.
     var isShowing = false {
@@ -88,10 +101,18 @@ import WebKit
     /// Runs one of the manifest's actions in the page and returns what its handler returned, as JSON, or nil.
     /// One action runs at a time; it gets `seconds` to answer.
     func perform(_ action: PluginManifestAction, values: [String: Any], text: String?, seconds: Double = 60) async throws -> String? {
-        guard activeEffect == nil else { throw FrogError.message("\(manifest.name) is still running another action.") }
-        activeEffect = action.effect
-        lastCommand = Date()
-        defer { activeEffect = nil }
+        guard runningEffect == nil else { throw FrogError.message("\(manifest.name) is still running another action.") }
+        runningEffect = action.effect
+        // An action that changes things may write the clipboard or show the page, as a command may; one that only
+        // reads may not.
+        if action.effect > .read { lastCommand = Date() }
+        defer {
+            runningEffect = nil
+            // Two ended actions in the grace: the smaller effect holds, since either may have left work behind.
+            let held = endedEffect.flatMap { $0.until > Date() ? $0.effect : nil }
+            endedEffect = (min(action.effect, held ?? action.effect), Date().addingTimeInterval(Self.effectGrace))
+            endedActions += 1
+        }
         await waitUntilLoaded()
         guard loaded else { throw FrogError.message("\(manifest.name)'s page did not load.") }
         let answer = PerformAnswer()
