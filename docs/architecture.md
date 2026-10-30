@@ -72,5 +72,7 @@ may add their own menu-bar item when the user turns that on.
 - Launch starts only plugins that are on; heavy work (model loading, catalog scans) is deferred until first use.
 - Keyboard surfaces (command bar, clipboard history, window switcher) open in one frame with no animation.
 - Models load on first use, are kept warm for a configurable idle time and prewarmed when a dictation key
-  goes down.
+  goes down; a Writing rule loads its local model while it reads the selection. After loading, each model
+  runs once on nothing (a second of silence, one token) so that its first real request is not the slow one.
+  Idle models unload when macOS reports memory pressure, and MLX keeps at most 20 MB of freed buffers.
 - Views observe with `@Observable` so a change redraws only the views that read it.

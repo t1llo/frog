@@ -1,7 +1,7 @@
 import AppKit
 
-/// How a menu-bar meter draws its readings. Mr. Usage and System monitor share these looks.
-enum MenuBarMeterStyle: String, CaseIterable, Identifiable, Sendable {
+/// How a menu-bar meter draws its readings. LLM usage and System monitor share these looks.
+enum MenuBarMeterStyle: String, CaseIterable, Identifiable, Codable, Sendable {
     /// A percentage per reading.
     case numbers
     /// Five steps per reading, stacked; each step is 20%.
@@ -23,7 +23,7 @@ enum MenuBarMeterStyle: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-enum MenuBarMeterPalette: String, CaseIterable, Identifiable, Sendable {
+enum MenuBarMeterPalette: String, CaseIterable, Identifiable, Codable, Sendable {
     /// The menu bar's own colour, like the system's icons.
     case clean
     /// Green, amber or red, by how full each meter is.

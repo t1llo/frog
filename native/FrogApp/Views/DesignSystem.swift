@@ -460,7 +460,7 @@ struct FrogCard<Content: View>: View {
     }
 }
 
-/// A titled group: a heading, then its rows in one card. Rows are set apart by space, never by lines.
+/// The v1 name of `FrogSection`, kept for views not moved yet.
 struct SettingsSection<Content: View, Accessory: View>: View {
     let title: String
     @ViewBuilder var accessory: Accessory
@@ -471,15 +471,7 @@ struct SettingsSection<Content: View, Accessory: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text(L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 8)
-                accessory
-            }.frame(minHeight: 20)
-            VStack(alignment: .leading, spacing: 10) { content }
-                .padding(14).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
-        }
+        FrogSection(title, accessory: { accessory }, content: { content })
     }
 }
 

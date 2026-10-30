@@ -75,7 +75,7 @@ public struct HuggingFaceModels: Sendable {
         let license = card["license"] as? String
         // Known Parakeet sources use the bundled, version-specific native adapter.
         if let known = LocalModelDescriptor.catalog.first(where: { $0.backend == .parakeet && $0.repository == source.repository }), source.variant == nil {
-            guard files.contains("parakeet_vocab.json"), ["Preprocessor", "Encoder", "Decoder", "JointDecision"].allSatisfy({ files.contains("\($0).mlmodelc/coremldata.bin") }) else {
+            guard files.contains("parakeet_vocab.json"), known.parakeetComponents.allSatisfy({ files.contains("\($0).mlmodelc/coremldata.bin") }) else {
                 throw FrogError.message("The Parakeet source is missing required Core ML components or vocabulary.")
             }
             return [known]

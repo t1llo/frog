@@ -34,7 +34,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .clipboard: "Clipboard"
         case .scratchpad: "Notes"
         case .scripts: "Scripts"
-        case .usage: "Mr. Usage"
+        case .usage: "LLM usage"
         case .systemMonitor: "System monitor"
         case .stayAwake: "Stay awake"
         case .menuBar: "Menu bar"
@@ -77,8 +77,8 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .clipboard: "Search and paste text you copied."
         case .scratchpad: "Markdown notes, and text to paste from the command bar."
         case .scripts: "Run your own shell scripts."
-        case .usage: "Plan limits and activity of your AI tools."
-        case .systemMonitor: "CPU, GPU, disk and battery."
+        case .usage: "Claude and Codex limits and activity."
+        case .systemMonitor: "CPU, GPU, memory and battery."
         case .stayAwake: "Keep the Mac awake, also with the lid closed."
         case .menuBar: "Hide menu bar icons behind a divider."
         case .cleaner: "Uninstall apps with the files they leave behind."
@@ -225,7 +225,7 @@ public struct UsageDisplayPreferences: Codable, Equatable, Sendable {
             throw FrogError.message("Choose session or week for the Claude accounts menu bar item.")
         }
         guard MenuBarMeterChoices.styles.contains(menuBarStyle), MenuBarMeterChoices.palettes.contains(menuBarPalette) else {
-            throw FrogError.message("Choose a known design for the Mr. Usage menu bar item.")
+            throw FrogError.message("Choose a known design for the LLM usage menu bar item.")
         }
     }
 }

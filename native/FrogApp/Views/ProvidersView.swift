@@ -19,8 +19,8 @@ struct ProvidersView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            PageHeader(title: "Models") {
+        FrogPage {
+            FrogPageHeader(title: "Models") {
                 if selectedFilter == "Local models" {
                     Button("Add model…", systemImage: "plus") { addingLocal = true }.buttonStyle(.frog(.primary))
                 } else if selectedFilter == "Providers" {
@@ -28,36 +28,37 @@ struct ProvidersView: View {
                         .buttonStyle(.frog(.primary)).keyboardShortcut("n", modifiers: .command)
                 }
             }
-            if selectedFilter == "Installed tools" { HStack { sourcePicker; Spacer() }.frame(height: FrogStyle.controlHeight) }
-            else {
-                ListToolbar(placeholder: selectedFilter == "Local models" ? "Search models" : "Search providers", search: $search) { sourcePicker }
-            }
-            ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-            if selectedFilter == "Installed tools" {
-                LocalToolProvidersView(client: model.localTools) { kind, selectedModel in
-                    do { try model.useLocalTool(kind, model: selectedModel); filter = "Providers"; search = "" }
-                    catch { model.report(error) }
+                if selectedFilter == "Installed tools" { HStack { sourcePicker; Spacer() }.frame(height: FrogStyle.controlHeight) }
+                else {
+                    ListToolbar(placeholder: selectedFilter == "Local models" ? "Search models" : "Search providers", search: $search) { sourcePicker }
                 }
-            } else if selectedFilter == "Local models" {
-                HStack(spacing: 12) {
-                    CompactSegments(values: [LocalModelDescriptor.Kind.audio, .text], selected: kind, title: { $0 == .audio ? "Speech" : "Text" }) { kind = $0 }
-                    Spacer()
-                    if !LocalModels.supported { Text("Requires Apple silicon").font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
-                }
-                ModelInventory(kind: kind, search: search, revealedModelID: revealedModelID)
-                if search.isEmpty { LocalModelSettingsView().padding(.top, 6) }
-            } else {
-                VStack(spacing: 2) {
-                    ForEach(providers) { provider in
-                        ProviderRow(provider: provider, edit: { editing = $0 }, delete: { deleting = $0 })
+                if selectedFilter == "Installed tools" {
+                    LocalToolProvidersView(client: model.localTools) { kind, selectedModel in
+                        do { try model.useLocalTool(kind, model: selectedModel); filter = "Providers"; search = "" }
+                        catch { model.report(error) }
                     }
-                    if providers.isEmpty { Text(search.isEmpty ? "Connect a cloud provider, Ollama or LM Studio." : "No providers match this search.").font(FrogType.caption).foregroundStyle(FrogStyle.muted).padding(8).frame(maxWidth: .infinity, alignment: .leading) }
-                }.padding(6).frogTableSurface()
+                } else if selectedFilter == "Local models" {
+                    HStack(spacing: 12) {
+                        CompactSegments(values: [LocalModelDescriptor.Kind.audio, .text], selected: kind, title: { $0 == .audio ? "Speech" : "Text" }) { kind = $0 }
+                        Spacer()
+                        if !LocalModels.supported { Text("Requires Apple silicon").font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
+                    }
+                    ModelInventory(kind: kind, search: search, revealedModelID: revealedModelID)
+                    if search.isEmpty { LocalModelSettingsView().padding(.top, 10) }
+                } else if providers.isEmpty {
+                    FrogEmptyState(symbol: "cloud", title: search.isEmpty ? "No providers" : "No matches",
+                                   message: search.isEmpty ? "Connect a cloud provider, Ollama or LM Studio." : "No provider matches this search.")
+                        .frame(maxWidth: .infinity).padding(.top, 40)
+                } else {
+                    VStack(spacing: 2) {
+                        ForEach(providers) { provider in
+                            ProviderRow(provider: provider, edit: { editing = $0 }, delete: { deleting = $0 })
+                        }
+                    }.padding(6).frogTableSurface()
+                }
             }
-            }.frame(maxWidth: .infinity, alignment: .leading).minimalScrollbars()
-            }
-        }.padding(20).frame(maxWidth: 1080).frame(maxWidth: .infinity, alignment: .top)
+        }
         .buttonStyle(.frog())
         .sheet(item: $editing) { provider in ProviderEditor(provider: provider).environmentObject(model) }
         .sheet(isPresented: $addingLocal) {

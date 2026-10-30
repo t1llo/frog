@@ -2,144 +2,41 @@ import SwiftUI
 import Charts
 import FrogUsage
 
+/// LLM usage's page: the plan limits, the token activity, the Claude accounts and the menu-bar item.
 struct UsageDashboardView: View {
+    @ObservedObject var plugin: LLMUsagePlugin
     @ObservedObject var usage: UsageDashboardModel
+
     var body: some View {
-        PageScroll {
-            PageHeader(title: "Mr. Usage") {
-                IconAction(title: "Refresh usage", symbol: "arrow.clockwise") { usage.refresh() }
+        let provider = usage.preferences.provider
+        FrogPage {
+            FrogPageHeader(title: "LLM usage") {
+                FrogDropdown(selected: provider, options: usage.providers, width: 120, title: { $0 }) { usage.selectProvider($0) }
+                    .accessibilityLabel("Provider")
+                IconAction(title: "Refresh", symbol: "arrow.clockwise", bordered: true) { usage.refresh() }
             }
-            UsageProviderControls(usage: usage)
-            if usage.preferences.provider == "Claude" {
-                if usage.accountsNoticeVisible { UsageAccountsNotice(usage: usage) }
-                if !usage.claudeAccountsEnabled {
-                    HStack(spacing: 8) {
-                        Text("Claude Code profile: \(usage.claudeConfigDirectory.lastPathComponent)")
-                            .font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                            .help(usage.claudeConfigDirectory.path)
-                        Button("Choose folder…") { chooseClaudeProfile() }.buttonStyle(.frog())
-                    }
-                }
-                // Found once two accounts are, and kept while on, so it can be turned on after Not now.
-                if usage.preferences.claudeAccounts || usage.detectedAccountCount >= 2 { UsageAccountsSection(usage: usage) }
-            }
-            if UsageStatusPopover.shownAccounts(usage).isEmpty { UsageLimitsView(usage: usage) }
-            else { UsageAccountsLimits(usage: usage) }
-            UsageActivityView(usage: usage)
-            UsageAccountDetails(usage: usage)
-            Text("API value is an estimate, not your subscription bill.")
-                .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineSpacing(3)
-            UsageMenuBarDesign(usage: usage)
+            if provider == "Claude", usage.accountsNoticeVisible { UsageAccountsNotice(usage: usage) }
+            if UsageStatusPopover.shownAccounts(usage).isEmpty { UsageLimitsSection(usage: usage) }
+            else { FrogSection("Limits") { UsageAccountsLimits(usage: usage).padding(.vertical, 10) } }
+            UsageActivitySection(usage: usage)
+            UsageHistorySections(usage: usage)
+            if provider == "Claude" { UsageClaudeSection(usage: usage) }
+            UsageMenuBarSection(plugin: plugin, usage: usage)
         }
         // The main window keeps this page after it is closed or minimised, so appearing and
         // disappearing do not say whether anyone can see it.
         .background(FeatureVisibility { usage.setPresented($0, for: .dashboard) })
     }
-    private func chooseClaudeProfile() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true; panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false; panel.showsHiddenFiles = true
-        panel.directoryURL = usage.claudeConfigDirectory
-        panel.message = "Choose the Claude Code configuration folder for the plan login and lifetime stats."
-        panel.begin { response in
-            guard response == .OK, let directory = panel.url else { return }
-            usage.selectClaudeConfigDirectory(directory)
-        }
-    }
 }
 
-/// The menu-bar popup, laid out like Frog's own: a 40-point header, content, the command rows
-/// and a quiet footer, as tall as its content.
-struct UsageStatusPopover: View {
-    static let popupName = "Mr. Usage"
-    static let width: CGFloat = 292
-    @ObservedObject var usage: UsageDashboardModel
-    let openDashboard: () -> Void
-    var signIn: () -> Void = {}
-    var installUpdate: () -> Void = {}
-    /// "Set up live readings for B…": the caller explains it before Terminal opens.
-    var liveSetup: (UsageAccountSummary) -> Void = { _ in }
-    /// "Sign in to Claude Code for B…", for an account whose own Claude Code login is gone.
-    var accountSignIn: (UsageAccountSummary) -> Void = { _ in }
-    var body: some View {
-        let provider = usage.preferences.provider
-        let accounts = Self.shownAccounts(usage)
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Text("Mr. Usage").font(FrogType.section).fixedSize()
-                Spacer(minLength: 6)
-                CompactSegments(values: usage.providers, selected: provider, width: 128, compact: true, title: { $0 }) {
-                    var next = usage.preferences; next.provider = $0; usage.updatePreferences(next)
-                }.accessibilityElement(children: .contain).accessibilityLabel("Usage provider")
-                IconAction(title: "Refresh usage", symbol: "arrow.clockwise", bordered: true) { usage.refresh() }
-            }.padding(.horizontal, 8).frame(height: 40)
-            VStack(alignment: .leading, spacing: 18) {
-                if provider == "Claude", usage.accountsNoticeVisible { UsageAccountsNotice(usage: usage, compact: true) }
-                if accounts.isEmpty { UsageLimitsView(usage: usage, compact: true) }
-                else { UsageAccountsLimits(usage: usage, compact: true) }
-                UsageActivityView(usage: usage, compact: true,
-                    showsCompactTokens: accounts.isEmpty && usage.windows(provider: provider).count <= 1)
-            }.padding(.horizontal, 8).padding(.top, 4).padding(.bottom, 12)
-            // At most one account is offered live readings or a sign-in: the first that needs one.
-            if let account = accounts.first(where: \.needsLiveSetup) {
-                MenuActionRow(title: "Set up live readings for \(account.label)…", symbol: "person.crop.circle.badge.plus") {
-                    liveSetup(account)
-                }.help(account.status ?? "")
-            } else if let account = accounts.first(where: \.needsSignIn) {
-                MenuActionRow(title: ClaudeSignIn.accountSignInTitle(account), symbol: "person.crop.circle.badge.checkmark") {
-                    accountSignIn(account)
-                }.disabled(account.checkingSignIn).help(account.warning ?? account.status ?? "")
-            } else if provider == "Claude", accounts.isEmpty, usage.needsClaudeSignIn {
-                MenuActionRow(title: usage.checkingClaudeSignIn ? "Checking Claude Code’s login…" : "Sign in to Claude Code…",
-                              symbol: "person.crop.circle.badge.checkmark", action: signIn)
-                    .disabled(usage.checkingClaudeSignIn).help(usage.status(provider: provider))
-            }
-            UpdateReadyRow(install: installUpdate)
-            MenuActionRow(title: "Open dashboard", symbol: "arrow.up.forward.app", action: openDashboard)
-            TimelineView(.periodic(from: .now, by: 30)) { context in
-                if !accounts.isEmpty { UsageAccountsFooter(accounts: accounts.filter(\.included), now: context.date) } else {
-                HStack(spacing: 4) {
-                    Text(usage.planUpdatedAt(provider: provider).map { "Updated \(Self.age(of: $0, at: context.date))" } ?? "No plan reading yet")
-                        .help(usage.status(provider: provider))
-                    if let warning = usage.planWarning(provider: provider) {
-                        Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning)
-                            .help(warning).accessibilityLabel(warning)
-                    }
-                    Spacer()
-                    if let source = usage.planSource(provider: provider) { Text(source) }
-                }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                }
-            }.padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 4)
-        }
-        .padding(6).frame(width: Self.width).fixedSize(horizontal: false, vertical: true)
-        .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
-        .frogPanel()
-        .onAppear { usage.setPresented(true, for: .popup) }
-        .onDisappear { usage.setPresented(false, for: .popup) }
-    }
-    /// "just now", "12m ago", "10h ago", "3d ago".
-    static func age(of date: Date, at now: Date) -> String {
-        let minutes = max(0, Int(now.timeIntervalSince(date) / 60))
-        if minutes < 1 { return "just now" }
-        if minutes < 60 { return "\(minutes)m ago" }
-        return minutes < 1440 ? "\(minutes / 60)h ago" : "\(minutes / 1440)d ago"
-    }
-    /// The Claude accounts shown one by one or combined: only while Frog reads each of them and
-    /// finds at least two; otherwise every surface shows the one account as always.
-    @MainActor static func shownAccounts(_ usage: UsageDashboardModel, now: Date = Date()) -> [UsageAccountSummary] {
-        guard usage.preferences.provider == "Claude", usage.claudeAccountsEnabled else { return [] }
-        let accounts = usage.accounts(now: now)
-        return accounts.count >= 2 ? accounts : []
-    }
-    /// "15:40" today, else the weekday: "Thu".
-    static func shortReset(_ date: Date, now: Date) -> String {
-        Calendar.current.isDate(date, inSameDayAs: now) ? date.formatted(.dateTime.hour().minute())
-            : date.formatted(.dateTime.weekday(.abbreviated))
+extension UsageDashboardModel {
+    func selectProvider(_ provider: String) {
+        var next = preferences; next.provider = provider; updatePreferences(next)
     }
 }
 
 /// Offers once to show each Claude account Frog found; Not now never asks again.
-private struct UsageAccountsNotice: View {
+struct UsageAccountsNotice: View {
     @ObservedObject var usage: UsageDashboardModel
     /// In the popup: compact buttons, and the radius of a block inside a popup.
     var compact = false
@@ -157,17 +54,61 @@ private struct UsageAccountsNotice: View {
     }
 }
 
+// MARK: Limits
+
+/// The one account's or provider's plan windows, with where they came from beside the title.
+private struct UsageLimitsSection: View {
+    @ObservedObject var usage: UsageDashboardModel
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            let provider = usage.preferences.provider
+            let windows = usage.windows(provider: provider, now: context.date)
+            let status = usage.status(provider: provider)
+            FrogSection("Limits") {
+                HStack(spacing: 6) {
+                    if let source = usage.planSource(provider: provider), let updated = usage.planUpdatedAt(provider: provider) {
+                        Text("\(source) · \(UsageStatusPopover.age(of: updated, at: context.date))")
+                            .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                            .help(updated.formatted(date: .abbreviated, time: .shortened))
+                    }
+                    if let plan = usage.planName(provider: provider) { UsagePlanBadge(plan: plan) }
+                }.help(provider == "Claude" ? usage.accountLabel ?? "" : "")
+            } content: {
+                let normal = status == "Newest available plan limits"
+                if windows.isEmpty {
+                    // One line: why there is no reading, or that there is none.
+                    FrogRowNote(text: normal ? "No current reading" : status).textSelection(.enabled)
+                } else {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: windows.count == 1 ? 1 : 2),
+                              alignment: .leading, spacing: 18) {
+                        ForEach(windows) { UsageLimitView(window: $0, now: context.date) }
+                    }.padding(.vertical, 10)
+                }
+                if !normal, !windows.isEmpty { FrogRowNote(text: status).textSelection(.enabled) }
+                if provider == "Claude", usage.needsClaudeSignIn {
+                    FrogRow("Claude Code login") {
+                        Button(usage.checkingClaudeSignIn ? "Checking…" : "Sign in…") { ClaudeSignIn.start(usage) }
+                            .buttonStyle(.frog()).disabled(usage.checkingClaudeSignIn)
+                    }
+                }
+                if let credits = usage.credits(provider: provider) {
+                    FrogRow("Credits") { Text(credits).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
+                }
+            }
+        }
+    }
+}
+
 /// While Frog shows several Claude accounts: each one's limits, or one set of combined limits.
-private struct UsageAccountsLimits: View {
+struct UsageAccountsLimits: View {
     @ObservedObject var usage: UsageDashboardModel
     var compact = false
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             let accounts = usage.accounts(now: context.date).filter(\.included)
-            VStack(alignment: .leading, spacing: compact ? 10 : 14) {
+            VStack(alignment: .leading, spacing: compact ? 10 : 18) {
                 if accounts.isEmpty {
-                    Text("No account is included. Turn on Include for an account under Accounts.")
-                        .font(FrogType.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                    Text("No account is included.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                 } else if usage.preferences.claudeAccountsView == "combined" {
                     combined(accounts, now: context.date)
                 } else if compact {
@@ -184,10 +125,9 @@ private struct UsageAccountsLimits: View {
     /// pace, because each account renews on its own clock.
     @ViewBuilder private func combined(_ accounts: [UsageAccountSummary], now: Date) -> some View {
         let windows = usage.combinedWindows(now: now)
-        let basis = windows.first?.basisDescription
-        Text("Plan limits · " + accounts.map(\.label).joined(separator: " + "))
-            .font(compact ? FrogType.label : FrogType.section).foregroundStyle(compact ? FrogStyle.muted : FrogStyle.ink)
-            .lineLimit(1).help(basis ?? "")
+        Text(accounts.map(\.label).joined(separator: " + "))
+            .font(compact ? FrogType.label : FrogType.bodyMedium).foregroundStyle(compact ? FrogStyle.muted : FrogStyle.ink)
+            .lineLimit(1).help(windows.first?.basisDescription ?? "")
         if windows.isEmpty {
             Text("No current reading").font(FrogType.bodyMedium)
         } else {
@@ -196,100 +136,24 @@ private struct UsageAccountsLimits: View {
                 ForEach(compact ? Array(windows.prefix(4)) : windows) { entry in
                     VStack(alignment: .leading, spacing: 4) {
                         UsageLimitView(window: entry.window, now: now, compact: compact)
-                        Text(([entry.breakdown] + entry.missing.map { "\($0): no current reading" }).filter { !$0.isEmpty }.joined(separator: " · "))
+                        Text(([entry.breakdown] + entry.missing.map { "\($0): no reading" }).filter { !$0.isEmpty }.joined(separator: " · "))
                             .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                             .help(entry.renewals)
                     }.opacity(entry.missing.isEmpty ? 1 : 0.55)
                 }
             }
         }
-        if !compact, let basis { Text(basis).font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
     }
 }
 
-/// One account in the popup: its label, plan, age and two small meters, Session and Week.
-private struct UsageAccountRow: View {
-    let account: UsageAccountSummary
-    let now: Date
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 6) {
-                Text(account.label).font(FrogType.bodyMedium).lineLimit(1)
-                if let plan = account.plan { UsagePlanBadge(plan: plan) }
-                Spacer(minLength: 4)
-                Text(account.age.map { UsageStatusPopover.age(of: $0, at: now) } ?? "No reading yet")
-                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                if account.stale {
-                    Image(systemName: "exclamationmark.circle").font(FrogType.caption).foregroundStyle(FrogStyle.warning)
-                        .accessibilityLabel("No current reading")
-                }
-            }
-            HStack(spacing: 12) {
-                UsageMiniMeter(title: "Session", window: account.windows.first { $0.id == "five_hour" }, now: now)
-                UsageMiniMeter(title: "Week", window: account.windows.first { $0.id == "seven_day" }, now: now)
-            }.opacity(account.stale ? 0.55 : 1)
-        }.contentShape(Rectangle()).help(account.status ?? "").accessibilityElement(children: .combine)
-    }
-}
-
-private struct UsageMiniMeter: View {
-    let title: String
-    let window: UsageWindow?
-    let now: Date
-    var body: some View {
-        let fraction = window.map { $0.percentage.isFinite ? min(1, max(0, $0.percentage / 100)) : 0 } ?? 0
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 4) {
-                Text(title).foregroundStyle(FrogStyle.muted)
-                Spacer(minLength: 2)
-                Text(window?.usedText ?? "—").font(FrogType.label).monospacedDigit()
-                if let reset = window?.resetsAt {
-                    Text(UsageStatusPopover.shortReset(reset, now: now)).foregroundStyle(FrogStyle.muted)
-                        .help(reset.formatted(date: .abbreviated, time: .shortened))
-                }
-            }.font(FrogType.caption).lineLimit(1)
-            GeometryReader { geometry in
-                Capsule().fill(FrogStyle.inset)
-                Capsule().fill(FrogStyle.level(fraction, warning: 0.8, critical: 0.95)).frame(width: geometry.size.width * fraction)
-            }.frame(height: 4).accessibilityHidden(true)
-        }.frame(maxWidth: .infinity)
-    }
-}
-
-private struct UsagePlanBadge: View {
-    let plan: String
-    var body: some View {
-        FrogBadge(text: plan).lineLimit(1)
-    }
-}
-
-/// "A 3m ago · B 2h ago", the sources on hover.
-private struct UsageAccountsFooter: View {
-    let accounts: [UsageAccountSummary]
-    let now: Date
-    var body: some View {
-        let stale = accounts.filter(\.stale)
-        HStack(spacing: 4) {
-            Text(accounts.map { "\($0.label) \($0.age.map { UsageStatusPopover.age(of: $0, at: now) } ?? "no reading")" }.joined(separator: " · "))
-                .help(accounts.map { "\($0.label): \($0.sources.joined(separator: ", "))" }.joined(separator: "\n"))
-            if !stale.isEmpty {
-                let warning = stale.map { "\($0.label): \($0.status ?? "no current reading")" }.joined(separator: "\n")
-                Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning)
-                    .help(warning).accessibilityLabel(warning)
-            }
-            Spacer()
-        }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-    }
-}
-
-/// One account's block on the page: its label as heading and its limits as one account's are shown.
+/// One account's block on the page: its label, plan and age, then its limits.
 private struct UsageAccountLimits: View {
     let account: UsageAccountSummary
     let now: Date
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Text(account.label).font(FrogType.section)
+                Text(account.label).font(FrogType.bodyMedium)
                 if let plan = account.plan { UsagePlanBadge(plan: plan) }
                 Spacer()
                 if let age = account.age {
@@ -297,7 +161,6 @@ private struct UsageAccountLimits: View {
                         .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                         .help(age.formatted(date: .abbreviated, time: .shortened))
                 }
-                // The dimmed limits below say why on hover; the Accounts list says it in full.
                 if account.stale, !account.windows.isEmpty {
                     let reason = account.warning ?? account.status ?? "No current reading"
                     Image(systemName: "exclamationmark.circle").font(FrogType.caption).foregroundStyle(FrogStyle.warning)
@@ -317,109 +180,342 @@ private struct UsageAccountLimits: View {
     }
 }
 
-/// How the menu-bar item draws the limits, previewed with the current readings.
-private struct UsageMenuBarDesign: View {
-    @ObservedObject var usage: UsageDashboardModel
-    /// Shown while there is no plan reading, so that the designs can still be compared.
-    private static let sample = UsageStatusReadout.Face(provider: "Claude", windows: [
-        UsageWindow(id: "five_hour", title: "Session", percentage: 37, resetsAt: nil, duration: 5 * 3600),
-        UsageWindow(id: "seven_day", title: "Week", percentage: 81, resetsAt: nil, duration: 7 * 86_400)
-    ])
+struct UsagePlanBadge: View {
+    let plan: String
+    var body: some View { FrogBadge(text: plan).lineLimit(1) }
+}
+
+/// One plan window: its share used as a bar, a tick for the time gone, what is left and when it renews.
+struct UsageLimitView: View {
+    let window: UsageWindow
+    let now: Date
+    var compact = false
+    private var fraction: Double { window.percentage.isFinite ? min(1, max(0, window.percentage / 100)) : 0 }
+    /// Nearly used is critical whatever the pace; otherwise the bar says how the window is going.
+    private var meterColor: Color {
+        if fraction >= 0.95 { return FrogStyle.critical }
+        switch window.pace(at: now) {
+        case "Ahead of pace": return FrogStyle.warning
+        case "Under pace": return FrogStyle.good
+        case nil: return FrogStyle.level(fraction, warning: 0.8, critical: 0.95)
+        default: return FrogStyle.accent
+        }
+    }
+    private func paceColor(_ pace: String) -> Color {
+        switch pace {
+        case "Ahead of pace": FrogStyle.warning
+        case "Under pace": FrogStyle.good
+        case "Limit reached": FrogStyle.critical
+        default: FrogStyle.muted
+        }
+    }
+    private var elapsed: Double? {
+        guard let reset = window.resetsAt, let duration = window.duration, duration > 0 else { return nil }
+        return min(1, max(0, 1 - reset.timeIntervalSince(now) / duration))
+    }
     var body: some View {
-        let preferences = usage.preferences
-        VStack(alignment: .leading, spacing: 10) {
-            SectionCaption(text: "Menu bar")
-            MenuBarDesignTiles(choices: MenuBarMeterStyle.allCases, selected: MenuBarMeterStyle(choice: preferences.menuBarStyle),
-                               title: { $0.title }, image: { style, dark in
-                var (face, _) = UsageStatusReadout.readout(usage, dark: dark)
-                if face.fractions.isEmpty {
-                    face = Self.sample
-                    face.palette = MenuBarMeterPalette(choice: preferences.menuBarPalette)
+        VStack(alignment: .leading, spacing: compact ? 6 : 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(window.title).font(FrogType.bodyMedium)
+                Spacer()
+                Text(window.usedText).font(GraphStyle.figure).monospacedDigit()
+            }
+            GeometryReader { geometry in
+                Capsule().fill(FrogStyle.inset)
+                Capsule().fill(meterColor).frame(width: geometry.size.width * fraction)
+                if let elapsed {
+                    Rectangle().fill(FrogStyle.ink.opacity(0.55)).frame(width: 1, height: 9)
+                        .offset(x: max(0, min(geometry.size.width - 1, geometry.size.width * elapsed)), y: -2)
                 }
-                face.style = style
-                face.dark = face.palette != .clean && dark
-                return UsageStatusReadout.image(face)
-            }) { style in
-                var next = usage.preferences; next.menuBarStyle = style.rawValue; usage.updatePreferences(next)
-            }
-            MenuBarPaletteRow(selected: MenuBarMeterPalette(choice: preferences.menuBarPalette)) { palette in
-                var next = usage.preferences; next.menuBarPalette = palette.rawValue; usage.updatePreferences(next)
-            }
-        }
+            }.frame(height: 5).accessibilityHidden(true).help("The tick marks the time gone in this window.")
+            HStack(spacing: 4) {
+                Text(window.leftText ?? "No reading since it renewed")
+                // A week's pace says something; a session's changes too fast to.
+                if (window.duration ?? 0) >= 604800 || !compact, let pace = window.pace(at: now) {
+                    Text("· \(pace)").foregroundStyle(paceColor(pace))
+                        .help(elapsed.map { "\(Int(fraction * 100))% used with \(Int($0 * 100))% of the window gone" } ?? "")
+                }
+                Spacer(minLength: 4)
+                if let reset = window.resetsAt {
+                    Text("Resets in \(Duration.seconds(max(0, reset.timeIntervalSince(now))).formatted(.units(allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 1)))")
+                        .help(reset.formatted(date: .abbreviated, time: .shortened))
+                }
+            }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+        }.padding(.trailing, compact ? 0 : 8).accessibilityElement(children: .combine)
     }
 }
 
-private struct UsageProviderControls: View {
+// MARK: Activity
+
+/// Token activity over the chosen period: the total, the chart, the totals by kind, models and sources.
+private struct UsageActivitySection: View {
     @ObservedObject var usage: UsageDashboardModel
     var body: some View {
-        HStack(spacing: 12) {
-            CompactSegments(values: usage.providers, selected: usage.preferences.provider, width: 220, title: { $0 }) {
-                var next = usage.preferences; next.provider = $0; usage.updatePreferences(next)
-            }.accessibilityLabel("Usage provider")
-            Spacer(minLength: 0)
-            // Each Claude account is read through its own folders while Frog shows each.
-            if usage.preferences.provider == "Claude", !usage.claudeAccountsEnabled {
-                FrogDropdown(selected: usage.loginSource, options: usage.loginSources, width: 180, title: { $0 }) {
-                    usage.selectLoginSource($0)
-                }.accessibilityLabel("Claude login source").help("Where Claude plan limits are read from")
+        let settings = usage.preferences
+        let chart = usage.chart(provider: settings.provider, range: settings.range, metric: settings.metric)
+        FrogSection("Activity") {
+            UsageMetricDropdown(usage: usage)
+            UsageRangeDropdown(usage: usage, compact: true)
+        } content: {
+            VStack(alignment: .leading, spacing: 12) {
+                UsageActivityTotal(usage: usage, chart: chart, page: true)
+                UsageActivityChart(usage: usage, chart: chart, compact: false)
+            }.padding(.vertical, 10)
+            if usage.loaded, chart.hasActivity { UsageTokenTotals(usage: usage, chart: chart).padding(.bottom, 10) }
+            UsageActivityNotes(usage: usage, chart: chart, compact: false)
+            if settings.provider == "OpenAI", !usage.hasAccountActivity {
+                FrogRowNote(text: "Account activity is unavailable; showing this Mac’s logs.")
+            }
+        }
+        if usage.loaded, chart.hasActivity, !chart.models.isEmpty {
+            FrogSection("Models") {
+                ForEach(chart.models) { row in
+                    FrogRow(row.name) { Text(usage.format(row.value, metric: settings.metric)).monospacedDigit() }.help(row.name)
+                }
+            }
+        }
+        if usage.loaded, !chart.sources.isEmpty {
+            FrogSection("Sources") {
+                ForEach(chart.sources) { source in
+                    FrogRow(source.name) { Text(usage.format(source.value, metric: settings.metric)).monospacedDigit() }
+                }
             }
         }
     }
 }
 
-/// The switch for several Claude accounts and, while it is on, every account Frog found: its
-/// label, where its readings come from, whether it counts, and the display choices.
-private struct UsageAccountsSection: View {
+struct UsageMetricDropdown: View {
+    @ObservedObject var usage: UsageDashboardModel
+    var body: some View {
+        FrogDropdown(selected: usage.preferences.metric, options: usage.metrics, width: 120, compact: true,
+                     title: { $0 == "Input" ? "Uncached input" : $0 }) { metric in
+            var next = usage.preferences; next.metric = metric; usage.updatePreferences(next)
+        }.buttonTitle { $0 }.accessibilityLabel("Activity metric")
+    }
+}
+
+struct UsageRangeDropdown: View {
+    @ObservedObject var usage: UsageDashboardModel
+    var compact = false
+    var body: some View {
+        FrogDropdown(selected: usage.preferences.range, options: usage.ranges, width: compact ? 70 : 150, compact: true,
+                     title: Self.title) { range in
+            var next = usage.preferences; next.range = range; usage.updatePreferences(next)
+        }.buttonTitle { compact ? $0 : Self.title($0) }.accessibilityLabel("Activity period")
+    }
+    static func title(_ range: String) -> String {
+        switch range { case "24h": "Last 24 hours"; case "30d": "Last 30 days"; default: "Last 7 days" }
+    }
+}
+
+/// The period's total in the chosen metric; how it is counted on hover.
+struct UsageActivityTotal: View {
+    @ObservedObject var usage: UsageDashboardModel
+    let chart: UsageChart
+    var page = false
+    var body: some View {
+        let settings = usage.preferences
+        GraphLegend(color: FrogStyle.series, title: settings.metric == "API cost" ? "API estimate" : "\(settings.metric) tokens", spacing: 5) {
+            Text(usage.loaded ? chart.total : "…").font(GraphStyle.legendValue(page: page)).monospacedDigit()
+        }.help(help(settings.provider))
+    }
+    private func help(_ provider: String) -> String {
+        let value = "API value is an estimate, not your subscription bill."
+        if provider == "OpenAI", usage.hasAccountActivity {
+            return value + " Account totals by UTC day; local activity fills unreported days. Splits are estimated from \(usage.accountEstimateBasis)."
+        }
+        return value + (provider == "Claude" ? " Reads Claude Code, OpenCode and Pi logs, which can span several accounts."
+                        : " Reads Codex, OpenCode and Pi logs on this Mac.")
+    }
+}
+
+/// The chart, or why there is none yet.
+struct UsageActivityChart: View {
+    @ObservedObject var usage: UsageDashboardModel
+    let chart: UsageChart
+    let compact: Bool
+    var body: some View {
+        let settings = usage.preferences
+        if !usage.loaded {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Reading token activity…").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+            }.frame(maxWidth: .infinity, minHeight: compact ? 64 : 150)
+        } else if !chart.hasActivity {
+            VStack(spacing: 6) {
+                Image(systemName: "chart.xyaxis.line").font(.system(size: compact ? 16 : 22)).foregroundStyle(FrogStyle.muted)
+                Text("No activity in this period").font(compact ? FrogType.small : FrogType.bodyMedium)
+            }.frame(maxWidth: .infinity, minHeight: compact ? 64 : 150)
+        } else {
+            UsageTrendChart(steps: UsageTrend(chart.points.map { ($0.date, $0.value) }).steps, compact: compact,
+                            hourly: chart.range == "24h", timeZone: chart.account ? TimeZone(secondsFromGMT: 0)! : .current) {
+                usage.format($0, metric: settings.metric)
+            }.id("\(settings.provider) \(settings.range)")
+        }
+    }
+}
+
+/// Unpriced models, older logs still being read, and a warning that activity may be incomplete.
+struct UsageActivityNotes: View {
+    @ObservedObject var usage: UsageDashboardModel
+    let chart: UsageChart
+    let compact: Bool
+    var body: some View {
+        if !compact, !chart.unpricedModels.isEmpty {
+            FrogRowNote(text: "No price for " + chart.unpricedModels.joined(separator: ", "))
+        }
+        if usage.loaded, usage.readingOlderActivity {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text("Reading older logs…")
+            }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).padding(.vertical, compact ? 0 : 6)
+                .help("The newest calls are counted first; the rest of the month follows.")
+        }
+        if let warning = usage.activityWarning {
+            Label(compact ? "Activity may be incomplete" : warning, systemImage: "clock.arrow.circlepath")
+                .font(FrogType.caption).foregroundStyle(FrogStyle.muted).padding(.vertical, compact ? 0 : 6)
+                .help(warning)
+        }
+    }
+}
+
+/// The period's tokens by kind; choosing one makes it the chart's metric.
+private struct UsageTokenTotals: View {
+    @ObservedObject var usage: UsageDashboardModel
+    let chart: UsageChart
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Total tokens").foregroundStyle(FrogStyle.muted)
+                Spacer()
+                Text(usage.format(chart.totalTokens, metric: "Input")).monospacedDigit()
+            }.font(FrogType.body)
+                .help("Uncached input, cache reads, cache writes and output.")
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                ForEach(chart.totals) { total in
+                    let selected = total.name == usage.preferences.metric
+                    Button {
+                        var next = usage.preferences; next.metric = total.name; usage.updatePreferences(next)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(total.label == "API cost" ? "API estimate" : total.label)
+                                .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                            Text(usage.format(total.value, metric: total.name)).font(GraphStyle.figure).monospacedDigit()
+                        }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(selected ? AnyShapeStyle(FrogStyle.selection) : AnyShapeStyle(FrogStyle.inset),
+                                        in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                        .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+        }
+    }
+}
+
+// MARK: Lifetime and plan history
+
+private struct UsageHistorySections: View {
+    @ObservedObject var usage: UsageDashboardModel
+    var body: some View {
+        if let lifetime = usage.lifetime(provider: usage.preferences.provider) {
+            FrogSection(lifetime.title) {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
+                    ForEach(lifetime.statistics) { statistic in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(statistic.name).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                            Text(statistic.value).font(GraphStyle.figure).monospacedDigit()
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }.padding(.vertical, 10)
+            }.help([lifetime.detail, lifetime.note].filter { !$0.isEmpty }.joined(separator: "\n"))
+        }
+        if usage.preferences.provider == "OpenAI", !usage.planHistory.isEmpty {
+            FrogSection("Recent plan usage") {
+                if let updated = usage.planHistoryUpdatedAt {
+                    Text(updated.formatted(date: .abbreviated, time: .shortened)).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                        .help("A daily report over all devices; it can lag the live limits.")
+                }
+            } content: {
+                ForEach(usage.planHistory.prefix(5)) { period in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("\(period.start.formatted(date: .abbreviated, time: .omitted)) – \(period.end.formatted(date: .abbreviated, time: .omitted))")
+                            Spacer()
+                            Text(String(format: "%.1f%%", period.percentage)).monospacedDigit()
+                        }.font(FrogType.small)
+                        ProgressView(value: min(100, max(0, period.percentage)), total: 100).tint(FrogStyle.accent)
+                        ForEach(period.models.prefix(4)) { row in
+                            HStack {
+                                Text(row.name); Spacer()
+                                Text(String(format: "%.1f%%", row.value)).monospacedDigit()
+                            }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                        }
+                    }.padding(.vertical, 8)
+                }
+            }
+        }
+    }
+}
+
+// MARK: Claude accounts
+
+/// Where Claude limits are read: one login, or each account Frog found on this Mac.
+private struct UsageClaudeSection: View {
     @ObservedObject var usage: UsageDashboardModel
     @State private var liveSetup: UsageAccountSummary?
+
     var body: some View {
-        let accounts = usage.claudeAccountsEnabled ? usage.accounts() : []
         let preferences = usage.preferences
-        VStack(alignment: .leading, spacing: 10) {
-            CompactRow(title: "Show each Claude account",
-                       detail: "Live readings need a Claude Code sign-in per account.") {
-                Toggle("Show each Claude account", isOn: Binding(get: { usage.preferences.claudeAccounts }, set: { on in
-                    var next = usage.preferences; next.claudeAccounts = on; usage.updatePreferences(next)
-                })).labelsHidden().toggleStyle(.switch)
+        let accounts = usage.claudeAccountsEnabled ? usage.accounts() : []
+        FrogSection("Claude") {
+            if usage.claudeAccountsEnabled {
+                Button("Add folder…") { addFolder() }.buttonStyle(.frog(compact: true))
+                    .help("A Claude app data folder or a Claude Code folder Frog did not find")
+            }
+        } content: {
+            // Found once two accounts are, and kept while on, so it can be turned on after Not now.
+            if preferences.claudeAccounts || usage.detectedAccountCount >= 2 {
+                FrogRow("Each account") {
+                    Toggle("Each account", isOn: Binding(get: { usage.preferences.claudeAccounts }, set: { on in
+                        var next = usage.preferences; next.claudeAccounts = on; usage.updatePreferences(next)
+                    })).labelsHidden().toggleStyle(.switch)
+                }.help("Live readings need a Claude Code sign-in per account.")
             }
             if usage.claudeAccountsEnabled {
-                HStack(spacing: 8) {
-                    SectionCaption(text: "Accounts")
-                    Spacer(minLength: 0)
-                    Button("Add folder…") { addFolder() }.buttonStyle(.frog())
-                        .help("A Claude app data folder or a Claude Code folder Frog did not find")
+                if accounts.isEmpty {
+                    FrogRowNote(text: usage.searchingClaudeAccounts ? "Looking for Claude accounts…" : "No Claude account found.")
                 }
-                FrogCard(padding: 0) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        if accounts.isEmpty {
-                            Text(usage.searchingClaudeAccounts ? "Looking for Claude accounts…"
-                                 : "No Claude account found. Add the folder of a Claude app profile or a Claude Code folder.")
-                                .font(FrogType.caption).foregroundStyle(FrogStyle.muted).padding(12)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        ForEach(accounts) { account in
-                            UsageAccountSettingsRow(usage: usage, account: account) { liveSetup = account }.padding(12)
-                        }
-                    }
+                ForEach(accounts) { account in
+                    UsageAccountSettingsRow(usage: usage, account: account) { liveSetup = account }.padding(.vertical, 8)
                 }
                 // One account is shown as always, so the choices only matter from two on.
                 if accounts.count >= 2 {
-                    CompactRow(title: "Show limits", detail: preferences.claudeAccountsView == "combined"
-                               ? "One value per limit over the included accounts, weighted by plan size when every plan is known."
-                               : "Each included account on its own.") {
-                        CompactSegments(values: UsageDashboardPreferences.claudeAccountsViews, selected: preferences.claudeAccountsView,
-                                        width: 200, title: { $0 == "combined" ? "Combined" : "Each account" }) { view in
+                    FrogRow("Show limits") {
+                        FrogDropdown(selected: preferences.claudeAccountsView, options: UsageDashboardPreferences.claudeAccountsViews,
+                                     width: 150, title: { $0 == "combined" ? "Combined" : "Each account" }) { view in
                             var next = usage.preferences; next.claudeAccountsView = view; usage.updatePreferences(next)
-                        }.accessibilityLabel("Show limits")
-                    }
+                        }
+                    }.help(preferences.claudeAccountsView == "combined"
+                           ? "One value per limit over the included accounts, weighted by plan size when every plan is known." : "")
                     if preferences.claudeAccountsView == "each", accounts.filter(\.included).count >= 2 {
-                        CompactRow(title: "Menu bar shows", detail: "Such as “A 37%  B 81%”.") {
-                            CompactSegments(values: UsageDashboardPreferences.claudeAccountsMenuBarWindows, selected: preferences.claudeAccountsMenuBar,
-                                            width: 140, title: { $0 == "week" ? "Week" : "Session" }) { window in
+                        FrogRow("Menu bar shows") {
+                            FrogDropdown(selected: preferences.claudeAccountsMenuBar, options: UsageDashboardPreferences.claudeAccountsMenuBarWindows,
+                                         width: 150, title: { $0 == "week" ? "Week" : "Session" }) { window in
                                 var next = usage.preferences; next.claudeAccountsMenuBar = window; usage.updatePreferences(next)
-                            }.accessibilityLabel("Menu bar shows")
+                            }
                         }
                     }
+                }
+            } else {
+                FrogRow("Login") {
+                    FrogDropdown(selected: usage.loginSource, options: usage.loginSources, width: 150, title: { $0 }) {
+                        usage.selectLoginSource($0)
+                    }.accessibilityLabel("Claude login source")
+                }.help("Where Claude plan limits are read from")
+                FrogRow("Claude Code folder") {
+                    Button(usage.claudeConfigDirectory.lastPathComponent + "…") { chooseClaudeProfile() }
+                        .buttonStyle(.frog()).help(usage.claudeConfigDirectory.path)
                 }
             }
         }
@@ -443,6 +539,18 @@ private struct UsageAccountsSection: View {
             usage.addClaudeAccountFolder(folder)
         }
     }
+
+    private func chooseClaudeProfile() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false; panel.showsHiddenFiles = true
+        panel.directoryURL = usage.claudeConfigDirectory
+        panel.message = "Choose the Claude Code folder for the plan login and lifetime stats."
+        panel.begin { response in
+            guard response == .OK, let directory = panel.url else { return }
+            usage.selectClaudeConfigDirectory(directory)
+        }
+    }
 }
 
 /// One account on the page. Its login's e-mail address is shown only on hover, so a screenshot
@@ -456,9 +564,13 @@ private struct UsageAccountSettingsRow: View {
             HStack(spacing: 8) {
                 UsageAccountLabelField(label: account.label) { usage.renameAccount(account.id, to: $0) }
                 if let plan = account.plan { UsagePlanBadge(plan: plan) }
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    Text(reading(at: context.date)).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                        .help(account.age?.formatted(date: .abbreviated, time: .shortened) ?? "")
+                }
                 Spacer(minLength: 8)
                 Toggle("Include", isOn: Binding(get: { account.included }, set: { usage.setAccountIncluded(account.id, $0) }))
-                    .toggleStyle(.switch).controlSize(.mini).font(FrogType.caption)
+                    .labelsHidden().toggleStyle(.switch).controlSize(.mini)
                     .help("Counts in the menu bar and in combined limits")
             }
             // A line of their own, so a long folder name is not cut short beside the label.
@@ -469,34 +581,29 @@ private struct UsageAccountSettingsRow: View {
                         .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius))
                         .help(source)
                 }
-            }
-            TimelineView(.periodic(from: .now, by: 30)) { context in
-                Text(reading(at: context.date)).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                    .help(account.age?.formatted(date: .abbreviated, time: .shortened) ?? "")
+                if let note = account.mergedNote {
+                    Image(systemName: "link").font(FrogType.caption).foregroundStyle(FrogStyle.muted).help(note).accessibilityLabel(note)
+                }
             }
             if let warning = account.warning {
                 Label { Text(warning) } icon: { Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning) }
                     .font(FrogType.caption).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             }
-            if let note = account.mergedNote {
-                Label(note, systemImage: "link").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-            }
             if account.needsLiveSetup {
-                Button("Set up live readings…", action: setUpLiveReadings).buttonStyle(.frog())
+                Button("Set up live readings…", action: setUpLiveReadings).buttonStyle(.frog(compact: true))
                     .help("Signs Claude Code in as \(account.label), so Frog can check its limits with Anthropic")
             } else if account.needsSignIn {
                 Button(account.checkingSignIn ? "Checking the login…" : "Sign in to Claude Code…") { ClaudeSignIn.start(usage, account: account.id) }
-                    .buttonStyle(.frog()).disabled(account.checkingSignIn)
+                    .buttonStyle(.frog(compact: true)).disabled(account.checkingSignIn)
                     .help("Opens Terminal to sign in to Claude Code as \(account.label), in this account’s own Claude Code folder")
             }
         }.help(usage.accountLogin(for: account.id) ?? "")
     }
 
-    /// "Last reading 3m ago, from the Claude app", "No reading yet".
+    /// "3m ago · Claude app", "No reading yet".
     private func reading(at now: Date) -> String {
         guard let age = account.age else { return "No reading yet" }
-        let source = account.readingSource.map { $0 == "Claude app" ? ", from the Claude app" : ", from the \($0)" } ?? ""
-        return "Last reading \(UsageStatusPopover.age(of: age, at: now))" + source
+        return [UsageStatusPopover.age(of: age, at: now), account.readingSource].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -526,350 +633,55 @@ private struct UsageAccountLabelField: View {
     }
 }
 
-private struct UsageLimitsView: View {
+// MARK: Menu bar
+
+/// The menu-bar item's switch, a preview with the current readings, and its looks.
+private struct UsageMenuBarSection: View {
+    @ObservedObject var plugin: LLMUsagePlugin
     @ObservedObject var usage: UsageDashboardModel
-    var compact = false
+    @Environment(\.colorScheme) private var scheme
+    /// Shown while there is no plan reading, so that the looks can still be compared.
+    static let sample = UsageStatusReadout.Face(provider: "Claude", windows: [
+        UsageWindow(id: "five_hour", title: "Session", percentage: 37, resetsAt: nil, duration: 5 * 3600),
+        UsageWindow(id: "seven_day", title: "Week", percentage: 81, resetsAt: nil, duration: 7 * 86_400)
+    ])
+
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            let provider = usage.preferences.provider
-            let windows = usage.windows(provider: provider, now: context.date)
-            VStack(alignment: .leading, spacing: 12) {
-                if compact {
-                    HStack {
-                        SectionCaption(text: "Plan limits")
-                        Spacer()
-                        if let plan = usage.planName(provider: provider) { UsagePlanBadge(plan: plan) }
-                    }
-                } else if let plan = usage.planName(provider: provider) {
-                    Label("\(plan) plan", systemImage: "person.crop.circle")
-                        .font(FrogType.bodyMedium)
+        let settings = plugin.settings
+        FrogSection("Menu bar") {
+            FrogRow("Show in the menu bar") {
+                Toggle("Show in the menu bar", isOn: binding(\.menuBarItem)).labelsHidden().toggleStyle(.switch)
+            }
+            if settings.menuBarItem {
+                MenuBarPreviewStrip(image: preview).padding(.vertical, 6)
+                FrogRow("Style") {
+                    FrogDropdown(selection: binding(\.menuBarStyle), options: MenuBarMeterStyle.allCases, width: 180) { $0.title }
                 }
-                if windows.isEmpty {
-                    HStack(spacing: 10) {
-                        Image(systemName: "chart.bar.xaxis").font(.system(size: compact ? 15 : 20)).foregroundStyle(FrogStyle.muted)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("No current reading").font(FrogType.bodyMedium)
-                            if !compact { Text("The source status below explains the latest check.")
-                                .font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                            }
-                        }
-                    }.padding(.vertical, compact ? 2 : 8).help(usage.status(provider: provider))
-                } else {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: compact || windows.count == 1 ? 1 : 2), alignment: .leading, spacing: compact ? 14 : 18) {
-                        ForEach(compact ? Array(windows.prefix(4)) : windows) { window in UsageLimitView(window: window, now: context.date, compact: compact) }
-                    }
-                }
-                if !compact, usage.status(provider: provider) != "Newest available plan limits" {
-                    Text(usage.status(provider: provider))
-                        .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineSpacing(2)
-                        .help(usage.status(provider: provider)).textSelection(.enabled)
-                }
-                if !compact, provider == "Claude", usage.needsClaudeSignIn {
-                    Button(usage.checkingClaudeSignIn ? "Checking Claude Code’s login…" : "Sign in to Claude Code…") { ClaudeSignIn.start(usage) }
-                        .buttonStyle(.frog()).disabled(usage.checkingClaudeSignIn)
-                }
-                if !compact, let credits = usage.credits(provider: provider) {
-                    Label(credits, systemImage: "creditcard").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                }
-                if !compact, provider == "Claude", let label = usage.accountLabel {
-                    Text(label).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                }
-                if !compact, let source = usage.planSource(provider: provider), !windows.isEmpty {
-                    HStack(spacing: 4) {
-                        Text(source)
-                        if let updated = usage.planUpdatedAt(provider: provider) {
-                            Text("·"); Text(updated, style: .relative); Text("ago")
-                        }
-                    }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                FrogRow("Colors") {
+                    FrogDropdown(selection: binding(\.menuBarPalette), options: MenuBarMeterPalette.allCases, width: 180) { $0.title }
                 }
             }
         }
+    }
+
+    private var preview: NSImage {
+        let dark = scheme == .dark
+        var (face, _) = UsageStatusReadout.readout(usage, dark: dark)
+        if face.fractions.isEmpty { face = Self.sample }
+        face.style = plugin.settings.menuBarStyle
+        face.palette = plugin.settings.menuBarPalette
+        face.dark = face.palette != .clean && dark
+        return UsageStatusReadout.image(face)
+    }
+
+    private func binding<Value>(_ key: WritableKeyPath<LLMUsageSettings, Value>) -> Binding<Value> {
+        Binding(get: { plugin.settings[keyPath: key] }, set: { value in
+            var next = plugin.settings; next[keyPath: key] = value; plugin.update(next)
+        })
     }
 }
 
-private struct UsageLimitView: View {
-    let window: UsageWindow
-    let now: Date
-    var compact = false
-    private var fraction: Double { window.percentage.isFinite ? min(1, max(0, window.percentage / 100)) : 0 }
-    /// Nearly used is critical whatever the pace; otherwise the bar says how the window is going.
-    private var meterColor: Color {
-        if fraction >= 0.95 { return FrogStyle.critical }
-        switch window.pace(at: now) {
-        case "Ahead of pace": return FrogStyle.warning
-        case "Under pace": return FrogStyle.good
-        case nil: return FrogStyle.level(fraction, warning: 0.8, critical: 0.95)
-        default: return FrogStyle.accent
-        }
-    }
-    private func paceColor(_ pace: String) -> Color {
-        switch pace {
-        case "Ahead of pace": FrogStyle.warning
-        case "Under pace": FrogStyle.good
-        case "Limit reached": FrogStyle.critical
-        default: FrogStyle.muted
-        }
-    }
-    private var elapsed: Double? {
-        guard let reset = window.resetsAt, let duration = window.duration, duration > 0 else { return nil }
-        return min(1, max(0, 1 - reset.timeIntervalSince(now) / duration))
-    }
-    var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 6 : 9) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(window.title).font(FrogType.bodyMedium)
-                Spacer()
-                Text(window.usedText).font(GraphStyle.figure).monospacedDigit()
-            }
-            GeometryReader { geometry in
-                Capsule().fill(FrogStyle.inset)
-                Capsule().fill(meterColor)
-                    .frame(width: geometry.size.width * fraction)
-                if let elapsed {
-                    Rectangle().fill(FrogStyle.ink.opacity(0.55)).frame(width: 1, height: 9)
-                        .offset(x: max(0, min(geometry.size.width - 1, geometry.size.width * elapsed)), y: -2)
-                }
-            }.frame(height: 5).accessibilityHidden(true).help("The tick marks elapsed time in this plan window.")
-            HStack {
-                Text(window.leftText ?? "No reading since it renewed")
-                if compact, (window.duration ?? 0) >= 604800, let pace = window.pace(at: now) {
-                    Text("· \(pace)").foregroundStyle(paceColor(pace))
-                }
-                Spacer(minLength: 4)
-                if let reset = window.resetsAt {
-                    Text("Resets in \(Duration.seconds(max(0, reset.timeIntervalSince(now))).formatted(.units(allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 1)))")
-                        .help(reset.formatted(date: .abbreviated, time: .shortened))
-                }
-            }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-            if !compact, let elapsed, let pace = window.pace(at: now) {
-                Text(pace)
-                    .font(FrogType.caption).foregroundStyle(paceColor(pace))
-                    .help("\(Int(fraction * 100))% used with \(Int(elapsed * 100))% of the window elapsed")
-            }
-        }.padding(.trailing, compact ? 0 : 8).accessibilityElement(children: .combine)
-    }
-}
-
-private struct UsageActivityView: View {
-    @ObservedObject var usage: UsageDashboardModel
-    var compact = false
-    var showsCompactTokens = false
-    var body: some View {
-        let settings = usage.preferences
-        let chart = usage.chart(provider: settings.provider, range: settings.range, metric: settings.metric)
-        VStack(alignment: .leading, spacing: compact ? 10 : 14) {
-            HStack(alignment: .top) {
-                GraphLegend(color: FrogStyle.series, title: settings.metric == "API cost" ? (compact ? "API estimate" : "Estimated API cost") : "\(settings.metric) tokens", spacing: 5) {
-                    Text(chart.total).font(GraphStyle.legendValue(page: !compact)).monospacedDigit()
-                }
-                Spacer()
-                if !compact {
-                    FrogDropdown(selected: settings.metric, options: usage.metrics, width: 130,
-                                 title: { $0 == "Input" ? "Uncached input" : $0 }) { metric in
-                        var next = usage.preferences; next.metric = metric; usage.updatePreferences(next)
-                    }.buttonTitle { $0 }.accessibilityLabel("Activity metric")
-                }
-                FrogDropdown(selected: settings.range, options: usage.ranges, width: compact ? 70 : 150, compact: compact,
-                             title: rangeTitle) { range in
-                    var next = usage.preferences; next.range = range; usage.updatePreferences(next)
-                }.buttonTitle { compact ? $0 : rangeTitle($0) }.accessibilityLabel("Activity period")
-            }
-            if !usage.loaded {
-                HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Reading token activity…").font(FrogType.small).foregroundStyle(FrogStyle.muted) }
-                    .frame(maxWidth: .infinity, minHeight: compact ? 80 : 140)
-            } else if !chart.hasActivity {
-                VStack(spacing: 6) {
-                    Image(systemName: "chart.xyaxis.line").font(.system(size: 22)).foregroundStyle(FrogStyle.muted)
-                    Text("No token activity in this period").font(FrogType.bodyMedium)
-                    if !compact { Text(settings.provider == "Claude" ? "Reads Claude Code, OpenCode and Pi logs. Desktop-only chats are not included." : "Reads Codex, OpenCode and Pi logs on this Mac.")
-                        .font(FrogType.small).foregroundStyle(FrogStyle.muted).multilineTextAlignment(.center)
-                    }
-                }.frame(maxWidth: .infinity, minHeight: compact ? 80 : 140)
-            } else {
-                UsageTrendChart(steps: UsageTrend(chart.points.map { ($0.date, $0.value) }).steps, compact: compact,
-                    hourly: chart.range == "24h", timeZone: chart.account ? TimeZone(secondsFromGMT: 0)! : .current) {
-                    usage.format($0, metric: settings.metric)
-                }.id("\(settings.provider) \(settings.range)")
-                if compact {
-                    HStack {
-                        Text("Total tokens").foregroundStyle(FrogStyle.muted)
-                        Spacer()
-                        Text(usage.format(chart.totalTokens, metric: "Input")).monospacedDigit()
-                    }.font(FrogType.small)
-                    if showsCompactTokens {
-                        HStack(spacing: 12) {
-                            ForEach(["Input", "Cache read", "Output"], id: \.self) { name in
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(name == "Cache read" ? "Cached" : name).lineLimit(1).foregroundStyle(FrogStyle.muted)
-                                    Text(usage.format(chart.totals.first { $0.name == name }?.value ?? 0, metric: name)).monospacedDigit()
-                                }.frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }.font(FrogType.caption)
-                            .help("Input excludes cache reads. Account token splits are estimates; full details are in the dashboard.")
-                    }
-                } else { UsageTokenTotals(usage: usage, chart: chart) }
-                if !compact {
-                    VStack(spacing: 2) {
-                        ForEach(chart.models) { row in
-                            VStack(spacing: 6) {
-                                HStack(spacing: 12) {
-                                    Circle().fill(FrogStyle.accent.opacity(0.65)).frame(width: 5, height: 5)
-                                    Text(row.name).lineLimit(1).help(row.name)
-                                    Spacer()
-                                    Text(usage.format(row.value, metric: settings.metric)).monospacedDigit()
-                                }.font(FrogType.body)
-                                GeometryReader { geometry in
-                                    Capsule().fill(FrogStyle.accent.opacity(0.2))
-                                        .frame(width: geometry.size.width * row.value / max(row.value, chart.models.map(\.value).reduce(0, +)))
-                                }.frame(height: 2)
-                            }.padding(.vertical, 8)
-                        }
-                    }
-                }
-            }
-            if !compact, !chart.unpricedModels.isEmpty {
-                Text("Price unavailable: " + chart.unpricedModels.joined(separator: ", "))
-                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(compact ? 2 : nil)
-            }
-            if usage.loaded, usage.readingOlderActivity {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.mini)
-                    Text("Reading older logs…")
-                }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                    .help("The newest calls are counted first; the rest of the month follows.")
-            }
-            if let warning = usage.activityWarning {
-                Label(compact ? "Activity may be incomplete" : warning, systemImage: "clock.arrow.circlepath")
-                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                    .help(warning)
-            }
-            if !compact, !chart.sources.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    SectionCaption(text: "Activity sources")
-                    ForEach(chart.sources) { source in
-                        HStack {
-                            Text(source.name)
-                            Spacer()
-                            Text(usage.format(source.value, metric: settings.metric)).monospacedDigit()
-                        }.font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                    }
-                }
-            }
-            if !compact, settings.provider == "OpenAI" {
-                Text(usage.hasAccountActivity
-                     ? "Account totals by UTC day; local activity fills unreported days. Token splits and API cost are estimated from \(usage.accountEstimateBasis)."
-                     : "Account activity is unavailable. Showing this Mac’s logs while account checks retry.")
-                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-            } else if !compact {
-                Text("Local logs can span multiple accounts; they are not filtered by the selected plan login.")
-                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-            }
-        }
-    }
-    private func rangeTitle(_ range: String) -> String {
-        switch range { case "24h": "Last 24 hours"; case "30d": "Last 30 days"; default: "Last 7 days" }
-    }
-    /// The bars are whole hours or days and the newest is still under way, so a period starts
-    /// at the beginning of its first bar rather than exactly 24 hours or 7 days ago.
-    private func rangeSpan(_ range: String) -> String {
-        switch range {
-        case "24h": "The current hour and the previous 23"
-        case "30d": "Today and the previous 29 days"
-        default: "Today and the previous 6 days"
-        }
-    }
-}
-
-private struct UsageTokenTotals: View {
-    @ObservedObject var usage: UsageDashboardModel
-    let chart: UsageChart
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Total tokens · \(chart.range)").foregroundStyle(FrogStyle.muted)
-                Spacer()
-                Text(usage.format(chart.totalTokens, metric: "Input")).monospacedDigit()
-            }.font(FrogType.bodyMedium)
-                .help("Uncached input + cache reads + cache writes + output. Lifetime statistics are separate.")
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
-                ForEach(chart.totals) { total in
-                    Button {
-                        var next = usage.preferences; next.metric = total.name; usage.updatePreferences(next)
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(total.label == "API cost" ? "API equivalent" : total.label)
-                                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                                Text(usage.format(total.value, metric: total.name))
-                                    .font(GraphStyle.figure).monospacedDigit()
-                            }
-                            Spacer(minLength: 0)
-                            if total.name == usage.preferences.metric {
-                                Circle().fill(FrogStyle.accent).frame(width: 4, height: 4)
-                            }
-                        }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(total.name == usage.preferences.metric ? AnyShapeStyle(FrogStyle.selection) : FrogStyle.inset,
-                                        in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-                            .contentShape(Rectangle())
-                    }.buttonStyle(.plain)
-                        .accessibilityAddTraits(total.name == usage.preferences.metric ? .isSelected : [])
-                }
-            }
-        }
-    }
-}
-
-private struct UsageAccountDetails: View {
-    @ObservedObject var usage: UsageDashboardModel
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if let lifetime = usage.lifetime(provider: usage.preferences.provider) {
-                DisclosureGroup {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(lifetime.detail).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
-                            ForEach(lifetime.statistics) { statistic in
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(statistic.name).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                                    Text(statistic.value).font(GraphStyle.figure).monospacedDigit()
-                                }.frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                        Text(lifetime.note).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                    }.padding(.top, 8)
-                } label: { Text(lifetime.title).font(FrogType.bodyMedium) }
-            }
-            if usage.preferences.provider == "OpenAI", !usage.planHistory.isEmpty {
-                DisclosureGroup {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("All devices · daily report; can lag live limits.")
-                            .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                        if let updated = usage.planHistoryUpdatedAt {
-                            Text("Reported \(updated.formatted(date: .abbreviated, time: .shortened))")
-                                .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                        }
-                        ForEach(usage.planHistory.prefix(5)) { period in
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Text("\(period.start.formatted(date: .abbreviated, time: .omitted)) – \(period.end.formatted(date: .abbreviated, time: .omitted))")
-                                    Spacer()
-                                    Text(String(format: "%.1f%%", period.percentage)).monospacedDigit()
-                                }.font(FrogType.small)
-                                ProgressView(value: min(100, max(0, period.percentage)), total: 100).tint(FrogStyle.accent)
-                                ForEach(period.models.prefix(4)) { row in
-                                    HStack {
-                                        Text(row.name); Spacer()
-                                        Text(String(format: "%.1f%%", row.value)).monospacedDigit()
-                                    }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                                }
-                            }
-                        }
-                    }.padding(.top, 8)
-                } label: { Text("Recent plan usage").font(FrogType.bodyMedium) }
-            }
-        }
-    }
-}
+// MARK: Trend chart
 
 /// A period drawn as progress: the running total as the line, each bucket's amount as a bar.
 /// The bars have their own scale, so a single day stays visible beside a month's total.
@@ -944,7 +756,6 @@ struct UsageTrendChart: View {
             .chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
             .chartXSelection(value: $selectedDate)
             .frame(height: compact ? 64 : 150)
-            .background(alignment: .bottom) { Rectangle().fill(FrogStyle.muted.opacity(0.15)).frame(height: 1) }
             .overlay(alignment: .topLeading) {
                 if let selected {
                     Text("\(label(selected.date, long: true)) · \(format(selected.amount)) · \(format(selected.total)) total")

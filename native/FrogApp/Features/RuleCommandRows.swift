@@ -10,7 +10,7 @@ import FrogCore
                                                subtitle: rule.answersInPanel ? "Answers in a panel" : "Run \(rule.category.title.lowercased()) rule",
                                                symbol: rule.category == .audio ? "waveform" : "command"),
                           primary: CommandRowAction(title: "Run") { [weak model] in
-                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message(WindowCommandRows.targetChanged) }
+                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message(CommandBarContext.targetChanged) }
                 model?.runRuleFromCommandBar(rule.id)
             })
         }
@@ -25,7 +25,7 @@ import FrogCore
         return WindowAction.allCases.map { action in
             CommandBarRow(record: SearchRecord(id: "layout:\(action.rawValue)", title: action.title, subtitle: "Arrange front window", keywords: "window layout", symbol: "macwindow"),
                           primary: CommandRowAction(title: "Arrange") { [weak model] in
-                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message(WindowCommandRows.targetChanged) }
+                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message(CommandBarContext.targetChanged) }
                 model?.runWindowAction(action)
             })
         }

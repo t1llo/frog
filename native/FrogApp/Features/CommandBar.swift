@@ -58,14 +58,13 @@ import SwiftUI
         TextToolRows(),
         CalculationRows(),
         EmojiRows(),
-        WindowCommandRows(),
         CleanerCommandRows(applications: { [unowned self] in self.applications.cleanerApplications }),
         PhoneCommandRows(),
         PluginCommandRows(),
         PluginActionRows(),
     ] + extraProviders
     private let extraProviders: [any CommandBarRowProviding]
-    private let clipboardRows = ClipboardCommandRows(), documentRows = DocumentCommandRows()
+    private let clipboardRows = ClipboardCommandRows(), documentRows = DocumentRowsProvider()
     /// The providers of this open, and the rows each gave last.
     private var providers: [any CommandBarRowProviding] = []
     private var providerRows: [ObjectIdentifier: [CommandBarRow]] = [:]

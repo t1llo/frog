@@ -1,20 +1,24 @@
 # Stay awake
 
-Frog's menu-bar popup has a **Stay awake** switch. It starts off and never automatically enables on launch. It uses the system-wide `pmset disablesleep` setting, including lid-closed sleep; ordinary idle-sleep assertions do not provide the same behavior.
+Stay awake keeps the Mac, and by default its screen, awake. Switch it on in Frog's popup, on the **Stay awake** page, from the command bar, or with `frog awake on`. It starts off and never switches itself on at launch.
 
-Choose 30 minutes, one hour, four hours (the default), or until Frog quits before enabling it. Frog restores sleep when its session expires, when it quits normally, or when an unplugged battery drops below 20%. Battery and timer checks run approximately once a minute. The menu-bar coffee symbol indicates that the system setting is on.
+## A session needs no setup
 
-## One-time permission setup
+A session holds the same power assertions as `caffeinate -d -i`: the Mac does not go to idle sleep, and with **Keep the screen on** (the default) the display stays on, so the screen does not dim or lock while you are away. `pmset -g assertions` lists them under Frog. Nothing on the Mac is changed, so there is no permission to set up, and the assertions end with the session, when Frog quits, and when Frog stops in any other way.
 
-Choose **Set up access…** in Frog's popup or **Settings → Stay awake**. The bundled [Terminal guide](../native/FrogApp/Resources/StayAwakeSetup.command) first explains what it will change, then walks through:
+A session lasts **until turned off** (the default), **1 hour**, **3 hours**, or **until a time** you pick. The popup offers the same choices while Stay awake is off and shows when the session ends while it is on. Changing the duration during a session counts it again from now. A timed session ends on its own, also when the Mac slept in between.
+
+## With the lid closed
+
+macOS ignores the assertions once the lid is closed. **Stay awake with the lid closed** is a separate switch on the page: while it is on, a session also turns on the system-wide `pmset disablesleep` setting and turns it off when the session ends. That setting needs a one-time permission, set up in Terminal; without it, a session still keeps the Mac awake with the lid open and the page says that lid-closed mode needs setup. Lock the Mac yourself before closing its lid.
+
+### One-time setup
+
+Choose **Set up…** under **Lid closed**. The bundled [Terminal guide](../native/FrogApp/Resources/StayAwakeSetup.command) first explains what it will change, then walks through:
 
 1. Reviewing the exact two power commands.
 2. Adding a rule for your current Mac account using `sudo visudo -f /etc/sudoers.d/frog-awake`.
 3. Validating the configuration and both effective passwordless command permissions without changing the sleep setting.
-
-The guide summarizes the result and its dedicated Terminal window closes automatically on success. Errors stay visible for review. The effective permissions decide, not the wording of the rule: a rule that `sudo` accepts in another form, for example with the two commands on separate lines, passes, and so does a Mac on which another rule already allows both commands. The guide then says that its own line is not in the file. Frog immediately checks the actual permissions again, displays **Ready to use** in Settings, and hides **Set up access…** from the popup when both commands are available. **Check access** refreshes that status at any time. Once access is ready, opening the popup or returning to Frog does not check it again; Frog checks it when the Stay awake page opens and before it switches Stay awake on. Cached administrator authentication does not count as configured access.
-
-Frog waits for the guide for as long as it takes. While it is open, Stay awake cannot be switched on; a session that is already on can still be switched off. If the guide's process ends without a result, for example because it was killed, Frog reports that setup did not finish. If both commands are allowed by then, because the rule was saved first, Frog says that too and Stay awake can be used. If the guide never reports back at all, choose **Cancel** in **Settings → Stay awake** to stop waiting, then close the guide's Terminal window if one is still open.
 
 Enter your administrator password directly into Terminal's `sudo` prompt. Frog never receives or stores it. The rule grants only these exact commands:
 
@@ -22,23 +26,46 @@ Enter your administrator password directly into Terminal's `sudo` prompt. Frog n
 YOUR_SHORT_USERNAME ALL=(root) NOPASSWD: /usr/bin/pmset -a disablesleep 0, /usr/bin/pmset -a disablesleep 1
 ```
 
-Frog then executes those commands using `sudo -n`, without a shell or password prompt. Starting a session without permission leaves the switch off and shows the setup action.
+Frog runs them with `sudo -n`, without a shell or password prompt. The effective permissions decide, not the wording of the rule: a rule that `sudo` accepts in another form passes, and so does a Mac on which another rule already allows both commands. Frog checks the permissions again when the guide ends and shows **Ready**; **Check** reads them again at any time. While the guide is open, choose **Cancel** to stop waiting for it. Cached administrator authentication does not count as configured access.
 
-## Reset access
+### Reset
 
-Choose **Settings → Stay awake → Reset access…**. Frog first restores sleep; if that fails, it keeps the current permission and reports the error. A running session therefore ends even if you then cancel in Terminal, and Settings says that sleep was restored. The Terminal guide explains the reset and asks you to confirm before emptying the dedicated file with:
+Choose **Reset…** next to **Ready**. Frog first restores sleep; if that fails, it keeps the permission and reports the error. The guide asks you to confirm before emptying the dedicated file with:
 
 ```sh
 sudo /usr/bin/tee /etc/sudoers.d/frog-awake < /dev/null
 ```
 
-It validates sudoers afterward and leaves the empty file in place. The main sudoers file is not edited. Settings returns to **Setup needed** unless another system policy independently allows both commands; availability always reflects the effective policy. Run setup again to restore access.
+It validates sudoers afterwards and leaves the empty file in place. The main sudoers file is not edited.
 
-## Session behavior
+### How the setting is handled
 
-- While Frog's session is on, Frog also holds the idle display-sleep and system-sleep assertions that `caffeinate -d -i` takes, so the display stays on and the screen does not lock from idleness. `pmset -g assertions` lists them under Frog. macOS ignores these assertions with the lid closed, where `disablesleep` keeps the Mac running; lock the Mac yourself before closing its lid.
-- Frog reads back the real setting after every change. Failed reads show an unverified state and retain the session marker for cleanup. If another app already enabled it, the popup shows **On outside Frog**; Frog will not claim that session or disable it when quitting. You can explicitly switch it off.
-- A small machine-local session marker in Application Support lets the next launch restore sleep if an owned session was interrupted. A crash or forced termination cannot run normal quit cleanup; until Frog restarts, the system setting can remain enabled. It can also be restored manually with `sudo /usr/bin/pmset -a disablesleep 0`. The marker names the Frog process that started the session. A second copy of Frog that starts while that process still runs, for example a development build beside the installed app, leaves the session alone and shows it as **On outside Frog**.
-- If restoring sleep fails during normal quit, Frog reports the error and remains open so you can restore access and retry.
+- Frog reads back the real setting after every change, and checks the battery about once a minute while it owns the setting: below 20% on battery it restores sleep and says so. Nothing is read while lid-closed mode is off and no session of Frog's has the setting on.
+- A small machine-local session marker in Application Support lets the next launch restore sleep if Frog was interrupted while the setting was on. Until Frog starts again, it can be restored by hand with `sudo /usr/bin/pmset -a disablesleep 0`. A second copy of Frog that starts while the first one runs leaves its setting alone.
+- If restoring sleep fails at quit, Frog reports the error and stays open so you can retry.
 
-Lid behavior must be checked on the target Mac after setup. The automated tests use isolated power-service fixtures and do not modify sudoers, battery settings, or system sleep.
+## Settings
+
+`[stay-awake]` in `config.toml`:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `duration` | `until-off` | `until-off`, `1h`, `3h` or `until-time` |
+| `until` | `18:00` | When `until-time` ends, as `HH:MM` |
+| `keep-screen-on` | `true` | Keep the display on too |
+| `lid-closed` | `false` | Also stay awake with the lid closed; needs the setup above |
+| `menu-bar-item` | `false` | A cup in the menu bar while a session runs |
+| `menu-bar-style` | `ring` | `icon`, `ring` (drains as a timed session runs out) or `time` |
+
+The table is written once from the previous settings the first time this version starts.
+
+## Actions
+
+| Action | What it does |
+| --- | --- |
+| `stay-awake.toggle` | Switches a session on with the page's duration, or off |
+| `stay-awake.on [--for 90\|1h\|3h\|until 17:30]` | Starts a session; `--for` takes minutes, hours or a time and leaves the page's duration alone |
+| `stay-awake.off` | Ends the session |
+| `stay-awake.status` | Whether a session runs, until when, and whether lid-closed mode is active |
+
+`frog awake on|off|status` are short names for the same actions. The automated tests use fake power services and never change sudoers, the sleep setting or real assertions.

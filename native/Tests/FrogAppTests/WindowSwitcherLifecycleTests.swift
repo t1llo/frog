@@ -74,6 +74,6 @@ private final class InputLifecycleFixture {
             return true
         }, stop: {
             self.stops += 1; self.input?.stop(); self.input = nil
-        }, statusChanged: { _, _ in })
+        }, statusChanged: { _ in })
     }
 }

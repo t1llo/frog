@@ -34,6 +34,8 @@ public struct RuleAction: Codable, Equatable, Sendable {
     public var recordingMode: RecordingMode?
     public var output: TranscriptOutput?
     public var cleanup = false
+    /// A dictation rule's cleanup: the Writing rule its transcript goes through. Wins over `cleanup`.
+    public var cleanupRuleID: UUID?
     /// Nil replaces the selection. Meaningful for text rules only; older versions ignore it.
     public var textOutput: TextOutput?
     public init(category: RuleCategory = .text) { self.category = category }

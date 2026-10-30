@@ -7,7 +7,7 @@ enum AgentSkill {
     /// The skill's name, which is also the name of its folder.
     static let name = "frog"
     /// Raise it whenever `text` changes, so Settings offers Update to installs of an older one.
-    static let version = 3
+    static let version = 4
     /// The frontmatter key that marks a skill Frog wrote, with its version.
     static let marker = "frog-skill-version"
 
@@ -23,7 +23,7 @@ enum AgentSkill {
 
     The `frog` command talks to Frog, the menu-bar app running on this Mac. The running app is the reference for what it can do:
 
-    - `frog help` lists every command by group: Frog, Windows, Scripts, Notes, Clipboard, Writing rules, Stay awake, System monitor, Mr. Usage, Plugins.
+    - `frog help` lists every command by group: Frog, Windows, Scripts, Notes, Clipboard, Writing rules, Stay awake, System monitor, LLM usage, Plugins.
     - `frog help <command>` explains one command, with its options and examples.
     - A group marked "(off)" belongs to a Frog feature that is switched off. Ask the user before turning it on with `frog features enable <feature>`.
 
@@ -45,14 +45,15 @@ enum AgentSkill {
 
     ## Scripts
 
-    Frog scripts are the user's own shell commands and run with their permissions. Run the script the user asked for, by name; `frog scripts` shows how to list them when it is unclear which one they mean.
+    Frog scripts are the user's own shell commands and run with their permissions. Run the script the user asked for, by name, with `frog run scripts.run --title <name>`; `frog run scripts.list` lists them when it is unclear which one they mean.
 
     ## Plugins
 
-    A plugin adds a feature of the user's own to Frog: a page in its sidebar, rows in its command bar, or both, built from HTML, CSS and JavaScript that run in a sandbox. When the user asks for one, or for something Frog cannot do yet:
+    A plugin adds a feature of the user's own to Frog: a page in its sidebar, rows in its command bar, and actions that `frog run` and shortcuts run, built from HTML, CSS and JavaScript that run in a sandbox. When the user asks for one, or for something Frog cannot do yet:
 
-    - Run `frog plugins guide` first and follow it; it is the reference for the Frog that is running.
-    - Build it in a folder with `frog plugins new`, install it with `frog plugins install`, and check it with `frog plugins snapshot` and `frog plugins logs` until it does what the user asked.
+    - Run `frog plugin guide` first and follow it; it is the reference for the Frog that is running.
+    - Build it in a folder with `frog plugin new`, check it with `frog plugin validate`, install it with `frog plugin install`, and look at it with `frog plugin snapshot` and `frog plugin logs` until it does what the user asked.
+    - `frog plugin publish` prints the directory entry to submit when the user wants to share it.
     - The user approves a plugin's first install, and any update that asks for more access, in Frog's window. You cannot approve it; tell them it is waiting.
     - Remove a plugin only when the user asks.
 

@@ -12,16 +12,18 @@ import FrogCore
     static let groups: [String: String] = [
         "status": "Frog", "version": "Frog", "features": "Frog", "open": "Frog", "actions": "Actions", "run": "Actions",
         "windows": "Windows", "apps": "Windows",
-        "scripts": "Scripts", "notes": "Notes",
         "clipboard": "Clipboard", "rules": "Writing rules", "awake": "Stay awake",
-        "monitor": "System monitor", "usage": "Mr. Usage", "plugins": "Plugins"
+        "monitor": "System monitor", "usage": "LLM usage", "plugin": "Plugins"
     ]
 
     /// Commands of features that became part of others, with what to use instead. Skills installed
     /// before then still name them.
     static let retired: [String: String] = [
-        "snippets": "Snippets are notes now. Run `frog notes list`, and `frog notes show <name> --expand` to fill in their variables.",
-        "shelf": "The shelf is gone; its items are notes now. Run `frog notes list`."
+        "snippets": "Snippets are notes now. Run `frog run notes.list`, and `frog run notes.read --title <name> --expand true` to fill in their variables.",
+        "shelf": "The shelf is gone; its items are notes now. Run `frog run notes.list`.",
+        "notes": "Notes are actions now: `frog actions notes` lists them, such as `frog run notes.read --title <name>`.",
+        "scripts": "Scripts are actions now: `frog actions scripts` lists them, such as `frog run scripts.run --title <name>`.",
+        "plugins": "Plugin commands start with `frog plugin` now, such as `frog plugin list`; `frog plugin check` is `frog plugin validate`, `frog plugin pack` is `frog plugin publish`, and a plugin's commands run with `frog run community.<id>.<command>`."
     ]
 
     static func run(_ request: AgentRequest, model: AppModel) async -> AgentResponse {

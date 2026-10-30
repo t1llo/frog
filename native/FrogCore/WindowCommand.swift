@@ -49,17 +49,6 @@ public enum WindowCommand: String, CaseIterable, Codable, Sendable, Identifiable
         }
     }
 
-    /// The command bar row's subtitle.
-    public var commandBarSubtitle: String {
-        switch self {
-        case .layoutPicker: "Choose a layout"
-        default: "Windows"
-        }
-    }
-
-    /// A command held down has nothing to run from the command bar.
-    public var showsInCommandBar: Bool { !isMomentary }
-
     /// Extra words the command bar matches.
     public var keywords: String {
         switch self {

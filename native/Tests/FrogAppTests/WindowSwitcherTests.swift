@@ -1,5 +1,6 @@
 import XCTest
 import CoreGraphics
+import FrogCore
 @testable import FrogApp
 
 final class WindowSwitcherTests: XCTestCase {
@@ -37,6 +38,47 @@ final class WindowSwitcherTests: XCTestCase {
         XCTAssertEqual(router.modifiers(command: false).action, .commit)
         XCTAssertNil(router.modifiers(command: false).action)
         XCTAssertTrue(router.key(code: 48, down: false, command: false, shift: false, otherModifiers: false).consume)
+    }
+
+    /// `window-switcher.show` opens the list with no key held: Tab moves, typing searches, a modifier
+    /// change does not choose, Return does; the chord itself closes it.
+    func testStickyListStepsSearchesAndCommitsOnlyOnReturn() {
+        var router = WindowSwitchKeyRouter()
+        let session = router.beginSticky()
+        XCTAssertTrue(router.active)
+        XCTAssertEqual(router.key(code: 48, down: true, flags: []).action, .step(backwards: false))
+        XCTAssertEqual(router.key(code: 48, down: true, flags: .maskShift).action, .step(backwards: true))
+        XCTAssertEqual(router.key(code: 2, down: true, flags: [], text: "d").action, .search("d"))
+        XCTAssertNil(router.modifiers(flags: []).action, "Nothing was held, so nothing is released")
+        let commit = router.key(code: 36, down: true, flags: [])
+        XCTAssertEqual(commit.action, .commit)
+        XCTAssertEqual(commit.sessionID, session)
+        XCTAssertFalse(router.active)
+        XCTAssertFalse(router.sticky)
+
+        _ = router.beginSticky()
+        XCTAssertEqual(router.key(code: 48, down: true, flags: .maskCommand).action, .cancel, "A chord closes the list")
+        XCTAssertFalse(router.sticky)
+        XCTAssertEqual(router.key(code: 48, down: true, flags: .maskCommand).action, .begin(backwards: false),
+                       "The next chord is an ordinary held session again")
+        XCTAssertEqual(router.modifiers(flags: []).action, .commit)
+    }
+
+    /// With a chord other than ⌘Tab, plain Tab still moves through a list opened by `window-switcher.show`,
+    /// and the modifiers of the shortcut that opened it may still be held.
+    func testStickyListStepsWithTabForAnyChordAndWhileTheOpeningShortcutIsHeld() {
+        var router = WindowSwitchKeyRouter(hotkey: Hotkey(keyCode: 50, modifiers: 2048))
+        _ = router.beginSticky()
+        XCTAssertEqual(router.key(code: 48, down: true, flags: []).action, .step(backwards: false))
+        XCTAssertEqual(router.key(code: 48, down: true, flags: .maskShift).action, .step(backwards: true))
+        XCTAssertEqual(router.key(code: 36, down: true, flags: []).action, .commit)
+
+        router = WindowSwitchKeyRouter()
+        _ = router.beginSticky(held: [.maskControl, .maskAlternate])
+        XCTAssertEqual(router.key(code: 48, down: true, flags: [.maskControl, .maskAlternate]).action, .step(backwards: false))
+        XCTAssertEqual(router.key(code: 48, down: true, flags: []).action, .step(backwards: false), "Released, nothing changes")
+        XCTAssertNil(router.modifiers(flags: []).action)
+        XCTAssertEqual(router.key(code: 48, down: true, flags: .maskCommand).action, .cancel, "Another chord closes the list")
     }
 
     func testEscapeCancelsAndDoesNotCommitOnRelease() {

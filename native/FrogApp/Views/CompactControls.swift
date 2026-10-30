@@ -45,19 +45,13 @@ extension EnvironmentValues {
     }
 }
 
+/// The v1 name of `FrogRow`, kept for views not moved yet: the same row, with small controls.
 struct CompactRow<Content: View>: View {
     let title: String
     var detail: String? = nil
     @ViewBuilder var content: Content
     var body: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(L10n.text(title)).font(FrogType.body)
-                if let detail { Text(L10n.text(detail)).font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true) }
-            }
-            Spacer(minLength: 12)
-            content.controlSize(.small).fixedSize(horizontal: true, vertical: false).environment(\.compactRowTitle, title)
-        }.frame(minHeight: FrogStyle.controlHeight)
+        FrogRow(title, caption: detail) { content.controlSize(.small) }
     }
 }
 

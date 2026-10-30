@@ -54,7 +54,7 @@ final class ModelRemovalTests: XCTestCase {
         XCTAssertEqual(model.ruleModelLabel(model.configuration.rules[0]), "Whisper Base · Not downloaded")
         // The rule says what is missing instead of recording into a model that is not there.
         model.startDictation(model.configuration.rules[0])
-        XCTAssertFalse(model.dictation.active)
+        XCTAssertFalse(model.dictating)
         XCTAssertTrue(model.errorMessage?.contains("Download this speech model") == true)
         // Editing such a rule in the meantime leaves its models as they are.
         var draft = model.configuration.rules[0]; draft.name = "Renamed"
@@ -202,7 +202,7 @@ final class ModelRemovalTests: XCTestCase {
         try model.saveRule(draft)
         XCTAssertEqual(try store.load().rules[0].name, "Still editable")
         model.startDictation(model.configuration.rules[0])
-        XCTAssertFalse(model.dictation.active)
+        XCTAssertFalse(model.dictating)
         XCTAssertTrue(model.errorMessage?.contains("Choose a speech model") == true)
     }
 

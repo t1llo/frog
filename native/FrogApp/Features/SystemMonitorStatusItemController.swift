@@ -1,15 +1,14 @@
 import AppKit
 import Combine
 import SwiftUI
-import FrogCore
 
-/// CPU and GPU load as an item of its own in the menu bar, while System monitor is on and its
-/// menu-bar item is chosen. Clicking it opens the system overview beneath it.
+/// System monitor's own menu-bar item: the chosen readings as a meter. Clicking it opens the overview
+/// beneath it. While it exists the monitor samples, also with every overview closed.
 @MainActor final class SystemMonitorStatusItemController: NSObject {
     static let popupName = "System"
     private let monitor: SystemMonitor
-    private let openFrog: () -> Void
-    private var preferences: SystemMonitorPreferences
+    private let openPage: () -> Void
+    private var settings: SystemMonitorSettings
     private var item: NSStatusItem?
     private var readings: AnyCancellable?
     private var appearance: NSKeyValueObservation?
@@ -19,8 +18,8 @@ import FrogCore
     private let presenter = StatusItemPopup(name: SystemMonitorStatusItemController.popupName)
     var isPopupShown: Bool { presenter.isShown }
 
-    init(monitor: SystemMonitor, preferences: SystemMonitorPreferences, openFrog: @escaping () -> Void) {
-        self.monitor = monitor; self.preferences = preferences; self.openFrog = openFrog
+    init(monitor: SystemMonitor, settings: SystemMonitorSettings, openPage: @escaping () -> Void) {
+        self.monitor = monitor; self.settings = settings; self.openPage = openPage
         super.init()
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.autosaveName = "Frog.SystemMonitor"
@@ -37,9 +36,9 @@ import FrogCore
         }
     }
 
-    func apply(_ preferences: SystemMonitorPreferences) {
-        guard self.preferences != preferences else { return }
-        self.preferences = preferences
+    func apply(_ settings: SystemMonitorSettings) {
+        guard self.settings != settings else { return }
+        self.settings = settings
         update()
     }
 
@@ -54,7 +53,7 @@ import FrogCore
 
     private func update() {
         guard let button = item?.button else { return }
-        let face = Self.face(reading, preferences: preferences, dark: button.effectiveAppearance.isDark)
+        let face = Self.face(reading, settings: settings, dark: button.effectiveAppearance.isDark)
         if face != shownFace { button.image = MenuBarMeter.image(face); shownFace = face }
         let description = Self.description(reading)
         guard description != shownDescription else { return }
@@ -63,13 +62,14 @@ import FrogCore
         button.setAccessibilityLabel(description)
     }
 
-    /// CPU above GPU. A Mac whose GPU driver gives no load shows CPU alone.
-    nonisolated static func face(_ reading: SystemMonitorReading?, preferences: SystemMonitorPreferences, dark: Bool) -> MenuBarMeterFace {
-        let palette = MenuBarMeterPalette(choice: preferences.menuBarPalette)
+    /// The chosen readings, top to bottom. A Mac whose GPU driver gives no load leaves GPU out.
+    nonisolated static func face(_ reading: SystemMonitorReading?, settings: SystemMonitorSettings, dark: Bool) -> MenuBarMeterFace {
+        let readings = settings.menuBarReadings
         var rows = [MenuBarMeterRow(label: "CPU", fraction: reading?.cpu.value)]
-        if reading?.gpu != .unavailable { rows.append(MenuBarMeterRow(label: "GPU", fraction: reading?.gpu.value)) }
-        return MenuBarMeterFace(rows: rows, style: MenuBarMeterStyle(choice: preferences.menuBarStyle), palette: palette,
-                                dark: palette != .clean && dark)
+        if readings.gpu, reading?.gpu != .unavailable { rows.append(MenuBarMeterRow(label: "GPU", fraction: reading?.gpu.value)) }
+        if readings.memory { rows.append(MenuBarMeterRow(label: "MEM", fraction: reading?.memory.value)) }
+        return MenuBarMeterFace(rows: rows, style: settings.menuBarStyle, palette: settings.menuBarPalette,
+                                dark: settings.menuBarPalette != .clean && dark)
     }
 
     nonisolated static func description(_ reading: SystemMonitorReading?) -> String {
@@ -80,14 +80,14 @@ import FrogCore
             default: "measuring…"
             }
         }
-        return "System monitor\nCPU \(text(reading?.cpu)) · GPU \(text(reading?.gpu))"
+        return "System monitor\nCPU \(text(reading?.cpu)) · GPU \(text(reading?.gpu)) · Memory \(text(reading?.memory))"
     }
 
     @objc private func togglePopup() {
         guard let button = item?.button else { return }
         if presenter.isShown { presenter.close(); return }
         let host = NSHostingView(rootView: SystemMonitorStatusPopover(monitor: monitor) { [weak self] in
-            self?.presenter.close(); self?.openFrog()
+            self?.presenter.close(); self?.openPage()
         }.background(MenuWindowSizing()))
         presenter.show(host, relativeTo: button)
     }
@@ -95,19 +95,19 @@ import FrogCore
     isolated deinit { stop() }
 }
 
-/// The overview from Frog's System tab, on its own beneath the CPU and GPU item.
+/// The overview from Frog's System tab, on its own beneath the menu-bar item.
 struct SystemMonitorStatusPopover: View {
     @ObservedObject var monitor: SystemMonitor
-    let openSettings: () -> Void
+    let openPage: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
                 Image(systemName: "gauge.medium").foregroundStyle(FrogStyle.muted)
                 Text("System").font(FrogType.section)
                 Spacer()
+                IconAction(title: "Open System monitor", symbol: "arrow.up.forward.app", action: openPage)
             }.padding(.horizontal, 8).frame(height: 40)
-            SystemMonitorView(monitor: monitor, presenter: .statusItem)
-            MenuActionRow(title: "Menu bar item settings…", symbol: "slider.horizontal.3", action: openSettings)
+            SystemMonitorView(monitor: monitor, presenter: .statusPopup)
         }.padding(6).frame(width: 292).fixedSize(horizontal: false, vertical: true)
             .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()

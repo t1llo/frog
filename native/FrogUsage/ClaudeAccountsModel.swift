@@ -64,7 +64,7 @@ final class ClaudeAccountsModel: ObservableObject {
 
     // MARK: Lifecycle
 
-    /// Mr. Usage is on: start the stores, and look for accounts once.
+    /// LLM usage collects: start the stores, and look for accounts once.
     func start() {
         guard !running else { return }; running = true
         for store in stores.values { store.start() }

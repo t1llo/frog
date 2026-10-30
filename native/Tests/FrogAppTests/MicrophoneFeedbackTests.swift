@@ -66,43 +66,39 @@ final class MicrophoneFeedbackTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanUp() }
         let model = AppModel(dataDirectory: fixture.directory, registerShortcuts: false, dictationController: fixture.controller, modelService: fixture.models)
+        model.attachDictation().update { $0.microphone = unpluggedMicrophone }
         defer { model.shutdown() }
-        var preferences = model.configuration.preferences.workflowSettings
-        preferences.microphoneID = unpluggedMicrophone
-        try model.saveWorkflowPreferences(preferences)
-        fixture.start(microphoneID: preferences.microphoneID)
+        fixture.start(microphoneID: unpluggedMicrophone)
         await fixture.controller.waitForWork()
         fixture.controller.selectMicrophone(nil)
         XCTAssertEqual(fixture.controller.phase, .recording)
         XCTAssertEqual(fixture.recorders.count, 1, "Saving the already-active default must not interrupt recording")
-        XCTAssertNil(try ConfigurationStore(directory: fixture.directory).load().preferences.workflowSettings.microphoneID)
+        XCTAssertNil(try savedMicrophone(fixture.directory))
     }
 
     func testUnavailableSavedMicrophoneStartsWithSystemDefaultAndCanStillBeChanged() async throws {
         let fixture = Fixture()
         defer { fixture.cleanUp() }
         let model = AppModel(dataDirectory: fixture.directory, registerShortcuts: false, dictationController: fixture.controller, modelService: fixture.models)
+        model.attachDictation().update { $0.microphone = unpluggedMicrophone }
         defer { model.shutdown() }
-        var preferences = model.configuration.preferences.workflowSettings
-        preferences.microphoneID = unpluggedMicrophone
-        try model.saveWorkflowPreferences(preferences)
         var issues: [String] = []
         var audio: [Float] = []
         fixture.controller.onError = { issues.append($0.localizedDescription) }
         fixture.controller.externalTranscription = { samples, _ in audio = samples; return "Transcript" }
-        fixture.start(microphoneID: preferences.microphoneID)
+        fixture.start(microphoneID: unpluggedMicrophone)
         await fixture.controller.waitForWork()
         XCTAssertEqual(fixture.controller.phase, .recording)
         XCTAssertEqual(fixture.recorders.count, 1)
         XCTAssertNil(fixture.recorders.first?.device, "A nil device opens the macOS default input")
         XCTAssertNil(fixture.controller.selectedMicrophoneID, "The popup must show the active fallback")
         XCTAssertTrue(issues.isEmpty)
-        XCTAssertEqual(try ConfigurationStore(directory: fixture.directory).load().preferences.workflowSettings.microphoneID, unpluggedMicrophone, "A temporary disconnection must not overwrite the saved preference")
+        XCTAssertEqual(try savedMicrophone(fixture.directory), unpluggedMicrophone, "A temporary disconnection must not overwrite the saved preference")
         fixture.recorders.first?.emit(0.1)
         fixture.controller.selectMicrophone(deskMicrophone)
         XCTAssertEqual(fixture.controller.selectedMicrophoneID, deskMicrophone)
         XCTAssertEqual(fixture.recorders.last?.device, deskMicrophone)
-        XCTAssertEqual(try ConfigurationStore(directory: fixture.directory).load().preferences.workflowSettings.microphoneID, deskMicrophone)
+        XCTAssertEqual(try savedMicrophone(fixture.directory), deskMicrophone)
         fixture.recorders.last?.emit(0.2)
         fixture.controller.stop(models: fixture.models)
         await fixture.controller.waitForWork()
@@ -420,11 +416,19 @@ final class MicrophoneFeedbackTests: XCTestCase {
         let fixture = Fixture()
         defer { fixture.cleanUp() }
         let model = AppModel(dataDirectory: fixture.directory, registerShortcuts: false, dictationController: fixture.controller)
+        model.attachDictation()
         fixture.start()
         await fixture.controller.waitForWork()
         fixture.controller.selectMicrophone(deskMicrophone)
-        XCTAssertEqual(model.configuration.preferences.workflowSettings.microphoneID, deskMicrophone)
-        XCTAssertEqual(try ConfigurationStore(directory: fixture.directory).load().preferences.workflowSettings.microphoneID, deskMicrophone)
+        XCTAssertEqual(model.dictationFeature?.settings.microphone, deskMicrophone)
+        XCTAssertEqual(try savedMicrophone(fixture.directory), deskMicrophone)
+    }
+
+    /// The microphone `[dictation]` in config.toml names.
+    private func savedMicrophone(_ directory: URL) throws -> String? {
+        let file = ConfigStore(fileURL: directory.appendingPathComponent("config.toml"))
+        try file.load()
+        return try file.section("dictation", as: DictationSettings.self).value.microphone
     }
 
     @MainActor

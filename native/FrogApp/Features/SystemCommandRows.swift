@@ -12,7 +12,7 @@ import FrogCore
         return SystemAction.allCases.filter { SystemActionController.destination(for: $0)?.scheme != "x-apple.systempreferences" }.map { action in
             CommandBarRow(record: SearchRecord(id: "system:\(action.rawValue)", title: action.title, subtitle: action.scope, keywords: "frog command shortcut", symbol: action.symbol),
                           primary: CommandRowAction(title: "Run") {
-                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message(WindowCommandRows.targetChanged) }
+                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message(CommandBarContext.targetChanged) }
                 perform(action)
             })
         }

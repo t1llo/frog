@@ -88,11 +88,6 @@ struct OrganizerMenuState: Equatable {
     var issue: String?
 }
 
-@MainActor protocol OrganizerHotkey: AnyObject {
-    func register(_ hotkey: Hotkey, action: @escaping () -> Void) -> String?
-    func unregister()
-}
-
 /// Hidden Bar is an agent app, and the workspace announces neither the launch nor the
 /// exit of one. The list of running applications is the only place that shows it leave.
 @MainActor protocol OrganizerApplications: AnyObject {
@@ -106,7 +101,6 @@ struct OrganizerMenuState: Equatable {
     @Published private(set) var isExpanded = true
     @Published private(set) var isEditingArrangement = false
     @Published private(set) var issue: String?
-    @Published private(set) var hotkeyError: String?
     var onShowSettings: (() -> Void)?
     var onSettingsChange: ((MenuBarPreferences) -> Void)?
     /// What Frog's own menu says while the organizer is switched on but has taken its arrow away.
@@ -116,7 +110,6 @@ struct OrganizerMenuState: Equatable {
     var scheduledTickInterval: TimeInterval? { timer?.timeInterval }
 
     private let items: any OrganizerStatusItems
-    private let hotkeys: any OrganizerHotkey
     private let applications: any OrganizerApplications
     private let environment: () -> OrganizerEnvironment
     private let now: () -> TimeInterval
@@ -133,8 +126,6 @@ struct OrganizerMenuState: Equatable {
     // Only the hide at start yields to an open settings page; one that was asked for does not.
     private var pendingCollapseAsked = false
     private var settingsVisible = false
-    private var shortcutsSuspended = false
-    private var registeredHotkey: Hotkey?
     private var appliedLengths: [OrganizerItem: CGFloat] = [:]
     /// From the last layout, for a release that can no longer ask the environment.
     private var statusItemPadding = OrganizerEnvironment.systemStatusItemPadding
@@ -147,12 +138,11 @@ struct OrganizerMenuState: Equatable {
     // a start, new settings, another display, a drag.
     private var validationDue = false
 
-    init(statusItems: (any OrganizerStatusItems)? = nil, hotkeys: (any OrganizerHotkey)? = nil,
+    init(statusItems: (any OrganizerStatusItems)? = nil,
          applications: (any OrganizerApplications)? = nil,
          automaticTicks: Bool = true, environment: (() -> OrganizerEnvironment)? = nil,
          now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.items = statusItems ?? NativeOrganizerStatusItems()
-        self.hotkeys = hotkeys ?? NativeOrganizerHotkey()
         self.applications = applications ?? NativeOrganizerApplications()
         self.automaticTicks = automaticTicks
         self.environment = environment ?? { OrganizerEnvironment.live() }
@@ -188,7 +178,6 @@ struct OrganizerMenuState: Equatable {
         } else {
             remove(.permanentDivider)
         }
-        updateHotkey()
         // Install at normal widths first. The first tick validates macOS's restored order.
         if !env.mouseDown {
             if geometryAvailable, let problem = arrangementIssue(env) {
@@ -241,6 +230,12 @@ struct OrganizerMenuState: Equatable {
         if issue != nil { onShowSettings?() } else if !geometryAvailable { pendingCollapse = true; pendingCollapseAsked = true }
     }
 
+    /// Hides the icons, as the arrow does, unless they are hidden already.
+    func hide() {
+        guard isInstalled, isExpanded || isEditingArrangement else { return }
+        toggle()
+    }
+
     func reveal() {
         guard isInstalled else { return }
         pendingCollapse = false
@@ -275,13 +270,6 @@ struct OrganizerMenuState: Equatable {
         if !visible && isEditingArrangement { setEditingArrangement(false) }
         resetDeadline()
         scheduleTicks()
-    }
-
-    /// Parent calls alongside its other managers when any shortcut recorder is active.
-    func setShortcutRecording(_ recording: Bool) {
-        guard shortcutsSuspended != recording else { return }
-        shortcutsSuspended = recording
-        updateHotkey()
     }
 
     /// A display was connected, removed or resized. The helpers' windows follow the screens a
@@ -383,7 +371,7 @@ struct OrganizerMenuState: Equatable {
     private func checkAvailability(_ env: OrganizerEnvironment) -> Bool {
         let problem: String?
         if env.competingOrganizer {
-            problem = "Hidden Bar is running. Frog's organizer starts once you quit Hidden Bar."
+            problem = "The Hidden Bar app is running. Quit it to use Frog's hidden bar."
         } else if !env.supportsLengthTechnique {
             problem = "This macOS version does not support the public status-item spacing technique. Frog has left your menu bar revealed."
         } else { problem = nil }
@@ -480,23 +468,10 @@ struct OrganizerMenuState: Equatable {
         self.timer = timer
     }
 
-    private func updateHotkey() {
-        let desired = isInstalled && !shortcutsSuspended ? settings.hotkey : nil
-        guard desired != registeredHotkey || hotkeyError != nil else { return }
-        hotkeys.unregister()
-        registeredHotkey = nil
-        hotkeyError = nil
-        if let desired {
-            hotkeyError = hotkeys.register(desired) { [weak self] in self?.toggle() }
-            if hotkeyError == nil { registeredHotkey = desired }
-        }
-    }
-
     private func tearDown() {
         timer?.invalidate(); timer = nil
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
         screenObserver = nil
-        hotkeys.unregister(); registeredHotkey = nil; hotkeyError = nil
         restoreCompactLengths(padding: environment().statusItemPadding)
         for item in OrganizerItem.allCases.reversed() { remove(item) }
         isInstalled = false; isExpanded = true; isEditingArrangement = false
@@ -509,7 +484,6 @@ struct OrganizerMenuState: Equatable {
     isolated deinit {
         timer?.invalidate()
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
-        hotkeys.unregister()
         applications.stopWatching()
         restoreCompactLengths(padding: statusItemPadding)
         for item in OrganizerItem.allCases.reversed() where installed.contains(item) { items.remove(item) }
@@ -519,15 +493,6 @@ struct OrganizerMenuState: Equatable {
     private func restoreCompactLengths(padding: CGFloat) {
         for item in installed { items.setLength(item.revealedLength(padding: padding), for: item) }
     }
-}
-
-@MainActor private final class NativeOrganizerHotkey: OrganizerHotkey {
-    private let manager = HotkeyManager()
-    private let id = UUID()
-    func register(_ hotkey: Hotkey, action: @escaping () -> Void) -> String? {
-        manager.register(rules: [Rule(id: id, name: "Menu bar", hotkey: hotkey)], onTrigger: { _ in action() })[id]
-    }
-    func unregister() { manager.unregister() }
 }
 
 @MainActor private final class NativeOrganizerApplications: OrganizerApplications {
@@ -570,7 +535,7 @@ struct OrganizerMenuState: Equatable {
         }
         let autoHide = NSMenuItem(title: "Automatically hide icons", action: #selector(autoHideFromMenu), keyEquivalent: "")
         autoHide.target = self; autoHide.state = state.autoHide ? .on : .off; menu.addItem(autoHide)
-        let settings = NSMenuItem(title: "Menu bar settings…", action: #selector(settingsFromMenu), keyEquivalent: "")
+        let settings = NSMenuItem(title: "Hidden bar settings…", action: #selector(settingsFromMenu), keyEquivalent: "")
         settings.target = self; menu.addItem(settings)
         contextMenu = menu
     }

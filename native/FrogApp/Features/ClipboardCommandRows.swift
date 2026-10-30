@@ -50,54 +50,20 @@ import FrogCore
     func close() { observation = nil; pending = nil }
 }
 
-/// Notes, notes that paste as snippets, and scripts. They are in memory once the store has been read; only that
-/// first read is waited for, and on its own, so a note that pastes is never missing while apps are rescanned.
-@MainActor final class DocumentCommandRows: CommandBarRowProviding {
+/// Notes, notes that paste as snippets, and scripts, from `DocumentCommandRows`. They are in memory once the store
+/// has been read; only that first read is waited for, and on its own, so a note that pastes is never missing while
+/// apps are rescanned.
+@MainActor final class DocumentRowsProvider: CommandBarRowProviding {
     private var loading: Task<Void, Never>?
 
     func rows(in context: CommandBarContext) -> [CommandBarRow] {
-        let model = context.model, preferences = model.configuration.preferences
-        guard model.documents.loaded else { return [] }
-        let target = context.pasteTarget, pasteboard = context.pasteboard, waitForRelease = context.waitForRelease, toolUse = context.toolUse
-        return model.documents.items.compactMap { item -> CommandBarRow? in
-            if item.kind == .note, item.pastes, preferences.featureEnabled(.scratchpad) {
-                let isCurrent = { [weak model] in
-                    model?.configuration.preferences.featureEnabled(.scratchpad) == true
-                        && model?.documents.items.contains(where: { $0.id == item.id && $0.pastes }) == true
-                }
-                let deliver: (Bool) async throws -> Void = { [weak model] paste in
-                    guard let model, isCurrent(), let current = model.documents.items.first(where: { $0.id == item.id }) else { return }
-                    let text = SnippetExpansion.expand(current.text, clipboard: pasteboard.string(forType: .string) ?? "")
-                    let sensitive = current.text.contains("{{clipboard}}") && pasteboard.holdsSensitiveText
-                    let entry = ClipboardHistoryEntry(text: text, isSensitive: sensitive)
-                    if paste {
-                        try await ClipboardHistoryDelivery.paste(entry, plainText: true, pasteboard: pasteboard, target: target,
-                                                                 isCurrent: isCurrent, waitForRelease: waitForRelease)
-                    } else {
-                        guard entry.write(to: pasteboard, plainText: true) else { throw FrogError.message("Could not copy the note.") }
-                    }
-                    toolUse(.snippetCopy)
-                }
-                // The ID it had as a snippet, so the choices the command bar learned still count.
-                return CommandBarRow(record: SearchRecord(id: "snippet:\(item.id)", title: item.title, subtitle: "Note · Paste · ⌘↩ Copy", symbol: "text.badge.plus"),
-                                     primary: CommandRowAction(title: "Paste") { try await deliver(true) },
-                                     secondary: CommandRowAction(title: "Copy") { try await deliver(false) })
-            }
-            if item.kind == .note, preferences.featureEnabled(.scratchpad) {
-                return CommandBarRow(record: SearchRecord(id: "note:\(item.id)", title: item.title, subtitle: "Notes", keywords: String(item.text.prefix(512)), symbol: "note.text"),
-                                     primary: CommandRowAction(title: "Open") { [weak model] in model?.openDocument(item) })
-            }
-            if item.kind == .script, preferences.featureEnabled(.scripts) {
-                return CommandBarRow(record: SearchRecord(id: "script:\(item.id)", title: item.title, subtitle: "Run saved script", symbol: "terminal"),
-                                     primary: CommandRowAction(title: "Run") { [weak model] in model?.openDocument(item); model?.runScript(item) })
-            }
-            return nil
-        }
+        guard context.model.documents.loaded else { return [] }
+        return DocumentCommandRows.rows(in: context)
     }
 
     func open(in context: CommandBarContext, changed: @escaping @MainActor () -> Void) {
         let model = context.model
-        guard [.scratchpad, .scripts].contains(where: model.configuration.preferences.featureEnabled), !model.documents.loaded else { return }
+        guard [NotesPlugin.info.id, ScriptsPlugin.info.id].contains(where: model.pluginEnabled), !model.documents.loaded else { return }
         loading = Task { [weak model] in
             guard let model else { return }
             await model.documents.load()

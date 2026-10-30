@@ -52,7 +52,7 @@ import FrogCore
 
     private func update() {
         guard let item else { return }
-        let on = power.hasReadState && power.isEnabled
+        let on = power.isEnabled
         if item.isVisible != on { item.isVisible = on }
         guard on else { timer?.invalidate(); timer = nil; shownFace = nil; return }
         // The ring and the time left move on their own while a timed session runs.
@@ -62,7 +62,8 @@ import FrogCore
             }
             timer?.tolerance = 5
         } else if power.deadline == nil { timer?.invalidate(); timer = nil }
-        let face = StayAwakeIcon.Face(style: style, deadline: power.deadline, duration: power.duration.rawValue)
+        let total = power.deadline.flatMap { deadline in power.startedAt.map { deadline.timeIntervalSince($0) } } ?? 0
+        let face = StayAwakeIcon.Face(style: style, deadline: power.deadline, duration: total)
         if face != shownFace { item.button?.image = StayAwakeIcon.image(face); shownFace = face }
         let description = Self.description(power)
         item.button?.toolTip = description
@@ -70,7 +71,7 @@ import FrogCore
     }
 
     static func description(_ power: StayAwakeController, now: Date = Date()) -> String {
-        guard let deadline = power.deadline else { return power.ownsSession ? "Stay awake is on until Frog quits" : "Stay awake is on outside Frog" }
+        guard let deadline = power.deadline else { return "Stay awake is on until turned off" }
         return "Stay awake is on until \(deadline.formatted(date: .omitted, time: .shortened))"
             + (StayAwakeIcon.left(until: deadline, now: now).map { " · \($0) left" } ?? "")
     }
@@ -82,14 +83,13 @@ import FrogCore
         menu.addItem(title)
         let off = NSMenuItem(title: L10n.text("Turn off Stay awake"), action: #selector(turnOff), keyEquivalent: "")
         off.target = self
-        off.isEnabled = power.canSwitch
         menu.addItem(off)
         let settings = NSMenuItem(title: L10n.text("Stay awake settings…"), action: #selector(showSettings), keyEquivalent: "")
         settings.target = self
         menu.addItem(settings)
     }
 
-    @objc private func turnOff() { power.setEnabled(false) }
+    @objc private func turnOff() { power.turnOff() }
     @objc private func showSettings() { openSettings() }
 
     isolated deinit { stop() }
@@ -100,7 +100,7 @@ import FrogCore
 enum StayAwakeIcon {
     struct Face: Equatable {
         let style: String
-        /// What is left of a timed session, 0 to 1 in steps of 2%; 1 for one until Frog quits.
+        /// What is left of a timed session, 0 to 1 in steps of 2%; 1 for one without an end.
         let remaining: Double
         /// "3h 42m", "42m"; nil for a session without an end or a style without text.
         let text: String?
@@ -109,7 +109,6 @@ enum StayAwakeIcon {
             self.style = StayAwakePreferences.menuBarStyles.contains(style) ? style : "ring"
             if let deadline {
                 let left = max(0, deadline.timeIntervalSince(now))
-                // A session restored after a restart may have begun with another duration.
                 let total = max(duration, left, 1)
                 remaining = (left / total * 50).rounded(.up) / 50
             } else {

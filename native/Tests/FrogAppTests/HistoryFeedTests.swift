@@ -120,6 +120,7 @@ final class HistoryFeedTests: XCTestCase {
         let model = AppModel(dataDirectory: directory, registerShortcuts: false, dictationController: controller, clipboardHistoryStore: clipboard)
         defer { model.shutdown() }
         model.start()
+        await model.pluginHost.syncAndWait()
         var rule = Rule.dictationPreset
         rule.action?.audioModelID = "fixture-speech"; rule.action?.audioProviderID = UUID()
         rule.action?.showRecordingPopup = false; rule.action?.output = .copy

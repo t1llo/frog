@@ -12,17 +12,27 @@ import FrogCore
 ///
 /// Run it after changing the version of WhisperKit, mlx-swift-lm or
 /// swift-transformers. Parakeet is left out to keep the download small.
+///
+/// After changing FluidAudio or the recommended models, run the recommended pair
+/// instead, Parakeet Ultra and Qwen3.5 2B (about 2.4 GB):
+///
+///     FROG_RUN_MODEL_TESTS=recommended swift test --filter RealModelTests
 @MainActor
 final class RealModelTests: XCTestCase {
     func testSmallestSpeechAndTextModelsDownloadLoadAndRun() async throws {
         guard ProcessInfo.processInfo.environment["FROG_RUN_MODEL_TESTS"] == "1" else { throw XCTSkip("Opt-in: downloads and runs real models") }
+        try await downloadLoadAndRun(speech: XCTUnwrap(LocalModelDescriptor.find("whisper-tiny")), text: XCTUnwrap(LocalModelDescriptor.find("qwen-0.6b")))
+    }
+    func testRecommendedSpeechAndTextModelsDownloadLoadAndRun() async throws {
+        guard ProcessInfo.processInfo.environment["FROG_RUN_MODEL_TESTS"] == "recommended" else { throw XCTSkip("Opt-in: downloads and runs the recommended models") }
+        try await downloadLoadAndRun(speech: LocalModelDescriptor.recommended(.audio), text: LocalModelDescriptor.recommended(.text))
+    }
+    private func downloadLoadAndRun(speech: LocalModelDescriptor, text: LocalModelDescriptor) async throws {
         guard LocalModels.supported else { throw XCTSkip("Built-in local models require Apple silicon") }
         // Its own storage root: never the model folder of an installed Frog.
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let models = LocalModels(directory: directory)
-        let speech = try XCTUnwrap(LocalModelDescriptor.find("whisper-tiny"))
-        let text = try XCTUnwrap(LocalModelDescriptor.find("qwen-0.6b"))
         for model in [speech, text] {
             models.download(model); await models.waitForDownload(model.id)
             // A failed download ends the test before the next one is fetched.
@@ -31,9 +41,10 @@ final class RealModelTests: XCTestCase {
         }
         XCTAssertTrue(models.unfinished.isEmpty)
 
-        // One second of a 440 Hz tone at 16 kHz. It holds no words, so any text
-        // counts, none included: the model has to load and decode without failing.
-        let tone = (0..<16000).map { Float(sin(2 * Double.pi * 440 * Double($0) / 16000)) * 0.2 }
+        // A second and a half of a 440 Hz tone at 16 kHz, over the second Parakeet
+        // needs. It holds no words, so any text counts, none included: the model has
+        // to load and decode without failing.
+        let tone = (0..<24000).map { Float(sin(2 * Double.pi * 440 * Double($0) / 16000)) * 0.2 }
         _ = try await models.transcribe(tone, modelID: speech.id)
         XCTAssertEqual(models.loaded, [speech.id])
 

@@ -23,7 +23,7 @@ public struct WindowPreferences: Codable, Equatable, Sendable {
     public var zoneOverlay = false
     /// The zones the overlay shows, a `ZoneGrid` raw value.
     public var zoneGrid = ZoneGrid.default.rawValue
-    /// What the first-run card recorded, a `WindowSetupChoice` raw value; nil while the card shows.
+    /// What the old first-run card recorded (`snap` or `manual`). Kept so existing files round-trip; nothing reads it.
     /// A string, so a choice from a newer version still decodes and keeps the card hidden.
     public var setupChoice: String?
 
@@ -124,11 +124,6 @@ public struct WindowSwitches: Equatable, Sendable {
 
     /// Window drags are watched: for drag to snap, the zone overlay, or both.
     public var watchesDrags: Bool { dragToSnap || zoneOverlay }
-
-    /// The window commands the command bar lists, in `allCases` order.
-    public var commandBarCommands: [WindowCommand] {
-        WindowCommand.allCases.filter { $0.showsInCommandBar && commandEnabled($0) }
-    }
 
     /// The window commands that run and have a shortcut, as the rules Frog registers, in `allCases` order.
     public var shortcutRules: [Rule] {

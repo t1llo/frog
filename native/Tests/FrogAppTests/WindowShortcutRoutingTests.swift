@@ -45,14 +45,14 @@ import FrogCore
         var configuration = configuration(cheatSheet: commandTab, windows: true)
         configuration.preferences.windowSwitcherEnabled = true
         configuration.preferences.toolkit?.windowSwitcherHotkey = commandTab
-        guard case .stop = AppModel.windowSwitcherStep(configuration, status: "Ready", ready: true) else {
+        guard case .stop = WindowSwitcherPlugin.step(configuration, status: .ready(commandTab)) else {
             return XCTFail("A window command on the switcher's shortcut stops the switcher")
         }
         configuration.preferences.setFeature(.windows, enabled: false)
-        XCTAssertEqual(AppModel.windowSwitcherStep(configuration, status: "Ready", ready: true), .configure)
-        XCTAssertEqual(AppModel.windowSwitcherChords(configuration.preferences), [commandTab, Hotkey(keyCode: 48, modifiers: 256 | 512)])
+        XCTAssertEqual(WindowSwitcherPlugin.step(configuration, status: .ready(commandTab)), .configure)
+        XCTAssertEqual(WindowSwitcherPlugin.chords(configuration.preferences), [commandTab, Hotkey(keyCode: 48, modifiers: 256 | 512)])
         configuration.preferences.windowSwitcherEnabled = false
-        XCTAssertEqual(AppModel.windowSwitcherChords(configuration.preferences), [])
+        XCTAssertEqual(WindowSwitcherPlugin.chords(configuration.preferences), [])
     }
 
     func testDuplicateWindowCommandShortcutIsRejected() throws {

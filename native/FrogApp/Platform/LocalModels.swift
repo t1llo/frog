@@ -380,6 +380,14 @@ final class LocalModels: ObservableObject {
         }
         try Task.checkCancellation()
     }
+    /// Starts loading a downloaded model without waiting for it, for work that is about
+    /// to need it: a Writing rule loads its model while it reads the selection. A
+    /// failure is left to the `prepare` that the work itself calls, which waits for
+    /// this load instead of starting another.
+    func prewarm(_ id: String) {
+        guard Self.supported, !loaded.contains(id), installed.contains(id), downloads[id] == nil, !changingDirectory else { return }
+        Task { try? await self.prepare(id) }
+    }
     /// A model that downloaded completely and does not load may have damaged files.
     /// The library's own text stays in the message.
     static func loadFailure(_ error: Error, model: LocalModelDescriptor) -> String {
@@ -652,7 +660,7 @@ enum ModelFiles {
     static func required(_ model: LocalModelDescriptor) -> [String] {
         switch model.backend {
         case .mlx: ["config.json", "tokenizer.json", "tokenizer_config.json"]
-        case .parakeet: ["Preprocessor", "Encoder", "Decoder", "JointDecision"].map { "\($0).mlmodelc/coremldata.bin" } + ["parakeet_vocab.json"]
+        case .parakeet: model.parakeetComponents.map { "\($0).mlmodelc/coremldata.bin" } + ["parakeet_vocab.json"]
         case .whisperKit: ["AudioEncoder", "TextDecoder", "MelSpectrogram"].map { "\($0).mlmodelc/coremldata.bin" }
         }
     }
@@ -802,7 +810,17 @@ actor LocalInference: LocalInferenceEngine {
     }
     private static func fetch(_ model: LocalModelDescriptor, base: URL, progress: @escaping @Sendable (DownloadProgress) -> Void) async throws -> URL {
         #if arch(arm64)
-        if model.backend == .parakeet { return try ModelFiles.requireComplete(model, folder: base, installed: try await ParakeetRuntime.download(model, base: base, progress: progress)) }
+        if model.backend == .parakeet {
+            let url = try ModelFiles.requireComplete(model, folder: base, installed: try await ParakeetRuntime.download(model, base: base, progress: progress))
+            // Like WhisperKit below: Core ML prepares a model for this Mac the first
+            // time it loads, which takes seconds. That happens now, not at the first
+            // dictation.
+            progress(.filesAreIn)
+            let engine = ParakeetRuntime()
+            try await engine.load(from: url, model: model)
+            await engine.unload()
+            return url
+        }
         let meter = DownloadMeter(folder: base, expected: model.downloadBytes)
         if model.backend == .whisperKit {
             // WhisperKit appends each file to a partial file in the model folder, so
@@ -849,7 +867,7 @@ actor LocalInference: LocalInferenceEngine {
                 await parakeet?.unload(); parakeet = nil; speechID = nil
                 await residency(loadedIDs); try Task.checkCancellation()
                 let engine = ParakeetRuntime()
-                try await engine.load(from: url, version: model.variant == "v2" ? .v2 : .v3)
+                try await engine.load(from: url, model: model)
                 parakeet = engine; speechID = id
                 await residency(loadedIDs)
             }
@@ -902,8 +920,11 @@ actor LocalInference: LocalInferenceEngine {
             MLX.Memory.clearCache()
             await residency(loadedIDs)
             try Task.checkCancellation()
-            textModel = try await LLMModelFactory.shared.loadContainer(configuration: ModelConfiguration(directory: url))
-            textID = id
+            let container = try await LLMModelFactory.shared.loadContainer(configuration: ModelConfiguration(directory: url))
+            try Task.checkCancellation()
+            await Self.warmUp(container)
+            try Task.checkCancellation()
+            textModel = container; textID = id
             await residency(loadedIDs)
         }
         #else
@@ -968,6 +989,15 @@ actor LocalInference: LocalInferenceEngine {
         #endif
     }
     #if arch(arm64)
+    /// Generates one token through the chat template, so that the Metal kernels are
+    /// compiled and the template parsed before the first request instead of during it.
+    /// A failure here is left for the request itself to report.
+    static func warmUp(_ container: ModelContainer) async {
+        guard let input = try? await container.prepare(input: UserInput(prompt: .chat([.system("Reply with OK."), .user("OK")]), additionalContext: ["enable_thinking": false])),
+              let stream = try? await container.generate(input: input, parameters: GenerateParameters(maxTokens: 1, temperature: 0)) else { return }
+        for await _ in stream {}
+        MLX.Memory.clearCache()
+    }
     /// What a generation that has ended may hand back. Text that ran into the
     /// token limit, or that ends inside the model's reasoning, is not a result:
     /// it would replace the selection with part of the answer.

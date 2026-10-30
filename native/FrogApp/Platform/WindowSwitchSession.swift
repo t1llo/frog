@@ -89,8 +89,14 @@ struct WindowSwitchKeyRouter: Sendable {
 
     func acceptsSearch(flags: CGEventFlags) -> Bool { active && matchesBaseModifiers(flags) }
 
+    /// The chord's modifiers are held; in a list opened without the chord, no modifier is held.
     private func matchesBaseModifiers(_ flags: CGEventFlags) -> Bool {
-        !requiredFlags.isEmpty && flags.intersection(Self.baseFlags) == requiredFlags
+        if sticky {
+            // The modifiers of the shortcut that opened the list may still be held.
+            let held = flags.intersection(Self.baseFlags)
+            return held.isEmpty || held == stickyFlags
+        }
+        return !requiredFlags.isEmpty && flags.intersection(Self.baseFlags) == requiredFlags
     }
 
     enum Action: Equatable, Sendable { case begin(backwards: Bool), step(backwards: Bool), commit, cancel, search(String), deleteSearch }
@@ -101,7 +107,13 @@ struct WindowSwitchKeyRouter: Sendable {
         // Suppressed repeats from a committed chord must not abort its activation.
         var cancelsPendingActivation: Bool { action != nil || !consume }
     }
-    private(set) var active = false
+    private(set) var active = false {
+        didSet { if !active { sticky = false } }
+    }
+    /// The list was opened without the chord, by `beginSticky`: releasing a modifier does not choose.
+    private(set) var sticky = false
+    /// The modifiers held when the sticky list opened, such as those of the shortcut that opened it.
+    private var stickyFlags: CGEventFlags = []
     private(set) var sessionID: UInt64?
     private var nextSessionID: UInt64 = 0
     private var swallowed = Set<UInt16>()
@@ -142,6 +154,8 @@ struct WindowSwitchKeyRouter: Sendable {
         case 123, 126: action = .step(backwards: true)
         case 124, 125: action = .step(backwards: false)
         case 51 where active: action = .deleteSearch
+        // Tab moves through a list opened without the chord, whatever key the chord uses.
+        case 48 where sticky: action = .step(backwards: flags.contains(.maskShift))
         default:
             if active && matches && !text.isEmpty && !text.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
                 swallowed.insert(code)
@@ -155,8 +169,18 @@ struct WindowSwitchKeyRouter: Sendable {
         return Result(consume: true, action: action, sessionID: id)
     }
 
+    /// Opens the list with no key held, for the command bar, a shortcut or an agent. Tab and the arrows
+    /// move, typing searches, Return chooses, Escape or any chord closes it.
+    mutating func beginSticky(held: CGEventFlags = []) -> UInt64 {
+        nextSessionID &+= 1
+        sessionID = nextSessionID
+        active = true; sticky = true
+        stickyFlags = held.intersection(Self.baseFlags)
+        return nextSessionID
+    }
+
     mutating func modifiers(flags: CGEventFlags) -> Result {
-        guard active, flags.intersection(requiredFlags) != requiredFlags else { return Result() }
+        guard active, !sticky, flags.intersection(requiredFlags) != requiredFlags else { return Result() }
         active = false
         return Result(action: .commit, sessionID: sessionID)
     }

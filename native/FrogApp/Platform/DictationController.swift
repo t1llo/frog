@@ -66,7 +66,6 @@ final class DictationController: ObservableObject {
     private var preferences = WorkflowPreferences()
     private weak var models: LocalModels?
     private var residencyHold: UUID?
-    var onFinish: ((Rule, String, String, String) -> Void)?
     /// The app this recording is for, when another app started it with `frog://dictate`.
     private(set) var handoff: DictationHandoff?
     /// Sends a handoff's outcome back to its app. Called once per handoff.
@@ -78,6 +77,8 @@ final class DictationController: ObservableObject {
     var onHistoryRecovered: ((UUID, Result<String, Error>) -> Void)?
     var onError: ((Error) -> Void)?
     var onMicrophoneChange: ((String?) -> Void)?
+    /// The text rule that cleans up a recording made with `rule`, or nil to deliver the transcript as it is.
+    var cleanupRule: (Rule) -> Rule? = { $0.action?.cleanup == true ? $0 : nil }
     var cleanup: ((String, Rule) async throws -> String)?
     var localCleanupModel: ((Rule) throws -> String?)?
     var externalTranscription: (([Float], Rule) async throws -> String)?
@@ -107,7 +108,7 @@ final class DictationController: ObservableObject {
           outputMute: any OutputMuting = RecordingMute(), cancelKey: (any DictationCancelKey)? = nil) {
         self.makeRecorder = makeRecorder; self.authorize = authorize; self.copy = copy; self.monitorKeys = monitorKeys
         self.presentsPopup = presentsPopup; self.outputMute = outputMute
-        self.cancelKey = cancelKey ?? (monitorKeys ? EscapeHotkey() : nil)
+        self.cancelKey = cancelKey
         self.previewInterval = previewInterval
         self.inputDevices = inputDevices
         self.paste = paste; self.now = now
@@ -171,10 +172,10 @@ final class DictationController: ObservableObject {
                 }
                 try Task.checkCancellation()
                 guard self.token == token else { return }
-                if rule.action?.cleanup == true {
+                if let cleanupRule = self.cleanupRule(rule) {
                     let cleanupID: String?
-                    if let resolve = self.localCleanupModel { cleanupID = try resolve(rule) }
-                    else { cleanupID = rule.action?.localTextModelID }
+                    if let resolve = self.localCleanupModel { cleanupID = try resolve(cleanupRule) }
+                    else { cleanupID = cleanupRule.action?.localTextModelID }
                     if let cleanupID {
                         self.preparationMessage = "Loading cleanup model…"
                         try await models.prepare(cleanupID)
@@ -408,10 +409,10 @@ final class DictationController: ObservableObject {
                 guard self.token == token else { return }
                 self.liveText = raw
                 var output = raw
-                if rule.action?.cleanup == true {
+                if let cleanupRule = self.cleanupRule(rule) {
                     self.phase = .correcting
                     if let cleanup = self.cleanup {
-                        do { output = try await cleanup(raw, rule) }
+                        do { output = try await cleanup(raw, cleanupRule) }
                         catch {
                             try Task.checkCancellation()
                             guard self.token == token else { return }
@@ -424,11 +425,10 @@ final class DictationController: ObservableObject {
                 // A completed transcript belongs in history even if delivery is subsequently cancelled.
                 self.transcriptPublished = true
                 self.onTranscript?(token, rule, raw, output)
-                if let handoff = self.handoff {
+                if self.handoff != nil {
                     // The app that asked takes the text; the clipboard and the focused field stay as they were.
                     self.endHandoff(.text(output))
                     self.onSuccessfulDelivery?(recordingSeconds, raw)
-                    self.onFinish?(rule, raw, output, "Sent to \(handoff.caller)")
                     self.cancel()
                     return
                 }
@@ -440,8 +440,7 @@ final class DictationController: ObservableObject {
                 }
                 try await DictationDelivery.finish(isCurrent: { self.token == token }, paste: insertion, onIssue: { self.onError?($0) }, onSuccess: {
                     self.onSuccessfulDelivery?(recordingSeconds, raw)
-                }) { delivery in
-                    self.onFinish?(rule, raw, output, delivery)
+                }) { _ in
                     if self.token == token { self.cancel() }
                 }
             } catch {
@@ -538,6 +537,10 @@ final class DictationController: ObservableObject {
         if !visible { panel?.orderOut(nil) }
         else if active { showPanel() }
     }
+    /// Closes the popup for good; the next recording makes a new one.
+    func releasePanel() {
+        panel?.orderOut(nil); panel?.contentView = nil; panel = nil
+    }
     func cancel() {
         endHandoff(.cancelled)
         token = nil; work?.cancel(); finalTranscription?.cancel(); preview?.cancel(); previewInference?.cancel(); ticker?.cancel()
@@ -573,9 +576,9 @@ final class DictationController: ObservableObject {
         // A registered key works without Accessibility permission and keeps Escape from the focused
         // app. While a hold shortcut is down, Escape arrives together with that shortcut's modifiers.
         let hold = (activeRule?.action?.recordingMode ?? preferences.recordingMode) == .hold
-        cancelKey?.register(heldModifiers: hold ? activeRule?.hotkey?.modifiers ?? 0 : 0) { [weak self] in
+        cancelKey?.register(heldModifiers: hold ? activeRule?.hotkey?.modifiers ?? 0 : 0) { [weak self] reason in
             guard self?.token == token else { return }
-            self?.interrupt(reason: .escape)
+            self?.interrupt(reason: reason)
         }
         guard monitorKeys else { return }
         // The monitors remain for an Escape that macOS would not register for Frog.

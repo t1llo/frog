@@ -56,7 +56,7 @@ struct MainView: View {
                         HStack(alignment: .center, spacing: 10) {
                             Image(systemName: "exclamationmark.circle.fill").foregroundStyle(FrogStyle.critical)
                             Text(error).font(FrogType.body).textSelection(.enabled)
-                                .lineLimit(3).help("Full details are in Settings → Logs.")
+                                .lineLimit(3).help("Full details are in Settings → Errors.")
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             CopyAction(title: "Copy error") { ViewActions.copy(error) }
                             IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)
@@ -79,7 +79,7 @@ struct MainView: View {
         .frame(minWidth: 740, minHeight: 520)
         .onAppear { model.refreshSystemStatus() }
         .sheet(isPresented: Binding(get: { model.setupPresented }, set: { if !$0 { model.finishSetup() } })) {
-            SetupView().environmentObject(model).interactiveDismissDisabled()
+            OnboardingView().environmentObject(model).interactiveDismissDisabled()
         }
     }
 
@@ -123,8 +123,8 @@ struct MainView: View {
                                         .id(ToolkitRoute.plugin(item.id))
                                 }
                             }
-                        }.padding(.horizontal, 8).padding(.bottom, 6).minimalScrollbars()
-                    }
+                        }.padding(.horizontal, 8).padding(.bottom, 20).minimalScrollbars()
+                    }.bottomScrollFade()
                     // Reveals a feature opened from elsewhere, such as the command bar, by the least scrolling;
                     // a row already in view stays where it is. A window that opens on a page shows its row too.
                     .onAppear { reveal(section, in: proxy) }

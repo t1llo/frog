@@ -38,18 +38,35 @@ public struct LocalModelDescriptor: Codable, Identifiable, Equatable, Sendable {
         if backend == .parakeet { return "25 European languages · automatic" }
         return kind == .audio ? "Multilingual · automatic or selected language" : "See model card for languages"
     }
+    /// The Core ML components of a Parakeet conversion, each a `.mlmodelc` folder.
+    /// Ultra ships only the joint with top-K outputs; v2 and v3 keep the joint they
+    /// were first downloaded with.
+    public var parakeetComponents: [String] {
+        ["Preprocessor", "Encoder", "Decoder", variant == "ultra" ? "JointDecisionv3" : "JointDecision"]
+    }
     public var streaming: String { kind == .audio ? "Live preview" : "Token streaming" }
     // `downloadBytes` sums the files that Frog's download fetches, as the Hugging Face
-    // API (`api/models/<repository>?blobs=true`) listed them on 2026-10-14: the WhisperKit
-    // variant folder plus the tokenizer files of the upstream OpenAI model, the four
-    // Parakeet Core ML components and their vocabulary, and the MLX files that match
-    // `mlxDownloadPatterns`.
+    // API (`api/models/<repository>?blobs=true`) listed them: the WhisperKit variant
+    // folder plus the tokenizer files of the upstream OpenAI model, the four Parakeet
+    // Core ML components and their vocabulary, and the MLX files that match
+    // `mlxDownloadPatterns`. Checked on 2026-10-14; Parakeet Ultra and Qwen3.5 on 2026-10-30.
+    //
+    // The list is short on purpose: one recommended model of each kind, and one
+    // alternative where it covers what the recommended one does not. Every other
+    // model can be added from Hugging Face. Entries are never removed, only
+    // hidden (`defaultCatalog`), so that saved rules and downloads keep resolving.
     public static let catalog: [Self] = [
+        // Shown: speech.
+        .init(id: "parakeet-ultra", name: "Parakeet Ultra", kind: .audio, repository: "FluidInference/parakeet-ultra-coreml", variant: "ultra", downloadBytes: 632_162_964, backend: .parakeet, originalRepository: "moondream/parakeet-ultra", license: "CC-BY-4.0"),
+        whisper("whisper-large-v3-turbo-626mb", "Whisper Large v3 Turbo", "openai_whisper-large-v3-v20240930_626MB", 629_482_970, "openai/whisper-large-v3-turbo"),
+        // Shown: text.
+        .init(id: "qwen3.5-2b", name: "Qwen3.5 2B · 4-bit", kind: .text, repository: "mlx-community/Qwen3.5-2B-4bit", downloadBytes: 1_749_079_691, originalRepository: "Qwen/Qwen3.5-2B", license: "Apache-2.0"),
+        .init(id: "qwen3.5-0.8b", name: "Qwen3.5 0.8B · 4-bit", kind: .text, repository: "mlx-community/Qwen3.5-0.8B-4bit", downloadBytes: 652_027_143, originalRepository: "Qwen/Qwen3.5-0.8B", license: "Apache-2.0"),
+        // Hidden: kept resolvable for saved rules and downloads. Parakeet Ultra supersedes
+        // Parakeet v3, Qwen3.5 the Qwen3 models.
+        .init(id: "parakeet-v3", name: "NVIDIA Parakeet TDT v3", kind: .audio, repository: "FluidInference/parakeet-tdt-0.6b-v3-coreml", variant: "v3", downloadBytes: 483_103_089, backend: .parakeet, originalRepository: "nvidia/parakeet-tdt-0.6b-v3", license: "CC-BY-4.0"),
         whisper("whisper-tiny", "Whisper Tiny", "openai_whisper-tiny", 79_400_529, "openai/whisper-tiny"),
         whisper("whisper-small-216mb", "Whisper Small · Compact", "openai_whisper-small_216MB", 220_115_879, "openai/whisper-small"),
-        .init(id: "parakeet-v3", name: "NVIDIA Parakeet TDT v3", kind: .audio, repository: "FluidInference/parakeet-tdt-0.6b-v3-coreml", variant: "v3", downloadBytes: 483_103_089, backend: .parakeet, originalRepository: "nvidia/parakeet-tdt-0.6b-v3", license: "CC-BY-4.0"),
-        whisper("whisper-large-v3-turbo-626mb", "Whisper Large v3 Turbo", "openai_whisper-large-v3-v20240930_626MB", 629_482_970, "openai/whisper-large-v3-turbo"),
-        // Keep original IDs and variants resolvable for saved rules and downloads.
         whisper("whisper-base", "Whisper Base", "openai_whisper-base", 149_484_585, "openai/whisper-base"),
         whisper("whisper-small", "Whisper Small", "openai_whisper-small", 489_252_581, "openai/whisper-small"),
         whisper("whisper-medium", "Whisper Medium", "openai_whisper-medium", 1_532_419_373, "openai/whisper-medium"),
@@ -69,20 +86,37 @@ public struct LocalModelDescriptor: Codable, Identifiable, Equatable, Sendable {
         .init(id: id, name: name, kind: .audio, repository: "argmaxinc/whisperkit-coreml", variant: variant, downloadBytes: bytes, originalRepository: original, license: "MIT")
     }
     public static func find(_ id: String) -> Self? { catalog.first { $0.id == id } }
+    /// The speech model that configurations from before per-rule model choices fall
+    /// back to. Changing it would change how those configurations migrate; the model
+    /// Frog recommends is `recommendedSpeechModelID`.
     public static let defaultAudioModelID = "whisper-large-v3-turbo-626mb"
     /// The text model that configurations from before per-rule model choices fall back to.
     /// Changing it would change how those configurations migrate.
     public static let legacyTextModelID = "qwen-0.6b"
-    public static var defaultCatalog: [Self] {
-        catalog.filter { $0.kind == .text || ["whisper-tiny", "whisper-small-216mb", "parakeet-v3", defaultAudioModelID].contains($0.id) }
+    /// The models a fresh Models list shows. Others appear once downloaded, chosen in a
+    /// rule or added from Hugging Face.
+    public static let shownModelIDs: Set<String> = ["parakeet-ultra", "whisper-large-v3-turbo-626mb", "qwen3.5-2b", "qwen3.5-0.8b"]
+    public static var defaultCatalog: [Self] { catalog.filter { shownModelIDs.contains($0.id) } }
+    /// The one speech model Frog recommends: fast, accurate dictation in 25 European
+    /// languages through FluidAudio on the Neural Engine or GPU.
+    public static let recommendedSpeechModelID = "parakeet-ultra"
+    /// The one text model Frog recommends: small and fast enough for corrections and
+    /// short rewrites, and it does not think before it answers.
+    public static let recommendedTextModelID = "qwen3.5-2b"
+    /// The recommended model of a kind, for a one-click download.
+    public static func recommended(_ kind: Kind) -> Self {
+        find(kind == .audio ? recommendedSpeechModelID : recommendedTextModelID)!
     }
-    /// Onboarding downloads one speech model and one optional text model.
-    public static var recommendedPair: [Self] { defaultCatalog.filter { $0.id == defaultAudioModelID || $0.id == "qwen-1.7b" } }
-    public var isRecommended: Bool { id == "parakeet-v3" || id == Self.defaultAudioModelID || id == "qwen-1.7b" }
+    /// Onboarding downloads one speech model and one optional text model, speech first.
+    public static var recommendedPair: [Self] { [recommended(.audio), recommended(.text)] }
+    public var isRecommended: Bool { id == Self.recommendedSpeechModelID || id == Self.recommendedTextModelID }
+    /// One line about what a shown model is for; nil for the others.
     public var recommendationSummary: String? {
         switch id {
-        case "parakeet-v3": "Fast dictation · 25 European languages"
-        case Self.defaultAudioModelID: "Broad multilingual coverage · 99+ languages"
+        case Self.recommendedSpeechModelID: "Fast, accurate dictation · 25 European languages"
+        case "whisper-large-v3-turbo-626mb": "Broad multilingual coverage · 99+ languages"
+        case Self.recommendedTextModelID: "Fast corrections and short rewrites · 201 languages"
+        case "qwen3.5-0.8b": "Smallest and fastest · spelling and punctuation"
         default: nil
         }
     }

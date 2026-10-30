@@ -37,9 +37,9 @@ struct CleanerCommandApp {
                                      subtitle: "App cleaner · Review before anything moves", symbol: "trash.circle"),
                 placement: .leading,
                 primary: CommandRowAction(title: "Open review") { @MainActor [weak model = context.model] in
-                    guard let model, model.configuration.preferences.featureEnabled(.cleaner) else { return }
+                    guard let model, let cleaner = model.cleanerPlugin?.cleaner else { return }
                     model.openFeature(.cleaner)
-                    await model.cleaner.open(URL(fileURLWithPath: path))
+                    await cleaner.open(URL(fileURLWithPath: path))
                 })
         }
     }

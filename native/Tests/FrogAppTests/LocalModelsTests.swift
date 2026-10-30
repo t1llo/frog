@@ -58,6 +58,30 @@ final class LocalModelsTests: XCTestCase {
         await models.unload()
     }
 
+    func testPrewarmLoadsOnceAndTheWorkThatNeedsItWaitsForThatLoad() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let gate = DownloadGate()
+        let engine = FixtureInference(preparationGate: gate)
+        let models = LocalModels(directory: directory, runtime: engine, downloader: Self.fixtureDownload, freeSpace: LocalModels.unlimitedFreeSpace)
+        let descriptor = try XCTUnwrap(LocalModelDescriptor.find("qwen3.5-2b"))
+        models.prewarm(descriptor.id)
+        XCTAssertFalse(models.busy, "A model that is not downloaded is not loaded")
+        models.download(descriptor); await models.waitForDownload(descriptor.id)
+        models.prewarm(descriptor.id)
+        await gate.waitUntilStarted()
+        let work = Task { try await models.prepare(descriptor.id) }
+        await Task.yield()
+        await gate.resume()
+        try await work.value
+        let preparations = await engine.preparations
+        XCTAssertEqual(preparations, 1)
+        XCTAssertEqual(models.loaded, [descriptor.id])
+        models.prewarm(descriptor.id)
+        XCTAssertFalse(models.busy, "A loaded model is not loaded again")
+        await models.unload()
+    }
+
     func testLegacySpeechDownloadsSurviveRestartAndKeepTheirOriginalRuntimeSources() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

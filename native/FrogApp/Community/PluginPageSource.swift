@@ -116,6 +116,21 @@ enum PluginPageSource {
           };
           Object.defineProperty(window, "__frogEmit", { value: emit, writable: false, configurable: false, enumerable: false });
 
+          // Actions from plugin.json, answered by the handler the page registers with frog.action. Frog calls
+          // __frogPerform; a page that is still loading gets a few seconds to register its handlers.
+          const actions = new Map();
+          const perform = async (name, params, text) => {
+            let handler = actions.get(name);
+            for (let waited = 0; !handler && waited < 5000; waited += 50) {
+              await new Promise((resolve) => setTimeout(resolve, 50));
+              handler = actions.get(name);
+            }
+            if (!handler) throw new Error(`The page has no handler for “${name}”. Register one with frog.action.`);
+            const result = await handler(Object.freeze(Object.assign({}, params || {})), text == null ? null : String(text));
+            return result === undefined || result === null ? null : JSON.stringify(result);
+          };
+          Object.defineProperty(window, "__frogPerform", { value: perform, writable: false, configurable: false, enumerable: false });
+
           const fetchText = async (url, options = {}) => {
             const as = options.as || "text";
             const response = await call("fetch", {
@@ -159,6 +174,12 @@ enum PluginPageSource {
               const queued = waiting.get(name);
               if (queued) { waiting.delete(name); setTimeout(() => queued.forEach((value) => emit(name, value)), 0); }
               return () => listeners.get(name).delete(handler);
+            },
+            action: (name, handler) => {
+              if (typeof handler !== "function") throw new TypeError("frog.action needs a function");
+              const key = String(name);
+              actions.set(key, handler);
+              return () => { if (actions.get(key) === handler) actions.delete(key); };
             },
             show: async () => { await call("show"); },
             close: async () => { await call("close"); }

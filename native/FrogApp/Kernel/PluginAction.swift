@@ -68,6 +68,10 @@ struct ActionInput: Sendable {
 struct ActionResult {
     var text: String
     var json: String
+    /// What `frog run` exits with, such as a script's own status; 0 is success.
+    var exitCode: Int32 = 0
+    /// A line for standard error, such as why the exit code is not 0.
+    var notice = ""
 
     init<Value: Encodable>(_ value: Value, text: String) {
         self.text = text

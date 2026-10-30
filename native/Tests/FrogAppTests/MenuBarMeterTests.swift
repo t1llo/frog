@@ -36,17 +36,31 @@ final class MenuBarMeterTests: XCTestCase {
     }
 
     func testAGPUWithoutALoadReadingLeavesCPUAlone() {
-        let preferences = SystemMonitorPreferences(menuBarItem: true)
-        let both = SystemMonitorStatusItemController.face(.init(cpu: .value(0.3), gpu: .value(0.6)), preferences: preferences, dark: false)
+        let settings = SystemMonitorSettings()
+        let both = SystemMonitorStatusItemController.face(.init(cpu: .value(0.3), gpu: .value(0.6)), settings: settings, dark: false)
         XCTAssertEqual(both.rows.map(\.label), ["CPU", "GPU"])
         XCTAssertEqual(both.style, .segments)
         XCTAssertEqual(both.palette, .spectrum)
-        let cpu = SystemMonitorStatusItemController.face(.init(cpu: .value(0.3), gpu: .unavailable), preferences: preferences, dark: false)
+        let cpu = SystemMonitorStatusItemController.face(.init(cpu: .value(0.3), gpu: .unavailable), settings: settings, dark: false)
         XCTAssertEqual(cpu.rows.map(\.label), ["CPU"])
-        let measuring = SystemMonitorStatusItemController.face(nil, preferences: preferences, dark: true)
+        let measuring = SystemMonitorStatusItemController.face(nil, settings: settings, dark: true)
         XCTAssertEqual(measuring.rows.map(\.fraction), [nil, nil])
-        XCTAssertFalse(SystemMonitorStatusItemController.face(nil, preferences: SystemMonitorPreferences(menuBarPalette: "clean"), dark: true).dark,
+        var clean = settings; clean.menuBarPalette = .clean
+        XCTAssertFalse(SystemMonitorStatusItemController.face(nil, settings: clean, dark: true).dark,
                        "A template does not depend on the menu bar's look")
+    }
+
+    func testTheChosenReadingsAreTheRowsOfTheItem() {
+        var settings = SystemMonitorSettings()
+        let reading = SystemMonitorReading(cpu: .value(0.3), gpu: .value(0.6), memory: .value(0.5))
+        let rows = { (readings: SystemMonitorSettings.Readings) -> [String] in
+            settings.menuBarReadings = readings
+            return SystemMonitorStatusItemController.face(reading, settings: settings, dark: false).rows.map(\.label)
+        }
+        XCTAssertEqual(rows(.cpu), ["CPU"])
+        XCTAssertEqual(rows(.cpuMemory), ["CPU", "MEM"])
+        XCTAssertEqual(rows(.cpuGpuMemory), ["CPU", "GPU", "MEM"])
+        XCTAssertEqual(SystemMonitorStatusItemController.description(reading), "System monitor\nCPU 30% · GPU 60% · Memory 50%")
     }
 
     func testUsageLimitsBecomeAMeterInEveryDesignButNumbers() throws {

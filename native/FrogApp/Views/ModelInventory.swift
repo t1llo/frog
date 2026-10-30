@@ -65,7 +65,7 @@ struct ModelInventory: View {
                                     Button("Check files") { model.localModels.checkFiles(item.id) }
                                         .disabled(model.localModels.fileChecks[item.id] == .checking)
                                     Button("Delete download…", role: .destructive) { deleting = item }
-                                        .disabled(model.localModels.busy || model.dictation.active)
+                                        .disabled(model.localModels.busy || model.dictating)
                                 }
                             } else {
                                 Button(L10n.text(unfinished ? "Resume" : "Download")) { model.localModels.download(item) }.buttonStyle(.frog(compact: true)).disabled(!LocalModels.supported)
@@ -99,7 +99,7 @@ struct ModelInventory: View {
                 Label(check.summary, systemImage: "exclamationmark.triangle").font(FrogType.caption).foregroundStyle(FrogStyle.warning).textSelection(.enabled)
                 Spacer()
                 Button("Repair") { Task { do { try await model.localModels.repair(item.id) } catch { model.report(error) } } }
-                    .buttonStyle(.frog(compact: true)).disabled(model.localModels.busy || model.dictation.active)
+                    .buttonStyle(.frog(compact: true)).disabled(model.localModels.busy || model.dictating)
                     .help("Download the missing or damaged files again into the same folder")
             }
         }
@@ -158,4 +158,8 @@ struct ModelDownloadSummary: View {
                 .lineLimit(1).frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
+}
+
+struct RecommendedModelBadge: View {
+    var body: some View { FrogBadge(text: "Recommended", active: true) }
 }

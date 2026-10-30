@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import FrogCore
 import WebKit
 import XCTest
@@ -16,7 +17,7 @@ import XCTest
         pasteboard = NSPasteboard(name: NSPasteboard.Name("frog-plugin-test-\(UUID().uuidString)"))
         runtime = PluginRuntime(store: PluginStore(directory: root.appendingPathComponent("Plugins", isDirectory: true)))
         runtime.pasteboard = pasteboard
-        runtime.directoryURL = nil
+        runtime.registryURL = nil
         runtime.configure(enabled: true)
     }
 
@@ -230,5 +231,203 @@ import XCTest
         } catch {
             XCTAssertEqual(error.localizedDescription, "The link's SHA-256 is not valid.")
         }
+    }
+
+    // MARK: Actions
+
+    private static let actionPage = """
+    <!doctype html><title>Test</title><script>
+    frog.action("echo", async (params, input) => ({ text: `${params.word} ${params.times} ${input ?? ""}`.trim(), params }));
+    frog.action("store", async () => { await frog.storage.set("k", 1); return "stored"; });
+    frog.action("peek", async () => { await frog.storage.set("k", 2); return "wrote"; });
+    frog.action("fail", async () => { throw new Error("Nope"); });
+    frog.action("later", async () => {
+      setTimeout(async () => {
+        try { await frog.storage.set("k", 3); window.late = "wrote"; } catch (error) { window.late = String(error.message || error); }
+      }, 200);
+      return "scheduled";
+    });
+    </script>
+    """
+
+    func testActionsRunInThePageWithTypedParametersAndKeepToTheirEffect() async throws {
+        let actions: [[String: Any]] = [
+            ["id": "echo", "title": "Echo", "effect": "read", "input": true,
+             "parameters": [["name": "word", "type": "text", "required": true], ["name": "times", "type": "integer"]]],
+            ["id": "store", "title": "Store", "effect": "write"],
+            ["id": "peek", "title": "Peek", "effect": "read"],
+            ["id": "fail", "title": "Fail", "effect": "read"],
+            ["id": "later", "title": "Later", "effect": "read"],
+        ]
+        let host = try await running(try makePlugin(permissions: [], extra: ["actions": actions], html: Self.actionPage))
+
+        let echo = try await runtime.perform("echo", of: "com.example.test", values: ["word": "hi", "times": "3"], text: "there")
+        XCTAssertEqual(echo.text, "hi 3 there")
+        let params = try XCTUnwrap((try JSONSerialization.jsonObject(with: Data(echo.json.utf8)) as? [String: Any])?["params"] as? [String: Any])
+        XCTAssertEqual(params["times"] as? Int, 3, "An integer parameter reaches the page as a number")
+
+        XCTAssertNil(host.lastCommand, "A read action does not open the window a command opens for writing the clipboard or showing")
+        let stored = try await runtime.perform("store", of: "com.example.test", values: [:], text: nil)
+        XCTAssertEqual(stored.text, "stored")
+        XCTAssertNotNil(host.lastCommand)
+        do {
+            _ = try await runtime.perform("peek", of: "com.example.test", values: [:], text: nil)
+            XCTFail("A read action cannot write storage")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("effect"), error.localizedDescription) }
+        do {
+            _ = try await runtime.perform("fail", of: "com.example.test", values: [:], text: nil)
+            XCTFail("A handler that throws fails the action")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("Nope"), error.localizedDescription) }
+        do {
+            _ = try await runtime.perform("echo", of: "com.example.test", values: ["word": "hi", "times": "many"], text: nil)
+            XCTFail("An integer parameter takes a whole number")
+        } catch {}
+
+        // Work a read action leaves behind stays inside its effect after the handler has answered.
+        let later = try await runtime.perform("later", of: "com.example.test", values: [:], text: nil)
+        XCTAssertEqual(later.text, "scheduled")
+        try await Task.sleep(for: .milliseconds(600))
+        let late = try await evaluate("return { late: window.late ?? null };", in: host)
+        XCTAssertTrue((late["late"] as? String)?.contains("effect") == true, "\(late)")
+        XCTAssertEqual(host.effectLimit, .read)
+    }
+
+    func testAnswersBecomeTextAndJSON() {
+        XCTAssertEqual(PluginRuntime.result(#""plain""#).text, "plain")
+        XCTAssertEqual(PluginRuntime.result(#"{"text":"Shown","n":1}"#).text, "Shown")
+        XCTAssertEqual(PluginRuntime.result(nil).text, "Done.")
+        XCTAssertEqual(PluginRuntime.effect(of: "storage.get"), .read)
+        XCTAssertEqual(PluginRuntime.effect(of: "clipboard.write"), .write)
+        XCTAssertEqual(PluginRuntime.effect(of: "fetch"), .network)
+    }
+
+    // MARK: Directory
+
+    private func signedEntry(for folder: URL, key: Curve25519.Signing.PrivateKey, archive: Data, download: String) throws -> PluginRegistryEntry {
+        let manifest = try PluginPackage.read(folder).manifest
+        var entry = PluginRegistryEntry(id: manifest.id, name: manifest.name, summary: manifest.description, version: manifest.version,
+                                        author: "Tester", permissions: manifest.permissions.map(\.rawValue),
+                                        manifest: "https://example.com/plugins/files/test.json", download: download,
+                                        sha256: PluginPackage.sha256(archive))
+        entry.signature = try key.signature(for: entry.signedMessage).base64EncodedString()
+        return entry
+    }
+
+    private func serve(_ files: [String: Data]) {
+        runtime.download = { url, _ in
+            guard let data = files[url.absoluteString] else { throw FrogError.message("No file at \(url)") }
+            return data
+        }
+    }
+
+    func testTheDirectoryInstallsOnlySignedFilesAndAPluginWithoutPermissionsInOneClick() async throws {
+        let key = Curve25519.Signing.PrivateKey()
+        runtime.registryKeys = [key.publicKey.rawRepresentation.base64EncodedString()]
+        runtime.registryURL = URL(string: "https://example.com/plugins/registry.json")
+        let folder = try makePlugin(permissions: [])
+        let archive = try PluginArchive.create(try PluginPackage.read(folder))
+        let good = try signedEntry(for: folder, key: key, archive: archive, download: "https://example.com/plugins/files/test.frogplugin")
+        var forged = good
+        forged.id = "com.example.forged"
+        let stranger = try signedEntry(for: folder, key: Curve25519.Signing.PrivateKey(), archive: archive, download: good.download)
+        let registry = try JSONEncoder().encode(PluginRegistry(plugins: [good, forged, stranger]))
+        serve(["https://example.com/plugins/registry.json": registry, good.download: archive])
+
+        await runtime.loadRegistry()
+        XCTAssertNil(runtime.registryError)
+        XCTAssertEqual(runtime.registry.map(\.id), ["com.example.test"])
+        XCTAssertEqual(runtime.registryRejected, 2, "A changed entry and one signed by another key are left out")
+
+        let installed = try await runtime.install(good)
+        XCTAssertTrue(installed, "A plugin that asks for no permissions installs at once")
+        XCTAssertNil(runtime.review)
+        XCTAssertEqual(runtime.item("com.example.test")?.record.sha256, good.sha256)
+        XCTAssertTrue(runtime.isListed(good.sha256))
+    }
+
+    func testTheDirectoryRefusesAFileThatIsNotTheSignedOneAndReviewsOneThatAsksForAccess() async throws {
+        let key = Curve25519.Signing.PrivateKey()
+        runtime.registryKeys = [key.publicKey.rawRepresentation.base64EncodedString()]
+        runtime.registryURL = URL(string: "https://example.com/plugins/registry.json")
+        let folder = try makePlugin(permissions: ["clipboard-read"])
+        let archive = try PluginArchive.create(try PluginPackage.read(folder))
+        let entry = try signedEntry(for: folder, key: key, archive: archive, download: "https://example.com/plugins/files/test.frogplugin")
+        serve(["https://example.com/plugins/registry.json": try JSONEncoder().encode(PluginRegistry(plugins: [entry])),
+               entry.download: archive + Data([0])])
+        await runtime.loadRegistry()
+        do {
+            try await runtime.install(entry)
+            XCTFail("A file whose SHA-256 is not the signed one is refused")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("SHA-256"), error.localizedDescription) }
+        XCTAssertNil(runtime.item("com.example.test"))
+
+        serve(["https://example.com/plugins/registry.json": try JSONEncoder().encode(PluginRegistry(plugins: [entry])), entry.download: archive])
+        let installed = try await runtime.install(entry)
+        XCTAssertFalse(installed, "A plugin that asks for access waits for its review")
+        XCTAssertEqual(runtime.review?.package.manifest.id, "com.example.test")
+        XCTAssertNil(runtime.item("com.example.test"), "Nothing is installed before the user approves it")
+    }
+
+    /// Serves `entries` as the signed directory, each with its archive, and reads it.
+    private func publish(_ folders: [URL], key: Curve25519.Signing.PrivateKey) async throws -> [PluginRegistryEntry] {
+        var files: [String: Data] = [:], entries: [PluginRegistryEntry] = []
+        for folder in folders {
+            let manifest = try PluginPackage.read(folder).manifest
+            let archive = try PluginArchive.create(try PluginPackage.read(folder))
+            let download = "https://example.com/plugins/files/\(manifest.id)-\(manifest.version).frogplugin"
+            entries.append(try signedEntry(for: folder, key: key, archive: archive, download: download))
+            files[download] = archive
+        }
+        files["https://example.com/plugins/registry.json"] = try JSONEncoder().encode(PluginRegistry(plugins: entries))
+        serve(files)
+        await runtime.loadRegistry()
+        return entries
+    }
+
+    private func directory() -> Curve25519.Signing.PrivateKey {
+        let key = Curve25519.Signing.PrivateKey()
+        runtime.registryKeys = [key.publicKey.rawRepresentation.base64EncodedString()]
+        runtime.registryURL = URL(string: "https://example.com/plugins/registry.json")
+        return key
+    }
+
+    func testTheDirectoryNeverRollsAPluginBackAndReviewsAnActionThatDoesMore() async throws {
+        let key = directory()
+        let reads: [[String: Any]] = [["id": "go", "title": "Go", "effect": "read"]]
+        let writes: [[String: Any]] = [["id": "go", "title": "Go", "effect": "write"]]
+        let first = try await publish([try makePlugin(permissions: [], extra: ["actions": reads], html: Self.actionPage)], key: key)
+        let firstInstalled = try await runtime.install(first[0])
+        XCTAssertTrue(firstInstalled)
+
+        let raised = try await publish([try makePlugin(permissions: [], extra: ["version": "1.1.0", "actions": writes], html: Self.actionPage)], key: key)
+        let raisedInstalled = try await runtime.install(raised[0])
+        XCTAssertFalse(raisedInstalled, "An update whose action does more than before waits for its review")
+        XCTAssertEqual(runtime.review?.package.manifest.version, "1.1.0")
+        XCTAssertEqual(runtime.item("com.example.test")?.manifest?.version, "1.0.0")
+        try runtime.approve(try XCTUnwrap(runtime.review))
+
+        let older = try await publish([try makePlugin(permissions: [], extra: ["actions": writes], html: Self.actionPage)], key: key)
+        do {
+            try await runtime.install(older[0])
+            XCTFail("An older version never replaces a newer one")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("newer"), error.localizedDescription) }
+        XCTAssertEqual(runtime.item("com.example.test")?.manifest?.version, "1.1.0")
+        XCTAssertEqual(PluginRuntime.raisedEffects(try PluginPackage.read(try makePlugin(permissions: [], extra: ["actions": writes])).manifest, over: nil).map(\.id), ["go"],
+                       "A new action that changes things counts as doing more")
+    }
+
+    func testADirectoryInstallLeavesAnOpenReviewAlone() async throws {
+        let key = directory()
+        let other = try makePlugin(permissions: ["clipboard-read"], extra: ["id": "com.example.other"])
+        try await runtime.openArchive(try PluginArchive.create(try PluginPackage.read(other)), source: .link("https://elsewhere.example/other.frogplugin"))
+        let open = try XCTUnwrap(runtime.review)
+
+        let entries = try await publish([try makePlugin(permissions: [])], key: key)
+        let installed = try await runtime.install(entries[0])
+        XCTAssertTrue(installed)
+        XCTAssertEqual(runtime.review?.id, open.id, "The review that was open stays open")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: open.package.root.path), "and keeps its unpacked files")
+        try runtime.approve(open)
+        XCTAssertNotNil(runtime.item("com.example.other"))
     }
 }

@@ -19,7 +19,7 @@ struct LocalModelSettingsView: View {
                                  title: { LocalModelSettings.idleTitle(seconds: $0) }) { seconds in update { $0.idleUnloadSeconds = seconds } }
                 }
                 CompactRow(title: model.localModels.loaded.isEmpty ? "No models loaded" : "Models in memory", detail: LocalModelSettings.inMemory(model.localModels.loaded, catalog: model.configuration.modelCatalog)) {
-                    Button("Unload now") { Task { await model.localModels.unload() } }.disabled(model.localModels.loaded.isEmpty || model.localModels.busy || model.dictation.active)
+                    Button("Unload now") { Task { await model.localModels.unload() } }.disabled(model.localModels.loaded.isEmpty || model.localModels.busy || model.dictating)
                 }
             }
             SettingsSection(title: "Storage") {
@@ -35,7 +35,7 @@ struct LocalModelSettingsView: View {
                     Button("Use default") { setModelFolder(model.localModels.defaultDirectory) }.buttonStyle(.frog(.ghost)).disabled(model.localModels.root == model.localModels.defaultDirectory)
                     Spacer()
                     Button("Show in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: model.localModels.root.path) }
-                }.disabled(model.localModels.busy || !model.localModels.progress.isEmpty || model.dictation.active)
+                }.disabled(model.localModels.busy || !model.localModels.progress.isEmpty || model.dictating)
             }
         }
         .toggleStyle(.switch).controlSize(.small)
@@ -60,10 +60,10 @@ struct LocalModelSettingsView: View {
     }
     /// Asks first when the downloaded models would stay behind in the current folder.
     private func setModelFolder(_ url: URL) {
-        guard !model.dictation.active else { return }
+        guard !model.dictating else { return }
         if folderChange(to: url) != nil { pendingModelFolder = url } else { applyModelFolder(url) }
     }
-    private func applyModelFolder(_ url: URL) { guard !model.dictation.active else { return }; Task { do { try await model.localModels.changeDirectory(to: url) } catch { model.report(error) } } }
+    private func applyModelFolder(_ url: URL) { guard !model.dictating else { return }; Task { do { try await model.localModels.changeDirectory(to: url) } catch { model.report(error) } } }
 }
 
 /// What the Local models section says about the idle time and about the models in memory.

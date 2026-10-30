@@ -3,26 +3,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 import FrogCore
 
-enum CleanerTab: String, CaseIterable, Identifiable {
-    case apps
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .apps: "Apps"
-        }
-    }
-    static func available(_ preferences: Preferences) -> [CleanerTab] {
-        var tabs: [CleanerTab] = []
-        tabs.append(.apps)
-        return tabs
-    }
-}
-
 /// The App cleaner's page. Nothing is read until it opens, and nothing is scanned until an app is picked or dropped.
 struct CleanerView: View {
     @EnvironmentObject private var model: AppModel
     @ObservedObject var cleaner: CleanerModel
-    @State private var showsSettings = false
+    /// Saves `[app-cleaner] possible-matches`.
+    let setPossibleMatches: (Bool) -> Void
     @State private var dropTargeted = false
     /// Read from the cleaner's store when the page opens; hidden until then.
     @State private var noticeDismissed = true
@@ -30,38 +16,23 @@ struct CleanerView: View {
 
     static let fullDiskAccessNoticeFlag = "fullDiskAccessNoticeDismissed"
 
-    private var preferences: Preferences { model.configuration.preferences }
-    private var showPossible: Bool { preferences.featureEnabled(.cleaner) && preferences.cleanerSettings.possibleMatches }
-
     var body: some View {
-        let tabs = CleanerTab.available(preferences)
-        PageScroll {
-            PageHeader(title: "App cleaner") {
+        FrogPage(width: FrogStyle.wideWidth) {
+            FrogPageHeader(title: "App cleaner", subtitle: cleaner.review == nil && cleaner.outcome == nil ? "Pick an app, or drop one here." : nil) {
                 IconAction(title: "Recently moved", symbol: "clock.arrow.circlepath") {
                     cleaner.dismissPutBack(); cleaner.loadRecords(); cleaner.showsRecent = true
                 }
                 .sheet(isPresented: $cleaner.showsRecent, onDismiss: { cleaner.dismissPutBack() }) {
                     CleanerRestoreView(cleaner: cleaner)
                 }
-                IconAction(title: "Cleaner settings", symbol: "slider.horizontal.3") { showsSettings.toggle() }
-                    .popover(isPresented: $showsSettings, arrowEdge: .bottom) {
-                        CleanerSettingsView().environmentObject(model)
-                    }
-            }
-            if tabs.count > 1 {
-                HStack(spacing: 4) {
-                    ForEach(tabs) { item in FilterTag(title: item.title, selected: item == cleaner.tab) { cleaner.tab = item } }
-                }
             }
             // An open review says itself which of its items need Full Disk Access.
             if cleaner.fullDiskAccess == false, !noticeDismissed, cleaner.review == nil { fullDiskAccessNotice }
             if let issue = cleaner.issue { InlineIssue(message: issue) }
-            switch cleaner.tab {
-            case .apps: appsContent        // outcome, review or app list
-            }
+            content
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if cleaner.tab == .apps, cleaner.outcome == nil, let review = cleaner.review {
+            if cleaner.outcome == nil, let review = cleaner.review {
                 CleanerReviewFooter(cleaner: cleaner, review: review)
             }
         }
@@ -92,11 +63,12 @@ struct CleanerView: View {
         }
     }
 
-    @ViewBuilder private var appsContent: some View {
+    /// The outcome, the review, or the app list.
+    @ViewBuilder private var content: some View {
         if let outcome = cleaner.outcome {
             CleanerOutcomeView(outcome: outcome, cleaner: cleaner)
         } else if let review = cleaner.review {
-            CleanerReviewView(cleaner: cleaner, review: review, showPossible: showPossible)
+            CleanerReviewView(cleaner: cleaner, review: review, setPossibleMatches: setPossibleMatches)
         } else if cleaner.phase == .scanning {
             CleanerScanningView(cleaner: cleaner)
         } else {
@@ -107,7 +79,7 @@ struct CleanerView: View {
     private var fullDiskAccessNotice: some View {
         HStack(spacing: 10) {
             Image(systemName: "lock.shield").foregroundStyle(FrogStyle.muted).accessibilityHidden(true)
-            Text("Without Full Disk Access, Frog cannot measure or move some app data.")
+            Text("Full Disk Access lets Frog find and move all app data.")
                 .font(FrogType.body).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button("Open Settings") { NSWorkspace.shared.open(RemovalSummary.SettingsLink.fullDiskAccess.url) }
@@ -136,32 +108,5 @@ struct CleanerView: View {
             await cleaner.open(url)
         }
         return true
-    }
-}
-
-/// The popover behind "Cleaner settings". Each row saves through `updateCleanerSettings`.
-struct CleanerSettingsView: View {
-    @EnvironmentObject private var model: AppModel
-    private var settings: CleanerPreferences { model.configuration.preferences.cleanerSettings }
-
-    var body: some View {
-        SettingsSection(title: "App cleaner") {
-            possibleMatchesRow
-        }
-        .padding(12).frame(width: 320)
-        .foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
-    }
-
-    private var possibleMatchesRow: some View {
-        CompactRow(title: "Show possible matches",
-                   detail: "Files whose names only resemble the app. Never ticked.") {
-            Toggle("Show possible matches", isOn: Binding(get: { settings.possibleMatches }, set: { value in
-                save { $0.possibleMatches = value }
-            })).labelsHidden().toggleStyle(.switch)
-        }
-    }
-
-    private func save(_ change: (inout CleanerPreferences) -> Void) {
-        do { try model.updateCleanerSettings(change) } catch { model.report(error) }
     }
 }

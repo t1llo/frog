@@ -12,6 +12,8 @@ import FrogCore
     let copy: (String) -> Void
     /// Counts a use of a tool for the statistics.
     var toolUse: (ActivityToolKind) -> Void = { _ in }
+    /// What a row that acts on the front app says when another app came to the front meanwhile.
+    static let targetChanged = "The target application changed. Open the command bar again."
 }
 
 /// A value a row asks for before it runs, such as the text of a new note. Choosing the row turns the search field
