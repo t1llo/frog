@@ -59,8 +59,8 @@ final class SystemMonitorPlugin: FrogPlugin, ObservableObject {
     init(context: PluginContext) { self.context = context }
 
     func start() async {
-        seedSettings()
-        settings = context.settings(SystemMonitorSettings.self)
+        // A seed that could not be written is still used, so the next choice saves the old ones with it.
+        settings = seedSettings() ?? context.settings(SystemMonitorSettings.self)
         monitor = SystemMonitor(sampler: Self.makeSampler())
         configureItem()
     }
@@ -116,12 +116,14 @@ final class SystemMonitorPlugin: FrogPlugin, ObservableObject {
     }
 
     /// The table is written once, from the settings made before config.toml, with every key and its comment.
-    private func seedSettings() {
+    /// Returns the seed when it could not be written; a later start tries again.
+    private func seedSettings() -> SystemMonitorSettings? {
         let id = Self.info.id
-        guard context.legacy.settingsFile.document.value(at: [id]) == nil else { return }
+        guard context.legacy.settingsFile.document.value(at: [id]) == nil else { return nil }
         let legacy = context.legacy.configuration.preferences.toolkitSettings.systemMonitor ?? SystemMonitorPreferences()
-        do { try context.legacy.settingsFile.edit { try $0.update(id, SystemMonitorSettings(legacy: legacy), all: true) } }
-        catch { context.report(error) }
+        let seeded = SystemMonitorSettings(legacy: legacy)
+        do { try context.legacy.settingsFile.edit { try $0.update(id, seeded, all: true) }; return nil }
+        catch { context.report(error); return seeded }
     }
 
     private func configureItem() {

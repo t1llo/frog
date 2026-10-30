@@ -57,8 +57,8 @@ final class AppModel: ObservableObject {
     private var loginWrites = 0
     private var loginStatusUpdatedAt: ContinuousClock.Instant?
     private var systemStatusTask: Task<Void, Never>?
-    /// The wait between two refreshes of the system status: one second, or a tick a test fires.
-    private let systemStatusTick: () async throws -> Void
+    /// The wait between two refreshes of the system status: `SystemStatusWake`, or a tick a test fires.
+    private let systemStatusTick: (() async throws -> Void)?
     private let hotkeys = HotkeyManager()
     /// The window switcher plugin while it runs; it owns the event tap and the window list.
     weak var windowSwitcher: WindowSwitcherPlugin?
@@ -318,7 +318,7 @@ final class AppModel: ObservableObject {
         self.power = powerController ?? StayAwakeController(directory: dataDirectory)
         self.clipboardHistoryStore = clipboardHistoryStore ?? ClipboardHistoryStore()
         self.errorDisplayDuration = errorDisplayDuration
-        self.systemStatusTick = systemStatusTick ?? { try await SystemStatusWake.wait() }
+        self.systemStatusTick = systemStatusTick
         let localModels = modelService ?? LocalModels(directory: dataDirectory)
         self.localModels = localModels
         self.answerStream = answerStream ?? AnswerStreams.live(localModels: localModels, localTools: localTools)
@@ -647,9 +647,16 @@ final class AppModel: ObservableObject {
         guard systemStatusTask == nil else { return }
         systemStatusTask = Task { [weak self, systemStatusTick] in
             while !Task.isCancelled {
-                guard self != nil else { return }
-                self?.refreshSystemStatus()
-                do { try await systemStatusTick() } catch { return }
+                // The refresh also restarts the window switcher's tap after macOS disables it.
+                let watchingTap: Bool? = self.map { model in
+                    model.refreshSystemStatus()
+                    return model.started && model.registerShortcuts && model.configuration.preferences.featureEnabled(.windowSwitcher)
+                }
+                guard let watchingTap else { return }
+                do {
+                    if let systemStatusTick { try await systemStatusTick() }
+                    else { try await SystemStatusWake.wait(watchingTap: watchingTap) }
+                } catch { return }
             }
         }
     }
