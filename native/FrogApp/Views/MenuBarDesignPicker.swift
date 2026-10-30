@@ -115,8 +115,8 @@ struct StayAwakeMenuBarSettings: View {
 
     var body: some View {
         let settings = settings
-        SettingsSection(title: "Menu bar") {
-            CompactRow(title: "Show a cup in the menu bar", detail: "While Stay awake is on, instead of the cup next to Frog's icon.") {
+        FrogSection("Menu bar") {
+            FrogRow("Show a cup in the menu bar", caption: "While Stay awake is on, instead of the cup next to Frog's icon.") {
                 Toggle("Show a cup in the menu bar", isOn: Binding(get: { settings.menuBarItem }, set: { on in save { $0.menuBarItem = on } }))
                     .labelsHidden().toggleStyle(.switch)
             }
@@ -127,6 +127,7 @@ struct StayAwakeMenuBarSettings: View {
                                    title: { ["icon": "Cup", "ring": "Countdown ring", "time": "Time left"][$0] ?? $0 }, image: { style, _ in
                     StayAwakeIcon.image(StayAwakeIcon.Face(style: style, deadline: deadline, duration: 4 * 3600))
                 }) { style in save { $0.menuBarStyle = style } }
+                    .padding(.vertical, 8)
             }
         }
     }
