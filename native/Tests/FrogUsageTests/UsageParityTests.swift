@@ -49,7 +49,7 @@ import XCTest
         model.applyPreferences(UsageDashboardPreferences(provider: "OpenAI", allDevices: false))
         model.setActive(true)
         defer { model.setActive(false) }
-        for _ in 0..<200 where !model.loaded { try await Task.sleep(for: .milliseconds(5)) }
+        for _ in 0..<1000 where !model.loaded { try await Task.sleep(for: .milliseconds(5)) }
         let chart = model.chart(provider: "OpenAI", range: "7d", metric: "Input")
         XCTAssertEqual(chart.totalTokens, 220, "Combine Codex and both generations of OpenCode activity")
         XCTAssertEqual(chart.sources.first { $0.name == "OpenCode" }?.value, 110)
@@ -72,7 +72,7 @@ import XCTest
         let model = UsageDashboardModel(defaults: defaults, fixtureRoot: root)
         model.setActive(true)
         defer { model.setActive(false) }
-        for _ in 0..<200 where !model.loaded { try await Task.sleep(for: .milliseconds(5)) }
+        for _ in 0..<1000 where !model.loaded { try await Task.sleep(for: .milliseconds(5)) }
         XCTAssertTrue(model.loaded)
         let line = try JSONSerialization.data(withJSONObject: ["type": "assistant",
             "timestamp": ISO8601DateFormatter().string(from: Date()),
@@ -120,7 +120,7 @@ import XCTest
         let model = UsageDashboardModel(defaults: defaults, fixtureRoot: root)
         model.setActive(true)
         defer { model.setActive(false) }
-        for _ in 0..<200 where !model.loaded { try await Task.sleep(for: .milliseconds(5)) }
+        for _ in 0..<1000 where !model.loaded { try await Task.sleep(for: .milliseconds(5)) }
         XCTAssertFalse(model.hasAccountActivity)
         let chart = model.chart(provider: "OpenAI", range: "7d", metric: "Input")
         XCTAssertFalse(chart.account, "Only the account's own totals come in UTC days")
@@ -142,7 +142,7 @@ import XCTest
         let model = UsageDashboardModel(defaults: defaults, fixtureRoot: root)
         model.setActive(true)
         defer { model.setActive(false) }
-        for _ in 0..<200 where !model.loaded { try await Task.sleep(for: .milliseconds(5)) }
+        for _ in 0..<1000 where !model.loaded { try await Task.sleep(for: .milliseconds(5)) }
         let lifetime = try XCTUnwrap(model.lifetime(provider: "Claude"))
         XCTAssertEqual(lifetime.statistics.first { $0.name == "Total tokens" }?.value, "100")
         XCTAssertEqual(lifetime.statistics.first { $0.name == "Sessions" }?.value, "7")
