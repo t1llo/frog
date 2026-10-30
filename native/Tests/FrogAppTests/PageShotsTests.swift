@@ -19,6 +19,7 @@ final class PageShotsTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         var configuration = Configuration()
         for feature in FeatureID.allCases { configuration.preferences.setFeature(feature, enabled: true) }
+        configuration.preferences.historyEnabled = true
         try ConfigurationStore(directory: root).save(configuration)
         // Notes and Scripts show an item rather than their empty state.
         try await UtilityDocumentStore(directory: root.appendingPathComponent("Toolkit")).save([
@@ -31,6 +32,7 @@ final class PageShotsTests: XCTestCase {
         let model = AppModel(dataDirectory: root, registerShortcuts: false, readKey: { _ in nil }, readAccessibility: { true },
                              toolkit: toolkit, systemStatusTick: { try await Task.sleep(for: .seconds(3_600)) })
         defer { model.shutdown() }
+        await model.pluginHost.syncAndWait()
         let only = ProcessInfo.processInfo.environment["FROG_PAGE_SHOTS_ONLY"]
         let routes: [(String, ToolkitRoute)] = FeatureID.allCases.map { ($0.rawValue, .feature($0)) }
             + [("history", .history), ("models", .models), ("features", .features), ("settings", .settings), ("statistics", .statistics)]

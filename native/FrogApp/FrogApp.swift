@@ -45,7 +45,6 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
         // Frog 1.0.0 to 1.0.2 posted notifications; remove any they left in Notification Center, once, so
         // plugin notifications that are waiting stay.
         DesktopNotifications.clearPreviousNotifications()
-        NSApplication.shared.setActivationPolicy(.accessory)
         model.openSettings = { [weak self] in self?.showWindow() }
         // Register at application launch, even if SwiftUI never mounts the menu label.
         model.start()
@@ -86,9 +85,21 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
             created.setFrameUsingName(Self.windowFrameName)
             window = created
         }
+        // Frog joins the Dock and Command-Tab while its window is open, like any app with a window, and leaves
+        // them when it closes. Popups and panels never change this.
+        if NSApp.activationPolicy() != .regular { NSApp.setActivationPolicy(.regular) }
         NSApplication.shared.activate(ignoringOtherApps: true)
         if window?.isMiniaturized == true { window?.deminiaturize(nil) }
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === window else { return }
+        // After the window has gone, so AppKit hands the focus to the app that was in front before.
+        DispatchQueue.main.async {
+            guard self.window?.isVisible != true else { return }
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 
     /// `frog://plugins/install?…` links from the plugin directory, and `frog://dictate` from apps that dictate through Frog.

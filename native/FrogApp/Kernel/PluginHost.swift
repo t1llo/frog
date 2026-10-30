@@ -45,6 +45,12 @@ import SwiftUI
         }
     }
 
+    /// Syncs and waits until every plugin that is on has started.
+    func syncAndWait() async {
+        sync()
+        await syncing?.value
+    }
+
     private func reconcile() async {
         for descriptor in descriptors {
             let on = isEnabled(descriptor.id)

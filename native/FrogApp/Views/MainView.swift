@@ -12,55 +12,35 @@ struct MainView: View {
         let id: ToolkitRoute
         let title: String
         let symbol: String
+        var tint: Color?
         var key: KeyEquivalent?
-        /// A small symbol at the row's end, such as the pin of a pinned feature.
-        var marker: String?
-    }
-    private func featureItem(_ feature: FeatureID, marker: String?) -> NavigationItem {
-        NavigationItem(id: .feature(feature), title: feature.title, symbol: feature.symbol,
-            key: feature == .writing ? "1" : feature == .applicationShortcuts ? "4" : nil, marker: marker)
     }
     private var workspaceNavigation: [NavigationItem] {
-        [NavigationItem(id: .history, title: "History", symbol: "clock.arrow.circlepath", key: "2"),
-            NavigationItem(id: .models, title: "Models", symbol: "cpu", key: "3"),
-            NavigationItem(id: .features, title: "Features", symbol: "square.grid.2x2"),
-            NavigationItem(id: .settings, title: "Settings", symbol: "slider.horizontal.3", key: "5")
-        ]
+        [NavigationItem(id: .models, title: "Models", symbol: "cpu"),
+         NavigationItem(id: .features, title: "Plugins", symbol: "puzzlepiece.extension"),
+         NavigationItem(id: .settings, title: "Settings", symbol: "gearshape", key: ",")]
+    }
+    /// The page of a built-in plugin; History keeps its own route until navigation moves to plugin IDs.
+    static func route(for plugin: String) -> ToolkitRoute {
+        if plugin == "history" { return .history }
+        return BuiltinPlugins.legacyFeatures[plugin].map { .feature($0) } ?? .features
+    }
+    @ViewBuilder private func pluginPage(_ id: String) -> some View {
+        if let page = model.pluginHost.page(for: id) { page }
+        else if let descriptor = model.pluginHost.descriptor(id) {
+            FrogEmptyState(symbol: descriptor.info.symbol, title: "\(descriptor.info.name) is off",
+                           message: "Turn it on in Plugins.")
+        }
     }
     @ViewBuilder private var selectedPage: some View {
         switch section {
-        case .history: HistoryView()
+        case .history: pluginPage("history")
         case .models: ProvidersView()
-        case .features: FeaturesView()
+        case .features: PluginsCatalogView()
         case .settings: PreferencesView(permissionsRequest: $permissionsRequest)
         case .statistics: StatisticsView(statistics: model.statistics, onBack: { model.toolkit.select(.settings) })
         case .plugin(let id): PluginPageView(id: id)
-        case .feature(let feature):
-            switch feature {
-            case .writing: RulesView(fixedCategory: .text)
-            case .dictation: RulesView(fixedCategory: .audio, output: .replace) { RecordingSettingsView() }
-            case .applicationShortcuts: RulesView(applications: true)
-            case .windowSwitcher: WindowSwitcherView()
-            case .clipboard: ClipboardView()
-            case .systemMonitor: SystemMonitorPage(monitor: model.systemMonitor)
-            case .commandBar: CommandBarSettingsView()
-            case .usage:
-                if let usage = model.toolkit.usage() { UsageDashboardView(usage: usage) }
-            case .stayAwake: StayAwakeView(power: model.power)
-            case .scratchpad: UtilityDocumentsView(documents: model.documents, kind: .note)
-            case .scripts: UtilityDocumentsView(documents: model.documents, kind: .script)
-            case .menuBar:
-                MenuBarSettingsView(organizer: model.toolkit.menuBarOrganizer, settings: Binding(
-                    get: { model.configuration.preferences.toolkitSettings.menuBar ?? MenuBarPreferences() },
-                    set: { value in
-                        do { try model.updateToolkit { $0.menuBar = value.normalized } } catch { model.report(error) }
-                    }))
-            case .explain: ExplainView()
-            case .windows: WindowsView()
-            case .cleaner: CleanerView(cleaner: model.cleaner)
-            case .phone: PhoneView()
-            case .plugins: PluginsView(plugins: model.plugins)
-            }
+        case .feature(let feature): pluginPage(BuiltinPlugins.pluginID(for: feature))
         }
     }
 
@@ -123,14 +103,23 @@ struct MainView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(alignment: .leading, spacing: 2) {
-                            SidebarFeatureList(features: model.toolkit.sidebar) { feature, marker in
-                                navigationButton(featureItem(feature, marker: marker)).id(ToolkitRoute.feature(feature))
+                            let groups = model.pluginHost.sidebar
+                            let numbered = groups.flatMap(\.plugins).prefix(9).map(\.id)
+                            ForEach(groups, id: \.category) { group in
+                                SectionCaption(text: group.category.title).padding(.horizontal, 9).padding(.top, 12).padding(.bottom, 4)
+                                ForEach(group.plugins) { plugin in
+                                    let route = Self.route(for: plugin.id)
+                                    let index = numbered.firstIndex(of: plugin.id)
+                                    navigationButton(NavigationItem(id: route, title: plugin.name, symbol: plugin.symbol, tint: plugin.tint.color,
+                                                                    key: index.map { KeyEquivalent(Character(String($0 + 1))) }))
+                                        .id(route)
+                                }
                             }
                             let pages = model.pluginPages
                             if !pages.isEmpty {
-                                SectionCaption(text: "Plugins").padding(.horizontal, 9).padding(.top, 14).padding(.bottom, 4)
+                                SectionCaption(text: "Community").padding(.horizontal, 9).padding(.top, 12).padding(.bottom, 4)
                                 ForEach(pages) { item in
-                                    navigationButton(NavigationItem(id: .plugin(item.id), title: item.name, symbol: PluginSymbol.name(item.symbol)))
+                                    navigationButton(NavigationItem(id: .plugin(item.id), title: item.name, symbol: PluginSymbol.name(item.symbol), tint: PluginTint.purple.color))
                                         .id(ToolkitRoute.plugin(item.id))
                                 }
                             }
@@ -177,12 +166,13 @@ private struct SidebarRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 9) {
-                Image(systemName: item.symbol).font(.system(size: 13)).frame(width: 18)
+                if let tint = item.tint {
+                    PluginTile(symbol: item.symbol, tint: tint, size: 20)
+                } else {
+                    Image(systemName: item.symbol).font(.system(size: 13)).frame(width: 20)
+                }
                 Text(L10n.text(item.title)).font(selected ? FrogType.bodyMedium : FrogType.body).lineLimit(1)
                 Spacer(minLength: 0)
-                if let marker = item.marker {
-                    Image(systemName: marker).font(.system(size: 9)).foregroundStyle(FrogStyle.muted).accessibilityHidden(true)
-                }
             }
             .foregroundStyle(selected || hovering ? FrogStyle.ink : FrogStyle.muted)
             .padding(.horizontal, 9).frame(height: FrogStyle.controlHeight)
