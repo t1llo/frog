@@ -79,7 +79,7 @@ struct MainView: View {
         .frame(minWidth: 740, minHeight: 520)
         .onAppear { model.refreshSystemStatus() }
         .sheet(isPresented: Binding(get: { model.setupPresented }, set: { if !$0 { model.finishSetup() } })) {
-            SetupView().environmentObject(model).interactiveDismissDisabled()
+            OnboardingView().environmentObject(model).interactiveDismissDisabled()
         }
     }
 

@@ -159,3 +159,7 @@ struct ModelDownloadSummary: View {
         }
     }
 }
+
+struct RecommendedModelBadge: View {
+    var body: some View { FrogBadge(text: "Recommended", active: true) }
+}
