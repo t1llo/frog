@@ -49,7 +49,8 @@ import XCTest
         model.applyPreferences(UsageDashboardPreferences(provider: "OpenAI", allDevices: false))
         model.setActive(true)
         defer { model.setActive(false) }
-        for _ in 0..<1000 where !model.loaded { try await Task.sleep(for: .milliseconds(5)) }
+        // Loaded shows Claude's first slice; Codex and OpenCode arrive after it.
+        try await waitUntil { model.chart(provider: "OpenAI", range: "7d", metric: "Input").totalTokens > 0 }
         let chart = model.chart(provider: "OpenAI", range: "7d", metric: "Input")
         XCTAssertEqual(chart.totalTokens, 220, "Combine Codex and both generations of OpenCode activity")
         XCTAssertEqual(chart.sources.first { $0.name == "OpenCode" }?.value, 110)
@@ -72,7 +73,7 @@ import XCTest
         let model = UsageDashboardModel(defaults: defaults, fixtureRoot: root)
         model.setActive(true)
         defer { model.setActive(false) }
-        for _ in 0..<1000 where !model.loaded { try await Task.sleep(for: .milliseconds(5)) }
+        try await waitUntil { model.loaded }
         XCTAssertTrue(model.loaded)
         let line = try JSONSerialization.data(withJSONObject: ["type": "assistant",
             "timestamp": ISO8601DateFormatter().string(from: Date()),
@@ -120,7 +121,7 @@ import XCTest
         let model = UsageDashboardModel(defaults: defaults, fixtureRoot: root)
         model.setActive(true)
         defer { model.setActive(false) }
-        for _ in 0..<1000 where !model.loaded { try await Task.sleep(for: .milliseconds(5)) }
+        try await waitUntil { model.chart(provider: "OpenAI", range: "7d", metric: "Input").totalTokens > 0 }
         XCTAssertFalse(model.hasAccountActivity)
         let chart = model.chart(provider: "OpenAI", range: "7d", metric: "Input")
         XCTAssertFalse(chart.account, "Only the account's own totals come in UTC days")
@@ -142,7 +143,7 @@ import XCTest
         let model = UsageDashboardModel(defaults: defaults, fixtureRoot: root)
         model.setActive(true)
         defer { model.setActive(false) }
-        for _ in 0..<1000 where !model.loaded { try await Task.sleep(for: .milliseconds(5)) }
+        try await waitUntil { model.lifetime(provider: "Claude") != nil }
         let lifetime = try XCTUnwrap(model.lifetime(provider: "Claude"))
         XCTAssertEqual(lifetime.statistics.first { $0.name == "Total tokens" }?.value, "100")
         XCTAssertEqual(lifetime.statistics.first { $0.name == "Sessions" }?.value, "7")
@@ -327,5 +328,10 @@ import XCTest
         for outcome in others {
             XCTAssertFalse(outcome.needsReadWrite, "\(outcome)")
         }
+    }
+
+    /// Waits up to five seconds: `loaded` follows Claude's first slice, and other tools' records come after it.
+    private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
+        for _ in 0..<1000 where !condition() { try await Task.sleep(for: .milliseconds(5)) }
     }
 }
