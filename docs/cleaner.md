@@ -4,7 +4,7 @@ The App cleaner uninstalls an app together with the files it leaves behind in yo
 
 ## Turn it on
 
-Open **Features** and switch on **App cleaner**. It is off by default. While it is off, Frog reads nothing for it and the page is not in the sidebar. Turning it off while a scan or the confirmation is open closes them without moving anything.
+Open **Plugins** and switch on **App cleaner**. It is off by default. While it is off, Frog reads nothing for it and the page is not in the sidebar; once on, it reads nothing until the page opens or an action runs. Turning it off while a scan or the confirmation is open closes them without moving anything.
 
 ## Uninstall an app
 
@@ -15,7 +15,7 @@ Frog then looks for the app's files and groups them by how sure it is that they 
 - **App:** the app itself.
 - **Sure matches:** named after the app's bundle ID, one of its parts or one of its app groups, or a background service that starts a program inside the app or names it as its own. The reason under each item says which, for example "Named after the bundle ID com.example.app." or "Its label is Example's bundle ID."
 - **Likely matches:** named exactly after the app, when that name is distinctive enough ("Folder named Example.", "Folder Example inside Vendor.", "Crash report of Example.").
-- **Possible matches:** only resemble the app ("Name contains example.", "Folder of the developer, Vendor.", "Starts with the developer's team ID.", "Label shares Example's developer prefix."). They appear only when **Show possible matches** is on in the page's settings.
+- **Possible matches:** only resemble the app ("Name contains example.", "Folder of the developer, Vendor.", "Starts with the developer's team ID.", "Label shares Example's developer prefix."). They stay hidden until you choose **Show possible matches** under the list; the choice is kept.
 - **Used by other apps:** another installed app claims the same name or ID.
 
 Only sure and likely matches start ticked. Possible matches, items used by other apps and group containers are never ticked by Frog; tick them yourself when you know they can go; a click anywhere on a row ticks or unticks it. Each row shows its size and a **Reveal in Finder** button. When Frog found nothing besides the app, the review says so. The bar at the bottom says how many items are ticked and how much they take; an item inside a ticked folder moves with it and counts once. "At least" means some sizes are not known yet or could not be read completely.
@@ -25,6 +25,13 @@ Notices above the list say when the app is running (Frog quits it first), when i
 ## From the command bar
 
 Type uninstall or remove and the app's name, for example `uninstall slack`. Frog opens the review; nothing moves until you confirm. The command bar offers up to three apps, the same ones the page lists: never Apple's apps, Finder or Frog itself. Typing the words starts no scan; the scan starts when you choose the row.
+
+## Actions
+
+For agents and scripts, through `frog run`:
+
+- `app-cleaner.scan --app <name, bundle ID or path>` lists what a review would show, as JSON with `--json`: each item's path, kind, how sure Frog is, why, its size and whether it would start ticked. It changes nothing.
+- `app-cleaner.uninstall --app <…> --confirm true` moves the app and the items that start ticked to the Trash, as **Move to Trash** would. Without `--confirm true` it moves nothing. It refuses while the app is running and never force quits it; items that need Finder are moved through Finder, with the same prompts.
 
 
 ## What Frog never touches
@@ -71,9 +78,8 @@ Frog can put items back only while they are in the Trash. After you empty it, th
 
 ## Settings
 
-The page's **Cleaner settings** button holds the cleaner's switches. In `~/.config/frog/config`:
+`[app-cleaner]` in `config.toml`:
 
-- `feature.cleaner`: turns the App cleaner on. Default `false`.
-- `cleaner.possible-matches`: also list possible matches. Default `false`.
+- `possible-matches`: also list possible matches. Default `false`. Written once from the previous `cleaner.possible-matches` the first time this version starts.
 
 Dismissed notices and the list of what was moved stay on each Mac in `~/Library/Application Support/Frog/Cleaner/` and are not exported. See [configuration](configuration.md#app-cleaner) and [privacy](privacy.md).

@@ -39,8 +39,9 @@ app/icon caches, recognizes Safari's linked bundle, and includes Settings, Model
 History and Features routes.
 
 Stay awake remains available in the feature hub and menu-bar popup. Its session
-is off by default, defaults to four hours, restores sleep on quit, and stops below
-20% battery while unplugged.
+is off by default, lasts until turned off unless a duration is chosen, and holds
+power assertions only; the separate lid-closed mode restores sleep on quit and
+stops below 20% battery while unplugged.
 
 ## Native walkthrough
 

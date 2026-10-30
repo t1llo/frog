@@ -21,11 +21,9 @@ struct CleanerAppsView: View {
                         Text("Finding apps…").font(FrogType.body).foregroundStyle(FrogStyle.muted)
                     }.padding(.vertical, 12)
                 } else if !cleaner.search.trimmingCharacters(in: .whitespaces).isEmpty {
-                    FrogEmptyState(symbol: "magnifyingglass", title: "No matching apps",
-                                   message: "Search by an app's name or its bundle ID.")
+                    FrogEmptyState(symbol: "magnifyingglass", title: "No matching apps", message: "Try its bundle ID.")
                 } else {
-                    FrogEmptyState(symbol: "app.dashed", title: "No apps found",
-                                   message: "Apps in your Applications folders appear here. Drop an app onto this page to review it.")
+                    FrogEmptyState(symbol: "app.dashed", title: "No apps found", message: "Drop an app here to review it.")
                 }
             } else {
                 LazyVStack(spacing: 2) {
@@ -41,7 +39,6 @@ struct CleanerAppsView: View {
                     return .handled
                 }
             }
-            Text("Drop an app here to review it.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
         }
     }
 

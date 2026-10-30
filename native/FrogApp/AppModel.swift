@@ -46,7 +46,8 @@ final class AppModel: ObservableObject {
     private let complete: (String, Rule, ProviderConfiguration, String?) async throws -> String
     private let readKey: (UUID) throws -> String?
     private let writeClipboard: (String) -> Void
-    private let registerShortcuts: Bool
+    /// False for test models: no global shortcuts, status items or panels.
+    let registerShortcuts: Bool
     private let readAccessibility: () -> Bool
     private let readLoginStatus: @Sendable () -> LoginService.Snapshot
     private let writeLoginItem: @Sendable (Bool) throws -> Void
@@ -79,8 +80,6 @@ final class AppModel: ObservableObject {
         guard let self else { return .failure("Frog is quitting.") }
         return await AgentCommands.run(request, model: self)
     }
-    /// The cup in the menu bar while Stay awake is on, when its icon is chosen.
-    private(set) var stayAwakeItem: StayAwakeStatusItemController?
     let statistics: ActivityStatisticsStore
     let commandChoices: CommandChoiceStore
     let localTools: LocalToolClient
@@ -90,16 +89,12 @@ final class AppModel: ObservableObject {
         if documentsModel == nil { documentsModel = LocalDocuments(directory: configurationStore.directory.appendingPathComponent("Toolkit")) }
         return documentsModel!
     }
-    /// Tests set this before anything touches `cleaner`, so no test reads the real Applications folders.
+    /// Tests set this before the App cleaner plugin first uses its model, so no test reads the real Applications folders.
     var cleanerDependencies: (@MainActor () -> CleanerDependencies)?
-    private var cleanerModel: CleanerModel?
-    var cleaner: CleanerModel {
-        if cleanerModel == nil {
-            cleanerModel = CleanerModel(dependencies: cleanerDependencies?() ?? .live(dataDirectory: historyStore.directory,
-                protectedPaths: [Bundle.main.bundleURL, historyStore.directory, configurationStore.directory]))
-            cleanerModel?.apply(configuration.preferences)
-        }
-        return cleanerModel!
+    /// What the App cleaner reads and changes: the test hook's fakes, or the real folders with Frog's own protected.
+    func makeCleanerDependencies() -> CleanerDependencies {
+        cleanerDependencies?() ?? .live(dataDirectory: historyStore.directory,
+                                        protectedPaths: [Bundle.main.bundleURL, historyStore.directory, configurationStore.directory])
     }
     /// Phone runs only while its feature is on, in the running app; tests may make one with `phoneFactory`.
     private(set) var phone: PhoneController?
@@ -314,7 +309,7 @@ final class AppModel: ObservableObject {
          systemStatusTick: (() async throws -> Void)? = nil) {
         let dataDirectory = dataDirectory ?? ProcessInfo.processInfo.environment["FROG_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0, isDirectory: true) }
         self.registerShortcuts = registerShortcuts
-        self.toolkit = injectedToolkit ?? Toolkit(showsUsageStatusItem: registerShortcuts, showsMenuBarOrganizer: registerShortcuts)
+        self.toolkit = injectedToolkit ?? Toolkit(showsUsageStatusItem: registerShortcuts)
         self.statistics = ActivityStatisticsStore(directory: dataDirectory)
         self.commandChoices = CommandChoiceStore(directory: dataDirectory)
         let localTools = localToolClient ?? LocalToolClient()
@@ -397,19 +392,9 @@ final class AppModel: ObservableObject {
         localModels.idleSeconds = configuration.preferences.workflowSettings.idleUnloadSeconds
         if registerShortcuts { localModels.unloadUnderMemoryPressure() }
         localModels.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
-        toolkit.onOpenMenuBar = { [weak self] in self?.showSettings() }
-        toolkit.menuBarOrganizer.onSettingsChange = { [weak self] value in
-            guard let self else { return }
-            var preferences = self.configuration.preferences
-            var toolkit = preferences.toolkitSettings
-            toolkit.menuBar = value; preferences.toolkit = toolkit
-            do { try self.savePreferences(preferences) }
-            catch { self.report(error) }
-        }
         scripts.onSuccessfulRun = { [weak self] in self?.statistics.recordToolUse(.scriptRun) }
         toolkit.apply(configuration.preferences)
         commandChoices.configure(enabled: Self.learnsCommandChoices(configuration.preferences))
-        power.configureFeature(enabled: configuration.preferences.featureEnabled(.stayAwake))
         toolkit.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         toolkit.onDisable = { [weak self] feature in
             guard let self else { return }
@@ -421,7 +406,6 @@ final class AppModel: ObservableObject {
             case .commandBar: self.commandBar.stop()
             case .explain: self.answerCapture?.cancel(); self.answers.close(); self.selectionWatcher.stop()
             case .windows: if !self.configuration.preferences.windowActionsEnabled { self.windowActionTask?.cancel() }; self.windowLayout?.stop()
-            case .cleaner: self.cleanerModel?.stop()
             case .plugins: self.pluginRuntime?.configure(enabled: false)
             default: break
             }
@@ -486,10 +470,8 @@ final class AppModel: ObservableObject {
         statistics.waitForWrites()
         commandChoices.waitForWrites()
         if agentServerCreated { agentServer.configure(enabled: false) }
-        stayAwakeItem?.stop(); stayAwakeItem = nil
         commandBar.stop()
         toolkit.stop()
-        cleanerModel?.stop()
         phone?.stop(); phone = nil
         clipboardHistoryStore.configure(forwardingCopies: false)
         pluginRuntime?.stop()
@@ -582,11 +564,8 @@ final class AppModel: ObservableObject {
     }
     func setFeature(_ feature: FeatureID, enabled: Bool) async throws {
         if feature == .stayAwake, !enabled {
-            await power.waitForOperation()
-            if power.ownsSession {
-                power.setEnabled(false); await power.waitForOperation()
-                guard !power.ownsSession else { throw FrogError.message(power.error ?? "Restore sleep before disabling Stay awake.") }
-            }
+            power.turnOff(); await power.waitForLid()
+            guard !power.lid.ownsSession else { throw FrogError.message(power.error ?? "Restore sleep before disabling Stay awake.") }
         }
         var preferences = configuration.preferences
         preferences.setFeature(feature, enabled: enabled)
@@ -725,11 +704,9 @@ final class AppModel: ObservableObject {
     private func applyConfiguration(_ candidate: Configuration) {
         configuration = candidate
         toolkit.apply(candidate.preferences)
-        cleanerModel?.apply(candidate.preferences)
         if candidate.preferences.featureEnabled(.commandBar) { commandBar.warm() }
         // Turning the switch or the Command bar off, here or in the configuration file, forgets what was learned.
         commandChoices.configure(enabled: Self.learnsCommandChoices(candidate.preferences))
-        power.configureFeature(enabled: candidate.preferences.featureEnabled(.stayAwake))
         configureStatusItems()
         localModels.updateCatalog(candidate.modelCatalog)
         if registerShortcuts { FrogAppearance.shared.apply(candidate.preferences.appearance ?? AppearancePreferences()) }
@@ -778,18 +755,6 @@ final class AppModel: ObservableObject {
     private func configureStatusItems() {
         let preferences = configuration.preferences
         let active = started && registerShortcuts
-        let awake = preferences.toolkitSettings.stayAwake ?? StayAwakePreferences()
-        let showsAwake = preferences.featureEnabled(.stayAwake) && awake.menuBarItem
-        if active, showsAwake {
-            if let item = stayAwakeItem { item.apply(style: awake.menuBarStyle) }
-            else {
-                stayAwakeItem = StayAwakeStatusItemController(power: power, style: awake.menuBarStyle) { [weak self] in
-                    self?.openFeature(.stayAwake)
-                }
-            }
-        } else { stayAwakeItem?.stop(); stayAwakeItem = nil }
-        // Frog's own icon leaves out its small cup while the cup has an item of its own.
-        if power.hasOwnMenuBarIcon != (active && showsAwake) { power.hasOwnMenuBarIcon = active && showsAwake }
     }
 
     /// `inBubble` leaves the rule out of the selection bubble or offers it again, saved with the rule; nil keeps it as it is.
@@ -978,7 +943,7 @@ final class AppModel: ObservableObject {
     /// What FrogCore cannot judge: a global shortcut that macOS or the focused app keeps for itself,
     /// and a configuration that turns Stay awake off while it keeps this Mac awake.
     private func validateForThisMac(_ candidate: Configuration, change: ConfigurationChange) throws {
-        guard candidate.preferences.featureEnabled(.stayAwake) || (!power.ownsSession && !power.isBusy) else {
+        guard candidate.preferences.featureEnabled(.stayAwake) || (!power.lid.ownsSession && !power.isBusy) else {
             switch change {
             case .reload: throw FrogError.message("Restore sleep before reloading a configuration that disables Stay awake.")
             case .preferences: throw FrogError.message("Restore sleep before disabling Stay awake.")
@@ -1192,7 +1157,6 @@ final class AppModel: ObservableObject {
     }
 
     private func setShortcutRecording(_ recording: Bool) {
-        toolkit.menuBarOrganizer.setShortcutRecording(recording)
         if recording { commandBar.hide() }
         if recording { dictation?.cancel() }
         if recording, registerShortcuts { clipboardHistory.cancel() }
@@ -1234,9 +1198,22 @@ final class AppModel: ObservableObject {
         hotkeyRules(for: current) != hotkeyRules(for: previous) || (failed && !holding)
     }
 
+    /// Global shortcuts that plugins register through Frog's own, so recording a shortcut pauses them too.
+    private(set) var pluginShortcuts: [UUID: (name: String, hotkey: Hotkey, action: () -> Void)] = [:]
+
+    /// Registers a plugin's global shortcut, or removes it when `hotkey` is nil. Returns why it could not be registered.
+    @discardableResult
+    func setPluginShortcut(_ id: UUID, name: String, hotkey: Hotkey?, action: @escaping () -> Void = {}) -> String? {
+        let previous = pluginShortcuts[id]?.hotkey
+        if let hotkey { pluginShortcuts[id] = (name, hotkey, action) } else { pluginShortcuts[id] = nil }
+        if previous != hotkey || hotkeyErrors[id] != nil { registerHotkeys() }
+        return hotkeyErrors[id]
+    }
+
     private func registerHotkeys() {
         guard registerShortcuts, !isRecordingShortcut else { return }
-        hotkeyErrors = hotkeys.register(rules: Self.hotkeyRules(for: configuration), purposes: [Self.clipboardHistoryID: .clipboardHistory], onPress: { [weak self] id in self?.handleShortcut(id, pressed: true) }) { [weak self] id in self?.handleShortcut(id, pressed: false) }
+        let plugins = pluginShortcuts.map { Rule(id: $0.key, name: $0.value.name, hotkey: $0.value.hotkey) }
+        hotkeyErrors = hotkeys.register(rules: Self.hotkeyRules(for: configuration) + plugins, purposes: [Self.clipboardHistoryID: .clipboardHistory], onPress: { [weak self] id in self?.handleShortcut(id, pressed: true) }) { [weak self] id in self?.handleShortcut(id, pressed: false) }
     }
 
     func resolved(_ rule: Rule) throws -> ProviderConfiguration {
@@ -1529,6 +1506,7 @@ final class AppModel: ObservableObject {
     }
 
     private func handleShortcut(_ id: UUID, pressed: Bool) {
+        if let shortcut = pluginShortcuts[id] { if pressed { shortcut.action() }; return }
         if let command = WindowCommand.command(for: id) { windowLayout?.handle(command, pressed: pressed); return }
         if id == Self.commandBarID { if pressed { showCommandBar() }; return }
         if id == Self.clipboardHistoryID { if !pressed { showClipboardHistory() }; return }

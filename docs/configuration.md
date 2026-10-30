@@ -150,18 +150,18 @@ Colors are six RGB hex digits, optionally prefixed with `#`. Overrides inherit a
 
 **Reduce Transparency** or **Increase Contrast** in macOS accessibility settings makes Frog surfaces opaque without changing your saved values. Increased Contrast also strengthens panel outlines. The `frog` theme keeps its black surfaces and green accent in dark mode.
 
-### Menu-bar organization
+### Hidden bar
 
-Enable with `feature.menu-bar = true`. Portable settings:
+The Hidden bar plugin (formerly Menu-bar organization) keeps its settings in `[hidden-bar]` in `config.toml`, written once from the `menubar.*` keys below:
 
-- `menubar.auto-hide`: boolean, default `true`.
-- `menubar.auto-hide-seconds`: 1–3600 seconds, default 10; fractions are supported.
-- `menubar.start-collapsed`: boolean, default `false`.
-- `menubar.permanently-hidden-section`: boolean, default `false`.
-- `menubar.hover-to-reveal`: boolean, default `false`.
-- `menubar.hotkey`: optional readable shortcut, such as `ctrl+alt+m`; unassigned by default.
+- `auto-hide`: boolean, default `true` (was `menubar.auto-hide`).
+- `auto-hide-seconds`: 1–3600 seconds, default 10; fractions are supported (was `menubar.auto-hide-seconds`).
+- `start-hidden`: boolean, default `false` (was `menubar.start-collapsed`).
+- `always-hidden-section`: boolean, default `false` (was `menubar.permanently-hidden-section`).
+- `show-on-hover`: boolean, default `false` (was `menubar.hover-to-reveal`).
+- `shortcut`: optional readable shortcut, such as `ctrl+alt+b`; unassigned by default (was `menubar.hotkey`). It is registered with Frog's other global shortcuts.
 
-macOS status-item positions stay on each Mac.
+Actions: `hidden-bar.toggle`, `hidden-bar.show`, `hidden-bar.hide` and `hidden-bar.arrange`. macOS status-item positions stay on each Mac.
 
 ### Portable usage display
 
@@ -204,10 +204,9 @@ The look of the Mr. Usage menu bar item:
   menu bar item while System monitor is on; clicking it opens the system overview.
 - `system-monitor.menu-bar-style`: a `usage.menu-bar-style` value, default `segments`.
 - `system-monitor.menu-bar-palette`: a `usage.menu-bar-palette` value, default `spectrum`.
-- `stay-awake.menu-bar`: boolean, default `false`. Shows a cup in the menu bar while Stay
-  awake is on, instead of the small cup next to Frog's icon.
-- `stay-awake.menu-bar-style`: `icon` shows the cup alone; `ring` (default) drains a ring
-  around it as a timed session runs out; `time` adds the time that is left.
+- `stay-awake.menu-bar` and `stay-awake.menu-bar-style` are now `menu-bar-item` and
+  `menu-bar-style` in `[stay-awake]` in `config.toml`, with the session's duration, the screen
+  and the lid-closed mode. See [Stay awake](stay-awake.md#settings).
 
 ### Explain
 
@@ -262,9 +261,9 @@ A command shortcut runs only while Windows is on, and must not repeat another gl
 
 ### App cleaner
 
-Enable with `feature.cleaner = true`. Portable settings, read only while the cleaner is on:
+Enable with `feature.cleaner = true`. Its setting is `possible-matches` in `[app-cleaner]` in `config.toml`, written once from `cleaner.possible-matches`:
 
-- `cleaner.possible-matches`: boolean, default `false`. Also lists files whose names only resemble the app; Frog never ticks them.
+- `possible-matches`: boolean, default `false`. Also lists files whose names only resemble the app; Frog never ticks them.
 
 Removal history, ignored items and dismissed notices stay on each Mac in `~/Library/Application Support/Frog/Cleaner/`. See the [App cleaner guide](cleaner.md).
 

@@ -172,12 +172,12 @@ import FrogCore
         adapter.updateMenu(OrganizerMenuState(expanded: false, arranging: false, autoHide: true))
         XCTAssertFalse(adapter.contextMenu.items.contains(where: \.isSeparatorItem), "Frog's menus have no lines")
         XCTAssertEqual(adapter.contextMenu.items.map(\.title),
-                       ["Show hidden icons", "Show all & arrange…", "Automatically hide icons", "Menu bar settings…"])
+                       ["Show hidden icons", "Show all & arrange…", "Automatically hide icons", "Hidden bar settings…"])
         let autoHide = try XCTUnwrap(adapter.contextMenu.items.first { $0.title == "Automatically hide icons" })
         XCTAssertEqual(autoHide.state, .on)
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(autoHide.action), to: autoHide.target, from: autoHide))
         XCTAssertTrue(changedAutoHide)
-        let settings = try XCTUnwrap(adapter.contextMenu.items.first { $0.title == "Menu bar settings…" })
+        let settings = try XCTUnwrap(adapter.contextMenu.items.first { $0.title == "Hidden bar settings…" })
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(settings.action), to: settings.target, from: settings))
         XCTAssertTrue(openedSettings, "The settings item reports through the same action as the others")
         adapter.updateMenu(OrganizerMenuState(expanded: true, arranging: true, autoHide: false))
@@ -204,7 +204,7 @@ import FrogCore
         XCTAssertEqual(reason.map(\.title).joined(separator: " "), issue)
         XCTAssertTrue(reason.allSatisfy { $0.action == nil && !$0.isEnabled }, "The reason is read, not chosen")
         XCTAssertEqual(adapter.contextMenu.items.dropFirst(reason.count).map(\.title),
-                       ["Hide menu bar icons", "Show all & arrange…", "Automatically hide icons", "Menu bar settings…"])
+                       ["Hide menu bar icons", "Show all & arrange…", "Automatically hide icons", "Hidden bar settings…"])
         XCTAssertEqual(NativeOrganizerStatusItems.arrowToolTip(expanded: true, issue: issue), issue, "Resting on the arrow says it too")
         XCTAssertEqual(NativeOrganizerStatusItems.arrowToolTip(expanded: true, issue: nil),
                        "Hide menu bar icons. Right-click for options; Option-click to arrange all icons.")
@@ -229,7 +229,7 @@ import FrogCore
         XCTAssertNotNil(fixture.organizer.issue)
         XCTAssertEqual(opened, 1, "A click that cannot hide the icons opens the page that says why")
         XCTAssertEqual(fixture.items.menuState?.issue, fixture.organizer.issue, "The arrow's menu has the reason before the timer comes round")
-        fixture.keys.action?()
+        fixture.organizer.toggle()
         XCTAssertEqual(opened, 2, "The shortcut ends in the same place")
         fixture.time = 60; fixture.organizer.tick()
         XCTAssertEqual(opened, 2, "Auto-hide that cannot hide opens nothing")
@@ -262,7 +262,7 @@ import FrogCore
         fixture.organizer.configure(enabled: true, settings: settings)
         fixture.organizer.tick()
         fixture.items.framesAvailable = false
-        fixture.keys.action?()
+        fixture.organizer.toggle()
         XCTAssertTrue(fixture.organizer.isExpanded)
         XCTAssertNil(fixture.organizer.issue)
         XCTAssertEqual(opened, 0, "A bar that is only out of sight is nothing to explain")
@@ -286,7 +286,7 @@ import FrogCore
         fixture.organizer.setEditingArrangement(false)
         fixture.organizer.setSettingsVisible(true)
         fixture.items.framesAvailable = false
-        fixture.keys.action?()
+        fixture.organizer.toggle()
         fixture.items.framesAvailable = true
         fixture.organizer.tick()
         XCTAssertFalse(fixture.organizer.isExpanded, "The shortcut hides while the settings page is open")
@@ -385,26 +385,98 @@ import FrogCore
         XCTAssertTrue(fixture.organizer.isExpanded)
     }
 
-    func testToolkitOwnsOrganizerAcrossNavigationDisableAndReenable() {
+    func testThePluginOwnsTheOrganizerFromStartToStop() async throws {
         let fixture = OrganizerFixture()
-        let toolkit = Toolkit(showsUsageStatusItem: false, showsMenuBarOrganizer: true, menuBarOrganizer: fixture.organizer)
-        var preferences = Preferences()
-        XCTAssertFalse(preferences.featureEnabled(.menuBar))
-        toolkit.apply(preferences)
+        HiddenBarPlugin.makeOrganizer = { fixture.organizer }
+        defer { HiddenBarPlugin.makeOrganizer = nil }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var configuration = Configuration()
+        var legacy = MenuBarPreferences(); legacy.permanentlyHiddenSection = true; legacy.autoHideSeconds = 30
+        configuration.preferences.ensureToolkit()
+        configuration.preferences.toolkit?.menuBar = legacy
+        try ConfigurationStore(directory: directory).save(configuration)
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil })
+        defer { model.shutdown() }
+        await model.pluginHost.syncAndWait()
+        XCTAssertTrue(fixture.items.active.isEmpty, "Off by default")
+
+        try await model.setFeature(.menuBar, enabled: true)
+        await model.pluginHost.syncAndWait()
+        let plugin = try XCTUnwrap(model.pluginHost.running["hidden-bar"] as? HiddenBarPlugin)
+        XCTAssertEqual(fixture.items.active.count, 3, "Seeded from the old preferences: the always-hidden section is on")
+        XCTAssertEqual(plugin.settings.autoHideSeconds, 30)
+        let text = try String(contentsOf: model.settingsFile.fileURL, encoding: .utf8)
+        XCTAssertTrue(text.contains("[hidden-bar]") && text.contains("always-hidden-section = true"), text)
+
+        let hide = try await model.pluginHost.run("hidden-bar.hide", ActionInput(source: .agent))
+        XCTAssertFalse(fixture.organizer.isExpanded)
+        XCTAssertTrue(hide.json.contains("\"hidden\" : true"), hide.json)
+        _ = try await model.pluginHost.run("hidden-bar.show", ActionInput(source: .agent))
+        XCTAssertTrue(fixture.organizer.isExpanded)
+        fixture.time = 5
+        _ = try await model.pluginHost.run("hidden-bar.toggle", ActionInput(source: .agent))
+        XCTAssertFalse(fixture.organizer.isExpanded)
+
+        plugin.update { $0.alwaysHiddenSection = false }
+        XCTAssertEqual(fixture.items.active.count, 2)
+        XCTAssertFalse(try model.settingsFile.section("hidden-bar", as: HiddenBarSettings.self).value.alwaysHiddenSection)
+
+        try await model.setFeature(.menuBar, enabled: false)
+        await model.pluginHost.syncAndWait()
         XCTAssertTrue(fixture.items.active.isEmpty)
-        preferences.setFeature(.menuBar, enabled: true)
-        var settings = MenuBarPreferences(); settings.permanentlyHiddenSection = true
-        preferences.toolkit?.menuBar = settings
-        toolkit.apply(preferences)
-        XCTAssertEqual(fixture.items.active.count, 3)
-        toolkit.select(.feature(.menuBar)); toolkit.select(.settings)
-        XCTAssertEqual(fixture.items.active.count, 3, "Collection and menu items must not depend on the settings page being open")
-        preferences.setFeature(.menuBar, enabled: false); toolkit.apply(preferences)
-        XCTAssertTrue(fixture.items.active.isEmpty)
-        preferences.setFeature(.menuBar, enabled: true); toolkit.apply(preferences)
-        XCTAssertEqual(fixture.items.active.count, 3)
-        toolkit.stop()
-        XCTAssertTrue(fixture.items.active.isEmpty)
+        XCTAssertNil(model.pluginHost.running["hidden-bar"])
+        do {
+            _ = try await model.pluginHost.run("hidden-bar.toggle", ActionInput(source: .agent))
+            XCTFail("The plugin is off")
+        } catch ActionError.pluginOff {}
+    }
+
+    func testTheShortcutGoesThroughTheSharedHotkeys() async throws {
+        let fixture = OrganizerFixture()
+        HiddenBarPlugin.makeOrganizer = { fixture.organizer }
+        defer { HiddenBarPlugin.makeOrganizer = nil }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var configuration = Configuration()
+        configuration.preferences.setFeature(.menuBar, enabled: true)
+        try ConfigurationStore(directory: directory).save(configuration)
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil })
+        defer { model.shutdown() }
+        await model.pluginHost.syncAndWait()
+        let plugin = try XCTUnwrap(model.pluginHost.running["hidden-bar"] as? HiddenBarPlugin)
+        let hotkey = Hotkey(keyCode: 11, modifiers: 6144)
+        plugin.update { $0.shortcut = try? Shortcut(hotkey) }
+        XCTAssertNil(plugin.shortcutError)
+        XCTAssertEqual(model.pluginShortcuts[AppModel.menuBarID]?.hotkey, hotkey)
+        fixture.organizer.tick()
+        XCTAssertTrue(fixture.organizer.isExpanded)
+        model.pluginShortcuts[AppModel.menuBarID]?.action()
+        XCTAssertFalse(fixture.organizer.isExpanded)
+        try await model.setFeature(.menuBar, enabled: false)
+        await model.pluginHost.syncAndWait()
+        XCTAssertNil(model.pluginShortcuts[AppModel.menuBarID], "Stopping gives the shortcut back")
+    }
+
+    /// `menuBar-arrow-*.png`: the page with its arrow in the bar, the icons hidden and a shortcut.
+    func testPageShotWithTheArrowInstalled() async throws {
+        guard ProcessInfo.processInfo.environment["FROG_PAGE_SHOTS"] != nil else { throw XCTSkip("Set FROG_PAGE_SHOTS") }
+        let fixture = OrganizerFixture()
+        HiddenBarPlugin.makeOrganizer = { fixture.organizer }
+        defer { HiddenBarPlugin.makeOrganizer = nil }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var configuration = Configuration()
+        configuration.preferences.setFeature(.menuBar, enabled: true)
+        try ConfigurationStore(directory: directory).save(configuration)
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil })
+        defer { model.shutdown() }
+        await model.pluginHost.syncAndWait()
+        let plugin = try XCTUnwrap(model.pluginHost.running["hidden-bar"] as? HiddenBarPlugin)
+        plugin.update { $0.shortcut = try? Shortcut(Hotkey(keyCode: 11, modifiers: 6144)); $0.alwaysHiddenSection = true }
+        fixture.organizer.tick()
+        fixture.organizer.hide()
+        try await savePluginPageShot("menuBar-arrow", model: model) { plugin.page()! }
     }
 
     func testNativeDividerMarkerStaysAtVisibleTrailingEdgeOfInflatedButton() {
@@ -427,11 +499,9 @@ import FrogCore
         fixture.organizer.configure(enabled: true, settings: settings)
         fixture.organizer.configure(enabled: true, settings: settings)
         XCTAssertEqual(fixture.items.created, [.toggle, .divider, .permanentDivider])
-        XCTAssertEqual(fixture.keys.registrations, 1)
         fixture.organizer.tick()
         fixture.organizer.stop()
         XCTAssertTrue(fixture.items.active.isEmpty)
-        XCTAssertNil(fixture.keys.action)
         XCTAssertFalse(fixture.organizer.isEnabled)
         fixture.time = 1000; fixture.organizer.tick()
         XCTAssertTrue(fixture.items.active.isEmpty, "A late tick must not recreate disabled items")
@@ -550,19 +620,28 @@ import FrogCore
     }
 
     /// A closed settings window keeps its page. Only a page that can be seen may hold the hidden icons open.
-    func testSettingsPageInAWindowThatIsNotOnScreenLeavesAutoHideAlone() {
+    func testSettingsPageInAWindowThatIsNotOnScreenLeavesAutoHideAlone() async throws {
         // The page keeps its organizer for as long as SwiftUI keeps the page, so this one owns what it reads.
         final class Clock { var time: TimeInterval = 0 }
         let clock = Clock()
         let env = OrganizerFixture().env
-        let organizer = MenuBarOrganizer(statusItems: FixtureOrganizerItems(), hotkeys: FixtureOrganizerHotkey(), automaticTicks: false,
+        let organizer = MenuBarOrganizer(statusItems: FixtureOrganizerItems(), automaticTicks: false,
                                          environment: { env }, now: { clock.time })
         var settings = MenuBarPreferences(); settings.autoHideSeconds = 5
         organizer.configure(enabled: true, settings: settings)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let model = AppModel(dataDirectory: directory, registerShortcuts: false)
-        let host = NSHostingView(rootView: MenuBarSettingsView(organizer: organizer, settings: .constant(settings)).environmentObject(model))
+        HiddenBarPlugin.makeOrganizer = { organizer }
+        defer { HiddenBarPlugin.makeOrganizer = nil }
+        var configuration = Configuration()
+        configuration.preferences.setFeature(.menuBar, enabled: true)
+        try ConfigurationStore(directory: directory).save(configuration)
+        let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil })
+        defer { model.shutdown() }
+        await model.pluginHost.syncAndWait()
+        let plugin = try XCTUnwrap(model.pluginHost.running["hidden-bar"] as? HiddenBarPlugin)
+        plugin.update { $0.autoHideSeconds = 5 }
+        let host = NSHostingView(rootView: HiddenBarPage(plugin: plugin).environmentObject(model))
         // The window is never shown: it holds the page the way a closed settings window does.
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -570,7 +649,7 @@ import FrogCore
         defer { window.close() }
         host.layoutSubtreeIfNeeded()
         // What the page reports arrives on the main queue.
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        try await Task.sleep(for: .milliseconds(50))
         XCTAssertTrue(organizer.isExpanded)
         clock.time = 6; organizer.tick()
         XCTAssertFalse(organizer.isExpanded, "A page nobody can see must not keep the icons from hiding")
@@ -601,14 +680,12 @@ import FrogCore
         var settings = MenuBarPreferences(); settings.hotkey = Hotkey(keyCode: 46, modifiers: 6144)
         fixture.organizer.configure(enabled: true, settings: settings)
         XCTAssertTrue(fixture.items.created.isEmpty)
-        XCTAssertEqual(fixture.keys.registrations, 0)
         XCTAssertTrue(fixture.organizer.isEnabled, "Keep the requested state so Retry works")
         fixture.env.competingOrganizer = false
         fixture.organizer.configure(enabled: true, settings: settings)
         XCTAssertTrue(fixture.organizer.isInstalled)
         fixture.env.supportsLengthTechnique = false; fixture.organizer.tick()
         XCTAssertTrue(fixture.items.active.isEmpty)
-        XCTAssertNil(fixture.keys.action)
         XCTAssertNotNil(fixture.organizer.issue)
         fixture.organizer.stop()
     }
@@ -628,7 +705,6 @@ import FrogCore
         XCTAssertTrue(fixture.organizer.isInstalled, "No timer runs while the helpers are removed, so the quit itself has to restart the organizer")
         XCTAssertNil(fixture.organizer.issue)
         XCTAssertEqual(fixture.items.created, [.toggle, .divider])
-        XCTAssertEqual(fixture.keys.registrations, 1)
         XCTAssertNil(fixture.applications.changed, "Nothing is left to wait for")
         // Hidden Bar starts while Frog's helpers are installed, and quits again.
         fixture.env.competingOrganizer = true; fixture.organizer.tick()
@@ -781,33 +857,12 @@ import FrogCore
         XCTAssertNil(fixture.organizer.scheduledTickInterval, "A late notification starts nothing")
     }
 
-    func testHotkeySuspendConflictAndDefaultOptIn() {
-        let fixture = OrganizerFixture()
-        var settings = MenuBarPreferences()
-        fixture.organizer.configure(enabled: true, settings: settings)
-        XCTAssertEqual(fixture.keys.registrations, 0)
-        settings.hotkey = Hotkey(keyCode: 46, modifiers: 6144)
-        fixture.keys.error = "Already registered"
-        fixture.organizer.configure(enabled: true, settings: settings)
-        XCTAssertEqual(fixture.organizer.hotkeyError, "Already registered")
-        fixture.keys.error = nil
-        fixture.organizer.configure(enabled: true, settings: settings)
-        XCTAssertNil(fixture.organizer.hotkeyError)
-        fixture.keys.action?()
-        XCTAssertFalse(fixture.organizer.isExpanded)
-        fixture.organizer.setShortcutRecording(true)
-        XCTAssertNil(fixture.keys.action)
-        fixture.organizer.setShortcutRecording(false)
-        XCTAssertNotNil(fixture.keys.action)
-        fixture.organizer.stop()
-    }
-
     func testHelpersLeaveAtTheirCompactWidthAlsoWhenTheOrganizerIsReleased() {
         let fixture = OrganizerFixture()
         var settings = MenuBarPreferences(); settings.startCollapsed = true
         for released in [false, true] {
             fixture.items.removedLengths = [:]
-            var organizer: MenuBarOrganizer? = MenuBarOrganizer(statusItems: fixture.items, hotkeys: fixture.keys,
+            var organizer: MenuBarOrganizer? = MenuBarOrganizer(statusItems: fixture.items, 
                 applications: fixture.applications, automaticTicks: false, environment: { fixture.env }, now: { fixture.time })
             organizer?.configure(enabled: true, settings: settings)
             organizer?.tick()
@@ -840,14 +895,13 @@ import FrogCore
 
 @MainActor private final class OrganizerFixture {
     let items = FixtureOrganizerItems()
-    let keys = FixtureOrganizerHotkey()
     let applications = FixtureOrganizerApplications()
     /// Set before the organizer is first used. The timer is only scheduled, a test never waits for it.
     var automaticTicks = false
     var time: TimeInterval = 0
     var env = OrganizerEnvironment(screens: [OrganizerScreen(frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
         menuRegions: [CGRect(x: 0, y: 876, width: 1440, height: 24)])])
-    lazy var organizer = MenuBarOrganizer(statusItems: items, hotkeys: keys, applications: applications, automaticTicks: automaticTicks,
+    lazy var organizer = MenuBarOrganizer(statusItems: items, applications: applications, automaticTicks: automaticTicks,
         environment: { [unowned self] in self.env }, now: { [unowned self] in self.time })
 }
 
@@ -892,18 +946,6 @@ import FrogCore
         }
         return CGRect(x: pendingOrigins[item] ?? right - width - padding, y: bar.y, width: width + padding, height: bar.height)
     }
-}
-
-@MainActor private final class FixtureOrganizerHotkey: OrganizerHotkey {
-    var registrations = 0
-    var action: (() -> Void)?
-    var error: String?
-    func register(_ hotkey: Hotkey, action: @escaping () -> Void) -> String? {
-        registrations += 1
-        if error == nil { self.action = action }
-        return error
-    }
-    func unregister() { action = nil }
 }
 
 @MainActor private final class FixtureOrganizerApplications: OrganizerApplications {

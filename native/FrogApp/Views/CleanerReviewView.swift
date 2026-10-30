@@ -6,8 +6,9 @@ import FrogCore
 struct CleanerReviewView: View {
     @ObservedObject var cleaner: CleanerModel
     let review: CleanerReview
-    let showPossible: Bool
+    let setPossibleMatches: (Bool) -> Void
     @State private var running = false
+    private var showPossible: Bool { cleaner.showPossibleMatches }
 
     private var roots: CleanerRoots { cleaner.dependencies.roots }
 
@@ -34,10 +35,11 @@ struct CleanerReviewView: View {
             }
             notices
             ForEach(review.groups(showPossible: showPossible)) { group in groupView(group) }
-            if let nothing = review.nothingElseFound(showPossible: showPossible) {
-                Text(nothing).font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+            if review.nothingElseFound(showPossible: showPossible) != nil {
+                Text(review.removedApp ? "No files found." : "No other files found.").font(FrogType.body).foregroundStyle(FrogStyle.muted)
                     .padding(.horizontal, 4)
             }
+            possibleMatchesButton
         }
         .task(id: app.path) { await checkRunning() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -45,18 +47,28 @@ struct CleanerReviewView: View {
         }
     }
 
+    /// Possible matches are hidden unless asked for, and never ticked.
+    @ViewBuilder private var possibleMatchesButton: some View {
+        let possible = review.items.filter { $0.kind != .application && !$0.suggested && $0.confidence == .possible }.count
+        if possible > 0 {
+            Button(showPossible ? "Hide possible matches" : "Show \(possible) possible \(possible == 1 ? "match" : "matches")") {
+                setPossibleMatches(!showPossible)
+            }.buttonStyle(.frog(.ghost))
+        }
+    }
+
     @ViewBuilder private var notices: some View {
         let app = review.app
         if running && !review.removedApp {
-            notice("\(app.name) is running. Frog quits it before moving anything.", symbol: "play.circle")
+            notice("\(app.name) is running. Frog quits it first.", symbol: "play.circle")
         }
         if let uninstaller = app.vendorUninstaller, !review.removedApp {
-            notice("\(app.name) comes with its own uninstaller, which can remove parts Frog cannot see.", symbol: "shippingbox") {
+            notice("\(app.name) has its own uninstaller.", symbol: "shippingbox") {
                 Button("Open Uninstaller") { NSWorkspace.shared.open(URL(fileURLWithPath: uninstaller)) }
             }
         }
         if app.hasSystemExtensions, !review.removedApp {
-            notice("\(app.name) has a system extension. Finder removes it with the app.", symbol: "puzzlepiece.extension")
+            notice("Finder removes its system extension with it.", symbol: "puzzlepiece.extension")
         }
         if let fullDiskAccess = review.fullDiskAccessNotice {
             notice(fullDiskAccess, symbol: "lock.shield") {
@@ -98,8 +110,9 @@ struct CleanerReviewView: View {
     private func itemRow(_ item: CleanerItem) -> some View {
         let path = roots.displayPath(item.url)
         return HStack(spacing: 10) {
-            Toggle(path, isOn: Binding(get: { review.selected.contains(item.id) }, set: { _ in cleaner.toggle(item.id) }))
-                .toggleStyle(.frogCheckbox).labelsHidden()
+            // The checkbox style draws its label, so the path is the accessibility label only.
+            Toggle(isOn: Binding(get: { review.selected.contains(item.id) }, set: { _ in cleaner.toggle(item.id) })) { EmptyView() }
+                .toggleStyle(.frogCheckbox).accessibilityLabel(path)
             // The name and reason tick the item too, not only the checkbox; the controls keep their own click.
             HStack(spacing: 10) {
                 Image(systemName: item.kind.symbol).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)

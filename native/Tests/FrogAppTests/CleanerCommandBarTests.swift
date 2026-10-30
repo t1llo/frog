@@ -31,6 +31,8 @@ import FrogCore
         var config = Configuration(); config.preferences.windowSwitcherEnabled = false
         config.preferences.setFeature(.commandBar, enabled: true)
         config.preferences.setFeature(.cleaner, enabled: cleaner)
+        // An earlier model's config.toml would decide which plugins are on.
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent("config.toml"))
         try ConfigurationStore(directory: directory).save(config)
         let model = AppModel(dataDirectory: directory, registerShortcuts: false, readKey: { _ in nil },
                              clipboardHistoryStore: ClipboardHistoryStore(pasteboard: pasteboard))
@@ -117,6 +119,8 @@ import FrogCore
         let path = try XCTUnwrap(app.action?.applicationPath)
         try fixture.item(.caches, "com.example.fixture", bytes: 64)
         _ = try makeModel(cleaner: true)
+        await model.pluginHost.syncAndWait()
+        let cleaner = try XCTUnwrap(model.cleanerPlugin?.cleaner)
         let bar = bar([app])
         defer { bar.stop() }
         var chosen = 0
@@ -130,9 +134,9 @@ import FrogCore
 
         XCTAssertEqual(chosen, 1)
         XCTAssertEqual(model.toolkit.route, .feature(.cleaner))
-        XCTAssertTrue([.scanning, .reviewing].contains(model.cleaner.phase))
-        XCTAssertEqual(model.cleaner.review?.app.bundleID, "com.example.fixture")
-        XCTAssertNil(model.cleaner.pending, "The confirmation is the page's step")
+        XCTAssertTrue([.scanning, .reviewing].contains(cleaner.phase))
+        XCTAssertEqual(cleaner.review?.app.bundleID, "com.example.fixture")
+        XCTAssertNil(cleaner.pending, "The confirmation is the page's step")
         XCTAssertFalse(log.entries.contains { $0.hasPrefix("trash") || $0.hasPrefix("finder") })
         XCTAssertTrue(FileManager.default.fileExists(atPath: path))
         // A removal answers only its own query and is never suggested again.

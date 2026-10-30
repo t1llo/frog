@@ -270,7 +270,8 @@ final class CleanerModel: ObservableObject {
     @Published private(set) var outcome: RemovalOutcome?
     @Published var issue: String?
     @Published private(set) var fullDiskAccess: Bool?
-    var showPossibleMatches = false {
+    /// From `[app-cleaner] possible-matches`: files whose names only resemble the app, never ticked.
+    @Published var showPossibleMatches = false {
         didSet { if !showPossibleMatches { untickHidden() } }
     }
     /// Set for reviews of removed apps; nil otherwise.
@@ -303,19 +304,6 @@ final class CleanerModel: ObservableObject {
     private var generation = 0
 
     init(dependencies: CleanerDependencies) { self.dependencies = dependencies }
-
-    // MARK: - Tabs
-
-    @Published var tab: CleanerTab = .apps
-    // One lazy sub-model per part, each below its own slot.
-
-    /// Called after every saved configuration. Keeps showPossibleMatches current, stops sub-models whose
-    /// switch is off (each part adds its line below its slot), and falls back to .apps when the selected
-    /// tab disappears.
-    func apply(_ preferences: Preferences) {
-        showPossibleMatches = preferences.featureEnabled(.cleaner) && preferences.cleanerSettings.possibleMatches
-        if !CleanerTab.available(preferences).contains(tab) { tab = .apps }
-    }
 
     private var isRemoving: Bool {
         if case .removing = phase { return true }
@@ -491,31 +479,34 @@ final class CleanerModel: ObservableObject {
         phase = .scanning
         scanningApp = app
         defer { if scanningApp == app { scanningApp = nil } }
-        let granted = await dependencies.system.hasFullDiskAccess()
-        guard !Task.isCancelled else { return }
-        fullDiskAccess = granted
-        let path = key(app.path)
-        let others = await allIdentities().filter { key($0.path) != path }
-        guard !Task.isCancelled else { return }
-
-        let scanner = LeftoverScanner(roots: dependencies.roots, safety: dependencies.safety, hasFullDiskAccess: granted ?? false)
-        var items: [CleanerItem]
-        do {
-            items = try await Self.offMain(.userInitiated) { try scanner.scan(app: app, otherApps: others) }
-        } catch {
+        let found: CleanerReview?
+        do { found = try await leftovers(of: app, removedApp: removedApp) } catch {
             guard !Task.isCancelled else { return }
             phase = .idle
             issue = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             return
         }
-        guard !Task.isCancelled else { return }
+        guard let found, !Task.isCancelled else { return }
+        fullDiskAccess = found.fullDiskAccess
+        review = found
+        phase = .reviewing
+        measureReviewSizes(found.items)
+    }
+
+    /// The app's bundle and leftovers with the default ticks, publishing nothing. Nil when cancelled.
+    private func leftovers(of app: AppIdentity, removedApp: Bool) async throws -> CleanerReview? {
+        let granted = await dependencies.system.hasFullDiskAccess()
+        guard !Task.isCancelled else { return nil }
+        let path = key(app.path)
+        let others = await allIdentities().filter { key($0.path) != path }
+        guard !Task.isCancelled else { return nil }
+        let scanner = LeftoverScanner(roots: dependencies.roots, safety: dependencies.safety, hasFullDiskAccess: granted ?? false)
+        var items = try await Self.offMain(.userInitiated) { try scanner.scan(app: app, otherApps: others) }
         if removedApp { items.removeAll { $0.kind == .application } }
         // Group containers hold data other apps of the developer may share, so Frog never ticks them.
         let selected = items.filter { $0.kind == .application || ($0.isPreselected && $0.kind != .groupContainer) }
-        review = CleanerReview(app: app, removedApp: removedApp, items: items, selected: Set(selected.map(\.id)),
-                               sizes: [:], fullDiskAccess: granted)
-        phase = .reviewing
-        measureReviewSizes(items)
+        return CleanerReview(app: app, removedApp: removedApp, items: items, selected: Set(selected.map(\.id)),
+                             sizes: [:], fullDiskAccess: granted)
     }
 
     /// Containers are not measured without Full Disk Access (`CleanerReview.measures`).
@@ -731,6 +722,74 @@ final class CleanerModel: ObservableObject {
     }
 
     func dismissPutBack() { putBackSummary = nil }
+
+    // MARK: - Agents
+
+    /// An installed app by path, name or bundle ID, or why Frog may not remove it.
+    func findApp(_ query: String) async throws -> AppIdentity {
+        let query = query.trimmingCharacters(in: .whitespaces)
+        if query.contains("/") || query.lowercased().hasSuffix(".app") {
+            let url = URL(fileURLWithPath: (query as NSString).expandingTildeInPath).standardizedFileURL
+            let inspector = dependencies.inspector, displayName = dependencies.displayName
+            guard url.pathExtension.lowercased() == "app", FileManager.default.fileExists(atPath: url.path) else {
+                throw ActionError.failed(Self.notAnApp)
+            }
+            guard let identity = try? await Self.offMain(.userInitiated, { try inspector.identity(of: url, displayName: displayName(url)) })
+            else { throw ActionError.failed(Self.unreadable) }
+            if let refusal = refusal(for: identity) { throw ActionError.failed(refusal) }
+            return identity
+        }
+        func matches(_ identity: AppIdentity) -> Bool {
+            [identity.name, identity.displayName, identity.bundleName, identity.bundleID].compactMap { $0 }
+                .contains { $0.compare(query, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
+        }
+        let all = await allIdentities()
+        let listed = apps.map(\.identity).filter(matches)
+        if listed.count > 1 {
+            throw ActionError.failed("More than one app is named \(query): " + listed.map(\.path).joined(separator: ", ") + ". Give its path.")
+        }
+        if let app = listed.first { return app }
+        if let other = all.first(where: matches), let refusal = refusal(for: other) { throw ActionError.failed(refusal) }
+        throw ActionError.failed("No app named \(query) in the Applications folders.")
+    }
+
+    /// What the review would list for `app`, with sizes; nothing moves and the page is left as it is.
+    func scanReport(_ app: AppIdentity) async throws -> CleanerReview {
+        guard var review = try await leftovers(of: app, removedApp: false) else { throw CancellationError() }
+        let urls = review.items.filter(review.measures).map(\.url)
+        if !urls.isEmpty, let sizes = try? await Self.offMain(.utility, { CleanerSizer().measure(urls) }) { review.sizes = sizes }
+        return review
+    }
+
+    /// Moves the app and its default-ticked leftovers to the Trash, as Move to Trash would, without asking.
+    /// A running app is not quit: the agent is told to quit it first.
+    func uninstall(_ app: AppIdentity) async throws -> RemovalOutcome {
+        guard !isRemoving, pending == nil else { throw ActionError.failed("Finish the removal open in Frog first.") }
+        let review = try await scanReport(app)
+        let items = review.items.map { item in
+            var item = item
+            if let size = review.sizes[item.id] { item.size = size.bytes }
+            return item
+        }
+        let plan = RemovalPlan.make(app: app, items: items, selected: review.selected, purpose: .leftover,
+                                    safety: dependencies.safety, sizes: review.sizes)
+        guard !plan.isEmpty else { throw ActionError.failed(plan.refused.first?.reason ?? Self.nothingTicked) }
+        if !plan.quitBundleIDs.isEmpty {
+            let running = await dependencies.system.running(bundleIDs: Set(plan.quitBundleIDs), inside: plan.removesApp ? app.path : nil)
+            if let first = running.first { throw ActionError.failed("\(first.name) is running. Quit it, then try again.") }
+        }
+        let generation = self.generation
+        let result = await makeRemover().perform(plan, title: app.name, confirmForceQuit: { _ in false })
+        guard generation == self.generation else { return result }
+        if result.moved.contains(where: { key($0.original) == key(app.path) }) {
+            let path = key(app.path)
+            apps.removeAll { key($0.identity.path) == path }
+            identities.removeAll { key($0.path) == path }
+            identityCache[path] = nil
+            if let open = self.review, key(open.app.path) == path { closeReview() }
+        }
+        return result
+    }
 
     // MARK: - Stop
 

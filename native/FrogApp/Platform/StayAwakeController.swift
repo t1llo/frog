@@ -1,348 +1,221 @@
 import Foundation
 import Combine
 
-/// Tracks a user-started session, not a preference that automatically enables on launch.
+/// How long a Stay awake session lasts.
+enum StayAwakeLength: Equatable, Sendable {
+    case untilOff
+    case minutes(Int)
+    /// The next time the clock shows this, today or tomorrow.
+    case until(hour: Int, minute: Int)
+
+    /// "60", "90m", "1h", "1h30m", "until 17:30", "17:30", "off" or "until-off".
+    init?(_ text: String) {
+        var text = text.trimmingCharacters(in: .whitespaces).lowercased()
+        if ["", "off", "until-off", "until off", "forever"].contains(text) { self = .untilOff; return }
+        if text.hasPrefix("until") { text = String(text.dropFirst(5)).trimmingCharacters(in: .whitespaces) }
+        let clock = text.split(separator: ":")
+        if clock.count == 2, let hour = Int(clock[0]), let minute = Int(clock[1]), (0..<24).contains(hour), (0..<60).contains(minute) {
+            self = .until(hour: hour, minute: minute); return
+        }
+        var minutes = 0, number = ""
+        for character in text {
+            if character.isNumber { number.append(character); continue }
+            guard let value = Int(number) else { return nil }
+            switch character {
+            case "h": minutes += value * 60
+            case "m": minutes += value
+            default: return nil
+            }
+            number = ""
+        }
+        // A bare number, or what follows "1h", is minutes.
+        if let value = Int(number) { minutes += value }
+        guard minutes > 0, minutes <= 7 * 24 * 60 else { return nil }
+        self = .minutes(minutes)
+    }
+
+    func deadline(from now: Date, calendar: Calendar = .current) -> Date? {
+        switch self {
+        case .untilOff: return nil
+        case .minutes(let minutes): return now.addingTimeInterval(TimeInterval(minutes * 60))
+        case .until(let hour, let minute):
+            return calendar.nextDate(after: now, matching: DateComponents(hour: hour, minute: minute), matchingPolicy: .nextTime)
+        }
+    }
+}
+
+/// A Stay awake session: power assertions that keep the Mac, and by default its screen, awake until it is turned
+/// off or its time is up. Nothing to set up. `lid` adds the separate "with the lid closed" mode, which changes a
+/// system setting and needs a one-time setup.
 @MainActor
 final class StayAwakeController: ObservableObject {
-    enum AccessState: Equatable {
-        case checking, ready, needsSetup, unavailable(String)
-        var title: String {
-            switch self {
-            case .checking: "Checking access…"
-            case .ready: "Ready to use"
-            case .needsSetup: "Setup needed"
-            case .unavailable: "Could not verify access"
-            }
-        }
-    }
-    enum DurationChoice: TimeInterval, CaseIterable, Identifiable {
-        case halfHour = 1800, hour = 3600, fourHours = 14400, untilQuit = 0
+    typealias AccessState = LidClosedSleep.AccessState
+    /// The choices the page and the popup offer.
+    enum DurationChoice: String, CaseIterable, Identifiable, Codable, Sendable {
+        case untilOff = "until-off", hour = "1h", threeHours = "3h", untilTime = "until-time"
         var id: Self { self }
         var title: String {
-            switch self { case .halfHour: "30 minutes"; case .hour: "1 hour"; case .fourHours: "4 hours"; case .untilQuit: "Until quit" }
+            switch self { case .untilOff: "Until turned off"; case .hour: "1 hour"; case .threeHours: "3 hours"; case .untilTime: "Until a time" }
         }
     }
-    @Published private(set) var isEnabled = false { didSet { holdDisplay() } }
-    @Published private(set) var isBusy = false
-    @Published private(set) var hasReadState = false
-    @Published private(set) var accessState: AccessState = .checking
-    @Published private(set) var isConfiguringAccess = false
-    @Published private(set) var accessNotice: String?
-    @Published private(set) var error: String?
+
+    @Published private(set) var isEnabled = false
+    @Published private(set) var startedAt: Date?
     @Published private(set) var deadline: Date?
     @Published private(set) var notice: String?
-    @Published var duration: DurationChoice = .fourHours
+    @Published var duration: DurationChoice = .untilOff
+    /// "HH:MM" for `.untilTime`.
+    @Published var untilTime = "18:00"
     /// The cup has a menu-bar item of its own, so Frog's icon leaves out its small one.
     @Published var hasOwnMenuBarIcon = false
-    private(set) var ownsSession = false { didSet { holdDisplay() } }
-    private let system: any StayAwakeSystem
-    private let display: (any DisplayAwakeHolding)?
-    private let sessionFile: URL
+    @Published private(set) var keepScreenOn = true
+    @Published private(set) var lidClosed = false
+    let lid: LidClosedSleep
+    private let holder: (any DisplayAwakeHolding)?
     private let now: () -> Date
-    private let monitorInterval: Duration
-    private var operation: Task<Void, Never>?
-    private var monitor: Task<Void, Never>?
-    private var revision = 0
-    private var started = false
-    private var quitting = false
-    private var featureEnabled = true
-    private var accessCheck: Task<Void, Never>?
-    private var accessRevision = 0
-    private var permissionError = false
-    /// The error came from reading the setting, not from a change that was asked for, so
-    /// the next read that works takes it away again.
-    private var readError = false
-    private var accessGuide: Task<Void, Never>?
-    private let openGuide: (StayAwakeSetup.Mode) async throws -> StayAwakeSetup.Session
-    private struct Session: Codable {
-        var deadline: Date?
-        // The process that owns the session. Markers of earlier versions have neither.
-        var pid: Int32?
-        var started: Int64?
-        /// Only an owner that is proven to be another process still running keeps its
-        /// session. In every other case the marker is a leftover that must be cleaned up.
-        var ownerRunsElsewhere: Bool {
-            guard let pid, let started, pid != getpid() else { return false }
-            return StayAwakeController.processStart(pid) == started
-        }
-    }
+    private var timer: Task<Void, Never>?
+    private var lidTask: Task<Void, Never>?
+    private var lidObservation: AnyCancellable?
 
+    /// The app's controller: assertions only for the real system, so test systems never touch the display.
     init(system: any StayAwakeSystem = NativeStayAwakeSystem(), directory: URL? = nil, now: @escaping () -> Date = Date.init,
-         monitorInterval: Duration = .seconds(60), display: (any DisplayAwakeHolding)? = nil,
+         monitorInterval: Duration = .seconds(60), display: (any DisplayAwakeHolding)? = nil, lidEnabled: Bool = false,
          openGuide: @escaping (StayAwakeSetup.Mode) async throws -> StayAwakeSetup.Session = { try await StayAwakeSetup.open($0) }) {
-        self.system = system; self.now = now; self.monitorInterval = monitorInterval; self.openGuide = openGuide
-        // Test systems never touch the real display.
-        self.display = display ?? (system is NativeStayAwakeSystem ? AwakeAssertion() : nil)
-        let directory = directory ?? ProcessInfo.processInfo.environment["FROG_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Frog")
-        sessionFile = directory.appendingPathComponent("stay-awake-session.json")
+        self.now = now
+        holder = display ?? (system is NativeStayAwakeSystem ? AwakeAssertion() : nil)
+        lid = LidClosedSleep(system: system, directory: directory, monitorInterval: monitorInterval, enabled: lidEnabled, openGuide: openGuide)
+        lidClosed = lidEnabled
+        // The popup and the page show the lid's state through this object.
+        lidObservation = lid.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     }
 
-    var needsQuitCleanup: Bool { ownsSession || isBusy }
-
-    /// The display stays on for as long as Frog's own session keeps the Mac awake.
-    private func holdDisplay() { display?.hold(isEnabled && ownsSession) }
-    var needsSetup: Bool { accessState == .needsSetup }
-    /// An open guide keeps the switch from being turned on, never from being turned off.
-    var canSwitch: Bool { !isBusy && hasReadState && (isEnabled || !isConfiguringAccess) }
-
-    func configureFeature(enabled: Bool) {
-        featureEnabled = enabled
-        if !enabled, !ownsSession, !isBusy {
-            monitor?.cancel(); monitor = nil
-            // Nothing reads the setting while the feature is off. Do not keep showing a
-            // state that is no longer checked, and drop a read that is still under way.
-            revision += 1
-            if isEnabled { isEnabled = false }
-            if hasReadState { hasReadState = false }
-        }
-        else if enabled, started { beginMonitoring() }
-        if enabled, started, !hasReadState {
-            // The launch cleanup may still be restoring sleep. Follow it instead of replacing
-            // it: quitting and disabling the feature wait for `operation`.
-            let previous = operation
-            operation = Task { await previous?.value; await refresh(); await refreshAccess() }
+    /// What `duration` and `untilTime` choose.
+    var chosenLength: StayAwakeLength {
+        switch duration {
+        case .untilOff: .untilOff
+        case .hour: .minutes(60)
+        case .threeHours: .minutes(180)
+        case .untilTime: StayAwakeLength("until \(untilTime)") ?? .untilOff
         }
     }
 
-    /// For checks nobody asked for: opening the popup and returning to Frog. Each check runs
-    /// `sudo`, and access that is ready is checked again before switching on and on the
-    /// Stay awake page, so only access still to be set up is looked at here.
-    func refreshAccessUnlessReady() async {
-        guard accessState != .ready else { return }
-        await refreshAccess()
+    /// From settings: whether the screen stays on too, and whether a session also keeps the Mac awake with the lid closed.
+    func configure(keepScreenOn: Bool, lidClosed: Bool) {
+        if self.keepScreenOn != keepScreenOn { self.keepScreenOn = keepScreenOn; if isEnabled { holder?.hold(true, screen: keepScreenOn) } }
+        guard self.lidClosed != lidClosed else { return }
+        self.lidClosed = lidClosed
+        lid.configureFeature(enabled: lidClosed)
+        if isEnabled { syncLid() }
     }
 
-    func refreshAccess(force: Bool = false) async {
-        guard featureEnabled || ownsSession else { return }
-        if force { accessRevision += 1; accessCheck?.cancel(); accessCheck = nil }
-        if let accessCheck { await accessCheck.value; return }
-        let token = accessRevision
-        let check = Task {
-            do {
-                let allowed = try await system.hasAccess()
-                guard !Task.isCancelled, token == accessRevision else { return }
-                accessState = allowed ? .ready : .needsSetup
-                if allowed, permissionError { error = nil; permissionError = false }
-            } catch {
-                if !Task.isCancelled, token == accessRevision { accessState = .unavailable(error.localizedDescription) }
+    func turnOn(_ length: StayAwakeLength? = nil) {
+        let length = length ?? chosenLength
+        let start = now()
+        notice = nil
+        startedAt = start
+        deadline = length.deadline(from: start)
+        isEnabled = true
+        holder?.hold(true, screen: keepScreenOn)
+        scheduleEnd()
+        syncLid()
+    }
+
+    func turnOff() {
+        timer?.cancel(); timer = nil
+        let wasOn = isEnabled
+        isEnabled = false; startedAt = nil; deadline = nil
+        holder?.hold(false, screen: keepScreenOn)
+        if wasOn || lid.ownsSession { syncLid() }
+    }
+
+    func toggle() { isEnabled ? turnOff() : turnOn() }
+
+    /// Ends a session whose time is up. The timer calls it; so do refreshes, in case the timer ran late.
+    func expireIfDue() {
+        guard isEnabled, let deadline, deadline <= now() else { return }
+        turnOff()
+    }
+
+    /// Waits for the lid-closed setting to follow the session.
+    func waitForLid() async {
+        await lidTask?.value
+        await lid.waitForOperation()
+    }
+
+    /// "On until 17:30", "On until turned off", "Off".
+    var statusText: String {
+        guard isEnabled else { return "Off" }
+        if let deadline { return "On until \(deadline.formatted(date: .omitted, time: .shortened))" }
+        return "On until turned off"
+    }
+
+    private func scheduleEnd() {
+        timer?.cancel(); timer = nil
+        guard let deadline else { return }
+        let wait = max(0, deadline.timeIntervalSince(now()))
+        // ContinuousClock keeps counting while the Mac sleeps, so a session never outlives its time.
+        timer = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(wait)) } catch { return }
+            guard let self else { return }
+            self.timer = nil
+            if self.isEnabled, self.deadline == deadline { self.turnOff() }
+        }
+    }
+
+    /// The lid-closed setting is on exactly while a session runs in lid-closed mode.
+    private func syncLid() {
+        let wanted = isEnabled && lidClosed
+        let previous = lidTask
+        lidTask = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            await self.lid.waitForOperation()
+            if wanted {
+                if !self.lid.hasReadState { await self.lid.refresh() }
+                await self.lid.refreshAccessUnlessReady()
+                guard self.isEnabled, self.lidClosed else { return }
+                if self.lid.accessState != .ready { self.notice = "Lid closed needs setup"; return }
+                if !self.lid.isEnabled { self.lid.setEnabled(true); await self.lid.waitForOperation() }
+            } else if self.lid.ownsSession {
+                self.lid.setEnabled(false); await self.lid.waitForOperation()
             }
         }
-        accessCheck = check
-        await check.value
-        if token == accessRevision { accessCheck = nil }
     }
 
-    func configureAccess(_ mode: StayAwakeSetup.Mode = .setup) {
-        guard !isConfiguringAccess, !quitting else { return }
-        isConfiguringAccess = true; accessNotice = nil
-        accessGuide = Task {
-            defer { isConfiguringAccess = false }
-            do {
-                var endedSession = false
-                if mode == .reset {
-                    await operation?.value
-                    guard !quitting else { return }
-                    // Restore sleep while the existing permission still exists. The restore
-                    // runs as `operation`, so quitting and disabling the feature wait for it.
-                    endedSession = isEnabled || ownsSession
-                    isBusy = true; revision += 1
-                    let restore = Task { await change(false) }
-                    operation = Task { _ = await restore.value }
-                    guard await restore.value else {
-                        accessNotice = error ?? "Restore sleep before resetting access."
-                        return
-                    }
-                }
-                // Quit may have arrived meanwhile. Do not open Terminal as Frog exits.
-                guard !quitting else { return }
-                // Nor after Cancel: nothing would wait for that window.
-                var result: StayAwakeSetup.Result? = .cancelled
-                if !Task.isCancelled {
-                    let session = try await openGuide(mode)
-                    // Only Cancel ends the wait without a result.
-                    result = try? await session.waitForResult()
-                    session.remove()
-                    // Also then: the guide may have changed the rule before the wait ended.
-                    await refreshAccess(force: true); await refresh()
-                }
-                switch result {
-                case .success:
-                    if mode == .reset {
-                        accessNotice = accessState == .ready ? "Frog's access file is empty. Another system rule still allows stay awake." : "Access reset. Set up again to use Stay awake."
-                    } else {
-                        accessNotice = accessState == .ready ? "Access verified. You can now use Stay awake from the menu bar." : "Setup finished, but both power commands are not yet allowed. Review the setup and try again."
-                    }
-                // Answering no in the reset guide keeps the permission, not the session.
-                case .cancelled: accessNotice = endedSession ? "Sleep restored. Access guide cancelled." : "Access guide cancelled."
-                // A guide that ends early may have saved the rule already. A reset that fails
-                // has removed nothing, so there access that is still ready is the failure.
-                // Closing the window or Control-C also ends a reset guide this way.
-                case .failed:
-                    accessNotice = mode == .setup && accessState == .ready
-                        ? "Setup did not finish, but both power commands are allowed. You can use Stay awake from the menu bar."
-                        : (endedSession ? "Sleep restored. " : "") + "Setup did not finish. Review the Terminal window and try again."
-                case nil: accessNotice = (endedSession ? "Sleep restored. " : "") + "Stopped waiting for the guide. Close its Terminal window if it is still open."
-                }
-            } catch is CancellationError { }
-            catch { accessNotice = error.localizedDescription }
-        }
-    }
+    // MARK: The app delegate and the popup
 
-    /// For a guide that never reports back, for example because Terminal could not run it.
-    func cancelAccessGuide() { accessGuide?.cancel() }
+    var error: String? { lid.error }
+    var isBusy: Bool { lid.isBusy }
+    /// The session is Frog's own, so its state is always known.
+    var hasReadState: Bool { true }
+    var ownsSession: Bool { isEnabled }
+    var canSwitch: Bool { !lid.isBusy }
+    var accessState: AccessState { lidClosed ? lid.accessState : .checking }
+    var isConfiguringAccess: Bool { lid.isConfiguringAccess }
+    var needsQuitCleanup: Bool { lid.needsQuitCleanup }
 
-    func waitForAccessGuide() async { await accessGuide?.value }
+    func setEnabled(_ enabled: Bool) { enabled ? turnOn() : turnOff() }
+    func waitForOperation() async { await waitForLid() }
+    func configureAccess() { lid.configureAccess() }
 
-    func start() {
-        guard !started else { return }; started = true
-        operation = Task {
-            if FileManager.default.fileExists(atPath: sessionFile.path) {
-                // A marker that cannot be read still says that Frog started a session.
-                let previous = try? JSONDecoder().decode(Session.self, from: Data(contentsOf: sessionFile))
-                if previous?.ownerRunsElsewhere == true {
-                    // Another copy of Frog is running and owns this session, for example
-                    // an installed and a development build. Show it, do not end it.
-                    await refresh()
-                } else {
-                    ownsSession = true; deadline = previous?.deadline
-                    // A previous process did not finish cleanup. Never resume an
-                    // enabled session automatically after a crash or restart.
-                    _ = await change(false)
-                }
-            } else { await refresh() }
-            await refreshAccess()
-            beginMonitoring()
-        }
-    }
-
-    func setEnabled(_ enabled: Bool) { setEnabled(enabled, for: nil) }
-
-    /// `length`: how long to stay on this time, leaving the page's own choice as it is.
-    func setEnabled(_ enabled: Bool, for length: DurationChoice?) {
-        guard !isBusy, !quitting, hasReadState, !enabled || (featureEnabled && !isConfiguringAccess) else { return }
-        isBusy = true; revision += 1
-        operation = Task { _ = await change(enabled, for: length) }
-    }
-
-    func waitForOperation() async { await operation?.value }
+    /// At launch: restores sleep when an earlier run of Frog left the lid-closed setting on.
+    func start() { lid.start() }
 
     func refresh() async {
-        guard !isBusy, !quitting, featureEnabled || ownsSession else { return }
-        let token = revision
-        do {
-            let enabled: Bool
-            do { enabled = try await system.sleepDisabled() }
-            catch {
-                if token == revision, !isBusy, !quitting { hasReadState = false }
-                throw error
-            }
-            guard token == revision, !isBusy, !quitting else { return }
-            isEnabled = enabled; hasReadState = true
-            if !enabled, ownsSession { try clearSession() }
-            guard enabled, ownsSession else { clearReadError(); return }
-            if let deadline, now() >= deadline {
-                setEnabled(false); await waitForOperation()
-                if !isEnabled { notice = "Timer finished · Sleep restored" }
-                return
-            }
-            let battery = try await system.battery()
-            guard token == revision, !isBusy, !quitting else { return }
-            if battery.onBattery, let percent = battery.percent, percent < 20 {
-                setEnabled(false); await waitForOperation()
-                if !isEnabled { notice = "Low battery · Sleep restored" }
-            } else { clearReadError() }
-        } catch { if token == revision, !quitting { self.error = error.localizedDescription; readError = true } }
+        expireIfDue()
+        if lidClosed || lid.ownsSession { await lid.refresh() }
     }
 
-    /// Only after everything was read: a battery that still cannot be read keeps its message.
-    private func clearReadError() {
-        if readError { error = nil; readError = false }
+    func refreshAccessUnlessReady() async {
+        if lidClosed { await lid.refreshAccessUnlessReady() }
     }
 
     func prepareToQuit() async -> Bool {
-        quitting = true; monitor?.cancel(); monitor = nil
-        await operation?.value
-        guard ownsSession else { return true }
-        let restored = await change(false)
-        if !restored { quitting = false; beginMonitoring() }
-        return restored
+        timer?.cancel(); timer = nil
+        holder?.hold(false, screen: keepScreenOn)
+        await lidTask?.value
+        return await lid.prepareToQuit()
     }
 
-    private func change(_ enabled: Bool, for length: DurationChoice? = nil) async -> Bool {
-        isBusy = true; revision += 1; error = nil; permissionError = false; readError = false; notice = nil
-        defer { isBusy = false }
-        do {
-            let current = try await system.sleepDisabled()
-            isEnabled = current; hasReadState = true
-            if current == enabled {
-                if !enabled { try clearSession() }
-                return true
-            }
-            if enabled {
-                guard try await system.hasAccess() else { throw StayAwakeError.permission }
-                let battery = try await system.battery()
-                if battery.onBattery, let percent = battery.percent, percent < 20 { throw StayAwakeError.lowBattery }
-                let length = length ?? duration
-                let end = length == .untilQuit ? nil : now().addingTimeInterval(length.rawValue)
-                try FileManager.default.createDirectory(at: sessionFile.deletingLastPathComponent(), withIntermediateDirectories: true)
-                // Save intent first so a crash between the command and readback
-                // cannot leave an untracked system-wide setting behind.
-                try JSONEncoder().encode(Session(deadline: end, pid: getpid(), started: Self.processStart(getpid()))).write(to: sessionFile, options: .atomic)
-                ownsSession = true; deadline = end
-            }
-            try await system.setSleepDisabled(enabled)
-            let actual = try await system.sleepDisabled()
-            isEnabled = actual
-            guard actual == enabled else { throw StayAwakeError.notApplied }
-            if enabled { accessState = .ready }
-            if !enabled { try clearSession() }
-            return true
-        } catch {
-            self.error = error.localizedDescription
-            if case StayAwakeError.permission = error {
-                accessRevision += 1; accessCheck?.cancel(); accessCheck = nil
-                permissionError = true
-                accessState = .needsSetup
-            }
-            if let actual = try? await system.sleepDisabled() {
-                isEnabled = actual; hasReadState = true
-                if !actual { try? clearSession() }
-            } else { hasReadState = false }
-            return false
-        }
-    }
-
-    /// When the kernel started a process, in microseconds since 1970, or nil when no such
-    /// process runs. A process id alone is reused, also across restarts of the Mac; together
-    /// with this time it names one run of one process.
-    nonisolated static func processStart(_ pid: pid_t) -> Int64? {
-        var info = kinfo_proc()
-        var size = MemoryLayout<kinfo_proc>.stride
-        var name = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
-        guard sysctl(&name, UInt32(name.count), &info, &size, nil, 0) == 0, size > 0,
-              info.kp_proc.p_pid == pid, Int32(info.kp_proc.p_stat) != SZOMB else { return nil }
-        let time = info.kp_proc.p_un.__p_starttime
-        return Int64(time.tv_sec) * 1_000_000 + Int64(time.tv_usec)
-    }
-
-    private func clearSession() throws {
-        if FileManager.default.fileExists(atPath: sessionFile.path) { try FileManager.default.removeItem(at: sessionFile) }
-        ownsSession = false; deadline = nil
-    }
-
-    private func beginMonitoring() {
-        guard !quitting, monitor == nil, featureEnabled || ownsSession else { return }
-        monitor = Task { [weak self, monitorInterval] in
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: monitorInterval) } catch { return }
-                guard let self else { return }
-                // A setting that is on is read on every tick, also when another tool switched
-                // it on, so the menu-bar cup cannot outlive it. While it is off, nothing runs.
-                if self.ownsSession || self.isEnabled || !self.hasReadState { await self.refresh() }
-            }
-        }
-    }
-
-    isolated deinit { monitor?.cancel(); operation?.cancel(); accessCheck?.cancel(); accessGuide?.cancel() }
+    isolated deinit { timer?.cancel(); lidTask?.cancel(); holder?.hold(false, screen: false) }
 }

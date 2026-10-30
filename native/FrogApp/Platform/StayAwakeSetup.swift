@@ -18,10 +18,10 @@ enum StayAwakeSetup {
             while true {
                 try Task.checkCancellation()
                 if let result { return result }
-                if guide == nil, let pid = process { guide = (pid, StayAwakeController.processStart(pid)) }
+                if guide == nil, let pid = process { guide = (pid, LidClosedSleep.processStart(pid)) }
                 // A guide that was killed never reports. One that ends in order writes its
                 // result first, so a last look after its process is gone cannot miss it.
-                if let guide, guide.started == nil || StayAwakeController.processStart(guide.pid) != guide.started {
+                if let guide, guide.started == nil || LidClosedSleep.processStart(guide.pid) != guide.started {
                     return result ?? .failed
                 }
                 try await Task.sleep(for: .milliseconds(250))
