@@ -258,7 +258,7 @@ Layout shortcuts stay on their window rules in `config.json` (`rules`). Window c
 
 A command shortcut runs only while Windows is on, and must not repeat another global shortcut then. A command name this version of Frog does not know is ignored.
 
-`preferences.toolkit.windows.setupChoice` records what was chosen on the Windows page the first time (`snap` or `manual`); the choice card shows while it is missing. It has no text key. A value this version of Frog does not know keeps the card hidden.
+`preferences.toolkit.windows.setupChoice` is what the old first-run card on the Windows page recorded (`snap` or `manual`). Frog keeps it so the file round-trips; nothing reads it any more.
 
 ### App cleaner
 
