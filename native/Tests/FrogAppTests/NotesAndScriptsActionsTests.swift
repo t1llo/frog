@@ -203,8 +203,15 @@ import XCTest
         XCTAssertEqual(run["status"] as? Int, 0)
         XCTAssertEqual(run["truncated"] as? Bool, false)
 
-        let fails = await failure("scripts.run", ["title": "Fails"])
-        XCTAssertTrue(fails.hasPrefix("partial\n") && fails.contains("status 3"), fails)
+        let fails = try await self.run("scripts.run", ["title": "Fails"])
+        XCTAssertEqual(fails.text, "partial\n")
+        XCTAssertEqual(fails.exitCode, 3, "frog run exits with the script's own status")
+        XCTAssertTrue(fails.notice.contains("status 3"), fails.notice)
+        let agent = await AgentCommands.run(AgentRequest(arguments: ["run", "scripts.run", "--title", "Fails"], directory: directory.path), model: model)
+        XCTAssertEqual(agent.exitCode, 3)
+        XCTAssertEqual(agent.output, "partial\n")
+        let prefix = await failure("scripts.run", ["title": "Hel"])
+        XCTAssertTrue(prefix.contains("exactly"), "Running takes the exact title: \(prefix)")
         let slow = await failure("scripts.run", ["title": "Slow", "timeout": "1"])
         XCTAssertTrue(slow.contains("started"), "What it printed before the time ran out: \(slow)")
         let wrong = await failure("scripts.run", ["title": "Hello", "timeout": "0"])
@@ -237,5 +244,25 @@ import XCTest
         XCTAssertLessThan(started.duration(to: .now), .seconds(10))
         XCTAssertNil(result, "A stopped script fails")
         XCTAssertFalse(model.scripts.needsQuitCleanup)
+    }
+
+    func testStoppingScriptsStopsTheRunsAnAgentStarted() async throws {
+        try await enable(.scripts)
+        await store(UtilityDocument(kind: .script, title: "Long", text: "sleep 30"))
+        for stop in ["action", "plugin"] {
+            let running = Task { try? await self.run("scripts.run", ["title": "Long", "timeout": "60"]) }
+            for _ in 0..<200 where model.scripts.runCount == 0 { try await Task.sleep(for: .milliseconds(10)) }
+            let started = ContinuousClock.now
+            if stop == "action" {
+                let stopped = try await run("scripts.stop")
+                XCTAssertEqual(stopped.text, "Stopped the script.")
+            } else {
+                await (model.pluginHost.running[ScriptsPlugin.info.id] as? ScriptsPlugin)?.stop()
+            }
+            let result = await running.value
+            XCTAssertNil(result, "Stopped by the \(stop)")
+            XCTAssertLessThan(started.duration(to: .now), .seconds(10))
+            XCTAssertEqual(model.scripts.runCount, 0)
+        }
     }
 }

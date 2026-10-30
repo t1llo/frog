@@ -196,6 +196,15 @@ enum ScriptProcess {
         generation = UUID(); task?.cancel()
         if running != nil { status = "Stopped" }; running = nil
     }
+    /// The page's run and every run the `frog` tool started.
+    var runCount: Int { (running != nil ? 1 : 0) + agentRuns.count }
+
+    /// Stops the page's run and the `frog` tool's, as turning Scripts off does.
+    func stopAll() {
+        stop()
+        agentRuns.values.forEach { $0.cancel() }
+    }
+
     func stopAndWait() async {
         stop()
         // A run an agent starts while these end is stopped as well.

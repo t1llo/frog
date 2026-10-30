@@ -76,16 +76,19 @@ import FrogCore
 
     func items(_ kind: UtilityDocument.Kind) -> [UtilityDocument] { items.filter { $0.kind == kind } }
 
-    /// The item of `kind` titled `name`: the exact title first, then the one title that starts with it, ignoring
-    /// case, or its id.
-    func item(_ kind: UtilityDocument.Kind, titled name: String) throws -> UtilityDocument {
+    /// The item of `kind` titled `name`: the exact title or its id first, then, unless `exactly`, the one title that
+    /// starts with it, ignoring case.
+    func item(_ kind: UtilityDocument.Kind, titled name: String, exactly: Bool = false) throws -> UtilityDocument {
         let candidates = items(kind)
         let wanted = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if let exact = candidates.first(where: { $0.title == wanted }) ?? candidates.first(where: { $0.id.uuidString.caseInsensitiveCompare(wanted) == .orderedSame }) {
             return exact
         }
-        let matching = candidates.filter { $0.title.lowercased().hasPrefix(wanted.lowercased()) }
         let noun = kind == .note ? "note" : "script"
+        guard !exactly else {
+            throw ActionError.failed("No \(noun) is titled exactly “\(wanted)”. List them with `frog run \(kind.pluginID).list`.")
+        }
+        let matching = candidates.filter { $0.title.lowercased().hasPrefix(wanted.lowercased()) }
         switch matching.count {
         case 1: return matching[0]
         case 0: throw ActionError.failed("No \(noun) “\(wanted)”. List them with `frog run \(kind.pluginID).list`.")

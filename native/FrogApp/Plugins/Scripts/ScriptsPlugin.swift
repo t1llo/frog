@@ -27,7 +27,7 @@ final class ScriptsPlugin: LegacyPlugin, FrogPlugin {
     }
 
     func stop() async {
-        runner.stop()
+        runner.stopAll()
         runner.onSuccessfulRun = nil
     }
 
@@ -55,6 +55,7 @@ final class ScriptsPlugin: LegacyPlugin, FrogPlugin {
 
     var actions: [PluginAction] {
         let title = ActionParameter(name: "title", required: true, help: "The script's title; its start is enough when only one script begins with it")
+        let exactTitle = ActionParameter(name: "title", required: true, help: "The script's exact title, or its id")
         return [
             PluginAction(id: "scripts.new", title: "New script", symbol: "plus.rectangle.on.rectangle", keywords: "shell zsh script") { [weak self] _ in
                 guard let self else { throw CancellationError() }
@@ -80,11 +81,12 @@ final class ScriptsPlugin: LegacyPlugin, FrogPlugin {
                 return ActionResult(Entry(script, text: true), text: script.text)
             },
             PluginAction(id: "scripts.run", title: "Run a script", symbol: "play",
-                         parameters: [title, ActionParameter(name: "timeout", kind: .integer, help: "Seconds before it is stopped, 1 to 600; [scripts] timeout by default")],
+                         parameters: [exactTitle, ActionParameter(name: "timeout", kind: .integer, help: "Seconds before it is stopped, 1 to 600; [scripts] timeout by default")],
                          surfaces: [.shortcut, .agent]) { [weak self] input in
                 guard let self else { throw CancellationError() }
                 try await documents.loadForAction()
-                let script = try documents.item(.script, titled: try input.required("title"))
+                // Running is not undone, so it takes the exact title or id, never the start of one.
+                let script = try documents.item(.script, titled: try input.required("title"), exactly: true)
                 // A shortcut runs it where its output shows; an agent reads the output it prints.
                 if input.source != .agent {
                     runOnPage(script)
@@ -94,9 +96,10 @@ final class ScriptsPlugin: LegacyPlugin, FrogPlugin {
             },
             PluginAction(id: "scripts.stop", title: "Stop the script", symbol: "stop", keywords: "script cancel") { [weak self] _ in
                 guard let self else { throw CancellationError() }
-                guard runner.running != nil else { return .done("No script is running.") }
-                runner.stop()
-                return .done("Stopped the script.")
+                let count = runner.runCount
+                guard count > 0 else { return .done("No script is running.") }
+                runner.stopAll()
+                return .done(count == 1 ? "Stopped the script." : "Stopped \(count) scripts.")
             },
         ]
     }
@@ -114,13 +117,13 @@ final class ScriptsPlugin: LegacyPlugin, FrogPlugin {
             throw ActionError.failed([output, error.localizedDescription].filter { !$0.isEmpty }.joined(separator: "\n"))
         }
         let notice = result.truncated ? "\nIts output was cut off at 256 KB." : ""
-        guard result.status == 0 else {
-            throw ActionError.failed(result.output + (result.output.hasSuffix("\n") || result.output.isEmpty ? "" : "\n")
-                                     + "“\(script.shownTitle)” exited with status \(result.status).\(notice)")
-        }
-        model.statistics.recordToolUse(.scriptRun)
-        return ActionResult(Run(title: script.shownTitle, status: result.status, output: result.output, truncated: result.truncated),
-                            text: result.output + notice)
+        if result.status == 0 { model.statistics.recordToolUse(.scriptRun) }
+        // `frog run` exits with the script's own status, as the script would.
+        var answer = ActionResult(Run(title: script.shownTitle, status: result.status, output: result.output, truncated: result.truncated),
+                                  text: result.output + notice)
+        answer.exitCode = result.status
+        if result.status != 0 { answer.notice = "“\(script.shownTitle)” exited with status \(result.status)." }
+        return answer
     }
 
     private static func preview(_ text: String) -> String {
