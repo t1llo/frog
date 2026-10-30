@@ -2,7 +2,7 @@ import Foundation
 import FrogCore
 
 /// Frog's tools: scripts, notes, clipboard, writing rules, Stay awake,
-/// System monitor and Mr. Usage. Each area has a file of its own; `tools` joins them.
+/// System monitor and LLM usage. Each area has a file of its own; `tools` joins them.
 extension AgentCommands {
     static var tools: [AgentCommand] { documentTools + textTools + systemTools }
 

@@ -23,7 +23,7 @@ enum AgentSkill {
 
     The `frog` command talks to Frog, the menu-bar app running on this Mac. The running app is the reference for what it can do:
 
-    - `frog help` lists every command by group: Frog, Windows, Scripts, Notes, Clipboard, Writing rules, Stay awake, System monitor, Mr. Usage, Plugins.
+    - `frog help` lists every command by group: Frog, Windows, Scripts, Notes, Clipboard, Writing rules, Stay awake, System monitor, LLM usage, Plugins.
     - `frog help <command>` explains one command, with its options and examples.
     - A group marked "(off)" belongs to a Frog feature that is switched off. Ask the user before turning it on with `frog features enable <feature>`.
 

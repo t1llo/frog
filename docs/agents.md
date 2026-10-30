@@ -1,6 +1,6 @@
 # Agents
 
-The `frog` command lets you and your AI agents use Frog from a terminal: arrange windows, open apps, run your scripts, read and add notes, use the clipboard history, run writing rules, keep the Mac awake, read the system monitor and Mr. Usage, switch Frog's features on and off, and build, install and share [plugins](plugins.md). A skill tells Claude Code, Codex, Gemini CLI, pi and OpenCode when and how to use it.
+The `frog` command lets you and your AI agents use Frog from a terminal: arrange windows, open apps, run your scripts, read and add notes, use the clipboard history, run writing rules, keep the Mac awake, read the system monitor and LLM usage, switch Frog's features on and off, and build, install and share [plugins](plugins.md). A skill tells Claude Code, Codex, Gemini CLI, pi and OpenCode when and how to use it.
 
 ## Turn it on
 
@@ -42,7 +42,7 @@ frog features enable scripts
 pbpaste | frog notes add "Title" --stdin
 ```
 
-`frog help` is the reference: the running app answers it, so it always lists exactly the commands that version of Frog has. The groups are Frog (status, version, features, open), Windows (windows and apps), Scripts, Notes, Clipboard, Writing rules, Stay awake, System monitor, Mr. Usage and Plugins. A group marked "(off)" belongs to a feature that is switched off; `frog features enable <feature>` turns it on.
+`frog help` is the reference: the running app answers it, so it always lists exactly the commands that version of Frog has. The groups are Frog (status, version, features, open), Windows (windows and apps), Scripts, Notes, Clipboard, Writing rules, Stay awake, System monitor, LLM usage and Plugins. A group marked "(off)" belongs to a feature that is switched off; `frog features enable <feature>` turns it on.
 
 - `--json` prints machine-readable output.
 - `--stdin` passes standard input as the command's text.

@@ -14,7 +14,7 @@ import FrogCore
         "windows": "Windows", "apps": "Windows",
         "scripts": "Scripts", "notes": "Notes",
         "clipboard": "Clipboard", "rules": "Writing rules", "awake": "Stay awake",
-        "monitor": "System monitor", "usage": "Mr. Usage", "plugins": "Plugins"
+        "monitor": "System monitor", "usage": "LLM usage", "plugins": "Plugins"
     ]
 
     /// Commands of features that became part of others, with what to use instead. Skills installed
