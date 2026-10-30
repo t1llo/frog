@@ -14,6 +14,13 @@ struct ClipboardSettings: ConfigSection {
         "items": "How many copies to keep, 1 to 1000",
     ]
 
+    /// With `items` in the range the store keeps, so the page shows what is kept.
+    var clamped: ClipboardSettings {
+        var settings = self
+        settings.items = min(max(items, 1), ClipboardHistoryStore.maxCapacity)
+        return settings
+    }
+
     /// The table the first time the plugin runs: the shortcut set before config.toml existed.
     static func seed(from preferences: Preferences) -> ClipboardSettings {
         var settings = ClipboardSettings()
@@ -35,12 +42,15 @@ final class ClipboardPlugin: LegacyPlugin, FrogPlugin {
     private var hotkeys: HotkeyManager?
     private var recordingObservation: AnyCancellable?
     private var warming: Task<Void, Never>?
+    /// Why `[clipboard] shortcut` is not registered: another Frog shortcut uses it.
+    private var shortcutClash: String?
     var store: ClipboardHistoryStore { model.clipboardHistoryStore }
 
     func start() async {
         seedSettingsIfNeeded()
-        state.settings = context.settings(ClipboardSettings.self)
+        state.settings = context.settings(ClipboardSettings.self).clamped
         store.capacity = state.settings.items
+        mirrorShortcut()
         let controller = ClipboardHistoryController(pasteboard: store.pasteboard, history: store)
         controller.onError = { [weak self] in self?.context.report($0) }
         controller.onSuccessfulPaste = { [weak model] in model?.statistics.recordToolUse(.clipboardPaste) }
@@ -71,9 +81,41 @@ final class ClipboardPlugin: LegacyPlugin, FrogPlugin {
 
     func settingsChanged() {
         let previous = state.settings
-        state.settings = context.settings(ClipboardSettings.self)
+        state.settings = context.settings(ClipboardSettings.self).clamped
         store.capacity = state.settings.items
-        if previous.shortcut != state.settings.shortcut, hotkeys != nil { registerShortcut() }
+        guard previous.shortcut != state.settings.shortcut else { return }
+        mirrorShortcut()
+        if hotkeys != nil { registerShortcut() }
+    }
+
+    /// `[clipboard]` decides; the preferences keep a copy of its shortcut, since Frog's shortcut conflict checks,
+    /// the shortcut reference, the window switcher and a Reload or Import read it there. A shortcut written into
+    /// config.toml by hand that another one already uses is left unregistered, and the page says why.
+    private func mirrorShortcut() {
+        shortcutClash = nil
+        do { try mirror(state.settings.shortcut.hotkey) } catch { shortcutClash = error.localizedDescription }
+        state.shortcutIssue = shortcutClash
+    }
+
+    private func mirror(_ hotkey: Hotkey) throws {
+        var workflow = model.configuration.preferences.workflowSettings
+        guard workflow.effectiveClipboardHistoryHotkey != hotkey else { return }
+        workflow.clipboardHistoryHotkey = hotkey
+        try model.saveWorkflowPreferences(workflow)
+    }
+
+    /// Reload and Import write the old `config`, whose `shortcut.clipboard` key `[clipboard]` then follows,
+    /// whether the plugin runs or not.
+    static func adoptLegacySettings(_ model: AppModel) {
+        let file = model.settingsFile
+        let hotkey = model.configuration.preferences.workflowSettings.effectiveClipboardHistoryHotkey
+        do {
+            var settings = (try? file.section(info.id, as: ClipboardSettings.self).value) ?? ClipboardSettings()
+            guard settings.shortcut.hotkey != hotkey else { return }
+            settings.shortcut = try Shortcut(hotkey)
+            try file.update(info.id, settings)
+        } catch { model.report(error) }
+        model.pluginHost.running[info.id]?.settingsChanged()
     }
 
     private func seedSettingsIfNeeded() {
@@ -87,6 +129,7 @@ final class ClipboardPlugin: LegacyPlugin, FrogPlugin {
         guard model.runsLiveServices, !model.isRecordingShortcut else { return }
         let hotkeys = self.hotkeys ?? HotkeyManager()
         self.hotkeys = hotkeys
+        guard shortcutClash == nil else { hotkeys.unregister(); state.shortcutIssue = shortcutClash; return }
         let rule = Rule(id: Self.shortcutID, name: "Clipboard history", hotkey: state.settings.shortcut.hotkey)
         // Opens on the press: the panel is there before the keys are up.
         let errors = hotkeys.register(rules: [rule], purposes: [Self.shortcutID: .clipboardHistory],
@@ -106,6 +149,9 @@ final class ClipboardPlugin: LegacyPlugin, FrogPlugin {
             if let issue = HotkeyManager.validationError(hotkey, purpose: .clipboardHistory) { throw FrogError.message(issue) }
             var settings = state.settings
             settings.shortcut = try Shortcut(hotkey)
+            // The preferences' copy first: a shortcut another one uses is refused before anything is written.
+            try mirror(hotkey)
+            shortcutClash = nil
             try save(settings)
             registerShortcut()
         } catch { context.report(error) }
@@ -114,6 +160,7 @@ final class ClipboardPlugin: LegacyPlugin, FrogPlugin {
     func setItems(_ items: Int) {
         var settings = state.settings
         settings.items = items
+        settings = settings.clamped
         do { try save(settings) } catch { context.report(error) }
     }
 
@@ -137,7 +184,7 @@ final class ClipboardPlugin: LegacyPlugin, FrogPlugin {
     }
 
     var actions: [PluginAction] {
-        let id = ActionParameter(name: "id", required: true, help: "The item's ID, or its first eight characters, from clipboard.list")
+        let id = ActionParameter(name: "id", required: true, help: "The item's ID from clipboard.list, or its start: at least 4 characters")
         let plain = ActionParameter(name: "plain", kind: .boolean, help: "Without formatting")
         let limit = ActionParameter(name: "limit", kind: .integer, help: "How many, newest first; 20 by default")
         return [
@@ -179,7 +226,13 @@ final class ClipboardPlugin: LegacyPlugin, FrogPlugin {
 
     private func entry(_ input: ActionInput) throws -> ClipboardHistoryEntry {
         let id = try input.required("id")
-        guard let entry = store.entry(id: id) else { throw ActionError.failed("No copied item “\(id)”. Run `frog run clipboard.list` for the IDs.") }
+        let matches = store.entries(id: id)
+        guard matches.count < 2 else { throw ActionError.failed("“\(id)” matches several items; give more characters.") }
+        guard let entry = matches.first else {
+            throw ActionError.failed(id.count < ClipboardHistoryStore.shortestID
+                ? "Give at least \(ClipboardHistoryStore.shortestID) characters of the ID."
+                : "No copied item “\(id)”. Run `frog run clipboard.list` for the IDs.")
+        }
         return entry
     }
 

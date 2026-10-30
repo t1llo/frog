@@ -139,6 +139,8 @@ final class PhoneController: ObservableObject {
     // MARK: Pairing
 
     func beginPairing() {
+        // A Phone page still on screen after Phone was turned off holds a stopped controller: it pairs nothing.
+        guard running else { return }
         let secret = CompanionBytes.random(count: CompanionProtocol.secretLength)
         let url = CompanionPairingURL(macID: store.macID, macName: macName, secret: secret,
                                       port: listeningPort ?? CompanionProtocol.defaultTCPPort,
@@ -229,8 +231,32 @@ final class PhoneController: ObservableObject {
     @discardableResult
     func send(text: String) -> String {
         guard !text.isEmpty else { return "Nothing to send." }
+        guard text.utf8.count <= Self.textLimit else { return "Text up to 1 MB can be sent; send a longer one as a file." }
         guard ClipboardSecret.detect(text) == nil else { return "Frog does not send passwords and keys." }
         return dispatch(PhoneOutgoingClip(.text(text))) ? "Sent to your phone." : "No phone is connected."
+    }
+
+    /// The longest text sent as text: a clip's body over Bluetooth is at most 1 MiB.
+    static let textLimit = 1024 * 1024
+
+    /// A file that looks like a key, a keystore or a secret, by its name, its folder or the text at its start.
+    /// `phone.send --file` refuses these, so an agent cannot carry them off the Mac.
+    nonisolated static func looksSecret(_ url: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Bool {
+        let file = url.standardizedFileURL.resolvingSymlinksInPath()
+        let path = file.path
+        let homePath = home.standardizedFileURL.resolvingSymlinksInPath().path
+        for folder in [".ssh", ".gnupg", "Library/Keychains"] where path.hasPrefix(homePath + "/" + folder + "/") { return true }
+        if path.hasPrefix("/Library/Keychains/") { return true }
+        let name = file.lastPathComponent.lowercased()
+        if name.hasPrefix(".env") || name.hasPrefix(".netrc") || name.hasPrefix(".npmrc") || name.hasPrefix(".pgpass") { return true }
+        if ["pem", "key", "p8", "p12", "pfx", "jks", "keystore", "keychain", "keychain-db", "ppk", "asc", "gpg"].contains(file.pathExtension.lowercased()) {
+            return true
+        }
+        if name.hasPrefix("id_rsa") || name.hasPrefix("id_ed25519") || name.hasPrefix("id_ecdsa") || name.hasPrefix("id_dsa") { return true }
+        guard let handle = try? FileHandle(forReadingFrom: file) else { return false }
+        defer { try? handle.close() }
+        guard let start = try? handle.read(upToCount: ClipboardSecret.scanLimit), !start.isEmpty else { return false }
+        return ClipboardSecret.detect(String(decoding: start, as: UTF8.self)) != nil
     }
 
     /// Sends files, one clip each; folders and files over 200 MB are left out.
