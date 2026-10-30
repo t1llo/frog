@@ -154,6 +154,23 @@ import XCTest
         XCTAssertEqual(world.fetches(".claude"), 1)
     }
 
+    func testAStoreStartedAgainReadsWhenDueInsteadOfWaitingItsTurnAgain() async throws {
+        try twoAccounts()
+        let world = world()
+        let model = accountsModel(world)
+        defer { model.stop() }
+        model.setEnabled(true); model.start()
+        try await until { model.stores.count == 2 && world.fetches(".claude") == 1 }
+        try await settled(model)
+        XCTAssertEqual(world.fetches(".claude-account-b"), 0, "B waits 30 s after A")
+        // Hidden before B's turn, shown again once it is due: B asks at once.
+        model.stop()
+        world.now = base.addingTimeInterval(45)
+        model.start()
+        try await until { world.fetches(".claude-account-b") == 1 }
+        XCTAssertEqual(world.fetches(".claude-account-b"), 1, "A restart keeps B's first turn and does not add another 30 s")
+    }
+
     func testTheDefaultAccountKeepsTheSavedGateAndTheOthersSaveTheirOwn() async throws {
         try twoAccounts()
         var saved = ClaudePollingState()

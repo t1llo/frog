@@ -26,7 +26,10 @@ final class Store: ObservableObject {
         return account.codeFolder ?? account.appFolder ?? URL(fileURLWithPath: account.slotPath)
     }
     /// Stores of several accounts start a little apart, so their first requests do not arrive together.
+    /// Only the first start sets that time: a store started again after a pause keeps it, so it reads
+    /// at once when it is due instead of waiting its turn over again.
     var startDelay: TimeInterval = 0
+    private var startedBefore = false
     /// Told when the account the Claude app's folder is signed in to is no longer the one it was,
     /// or the Claude Code folder holds a new login of another account than when it was matched.
     var onOrganizationChange: (() -> Void)?
@@ -124,10 +127,12 @@ final class Store: ObservableObject {
 
     func start() {
         guard !active else { return }; active = true
-        fetchesFrom = currentDate().addingTimeInterval(startDelay)
+        // The first start sets when this store may first ask; a later start keeps that time.
+        if !startedBefore { fetchesFrom = currentDate().addingTimeInterval(startDelay) }
+        startedBefore = true
+        let delay = max(0, fetchesFrom.timeIntervalSince(currentDate()))
         tick()
-        if startDelay > 0 {
-            let delay = startDelay
+        if delay > 0 {
             delayedStart = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(delay))
                 guard !Task.isCancelled else { return }
