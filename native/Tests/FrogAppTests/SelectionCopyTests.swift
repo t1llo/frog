@@ -195,6 +195,36 @@ final class SelectionCopyTests: XCTestCase {
         XCTAssertEqual(board.string(forType: .string), "copied meanwhile")
     }
 
+    func testTwoQuickReplacesGiveBackTheFirstOriginal() async throws {
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        board.clearContents(); board.setString("my clipboard", forType: .string)
+        let restore = ClipboardRestore()
+        let first = restore.snapshot(of: board)
+        board.clearContents(); board.setString("first result", forType: .string)
+        let firstTask = restore.schedule(first, on: board, after: .milliseconds(200))
+        // The second replace starts before the first gave the clipboard back.
+        let second = restore.snapshot(of: board)
+        board.clearContents(); board.setString("second result", forType: .string)
+        await restore.schedule(second, on: board, after: .milliseconds(20)).value
+        await firstTask.value
+        XCTAssertEqual(board.string(forType: .string), "my clipboard")
+    }
+
+    func testAConcealedClipboardIsNeverGivenBack() async throws {
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        let item = NSPasteboardItem()
+        item.setString("synthetic-password", forType: .string)
+        item.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
+        board.clearContents(); board.writeObjects([item])
+        let original = PasteboardSnapshot(board)
+        XCTAssertTrue(original.sensitive)
+        board.clearContents(); board.setString("result", forType: .string)
+        await original.restore(on: board, after: .zero).value
+        XCTAssertEqual(board.string(forType: .string), "result", "a password manager's clearing is not undone")
+    }
+
     func testEmptyClipboardIsGivenBackEmpty() async throws {
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }

@@ -64,11 +64,13 @@ final class ClipboardSelection: CapturedTextSelection {
     }
 
     func replace(with result: String) async throws {
-        try await replace(with: result, restoring: PasteboardSnapshot(.general))
+        try await replace(with: result, restoring: ClipboardRestore.shared.snapshot(of: .general))
     }
 
-    /// Pastes `result` over the selection, then puts `original` back on the clipboard. When the replace fails the
-    /// result stays on the clipboard, as the error says.
+    /// Pastes `result` over the selection, then puts `original` back on the clipboard once the app has read it. That
+    /// is known only when Paste went through the app's menu: a posted Command-V may be read late, such as by a busy
+    /// Electron app, and must not find the old clipboard, so then the result stays. When the replace fails the result
+    /// stays on the clipboard, as the error says.
     func replace(with result: String, restoring original: PasteboardSnapshot) async throws {
         // Set before validation. FreshSelectionCopy restores this result on failure,
         // also when the app answers Copy late; do not clear the pasteboard again
@@ -97,8 +99,9 @@ final class ClipboardSelection: CapturedTextSelection {
         guard canPaste else { throw FrogError.message("The field is no longer editable. The result is on the clipboard.") }
         try Task.checkCancellation()
         try Self.putBack(result, on: .general)
-        try Self.command("v", keyCode: 9, menu: menu, pid: pid)
-        original.restore(on: .general, after: PasteboardSnapshot.pasteDelay)
+        if try Self.command("v", keyCode: 9, menu: menu, pid: pid) {
+            ClipboardRestore.shared.schedule(original, on: .general, after: PasteboardSnapshot.pasteDelay)
+        }
     }
 
     private static var modifiersReleased: Bool {
@@ -124,9 +127,13 @@ final class ClipboardSelection: CapturedTextSelection {
         return menu.item("v") != nil
     }
 
-    static func command(_ character: String, keyCode: CGKeyCode, menu: MenuCommandCache, pid: pid_t) throws {
-        if let item = menu.item(character), press(item) { return }
+    /// True when the app's menu carried the command out; false when a key event was posted, which the app handles
+    /// whenever it gets to it.
+    @discardableResult
+    static func command(_ character: String, keyCode: CGKeyCode, menu: MenuCommandCache, pid: pid_t) throws -> Bool {
+        if let item = menu.item(character), press(item) { return true }
         try key(keyCode, pid: pid)
+        return false
     }
 
     /// Paste inserts whatever the clipboard holds at that moment. The Copy that
@@ -191,32 +198,68 @@ struct ReleasedShortcut: Sendable {
 /// the person's own clipboard comes back once the app has read the result.
 @MainActor
 struct PasteboardSnapshot {
-    /// How long an app gets to read the result after Paste before the clipboard is put back.
+    /// How long an app gets to read the result after its Paste menu command before the clipboard is put back.
     static let pasteDelay: Duration = .milliseconds(500)
     private let items: [NSPasteboardItem]
+    /// Marked concealed or transient, such as a password a password manager clears after a while. Never put back,
+    /// so the replace does not undo that clearing.
+    let sensitive: Bool
 
     init(_ pasteboard: NSPasteboard) {
-        items = pasteboard.pasteboardItems?.map { item in
+        sensitive = pasteboard.holdsSensitiveText
+        items = sensitive ? [] : pasteboard.pasteboardItems?.map { item in
             let saved = NSPasteboardItem()
             for type in item.types { if let data = item.data(forType: type) { saved.setData(data, forType: type) } }
             return saved
         } ?? []
     }
 
-    /// Puts the saved items back after `delay`, unless something else was copied meanwhile. Clipboard history
-    /// does not record the restore as a new copy.
+    /// Puts the saved items back after `delay`, unless something else was copied meanwhile, the task was cancelled
+    /// or the items are sensitive. Clipboard history does not record the restore as a new copy.
     @discardableResult
     func restore(on pasteboard: NSPasteboard, after delay: Duration) -> Task<Void, Never> {
         let count = pasteboard.changeCount
         let items = items
+        let sensitive = sensitive
         return Task { @MainActor in
             try? await Task.sleep(for: delay)
-            guard pasteboard.changeCount == count else { return }
+            guard !Task.isCancelled, !sensitive, pasteboard.changeCount == count else { return }
             ClipboardHistoryCaptureGate.shared.begin()
             defer { ClipboardHistoryCaptureGate.shared.end(pasteboard: pasteboard) }
             pasteboard.clearContents()
             if !items.isEmpty { pasteboard.writeObjects(items) }
         }
+    }
+}
+
+/// One clipboard restore at a time. A replace that starts while an earlier one still waits takes over the earlier
+/// original, so two quick runs give back the person's clipboard, not the first result.
+@MainActor
+final class ClipboardRestore {
+    static let shared = ClipboardRestore()
+    private var pending: (token: UUID, pasteboard: NSPasteboard.Name, snapshot: PasteboardSnapshot, task: Task<Void, Never>)?
+
+    /// What the clipboard should get back after the next replace on `pasteboard`.
+    func snapshot(of pasteboard: NSPasteboard) -> PasteboardSnapshot {
+        if let pending, pending.pasteboard == pasteboard.name {
+            pending.task.cancel()
+            self.pending = nil
+            return pending.snapshot
+        }
+        return PasteboardSnapshot(pasteboard)
+    }
+
+    @discardableResult
+    func schedule(_ snapshot: PasteboardSnapshot, on pasteboard: NSPasteboard, after delay: Duration) -> Task<Void, Never> {
+        pending?.task.cancel()
+        let token = UUID()
+        let task = snapshot.restore(on: pasteboard, after: delay)
+        pending = (token, pasteboard.name, snapshot, task)
+        Task { @MainActor [weak self] in
+            await task.value
+            if self?.pending?.token == token { self?.pending = nil }
+        }
+        return task
     }
 }
 
