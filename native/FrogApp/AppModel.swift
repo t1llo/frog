@@ -910,15 +910,17 @@ final class AppModel: ObservableObject {
         }
         // A plugin shortcut that the preferences do not mirror is seen here, so a new shortcut cannot take its keys.
         let configured = Set(Self.hotkeyRules(for: candidate).compactMap(\.hotkey)
-            + [candidate.preferences.featureEnabled(.menuBar) ? toolkit.menuBar?.hotkey : nil].compactMap { $0 })
+            + [candidate.preferences.featureEnabled(.menuBar) ? toolkit.menuBar?.hotkey : nil,
+               candidate.preferences.featureEnabled(.commandBar) ? toolkit.effectiveCommandBarHotkey : nil].compactMap { $0 })
         if let clash = unmirroredPluginShortcuts.first(where: { configured.contains($0.hotkey) }) {
             throw FrogError.message("\(HotkeyManager.display(clash.hotkey)) is already the \(clash.name) shortcut.")
         }
     }
 
-    /// Plugin shortcuts that are not also kept in the preferences. Hidden bar's is, under `toolkit.menuBar.hotkey`.
+    /// Plugin shortcuts that are not also kept in the preferences. Hidden bar's is, under `toolkit.menuBar.hotkey`,
+    /// and the command bar's under `toolkit.commandBarHotkey`.
     var unmirroredPluginShortcuts: [(name: String, hotkey: Hotkey)] {
-        pluginShortcuts.filter { $0.key != Self.menuBarID }.map { ($0.value.name, $0.value.hotkey) }
+        pluginShortcuts.filter { $0.key != Self.menuBarID && $0.key != CommandBarPlugin.shortcutID }.map { ($0.value.name, $0.value.hotkey) }
     }
 
     func savePreferences(_ preferences: Preferences) throws {

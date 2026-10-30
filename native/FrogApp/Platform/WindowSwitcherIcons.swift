@@ -42,14 +42,15 @@ import AppKit
             }
             let icons = await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
             guard !Task.isCancelled, let self else { return }
-            self.insert(icons)
+            self.insert(icons, listed: missing)
             loaded(self.images)
         }
     }
 
-    func insert(_ icons: [pid_t: NSImage]) {
+    /// Adds loaded icons, as recent in the order the apps were listed, then drops the oldest past the limit.
+    private func insert(_ icons: [pid_t: NSImage], listed: [pid_t]) {
         for (pid, icon) in icons { images[pid] = icon }
-        touch(Array(icons.keys))
+        touch(listed.filter { icons[$0] != nil })
         while images.count > limit, let oldest = order.first {
             order.removeFirst(); images[oldest] = nil
         }
