@@ -94,7 +94,7 @@ struct CleanerRestoreView: View {
                 .buttonStyle(.frog(.primary)).keyboardShortcut(.cancelAction)
             }
         }
-        .padding(20).frame(width: 520).frame(maxHeight: 520)
+        .padding(FrogStyle.sheetPadding).frame(width: 520).frame(maxHeight: 520)
         .buttonStyle(FrogButtonStyle())
         .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
     }

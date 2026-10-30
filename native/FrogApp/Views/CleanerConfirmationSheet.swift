@@ -71,7 +71,7 @@ struct CleanerConfirmationSheet: View {
                 }
             }
         }
-        .padding(20).frame(width: 480)
+        .padding(FrogStyle.sheetPadding).frame(width: 480)
         .buttonStyle(FrogButtonStyle())
         .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
         .interactiveDismissDisabled(removing != nil)

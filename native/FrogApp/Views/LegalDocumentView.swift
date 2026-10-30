@@ -33,7 +33,7 @@ struct LegalDocumentView: View {
             ReadOnlyText(text: text).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
                 .accessibilityLabel(L10n.text(document.title))
             HStack { Spacer(); Button("Done") { dismiss() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction) }
-        }.padding(22).frame(width: 640, height: 520).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
+        }.padding(FrogStyle.sheetPadding).frame(width: 640, height: 520).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
             .buttonStyle(.frog()).environment(\.locale, L10n.locale)
     }
 }

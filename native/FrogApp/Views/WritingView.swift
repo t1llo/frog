@@ -228,7 +228,7 @@ struct WritingRuleEditor: View {
                 TextField("Name your rule", text: $rule.name).textFieldStyle(.plain).font(FrogType.title)
                     .accessibilityLabel("Rule name")
                 Toggle("On", isOn: $rule.enabled).toggleStyle(.switch).controlSize(.mini).font(FrogType.small)
-            }.padding(20)
+            }.padding(FrogStyle.sheetPadding)
             ScrollView {
                 VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
                     FrogSection("Instructions") {
@@ -250,9 +250,9 @@ struct WritingRuleEditor: View {
                         }
                         FrogRow("Model") { RuleModelPicker(rule: $rule) }
                     }
-                }.padding(.horizontal, 20).padding(.bottom, 16).minimalScrollbars()
+                }.padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space16).minimalScrollbars()
             }
-            if let issue { InlineIssue(message: issue).padding(.horizontal, 20).padding(.bottom, 10) }
+            if let issue { InlineIssue(message: issue).padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space10) }
             HStack(spacing: 8) {
                 if existing {
                     Button("Delete", systemImage: "trash", role: .destructive) { deleting = true }.buttonStyle(.frog(.destructive))
@@ -263,7 +263,7 @@ struct WritingRuleEditor: View {
                 Button("Save") {
                     do { try model.saveRule(rule); dismiss() } catch { issue = error.localizedDescription }
                 }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction).disabled(!named)
-            }.padding(.horizontal, 20).padding(.vertical, 16)
+            }.padding(.horizontal, FrogStyle.sheetPadding).padding(.vertical, FrogStyle.space16)
         }.frame(width: 540, height: 610)
             .foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).background(FrogWindowMaterial())
             .tint(FrogStyle.accent).buttonStyle(FrogButtonStyle()).controlSize(.small)
@@ -326,7 +326,7 @@ struct WritingTryView: View {
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || run != nil || model.isProcessing)
             }
-        }.padding(20).frame(width: 520, height: 460).foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas)
+        }.padding(FrogStyle.sheetPadding).frame(width: 520, height: 460).foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas)
             .background(FrogWindowMaterial()).buttonStyle(FrogButtonStyle()).tint(FrogStyle.accent)
             .onDisappear { run?.cancel() }
     }
