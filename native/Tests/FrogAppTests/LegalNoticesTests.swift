@@ -43,15 +43,4 @@ final class LegalNoticesTests: XCTestCase {
         XCTAssertFalse(text.isEditable)
         XCTAssertTrue(text.isSelectable)
     }
-
-    /// Regenerating the guide from the wizard template would drop the notice its MIT license requires.
-    func testStayAwakeGuideKeepsTheNoticeOfItsWizardLibrary() throws {
-        let url = try XCTUnwrap(FrogResources.bundle.url(forResource: "StayAwakeSetup", withExtension: "command"))
-        let script = try String(contentsOf: url, encoding: .utf8)
-        let library = try XCTUnwrap(script.components(separatedBy: "# STAGES:").first)
-
-        XCTAssertTrue(library.contains("# Copyright (c) 2026 Matt Pocock"))
-        XCTAssertTrue(library.contains("# Permission is hereby granted, free of charge, to any person obtaining a copy"))
-        XCTAssertTrue(library.contains("# The above copyright notice and this permission notice shall be included in all"))
-    }
 }

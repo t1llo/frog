@@ -9,7 +9,7 @@ enum LegalDocument: String, Identifiable, CaseIterable {
     var id: String { rawValue }
     var title: String { self == .license ? "License" : "Third-party notices" }
     var summary: String {
-        self == .license ? "GNU General Public License, version 3 or later."
+        self == .license ? "MIT License."
             : "Licenses of the open-source software Frog is built with."
     }
     /// Nil outside a packaged app, such as under `swift run`, Xcode and tests.

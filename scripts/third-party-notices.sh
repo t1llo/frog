@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Writes one text file with the license and notice files of every package pinned in
-# Package.resolved, then those in ThirdPartyLicenses/ for code copied into this repository.
+# Package.resolved.
 # Run after `swift build`, which fills .build/checkouts.
 output="${1:?Usage: third-party-notices.sh <output file>}"
 checkouts=".build/checkouts"
@@ -48,16 +48,6 @@ for ((index = 0; index < count; index++)); do
     done <<< "$files"
 done
 
-copied=""
-for file in ThirdPartyLicenses/*; do
-    [[ -f "$file" ]] || continue
-    if [[ -z "$copied" ]]; then printf '%s\nCode copied into Frog'"'"'s source\n%s\n\n' "$rule" "$rule" >> "$texts"; fi
-    copied+="  $(head -n 1 "$file")"$'\n'
-    printf -- '---- %s ----\n\n' "$file" >> "$texts"
-    cat "$file" >> "$texts"
-    printf '\n\n' >> "$texts"
-done
-
 {
     cat <<EOF
 Frog: third-party notices
@@ -67,12 +57,10 @@ license, notice and acknowledgment file found in their source at the pinned
 versions, including those of code the packages bundle. Some of these files cover
 components that are not part of Frog.
 
-Frog itself is free software under the GNU General Public License, version 3 or
-later. Its license is in LICENSE.txt next to this file.
+Frog itself is open source under the MIT License, in LICENSE.txt next to this file.
 
 Swift packages:
 $packages
 EOF
-    if [[ -n "$copied" ]]; then printf 'Code copied into Frog'"'"'s source:\n%s\n' "$copied"; fi
     cat "$texts"
 } > "$output"

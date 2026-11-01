@@ -11,7 +11,7 @@ Free and open source. No account, no telemetry.
 [![Latest release](https://img.shields.io/github/v/release/t1llo/frog?label=release&color=397A4C)](https://github.com/t1llo/frog/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/t1llo/frog/total?color=397A4C)](https://github.com/t1llo/frog/releases)
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-397A4C?logo=apple&logoColor=white)](#install)
-[![License: GPL-3.0](https://img.shields.io/github/license/t1llo/frog?color=397A4C)](LICENSE)
+[![License: MIT](https://img.shields.io/github/license/t1llo/frog?color=397A4C)](LICENSE)
 [![Build](https://github.com/t1llo/frog/actions/workflows/native.yml/badge.svg?branch=main)](https://github.com/t1llo/frog/actions/workflows/native.yml)
 
 [**Download for Mac**](https://github.com/t1llo/frog/releases/latest) · [Website](https://frog.beffa.xyz/) · [Plugins](https://frog.beffa.xyz/plugins/) · [Docs](docs/)
@@ -113,4 +113,4 @@ Issues and pull requests are welcome. Built a plugin you like? Open an issue wit
 
 ## License
 
-Copyright © 2026 Tillo Beffa. Frog is free software under the [GNU General Public License](LICENSE), version 3 or later.
+Copyright © 2026 Tillo Beffa. Frog is open source under the [MIT License](LICENSE).
