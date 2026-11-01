@@ -15,6 +15,7 @@ struct SystemMonitorSnapshot: Equatable, Sendable {
     var cpu: SystemMonitorMetric = .measuring
     var gpu: SystemMonitorMetric = .measuring
     var memory: SystemMonitorMemory?
+    var storage: SystemMonitorStorage?
     var power = SystemMonitorPower()
 }
 
@@ -23,6 +24,13 @@ struct SystemMonitorMemory: Equatable, Sendable {
     let used: Int64
     let total: Int64
     var fraction: Double { total > 0 ? min(1, max(0, Double(used) / Double(total))) : 0 }
+}
+
+/// Space on the startup volume, free as Finder counts it.
+struct SystemMonitorStorage: Equatable, Sendable {
+    let available: Int64
+    let total: Int64
+    var usedFraction: Double { total > 0 ? min(1, max(0, Double(total - available) / Double(total))) : 0 }
 }
 
 /// The newest load, as the menu-bar item shows it.

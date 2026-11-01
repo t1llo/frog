@@ -96,6 +96,9 @@ struct SystemMonitorOverview: View {
                 SystemMonitorGraph(history: history, inspected: $inspected, sample: sample).frame(height: wide ? 150 : 54)
                 GraphAxis(leading: GraphStyle.ago(SystemMonitor.historyWindow), trailing: "Now")
             }.modifier(OverviewCard(wide: wide))
+            if let storage = snapshot.storage {
+                storageLine(storage).modifier(OverviewCard(wide: wide))
+            }
             if let power = powerLine {
                 power.modifier(OverviewCard(wide: wide))
             }
@@ -116,6 +119,21 @@ struct SystemMonitorOverview: View {
         }.frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
             .help(snapshot.memory.map { "\(bytes($0.used)) of \(bytes($0.total)) in use" } ?? "")
+    }
+
+    /// Free space on the startup volume, with a meter of what is used.
+    private func storageLine(_ storage: SystemMonitorStorage) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Label("Storage", systemImage: "internaldrive").font(FrogType.label)
+                Text(diskBytes(storage.available)).font(GraphStyle.figure).monospacedDigit()
+                Text("free").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                Spacer(minLength: 4)
+                Text("of \(diskBytes(storage.total))").font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+            }
+            meter(storage.usedFraction, color: FrogStyle.level(storage.usedFraction, warning: 0.85, critical: 0.95))
+        }.accessibilityElement(children: .combine)
+            .help("Space free on the startup disk, counting what macOS can clear, as Finder shows it.")
     }
 
     /// The battery, and the thermal state or Low Power Mode only while they say something.
@@ -179,6 +197,11 @@ struct SystemMonitorOverview: View {
 
     private func bytes(_ count: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: count, countStyle: .memory)
+    }
+
+    /// Disk sizes in decimal units, as Finder shows them.
+    private func diskBytes(_ count: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: count, countStyle: .file)
     }
 }
 

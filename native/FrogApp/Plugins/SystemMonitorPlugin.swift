@@ -27,7 +27,7 @@ struct SystemMonitorSettings: ConfigSection {
     var menuBarPalette = MenuBarMeterPalette.spectrum
 
     static let comments = [
-        "": "System monitor: CPU, GPU, memory and battery.",
+        "": "System monitor: CPU, GPU, memory, storage and battery.",
         "menu-bar-item": "An item of its own in the menu bar",
         "menu-bar-readings": "cpu, cpu-gpu, cpu-memory or cpu-gpu-memory",
         "menu-bar-style": "numbers, segments, bars or columns",
@@ -44,10 +44,10 @@ struct SystemMonitorSettings: ConfigSection {
     init() {}
 }
 
-/// CPU, GPU, memory and battery. It samples only while an overview or its menu-bar item is on screen.
+/// CPU, GPU, memory, storage and battery. It samples only while an overview or its menu-bar item is on screen.
 final class SystemMonitorPlugin: FrogPlugin, ObservableObject {
     static let info = PluginInfo(id: "system-monitor", name: "System monitor", symbol: "gauge.medium", tint: .teal,
-                                 category: .system, summary: "CPU, GPU, memory and battery")
+                                 category: .system, summary: "CPU, GPU, memory, storage and battery")
     /// Replaced by tests, so no test depends on this Mac's load.
     static var makeSampler: @MainActor () -> any SystemMonitorSampling = { NativeSystemMonitorSampler() }
 
@@ -97,7 +97,7 @@ final class SystemMonitorPlugin: FrogPlugin, ObservableObject {
     var actions: [PluginAction] {
         [
             PluginAction(id: "system-monitor.status", title: "System status", symbol: "gauge.medium",
-                         keywords: "cpu gpu memory ram battery load", surfaces: .agent) { [weak self] _ in
+                         keywords: "cpu gpu memory ram storage disk free space battery load", surfaces: .agent) { [weak self] _ in
                 guard let monitor = self?.monitor else { throw ActionError.pluginOff(Self.info.name) }
                 let report = SystemMonitorReport(await monitor.current())
                 return ActionResult(report, text: report.text)
@@ -141,6 +141,7 @@ final class SystemMonitorPlugin: FrogPlugin, ObservableObject {
 /// What `system-monitor.status` answers.
 struct SystemMonitorReport: Encodable {
     struct Memory: Encodable { let usedBytes: Int64; let totalBytes: Int64; let percent: Double }
+    struct Storage: Encodable { let freeBytes: Int64; let totalBytes: Int64 }
     struct Battery: Encodable {
         let percent: Int
         let charging: Bool
@@ -150,6 +151,7 @@ struct SystemMonitorReport: Encodable {
     let cpuPercent: Double?
     let gpuPercent: Double?
     let memory: Memory?
+    let storage: Storage?
     let battery: Battery?
     let powerSource: String
     let thermalState: String
@@ -160,6 +162,7 @@ struct SystemMonitorReport: Encodable {
         cpuPercent = percent(snapshot.cpu.value)
         gpuPercent = percent(snapshot.gpu.value)
         memory = snapshot.memory.map { Memory(usedBytes: $0.used, totalBytes: $0.total, percent: percent($0.fraction) ?? 0) }
+        storage = snapshot.storage.map { Storage(freeBytes: $0.available, totalBytes: $0.total) }
         let power = snapshot.power
         battery = power.batteryPercent.map { Battery(percent: $0, charging: power.charging, watts: power.batteryFlow.map { ($0.watts * 10).rounded() / 10 }) }
         powerSource = power.source
@@ -172,6 +175,8 @@ struct SystemMonitorReport: Encodable {
         func bytes(_ count: Int64) -> String { ByteCountFormatter.string(fromByteCount: count, countStyle: .memory) }
         var rows = [["CPU", percent(cpuPercent)], ["GPU", percent(gpuPercent)],
                     ["Memory", memory.map { "\(Int($0.percent.rounded()))%, \(bytes($0.usedBytes)) of \(bytes($0.totalBytes))" } ?? "unavailable"]]
+        func disk(_ count: Int64) -> String { ByteCountFormatter.string(fromByteCount: count, countStyle: .file) }
+        rows.append(["Storage", storage.map { "\(disk($0.freeBytes)) free of \(disk($0.totalBytes))" } ?? "unavailable"])
         if let battery {
             var line = "\(battery.percent)%" + (battery.charging ? ", charging" : "")
             if let watts = battery.watts { line += ", \(watts) W" }

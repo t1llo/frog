@@ -40,7 +40,7 @@ extension AgentCommands {
 
     /// Works whether System monitor is on or not: it takes two readings, a second apart, and leaves nothing running.
     private static var monitor: AgentCommand {
-        AgentCommand(words: ["monitor"], summary: "CPU, GPU, memory and battery right now.",
+        AgentCommand(words: ["monitor"], summary: "CPU, GPU, memory, storage and battery right now.",
                      details: "Takes two readings a second apart, then stops. Works whether or not System monitor is on; `frog run system-monitor.status` is the same reading from the plugin.") { call in
             if call.model.pluginHost.action("system-monitor.status") != nil {
                 let result = try await call.model.pluginHost.run("system-monitor.status", ActionInput(source: .agent))

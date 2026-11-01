@@ -70,7 +70,7 @@ import FrogUsage
         XCTAssertEqual(calls, 0)
     }
 
-    func testStatusAnswersCPUGPUAndMemoryAndLeavesNothingSampling() async throws {
+    func testStatusAnswersCPUGPUMemoryAndStorageAndLeavesNothingSampling() async throws {
         try await turn("system-monitor", true)
         let plugin = try XCTUnwrap(model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)
         XCTAssertTrue(model.pluginHost.menuTabs.contains { $0.id == "system-monitor.tab" })
@@ -79,7 +79,9 @@ import FrogUsage
         XCTAssertEqual(json["cpuPercent"] as? Double, 25)
         XCTAssertEqual(json["gpuPercent"] as? Double, 50)
         XCTAssertEqual((json["memory"] as? [String: Any])?["percent"] as? Double, 25)
+        XCTAssertEqual((json["storage"] as? [String: Any])?["freeBytes"] as? Int64, 412_000_000_000)
         XCTAssertTrue(result.text.contains("CPU") && result.text.contains("25%"), result.text)
+        XCTAssertTrue(result.text.contains("412 GB free of 1 TB"), result.text)
         let calls = await sampler.calls
         XCTAssertEqual(calls, 2, "Two readings a second apart, then nothing")
         XCTAssertEqual(plugin.monitor?.isSampling, false)
@@ -246,6 +248,7 @@ private actor CountingSampler: SystemMonitorSampling {
     private(set) var calls = 0
     func sample(reset: Bool, full: Bool) async -> SystemMonitorSnapshot {
         calls += 1
-        return SystemMonitorSnapshot(cpu: .value(0.25), gpu: .value(0.5), memory: SystemMonitorMemory(used: 4, total: 16))
+        return SystemMonitorSnapshot(cpu: .value(0.25), gpu: .value(0.5), memory: SystemMonitorMemory(used: 4, total: 16),
+                                     storage: SystemMonitorStorage(available: 412_000_000_000, total: 1_000_000_000_000))
     }
 }

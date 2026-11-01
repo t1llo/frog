@@ -6,19 +6,39 @@ import IOKit
 /// thread. No process inventory, subprocesses, privileged helpers or disk scans.
 actor NativeSystemMonitorSampler: SystemMonitorSampling {
     private var cpu = SystemMonitorCPUMeter()
+    private var storage: SystemMonitorStorage?
+    private var storageTime: TimeInterval?
+    /// Free space changes slowly, so the volume is asked at most this often.
+    static let storageInterval: TimeInterval = 30
 
     func sample(reset: Bool, full: Bool) async -> SystemMonitorSnapshot {
         if reset { cpu.reset() }
         guard !Task.isCancelled else { return SystemMonitorSnapshot() }
+        let now = ProcessInfo.processInfo.systemUptime
         var result = SystemMonitorSnapshot()
-        result.cpu = cpu.reading(readCPU(), at: ProcessInfo.processInfo.systemUptime)
+        result.cpu = cpu.reading(readCPU(), at: now)
         guard !Task.isCancelled else { return result }
         result.gpu = readGPU().map(SystemMonitorMetric.value) ?? .unavailable
         result.memory = Self.readMemory()
-        // Power is shown, not graphed, so only a visible overview reads it.
+        // Storage and power are shown, not graphed, so only a visible overview reads them.
         guard full, !Task.isCancelled else { return result }
+        if reset || storageTime.map({ now - $0 >= Self.storageInterval || now < $0 }) ?? true {
+            storage = Self.readStorage()
+            storageTime = now
+        }
+        result.storage = storage
         result.power = readPower()
         return result
+    }
+
+    /// The writable startup volume, not the read-only sealed system snapshot. Free counts space
+    /// macOS can purge, as Finder and About This Mac do.
+    static func readStorage(at url: URL = URL(fileURLWithPath: "/System/Volumes/Data", isDirectory: true)) -> SystemMonitorStorage? {
+        guard let values = try? url.resourceValues(forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey]),
+              let total = values.volumeTotalCapacity, total > 0 else { return nil }
+        let important = values.volumeAvailableCapacityForImportantUsage.flatMap { $0 > 0 ? $0 : nil }
+        guard let free = important ?? values.volumeAvailableCapacity.map(Int64.init), free >= 0 else { return nil }
+        return SystemMonitorStorage(available: min(Int64(total), free), total: Int64(total))
     }
 
     /// Memory in use as Activity Monitor counts it: app memory, wired and compressed.

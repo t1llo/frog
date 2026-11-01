@@ -240,4 +240,14 @@ final class SystemMonitorDeltaTests: XCTestCase {
         XCTAssertEqual(SystemMonitorDelta.gpu(percent: 42), 0.42)
         XCTAssertEqual(SystemMonitorDelta.gpu(percent: 100), 1)
     }
+
+    func testStorageReadsTheVolumeAndNeverReportsMoreFreeThanTotal() throws {
+        let storage = try XCTUnwrap(NativeSystemMonitorSampler.readStorage(at: FileManager.default.temporaryDirectory))
+        XCTAssertGreaterThan(storage.total, 0)
+        XCTAssertGreaterThanOrEqual(storage.available, 0)
+        XCTAssertLessThanOrEqual(storage.available, storage.total)
+        XCTAssertNil(NativeSystemMonitorSampler.readStorage(at: URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString)")))
+        XCTAssertEqual(SystemMonitorStorage(available: 250, total: 1000).usedFraction, 0.75)
+        XCTAssertEqual(SystemMonitorStorage(available: 0, total: 0).usedFraction, 0)
+    }
 }

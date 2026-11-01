@@ -252,7 +252,7 @@ and every refresh fails. Frog still never renews or consumes another tool's toke
   refreshed is drawn dimmed.
 - Limit bars and pace labels use the theme's status tones: `good` under pace,
   `warning` ahead of pace, `critical` from 95 % used; on pace keeps the accent. The
-  System monitor uses the same tones for disk and battery. Each built-in theme
+  System monitor uses the same tones for storage and battery. Each built-in theme
   defines them and `palette.light`/`palette.dark` can override them.
 - Graphs (2026-10-13) share one look, modelled on Linear's project graph
   (`GraphStyle.swift`): a legend of small squares with the value below, a thin smooth

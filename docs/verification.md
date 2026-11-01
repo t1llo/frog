@@ -121,13 +121,13 @@ macOS versions and physical trackpad scrolling remain manual checks. Vorssaint's
 background-discovery approach informed an independent implementation; no reference
 source was copied.
 
-The optional System monitor samples on a utility-priority actor: CPU and GPU every
-five seconds while the feature is on, and every two seconds together with disk and
-power while its menu view is visible. The graph keeps ten minutes of timestamped
-samples (at most 600); disk capacity is cached for 30 seconds. Initial native sampling measured about 7.3 ms
+The optional System monitor samples on a utility-priority actor, only while an overview
+or its menu-bar item is on screen: CPU, GPU and memory every two seconds, plus free
+storage and power while an overview is visible. The graph keeps ten minutes of timestamped
+samples (at most 600); free storage on the startup volume (`/System/Volumes/Data`, counted
+as Finder does, purgeable space included) is cached for 30 seconds. Initial native sampling measured about 7.3 ms
 cold and 0.68 ms warm. CPU uses tick deltas; GPU reports the busiest supported
-driver statistic; disk I/O covers supported devices, with startup-volume capacity
-shown separately. Power source, battery charge, thermal state and Low Power Mode
+driver statistic. Power source, battery charge, thermal state and Low Power Mode
 use native readings. An unsupported GPU remains unavailable. Total-system wattage has
 no public reading and no row.
 

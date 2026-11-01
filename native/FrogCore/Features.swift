@@ -78,7 +78,7 @@ public enum FeatureID: String, Codable, CaseIterable, Identifiable, Sendable {
         case .scratchpad: "Markdown notes, and text to paste from the command bar."
         case .scripts: "Run your own shell scripts."
         case .usage: "Claude and Codex limits and activity."
-        case .systemMonitor: "CPU, GPU, memory and battery."
+        case .systemMonitor: "CPU, GPU, memory, storage and battery."
         case .stayAwake: "Keep the Mac awake, also with the lid closed."
         case .menuBar: "Hide menu bar icons behind a divider."
         case .cleaner: "Uninstall apps with the files they leave behind."
