@@ -69,12 +69,18 @@ The same `frog` command lets agents arrange windows, run your scripts, add notes
 | **Windows** | Drag-to-snap zones, a layout picker, keyboard halves and thirds, a window switcher. |
 | **Clipboard & notes** | Searchable clipboard history, Markdown notes and saved scripts. |
 | **Mr. Usage** | Claude and OpenAI plan limits, token charts and estimated cost. |
-| **System monitor** | CPU and GPU charts, disk, battery and thermals in the menu bar. |
+| **System monitor** | CPU, GPU and memory over the last ten minutes, free storage, and what the Mac draws, battery state and temperature. |
 | **Menu bar & Stay awake** | Hide icons you rarely need; keep the Mac awake for a while. |
 | **App cleaner** | Uninstall apps with the files they leave behind, after a review. |
 | **Phone** | Share the clipboard and files with your Android phone over Wi-Fi or Bluetooth, through the Frog Companion app. |
 | **Plugins** | Your own pages and commands, sandboxed, shared as one file. |
 | **Themes** | Eleven themes, including Tokyo Night, and editable config files. |
+
+<div align="center">
+
+<img src="docs/media/frog-system-monitor.png" alt="Frog's System view: CPU, GPU and memory over the last ten minutes, free storage, and the battery's charge, what the Mac draws and its temperature" width="292">
+
+</div>
 
 ## Install
 
