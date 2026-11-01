@@ -121,15 +121,18 @@ macOS versions and physical trackpad scrolling remain manual checks. Vorssaint's
 background-discovery approach informed an independent implementation; no reference
 source was copied.
 
-The optional System monitor samples on a utility-priority actor, only while an overview
-or its menu-bar item is on screen: CPU, GPU and memory every two seconds, plus free
-storage and power while an overview is visible. The graph keeps ten minutes of timestamped
+The optional System monitor samples on a utility-priority actor. While it is on it records
+CPU, GPU and memory every five seconds out of sight, so an overview opens on the last ten
+minutes; while an overview or its menu-bar item is on screen it reads every two seconds, plus
+free storage and power while an overview is visible. The graph keeps ten minutes of timestamped
 samples (at most 600); free storage on the startup volume (`/System/Volumes/Data`, counted
 as Finder does, purgeable space included) is cached for 30 seconds. Initial native sampling measured about 7.3 ms
 cold and 0.68 ms warm. CPU uses tick deltas; GPU reports the busiest supported
 driver statistic. Power source, battery charge, thermal state and Low Power Mode
-use native readings. An unsupported GPU remains unavailable. Total-system wattage has
-no public reading and no row.
+use native readings. An unsupported GPU remains unavailable. What the whole Mac draws comes
+from the battery's `PowerTelemetryData.SystemLoad` (milliwatts, Apple silicon laptops), the
+battery temperature from its `Temperature` (hundredths of a degree); a Mac without them shows
+neither.
 
 Ten focused tests passed for initial monitor integration, including optional/default-
 off behavior, delta calculations, bounded history, visibility, and late-result
@@ -511,7 +514,7 @@ the CPU/GPU graph already holding data when its tab is opened.
   the two lines keep one colour each instead of changing with the load. The activity
   chart of Mr. Usage draws the period's running total as the line and each day's or
   hour's amount as a bar on its own scale.
-- **Recording** (`SystemMonitor`): while the feature is on, CPU and GPU are sampled
+- **Recording** (`SystemMonitor`): while the feature is on, CPU, GPU and memory are sampled
   every five seconds whether or not the menu is open; disk and power are still read
   only while the view is visible, every two seconds. Samples carry their time, so a
   missing reading or a pause over 30 seconds (sleep) breaks the line instead of being

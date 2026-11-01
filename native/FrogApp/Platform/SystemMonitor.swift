@@ -11,8 +11,9 @@ protocol SystemMonitorSampling: Sendable {
     func sample(reset: Bool, full: Bool) async -> SystemMonitorSnapshot
 }
 
-/// Samples only while something shows the readings: an open overview or a menu-bar item.
-/// With nothing on screen no task runs, so an idle Frog spends nothing here.
+/// Samples every two seconds while something shows the readings: an open overview or a menu-bar
+/// item. With recording on, it also keeps a lighter reading every few seconds out of sight, so an
+/// overview opens on the last ten minutes instead of an empty graph.
 @MainActor
 final class SystemMonitor: ObservableObject {
     @Published private(set) var snapshot = SystemMonitorSnapshot()
@@ -31,6 +32,8 @@ final class SystemMonitor: ObservableObject {
     private var presenters: Set<SystemMonitorPresenter> = []
     private var presented: Bool { !presenters.isEmpty }
     private var liveReadout = false
+    private var recording = false
+    private let backgroundInterval: Duration
     private var generation = UUID()
     private var task: Task<Void, Never>?
     /// The stretch of time the graph covers.
@@ -40,9 +43,10 @@ final class SystemMonitor: ObservableObject {
     nonisolated static let recordingPause: TimeInterval = 30
 
     init(sampler: any SystemMonitorSampling = NativeSystemMonitorSampler(), interval: Duration = .seconds(2),
-         now: @escaping @MainActor () -> Date = { Date() }) {
+         backgroundInterval: Duration = .seconds(5), now: @escaping @MainActor () -> Date = { Date() }) {
         self.sampler = sampler
         self.interval = interval
+        self.backgroundInterval = backgroundInterval
         self.now = now
     }
 
@@ -59,6 +63,14 @@ final class SystemMonitor: ObservableObject {
     func setLiveReadout(_ live: Bool) {
         guard liveReadout != live else { return }
         liveReadout = live
+        if !live, readings.value != nil { readings.send(nil) }
+        reschedule()
+    }
+
+    /// Keeps the graph's history while nothing shows it.
+    func setRecording(_ on: Bool) {
+        guard recording != on else { return }
+        recording = on
         reschedule()
     }
 
@@ -73,6 +85,7 @@ final class SystemMonitor: ObservableObject {
     func stop() {
         presenters = []
         liveReadout = false
+        recording = false
         cancel()
         recorded = []
         history = []
@@ -80,13 +93,13 @@ final class SystemMonitor: ObservableObject {
     }
 
     private func reschedule() {
-        guard presented || liveReadout else { cancel(); return }
+        guard presented || liveReadout || recording else { cancel(); return }
         task?.cancel()
         generation = UUID()
         let token = generation
         let sampler = sampler
         let full = presented
-        let interval = interval
+        let interval = presented || liveReadout ? interval : backgroundInterval
         // A recent sample keeps the CPU baseline valid, so the first reading is a real one.
         let recent = recorded.last.map { now().timeIntervalSince($0.time) < Self.recordingPause } ?? false
         task = Task(priority: .utility) { [weak self] in
@@ -107,11 +120,13 @@ final class SystemMonitor: ObservableObject {
         let time = now()
         // A clock set back must not leave samples ahead of the newest one.
         recorded.removeAll { $0.time < time.addingTimeInterval(-Self.historyWindow) || $0.time >= time }
-        recorded.append(.init(time: time, cpu: reading.cpu.value, gpu: reading.gpu.value))
+        recorded.append(.init(time: time, cpu: reading.cpu.value, gpu: reading.gpu.value, memory: reading.memory?.fraction))
         if recorded.count > Self.historyLimit { recorded.removeFirst(recorded.count - Self.historyLimit) }
-        let memory = reading.memory.map { SystemMonitorMetric.value($0.fraction) } ?? .unavailable
-        let live = SystemMonitorReading(cpu: reading.cpu, gpu: reading.gpu, memory: memory)
-        if readings.value != live { readings.send(live) }
+        if liveReadout {
+            let memory = reading.memory.map { SystemMonitorMetric.value($0.fraction) } ?? .unavailable
+            let live = SystemMonitorReading(cpu: reading.cpu, gpu: reading.gpu, memory: memory)
+            if readings.value != live { readings.send(live) }
+        }
         guard full else { return }
         snapshot = reading
         history = recorded

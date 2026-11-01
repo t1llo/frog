@@ -136,7 +136,8 @@ private actor VisibleMonitorFixture: SystemMonitorSampling {
     @Published var snapshot = SystemMonitorSnapshot(
         cpu: .value(0.23), gpu: .value(0.1), memory: SystemMonitorMemory(used: 11_000_000_000, total: 17_179_869_184),
         storage: SystemMonitorStorage(available: 412_500_000_000, total: 994_662_584_320),
-        power: .init(source: "Power adapter", batteryPercent: 83, charging: true, thermal: "Normal", lowPower: false, batteryFlow: .charging(watts: 24)))
+        power: .init(source: "Power adapter", batteryPercent: 83, charging: true, thermal: "Normal", lowPower: false, batteryFlow: .charging(watts: 24),
+                     systemWatts: 21.4, batteryCelsius: 30.7))
 }
 
 private struct MonitorMenuFixtureView: View {

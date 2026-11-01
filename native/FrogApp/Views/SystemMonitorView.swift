@@ -86,15 +86,11 @@ struct SystemMonitorOverview: View {
                         .help("Busy time across all CPU cores.")
                     legend("GPU", color: FrogStyle.seriesSecondary, text: sample.map { percent($0.gpu) } ?? percent(snapshot.gpu))
                         .help("The busiest GPU, when its driver reports it.")
-                    memory
-                }.overlay(alignment: .topTrailing) {
-                    if let sample, let end = history.last?.time {
-                        Text(GraphStyle.ago(end.timeIntervalSince(sample.time)))
-                            .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                    }
+                    memory(sample)
                 }
                 SystemMonitorGraph(history: history, inspected: $inspected, sample: sample).frame(height: wide ? 150 : 54)
-                GraphAxis(leading: GraphStyle.ago(SystemMonitor.historyWindow), trailing: "Now")
+                GraphAxis(leading: GraphStyle.ago(SystemMonitor.historyWindow), trailing: "Now",
+                          center: sample.flatMap { sample in history.last.map { GraphStyle.ago($0.time.timeIntervalSince(sample.time)) } })
             }.modifier(OverviewCard(wide: wide))
             if let storage = snapshot.storage {
                 storageLine(storage).modifier(OverviewCard(wide: wide))
@@ -106,13 +102,17 @@ struct SystemMonitorOverview: View {
             .accessibilityElement(children: .contain).accessibilityLabel("System overview")
     }
 
-    private var memory: some View {
-        VStack(alignment: .leading, spacing: 3) {
+    /// Memory now, or as recorded at the moment under the pointer.
+    private func memory(_ sample: SystemMonitorSample?) -> some View {
+        let fraction = sample != nil ? sample?.memory : snapshot.memory?.fraction
+        return VStack(alignment: .leading, spacing: 3) {
             Text("Memory").font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
-            if let memory = snapshot.memory {
-                Text(percent(.value(memory.fraction))).font(GraphStyle.legendValue(page: wide)).monospacedDigit()
+            if let fraction {
+                Text(percent(.value(fraction))).font(GraphStyle.legendValue(page: wide)).monospacedDigit()
                     .frame(height: wide ? 34 : 24, alignment: .leading)
-                meter(memory.fraction, color: FrogStyle.level(memory.fraction, warning: 0.8, critical: 0.92))
+                meter(fraction, color: FrogStyle.level(fraction, warning: 0.8, critical: 0.92))
+            } else if sample != nil {
+                Text("—").font(FrogType.small).frame(height: wide ? 34 : 24, alignment: .leading)
             } else {
                 Text(percent(.measuring)).font(FrogType.small).frame(height: wide ? 34 : 24, alignment: .leading)
             }
@@ -136,36 +136,93 @@ struct SystemMonitorOverview: View {
             .help("Space free on the startup disk, counting what macOS can clear, as Finder shows it.")
     }
 
-    /// The battery, and the thermal state or Low Power Mode only while they say something.
+    /// The battery's charge and state, what the Mac draws, the battery's temperature, and the
+    /// thermal state or Low Power Mode only while they say something.
     private var powerLine: AnyView? {
         let power = snapshot.power
         var notes: [String] = []
         if power.thermal != "Normal", power.thermal != "Unavailable" { notes.append(power.thermal) }
         if power.lowPower == true { notes.append("Low Power Mode") }
-        guard power.batteryPercent != nil || !notes.isEmpty else { return nil }
-        return AnyView(VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Label("Battery", systemImage: power.charging ? "battery.100.bolt" : "battery.75").font(FrogType.label)
-                if let percent = power.batteryPercent {
-                    Text("\(percent)%").font(GraphStyle.figure).monospacedDigit()
+        guard power.batteryPercent != nil || power.systemWatts != nil || !notes.isEmpty else { return nil }
+        let stats = powerStats
+        return AnyView(VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Label("Battery", systemImage: power.charging ? "battery.100.bolt" : "battery.75").font(FrogType.label)
+                    if let percent = power.batteryPercent {
+                        Text("\(percent)%").font(GraphStyle.figure).monospacedDigit()
+                    }
+                    Spacer(minLength: 4)
+                    Text(([batteryState].compactMap { $0 } + notes).joined(separator: " · "))
+                        .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                 }
-                Spacer(minLength: 4)
-                Text(([flowText].compactMap { $0 } + notes).joined(separator: " · "))
-                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                    .help("Power into or out of the battery, not the whole Mac.")
+                if let percent = power.batteryPercent {
+                    meter(Double(percent) / 100, color: power.charging ? FrogStyle.good
+                          : percent <= 10 ? FrogStyle.critical : percent <= 20 ? FrogStyle.warning : FrogStyle.accent)
+                }
             }
-            if let percent = power.batteryPercent {
-                meter(Double(percent) / 100, color: power.charging ? FrogStyle.good
-                      : percent <= 10 ? FrogStyle.critical : percent <= 20 ? FrogStyle.warning : FrogStyle.accent)
+            if !stats.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    ForEach(stats, id: \.title) { stat in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(stat.title).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                Text(stat.value).font(FrogType.bodyMedium).monospacedDigit().lineLimit(1)
+                                if let detail = stat.detail {
+                                    Text(detail).font(FrogType.caption).foregroundStyle(stat.tint).lineLimit(1)
+                                }
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityElement(children: .combine).help(stat.help)
+                    }
+                }
             }
         })
     }
 
-    private var flowText: String? {
-        guard let flow = snapshot.power.batteryFlow else { return snapshot.power.charging ? "Charging" : nil }
-        let watts = flow.watts < 0.1 ? "<0.1 W" : flow.watts.formatted(.number.precision(.fractionLength(1))) + " W"
-        if case .charging = flow { return "Charging · " + watts }
-        return watts
+    private var batteryState: String? {
+        let power = snapshot.power
+        guard power.batteryPercent != nil else { return nil }
+        if power.charging { return "Charging" }
+        if power.source == "Battery" { return "On battery" }
+        if power.fullyCharged { return "Fully charged" }
+        return power.source == "Unavailable" ? nil : "Not charging"
+    }
+
+    private struct PowerStat {
+        let title: String
+        let value: String
+        var detail: String?
+        var tint = FrogStyle.muted
+        let help: String
+    }
+
+    /// What the Mac draws, power into or out of the battery when it adds something, and its temperature.
+    private var powerStats: [PowerStat] {
+        let power = snapshot.power
+        var stats: [PowerStat] = []
+        if let watts = power.systemWatts {
+            stats.append(.init(title: "Mac draws", value: Self.watts(watts),
+                               help: "What the whole Mac uses right now, from the adapter or the battery."))
+        }
+        switch power.batteryFlow {
+        case .charging(let watts):
+            stats.append(.init(title: "Into battery", value: Self.watts(watts), help: "Power going into the battery."))
+        case .drawing(let watts) where power.systemWatts == nil || power.source != "Battery":
+            stats.append(.init(title: "From battery", value: Self.watts(watts), help: "Power coming out of the battery."))
+        default: break
+        }
+        if let celsius = power.batteryCelsius {
+            let state = SystemMonitorBatteryPower.temperatureState(celsius)
+            stats.append(.init(title: "Temperature", value: "\(Int(celsius.rounded())) °C", detail: state,
+                               tint: state == "Hot" ? FrogStyle.critical : state == "Warm" ? FrogStyle.warning : FrogStyle.muted,
+                               help: "The battery's own temperature. Batteries age faster when they stay warm."))
+        }
+        return stats
+    }
+
+    private static func watts(_ value: Double) -> String {
+        value < 0.1 ? "<0.1 W" : value.formatted(.number.precision(.fractionLength(1))) + " W"
     }
 
     private func legend(_ title: String, color: Color, text: String) -> some View {

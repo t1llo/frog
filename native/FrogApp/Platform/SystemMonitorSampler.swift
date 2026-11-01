@@ -100,7 +100,7 @@ actor NativeSystemMonitorSampler: SystemMonitorSampling {
         case .critical: result.thermal = "Critical"
         @unknown default: result.thermal = "Unavailable"
         }
-        result.batteryFlow = readBatteryFlow()
+        readBattery(into: &result)
         guard let sources = PowerSources.read() else { return result }
         switch sources.source {
         case .adapter: result.source = "Power adapter"
@@ -113,16 +113,19 @@ actor NativeSystemMonitorSampler: SystemMonitorSampling {
         return result
     }
 
-    private func readBatteryFlow() -> SystemMonitorBatteryFlow? {
+    private func readBattery(into result: inout SystemMonitorPower) {
         let battery = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
-        guard battery != 0 else { return nil }
+        guard battery != 0 else { return }
         defer { IOObjectRelease(battery) }
         // One registry snapshot keeps voltage/current and connection flags
-        // together. Retain only the validated flow, not battery metadata.
+        // together. Retain only the validated readings, not battery metadata.
         var properties: Unmanaged<CFMutableDictionary>?
         guard IORegistryEntryCreateCFProperties(battery, &properties, kCFAllocatorDefault, 0) == KERN_SUCCESS,
-              let values = properties?.takeRetainedValue() as? [String: Any] else { return nil }
-        return SystemMonitorBatteryPower.reading(properties: values)
+              let values = properties?.takeRetainedValue() as? [String: Any] else { return }
+        result.batteryFlow = SystemMonitorBatteryPower.reading(properties: values)
+        result.systemWatts = SystemMonitorBatteryPower.systemWatts(properties: values)
+        result.batteryCelsius = SystemMonitorBatteryPower.celsius(properties: values)
+        result.fullyCharged = SystemMonitorBatteryPower.fullyCharged(properties: values)
     }
 
     private func property(_ service: io_service_t, key: String) -> CFTypeRef? {

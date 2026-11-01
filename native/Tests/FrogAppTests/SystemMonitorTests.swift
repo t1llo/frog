@@ -57,6 +57,27 @@ import XCTest
         XCTAssertFalse(monitor.isSampling)
     }
 
+    func testRecordingFillsTheGraphOutOfSightWithoutPublishing() async throws {
+        let sampler = MonitorFixture(snapshot: .init(cpu: .value(0.25), gpu: .value(0.5),
+                                                     memory: SystemMonitorMemory(used: 4, total: 16)))
+        let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5), backgroundInterval: .milliseconds(5))
+        defer { monitor.stop() }
+        monitor.setRecording(true)
+        try await waitUntil { await sampler.calls.count >= 3 }
+        XCTAssertTrue(monitor.history.isEmpty, "Nothing is published to a view nobody sees")
+        XCTAssertNil(monitor.readings.value, "Without a menu-bar item, no live reading is sent")
+        let full = await sampler.calls.contains { $0.full }
+        XCTAssertFalse(full, "Recording needs no power or storage reading")
+
+        monitor.setPresented(true, for: .page)
+        XCTAssertGreaterThanOrEqual(monitor.history.count, 3, "An overview opens on what was recorded")
+        XCTAssertEqual(monitor.history.last?.memory, 0.25)
+        monitor.setPresented(false, for: .page)
+        XCTAssertTrue(monitor.isSampling, "Recording goes on once the overview closes")
+        monitor.setRecording(false)
+        XCTAssertFalse(monitor.isSampling)
+    }
+
     func testHidingTheViewPublishesNothing() async throws {
         let sampler = MonitorFixture()
         let monitor = SystemMonitor(sampler: sampler, interval: .seconds(60))

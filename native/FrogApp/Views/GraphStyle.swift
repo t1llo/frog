@@ -48,6 +48,8 @@ struct GraphLegend<Value: View>: View {
 struct GraphAxis: View {
     let leading: String
     let trailing: String
+    /// The moment under the pointer, centred between the ends.
+    var center: String? = nil
 
     var body: some View {
         VStack(spacing: 3) {
@@ -58,6 +60,8 @@ struct GraphAxis: View {
                 Text(leading)
                 Spacer(minLength: 4)
                 Text(trailing)
+            }.overlay {
+                if let center { Text(center).foregroundStyle(FrogStyle.ink) }
             }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
         }
     }

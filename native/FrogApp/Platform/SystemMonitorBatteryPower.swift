@@ -48,6 +48,38 @@ enum SystemMonitorBatteryPower {
         return .drawing(watts: watts)
     }
 
+    /// What the whole Mac draws, in watts, whether from the adapter or the battery. Apple silicon
+    /// laptops publish it as SystemLoad, in milliwatts, inside PowerTelemetryData.
+    static func systemWatts(properties: [String: Any]) -> Double? {
+        guard let telemetry = properties["PowerTelemetryData"] as? [String: Any],
+              let load = integer(telemetry["SystemLoad"]) else { return nil }
+        let watts = Double(load.int64Value) / 1_000
+        return watts > 0 && watts <= 500 ? watts : nil
+    }
+
+    /// The battery's temperature in degrees Celsius; the registry gives hundredths of a degree.
+    static func celsius(properties: [String: Any]) -> Double? {
+        guard flag(properties["BatteryInstalled"]) != false, let raw = integer(properties["Temperature"]) else { return nil }
+        let celsius = Double(raw.int64Value) / 100
+        return (-30...90).contains(celsius) ? celsius : nil
+    }
+
+    static func fullyCharged(properties: [String: Any]) -> Bool {
+        flag(properties["FullyCharged"]) == true
+    }
+
+    /// A word for a battery temperature. Apple keeps batteries happiest between about 16 and 22 °C
+    /// around the Mac; inside, low thirties are usual under light work.
+    static func temperatureState(_ celsius: Double) -> String {
+        switch celsius {
+        case ..<10: "Cold"
+        case ..<20: "Cool"
+        case ..<36: "Normal"
+        case ..<42: "Warm"
+        default: "Hot"
+        }
+    }
+
     private static func signedMilliamps(_ value: Any?) -> Int64? {
         guard let number = integer(value) else { return nil }
         var signed = number.int64Value

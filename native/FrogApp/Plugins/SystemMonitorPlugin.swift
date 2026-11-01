@@ -44,7 +44,8 @@ struct SystemMonitorSettings: ConfigSection {
     init() {}
 }
 
-/// CPU, GPU, memory, storage and battery. It samples only while an overview or its menu-bar item is on screen.
+/// CPU, GPU, memory, storage and battery. It records a light reading every few seconds while on, so the
+/// graph already holds the last ten minutes when an overview opens, and reads every two seconds while one shows.
 final class SystemMonitorPlugin: FrogPlugin, ObservableObject {
     static let info = PluginInfo(id: "system-monitor", name: "System monitor", symbol: "gauge.medium", tint: .teal,
                                  category: .system, summary: "CPU, GPU, memory, storage and battery")
@@ -62,6 +63,7 @@ final class SystemMonitorPlugin: FrogPlugin, ObservableObject {
         // A seed that could not be written is still used, so the next choice saves the old ones with it.
         settings = seedSettings() ?? context.settings(SystemMonitorSettings.self)
         monitor = SystemMonitor(sampler: Self.makeSampler())
+        monitor?.setRecording(true)
         configureItem()
     }
 

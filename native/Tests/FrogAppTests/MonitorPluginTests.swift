@@ -70,7 +70,7 @@ import FrogUsage
         XCTAssertEqual(calls, 0)
     }
 
-    func testStatusAnswersCPUGPUMemoryAndStorageAndLeavesNothingSampling() async throws {
+    func testStatusAnswersCPUGPUMemoryAndStorage() async throws {
         try await turn("system-monitor", true)
         let plugin = try XCTUnwrap(model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)
         XCTAssertTrue(model.pluginHost.menuTabs.contains { $0.id == "system-monitor.tab" })
@@ -83,20 +83,19 @@ import FrogUsage
         XCTAssertTrue(result.text.contains("CPU") && result.text.contains("25%"), result.text)
         XCTAssertTrue(result.text.contains("412 GB free of 1 TB"), result.text)
         let calls = await sampler.calls
-        XCTAssertEqual(calls, 2, "Two readings a second apart, then nothing")
-        XCTAssertEqual(plugin.monitor?.isSampling, false)
+        XCTAssertGreaterThanOrEqual(calls, 2, "Two readings a second apart, beside the background recording")
+        XCTAssertEqual(plugin.monitor?.isSampling, true, "The graph keeps recording")
     }
 
-    /// The measurement the brief asks for: with every overview closed nothing is sampled; an open one
-    /// samples every two seconds.
-    func testIdleWithEveryOverviewClosedSamplesNothing() async throws {
+    /// With every overview closed it records lightly, so the graph is full when one opens;
+    /// an open one samples every two seconds.
+    func testRecordsInTheBackgroundAndFasterWhileShown() async throws {
         try await turn("system-monitor", true)
         let plugin = try XCTUnwrap(model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)
         let monitor = try XCTUnwrap(plugin.monitor)
-        try await Task.sleep(for: .milliseconds(300))
+        try await waitUntil { await self.sampler.calls >= 1 }
+        XCTAssertTrue(monitor.isSampling, "Popup closed, no item: it still records")
         var calls = await sampler.calls
-        XCTAssertEqual(calls, 0, "Popup closed, no item: no sampling at all")
-        XCTAssertFalse(monitor.isSampling)
 
         // The test runner sits in the background, where App Nap would stretch every sleep.
         let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "Timing the monitor")
@@ -114,7 +113,9 @@ import FrogUsage
         XCTAssertLessThanOrEqual(rate, 0.6, "The open popup samples every two seconds")
         XCTAssertGreaterThan(calls - before, 0)
         monitor.setPresented(false, for: .frogMenu)
-        XCTAssertFalse(monitor.isSampling)
+        XCTAssertTrue(monitor.isSampling, "Closed again, it goes back to recording")
+        try await turn("system-monitor", false)
+        XCTAssertFalse(monitor.isSampling, "Off means nothing runs")
     }
 
     func testOneRealSampleIsCheap() async {

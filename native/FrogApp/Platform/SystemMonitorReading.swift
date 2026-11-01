@@ -45,6 +45,7 @@ struct SystemMonitorSample: Equatable, Sendable {
     let time: Date
     let cpu: Double?
     let gpu: Double?
+    var memory: Double? = nil
 }
 
 /// A stretch of consecutive readings; the line breaks where one is missing or recording paused.
@@ -85,6 +86,10 @@ struct SystemMonitorPower: Equatable, Sendable {
     var thermal = "Unavailable"
     var lowPower: Bool?
     var batteryFlow: SystemMonitorBatteryFlow?
+    var fullyCharged = false
+    /// What the whole Mac draws, in watts.
+    var systemWatts: Double?
+    var batteryCelsius: Double?
 }
 
 /// Counter math is independent of OS access so resets, hot-plug and sleep gaps

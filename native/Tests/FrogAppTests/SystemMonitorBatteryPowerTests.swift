@@ -17,6 +17,31 @@ final class SystemMonitorBatteryPowerTests: XCTestCase {
         XCTAssertEqual(SystemMonitorBatteryFlow.charging(watts: 24).title, "Battery charging")
     }
 
+    func testWholeMacDrawTemperatureAndFullChargeComeFromTheSameSnapshot() {
+        var values = properties(current: 0, external: true)
+        values["PowerTelemetryData"] = ["SystemLoad": 26_778, "SystemPowerIn": 26_778]
+        values["Temperature"] = 3_071
+        values["FullyCharged"] = true
+        XCTAssertNil(SystemMonitorBatteryPower.reading(properties: values), "A full battery on the adapter moves no power")
+        XCTAssertEqual(SystemMonitorBatteryPower.systemWatts(properties: values) ?? 0, 26.778, accuracy: 0.001)
+        XCTAssertEqual(SystemMonitorBatteryPower.celsius(properties: values) ?? 0, 30.71, accuracy: 0.001)
+        XCTAssertTrue(SystemMonitorBatteryPower.fullyCharged(properties: values))
+
+        values["PowerTelemetryData"] = ["SystemLoad": 0]
+        values["Temperature"] = 12_000
+        XCTAssertNil(SystemMonitorBatteryPower.systemWatts(properties: values), "No load is no reading")
+        XCTAssertNil(SystemMonitorBatteryPower.celsius(properties: values), "120 °C is a broken counter")
+        XCTAssertNil(SystemMonitorBatteryPower.systemWatts(properties: [:]))
+    }
+
+    func testTemperatureStates() {
+        XCTAssertEqual(SystemMonitorBatteryPower.temperatureState(5), "Cold")
+        XCTAssertEqual(SystemMonitorBatteryPower.temperatureState(18), "Cool")
+        XCTAssertEqual(SystemMonitorBatteryPower.temperatureState(30.7), "Normal")
+        XCTAssertEqual(SystemMonitorBatteryPower.temperatureState(38), "Warm")
+        XCTAssertEqual(SystemMonitorBatteryPower.temperatureState(45), "Hot")
+    }
+
     func testSignedAndUnsigned32And64BitRegistryEncodingsAgree() {
         let encodings: [NSNumber] = [
             NSNumber(value: Int32(-1_500)), NSNumber(value: Int64(-1_500)),
