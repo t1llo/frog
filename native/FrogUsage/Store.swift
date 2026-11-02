@@ -231,10 +231,15 @@ final class Store: ObservableObject {
         defer { checkingLogin = false }
         // Set before the first suspension, so a check already under way starts no second renewal.
         awaitingLoginUntil = currentDate().addingTimeInterval(600)
-        let generation = loginGeneration, directory = configDirectory, reader = readAuth
+        // A renewal under way now is the one to wait for, even if it ends before the login is read.
+        let generation = loginGeneration, directory = configDirectory, reader = readAuth, underWay = renewal
         guard var usable = try? await usageWork({ reader(.claudeCode, directory) != nil }),
               active, generation == loginGeneration else { return false }
-        if !usable, await renew(directory, deadline: Self.signInRenewalDeadline) == .renewed {
+        let renewed: () async -> ClaudeLoginRenewal = { [self] in
+            if let underWay { return await underWay.value }
+            return await renew(directory, deadline: Self.signInRenewalDeadline)
+        }
+        if !usable, await renewed() == .renewed {
             guard let found = try? await usageWork({ reader(.claudeCode, directory) != nil }) else { return false }
             usable = found
         }

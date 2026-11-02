@@ -9,7 +9,7 @@ import XCTest
     private final class World: @unchecked Sendable {
         private let lock = NSLock()
         private var _now: Date, _login = false, _renewal = ClaudeLoginRenewal.failed
-        private var _renewals = 0, _reads = 0, _requests = 0, _held = false, _deadlines: [TimeInterval] = []
+        private var _renewals = 0, _reads = 0, _requests = 0, _held = false, _readsHeld = false, _deadlines: [TimeInterval] = []
         init(now: Date) { _now = now }
         private func locked<Value>(_ body: () -> Value) -> Value { lock.lock(); defer { lock.unlock() }; return body() }
         var now: Date { get { locked { _now } } set { locked { _now = newValue } } }
@@ -20,8 +20,13 @@ import XCTest
         var requests: Int { locked { _requests } }
         /// Keeps a renewal running until it is let go.
         var held: Bool { get { locked { _held } } set { locked { _held = newValue } } }
+        /// Keeps login reads waiting until they are let go, like a busy Mac.
+        var readsHeld: Bool { get { locked { _readsHeld } } set { locked { _readsHeld = newValue } } }
         var deadlines: [TimeInterval] { locked { _deadlines } }
-        func read() -> Bool { locked { _reads += 1; return _login } }
+        func read() -> Bool {
+            while readsHeld { usleep(1000) }
+            return locked { _reads += 1; return _login }
+        }
         func renew(deadline: TimeInterval) -> ClaudeLoginRenewal {
             locked { _renewals += 1; _deadlines.append(deadline) }
             while held { usleep(1000) }
@@ -147,6 +152,25 @@ import XCTest
         XCTAssertEqual(world.renewals, 2)
         XCTAssertEqual(world.deadlines.count, 2)
         XCTAssertLessThan(world.deadlines[1], world.deadlines[0])
+    }
+
+    func testSignInWhoseLoginCheckOutlastsTheRenewalUnderWayStartsNoSecond() async throws {
+        let world = World(now: base); world.held = true
+        let store = store(world)
+        defer { world.held = false; world.readsHeld = false; store.stop() }
+        store.start()
+        for _ in 0..<400 where world.renewals == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        world.readsHeld = true
+        async let signIn = store.beginSignIn()
+        for _ in 0..<400 where !store.checkingLogin { try await Task.sleep(for: .milliseconds(5)) }
+        // The renewal fails while the sign-in is still looking at the login.
+        world.held = false
+        try await settled(store)
+        XCTAssertFalse(store.inFlight)
+        world.readsHeld = false
+        let needed = await signIn
+        XCTAssertTrue(needed)
+        XCTAssertEqual(world.renewals, 1, "The sign-in takes the result of the renewal it found under way")
     }
 
     func testSignInIsSkippedWhenClaudeCodeStillHasAUsableLogin() async throws {
