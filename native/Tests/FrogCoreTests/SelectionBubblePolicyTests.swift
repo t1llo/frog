@@ -144,4 +144,81 @@ final class SelectionBubblePolicyTests: XCTestCase {
         XCTAssertFalse(SelectionBubblePolicy.isGame(applicationCategory: "public.app-category.productivity"))
         XCTAssertFalse(SelectionBubblePolicy.isGame(applicationCategory: nil))
     }
+
+    func testNoBubbleWithoutTextByDefault() {
+        XCTAssertFalse(SelectionBubbleOptions().chromiumApps)
+    }
+
+    func testOneCharacterOrOnlyPunctuationIsTooShort() {
+        func show(_ text: String) -> BubbleBlock? {
+            SelectionBubblePolicy.mayShow(selection(text), dismissed: nil, shown: nil, itemCount: 1)
+        }
+        XCTAssertEqual(show("a"), .tooShort)
+        XCTAssertEqual(show(" a \n"), .tooShort)
+        XCTAssertEqual(show("..."), .tooShort)
+        XCTAssertEqual(show("- ("), .tooShort)
+        XCTAssertEqual(show("   "), .empty)
+        XCTAssertNil(show("ok"))
+        XCTAssertNil(show("42"))
+        XCTAssertNil(show("a.b"))
+    }
+
+    func testAGestureMustBeginOnTextNotOnAControlOrAWindowPart() {
+        func block(_ role: String?, _ ancestors: [String] = []) -> BubbleBlock? {
+            SelectionBubblePolicy.mayStartSelection(on: role.map { PointElement(role: $0, ancestors: ancestors) })
+        }
+        XCTAssertNil(SelectionBubblePolicy.mayStartSelection(on: nil), "Unknown: the text decides")
+        for role in ["AXScrollBar", "AXSlider", "AXButton", "AXRadioButton", "AXImage", "AXWindow", "AXMenuItem", "AXToolbar"] {
+            XCTAssertEqual(block(role, ["AXWebArea"]), .notText, role)
+        }
+        XCTAssertNil(block("AXTextArea", ["AXScrollArea", "AXWindow"]))
+        XCTAssertNil(block("AXTextField", ["AXToolbar", "AXWindow"]), "A search field in a toolbar")
+        XCTAssertNil(block("AXTextField", ["AXCell", "AXRow", "AXOutline"]), "A file being renamed")
+        XCTAssertNil(block("AXStaticText", ["AXGroup", "AXScrollArea", "AXWindow"]))
+        XCTAssertNil(block("AXWebArea"))
+        XCTAssertNil(block("AXStaticText", ["AXCell", "AXRow", "AXTable", "AXGroup", "AXWebArea"]), "A table in a web page")
+        XCTAssertNil(block("AXLink", ["AXGroup", "AXWebArea"]))
+        XCTAssertEqual(block("AXStaticText", ["AXCell", "AXRow", "AXOutline", "AXScrollArea", "AXWindow"]), .notText, "A file list")
+        XCTAssertEqual(block("AXStaticText", ["AXGroup", "AXToolbar", "AXWindow"]), .notText)
+        XCTAssertEqual(block("AXGroup", ["AXTabGroup", "AXWindow"]), .notText)
+    }
+
+    func testWithoutTextOnlyADragOrDoubleClickInsideTheContentCounts() {
+        let window = CGRect(x: 100, y: 100, width: 800, height: 600)
+        let inside = CGPoint(x: 400, y: 400)
+        func offer(_ start: CGPoint?, _ gesture: SelectionGesture, to end: CGPoint = CGPoint(x: 600, y: 400)) -> BubbleBlock? {
+            SelectionBubblePolicy.mayOfferWithoutText(pointer: end, window: window, start: start, gesture: gesture)
+        }
+        XCTAssertNil(offer(inside, .drag))
+        XCTAssertNil(offer(inside, .doubleClick, to: inside))
+        XCTAssertNil(offer(inside, .tripleClick, to: inside))
+        XCTAssertEqual(offer(inside, .shiftClick), .noPosition)
+        XCTAssertEqual(offer(inside, .keyboard), .noPosition)
+        XCTAssertEqual(offer(CGPoint(x: 400, y: 690), .drag), .windowChrome, "A drag that began on the tabs moves the window")
+        XCTAssertEqual(offer(CGPoint(x: 895, y: 400), .drag), .windowChrome, "A drag that began on the scroll bar")
+        XCTAssertEqual(offer(CGPoint(x: 50, y: 400), .drag), .windowChrome, "Began outside the window")
+        XCTAssertEqual(offer(inside, .drag, to: CGPoint(x: 405, y: 405)), .tooShort, "A slipped click")
+    }
+
+    func testAGestureBeginningOnTheSelectionCountsAsSelectingIt() {
+        let word = CGRect(x: 100, y: 500, width: 40, height: 16)
+        XCTAssertTrue(SelectionBubblePolicy.reselects(pointer: CGPoint(x: 400, y: 100), start: CGPoint(x: 110, y: 508),
+                                                      afterShortcut: false, bounds: word, endBounds: word))
+        XCTAssertFalse(SelectionBubblePolicy.reselects(pointer: CGPoint(x: 400, y: 100), start: CGPoint(x: 300, y: 100),
+                                                       afterShortcut: false, bounds: word, endBounds: word))
+    }
+
+    func testOnlyNavigationKeysWithShiftEndAKeyboardSelection() {
+        var keys = ShiftKeys()
+        XCTAssertFalse(keys.endsSelection, "Shift alone")
+        keys.pressed(keyCode: 124)
+        XCTAssertTrue(keys.endsSelection, "Shift and the right arrow")
+        keys.pressed(keyCode: 0)
+        XCTAssertFalse(keys.endsSelection, "Typing in between")
+        var typed = ShiftKeys()
+        typed.pressed(keyCode: 17)
+        XCTAssertFalse(typed.endsSelection, "A capital letter or a shortcut")
+        for code in [UInt16]([123, 124, 125, 126, 115, 119, 116, 121]) { XCTAssertTrue(ShiftKeys.extendsSelection(keyCode: code)) }
+        XCTAssertFalse(ShiftKeys.extendsSelection(keyCode: 36), "Return")
+    }
 }

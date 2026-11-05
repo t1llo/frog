@@ -36,7 +36,7 @@ public struct ExplainSettings: Codable, Equatable, Sendable {
     public var bubbleExcludedApps: [String] = SelectionBubbleOptions.defaultExcludedApps.sorted()
     /// Offers the bubble in Chrome, Electron and similar apps too, which keep their text hidden. The name stays from
     /// when Frog asked them to expose it.
-    public var bubbleExposeText = true
+    public var bubbleExposeText = false
     /// Rules the person took out of the bubble; their shortcuts still work.
     public var bubbleHiddenRules: [UUID] = []
 
@@ -69,7 +69,7 @@ public struct ExplainSettings: Codable, Equatable, Sendable {
         bubbleExcludedApps = try values.decodeIfPresent([String].self, forKey: .bubbleExcludedApps)
             ?? SelectionBubbleOptions.defaultExcludedApps.sorted()
         bubbleHiddenRules = try values.decodeIfPresent([UUID].self, forKey: .bubbleHiddenRules) ?? []
-        bubbleExposeText = try values.decodeIfPresent(Bool.self, forKey: .bubbleExposeText) ?? true
+        bubbleExposeText = try values.decodeIfPresent(Bool.self, forKey: .bubbleExposeText) ?? false
         self = normalized
     }
 

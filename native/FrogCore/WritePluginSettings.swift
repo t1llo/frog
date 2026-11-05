@@ -7,7 +7,7 @@ public struct WritingConfig: ConfigSection {
         public var on = false
         public var doubleClick = true
         public var keyboard = true
-        public var chromiumApps = true
+        public var chromiumApps = false
         public var maxCharacters = 4_000
         public var excludedApps = SelectionBubbleOptions.defaultExcludedApps.sorted()
         public init() {}
@@ -46,7 +46,7 @@ public struct WritingConfig: ConfigSection {
         "bubble": "The bubble that offers your rules after you select text",
         "bubble.double-click": "Also after a double- or triple-click",
         "bubble.keyboard": "Also after selecting with Shift and the arrow keys",
-        "bubble.chromium-apps": "Also in Chrome, Electron and other apps that hide their text",
+        "bubble.chromium-apps": "Also in Chrome, Electron and other apps that hide their text, offered without reading it (off by default)",
         "bubble.max-characters": "Longer selections show no bubble (100 to 20000)",
         "bubble.excluded-apps": "Bundle identifiers of apps that never show it",
     ]

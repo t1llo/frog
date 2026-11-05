@@ -25,6 +25,11 @@ struct SelectionBubbleView: View {
     /// The list is as wide as its longest row within these bounds.
     static let listWidths: ClosedRange<CGFloat> = 248...320
     static let rowHeight: CGFloat = FrogStyle.controlHeight
+    /// The bar is a 36-point pill (`FrogStyle.pillRadius` 18): items 26 high sit 5 in, so their highlight curves
+    /// at 18 - 5 = 13 and runs parallel to the pill's end.
+    static let barItemHeight: CGFloat = 26
+    static let barInset: CGFloat = 5
+    static let barItemRadius: CGFloat = FrogStyle.pillRadius - barInset
 
     var body: some View {
         Group {
@@ -41,7 +46,8 @@ struct SelectionBubbleView: View {
             ForEach(Array(visible.enumerated()), id: \.element.id) { index, item in
                 if index > 0, visible[index - 1].answers != item.answers { groupGap }
                 Button { select(item) } label: { barLabel(item) }
-                    .buttonStyle(BubbleButtonStyle(pointer: pointer))
+
+                    .buttonStyle(BubbleButtonStyle(pointer: pointer, radius: Self.barItemRadius))
                     .help(Self.help(item))
                     .accessibilityLabel(Self.accessibilityTitle(item))
             }
@@ -49,15 +55,15 @@ struct SelectionBubbleView: View {
                 groupGap
                 Button(action: expand) {
                     Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.muted)
-                        .frame(width: 24, height: 26).contentShape(Rectangle())
+                        .frame(width: 26, height: Self.barItemHeight).contentShape(Rectangle())
                 }
-                .buttonStyle(BubbleButtonStyle(pointer: pointer))
+                .buttonStyle(BubbleButtonStyle(pointer: pointer, radius: Self.barItemRadius))
                 .help(L10n.text("More rules"))
                 .accessibilityLabel(L10n.text("More rules"))
             }
         }
-        .padding(4)
-        .frogPanel()
+        .padding(Self.barInset)
+        .frogPanel(pill: true)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L10n.text("Selection bubble"))
     }
@@ -69,12 +75,12 @@ struct SelectionBubbleView: View {
 
     private func barLabel(_ item: BubbleItem) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: item.symbol).font(.system(size: 11, weight: .medium))
+            Image(systemName: item.symbol).font(.system(size: 11, weight: .medium)).frame(width: 14)
                 .foregroundStyle(FrogStyle.muted)
             Text(item.title).font(FrogType.label).lineLimit(1).truncationMode(.tail).frame(maxWidth: 140, alignment: .leading)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 26)
+        .padding(.horizontal, 9)
+        .frame(height: Self.barItemHeight)
         .fixedSize(horizontal: true, vertical: false)
         .contentShape(Rectangle())
     }
@@ -102,7 +108,8 @@ struct SelectionBubbleView: View {
             if !answers.isEmpty { section("Answer", answers) }
             if !writing.isEmpty { section("Replace selection", writing) }
         }
-        .padding(6)
+        // Rows sit a panel inset from the edge: 10-point highlights inside 18-point corners.
+        .padding(FrogStyle.panelInset)
     }
 
     private func section(_ title: String, _ items: [BubbleItem]) -> some View {
@@ -150,13 +157,14 @@ struct SelectionBubbleView: View {
 /// (`frogRowHighlight`), from the pointer the bubble's container reports.
 private struct BubbleButtonStyle: ButtonStyle {
     @ObservedObject var pointer: BubblePointer
+    var radius: CGFloat = FrogStyle.controlRadius
 
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
         configuration.label
             .background {
                 GeometryReader { proxy in
                     let hovered = pointer.location.map { proxy.frame(in: .named(SelectionBubbleView.space)).contains($0) } ?? false
-                    RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous)
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
                         .fill(configuration.isPressed || hovered ? FrogStyle.hover : .clear)
                 }
             }

@@ -9,23 +9,27 @@ struct AnswerPanelView: View {
     @State private var chromeHeight: CGFloat = 0
 
     /// The answer scrolls once the panel reaches its tallest.
-    private var scrollHeight: CGFloat { min(contentHeight, max(80, model.maxHeight - chromeHeight)) }
+    /// The fade under the answer, which also adds its height as an empty margin below the last line.
+    private static let fadeHeight: CGFloat = 20
+    /// The answer and the fade's margin, so a short answer sits fully above the fade and never scrolls.
+    private var scrollHeight: CGFloat { min(contentHeight + Self.fadeHeight, max(80, model.maxHeight - chromeHeight)) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-                .padding(.leading, 14).padding(.trailing, 8).padding(.vertical, 8)
+                .padding(.leading, FrogStyle.cardPadding).padding(.trailing, FrogStyle.panelInset).padding(.vertical, FrogStyle.panelInset)
                 .background(WindowDragRegion())
                 .measured(ChromeHeightKey.self)
             // Before the first text and after a failure without any, the status line follows the header directly.
             if hasContent {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        answer.padding(.horizontal, 14).padding(.top, 2).padding(.bottom, 12)
+                        answer.padding(.horizontal, FrogStyle.cardPadding).padding(.top, 2)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .measured(ContentHeightKey.self)
                     }
-                    .minimalScrollbars()
+                    .scrollIndicators(.never)
+                    .bottomScrollFade(height: Self.fadeHeight)
                     .frame(height: scrollHeight)
                     .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
                     // A follow-up's answer starts below the earlier ones, often out of sight in a full panel.
@@ -82,7 +86,7 @@ struct AnswerPanelView: View {
                 if let pending = session.pendingQuestion, !session.turns.isEmpty { question(pending).id(Self.followUpID) }
                 if !session.partial.isEmpty { AnswerMarkdown(text: session.partial) }
             }
-            .font(FrogType.row)
+            .font(FrogType.body).lineSpacing(3)
             .textSelection(.enabled)
         }
     }
@@ -100,7 +104,11 @@ struct AnswerPanelView: View {
     @ViewBuilder private var statusLine: some View {
         if let session = model.session, let line = noteFailure ?? session.statusLine {
             HStack(spacing: 8) {
-                if noteFailure == nil, session.phase.isPending { ProgressView().controlSize(.mini) }
+                if noteFailure == nil, session.phase.isPending { PulseDot() }
+                else if failed || noteFailure != nil {
+                    Image(systemName: "exclamationmark.triangle.fill").font(FrogType.small).foregroundStyle(FrogStyle.warning)
+                        .accessibilityHidden(true)
+                }
                 Text(line).font(FrogType.caption)
                     .foregroundStyle(failed || noteFailure != nil ? FrogStyle.warning : FrogStyle.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -113,7 +121,7 @@ struct AnswerPanelView: View {
                 }
             }
             .buttonStyle(.frog(compact: true))
-            .padding(.horizontal, 14).padding(.vertical, 8)
+            .padding(.horizontal, FrogStyle.cardPadding).padding(.vertical, FrogStyle.panelInset)
             .accessibilityElement(children: .combine)
         }
     }
@@ -123,8 +131,8 @@ struct AnswerPanelView: View {
             HStack(spacing: 2) {
                 TextField(L10n.text(followUpPlaceholder), text: $model.question)
                     .textFieldStyle(.plain).font(FrogType.row)
-                    .padding(.horizontal, 10)
-                    .frogControlSurface(height: FrogStyle.controlHeight)
+                    .padding(.horizontal, FrogStyle.rowInset)
+                    .frogControlSurface(height: FrogStyle.controlHeight, radius: FrogStyle.controlRadius)
                     // It stays enabled while the answer runs, so it keeps focus and the next question can be typed.
                     .disabled(followUpBlocked)
                     .onSubmit { model.ask(model.question) }
@@ -148,7 +156,10 @@ struct AnswerPanelView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.leading, 10).padding(.trailing, 8).padding(.vertical, 10)
+        // Field and icons sit a panel inset from the edge, so their 10-point corners nest in the panel's 18.
+        .padding(FrogStyle.panelInset)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .top) { Rectangle().fill(FrogStyle.hairline).frame(height: 1) }
     }
 
     // MARK: State
@@ -208,6 +219,19 @@ private struct PanelIcon: View {
         .buttonStyle(.plain).opacity(enabled || active ? 1 : 0.4)
         .onHover { hovering = $0 }
         .help(L10n.text(help ?? title)).accessibilityLabel(L10n.text(title))
+    }
+}
+
+/// A quiet dot that breathes while the answer is on its way; it holds still under Reduce Motion.
+private struct PulseDot: View {
+    @State private var on = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        Circle().fill(FrogStyle.muted).frame(width: 6, height: 6)
+            .opacity(on || reduceMotion ? 0.9 : 0.35)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: on)
+            .onAppear { on = true }
+            .accessibilityHidden(true)
     }
 }
 

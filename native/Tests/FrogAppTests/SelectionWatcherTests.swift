@@ -162,12 +162,11 @@ final class SelectionWatcherTests: XCTestCase {
         XCTAssertFalse(fixture.presenter.isVisible)
         XCTAssertEqual(fixture.presenter.shows.count, 1)
 
-        // A shortcut with Shift, such as ⇧⌘T, ends like a keyboard selection, whichever key goes up first.
-        fixture.pressShift(with: .command)
-        try await waitUntil { fixture.reader.calls.count == 3 }
-        fixture.pressShift(with: .control, releasingShiftFirst: true)
-        try await waitUntil { fixture.reader.calls.count == 4 }
-        try await Task.sleep(for: .milliseconds(10))
+        // A shortcut with Shift, such as ⇧⌘T, selects nothing and reads nothing, whichever key goes up first.
+        fixture.pressShift(with: .command, key: Fixture.letterT)
+        fixture.pressShift(with: .control, releasingShiftFirst: true, key: Fixture.letterT)
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(fixture.reader.calls.count, 2)
         XCTAssertEqual(fixture.presenter.shows.count, 1)
 
         // Double-clicking the same word again brings it back.
@@ -344,6 +343,48 @@ final class SelectionWatcherTests: XCTestCase {
         }
     }
 
+    func testShiftReleasedAfterTypingOrWithoutAnyKeyReadsNothing() async throws {
+        // A capital letter typed into a field that shows an autocompleted selection.
+        let fixture = Fixture()
+        fixture.pressShift(key: 0)
+        fixture.pressShift(key: nil)
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertTrue(fixture.reader.calls.isEmpty)
+        XCTAssertTrue(fixture.presenter.shows.isEmpty)
+
+        // Shift and an arrow key selects, and typing in between spoils it.
+        fixture.pressShift(key: Fixture.rightArrow)
+        try await waitUntil { fixture.presenter.shows.count == 1 }
+    }
+
+    func testAGestureThatBeganOnAControlOrTheWindowFrameReadsNothing() async throws {
+        let blocked = [PointElement(role: "AXScrollBar"), PointElement(role: "AXWindow"), PointElement(role: "AXSlider"),
+                       PointElement(role: "AXStaticText", ancestors: ["AXCell", "AXRow", "AXOutline", "AXWindow"])]
+        for element in blocked {
+            let fixture = Fixture()
+            fixture.element = element
+            fixture.drag()
+            try await Task.sleep(for: .milliseconds(40))
+            XCTAssertTrue(fixture.reader.calls.isEmpty, "\(element)")
+            XCTAssertTrue(fixture.presenter.shows.isEmpty, "\(element)")
+        }
+        let allowed = Fixture()
+        allowed.element = PointElement(role: "AXStaticText", ancestors: ["AXGroup", "AXWebArea", "AXWindow"])
+        allowed.drag()
+        try await waitUntil { allowed.presenter.shows.count == 1 }
+    }
+
+    func testASelectionOfOneCharacterOrOnlyPunctuationShowsNothing() async throws {
+        for text in ["a", " . ", "--"] {
+            let fixture = Fixture()
+            fixture.reader.result = .selection(Self.snapshot(text))
+            fixture.drag()
+            try await waitUntil { fixture.reader.calls.count == 1 }
+            try await Task.sleep(for: .milliseconds(20))
+            XCTAssertTrue(fixture.presenter.shows.isEmpty, text)
+        }
+    }
+
     static func snapshot(_ text: String = "levee", element: Int = 1, end: CGRect? = SelectionWatcherTests.end) -> SelectionSnapshot {
         SelectionSnapshot(text: text, bounds: end, endBounds: end, context: nil, source: nil, isEditable: false,
                           pid: Fixture.pid, bundleID: "com.apple.Safari", applicationName: "Safari",
@@ -374,6 +415,8 @@ private final class Fixture {
     var builtOnVSCode = false
     var builtOnChromium = false
     var window: CGRect?
+    /// What lies under the pointer where a gesture begins; unknown unless a test says.
+    var element: PointElement?
     var options = SelectionBubbleOptions()
     let items = [BubbleItem(id: UUID(), title: "Explain", symbol: SelectionBubbleItems.answerSymbol, answers: true)]
     var ran: [(BubbleItem, SelectionSnapshot)] = []
@@ -386,6 +429,7 @@ private final class Fixture {
         let fixture = Fixture()
         fixture.frontmost = BubbleApplication(pid: pid, bundleID: "net.imput.helium", bundleURL: URL(fileURLWithPath: "/Applications/Helium.app"))
         fixture.builtOnChromium = true
+        fixture.options.chromiumApps = true
         fixture.window = CGRect(x: 0, y: 0, width: 1_000, height: 800)
         fixture.reader.result = .unavailable
         return fixture
@@ -399,7 +443,8 @@ private final class Fixture {
                                              builtOnChromium: { [unowned self] _ in self.builtOnChromium },
                                              windowFrame: { [unowned self] _, point in
                                                  self.window.flatMap { $0.contains(point) ? $0 : nil }
-                                             })
+                                             },
+                                             pointElement: { [unowned self] _ in await self.element })
         watcher = SelectionWatcher(
             reader: reader, presenter: presenter,
             hooks: .init(options: { [unowned self] in self.options }, state: { [unowned self] in self.state },
@@ -428,11 +473,15 @@ private final class Fixture {
 
     /// Shift goes down and up, as around Shift and the arrow keys or a shortcut such as ⇧⌘T. `others` go down
     /// before Shift and up after it, or before it.
-    func pressShift(with others: BubbleModifiers = [], releasingShiftFirst: Bool = false) {
-        for modifiers in [others, others.union(.shift), releasingShiftFirst ? others : .shift, []] {
+    func pressShift(with others: BubbleModifiers = [], releasingShiftFirst: Bool = false, key: UInt16? = Fixture.rightArrow) {
+        for (step, modifiers) in [others, others.union(.shift), releasingShiftFirst ? others : .shift, []].enumerated() {
             watcher.modifiersChanged(modifiers, mouseButtonDown: false, now: now)
+            if step == 1, let key { watcher.shiftKeyPressed(keyCode: key) }
         }
     }
+
+    static let rightArrow: UInt16 = 124
+    static let letterT: UInt16 = 17
 }
 
 private final class Reader: SelectionReading, @unchecked Sendable {

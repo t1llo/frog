@@ -42,9 +42,13 @@ struct BubbleState: Equatable {
 
 /// Watches for the end of a selection gesture in another app and offers the bubble. A thin shell around
 /// `SelectionWatcherCore`: it turns events into `SelectionInput`s, runs one settle task, reads the selection through
-/// Accessibility only and hands the result to the presenter. Apps built on Chromium keep their text hidden, so a
-/// mouse gesture there offers the bubble at the pointer without any text. It never copies and never sees typed
-/// characters: key presses are watched only while the bubble shows, and then only their key code and modifier keys.
+/// Accessibility only and hands the result to the presenter. It shows the bubble only for a text selection it read,
+/// that this gesture made, from a gesture that began on text: the element under the pointer at mouse down must not be
+/// a scroll bar, slider, button, tab, toolbar, window part or file list. Apps built on Chromium keep their text hidden;
+/// only when the user turned on `chromiumApps` does a drag or double click there offer the bubble at the pointer
+/// without any text. It never copies and never sees typed characters: key presses are watched only while the bubble
+/// shows and while Shift is held, and then only their key code and modifier keys, to tell Shift and the arrow keys
+/// from typing a capital letter.
 @MainActor final class SelectionWatcher: SelectionWatching {
     struct Hooks {
         var options: @MainActor () -> SelectionBubbleOptions
@@ -67,6 +71,8 @@ struct BubbleState: Equatable {
         var builtOnChromium: @MainActor (URL) -> Bool = { _ in false }
         /// The frame of the app's frontmost window under the point, in Cocoa coordinates.
         var windowFrame: @MainActor (pid_t, CGPoint) -> CGRect? = { _, _ in nil }
+        /// The Accessibility element under a point (Cocoa coordinates), by role only. Runs off the main thread.
+        var pointElement: @Sendable (CGPoint) async -> PointElement? = { _ in nil }
 
         static let live = System(
             frontmost: {
@@ -98,7 +104,8 @@ struct BubbleState: Equatable {
                     if frame.contains(point) { return frame }
                 }
                 return nil
-            })
+            },
+            pointElement: { await PointElementLookup.element(at: $0) })
     }
 
     private let reader: SelectionReading
@@ -117,6 +124,13 @@ struct BubbleState: Equatable {
     /// leaves the selection as it was, rather than a selection made with Shift and the arrow keys.
     private var shortcutWithShift = false
     private var lastMouseUp: CGPoint?
+    private var lastMouseDown: CGPoint?
+    /// What was under the pointer when the mouse last went down, looked up off the main thread while the gesture runs,
+    /// since a window dragged by its title bar is gone from there by the time the gesture ends.
+    private var downElement: Task<PointElement?, Never>?
+    /// The keys pressed while Shift is held, by key code only.
+    private var shiftKeys = ShiftKeys()
+    private var shiftKeyMonitor: Any?
     private var pending: Task<Void, Never>?
     private var idleCheck: Task<Void, Never>?
     private var hovering = false
@@ -168,6 +182,8 @@ struct BubbleState: Equatable {
     func stop() {
         generation += 1
         pending?.cancel(); pending = nil
+        downElement?.cancel(); downElement = nil
+        removeShiftKeyMonitor()
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
         if let activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(activationObserver) }
@@ -221,11 +237,39 @@ struct BubbleState: Equatable {
     /// went down while it was held.
     func modifiersChanged(_ modifiers: BubbleModifiers, mouseButtonDown: Bool, now: Date) {
         let shift = modifiers.contains(.shift)
-        if shift, !shiftDown { shortcutWithShift = false }
+        if shift, !shiftDown {
+            shortcutWithShift = false
+            shiftKeys = ShiftKeys()
+            installShiftKeyMonitor()
+        }
         if shift, !modifiers.isDisjoint(with: [.command, .control]) { shortcutWithShift = true }
         let released = shiftDown && !shift && !mouseButtonDown
         shiftDown = shift
-        if released { handle(.shiftReleased, now: now) }
+        if !shift { removeShiftKeyMonitor() }
+        guard released else { return }
+        // Shift after a capital letter, a shortcut or a Shift-click selects nothing, and a field may still show an
+        // autocompleted selection then. Only Shift with the arrow keys, Home, End or the page keys does.
+        guard shiftKeys.endsSelection else {
+            Self.log.debug("shift released without selection keys: navigation \(self.shiftKeys.navigation), other keys \(self.shiftKeys.other)")
+            return
+        }
+        handle(.shiftReleased, now: now)
+    }
+
+    /// A key went down while Shift was held. Only its code.
+    func shiftKeyPressed(keyCode: UInt16) { shiftKeys.pressed(keyCode: keyCode) }
+
+    private func installShiftKeyMonitor() {
+        guard isRunning, shiftKeyMonitor == nil else { return }
+        shiftKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let keyCode = event.keyCode
+            MainActor.assumeIsolated { self?.shiftKeyPressed(keyCode: keyCode) }
+        }
+    }
+
+    private func removeShiftKeyMonitor() {
+        if let shiftKeyMonitor { NSEvent.removeMonitor(shiftKeyMonitor) }
+        shiftKeyMonitor = nil
     }
 
     private static func modifiers(_ flags: NSEvent.ModifierFlags) -> BubbleModifiers {
@@ -243,6 +287,7 @@ struct BubbleState: Equatable {
         if input == .scroll, shown == nil, core.pendingToken == nil, reading == 0 { return }
         generation += 1
         if case let .mouseUp(point, _, _) = input { lastMouseUp = point }
+        if case let .mouseDown(point, _, right) = input { beginGesture(at: point, right: right) }
         let effects = core.receive(input, now: now, options: hooks.options())
         switch input {
         case .mouseDown, .mouseUp, .shiftReleased, .applicationChanged:
@@ -257,27 +302,47 @@ struct BubbleState: Equatable {
                 pending?.cancel(); pending = nil
             case let .scheduleRead(token, at, gesture):
                 let keyboard = gesture == .keyboard
+                // Command or Control with Shift is a shortcut, unless a navigation key came with it: Shift Command Left
+                // selects to the start of the line.
                 schedule(token: token, delay: max(at.timeIntervalSince(now), 0), gesture: gesture,
-                         pointer: keyboard ? nil : lastMouseUp, afterShortcut: keyboard && shortcutWithShift)
+                         pointer: keyboard ? nil : lastMouseUp, start: keyboard ? nil : lastMouseDown,
+                         element: keyboard ? nil : downElement,
+                         afterShortcut: keyboard && shortcutWithShift && !shiftKeys.navigation)
             case .dismiss:
                 hideBubble()
             }
         }
     }
 
+    /// A left mouse down looks up what is under the pointer, once, off the main thread. A right click opens a menu and
+    /// selects nothing.
+    private func beginGesture(at point: CGPoint, right: Bool) {
+        downElement?.cancel()
+        downElement = nil
+        lastMouseDown = right ? nil : point
+        guard !right else { return }
+        let state = hooks.state()
+        guard state.bubbleEnabled, state.accessibilityTrusted else { return }
+        let lookup = system.pointElement
+        downElement = Task { await lookup(point) }
+    }
+
     // MARK: Reading
 
-    private func schedule(token: Int, delay: TimeInterval, gesture: SelectionGesture, pointer: CGPoint?, afterShortcut: Bool) {
+    private func schedule(token: Int, delay: TimeInterval, gesture: SelectionGesture, pointer: CGPoint?, start: CGPoint?,
+                          element: Task<PointElement?, Never>?, afterShortcut: Bool) {
         pending?.cancel()
         pending = Task { [weak self, sleep] in
             do { try await sleep(delay) } catch { return }
             guard !Task.isCancelled else { return }
-            await self?.settle(token: token, gesture: gesture, pointer: pointer, afterShortcut: afterShortcut)
+            await self?.settle(token: token, gesture: gesture, pointer: pointer, start: start, element: element,
+                               afterShortcut: afterShortcut)
         }
     }
 
     /// After the quiet time: checks, reads without context, checks again, shows.
-    private func settle(token: Int, gesture: SelectionGesture, pointer: CGPoint?, afterShortcut: Bool) async {
+    private func settle(token: Int, gesture: SelectionGesture, pointer: CGPoint?, start: CGPoint?,
+                        element: Task<PointElement?, Never>?, afterShortcut: Bool) async {
         guard core.settleFired(token: token) else { return }
         pending = nil
         guard let front = system.frontmost() else { return }
@@ -292,6 +357,18 @@ struct BubbleState: Equatable {
             return
         }
         let started = generation
+        // A gesture that began on a control or a window part is not a selection, whatever text is selected elsewhere.
+        if let element {
+            let found = await element.value
+            guard started == generation else {
+                Self.log.debug("gesture in \(front.bundleID ?? "?", privacy: .public) dropped by a later input")
+                return
+            }
+            if let block = SelectionBubblePolicy.mayStartSelection(on: found) {
+                Self.log.debug("not read in \(front.bundleID ?? "?", privacy: .public): \(String(describing: block), privacy: .public), began on \(found?.role ?? "?", privacy: .public) in \(String(describing: found?.ancestors.first), privacy: .public)")
+                return
+            }
+        }
         reading += 1
         let read = await readSelection(front, options: options, started: started)
         reading -= 1
@@ -300,7 +377,7 @@ struct BubbleState: Equatable {
             return
         }
         if result == .unavailable, options.chromiumApps, offersWithoutText(front) {
-            offerWithoutText(in: front, token: token, pointer: pointer)
+            offerWithoutText(in: front, token: token, pointer: pointer, start: start, gesture: gesture)
             return
         }
         var items: (visible: [BubbleItem], more: [BubbleItem]) = ([], [])
@@ -308,7 +385,7 @@ struct BubbleState: Equatable {
         if case let .selection(snapshot) = result {
             items = hooks.items(snapshot)
             // Dragging a window or pressing a shortcut with Shift ends like a selection but leaves the old one.
-            reselected = SelectionBubblePolicy.reselects(pointer: pointer, afterShortcut: afterShortcut,
+            reselected = SelectionBubblePolicy.reselects(pointer: pointer, start: start, afterShortcut: afterShortcut,
                                                          bounds: snapshot.bounds, endBounds: snapshot.endBounds)
         }
         if let block = SelectionBubblePolicy.mayShow(result, dismissed: core.dismissedFingerprint, shown: core.shownFingerprint,
@@ -330,9 +407,10 @@ struct BubbleState: Equatable {
 
     /// An app built on Chromium keeps its text hidden, so a mouse gesture that ended in its content may have selected
     /// text. The bubble offers answer rules at the pointer; the rule picked copies the selection as its shortcut does.
-    private func offerWithoutText(in app: BubbleApplication, token: Int, pointer: CGPoint?) {
+    private func offerWithoutText(in app: BubbleApplication, token: Int, pointer: CGPoint?, start: CGPoint?,
+                                  gesture: SelectionGesture) {
         let window = pointer.flatMap { system.windowFrame(app.pid, $0) }
-        if let block = SelectionBubblePolicy.mayOfferWithoutText(pointer: pointer, window: window) {
+        if let block = SelectionBubblePolicy.mayOfferWithoutText(pointer: pointer, window: window, start: start, gesture: gesture) {
             Self.log.debug("not shown in \(app.bundleID ?? "?", privacy: .public) without text: \(String(describing: block), privacy: .public)")
             return
         }
@@ -461,6 +539,46 @@ struct BubbleState: Equatable {
                 self.handle(.keyDown(keyCode: keyCode, modifiers: Self.modifiers(flags)), now: self.clock())
             }
         }
+    }
+}
+
+/// Looks up the element under a point through Accessibility, by role only, on a background task: the call waits for
+/// the other app, so a bound on each call and on the whole walk keeps an app that does not answer from holding it.
+enum PointElementLookup {
+    static let timeout: Float = 0.2
+    static let deadline: TimeInterval = 0.35
+    static let maxDepth = 12
+
+    static func element(at point: CGPoint) async -> PointElement? {
+        await Task.detached(priority: .userInitiated) { lookup(point) }.value
+    }
+
+    private static func lookup(_ point: CGPoint) -> PointElement? {
+        let started = Date()
+        // No timeout on the system-wide element: set there, it becomes the default for every Accessibility call Frog
+        // makes, as WindowDragMonitor notes. Only the element the hit test returns is bounded.
+        let system = AXUIElementCreateSystemWide()
+        var found: AXUIElement?
+        let primaryHeight = CGDisplayBounds(CGMainDisplayID()).height
+        guard AXUIElementCopyElementAtPosition(system, Float(point.x), Float(primaryHeight - point.y), &found) == .success,
+              let leaf = found else { return nil }
+        AXUIElementSetMessagingTimeout(leaf, timeout)
+        let role = AXRead.string(leaf, kAXRoleAttribute)
+        let subrole = AXRead.string(leaf, kAXSubroleAttribute)
+        var ancestors: [String] = []
+        // A text field or a control already decides; anything else is judged by what holds it.
+        let decided = role.map { SelectionBubblePolicy.editableRoles.contains($0) || SelectionBubblePolicy.nonTextRoles.contains($0) } ?? false
+        if !decided {
+            var current = leaf
+            while ancestors.count < maxDepth, Date().timeIntervalSince(started) < deadline,
+                  let parent = AXRead.element(current, kAXParentAttribute, timeout: timeout),
+                  let parentRole = AXRead.string(parent, kAXRoleAttribute) {
+                ancestors.append(parentRole)
+                if parentRole == "AXWindow" || parentRole == "AXWebArea" { break }
+                current = parent
+            }
+        }
+        return PointElement(role: role, subrole: subrole, ancestors: ancestors)
     }
 }
 

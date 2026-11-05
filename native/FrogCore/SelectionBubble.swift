@@ -24,15 +24,58 @@ public enum SelectionInput: Equatable, Sendable {
     case applicationChanged
 }
 
-public enum SelectionGesture: Equatable, Sendable { case drag, doubleClick, tripleClick, shiftClick, keyboard }
+public enum SelectionGesture: Equatable, Sendable {
+    case drag, doubleClick, tripleClick, shiftClick, keyboard
+
+    /// Whether the gesture alone, without the selected text, says that text was selected: a drag or a double click
+    /// does. A Shift-click extends a selection in lists as well, and Shift and the arrow keys move through them.
+    public var selectsWithoutText: Bool { self == .drag || self == .doubleClick || self == .tripleClick }
+}
+
+/// The keys pressed while Shift is held, by key code only, never by character. Shift and the arrow keys select text;
+/// Shift and a letter types a capital, and Shift with Command and a letter is a shortcut. Only the first ends in a
+/// selection, so releasing Shift after typing, which is when a field may still show an autocompleted selection,
+/// reads nothing.
+public struct ShiftKeys: Equatable, Sendable {
+    public private(set) var navigation = false
+    public private(set) var other = false
+
+    public init() {}
+
+    /// The arrow keys, Home, End, Page Up and Page Down: the keys that move the caret and so extend a selection.
+    public static func extendsSelection(keyCode: UInt16) -> Bool {
+        [123, 124, 125, 126, 115, 119, 116, 121].contains(keyCode)
+    }
+
+    public mutating func pressed(keyCode: UInt16) {
+        if Self.extendsSelection(keyCode: keyCode) { navigation = true } else { other = true }
+    }
+
+    /// True when a navigation key was pressed and nothing else, so releasing Shift ends a keyboard selection.
+    public var endsSelection: Bool { navigation && !other }
+}
+
+/// The Accessibility element under the pointer when a mouse gesture began, reduced to roles. Never any text.
+public struct PointElement: Equatable, Sendable {
+    public var role: String?
+    public var subrole: String?
+    /// The roles of the containers around it, nearest first, up to its window.
+    public var ancestors: [String]
+
+    public init(role: String?, subrole: String? = nil, ancestors: [String] = []) {
+        self.role = role; self.subrole = subrole; self.ancestors = ancestors
+    }
+}
 
 public struct SelectionBubbleOptions: Equatable, Sendable {
     public var doubleClick = true
     public var keyboard = true
     public var maxCharacters = 4_000
     /// Offers the bubble in Chrome, Electron and other apps built on Chromium, which keep their text from
-    /// Accessibility, after a mouse gesture and without reading the text.
-    public var chromiumApps = true
+    /// Accessibility, after a drag or a double click and without reading the text. Off by default: without the text
+    /// Frog cannot tell a selection from a dragged window, tab, file or slider, so the bubble would show on gestures
+    /// that selected nothing.
+    public var chromiumApps = false
     public var excludedApps: Set<String> = SelectionBubbleOptions.defaultExcludedApps
     public static let defaultExcludedApps: Set<String> = [
         "com.1password.1password", "com.agilebits.onepassword7", "com.bitwarden.desktop",
@@ -82,7 +125,8 @@ public struct SelectionGestureTracker {
                                  options: SelectionBubbleOptions) -> Decision {
         let start = down
         down = nil
-        if modifiers.contains(.command) { return .none }
+        // Command-click selects files and links, and Control-click opens a menu.
+        if !modifiers.isDisjoint(with: [.command, .control]) { return .none }
         if let start, hypot(point.x - start.x, point.y - start.y) >= Self.dragDistance { return .schedule(.drag) }
         if clickCount >= 2 { return options.doubleClick ? .schedule(clickCount == 2 ? .doubleClick : .tripleClick) : .none }
         if clickCount == 1, modifiers.contains(.shift) { return .schedule(.shiftClick) }
@@ -215,6 +259,10 @@ public struct BubbleContext: Sendable {
 public enum BubbleBlock: Equatable, Sendable {
     case off, needsAccessibility, frogFrontmost, secureInput, excluded, game, busy
     case secureField, empty, tooLong, dismissedBefore, noItems, alreadyShowing
+    /// One character, or only punctuation: not worth a bubble.
+    case tooShort
+    /// The gesture began on a scroll bar, slider, button, tab, toolbar, menu, window frame or a list of files, not on text.
+    case notText
     /// The selection the bubble offered last, left as it was by a gesture that did not select it again.
     case unchanged
     /// An app that keeps its text hidden, and the pointer is not over one of its windows.
@@ -253,6 +301,7 @@ public enum SelectionBubblePolicy {
         if snapshot.fingerprint == dismissed { return .dismissedBefore }
         if snapshot.fingerprint == shown { return .alreadyShowing }
         if snapshot.fingerprint == offered, !reselected { return .unchanged }
+        if isTooShort(snapshot.text) { return .tooShort }
         if itemCount == 0 { return .noItems }
         return nil
     }
@@ -260,17 +309,61 @@ public enum SelectionBubblePolicy {
     /// How far from its selection a mouse gesture may end and still count as having made it.
     public static let reselectionMargin: CGFloat = 24
 
+    /// Fewer than two characters once trimmed, or no letter or digit in it.
+    public static let minimumCharacters = 2
+    public static func isTooShort(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (trimmed as NSString).length < minimumCharacters
+            || !trimmed.unicodeScalars.contains { CharacterSet.alphanumerics.contains($0) }
+    }
+
     /// Whether a gesture may have selected the text it read again. A drag or click that selects ends on or next to
     /// its selection; dragging a window or a scroll bar ends away from a selection it leaves as it was. A mouse
     /// gesture whose selection reports no rectangle always counts. A keyboard gesture, without a pointer, counts
     /// unless Command or Control went down while Shift was held (`afterShortcut`), as for ⇧⌘T, which leaves the
     /// selection as it was. Cocoa coordinates.
-    public static func reselects(pointer: CGPoint?, afterShortcut: Bool, bounds: CGRect?, endBounds: CGRect?) -> Bool {
+    /// `start` is where the mouse went down: a drag that selects begins or ends on its text, a window drag does neither.
+    public static func reselects(pointer: CGPoint?, start: CGPoint? = nil, afterShortcut: Bool, bounds: CGRect?,
+                                 endBounds: CGRect?) -> Bool {
         guard let pointer else { return !afterShortcut }
         let rects = [bounds, endBounds].compactMap { $0 }
         guard !rects.isEmpty else { return true }
-        return rects.contains { $0.insetBy(dx: -reselectionMargin, dy: -reselectionMargin).contains(pointer) }
+        return [pointer, start].compactMap { $0 }.contains { point in
+            rects.contains { $0.insetBy(dx: -reselectionMargin, dy: -reselectionMargin).contains(point) }
+        }
     }
+
+    /// Roles that are controls or window parts, never text.
+    public static let nonTextRoles: Set<String> = [
+        "AXScrollBar", "AXSlider", "AXButton", "AXPopUpButton", "AXMenuButton", "AXCheckBox", "AXRadioButton",
+        "AXTabGroup", "AXImage", "AXValueIndicator", "AXIncrementor", "AXStepper", "AXMenuItem", "AXMenuBarItem",
+        "AXMenuBar", "AXMenu", "AXToolbar", "AXSplitter", "AXDisclosureTriangle", "AXColorWell", "AXProgressIndicator",
+        "AXWindow", "AXSheet", "AXDockItem", "AXMenuExtra", "AXHandle", "AXRuler",
+    ]
+    /// Containers whose labels are not selected for explaining: toolbars, menus, and the lists, tables and columns of
+    /// files and messages.
+    public static let nonTextContainers: Set<String> = [
+        "AXToolbar", "AXTabGroup", "AXMenuBar", "AXMenu", "AXTable", "AXOutline", "AXBrowser", "AXRow", "AXCell", "AXColumn",
+    ]
+    public static let editableRoles: Set<String> = ["AXTextArea", "AXTextField", "AXComboBox", "AXSearchField"]
+
+    /// Checked for a mouse gesture from the element under the pointer where it began; nil when the element is unknown,
+    /// as for an app that did not answer, which leaves the decision to the text that is read. A text field, text area
+    /// or anything in a web page may be selected from; a control, a window part and a label in a toolbar or a file
+    /// list may not.
+    public static func mayStartSelection(on element: PointElement?) -> BubbleBlock? {
+        guard let element else { return nil }
+        let role = element.role ?? ""
+        if editableRoles.contains(role) { return nil }
+        if nonTextRoles.contains(role) { return .notText }
+        if role == "AXWebArea" || element.ancestors.contains("AXWebArea") { return nil }
+        if element.ancestors.contains(where: nonTextContainers.contains) { return .notText }
+        return nil
+    }
+
+    /// How far a drag in an app that keeps its text hidden must go: shorter ones are clicks that slipped, tab and
+    /// button presses.
+    public static let hiddenTextDragDistance: CGFloat = 12
 
     /// From the app's `LSApplicationCategoryType`, such as `public.app-category.action-games`.
     public static func isGame(applicationCategory: String?) -> Bool {
@@ -299,9 +392,17 @@ public enum SelectionBubblePolicy {
 
     /// Checked for a mouse gesture in an app that keeps its text hidden, where only where the gesture ended tells
     /// whether it may have selected text. `window` is the app's window under the pointer. Cocoa coordinates.
-    public static func mayOfferWithoutText(pointer: CGPoint?, window: CGRect?) -> BubbleBlock? {
+    /// `start` is where the mouse went down, which must be in the window's content too. Only a drag or a double click
+    /// counts, and a drag only past `hiddenTextDragDistance`.
+    public static func mayOfferWithoutText(pointer: CGPoint?, window: CGRect?, start: CGPoint? = nil,
+                                           gesture: SelectionGesture? = nil) -> BubbleBlock? {
         guard let pointer, let window, window.contains(pointer) else { return .noPosition }
-        if pointer.y > window.maxY - windowTopStrip || pointer.x > window.maxX - scrollBarWidth { return .windowChrome }
+        if let gesture, !gesture.selectsWithoutText { return .noPosition }
+        for point in [pointer, start].compactMap({ $0 }) {
+            if !window.contains(point) { return .windowChrome }
+            if point.y > window.maxY - windowTopStrip || point.x > window.maxX - scrollBarWidth { return .windowChrome }
+        }
+        if gesture == .drag, let start, hypot(pointer.x - start.x, pointer.y - start.y) < hiddenTextDragDistance { return .tooShort }
         return nil
     }
 

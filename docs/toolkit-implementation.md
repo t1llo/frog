@@ -543,17 +543,30 @@ context, with no shortcut wait and no clipboard. A Writing rule runs through
 watcher, the controller and the view as well as the reader for any clipboard, Copy, posted
 event or accessibility-forcing attribute.
 
+Before it reads, the watcher checks where the gesture began. At each left mouse down it looks
+up the element under the pointer through Accessibility on a background task
+(`PointElementLookup`: role, subrole and the roles of the containers up to the window, never
+text, 0.2 s per call and 0.35 s for the walk). `SelectionBubblePolicy.mayStartSelection` blocks
+a scroll bar, slider, button, tab, image, menu, toolbar, window part, and a label inside a file
+list or table, unless the element is a text field or text area or sits inside a web area; an
+unknown element leaves the decision to the text. Shift released with no mouse button down reads
+only when the keys pressed while Shift was held (`ShiftKeys`, key codes only, watched only
+while Shift is down) were navigation keys, so a capital letter, a shortcut or a bare Shift tap
+reads nothing. A selection under two characters or without a letter or digit
+(`isTooShort`) shows nothing, and Control-click is ignored like Command-click.
+
 An empty or unavailable read is read once more after 0.15 s, for an app that reports a
-fresh selection late. When the read stays unavailable after a mouse gesture, **Chrome and
-Electron apps** (`explain.bubble-expose-text`, `SelectionBubbleOptions.chromiumApps`) is on,
+fresh selection late. When the read stays unavailable after a drag or double click, **Chrome and
+Electron apps** (`explain.bubble-expose-text`, `SelectionBubbleOptions.chromiumApps`, off by default) is on,
 and the app is built on Chromium, whose framework in `Contents/Frameworks` carries
 `Versions/Current/Helpers`, the watcher offers the bubble without text. It asks
 `SelectionBubblePolicy.offersWithoutText` once per bundle identifier, which leaves out VS Code
 and the editors built on it: the bundle identifiers in `codeEditors`, and any app that ships
 `Contents/Resources/app/product.json`. `System.windowFrame` finds the app's window under the
 pointer through `CGWindowListCopyWindowInfo`, without Accessibility, and
-`mayOfferWithoutText` lets the bubble show only when the gesture ended inside it, below the
-top 44 points (the title bar and tabs) and left of the right 16 points (the scroll bar). A
+`mayOfferWithoutText` lets the bubble show only when the gesture began and ended inside it, below the
+top 44 points (the title bar and tabs) and left of the right 16 points (the scroll bar), and a drag
+went at least 12 points. A
 keyboard selection and an empty read show nothing. The snapshot is
 `SelectionSnapshot.hidden`: no text, not editable, so the bubble lists answer rules only, at
 the pointer. Picking one runs `startAnswer(rule, from: nil)`, which reads again through

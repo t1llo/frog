@@ -36,6 +36,19 @@ final class SelectionGestureTrackerTests: XCTestCase {
         XCTAssertEqual(click(count: 2, modifiers: .command), .none)
     }
 
+    func testControlClickOpensAMenuAndSelectsNothing() {
+        XCTAssertEqual(click(upAt: CGPoint(x: 200, y: 100), modifiers: .control), .none)
+        XCTAssertEqual(click(count: 2, modifiers: .control), .none)
+    }
+
+    func testOnlyDragsAndDoubleClicksSelectWithoutText() {
+        XCTAssertTrue(SelectionGesture.drag.selectsWithoutText)
+        XCTAssertTrue(SelectionGesture.doubleClick.selectsWithoutText)
+        XCTAssertTrue(SelectionGesture.tripleClick.selectsWithoutText)
+        XCTAssertFalse(SelectionGesture.shiftClick.selectsWithoutText)
+        XCTAssertFalse(SelectionGesture.keyboard.selectsWithoutText)
+    }
+
     func testDoubleAndTripleClicks() {
         XCTAssertEqual(click(count: 2), .schedule(.doubleClick))
         XCTAssertEqual(click(count: 3), .schedule(.tripleClick))

@@ -98,7 +98,8 @@ struct WritingBubbleSection: View {
                 Group {
                     toggle("After a double-click", \.doubleClick)
                     toggle("After selecting with the keyboard", \.keyboard)
-                    toggle("In Chrome and Electron apps", \.chromiumApps)
+                    toggle("In Chrome and Electron apps", \.chromiumApps,
+                           caption: "Offers the bubble there without reading the text, so it can also show after dragging a tab or a window.")
                     FrogRow("Longest selection") {
                         FrogDropdown(selected: bubble.maxCharacters, options: Self.characterChoices(including: bubble.maxCharacters),
                                      width: 150, title: Self.characters) { count in update { $0.maxCharacters = count } }
@@ -130,8 +131,8 @@ struct WritingBubbleSection: View {
         return names.count <= 3 ? names.formatted(.list(type: .and)) : names.prefix(2).joined(separator: ", ") + " and \(names.count - 2) more"
     }
 
-    private func toggle(_ title: String, _ key: WritableKeyPath<WritingConfig.Bubble, Bool>) -> some View {
-        FrogRow(title) {
+    private func toggle(_ title: String, _ key: WritableKeyPath<WritingConfig.Bubble, Bool>, caption: String? = nil) -> some View {
+        FrogRow(title, caption: caption) {
             Toggle(title, isOn: Binding(get: { bubble[keyPath: key] }, set: { value in update { $0[keyPath: key] = value } }))
                 .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
         }

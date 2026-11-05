@@ -17,19 +17,17 @@ struct ExplainView: View {
         FrogPage {
             FrogPageHeader(title: "Explain", subtitle: "Select text, press the shortcut, read the answer.")
             if let rule = plugin.rule {
-                FrogSection {
-                    FrogRow("Shortcut") { HotkeyRecorder(hotkey: ruleBinding(rule, \.hotkey)) }
+                FrogSection("Explain") {
+                    FrogRow("Shortcut", caption: "Select text in any app, then press it.") { HotkeyRecorder(hotkey: ruleBinding(rule, \.hotkey)) }
                     if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
-                    FrogRow("Model") { RuleModelPicker(rule: Binding(get: { rule }, set: save)) }
-                    FrogRow("Surrounding text", caption: "Sends the sentence around the selection too.") {
+                    FrogRow("Model", caption: "Writes the answer.") { RuleModelPicker(rule: Binding(get: { rule }, set: save)) }
+                }
+                FrogSection("Answer") {
+                    FrogRow("Surrounding text", caption: "Also sends the sentence around the selection.") {
                         Toggle("Surrounding text", isOn: setting(\.context)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                     }
-                    if bubbleOn {
-                        FrogRow("In the selection bubble") {
-                            Toggle("In the selection bubble", isOn: ruleBinding(rule, \.showsInBubble)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
-                        }
-                    }
                 }
+                bubble(rule)
                 notes
             } else {
                 FrogEmptyState(symbol: "questionmark.bubble", title: "No Explain rule", message: "Add it back to explain selected text.") {
@@ -41,21 +39,34 @@ struct ExplainView: View {
         }
     }
 
+    /// Whether Explain is one of the buttons in the selection bubble. The bubble itself is set up on the Writing page.
+    @ViewBuilder private func bubble(_ rule: Rule) -> some View {
+        FrogSection("Selection bubble") {
+            if bubbleOn {
+                FrogRow("Show Explain in the bubble", caption: "The bubble appears after you select text by dragging, double-clicking or with Shift and arrow keys. Turn it on, off or limit it on the Writing page.") {
+                    Toggle("Show Explain in the bubble", isOn: ruleBinding(rule, \.showsInBubble)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+                }
+            } else {
+                FrogRow("Selection bubble is off", caption: "Turn it on in Writing to offer Explain after you select text. The shortcut works either way.") { EmptyView() }
+            }
+        }
+    }
+
     private var notes: some View {
         FrogSection("Notes") {
-            FrogRow("Save to note", caption: "Adds Save to note to the answer panel.") {
+            FrogRow("Save to note", caption: "Adds a Save to note button to the answer panel.") {
                 Toggle("Save to note", isOn: Binding(get: { settings.notes.on }, set: { value in
                     withAnimation(reduceMotion ? nil : FrogMotion.reveal) { update { $0.notes.on = value } }
                 })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
             if settings.notes.on {
                 Group {
-                    FrogRow("Folder", caption: settings.notes.folder ?? "None chosen") {
+                    FrogRow("Folder", caption: settings.notes.folder ?? "No folder chosen yet") {
                         Button("Choose…") {
                             Task { do { _ = try await model.chooseAnswerNotesFolder() } catch { model.report(error) } }
                         }
                     }
-                    FrogRow("Save as") {
+                    FrogRow("Save as", caption: settings.notes.mode == .append ? "Each answer is added to the file below." : "Each answer becomes its own note.") {
                         FrogDropdown(selected: settings.notes.mode, options: ExplainConfig.NotesMode.allCases, width: 180,
                                      title: { $0 == .perAnswer ? "A note per answer" : "Added to one note" }) { mode in
                             update { $0.notes.mode = mode }
@@ -74,7 +85,7 @@ struct ExplainView: View {
                                 .accessibilityLabel("Notes file")
                         }
                     }
-                    FrogRow("Open after saving") {
+                    FrogRow("Open after saving", caption: "Opens the note in Obsidian when the folder is a vault.") {
                         Toggle("Open after saving", isOn: setting(\.notes.open)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                     }
                 }.transition(.opacity.combined(with: .offset(y: -4)))
