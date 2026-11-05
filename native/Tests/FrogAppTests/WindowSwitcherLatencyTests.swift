@@ -41,7 +41,8 @@ final class WindowSwitcherLatencyTests: XCTestCase {
         }
         samples.sort()
         print("SWITCHER LATENCY native 200-row presentation: idle preparation \(preparationTime), first \(cold), warm p50 \(samples[10]), p95 \(samples[18])")
-        XCTAssertEqual(panel.frame.height, 352, "Rows-only geometry must remain intact")
+        XCTAssertEqual(panel.frame.height, WindowSwitcherLayout.size(windowCount: WindowSwitcherLayout.visibleRows).height,
+                       "Rows-only geometry must remain intact")
         XCTAssertLessThan(samples[18], .milliseconds(100), "Warm native presentation must not acquire a discovery-sized stall")
     }
 

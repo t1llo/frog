@@ -8,7 +8,7 @@ enum WindowSwitcherLayout {
     static let visibleRows = 10
     /// The panel fits up to ten rows, at least one for the empty message, and the search line while there is a query.
     static func size(windowCount: Int, queryVisible: Bool = false) -> CGSize {
-        CGSize(width: width, height: 16 + CGFloat(max(1, min(visibleRows, windowCount))) * rowHeight + (queryVisible ? queryLineHeight : 0))
+        CGSize(width: width, height: 2 * FrogStyle.panelInset + CGFloat(max(1, min(visibleRows, windowCount))) * rowHeight + (queryVisible ? queryLineHeight : 0))
     }
 }
 

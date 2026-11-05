@@ -393,18 +393,15 @@ final class StayAwakeTests: XCTestCase {
         window.contentView = host; window.makeKeyAndOrderFront(nil)
         defer { window.orderOut(nil); window.contentView = nil }
         host.layoutSubtreeIfNeeded()
-        let control = try XCTUnwrap(descendants(host).compactMap { $0 as? NSSwitch }.first)
         for expected in [true, false] {
             host.layoutSubtreeIfNeeded()
-            XCTAssertTrue(control.isEnabled)
-            let point = control.convert(NSPoint(x: control.bounds.midX, y: control.bounds.midY), to: host.superview)
-            let hit = host.hitTest(point)
-            XCTAssertTrue(hit === control || hit?.isDescendant(of: control) == true, "The popup switch must remain hittable")
+            // Found as VoiceOver finds it: a switch named by its toggle, though the popup draws no label beside it.
+            let control = try await AccessibleControls.require("Stay awake", role: .checkBox, in: host)
+            XCTAssertEqual(control.object.value(forKey: "accessibilityEnabled") as? Bool, true)
             let changed = expectation(description: "Native switch changes the verified power state to \(expected)")
             let observation = power.$isEnabled.dropFirst().filter { $0 == expected }.prefix(1).sink { _ in changed.fulfill() }
-            // Exercise the real native control action. A test's borderless window
-            // does not have MenuBarExtra's activation/event-tracking lifecycle.
-            control.performClick(nil)
+            // A real click on the switch's centre, so nothing may lie over it.
+            try await AccessibleControls.click("Stay awake", role: .checkBox, in: host)
             await fulfillment(of: [changed], timeout: 2)
             observation.cancel()
             await power.waitForLid()

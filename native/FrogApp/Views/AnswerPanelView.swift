@@ -229,7 +229,7 @@ private struct PulseDot: View {
     var body: some View {
         Circle().fill(FrogStyle.muted).frame(width: 6, height: 6)
             .opacity(on || reduceMotion ? 0.9 : 0.35)
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: on)
+            .animation(reduceMotion ? nil : FrogMotion.pulse, value: on)
             .onAppear { on = true }
             .accessibilityHidden(true)
     }

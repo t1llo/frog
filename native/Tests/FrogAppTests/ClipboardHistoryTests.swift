@@ -341,7 +341,8 @@ final class ClipboardHistoryTests: XCTestCase {
         defer { controller.stop() }
         controller.show()
         let panel = try XCTUnwrap(NSApplication.shared.windows.first { $0.isVisible && $0.title == "Clipboard history" })
-        XCTAssertLessThan(panel.frame.height, 460)
+        XCTAssertLessThanOrEqual(panel.frame.height, ClipboardHistoryLayout.size(entryCount: ClipboardHistoryLayout.visibleRows).height,
+                                 "A hundred entries scroll inside the visible rows rather than grow the panel")
         for _ in 0..<90 { try await sendKey(125, to: panel) }
         let scroll = try XCTUnwrap(descendants(try XCTUnwrap(panel.contentView)).compactMap { $0 as? NSScrollView }
             .first { ($0.documentView?.bounds.height ?? 0) > $0.bounds.height })

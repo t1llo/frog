@@ -29,6 +29,8 @@ enum FrogMotion {
     static let resizeCurve = CAMediaTimingFunction(name: .easeInEaseOut)
     /// The glare of a glowing surface gliding after the pointer: slow and soft, like light, never springy.
     static let glare = Animation.spring(response: 0.6, dampingFraction: 1)
+    /// Something waiting, such as the answer panel's dot before the first words: a slow breath in and out.
+    static let pulse = Animation.easeInOut(duration: 0.9).repeatForever(autoreverses: true)
     /// How long a copy stays confirmed.
     static let confirmation = Duration.seconds(1.5)
 

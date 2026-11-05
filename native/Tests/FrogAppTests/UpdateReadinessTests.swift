@@ -11,7 +11,9 @@ import XCTest
         XCTAssertEqual(rowHeight(), 0, accuracy: 0.5)
         readiness.ready("1.0.26")
         XCTAssertEqual(readiness.version, "1.0.26")
-        XCTAssertEqual(rowHeight(), FrogStyle.controlHeight, accuracy: 0.5)
+        // One menu row of the popup, like the rows beside it.
+        let menuRow = NSHostingView(rootView: MenuActionRow(title: "Row", symbol: "gear", action: {}).frame(width: 282)).fittingSize.height
+        XCTAssertEqual(rowHeight(), menuRow, accuracy: 0.5)
         readiness.ready("")
         XCTAssertEqual(rowHeight(), 0, accuracy: 0.5, "An update with no version to name is not announced")
     }

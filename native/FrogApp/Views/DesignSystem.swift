@@ -516,10 +516,9 @@ struct FrogSwitch: View {
             .onTapGesture { if enabled { configuration.isOn.toggle() } }
         }
         .opacity(enabled ? 1 : 0.45)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityValue(on ? L10n.text("On") : L10n.text("Off"))
-        .accessibilityAction { if enabled { configuration.isOn.toggle() } }
+        // VoiceOver reads a system switch named by the toggle's label, even where the label is not drawn. The
+        // explicit style keeps the stand-in from drawing this style again.
+        .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label }.toggleStyle(.switch) }
     }
 }
 

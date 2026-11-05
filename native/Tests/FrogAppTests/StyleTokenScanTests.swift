@@ -5,7 +5,13 @@ import XCTest
 /// docs/design.md. The scan reads the app's sources as text; it opens no window.
 final class StyleTokenScanTests: XCTestCase {
     /// `"File.swift: pattern"` entries a view may keep, each with a comment that says why.
-    private let allowed: Set<String> = []
+    private let allowed: Set<String> = [
+        // `PluginTint`s, not colours, chosen in a switch and a ternary where no `tint: ` stands before them.
+        "Views/OnboardingPermissions.swift: .orange",
+        "Views/ClipboardHistoryView.swift: .orange",
+        // The colour scheme tiles draw a window's red, yellow and green buttons, the same in every theme.
+        "Views/AppearanceSettingsView.swift: Color.red",
+    ]
 
     /// A plugin's `tint: .orange` is a `PluginTint`, not a colour, so it is not matched.
     func testViewsUseThemeColoursInsteadOfRawOrangeAndRed() throws {

@@ -135,6 +135,7 @@ Frog moves little: a press answers, a hover leaves softly, a choice slides, and 
 | `step` | spring, response 0.35, no bounce | Steps of the setup assistant: in 16 points from the side they lie on |
 | `fadeOut` | strong ease-out, 0.2 s | Status pills and status item popups fading out (`NSWindow.fadeOut()`) |
 | `resize` | ease-in-out, 0.22 s | The dictation pill growing with its text; it changes shape on screen |
+| `pulse` | ease-in-out, 0.9 s, repeating | The answer panel's dot breathing while it waits; still under Reduce Motion |
 | `confirmation` | 1.5 s | How long `CopyAction` shows its checkmark |
 
 - Never animate the command bar, clipboard history, window switcher or layout picker: opening, closing, typing, arrow keys. Their roots set `.environment(\.frogKeyboardSurface, true)`, which turns off hover fades and press motion inside them.
