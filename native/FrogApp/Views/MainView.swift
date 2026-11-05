@@ -169,7 +169,7 @@ struct MainView: View {
             Color.clear.frame(height: 48).frame(maxWidth: .infinity)
                 .overlay { WindowDragRegion().accessibilityHidden(true) }
             SearchBox(placeholder: "Search", text: $sidebarQuery)
-                .padding(.horizontal, FrogStyle.space10).padding(.bottom, FrogStyle.space16)
+                .padding(.horizontal, FrogStyle.sidebarRowInset).padding(.bottom, FrogStyle.space16)
 
             ScrollViewReader { proxy in
                 ScrollView {
@@ -207,7 +207,7 @@ struct MainView: View {
                             Text(L10n.text("No matches")).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                                 .padding(.horizontal, FrogStyle.space8).padding(.top, FrogStyle.space4)
                         }
-                    }.padding(.horizontal, FrogStyle.space10).padding(.bottom, FrogStyle.space10).minimalScrollbars()
+                    }.padding(.horizontal, FrogStyle.sidebarRowInset).padding(.bottom, FrogStyle.space10).minimalScrollbars()
                 }.bottomScrollFade()
                 // Reveals a feature opened from elsewhere, such as the command bar, by the least scrolling;
                 // a row already in view stays where it is. A window that opens on a page shows its row too.

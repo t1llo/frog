@@ -68,7 +68,7 @@ struct UsageStatusPopover: View {
             }.padding(FrogStyle.listInset).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
             UsageMenuFooter(usage: usage).padding(.horizontal, FrogStyle.space6).padding(.top, FrogStyle.space8)
         }
-        .padding(FrogStyle.space8).frame(width: Self.width).fixedSize(horizontal: false, vertical: true)
+        .padding(FrogStyle.panelCardInset).frame(width: Self.width).fixedSize(horizontal: false, vertical: true)
         .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
         .frogPanel()
         .environment(\.locale, L10n.locale)

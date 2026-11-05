@@ -76,7 +76,7 @@ struct WindowSwitcherOverlay: View {
                                     .onContinuousHover { phase in if case .active = phase { hover(window.id) } }
                                     .accessibilityAddTraits(model.selected == window.id ? .isSelected : [])
                             }
-                        }.padding(8)
+                        }.padding(FrogStyle.panelInset)
                     }
                     // `.never`, not `.hidden`: with "Show scroll bars: Always" macOS shows a hidden indicator anyway.
                     .scrollIndicators(.never)
@@ -100,8 +100,8 @@ struct WindowSwitcherOverlay: View {
             Spacer(minLength: 8)
             KeyCap("⌫")
         }.padding(.horizontal, FrogStyle.space10).frame(height: WindowSwitcherLayout.queryLineHeight - FrogStyle.space12)
-            .frogControlSurface(height: WindowSwitcherLayout.queryLineHeight - FrogStyle.space12, capsule: true)
-            .padding(.horizontal, FrogStyle.rowPadding).padding(.top, FrogStyle.rowPadding).frame(height: WindowSwitcherLayout.queryLineHeight)
+            .frogControlSurface(height: WindowSwitcherLayout.queryLineHeight - FrogStyle.space12, radius: FrogStyle.controlRadius)
+            .padding(.horizontal, FrogStyle.panelInset).padding(.top, FrogStyle.panelInset).frame(height: WindowSwitcherLayout.queryLineHeight)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(L10n.text("Search"))
             .accessibilityValue(model.query)

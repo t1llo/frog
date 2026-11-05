@@ -19,13 +19,16 @@ Frog looks quiet and consistent: Raycast's dense, keyboard-first popups, and a s
 
 ## Radii
 
+Corners nest. A shape inside another has the outer radius minus the gap between them, so both curves share one centre and the gap stays even all the way round. Every row, field and highlight is `controlRadius`; each container is that plus the gap its content keeps from its edge, and the tokens are defined that way in `FrogStyle`, so they cannot drift apart.
+
 | Token | Value | Use |
 | --- | --- | --- |
-| `smallRadius` | 4 | Key caps, badges, colour swatches |
-| `controlRadius` | 8 | Fields, rows and their highlight, menu rows, symbol tiles, blocks inside a card or popup |
-| `cardRadius` | 12 | Cards, settings groups, lists, previews, banners, the sidebar's Frog row |
-| `panelRadius` | 18 | Popups and floating panels (`frogPanel()`), as round as Rex's sheets |
-| `sidebarRadius` | 14 | The main window's sidebar panel |
+| `smallRadius` | 4 | Key caps, badges, colour swatches: marks inside a control |
+| `controlRadius` | 10 | Fields, rows and their highlight, menu rows, symbol tiles, blocks inside a card or popup, a popup's search field |
+| `cardRadius` | 14 = 10 + `listInset` 4 | Cards, settings groups, lists, previews, banners; a list's rows sit 4 in |
+| `panelRadius` | 18 = 10 + `panelInset` 8 | Popups and floating panels (`frogPanel()`); their search field, rows and blocks sit 8 in, and a card inside one sits `panelCardInset` (4) in |
+| `windowRadius` | 28 on macOS 26 | The main window's own corner, drawn by macOS (measured) |
+| `sidebarRadius` | 20 = 28 - `sidebarInset` 8 | The main window's sidebar panel; its rows sit `sidebarRowInset` (10) in |
 | `pillRadius` | 18 | 36-point status pills (`frogPanel(pill: true)`) |
 
 Buttons, search boxes, segmented controls and switches are capsules, as in Rex; so are dots, avatars, progress bars and the back and forward capsule. No other numbers. Cards, controls and the sidebar panel use the `.continuous` corner style.

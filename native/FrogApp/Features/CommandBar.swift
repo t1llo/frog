@@ -766,7 +766,7 @@ struct CommandBarView: View {
     @FocusState private var focused: Bool
     var body: some View {
         VStack(spacing: 0) {
-            searchField.padding(.horizontal, FrogStyle.space12).padding(.top, FrogStyle.space12).padding(.bottom, FrogStyle.space6)
+            searchField.padding(.horizontal, FrogStyle.panelInset).padding(.top, FrogStyle.panelInset).padding(.bottom, FrogStyle.space6)
                 .background(WindowDragRegion(onDragEnd: bar.finishDragging))
             ScrollViewReader { proxy in
                 ScrollView {
@@ -779,7 +779,7 @@ struct CommandBarView: View {
                             Text(bar.argument == nil ? "No results" : "Type, then press Return")
                                 .font(FrogType.row).foregroundStyle(FrogStyle.muted).padding(FrogStyle.sectionSpacing)
                         }
-                    }.padding(FrogStyle.listInset)
+                    }.padding(FrogStyle.panelInset)
                 }
                 // `.never`, not `.hidden`: with "Show scroll bars: Always" macOS shows a hidden indicator anyway.
                 .scrollIndicators(.never)
@@ -809,7 +809,7 @@ struct CommandBarView: View {
                 IconAction(title: "Center command bar", symbol: "scope") { bar.center() }
             }
         }.padding(.horizontal, FrogStyle.space12)
-            .frogControlSurface(height: 40, capsule: true)
+            .frogControlSurface(height: 40, radius: FrogStyle.controlRadius)
     }
 }
 

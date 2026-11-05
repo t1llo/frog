@@ -40,17 +40,34 @@ struct FrogSurfaceStyle: ShapeStyle {
 
 /// Frog's design tokens. docs/design.md has the rules; `StyleTokenScanTests` checks the ones code can.
 enum FrogStyle {
-    /// Key caps, badges, colour swatches and the thumb of a segmented control.
+    // Corners nest: a shape inside another has the outer radius minus the gap between them, so both curves
+    // share one centre and the gap stays even all the way round. Every row, field and highlight is
+    // `controlRadius`, and each container is that plus the gap its content keeps from its edge.
+
+    /// Key caps, badges, colour swatches: small marks inside a control.
     static let smallRadius: CGFloat = 4
-    /// Buttons, fields, dropdowns, segmented controls, list rows and their highlight, menu rows, symbol tiles,
-    /// and blocks inside a popup.
-    static let controlRadius: CGFloat = 8
-    /// Cards, grouped settings, lists, previews and sheets' inner surfaces.
-    static let cardRadius: CGFloat = 12
-    /// Popups, menus and floating panels: as round as Rex's sheets and macOS's windows.
-    static let panelRadius: CGFloat = 18
-    /// The main window's sidebar panel, inset 8 from the window's corner.
-    static let sidebarRadius: CGFloat = 14
+    /// Rows and their highlight, fields, menu rows, symbol tiles and blocks inside a card or popup.
+    /// Buttons, search boxes in a page, segmented controls and switches are capsules instead.
+    static let controlRadius: CGFloat = 10
+    /// The gap between a card's edge and the rows of a list inside it.
+    static let listInset: CGFloat = 4
+    /// Cards, grouped settings, lists and previews: their rows sit `listInset` in.
+    static let cardRadius: CGFloat = controlRadius + listInset
+    /// The gap between a popup's edge and its search field, rows and blocks.
+    static let panelInset: CGFloat = 8
+    /// Popups, menus and floating panels: their content sits `panelInset` in.
+    static let panelRadius: CGFloat = controlRadius + panelInset
+    /// The gap between a popup's edge and a card inside it, such as the menu-bar menus' groups.
+    static let panelCardInset: CGFloat = panelRadius - cardRadius
+    /// The main window's corner: macOS 26 rounds a window with a toolbar to about 28 points (measured).
+    static var windowRadius: CGFloat {
+        if #available(macOS 26, *) { return 28 }
+        return 10
+    }
+    /// The main window's sidebar panel, `sidebarInset` inside the window's corner.
+    static var sidebarRadius: CGFloat { max(windowRadius - sidebarInset, cardRadius) }
+    /// The gap between the sidebar's edge and its rows.
+    static var sidebarRowInset: CGFloat { sidebarRadius - controlRadius }
     /// Small floating status pills, 36 points tall.
     static let pillRadius: CGFloat = 18
     /// Buttons, fields, dropdowns, search boxes and segmented controls.
@@ -82,11 +99,10 @@ enum FrogStyle {
     static let space12: CGFloat = 12
     static let space16: CGFloat = 16
     /// Where content starts inside a card, a section card, and a popup's header, body and footer: 14 from the
-    /// edge. A popup list adds `listInset` around its rows and `rowPadding` inside them, which together make
-    /// the same 14, so a row's text lines up with the header's.
+    /// edge. A list adds `listInset` around its rows and `rowPadding` inside them, which together make the
+    /// same 14, so a row's text lines up with the header's.
     static let cardPadding: CGFloat = 14
-    static let listInset: CGFloat = 6
-    static let rowPadding: CGFloat = 8
+    static let rowPadding: CGFloat = cardPadding - listInset
     /// Space around a sheet's content, its header and its buttons.
     static let sheetPadding: CGFloat = 20
     /// The widest a settings page's column grows (`FrogPage`), so rows stay readable in a wide window.
@@ -372,8 +388,9 @@ extension View {
     }
     /// The fill and hairline every bordered control shares: secondary buttons, dropdowns, fields, search boxes,
     /// segmented controls and shortcut badges.
-    func frogControlSurface(hovering: Bool = false, pressed: Bool = false, height: CGFloat? = FrogStyle.controlHeight, capsule: Bool = false) -> some View {
-        modifier(FrogControlSurface(hovering: hovering, pressed: pressed, height: height, capsule: capsule))
+    /// `radius` overrides the corner, as for a field nested in a panel's corner (`FrogStyle.nestedRadius`).
+    func frogControlSurface(hovering: Bool = false, pressed: Bool = false, height: CGFloat? = FrogStyle.controlHeight, capsule: Bool = false, radius: CGFloat? = nil) -> some View {
+        modifier(FrogControlSurface(hovering: hovering, pressed: pressed, height: height, capsule: capsule, radius: radius))
     }
     /// A row that highlights on hover and when chosen, as in lists, menus and the sidebar.
     func frogRowHighlight(hovering: Bool, selected: Bool = false) -> some View {
@@ -517,10 +534,11 @@ private struct FrogControlSurface: ViewModifier {
     let height: CGFloat?
     /// Buttons and search boxes are capsules in Rex; fields keep the rounded rectangle.
     let capsule: Bool
+    let radius: CGFloat?
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.frogKeyboardSurface) private var keyboardSurface
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: capsule ? (height ?? FrogStyle.controlHeight) / 2 : FrogStyle.controlRadius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: radius ?? (capsule ? (height ?? FrogStyle.controlHeight) / 2 : FrogStyle.controlRadius), style: .continuous)
         content.frame(minHeight: height)
             .background {
                 ZStack {

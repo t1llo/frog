@@ -6,7 +6,7 @@ enum ClipboardHistoryLayout {
     static let footerHeight: CGFloat = 36
     static let rowHeight: CGFloat = 40
     static let emptyHeight: CGFloat = 64
-    static let inset: CGFloat = 8
+    static let inset: CGFloat = FrogStyle.panelInset
     static let visibleRows = 9
 
     static func size(entryCount: Int) -> CGSize {
@@ -50,7 +50,7 @@ struct ClipboardHistoryView: View {
                 IconAction(title: "Close", symbol: "xmark", action: close)
             }
             .padding(.leading, 12).padding(.trailing, 4)
-            .frogControlSurface(height: 36, capsule: true)
+            .frogControlSurface(height: 36, radius: FrogStyle.controlRadius)
             .padding(.horizontal, ClipboardHistoryLayout.inset).frame(height: ClipboardHistoryLayout.headerHeight)
 
             Group {

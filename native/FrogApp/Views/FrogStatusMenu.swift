@@ -68,7 +68,7 @@ struct FrogStatusMenu: View {
                     action("Quit Frog", symbol: "power", key: "⌘Q") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
                 }.padding(FrogStyle.listInset).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
             }
-        }.padding(FrogStyle.space8).frame(width: 292).fixedSize(horizontal: false, vertical: true)
+        }.padding(FrogStyle.panelCardInset).frame(width: 292).fixedSize(horizontal: false, vertical: true)
             .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()
             .background(MenuWindowSizing())
