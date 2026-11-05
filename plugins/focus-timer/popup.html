@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <title>Focus timer</title>
+  <link rel="stylesheet" href="/_frog/frog.css">
+  <style>
+    .clock { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .time { font-size: 34px; font-weight: 300; line-height: 1; letter-spacing: -0.8px; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <main class="frog-page">
+    <p id="error" class="frog-error" role="alert" hidden></p>
+    <div class="clock">
+      <div id="time" class="time" role="timer">25:00</div>
+      <span id="today" class="frog-muted frog-tabular"></span>
+    </div>
+    <div id="progress" class="frog-meter" style="--value: 0" aria-hidden="true"></div>
+    <div class="frog-row">
+      <span id="status" class="frog-muted">Ready</span>
+      <span class="frog-spacer"></span>
+      <button id="reset" class="frog-quiet">Reset</button>
+      <button id="toggle" class="frog-primary">Start</button>
+    </div>
+  </main>
+  <script src="timer.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -157,6 +157,32 @@ import XCTest
         XCTAssertTrue(model.plugins.statusItems.isEmpty, "Removing it removes its menu-bar item")
     }
 
+    func testTheFocusTimerExampleIsAWholeFeature() async throws {
+        try await enablePlugins()
+        let example = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("plugins/focus-timer")
+        let checked = try object(await run("plugin", "validate", example.path, json: true))
+        XCTAssertEqual(checked["hints"] as? [String], [], "The example follows the guide")
+        let id = "xyz.beffa.frog.focus-timer"
+        _ = await run("plugin", "install", example.path)
+        try model.plugins.approve(try XCTUnwrap(model.plugins.review))
+        await model.pluginHost.syncAndWait()
+        XCTAssertNotNil(model.plugins.statusItems[id], "It has its menu-bar item")
+        for _ in 0..<50 where model.plugins.loadedHost(id) == nil { try await Task.sleep(for: .milliseconds(100)) }
+        XCTAssertNotNil(model.plugins.loadedHost(id), "It runs in the background")
+        XCTAssertNotNil(model.plugins.shortcut(id, action: "toggle"))
+        for popup in [false, true] {
+            let picture = directory.appendingPathComponent("focus-\(popup).png")
+            let snapshot = popup ? await run("plugin", "snapshot", id, "--popup", "--output", picture.path)
+                : await run("plugin", "snapshot", id, "--output", picture.path)
+            XCTAssertEqual(snapshot.exitCode, 0, snapshot.error)
+        }
+        let logs = await run("plugin", "logs", id)
+        XCTAssertTrue(logs.output.contains("logged nothing"), "Its pages run without errors: \(logs.output)")
+        model.plugins.remove(id)
+        XCTAssertTrue(model.plugins.statusItems.isEmpty)
+    }
+
     func testAPackedFileOpensItsReviewWithoutInstalling() async throws {
         try await enablePlugins()
         _ = await run("plugin", "new", "shared", "--id", "com.example.shared")

@@ -1,22 +1,27 @@
 # Focus timer
 
-An example Frog plugin. A Pomodoro-style timer: choose 25 or 50 minutes or your own length, start, pause or reset, and Frog notifies you when the session ends. It counts the sessions you finish each day.
+An example Frog plugin that is a whole feature: a Pomodoro-style timer in the menu bar. Start it with a shortcut from any app, see the time left beside its icon, and when a session ends take a break or focus again straight from the notification. It counts the sessions you finish each day.
 
-Two command bar rows work without opening the page:
+- **Menu bar.** The timer's icon shows the time left while a session runs, a cup during a break and a pause sign while paused. Click it for a popup with the time, Start or Pause and Reset.
+- **Shortcut.** ⌃⌥⇧F starts or pauses the timer in any app.
+- **Notifications.** A finished session offers **Take a 5-minute break** and **Focus again**; a finished break offers **Start focusing**.
+- **Settings.** The focus and break lengths, and whether the menu bar shows the time, in Frog → Community plugins → Focus timer → Settings. The shortcut's keys change there too.
+- **Command bar and agents.** *Start or pause the focus timer*, *Start a focus session* and *Stop the focus timer*, also as `frog run community.xyz.beffa.frog.focus-timer.toggle`.
 
-- **Start a focus session** starts the timer with the length you chose last and confirms it with a notification.
-- **Stop the focus timer** stops it.
-
-The timer keeps the time a session ends at rather than counting ticks, so it stays right while Frog runs the page in the background. The session is saved, so a page Frog reloads picks it up where it was.
+The page runs in the background from Frog's start, so the menu bar stays current with the page closed, and a session that ended while the Mac slept is counted when it wakes. The timer keeps the time a session ends at rather than counting ticks, and is saved, so it stays right whatever Frog does.
 
 ## Permissions
 
-- `notifications`: to tell you when a session ends, and to confirm the command bar rows, which run without showing the page.
+- `notifications`: to tell you when a session or a break ends, with buttons that start the next one.
+- `menubar`: for its menu-bar item and popup.
+- `hotkeys`: for the shortcut.
+- `background`: to keep running with its page closed.
 
 ## Files
 
-- `plugin.json`: the manifest, with the permission and the two commands with `"show": false`.
-- `index.html`: the page, styled with Frog's `/_frog/frog.css`.
-- `app.js`: the timer, `frog.notify` with `at` to schedule the end with macOS, `frog.storage` for the session and today's count, and `frog.close()` once a command's work is done.
+- `plugin.json`: the manifest, with the permissions, the menu-bar item and its popup, the settings and the three actions, one with a shortcut.
+- `timer.js`: the timer's state, shared by the page and the popup through `frog.storage`, and the notification scheduled with `at` and `actions`.
+- `index.html` and `app.js`: the page, which ends sessions, counts them, updates the menu bar with `frog.menubar.set`, answers the actions with `frog.action` and the notification's buttons, and hears `wake`, `storage` and `settings`.
+- `popup.html` and `popup.js`: the popup, which hears the page's changes through the `storage` event.
 
-Install it from this folder with `frog plugin install plugins/focus-timer`, then approve it in Frog → Community plugins. See [docs/plugins.md](../../docs/plugins.md) for the plugin contract.
+All pages use Frog's `/_frog/frog.css`. Install it from this folder with `frog plugin install plugins/focus-timer`, then approve it in Frog → Community plugins. See [docs/plugins.md](../../docs/plugins.md) for the plugin contract.

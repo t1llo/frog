@@ -8,8 +8,7 @@
   <style>
     .timer { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 28px 20px; text-align: center; }
     .time { font-size: 64px; font-weight: 300; line-height: 1; letter-spacing: -1.5px; font-variant-numeric: tabular-nums; }
-    .bar { width: min(320px, 100%); height: 4px; border-radius: 2px; background: var(--frog-inset); overflow: hidden; }
-    .bar > div { height: 100%; width: 0; background: var(--frog-accent); transition: width 0.4s linear; }
+    .timer .frog-meter { width: min(320px, 100%); }
     #custom { width: 72px; }
   </style>
 </head>
@@ -18,7 +17,7 @@
     <header class="frog-header">
       <div>
         <h1>Focus timer</h1>
-        <p class="frog-subtitle">Work in focused blocks; Frog tells you when one ends.</p>
+        <p class="frog-subtitle">Work in focused blocks; Frog tells you when one ends and offers a break.</p>
       </div>
     </header>
 
@@ -35,7 +34,7 @@
         Minutes <input id="custom" type="number" min="1" max="240" step="1" value="15">
       </label>
       <div id="time" class="time" role="timer">25:00</div>
-      <div class="bar" aria-hidden="true"><div id="progress"></div></div>
+      <div id="progress" class="frog-meter" style="--value: 0" aria-hidden="true"></div>
       <p id="status" class="frog-muted">Ready</p>
       <div class="frog-row">
         <button id="reset">Reset</button>
@@ -43,10 +42,21 @@
       </div>
     </section>
 
-    <section class="frog-card">
-      <div class="frog-stat"><strong id="today">0</strong><span>Sessions finished today</span></div>
+    <section class="frog-section">
+      <h2 class="frog-caption">Today</h2>
+      <div class="frog-rows">
+        <div class="frog-setting">
+          <div>Sessions finished<small>Counted when a focus session runs to its end.</small></div>
+          <strong id="today" class="frog-tabular">0</strong>
+        </div>
+        <div class="frog-setting">
+          <div>Start or pause from any app<small>Change the keys, the lengths and the menu-bar time in the plugin's settings.</small></div>
+          <span><kbd>⌃</kbd><kbd>⌥</kbd><kbd>⇧</kbd><kbd>F</kbd></span>
+        </div>
+      </div>
     </section>
   </main>
+  <script src="timer.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
