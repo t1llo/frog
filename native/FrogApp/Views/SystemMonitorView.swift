@@ -33,7 +33,6 @@ struct SystemMonitorMenuBarSection: View {
     let save: (SystemMonitorSettings) -> Void
     /// What the preview shows, so every look can be judged on the same load.
     static let sample = SystemMonitorReading(cpu: .value(0.42), gpu: .value(0.78), memory: .value(0.61))
-    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         FrogSection("Menu bar") {
@@ -41,17 +40,18 @@ struct SystemMonitorMenuBarSection: View {
                 Toggle("Show in the menu bar", isOn: binding(\.menuBarItem)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
             if settings.menuBarItem {
-                MenuBarPreviewStrip(image: MenuBarMeter.image(SystemMonitorStatusItemController.face(Self.sample, settings: settings, dark: scheme == .dark)))
-                    .padding(.vertical, 6)
                 FrogRow("Readings") {
                     FrogDropdown(selection: binding(\.menuBarReadings), options: SystemMonitorSettings.Readings.allCases, width: 180) { $0.title }
                 }
-                FrogRow("Style") {
-                    FrogDropdown(selection: binding(\.menuBarStyle), options: MenuBarMeterStyle.allCases, width: 180) { $0.title }
-                }
-                FrogRow("Colors") {
-                    FrogDropdown(selection: binding(\.menuBarPalette), options: MenuBarMeterPalette.allCases, width: 180) { $0.title }
-                }
+                MenuBarStyleGallery(sample: "system|\(settings.menuBarReadings)", style: settings.menuBarStyle, palette: settings.menuBarPalette,
+                                    render: { style, palette, dark in
+                                        var shown = settings
+                                        shown.menuBarStyle = style
+                                        shown.menuBarPalette = palette
+                                        return MenuBarMeter.image(SystemMonitorStatusItemController.face(Self.sample, settings: shown, dark: dark))
+                                    },
+                                    chooseStyle: { binding(\.menuBarStyle).wrappedValue = $0 },
+                                    choosePalette: { binding(\.menuBarPalette).wrappedValue = $0 })
             }
         }
     }

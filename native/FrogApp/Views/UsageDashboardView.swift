@@ -640,7 +640,6 @@ private struct UsageAccountLabelField: View {
 private struct UsageMenuBarSection: View {
     @ObservedObject var plugin: LLMUsagePlugin
     @ObservedObject var usage: UsageDashboardModel
-    @Environment(\.colorScheme) private var scheme
     /// Shown while there is no plan reading, so that the looks can still be compared.
     static let sample = UsageStatusReadout.Face(provider: "Claude", windows: [
         UsageWindow(id: "five_hour", title: "Session", percentage: 37, resetsAt: nil, duration: 5 * 3600),
@@ -654,24 +653,19 @@ private struct UsageMenuBarSection: View {
                 Toggle("Show in the menu bar", isOn: binding(\.menuBarItem)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
             if settings.menuBarItem {
-                MenuBarPreviewStrip(image: preview).padding(.vertical, 6)
-                FrogRow("Style") {
-                    FrogDropdown(selection: binding(\.menuBarStyle), options: MenuBarMeterStyle.allCases, width: 180) { $0.title }
-                }
-                FrogRow("Colors") {
-                    FrogDropdown(selection: binding(\.menuBarPalette), options: MenuBarMeterPalette.allCases, width: 180) { $0.title }
-                }
+                MenuBarStyleGallery(sample: "usage", style: settings.menuBarStyle, palette: settings.menuBarPalette,
+                                    render: { Self.preview($0, $1, dark: $2) },
+                                    chooseStyle: { binding(\.menuBarStyle).wrappedValue = $0 },
+                                    choosePalette: { binding(\.menuBarPalette).wrappedValue = $0 })
             }
         }
     }
 
-    private var preview: NSImage {
-        let dark = scheme == .dark
-        var (face, _) = UsageStatusReadout.readout(usage, dark: dark)
-        if face.fractions.isEmpty { face = Self.sample }
-        face.style = plugin.settings.menuBarStyle
-        face.palette = plugin.settings.menuBarPalette
-        face.dark = face.palette != .clean && dark
+    private static func preview(_ style: MenuBarMeterStyle, _ palette: MenuBarMeterPalette, dark: Bool) -> NSImage {
+        var face = sample
+        face.style = style
+        face.palette = palette
+        face.dark = palette != .clean && dark
         return UsageStatusReadout.image(face)
     }
 
