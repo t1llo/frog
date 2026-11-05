@@ -65,11 +65,21 @@ import SwiftUI
     /// The chosen readings, top to bottom. A Mac whose GPU driver gives no load leaves GPU out.
     nonisolated static func face(_ reading: SystemMonitorReading?, settings: SystemMonitorSettings, dark: Bool) -> MenuBarMeterFace {
         let readings = settings.menuBarReadings
-        var rows = [MenuBarMeterRow(label: "CPU", fraction: reading?.cpu.value)]
-        if readings.gpu, reading?.gpu != .unavailable { rows.append(MenuBarMeterRow(label: "GPU", fraction: reading?.gpu.value)) }
-        if readings.memory { rows.append(MenuBarMeterRow(label: "MEM", fraction: reading?.memory.value)) }
+        // Only what the style can show: a change below one step draws the same face, which is then skipped.
+        let style = settings.menuBarStyle
+        func shown(_ fraction: Double?) -> Double? { fraction.map { quantised($0, style: style) } }
+        var rows = [MenuBarMeterRow(label: "CPU", fraction: shown(reading?.cpu.value))]
+        if readings.gpu, reading?.gpu != .unavailable { rows.append(MenuBarMeterRow(label: "GPU", fraction: shown(reading?.gpu.value))) }
+        if readings.memory { rows.append(MenuBarMeterRow(label: "MEM", fraction: shown(reading?.memory.value))) }
         return MenuBarMeterFace(rows: rows, style: settings.menuBarStyle, palette: settings.menuBarPalette,
                                 dark: settings.menuBarPalette != .clean && dark)
+    }
+
+    /// A reading rounded to the finest step `style` draws: 5% for bars, whole percents for numbers.
+    /// Bars and columns round to 5%, so a small change does not redraw the icon; other faces keep the exact fill.
+    nonisolated private static func quantised(_ fraction: Double, style: MenuBarMeterStyle) -> Double {
+        guard style == .bars || style == .columns else { return fraction }
+        return (fraction * 20).rounded() / 20
     }
 
     nonisolated static func description(_ reading: SystemMonitorReading?) -> String {
@@ -105,10 +115,11 @@ struct SystemMonitorStatusPopover: View {
                 PluginIconTile(symbol: "gauge.medium", tint: FrogStyle.accent, size: .sidebar)
                 Text("System").font(FrogType.section)
                 Spacer()
-                IconAction(title: "Open System monitor", symbol: "arrow.up.forward.app", action: openPage)
+                IconAction(title: "Open System monitor", symbol: "arrow.up.forward.app", bordered: true, action: openPage)
             }.padding(.horizontal, FrogStyle.space6).frame(height: 40)
-            SystemMonitorView(monitor: monitor, presenter: .statusPopup)
-        }.padding(FrogStyle.space8).frame(width: 292).fixedSize(horizontal: false, vertical: true)
+            SystemMonitorView(monitor: monitor, presenter: .statusPopup).padding(.bottom, FrogStyle.space8)
+            PanelFooter(symbol: "gauge.medium", name: "System", showsActions: false, closeTitle: "Close")
+        }.padding(FrogStyle.panelCardInset).frame(width: 292).fixedSize(horizontal: false, vertical: true)
             .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()
             .environment(\.locale, L10n.locale)

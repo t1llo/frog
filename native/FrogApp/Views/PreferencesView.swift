@@ -25,7 +25,7 @@ struct PreferencesView: View {
                     HotkeyRecorder(hotkey: Binding(get: { prefs.shortcutPanelHotkey }, set: { value in update { $0.shortcutPanelHotkey = value } }))
                 }
                 if let issue = model.hotkeyErrors[AppModel.shortcutPanelID] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
-                FrogRow("Setup") { Button("Open…") { model.showSetup() } }
+                FrogRow("Setup", caption: "Walk through plugins, permissions, models and providers again.") { Button("Run setup again") { model.showSetup() } }
                 FrogRow("Statistics") { Button("View") { model.toolkit.select(.statistics) } }
             }
             AppearanceSettingsView(model: model)

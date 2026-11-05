@@ -43,7 +43,7 @@ final class SystemMonitor: ObservableObject {
     nonisolated static let recordingPause: TimeInterval = 30
 
     init(sampler: any SystemMonitorSampling = NativeSystemMonitorSampler(), interval: Duration = .seconds(2),
-         backgroundInterval: Duration = .seconds(5), now: @escaping @MainActor () -> Date = { Date() }) {
+         backgroundInterval: Duration = .seconds(10), now: @escaping @MainActor () -> Date = { Date() }) {
         self.sampler = sampler
         self.interval = interval
         self.backgroundInterval = backgroundInterval

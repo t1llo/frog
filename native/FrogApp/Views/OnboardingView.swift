@@ -1,29 +1,32 @@
 import AppKit
-import ApplicationServices
 import SwiftUI
-import UserNotifications
 import FrogCore
 
-/// The first run: which plugins, the permissions they need, the recommended local models, and the providers and agents
-/// already on this Mac. Every step can be skipped; everything here is also in Plugins, Models and Settings.
+/// The first run, one calm step at a time: a welcome, which plugins, the permissions they need, the recommended local
+/// models, the providers and agents already on this Mac, and a summary. Every step can be skipped; everything here is
+/// also in Plugins, Models and Settings, and setup can be run again from Settings.
 struct OnboardingView: View {
     enum Step: Int, CaseIterable {
-        case plugins, permissions, models, providers
+        case welcome, plugins, permissions, models, providers, done
 
         var title: String {
             switch self {
-            case .plugins: "Welcome to Frog"
-            case .permissions: "Permissions"
+            case .welcome: "Welcome to Frog"
+            case .plugins: "Choose your tools"
+            case .permissions: "Allow access"
             case .models: "Local models"
-            case .providers: "Providers and agents"
+            case .providers: "Connect AI"
+            case .done: "You're all set"
             }
         }
         var subtitle: String {
             switch self {
-            case .plugins: "Pick what you want. Change it any time in Plugins."
-            case .permissions: "Only what your plugins need."
-            case .models: "Private and offline, on your Mac."
-            case .providers: "Found on this Mac."
+            case .welcome: "Window layouts, writing help, dictation and the small tools your Mac is missing, in one calm menu bar app."
+            case .plugins: "Turn on what you want. You can change this any time in Plugins."
+            case .permissions: "Frog asks only for what the tools you chose need."
+            case .models: "Private and offline, on your Mac. Optional."
+            case .providers: "AI tools and servers found on this Mac."
+            case .done: "Here is what is ready. Everything can be changed in Settings."
             }
         }
     }
@@ -37,20 +40,28 @@ struct OnboardingView: View {
     @State private var pendingImport: Configuration?
 
     /// `step` opens at a later step, for pictures of it.
-    init(step: Int = 0) { _step = State(initialValue: Step(rawValue: step) ?? .plugins) }
+    init(step: Int = 0) { _step = State(initialValue: Step(rawValue: step) ?? .welcome) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    ZStack(alignment: .topLeading) { page.id(step).transition(stepTransition) }
-                    if let issue { InlineIssue(message: issue) }
-                }.padding(.horizontal, FrogStyle.pagePadding).padding(.bottom, FrogStyle.sheetPadding).frame(maxWidth: .infinity, alignment: .leading)
-            }.minimalScrollbars().bottomScrollFade()
-            footer
+        ZStack {
+            if step == .welcome {
+                welcome.transition(stepTransition)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    header
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            ZStack(alignment: .topLeading) { page.id(step).transition(stepTransition) }
+                            if let issue { InlineIssue(message: issue) }
+                        }.padding(.horizontal, FrogStyle.pagePadding).padding(.bottom, FrogStyle.sheetPadding).frame(maxWidth: .infinity, alignment: .leading)
+                    }.scrollIndicators(.never).bottomScrollFade()
+                    Rectangle().fill(FrogStyle.hairline).frame(height: 1).accessibilityHidden(true)
+                    footer
+                }
+            }
         }
-        .frame(width: 600, height: 580).foregroundStyle(FrogStyle.ink).frogSurface(.window).background(FrogStyle.canvas)
+        // A fixed size, so no step makes the sheet jump; a long step scrolls inside.
+        .frame(width: 620, height: 600).foregroundStyle(FrogStyle.ink).frogSurface(.window).background(FrogStyle.canvas)
         .buttonStyle(.frog()).tint(FrogStyle.accent)
         .confirmationDialog("Import settings and skip setup?", isPresented: Binding(get: { pendingImport != nil }, set: { if !$0 { pendingImport = nil } })) {
             Button("Import settings") {
@@ -62,40 +73,85 @@ struct OnboardingView: View {
         } message: { Text("Frog keeps a backup of the current settings. Keys, models and permissions are not imported.") }
     }
 
+    // MARK: Welcome
+
+    private var welcome: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            VStack(spacing: FrogStyle.space16) {
+                FrogMark(size: 96)
+                VStack(spacing: FrogStyle.space10) {
+                    Text(L10n.text(Step.welcome.title)).font(FrogType.title).tracking(-0.4).accessibilityAddTraits(.isHeader)
+                    Text(L10n.text(Step.welcome.subtitle)).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
+                        .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true).frame(maxWidth: 380)
+                }
+            }
+            Spacer(minLength: 0)
+            VStack(spacing: FrogStyle.space10) {
+                Button("Get started") { go(to: .plugins) }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
+                HStack(spacing: FrogStyle.space4) {
+                    Button("Import settings…", action: chooseImport).buttonStyle(.frog(.ghost))
+                    Button("Skip setup") { model.finishSetup() }.buttonStyle(.frog(.ghost))
+                }
+                if let issue { InlineIssue(message: issue) }
+            }.padding(.bottom, FrogStyle.sheetPadding)
+        }.padding(.horizontal, FrogStyle.pagePadding).frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: Header and footer
+
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
-            FrogMark()
+            FrogMark(size: 40)
             VStack(alignment: .leading, spacing: 4) {
-                Text(step.title).font(FrogType.title).tracking(-0.4)
-                Text(step.subtitle).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
+                Text(L10n.text(step.title)).font(FrogType.title).tracking(-0.4).accessibilityAddTraits(.isHeader)
+                Text(L10n.text(step.subtitle)).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
             }
             Spacer()
-            OnboardingProgress(step: step.rawValue, count: Step.allCases.count).padding(.top, 8)
-        }.padding([.horizontal, .top], FrogStyle.pagePadding).padding(.bottom, FrogStyle.sectionSpacing)
+        }.padding([.horizontal, .top], FrogStyle.pagePadding).padding(.bottom, FrogStyle.sectionSpacing - 8)
     }
 
     private var footer: some View {
         HStack(spacing: 10) {
             // The ghost button's text starts at the content edge; its hover fill reaches past it.
-            Group {
-                if step == .plugins { Button("Import settings…", action: chooseImport).buttonStyle(.frog(.ghost)) }
-                else { Button("Skip setup") { model.finishSetup() }.buttonStyle(.frog(.ghost)) }
-            }.padding(.leading, -10)
+            Button("Back") { back() }.buttonStyle(.frog(.ghost)).keyboardShortcut("[", modifiers: .command).padding(.leading, -10)
             Spacer()
-            if let previous = Step(rawValue: step.rawValue - 1) { Button("Back") { go(to: previous) } }
-            Button(step == Step.allCases.last ? "Open Frog" : "Continue") {
-                if let next = Step(rawValue: step.rawValue + 1) { go(to: next) } else { model.finishSetup() }
-            }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
-        }.padding([.horizontal, .bottom], FrogStyle.pagePadding).padding(.top, FrogStyle.space16)
+            if step != .done { Button("Skip") { advance() }.buttonStyle(.frog(.ghost)) }
+            Button(step == .done ? "Done" : "Continue") { advance() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
+        }
+        .overlay { OnboardingProgress(step: step.rawValue - 1, count: Step.allCases.count - 1) }
+        .background {
+            // Escape steps back too; on the welcome step it does nothing, since leaving is an explicit choice.
+            Button("Back") { back() }.keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+        }
+        .padding([.horizontal, .bottom], FrogStyle.pagePadding).padding(.top, FrogStyle.space16)
     }
 
     @ViewBuilder private var page: some View {
         switch step {
+        case .welcome: EmptyView()
         case .plugins: OnboardingPlugins()
         case .permissions: OnboardingPermissions()
         case .models: OnboardingModels()
         case .providers: OnboardingProviders()
+        case .done: OnboardingDone { go(to: $0) }
         }
+    }
+
+    // MARK: Moving
+
+    private func advance() {
+        if let next = Step(rawValue: step.rawValue + 1) { go(to: next) } else { finish() }
+    }
+
+    private func back() {
+        if let previous = Step(rawValue: step.rawValue - 1) { go(to: previous) }
+    }
+
+    /// Done opens the main window on Settings, where everything chosen here can be changed.
+    private func finish() {
+        model.toolkit.select(.settings)
+        model.finishSetup()
     }
 
     private func go(to next: Step) {
@@ -117,7 +173,7 @@ struct OnboardingView: View {
     }
 }
 
-/// A dot per step; the current one is a short bar.
+/// A dot per step after the welcome; the current one is a short bar.
 private struct OnboardingProgress: View {
     let step: Int
     let count: Int
@@ -130,6 +186,50 @@ private struct OnboardingProgress: View {
         }
         .animation(FrogMotion.reveal, value: step)
         .accessibilityElement().accessibilityLabel("Step \(step + 1) of \(count)")
+    }
+}
+
+// MARK: Done
+
+/// What is set up and what was skipped; a skipped part is one button from its step.
+private struct OnboardingDone: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var granted: Set<MacPermission> = []
+    let jump: (OnboardingView.Step) -> Void
+
+    var body: some View {
+        let host = model.pluginHost
+        let on = host.descriptors.filter { host.enabled($0.id) }.count
+        let needed = OnboardingPermissionSupport.needed(model)
+        let missing = needed.filter { !granted.contains($0) }
+        let pair = LocalModelDescriptor.recommendedPair
+        let ready = pair.filter { model.localModels.installed.contains($0.id) }.count
+        let providers = model.configuration.providers.count
+        let access = model.configuration.preferences.toolkitSettings.agentAccess == true
+        FrogSection {
+            row("Tools", on > 0 ? "\(on) turned on" : "None turned on", done: on > 0, step: .plugins)
+            row("Permissions", needed.isEmpty ? "None needed" : missing.isEmpty ? "All allowed" : "\(missing.map(\.title).joined(separator: ", ")) still to allow",
+                done: missing.isEmpty, step: .permissions)
+            row("Local models", ready == 0 ? "None downloaded" : "\(ready) of \(pair.count) ready", done: ready > 0, step: .models)
+            row("Providers", providers == 0 ? "None added" : "\(providers) added", done: providers > 0, step: .providers)
+            row("AI agents", access ? "Can use the frog command" : "Off", done: access, step: .providers)
+        }
+        .task {
+            while !Task.isCancelled {
+                granted = await OnboardingPermissionSupport.granted()
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+    }
+
+    private func row(_ title: String, _ detail: String, done: Bool, step: OnboardingView.Step) -> some View {
+        FrogRow(title, caption: detail, icon: {
+            Image(systemName: done ? "checkmark.circle.fill" : "circle.dashed").font(.system(size: 18))
+                .foregroundStyle(done ? FrogStyle.good : FrogStyle.muted).frame(width: 28, height: 28)
+                .accessibilityHidden(true)
+        }, control: {
+            if !done { Button("Set up") { jump(step) }.buttonStyle(.frog(.ghost, compact: true)) }
+        })
     }
 }
 
@@ -183,15 +283,6 @@ private struct OnboardingPluginTile: View {
             HStack(spacing: 10) {
                 PluginIconTile(symbol: plugin.symbol, tint: plugin.tint.color, size: .list)
                     .saturation(on ? 1 : 0).opacity(on ? 1 : 0.5)
-                    .overlay(alignment: .bottomTrailing) {
-                        if on {
-                            Image(systemName: "checkmark.circle.fill").font(.system(size: 13, weight: .semibold))
-                                .symbolRenderingMode(.palette).foregroundStyle(FrogStyle.canvas, FrogStyle.accent)
-                                .background(Circle().fill(FrogStyle.canvas).padding(1))
-                                .offset(x: 5, y: 5)
-                                .transition(.scale(scale: 0.6).combined(with: .opacity))
-                        }
-                    }
                 Text(L10n.text(plugin.name)).font(FrogType.bodyMedium).foregroundStyle(on ? FrogStyle.ink : FrogStyle.muted)
                     .lineLimit(1).minimumScaleFactor(0.9)
                 Spacer(minLength: 0)
@@ -199,96 +290,17 @@ private struct OnboardingPluginTile: View {
             .padding(10).frame(maxWidth: .infinity, alignment: .leading)
             .frogRowHighlight(hovering: hovering, selected: false)
             .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+            // Rex's accent ring marks the tools that are on: a 2.5 line drawn inside a frame 5.5 out leaves a clear
+            // 3 between ring and tile, and the ring's radius grows by the same 5.5, so the curves run parallel.
+            .padding(5.5)
+            .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius + 5.5, style: .continuous)
+                .strokeBorder(on ? FrogStyle.accent : hovering ? FrogStyle.hairline : .clear, lineWidth: 2.5))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).disabled(busy).onHover { hovering = $0 }.help(L10n.text(plugin.summary))
         .animation(FrogMotion.check, value: on)
         .accessibilityLabel(Text(L10n.text(plugin.name))).accessibilityValue(on ? "On" : "Off")
         .accessibilityAddTraits(on ? .isSelected : [])
-    }
-}
-
-// MARK: Permissions
-
-/// The permissions the plugins that are on need, checked every second while the step is open, so a switch turned in
-/// System Settings shows here as soon as the user comes back.
-private struct OnboardingPermissions: View {
-    @EnvironmentObject private var model: AppModel
-    @State private var granted: Set<MacPermission> = []
-
-    private var needed: [MacPermission] {
-        let on = model.pluginHost.descriptors.filter { model.pluginHost.enabled($0.id) }
-        let wanted = Set(on.flatMap(\.info.permissions))
-        return MacPermission.allCases.filter { wanted.contains($0) && Self.checkable.contains($0) }
-    }
-    private static let checkable: Set<MacPermission> = [.accessibility, .microphone, .notifications]
-
-    var body: some View {
-        let needed = needed
-        FrogSection {
-            if needed.isEmpty {
-                FrogRow("Nothing to allow", caption: "The plugins you picked need no permissions.")
-            }
-            ForEach(needed, id: \.self) { permission in
-                FrogRow(permission.title, caption: Self.reason(permission)) {
-                    if granted.contains(permission) {
-                        Label("Allowed", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.accent)
-                            .transition(.opacity)
-                    } else {
-                        Button("Allow…") { request(permission) }.buttonStyle(.frog(.secondary, compact: true))
-                    }
-                }
-            }
-        }
-        .animation(FrogMotion.reveal, value: granted)
-        .task {
-            while !Task.isCancelled {
-                await refresh()
-                try? await Task.sleep(for: .seconds(1))
-            }
-        }
-    }
-
-    private static func reason(_ permission: MacPermission) -> String {
-        switch permission {
-        case .accessibility: "Read and replace selected text, move windows."
-        case .microphone: "Record while you dictate."
-        case .notifications: "Show what arrives from your phone."
-        default: ""
-        }
-    }
-
-    private func refresh() async {
-        var now: Set<MacPermission> = []
-        if AXIsProcessTrusted() { now.insert(.accessibility) }
-        if DictationController.microphoneGranted { now.insert(.microphone) }
-        if NotificationRouter.available {
-            let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
-            if status == .authorized || status == .provisional { now.insert(.notifications) }
-        }
-        if now != granted {
-            granted = now
-            if now.contains(.accessibility) != model.accessibilityGranted { model.refreshSystemStatus() }
-        }
-    }
-
-    private func request(_ permission: MacPermission) {
-        switch permission {
-        case .accessibility:
-            SelectionService.requestAccess(); SelectionService.openAccessibilitySettings()
-        case .microphone:
-            Task {
-                if !(await DictationController.requestMicrophone()) { DictationController.openMicrophoneSettings() }
-                await refresh()
-            }
-        case .notifications:
-            guard NotificationRouter.available else { return }
-            Task {
-                _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
-                await refresh()
-            }
-        default: break
-        }
     }
 }
 

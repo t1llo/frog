@@ -69,7 +69,7 @@ final class SurfaceShotsTests: XCTestCase {
             ("layouts", AnyView(LayoutPickerView(panel: picker, measuring: true))),
             ("bubble", AnyView(SelectionBubbleView(visible: bubble, more: bubble, expanded: false, pointer: BubblePointer(),
                                                    select: { _ in }, expand: {})))
-        ] + (0..<4).map { step in ("setup-\(step + 1)", AnyView(OnboardingView(step: step).environmentObject(model))) }
+        ] + (0..<OnboardingView.Step.allCases.count).map { step in ("setup-\(step + 1)", AnyView(OnboardingView(step: step).environmentObject(model))) }
 
         let only = ProcessInfo.processInfo.environment["FROG_SURFACE_SHOTS_ONLY"]?.split(separator: ",").map(String.init)
         // FROG_SURFACE_SHOTS_LOOK=aurora draws them with that look's transparency and glow, standing still.

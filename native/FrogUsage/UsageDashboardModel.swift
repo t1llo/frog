@@ -330,13 +330,19 @@ extension ClaudeAccountsCombination.Combined: Identifiable {
     public func refresh() {
         guard active else { return }
         claudeAccountsModel.detect()
-        refreshShown()
+        refreshShown(force: true)
     }
-    private func refreshShown() {
+    /// When a shown surface last refreshed, so opening one again soon shows what is there.
+    private var lastShownRefresh = Date.distantPast
+    /// Opening a popup shows the last reading at once; a refresh starts only when it is older than this.
+    private static let openRefreshAge: TimeInterval = 45
+    private func refreshShown(force: Bool = false) {
         guard active else { return }
+        lastShownRefresh = Date()
         if fixtureRoot == nil { claude.tick() }
         claudeAccountsModel.tick()
-        tokens.refresh(forceLocal: true)
+        // Only the Refresh button bypasses the scan gate; the timed refresh keeps its minute.
+        tokens.refresh(forceLocal: force)
     }
     /// Each account's store takes over from the one store, which shares the default account's
     /// saved request gate, so only one of them runs at a time.
@@ -373,7 +379,7 @@ extension ClaudeAccountsCombination.Combined: Identifiable {
     private func updateVisiblePolling() {
         visibleTimer?.invalidate(); visibleTimer = nil
         guard active, !presenters.isEmpty else { return }
-        refreshShown()
+        if Date().timeIntervalSince(lastShownRefresh) > Self.openRefreshAge { refreshShown() }
         visibleTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshShown() }
         }
@@ -465,10 +471,18 @@ extension ClaudeAccountsCombination.Combined: Identifiable {
     }
     public func credits(provider: String) -> String? {
         if provider == Provider.claude.rawValue {
-            guard let credits = primary.displayUsage()?.credits else { return nil }
-            return "Extra usage: \(money(credits.usedCents))" + (credits.limitCents.map { " of \(money($0))" } ?? "")
+            guard let extra = extraUsage(provider: provider) else { return nil }
+            return "Extra usage: \(extra.used)" + (extra.limit.map { " of \($0)" } ?? "")
         }
         return tokens.codexCredits.map { "Additional usage: \($0.displayBalance) credits" }
+    }
+    /// Claude's extra usage this month, only while it is enabled: what was used and the monthly
+    /// limit as currency, and how much of the limit is gone when there is one.
+    public func extraUsage(provider: String) -> UsageExtra? {
+        guard provider == Provider.claude.rawValue, let credits = primary.displayUsage()?.credits else { return nil }
+        let fraction = credits.limitCents.flatMap { $0 > 0 && credits.usedCents.isFinite ? min(1, max(0, credits.usedCents / $0)) : nil }
+        return UsageExtra(used: money(credits.usedCents, currency: credits.currency),
+                          limit: credits.limitCents.map { money($0, currency: credits.currency) }, fraction: fraction)
     }
     public func planName(provider: String) -> String? {
         if provider == "Claude" { return primary.plan }
@@ -632,4 +646,12 @@ extension UsageDashboardModel {
         sources += account.codeFolders.map { "Claude Code · \(shown($0))" }
         return sources
     }
+}
+
+/// Extra usage as shown on the popup and the page: "$12.34" of "$50.00", with the share used.
+public struct UsageExtra: Equatable {
+    public let used: String
+    public let limit: String?
+    /// 0 to 1 against the monthly limit; nil without one.
+    public let fraction: Double?
 }

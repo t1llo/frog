@@ -575,8 +575,8 @@ final class AppModel: ObservableObject {
 
     func refreshSystemStatus(forceLoginStatus: Bool = false) {
         let trusted = readAccessibility()
-        if accessibilityGranted != trusted { accessibilityGranted = trusted }
-        if started { configureWindowSwitcher() }
+        // The switcher is told only when Accessibility actually changed: every popup open calls this.
+        if accessibilityGranted != trusted { accessibilityGranted = trusted; if started { configureWindowSwitcher() } }
         refreshLoginStatus(force: forceLoginStatus)
     }
 

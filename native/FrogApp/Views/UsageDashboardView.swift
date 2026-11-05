@@ -91,7 +91,12 @@ private struct UsageLimitsSection: View {
                             .buttonStyle(.frog()).disabled(usage.checkingClaudeSignIn)
                     }
                 }
-                if let credits = usage.credits(provider: provider) {
+                if let extra = usage.extraUsage(provider: provider) {
+                    FrogRow("Extra usage") {
+                        Text(extra.used + (extra.limit.map { " of \($0)" } ?? "")).font(FrogType.small).monospacedDigit()
+                            .foregroundStyle(extra.fraction.map { $0 >= 0.8 ? FrogStyle.level($0, warning: 0.8, critical: 0.95) : FrogStyle.muted } ?? FrogStyle.muted)
+                    }
+                } else if let credits = usage.credits(provider: provider) {
                     FrogRow("Credits") { Text(credits).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
                 }
             }
@@ -220,14 +225,8 @@ struct UsageLimitView: View {
                 Spacer()
                 Text(window.usedText).font(GraphStyle.figure).monospacedDigit()
             }
-            GeometryReader { geometry in
-                Capsule().fill(FrogStyle.inset)
-                Capsule().fill(meterColor).frame(width: geometry.size.width * fraction)
-                if let elapsed {
-                    Rectangle().fill(FrogStyle.ink.opacity(0.55)).frame(width: 1, height: 9)
-                        .offset(x: max(0, min(geometry.size.width - 1, geometry.size.width * elapsed)), y: -2)
-                }
-            }.frame(height: 5).accessibilityHidden(true).help("The tick marks the time gone in this window.")
+            FrogMeter(fraction: fraction, tint: meterColor, size: compact ? .compact : .regular, tick: elapsed)
+                .help("The tick marks the time gone in this window.")
             HStack(spacing: 4) {
                 Text(window.leftText ?? "No reading since it renewed")
                 // A week's pace says something; a session's changes too fast to.
@@ -342,10 +341,12 @@ struct UsageActivityChart: View {
                 Text("Reading token activity…").font(FrogType.small).foregroundStyle(FrogStyle.muted)
             }.frame(maxWidth: .infinity, minHeight: compact ? 64 : 150)
         } else if !chart.hasActivity {
-            VStack(spacing: 6) {
-                Image(systemName: "chart.xyaxis.line").font(.system(size: compact ? 16 : 22)).foregroundStyle(FrogStyle.muted)
-                Text("No activity in this period").font(compact ? FrogType.small : FrogType.bodyMedium)
-            }.frame(maxWidth: .infinity, minHeight: compact ? 64 : 150)
+            FrogChartPlaceholder(height: compact ? 64 : 150) {
+                VStack(spacing: 6) {
+                    Image(systemName: "chart.xyaxis.line").font(.system(size: compact ? 16 : 22))
+                    Text("No activity in this period").font(compact ? FrogType.small : FrogType.bodyMedium).foregroundStyle(FrogStyle.ink)
+                }.padding(.bottom, compact ? 4 : 10)
+            }
         } else {
             UsageTrendChart(steps: UsageTrend(chart.points.map { ($0.date, $0.value) }).steps, compact: compact,
                             hourly: chart.range == "24h", timeZone: chart.account ? TimeZone(secondsFromGMT: 0)! : .current) {
@@ -726,42 +727,44 @@ struct UsageTrendChart: View {
         }
         VStack(spacing: 4) {
             Chart {
+                FrogChartGrid(values: compact ? [0.5] : [0, 0.5, 1])
                 ForEach(steps) { step in
                     AreaMark(x: .value("Date", step.date), y: .value("Total", step.line))
-                        .interpolationMethod(.monotone).foregroundStyle(GraphStyle.fill(FrogStyle.series))
+                        .interpolationMethod(.monotone).foregroundStyle(FrogChart.areaFill(FrogStyle.series))
                         .accessibilityHidden(true)
                 }
                 ForEach(steps) { step in
-                    BarMark(x: .value("Date", step.date), y: .value("Amount", step.bar), width: .fixed(compact ? 2 : 3))
-                        .foregroundStyle(FrogStyle.series)
-                        .opacity(selected == nil || selected?.id == step.id ? 1 : 0.4)
+                    BarMark(x: .value("Date", step.date), y: .value("Amount", step.bar), width: .fixed(compact ? 2 : 4))
+                        .cornerRadius(FrogStyle.smallRadius)
+                        .foregroundStyle(FrogStyle.series.opacity(selected == nil ? 0.32 : selected?.id == step.id ? 0.9 : 0.18))
                         .accessibilityLabel(label(step.date, long: true))
                         .accessibilityValue(format(step.amount))
                 }
                 ForEach(steps) { step in
                     LineMark(x: .value("Date", step.date), y: .value("Total", step.line))
-                        .interpolationMethod(.monotone).lineStyle(GraphStyle.line).foregroundStyle(FrogStyle.series)
+                        .interpolationMethod(.monotone).lineStyle(FrogChart.line).foregroundStyle(FrogStyle.series)
                         .accessibilityLabel("Total by \(label(step.date, long: true))")
                         .accessibilityValue(format(step.total))
                 }
+                if let last = steps.last {
+                    FrogChartPoint(x: .value("Date", last.date), y: .value("Total", last.line), color: FrogStyle.series)
+                }
                 if let selected {
-                    RuleMark(x: .value("Date", selected.date)).lineStyle(StrokeStyle(lineWidth: 1))
-                        .foregroundStyle(FrogStyle.muted.opacity(0.45)).accessibilityHidden(true)
-                    PointMark(x: .value("Date", selected.date), y: .value("Total", selected.line))
-                        .symbolSize(compact ? 22 : 30).foregroundStyle(FrogStyle.series).accessibilityHidden(true)
+                    FrogChartRule(x: .value("Date", selected.date))
+                    FrogChartPoint(x: .value("Date", selected.date), y: .value("Total", selected.line), color: FrogStyle.series)
                 }
             }
-            .chartXScale(domain: domain(steps), range: .plotDimension(startPadding: 3, endPadding: 3))
-            .chartYScale(domain: 0...1, range: .plotDimension(startPadding: 0, endPadding: 2))
+            .chartXScale(domain: domain(steps), range: .plotDimension(startPadding: FrogChart.endInset, endPadding: FrogChart.endInset))
+            .chartYScale(domain: 0...1, range: .plotDimension(startPadding: 6, endPadding: FrogChart.endInset))
             .chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
             .chartXSelection(value: $selectedDate)
+            .frogChartPlot(compact: compact)
             .frame(height: compact ? 64 : 150)
-            .overlay(alignment: .topLeading) {
+            .overlay(alignment: FrogChart.chipAlignment(pointerAt: pointer(selected))) {
                 if let selected {
-                    Text("\(label(selected.date, long: true)) · \(format(selected.amount)) · \(format(selected.total)) total")
-                        .font(FrogType.caption).monospacedDigit().lineLimit(1)
-                        .padding(6).background(FrogStyle.panelSurface, in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius))
-                        .allowsHitTesting(false)
+                    FrogChartChip {
+                        Text("\(label(selected.date, long: true)) · \(format(selected.amount)) · \(format(selected.total)) total")
+                    }
                 }
             }
             .help("The line is the running total for the period. The bars are each \(hourly ? "hour" : "day")’s amount.")
@@ -769,6 +772,12 @@ struct UsageTrendChart: View {
                 GraphAxis(leading: label(first.date, long: false), trailing: label(last.date, long: false))
             }
         }
+    }
+
+    /// Where the selected bucket lies across the chart, 0 at its left edge and 1 at its right.
+    private func pointer(_ selected: UsageTrend.Step?) -> Double {
+        guard let selected, let first = steps.first?.date, let last = steps.last?.date, last > first else { return 0 }
+        return selected.date.timeIntervalSince(first) / last.timeIntervalSince(first)
     }
 
     private func domain(_ steps: [UsageTrend.Step]) -> ClosedRange<Date> {

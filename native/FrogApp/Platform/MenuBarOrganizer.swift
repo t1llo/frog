@@ -61,7 +61,8 @@ struct OrganizerEnvironment {
         }
         return Self(screens: screens, pointerInMenuBar: screens.contains { $0.menuBarContains(pointer, thickness: thickness) },
         mouseDown: NSEvent.pressedMouseButtons != 0,
-        competingOrganizer: NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.dwarvesv.minimalbar" },
+        competingOrganizer: // One LaunchServices query, not one synchronous round trip per running app on the main thread.
+        !NSRunningApplication.runningApplications(withBundleIdentifier: "com.dwarvesv.minimalbar").isEmpty,
         supportsLengthTechnique: ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27,
         statusItemPadding: systemStatusItemPadding)
     }

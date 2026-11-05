@@ -13,6 +13,7 @@ import FrogCore
     private var updateTask: Task<Void, Never>?
     private var timer: Timer?
     private var shownFace: StayAwakeIcon.Face?
+    private var shownDescription: String?
     var isShown: Bool { item?.isVisible == true }
 
     init(power: StayAwakeController, style: String, openSettings: @escaping () -> Void) {
@@ -54,7 +55,7 @@ import FrogCore
         guard let item else { return }
         let on = power.isEnabled
         if item.isVisible != on { item.isVisible = on }
-        guard on else { timer?.invalidate(); timer = nil; shownFace = nil; return }
+        guard on else { timer?.invalidate(); timer = nil; shownFace = nil; shownDescription = nil; return }
         // The ring and the time left move on their own while a timed session runs.
         if power.deadline != nil, timer == nil {
             timer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
@@ -66,6 +67,8 @@ import FrogCore
         let face = StayAwakeIcon.Face(style: style, deadline: power.deadline, duration: total)
         if face != shownFace { item.button?.image = StayAwakeIcon.image(face); shownFace = face }
         let description = Self.description(power)
+        guard description != shownDescription else { return }
+        shownDescription = description
         item.button?.toolTip = description
         item.button?.setAccessibilityLabel(description)
     }

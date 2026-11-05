@@ -32,10 +32,14 @@ import FrogUsage
         item.button?.action = #selector(togglePopup)
         observation = usage.objectWillChange.sink { [weak self] _ in
             // ObservableObject emits before mutation. Coalesce and draw the new snapshot.
-            self?.updateTask?.cancel()
-            self?.updateTask = Task { @MainActor [weak self] in
-                guard !Task.isCancelled else { return }
-                self?.updateReadout()
+            // A burst of changes (one per scan slice) draws once: the first starts a short wait,
+            // the rest join it.
+            guard let self, self.updateTask == nil else { return }
+            self.updateTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled, let self else { return }
+                self.updateTask = nil
+                self.updateReadout()
             }
         }
         // A coloured design draws its text for the menu bar's light or dark look.

@@ -143,3 +143,15 @@ Frog moves little: a press answers, a hover leaves softly, a choice slides, and 
 - Reduce Motion: no scale and no sliding; segments, setup steps, the error banner and the checkbox mark cross-fade instead.
 - Copy actions use `CopyAction`: its symbol turns into a checkmark for `confirmation`.
 - An animation names a token from `Motion.swift`: `withAnimation(FrogMotion.reveal)`, never `.easeOut(duration:)`, a bare `withAnimation` or a literal `NSAnimationContext` duration. `StyleTokenScanTests` checks it.
+
+## Charts and meters
+
+Every graph and meter is built from `FrogApp/Views/Design/FrogChart.swift`, so System monitor and Usage look like one family.
+
+- Lines are smooth (`.monotone`, never overshooting), 2 points with round caps and joins (`FrogChart.line`). A second series is 1.5 points and uses `FrogStyle.seriesSecondary`, a soft ink that reads in every theme; the main series uses `FrogStyle.series` (the accent). Warning and critical colours colour meters only, through `FrogStyle.level`.
+- The main line sits on a fill that fades from 35 % of its colour to clear (`FrogChart.areaFill`). Daily amounts are thin rounded `BarMark`s in the accent at low opacity.
+- Minimal chrome: no axes, a few faint dashed grid lines in `hairline` (`FrogChartGrid`), and short muted labels only where they help: 0, 50 and 100 % on the wide CPU graph, the two end dates or times under a graph (`GraphAxis`). The plot is clipped to a nested corner (`FrogChart.plotRadius`: `controlRadius` on pages, `smallRadius` in popups).
+- The newest value of the main series ends in a filled dot with a soft halo (`FrogChartPoint`). Under the pointer: a thin rule (`FrogChartRule`), a dot on each line and a rounded chip (`FrogChartChip`) with the values and the time. The chip takes the corner away from the pointer, so it stays inside the plot.
+- Before there is a line, `FrogChartPlaceholder` shows a dashed baseline and a calm note at the graph's own height, so nothing moves when data arrives.
+- `FrogMeter` is the one horizontal meter: an inset capsule track, a fill that fades from lighter to full level colour with a soft highlight, and an optional crisp tick (the share of time gone in a plan window). Height is `.compact` (5, usage popups) or `.regular` (6, pages and the system overview). The fill glides with `FrogMotion.reveal` and does not move under Reduce Motion.
+- Nothing animates continuously. Graphs are drawn from bounded data (`SystemMonitorGraph.maxPoints`) and are `Equatable`, so an unrelated update does not redraw them.

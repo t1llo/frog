@@ -231,7 +231,9 @@ enum FrogStyle {
         guard settings.effectiveTheme == .minimal, usesThemeAccent, !custom else { return accent }
         return adaptive(light: 0x5E6AD2, dark: 0x7B84EC)
     }
-    static var seriesSecondary: Color { warning }
+    /// The second line of a graph: a soft ink, which reads against the accent of every theme in light and dark.
+    /// Warning and critical colours stay with meters.
+    static var seriesSecondary: Color { ink.opacity(0.55) }
 
     private struct Tones {
         var good, warning, critical: (light: UInt32, dark: UInt32)

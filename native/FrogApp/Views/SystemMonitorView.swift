@@ -79,8 +79,8 @@ struct SystemMonitorOverview: View {
 
     var body: some View {
         let sample = inspectedSample
-        VStack(spacing: 6) {
-            VStack(alignment: .leading, spacing: 6) {
+        VStack(spacing: FrogStyle.space8) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 8) {
                     legend("CPU", color: FrogStyle.series, text: sample.map { percent($0.cpu) } ?? percent(snapshot.cpu))
                         .help("Busy time across all CPU cores.")
@@ -88,18 +88,24 @@ struct SystemMonitorOverview: View {
                         .help("The busiest GPU, when its driver reports it.")
                     memory(sample)
                 }
-                SystemMonitorGraph(history: history, inspected: $inspected, sample: sample).frame(height: wide ? 150 : 54)
-                GraphAxis(leading: GraphStyle.ago(SystemMonitor.historyWindow), trailing: "Now",
-                          center: sample.flatMap { sample in history.last.map { GraphStyle.ago($0.time.timeIntervalSince(sample.time)) } })
+                if history.count < 2 {
+                    // Hold the graph's place, so the card does not grow when the first readings arrive.
+                    FrogChartPlaceholder(height: wide ? 150 : 54) { Text("Measuring…").font(FrogType.small) }
+                } else {
+                    SystemMonitorGraph(history: history, inspected: $inspected, sample: sample, wide: wide).equatable().frame(height: wide ? 150 : 54)
+                }
+                GraphAxis(leading: GraphStyle.ago(SystemMonitorGraph.span(history)), trailing: "Now")
             }.modifier(OverviewCard(wide: wide))
             if let storage = snapshot.storage {
                 storageLine(storage).modifier(OverviewCard(wide: wide))
+            } else if snapshot.cpu == .measuring {
+                // Every Mac has a startup disk: hold its place so the card does not push the rest down later.
+                storagePlaceholder.modifier(OverviewCard(wide: wide))
             }
             if let power = powerLine {
                 power.modifier(OverviewCard(wide: wide))
             }
-        }.padding(.horizontal, wide ? 0 : 2).padding(.bottom, wide ? 0 : 4)
-            .accessibilityElement(children: .contain).accessibilityLabel("System overview")
+        }.accessibilityElement(children: .contain).accessibilityLabel("System overview")
     }
 
     /// Memory now, or as recorded at the moment under the pointer.
@@ -123,7 +129,7 @@ struct SystemMonitorOverview: View {
 
     /// Free space on the startup volume, with a meter of what is used.
     private func storageLine(_ storage: SystemMonitorStorage) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Label("Storage", systemImage: "internaldrive").font(FrogType.label)
                 Text(diskBytes(storage.available)).font(GraphStyle.figure).monospacedDigit()
@@ -136,6 +142,17 @@ struct SystemMonitorOverview: View {
             .help("Space free on the startup disk, counting what macOS can clear, as Finder shows it.")
     }
 
+    private var storagePlaceholder: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Label("Storage", systemImage: "internaldrive").font(FrogType.label)
+                Spacer(minLength: 4)
+                Text(percent(.measuring)).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+            }
+            meter(0, color: FrogStyle.accent)
+        }.accessibilityElement(children: .combine)
+    }
+
     /// The battery's charge and state, what the Mac draws, the battery's temperature, and the
     /// thermal state or Low Power Mode only while they say something.
     private var powerLine: AnyView? {
@@ -145,8 +162,8 @@ struct SystemMonitorOverview: View {
         if power.lowPower == true { notes.append("Low Power Mode") }
         guard power.batteryPercent != nil || power.systemWatts != nil || !notes.isEmpty else { return nil }
         let stats = powerStats
-        return AnyView(VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 6) {
+        return AnyView(VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Label("Battery", systemImage: power.charging ? "battery.100.bolt" : "battery.75").font(FrogType.label)
                     if let percent = power.batteryPercent {
@@ -233,10 +250,7 @@ struct SystemMonitorOverview: View {
     }
 
     private func meter(_ value: Double, color: Color) -> some View {
-        GeometryReader { geometry in
-            Capsule().fill(FrogStyle.muted.opacity(0.15))
-            Capsule().fill(color).frame(width: geometry.size.width * min(1, max(0, value)))
-        }.frame(height: 4).accessibilityHidden(true)
+        FrogMeter(fraction: value, tint: color)
     }
 
     private func percent(_ metric: SystemMonitorMetric) -> String {
@@ -269,50 +283,125 @@ private struct OverviewCard: ViewModifier {
         if wide {
             content.padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .topLeading).frogTableSurface()
         } else {
-            content.padding(8).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+            // The popup's card: the same surface, sitting panelCardInset from the panel's edge.
+            content.padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .topLeading).frogTableSurface()
         }
     }
 }
 
-/// CPU and GPU over the recorded stretch: CPU as the filled line, GPU as a second line.
-private struct SystemMonitorGraph: View {
+/// CPU and GPU over the recorded stretch: CPU as the smooth line over a fading fill with a live dot at its end,
+/// GPU as a quieter second line, and a rule, dots and a chip under the pointer.
+/// Equatable on what it draws, so a sample that changes only the cards beside it leaves it alone,
+/// and bounded to `maxPoints` per series however long the history is.
+struct SystemMonitorGraph: View, Equatable {
+    static let maxPoints = 90
+
+    /// The stretch the graph spans: what was recorded, rounded up to whole minutes, from one minute up to the
+    /// full history window, so a fresh start fills the graph instead of sitting in a sliver at its right edge.
+    static func span(_ history: [SystemMonitorSample]) -> TimeInterval {
+        guard let first = history.first?.time, let last = history.last?.time else { return 60 }
+        let minutes = (last.timeIntervalSince(first) / 60).rounded(.up)
+        return min(SystemMonitor.historyWindow, max(60, minutes * 60))
+    }
+
+    static func == (a: Self, b: Self) -> Bool {
+        a.wide == b.wide && a.history.count == b.history.count && a.history.last?.time == b.history.last?.time
+            && a.history.first?.time == b.history.first?.time && a.sample?.time == b.sample?.time
+    }
+
+    /// Averages neighbouring points of every run down to about `maxPoints` in all.
+    /// Chunks are counted back from each run's newest point, which stays exact, so a new sample
+    /// scrolls the line instead of regrouping every chunk.
+    static func thinned(_ runs: [SystemMonitorRun]) -> [SystemMonitorRun] {
+        let total = runs.reduce(0) { $0 + $1.points.count }
+        guard total > maxPoints else { return runs }
+        let step = Int((Double(total) / Double(maxPoints)).rounded(.up))
+        return runs.map { run in
+            var run = run
+            let points = run.points
+            guard let newest = points.last else { return run }
+            var thinned = [newest]
+            var end = points.count - 1
+            while end > 0 {
+                let chunk = points[max(0, end - step)..<end]
+                let count = Double(chunk.count)
+                thinned.append(SystemMonitorRun.Point(time: chunk[chunk.startIndex + chunk.count / 2].time,
+                                                      offset: chunk.reduce(0) { $0 + $1.offset } / count,
+                                                      value: chunk.reduce(0) { $0 + $1.value } / count))
+                end -= step
+            }
+            run.points = thinned.reversed()
+            return run
+        }
+    }
+
     let history: [SystemMonitorSample]
     @Binding var inspected: Double?
     let sample: SystemMonitorSample?
+    let wide: Bool
 
     var body: some View {
-        let cpu = SystemMonitorRun.runs(history, pause: SystemMonitor.recordingPause, value: \.cpu)
-        let gpu = SystemMonitorRun.runs(history, pause: SystemMonitor.recordingPause, value: \.gpu)
+        let cpu = Self.thinned(SystemMonitorRun.runs(history, pause: SystemMonitor.recordingPause, value: \.cpu))
+        let gpu = Self.thinned(SystemMonitorRun.runs(history, pause: SystemMonitor.recordingPause, value: \.gpu))
+        let window = Self.span(history)
         Chart {
+            FrogChartGrid(values: wide ? [0, 0.5, 1] : [0.5])
             ForEach(cpu) { run in
                 ForEach(run.points) { point in
-                    AreaMark(x: .value("Seconds", point.offset), y: .value("CPU", point.value), series: .value("Run", run.id), stacking: .unstacked)
-                        .interpolationMethod(.monotone).foregroundStyle(GraphStyle.fill(FrogStyle.series))
+                    AreaMark(x: .value("Seconds", point.offset), y: .value("CPU", point.value), series: .value("Run", "CPU area \(run.id)"), stacking: .unstacked)
+                        .interpolationMethod(.monotone).foregroundStyle(FrogChart.areaFill(FrogStyle.series))
                     LineMark(x: .value("Seconds", point.offset), y: .value("CPU", point.value), series: .value("Run", "CPU \(run.id)"))
-                        .interpolationMethod(.monotone).lineStyle(GraphStyle.line).foregroundStyle(FrogStyle.series)
+                        .interpolationMethod(.monotone).lineStyle(FrogChart.line).foregroundStyle(FrogStyle.series)
                 }
             }
             ForEach(gpu) { run in
                 ForEach(run.points) { point in
                     LineMark(x: .value("Seconds", point.offset), y: .value("GPU", point.value), series: .value("Run", "GPU \(run.id)"))
-                        .interpolationMethod(.monotone).lineStyle(GraphStyle.line).foregroundStyle(FrogStyle.seriesSecondary)
+                        .interpolationMethod(.monotone).lineStyle(FrogChart.secondaryLine).foregroundStyle(FrogStyle.seriesSecondary)
                 }
+            }
+            if let point = cpu.last?.points.last, point.time == history.last?.time {
+                FrogChartPoint(x: .value("Seconds", point.offset), y: .value("CPU", point.value), color: FrogStyle.series)
             }
             if let sample, let end = history.last?.time {
                 let offset = sample.time.timeIntervalSince(end)
-                RuleMark(x: .value("Seconds", offset)).lineStyle(StrokeStyle(lineWidth: 1)).foregroundStyle(FrogStyle.muted.opacity(0.45))
+                FrogChartRule(x: .value("Seconds", offset))
                 if let value = sample.cpu {
-                    PointMark(x: .value("Seconds", offset), y: .value("CPU", value)).symbolSize(22).foregroundStyle(FrogStyle.series)
+                    FrogChartPoint(x: .value("Seconds", offset), y: .value("CPU", value), color: FrogStyle.series)
                 }
                 if let value = sample.gpu {
-                    PointMark(x: .value("Seconds", offset), y: .value("GPU", value)).symbolSize(22).foregroundStyle(FrogStyle.seriesSecondary)
+                    FrogChartPoint(x: .value("Seconds", offset), y: .value("GPU", value), color: FrogStyle.seriesSecondary)
                 }
             }
         }
-        .chartXScale(domain: -SystemMonitor.historyWindow...0)
-        .chartYScale(domain: 0...1, range: .plotDimension(startPadding: 1, endPadding: 1))
+        .chartXScale(domain: -window...0, range: .plotDimension(startPadding: 0, endPadding: FrogChart.endInset))
+        .chartYScale(domain: 0...1, range: .plotDimension(startPadding: 6, endPadding: 6))
         .chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
         .chartXSelection(value: $inspected)
-        .accessibilityHidden(true)
+        .frogChartPlot(compact: !wide)
+        .overlay { if wide { FrogChartScaleLabels() } }
+        .overlay(alignment: FrogChart.chipAlignment(pointerAt: pointer(window))) {
+            if let sample, let end = history.last?.time { chip(sample, end: end) }
+        }
+        .accessibilityElement().accessibilityLabel("CPU and GPU history")
+        .accessibilityValue(history.last.map { "CPU \(Self.percent($0.cpu)), GPU \(Self.percent($0.gpu))" } ?? "")
     }
+
+    /// Where the inspected moment lies across the graph, 0 at its left edge and 1 at its right.
+    private func pointer(_ window: TimeInterval) -> Double {
+        guard let sample, let end = history.last?.time else { return 0 }
+        return 1 + sample.time.timeIntervalSince(end) / window
+    }
+
+    private func chip(_ sample: SystemMonitorSample, end: Date) -> some View {
+        FrogChartChip {
+            HStack(spacing: 8) {
+                Text("CPU \(Self.percent(sample.cpu))").foregroundStyle(FrogStyle.series)
+                Text("GPU \(Self.percent(sample.gpu))")
+                Text(GraphStyle.ago(end.timeIntervalSince(sample.time))).foregroundStyle(FrogStyle.muted)
+            }
+        }
+    }
+
+    private static func percent(_ value: Double?) -> String { value.map { "\(Int(($0 * 100).rounded()))%" } ?? "-" }
 }

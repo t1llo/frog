@@ -12,14 +12,20 @@ import SwiftUI
     private var outsideClick: Any?
     private var deactivation: NSObjectProtocol?
     private var otherPopup: NSObjectProtocol?
-    var isShown: Bool { panel?.isVisible == true }
+    /// The panel still fading out. A click during the fade counts as shown, so the status button's toggle
+    /// does not open a second panel over it.
+    private var closing: NSPanel?
+    var isShown: Bool { panel?.isVisible == true || closing != nil }
 
     init(name: String) { self.name = name }
 
     func show(_ host: NSView, relativeTo anchor: NSView) {
         close()
+        // A re-open during a fade replaces the fading panel at once.
+        if let closing { closing.alphaValue = 0; closing.orderOut(nil); closing.contentView = nil; self.closing = nil }
         // Frog's own menu-bar popup closes itself when this one opens, and the reverse.
         NotificationCenter.default.post(name: .frogMenuPopupWillOpen, object: name)
+        host.layoutSubtreeIfNeeded()
         let size = host.fittingSize
         let panel = StatusPopupPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
                                      backing: .buffered, defer: false)
@@ -65,7 +71,11 @@ import SwiftUI
         // It fades like Frog's own menu-bar popup; clicks meanwhile reach whatever is beneath it.
         panel.ignoresMouseEvents = true
         // Popup content is created when opened; releasing it ends its visible refresh.
-        panel.fadeOut { panel.contentView = nil }
+        closing = panel
+        panel.fadeOut { [weak self, weak panel] in
+            panel?.contentView = nil
+            if let self, self.closing === panel { self.closing = nil }
+        }
     }
 
     /// Directly beneath the status item and left-aligned with it, like a MenuBarExtra window,

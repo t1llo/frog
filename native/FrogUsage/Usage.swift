@@ -64,7 +64,7 @@ struct Limit: Identifiable, Codable, Equatable {
     /// Length of the rolling window, used for the even-pace marker. Nil hides the marker.
     let window: TimeInterval?
 }
-struct Credits: Codable { let usedCents: Double; let limitCents: Double? }
+struct Credits: Codable { let usedCents: Double; let limitCents: Double?; var currency: String? = nil }
 struct Usage: Codable { var limits: [Limit] = []; var credits: Credits? }
 
 /// JSON numeric fields can be integral or fractional, but booleans are not counts.
@@ -274,7 +274,8 @@ func parse(_ json: [String: Any]) -> Usage {
     }
     if let e = json["extra_usage"] as? [String: Any], e["is_enabled"] as? Bool == true,
        let used = e["used_credits"] as? Double {
-        usage.credits = Credits(usedCents: used, limitCents: e["monthly_limit"] as? Double)
+        usage.credits = Credits(usedCents: used, limitCents: e["monthly_limit"] as? Double,
+                                currency: (e["currency"] as? String).flatMap { $0.count == 3 ? $0.uppercased() : nil })
     }
     return usage
 }
@@ -312,4 +313,8 @@ func clock(_ d: Date, locale: Locale = .autoupdatingCurrent) -> String {
     d.formatted(Date.FormatStyle(locale: locale).hour().minute())
 }
 
-func money(_ cents: Double) -> String { String(format: "$%.2f", cents / 100) }
+/// Cents as currency: dollars unless the API names the account's currency.
+func money(_ cents: Double, currency: String? = nil) -> String {
+    guard let currency else { return String(format: "$%.2f", cents / 100) }
+    return (cents / 100).formatted(.currency(code: currency))
+}

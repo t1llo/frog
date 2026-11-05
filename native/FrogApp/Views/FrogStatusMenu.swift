@@ -27,47 +27,16 @@ struct FrogStatusMenu: View {
         let tabs = host.menuTabs
         let shown = tabs.contains { $0.id == selectedTab } ? selectedTab : Self.frogTab
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: FrogStyle.space8) {
-                Image(nsImage: FrogMenuIcon.image).renderingMode(.template)
-                // With tabs, the first tab names Frog.
-                if tabs.isEmpty { Text("Frog").font(FrogType.section) }
-                Spacer()
-                if !tabs.isEmpty {
-                    CompactSegments(values: [Self.frogTab] + tabs.map(\.id), selected: shown,
-                                    width: min(232, CGFloat(64 * (tabs.count + 1))), compact: true,
-                                    title: { id in tabs.first { $0.id == id }?.tabTitle ?? "Frog" }) { selectedTab = $0 }
-                        .accessibilityElement(children: .contain).accessibilityLabel("Menu view")
-                }
-            }.padding(.horizontal, FrogStyle.space6).frame(height: 40)
-
+            header(tabs: tabs, shown: shown)
             VStack(alignment: .leading, spacing: FrogStyle.space8) {
                 if let tab = tabs.first(where: { $0.id == shown }) {
-                    tab.content()
+                    // A tab's own views observe their own models, so an unrelated AppModel change need not rebuild them.
+                    MenuTabBody(id: tab.id, build: tab.content).equatable()
                 } else {
-                    VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                        ForEach(host.menuRows) { $0.content() }
-                        if model.isProcessing {
-                            action("Cancel processing", symbol: "xmark", tint: FrogStyle.critical) { model.cancelProcessing() }
-                        }
-                    }.padding(FrogStyle.listInset).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
-                    if let error = model.errorMessage {
-                        HStack(alignment: .top) {
-                            Text(String(error.prefix(500))).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
-                                .lineLimit(3).help("Full details are in Settings → Errors.")
-                            Spacer(minLength: 0)
-                            IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)
-                        }.padding(FrogStyle.rowPadding).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
-                    }
+                    frogContent(host.menuRows)
                 }
-                VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                    UpdateReadyRow { dismiss(); UpdateService.shared.installReadyUpdate() }
-                    action(model.setupPresented ? "Set up Frog…" : "Open Frog", symbol: "arrow.up.forward.app", key: "⌘,",
-                           tint: FrogStyle.accent) {
-                        dismiss(); model.showSettings()
-                    }.keyboardShortcut(",")
-                    action("Quit Frog", symbol: "power", key: "⌘Q") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
-                }.padding(FrogStyle.listInset).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
-            }
+            }.padding(.bottom, FrogStyle.listInset)
+            footer
         }.padding(FrogStyle.panelCardInset).frame(width: 292).fixedSize(horizontal: false, vertical: true)
             .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()
@@ -79,10 +48,84 @@ struct FrogStatusMenu: View {
             }
     }
 
-    private func action(_ title: String, symbol: String, key: String? = nil, tint: Color = FrogStyle.muted,
-                        perform: @escaping () -> Void) -> some View {
-        MenuActionRow(title: title, symbol: symbol, key: key, tint: tint, action: perform)
+    /// The icon, then either the name of the popup or the tabs that replace it.
+    private func header(tabs: [MenuContribution], shown: String) -> some View {
+        HStack(spacing: FrogStyle.space8) {
+            Image(nsImage: FrogMenuIcon.image).renderingMode(.template)
+            // With tabs, the first tab names Frog.
+            if tabs.isEmpty { Text("Frog").font(FrogType.section) }
+            Spacer()
+            if !tabs.isEmpty {
+                CompactSegments(values: [Self.frogTab] + tabs.map(\.id), selected: shown,
+                                width: min(232, CGFloat(64 * (tabs.count + 1))), compact: true,
+                                title: { id in tabs.first { $0.id == id }?.tabTitle ?? "Frog" }) { selectedTab = $0 }
+                    .accessibilityElement(children: .contain).accessibilityLabel("Menu view")
+            }
+        }.padding(.horizontal, FrogStyle.space6).frame(height: 40)
     }
+
+    /// One muted line of state, then the plugins' rows in a card, and an error when there is one.
+    @ViewBuilder private func frogContent(_ rows: [MenuContribution]) -> some View {
+        statusLine
+        VStack(alignment: .leading, spacing: FrogStyle.space2) {
+            ForEach(rows) { $0.content() }
+            if model.isProcessing {
+                MenuActionRow(title: "Cancel processing", symbol: "xmark", tint: FrogStyle.critical) { model.cancelProcessing() }
+            }
+        }.padding(FrogStyle.listInset).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
+        if let error = model.errorMessage {
+            HStack(alignment: .top) {
+                Text(String(error.prefix(500))).font(FrogType.small).foregroundStyle(FrogStyle.warning)
+                    .lineLimit(3).help("Full details are in Settings → Errors.")
+                Spacer(minLength: 0)
+                IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)
+            }.padding(FrogStyle.rowPadding).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
+        }
+        UpdateReadyRow { dismiss(); UpdateService.shared.installReadyUpdate() }
+    }
+
+    private var statusLine: some View {
+        let (text, color): (String, Color) = model.isProcessing ? ("Processing", FrogStyle.accent)
+            : model.errorMessage != nil ? ("Needs attention", FrogStyle.warning)
+            : model.setupPresented ? ("Setup not finished", FrogStyle.warning) : ("Ready", FrogStyle.good)
+        return HStack(spacing: FrogStyle.space6) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(L10n.text(text)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+            Spacer(minLength: 0)
+        }.padding(.horizontal, FrogStyle.space6).accessibilityElement(children: .combine)
+    }
+
+    /// Secondary actions under a hairline, with their shortcuts as key caps.
+    private var footer: some View {
+        HStack(spacing: FrogStyle.space4) {
+            footerButton(model.setupPresented ? "Set up Frog…" : "Open Frog", symbol: "arrow.up.forward.app", key: "\u{2318}", key2: ",",
+                         tint: FrogStyle.accent) { dismiss(); model.showSettings() }.keyboardShortcut(",")
+            Spacer(minLength: 0)
+            footerButton("Quit Frog", symbol: "power", key: "\u{2318}", key2: "Q", tint: FrogStyle.muted) {
+                NSApplication.shared.terminate(nil)
+            }.keyboardShortcut("q")
+        }.padding(.horizontal, FrogStyle.space4).padding(.top, FrogStyle.space4)
+            .overlay(alignment: .top) { Rectangle().fill(FrogStyle.hairline).frame(height: 1) }
+    }
+
+    private func footerButton(_ title: String, symbol: String, key: String, key2: String, tint: Color,
+                              perform: @escaping () -> Void) -> some View {
+        Button(action: perform) {
+            HStack(spacing: FrogStyle.space6) {
+                Image(systemName: symbol).font(FrogType.label).foregroundStyle(tint)
+                Text(L10n.text(title)).font(FrogType.small).lineLimit(1)
+                HStack(spacing: 3) { KeyCap(key); KeyCap(key2) }
+            }.padding(.horizontal, FrogStyle.space8).frame(height: FrogStyle.controlHeight).contentShape(Rectangle())
+        }.buttonStyle(MenuRowStyle())
+    }
+}
+
+/// A tab's content, rebuilt only when the tab changes: its views watch their own models.
+private struct MenuTabBody: View, Equatable {
+    let id: String
+    let build: @MainActor () -> AnyView
+    static func == (lhs: MenuTabBody, rhs: MenuTabBody) -> Bool { lhs.id == rhs.id }
+    var body: some View { build() }
 }
 
 /// The organizer takes its arrow out of the menu bar when it cannot run, so this menu says why.
