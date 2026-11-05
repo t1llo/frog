@@ -16,6 +16,8 @@ import SwiftUI
     /// does not open a second panel over it.
     private var closing: NSPanel?
     var isShown: Bool { panel?.isVisible == true || closing != nil }
+    /// Called each time the popup closes, however it was dismissed.
+    var onClose: (() -> Void)?
 
     init(name: String) { self.name = name }
 
@@ -68,6 +70,7 @@ import SwiftUI
         deactivation = nil; otherPopup = nil
         guard let panel else { return }
         self.panel = nil
+        onClose?()
         // It fades like Frog's own menu-bar popup; clicks meanwhile reach whatever is beneath it.
         panel.ignoresMouseEvents = true
         // Popup content is created when opened; releasing it ends its visible refresh.

@@ -101,7 +101,14 @@ enum PluginPageSource {
           // Events wait for their first listener, so a command that opened the page is not lost.
           const listeners = new Map();
           const waiting = new Map();
+          // Output of scripts run with onOutput, by the stream each run was given.
+          const streams = new Map();
           const emit = (event, value) => {
+            if (event === "__script") {
+              const listener = value && streams.get(value.stream);
+              if (listener) { try { listener(String(value.output)); } catch (error) { log("error", describe(error)); } }
+              return;
+            }
             const handlers = listeners.get(event);
             if (!handlers || handlers.size === 0) {
               const queue = waiting.get(event) || [];
@@ -157,14 +164,57 @@ enum PluginPageSource {
             notify: (title, body = "", options = {}) => call("notify", {
               title: String(title), body: String(body),
               at: options.at == null ? null : Number(options.at instanceof Date ? options.at.getTime() : options.at),
-              id: options.id == null ? null : String(options.id)
+              id: options.id == null ? null : String(options.id),
+              actions: (options.actions || []).map((action) => ({ id: String(action.id), title: String(action.title) }))
             }),
             cancelNotification: async (id) => { await call("notify.cancel", { id: String(id) }); },
             openURL: async (url) => { await call("openURL", { url: String(url) }); },
             fetch: fetchText,
             ai: (instructions, text = "") => call("ai", { instructions: String(instructions), text: String(text) }),
-            run: (name, options = {}) => call("run", {
-              name: String(name), args: (options.args || []).map(String), input: options.input == null ? null : String(options.input)
+            run: async (name, options = {}) => {
+              const stream = typeof options.onOutput === "function" ? Math.random().toString(36).slice(2) : null;
+              if (stream) streams.set(stream, options.onOutput);
+              try {
+                const result = await call("run", {
+                  name: String(name), args: (options.args || []).map(String), input: options.input == null ? null : String(options.input),
+                  timeout: options.timeout == null ? null : Number(options.timeout), stream
+                });
+                if (options.as === "json") result.json = JSON.parse(result.output);
+                return result;
+              } finally { if (stream) streams.delete(stream); }
+            },
+            settings: Object.freeze({
+              get: (key) => call("settings.get", { key: String(key) }),
+              all: () => call("settings.all"),
+              set: async (key, value) => { await call("settings.set", { key: String(key), value }); }
+            }),
+            selection: Object.freeze({
+              read: () => call("selection.read"),
+              replace: async (text) => { await call("selection.replace", { text: String(text) }); }
+            }),
+            runAction: (id, params = {}, text = null) => call("actions.run", {
+              id: String(id), text: text == null ? null : String(text),
+              params: Object.fromEntries(Object.entries(params || {}).map(([k, v]) => [String(k), String(v)]))
+            }),
+            files: Object.freeze({
+              pick: () => call("files.pick"),
+              folders: () => call("files.folders"),
+              list: (folder, path = "") => call("files.list", { folder: String(folder), path: String(path) }),
+              read: (folder, path, options = {}) => call("files.read", { folder: String(folder), path: String(path), as: options.as === "base64" ? "base64" : "text" }),
+              write: async (folder, path, data, options = {}) => {
+                await call("files.write", { folder: String(folder), path: String(path), data: String(data), as: options.as === "base64" ? "base64" : "text" });
+              },
+              trash: async (folder, path) => { await call("files.trash", { folder: String(folder), path: String(path) }); }
+            }),
+            menubar: Object.freeze({
+              set: async (options = {}) => {
+                await call("menubar.set", {
+                  title: options.title == null ? null : String(options.title), symbol: options.symbol == null ? null : String(options.symbol),
+                  tooltip: options.tooltip == null ? null : String(options.tooltip)
+                });
+              },
+              resize: async (height) => { await call("menubar.resize", { height: Number(height) }); },
+              close: async () => { await call("menubar.close"); }
             }),
             on: (event, handler) => {
               if (typeof handler !== "function") throw new TypeError("frog.on needs a function");
@@ -197,22 +247,27 @@ enum PluginPageSource {
 
     /// The theme's colours for light and dark, on :root so they win over the stylesheet's defaults.
     @MainActor static func themeStyle() -> String {
-        func hex(_ color: Color, dark: Bool) -> String {
+        func css(_ color: Color, dark: Bool) -> String {
             var resolved = NSColor(color)
             NSAppearance(named: dark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance {
                 resolved = NSColor(color).usingColorSpace(.sRGB) ?? NSColor(color)
             }
             let red = Int((resolved.redComponent * 255).rounded()), green = Int((resolved.greenComponent * 255).rounded())
             let blue = Int((resolved.blueComponent * 255).rounded())
-            return String(format: "#%02x%02x%02x", red, green, blue)
+            // The layers Frog draws over the page, such as cards and hover fills, keep their transparency.
+            guard resolved.alphaComponent < 0.999 else { return String(format: "#%02x%02x%02x", red, green, blue) }
+            return String(format: "rgb(%d %d %d / %.3f)", red, green, blue, resolved.alphaComponent)
         }
         let roles: [(String, Color)] = [
             ("ink", FrogStyle.ink), ("muted", FrogStyle.muted), ("canvas", FrogStyle.opaqueCanvas), ("surface", FrogStyle.panelSurface),
-            ("inset", FrogStyle.opaqueInset), ("border", FrogStyle.border), ("accent", FrogStyle.accent),
-            ("good", FrogStyle.good), ("warning", FrogStyle.warning), ("critical", FrogStyle.critical)
+            ("inset", FrogStyle.opaqueInset), ("border", FrogStyle.border), ("accent", FrogStyle.accent), ("on-accent", FrogStyle.onAccent),
+            ("good", FrogStyle.good), ("warning", FrogStyle.warning), ("critical", FrogStyle.critical),
+            ("card", FrogStyle.card), ("control", FrogStyle.control), ("hover", FrogStyle.hover), ("pressed", FrogStyle.pressed),
+            ("selection", FrogStyle.selection), ("line", FrogStyle.separator), ("hairline", FrogStyle.hairline),
+            ("switch-track", FrogStyle.switchTrack), ("sidebar", FrogStyle.opaqueSidebar)
         ]
         func block(dark: Bool) -> String {
-            roles.map { "--frog-\($0.0):\(hex($0.1, dark: dark));" }.joined()
+            roles.map { "--frog-\($0.0):\(css($0.1, dark: dark));" }.joined()
                 + "--frog-font:-apple-system,BlinkMacSystemFont,\"Helvetica Neue\",sans-serif;"
         }
         return ":root{\(block(dark: false))color-scheme:light dark}@media (prefers-color-scheme: dark){:root{\(block(dark: true))}}"
@@ -229,6 +284,17 @@ enum PluginPageSource {
             style.textContent = \(literal);
           };
           if (document.documentElement) apply(); else document.addEventListener("readystatechange", apply, { once: true });
+        })();
+        """
+    }
+
+    /// Marks the page's root with where it shows, `data-frog-surface="page"` or `"popup"`, so the stylesheet lays a popup
+    /// out like Frog's own.
+    static func markSurface(_ surface: String) -> String {
+        """
+        (() => {
+          const mark = () => { document.documentElement.dataset.frogSurface = \(surface == "popup" ? "\"popup\"" : "\"page\""); };
+          if (document.documentElement) mark(); else document.addEventListener("readystatechange", mark, { once: true });
         })();
         """
     }

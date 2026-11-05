@@ -13,7 +13,10 @@ import FrogCore
         }
         rows.append(CommandBarRow(record: SearchRecord(id: "features", title: "Plugins", subtitle: "Frog", keywords: "frog features manage turn on off", symbol: "puzzlepiece.extension"),
                                   primary: CommandRowAction(title: "Open") { [weak model] in model?.toolkit.select(.features); model?.showSettings() }))
-        for (route, title, symbol) in [(ToolkitRoute.settings, "Settings", "gearshape"), (.models, "Models", "cpu"), (.history, "History", "clock.arrow.circlepath")] {
+        var routes: [(ToolkitRoute, String, String)] = [(.settings, "Settings", "gearshape"), (.models, "Models", "cpu")]
+        // History is a feature: with it off, nothing in the command bar leads to it.
+        if model.pluginEnabled("history") { routes.append((.history, "History", "clock.arrow.circlepath")) }
+        for (route, title, symbol) in routes {
             rows.append(CommandBarRow(record: SearchRecord(id: "route:\(title)", title: title, subtitle: "Frog", keywords: "frog preferences configuration", symbol: symbol),
                                       primary: CommandRowAction(title: "Open") { [weak model] in model?.toolkit.select(route); model?.showSettings() }))
         }

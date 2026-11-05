@@ -108,6 +108,7 @@ final class PhoneController: ObservableObject {
     func stop() {
         guard running else { return }
         running = false
+        NotificationRouter.shared.unregister(key: Self.notificationKey)
         endPairing()
         for session in Array(sessions.values) { session.close(reason: "Phone turned off") }
         sessions = [:]

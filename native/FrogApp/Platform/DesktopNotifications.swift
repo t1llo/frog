@@ -38,6 +38,10 @@ final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// Forgets the handler, as when the feature that registered it stops. Its category stays registered; without a
+    /// handler its buttons do nothing.
+    func unregister(key: String) { handlers[key] = nil }
+
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .sound, .list]
     }

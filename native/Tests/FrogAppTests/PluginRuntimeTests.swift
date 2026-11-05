@@ -10,6 +10,7 @@ import XCTest
     private var root: URL!
     private var runtime: PluginRuntime!
     private var pasteboard: NSPasteboard!
+    private let secrets = MemoryPluginSecrets()
 
     override func setUp() async throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("frog-plugin-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -18,6 +19,7 @@ import XCTest
         runtime = PluginRuntime(store: PluginStore(directory: root.appendingPathComponent("Plugins", isDirectory: true)))
         runtime.pasteboard = pasteboard
         runtime.registryURL = nil
+        runtime.secrets = secrets
         runtime.configure(enabled: true)
     }
 
@@ -292,6 +294,148 @@ import XCTest
         XCTAssertEqual(host.effectLimit, .read)
     }
 
+    func testSettingsKeepTypedValuesAndSecretsStayInTheirStoreUntilRemoval() async throws {
+        let settings: [[String: Any]] = [
+            ["key": "minutes", "title": "Minutes", "type": "integer", "default": 25, "min": 1, "max": 90],
+            ["key": "sound", "title": "Sound", "type": "boolean", "default": true],
+            ["key": "token", "title": "Token", "type": "secret"],
+        ]
+        let host = try await running(try makePlugin(permissions: [], extra: ["settings": settings]))
+        let result = try await evaluate("""
+            const out = {};
+            const attempt = async (name, work) => { try { out[name] = await work(); } catch (error) { out[name] = "error: " + error.message; } };
+            out.initial = await frog.settings.all();
+            await frog.settings.set("minutes", 50);
+            out.minutes = await frog.settings.get("minutes");
+            await attempt("tooMany", () => frog.settings.set("minutes", 500));
+            await attempt("wrongType", () => frog.settings.set("sound", "loud"));
+            await attempt("unknown", () => frog.settings.get("colour"));
+            await frog.settings.set("token", "s3cret");
+            out.token = await frog.settings.get("token");
+            out.all = await frog.settings.all();
+            return out;
+            """, in: host)
+        XCTAssertEqual(result["initial"] as? [String: AnyHashable], ["minutes": 25, "sound": true], "Defaults, and no secret")
+        XCTAssertEqual(result["minutes"] as? Int, 50)
+        XCTAssertTrue((result["tooMany"] as? String)?.contains("at most 90") == true, "\(result)")
+        XCTAssertTrue((result["wrongType"] as? String)?.hasPrefix("error:") == true)
+        XCTAssertTrue((result["unknown"] as? String)?.contains("no setting") == true)
+        XCTAssertEqual(result["token"] as? String, "s3cret")
+        XCTAssertEqual((result["all"] as? [String: Any])?.keys.sorted(), ["minutes", "sound"])
+        XCTAssertEqual(try secrets.read("token", plugin: "com.example.test"), "s3cret")
+        XCTAssertFalse(try String(contentsOf: runtime.store.dataFolder(for: "com.example.test").appendingPathComponent("settings.json"), encoding: .utf8).contains("s3cret"))
+
+        runtime.trash = { try FileManager.default.removeItem(at: $0) }
+        runtime.remove("com.example.test")
+        XCTAssertEqual(secrets.count, 0, "Removing the plugin deletes its secrets")
+    }
+
+    func testFilesStayInsideTheFoldersTheUserPicked() async throws {
+        let picked = root.appendingPathComponent("Picked", isDirectory: true)
+        try FileManager.default.createDirectory(at: picked, withIntermediateDirectories: true)
+        try Data("outside".utf8).write(to: root.appendingPathComponent("secret.txt"))
+        try FileManager.default.createSymbolicLink(at: picked.appendingPathComponent("escape"), withDestinationURL: root)
+        runtime.pickFolder = { _ in picked }
+        let host = try await running(try makePlugin(permissions: ["files"]))
+        let hidden = try await evaluate("try { await frog.files.pick(); return {}; } catch (error) { return { error: error.message }; }", in: host)
+        XCTAssertTrue((hidden["error"] as? String)?.contains("open") == true, "A hidden page cannot ask for a folder: \(hidden)")
+
+        host.isShowing = true
+        let result = try await evaluate("""
+            const out = {};
+            const attempt = async (name, work) => { try { out[name] = await work(); } catch (error) { out[name] = "error: " + error.message; } };
+            const folder = await frog.files.pick();
+            out.folder = folder.name;
+            await frog.files.write(folder.id, "notes/today.md", "# Today");
+            out.read = await frog.files.read(folder.id, "notes/today.md");
+            out.list = (await frog.files.list(folder.id, "notes")).map((entry) => entry.name);
+            await attempt("up", () => frog.files.read(folder.id, "../secret.txt"));
+            await attempt("link", () => frog.files.read(folder.id, "escape/secret.txt"));
+            await frog.files.trash(folder.id, "notes/today.md");
+            out.after = (await frog.files.list(folder.id, "notes")).length;
+            out.folders = (await frog.files.folders()).length;
+            return out;
+            """, in: host)
+        XCTAssertEqual(result["folder"] as? String, "Picked")
+        XCTAssertEqual(result["read"] as? String, "# Today")
+        XCTAssertEqual(result["list"] as? [String], ["today.md"])
+        XCTAssertTrue((result["up"] as? String)?.hasPrefix("error:") == true, "\(result)")
+        XCTAssertTrue((result["link"] as? String)?.contains("outside") == true, "\(result)")
+        XCTAssertEqual(result["after"] as? Int, 0)
+        XCTAssertEqual(result["folders"] as? Int, 1)
+    }
+
+    func testFrogActionsRunOnlyWhenListedInUses() async throws {
+        var ran: [String] = []
+        runtime.runFrogAction = { id, values, _ in ran.append(id); return ("moved \(values["app"] ?? "")", #"{"ok":true}"#) }
+        let host = try await running(try makePlugin(permissions: ["frog-actions"], extra: ["uses": ["windows.*"]]))
+        let result = try await evaluate("""
+            const out = {};
+            const attempt = async (name, work) => { try { out[name] = await work(); } catch (error) { out[name] = "error: " + error.message; } };
+            out.moved = await frog.runAction("windows.move", { app: "Safari" });
+            await attempt("notes", () => frog.runAction("notes.add", { text: "hi" }));
+            await attempt("scripts", () => frog.runAction("scripts.run", { name: "x" }));
+            return out;
+            """, in: host)
+        XCTAssertEqual((result["moved"] as? [String: Any])?["text"] as? String, "moved Safari")
+        XCTAssertTrue((result["notes"] as? String)?.contains("uses") == true, "\(result)")
+        XCTAssertTrue((result["scripts"] as? String)?.contains("uses") == true, "\(result)")
+        XCTAssertEqual(ran, ["windows.move"])
+    }
+
+    func testTheSelectionIsReadAfterACommandAndReplacedOnlyOnceRead() async throws {
+        let selection = FakeSelection(text: "teh text")
+        runtime.captureSelection = { selection }
+        let host = try await running(try makePlugin(permissions: ["selection"]))
+        let unasked = try await evaluate("try { await frog.selection.read(); return {}; } catch (error) { return { error: error.message }; }", in: host)
+        XCTAssertNotNil(unasked["error"], "Without a command or action the page cannot read the selection")
+        let unread = try await evaluate("try { await frog.selection.replace('x'); return {}; } catch (error) { return { error: error.message }; }", in: host)
+        XCTAssertNotNil(unread["error"])
+
+        host.lastCommand = Date()
+        let result = try await evaluate("""
+            const read = await frog.selection.read();
+            await frog.selection.replace(read.text.replace("teh", "the"));
+            return read;
+            """, in: host)
+        XCTAssertEqual(result["text"] as? String, "teh text")
+        XCTAssertEqual(selection.replaced, "the text")
+    }
+
+    func testShortcutsRegisterFromPluginJSONAndFollowTheUsersChoice() async throws {
+        var registered: [UUID: String] = [:]
+        runtime.registerShortcuts = { _, shortcuts in
+            registered = shortcuts.mapValues { "\($0.name) \(HotkeyManager.display($0.hotkey))" }
+            return [:]
+        }
+        let actions: [[String: Any]] = [["id": "start", "title": "Start", "effect": "write", "shortcut": "ctrl+alt+t"]]
+        _ = try await running(try makePlugin(permissions: ["hotkeys"], extra: ["actions": actions]))
+        XCTAssertEqual(registered.count, 1)
+        XCTAssertTrue(registered.values.first?.hasPrefix("Test: Start") == true, "\(registered)")
+
+        try runtime.setShortcut("com.example.test", action: "start", to: nil)
+        XCTAssertTrue(registered.isEmpty, "The user turned the key off")
+        try runtime.setShortcut("com.example.test", action: "start", to: try Shortcut("cmd+shift+y"))
+        XCTAssertEqual(runtime.shortcut("com.example.test", action: "start"), try Shortcut("cmd+shift+y"))
+
+        runtime.setEnabled("com.example.test", false)
+        XCTAssertTrue(registered.isEmpty, "A plugin turned off keeps no shortcut")
+    }
+
+    func testABackgroundPluginLoadsAtOnceAndStaysWhenClosed() async throws {
+        let folder = try makePlugin(permissions: ["background"], html: "<!doctype html><script>frog.close()</script>")
+        let package = try PluginPackage.read(folder)
+        try runtime.store.install(package, source: .folder(folder.path), approving: true)
+        runtime.refresh()
+        for _ in 0..<50 where runtime.loadedHost("com.example.test") == nil { try await Task.sleep(for: .milliseconds(100)) }
+        let host = try XCTUnwrap(runtime.loadedHost("com.example.test"), "A background plugin starts without being opened")
+        await host.waitUntilLoaded()
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(runtime.loadedHost("com.example.test") === host, "frog.close() does not stop a background plugin")
+        runtime.setEnabled("com.example.test", false)
+        XCTAssertNil(runtime.loadedHost("com.example.test"))
+    }
+
     func testAnswersBecomeTextAndJSON() {
         XCTAssertEqual(PluginRuntime.result(#""plain""#).text, "plain")
         XCTAssertEqual(PluginRuntime.result(#"{"text":"Shown","n":1}"#).text, "Shown")
@@ -430,4 +574,15 @@ import XCTest
         try runtime.approve(open)
         XCTAssertNotNil(runtime.item("com.example.other"))
     }
+}
+
+private final class FakeSelection: CapturedTextSelection {
+    let text: String
+    var replaced: String?
+    var anchor: CGRect? { nil }
+    var context: String? { nil }
+    var applicationName: String? { "TextEdit" }
+    var source: String? { nil }
+    init(text: String) { self.text = text }
+    func replace(with text: String) async throws { replaced = text }
 }

@@ -78,15 +78,28 @@ struct PluginReview: Identifiable {
     /// Plugins whose page is loaded, shown or not.
     @Published private(set) var running: Set<String> = []
 
+    /// Keys a plugin's shortcut could not take, by `<plugin>/<action>`.
+    @Published var shortcutIssues: [String: String] = [:]
+
     let store: PluginStore
     private(set) var logs: [String: [PluginLogLine]] = [:]
-    private var hosts: [String: PluginWebHost] = [:]
+    private(set) var hosts: [String: PluginWebHost] = [:]
+    /// The popups of plugins with a menu-bar item, loaded when first opened.
+    var popups: [String: PluginWebHost] = [:]
+    var statusItems: [String: PluginStatusItem] = [:]
+    /// The id each plugin shortcut is registered under, by `<plugin>/<action>`.
+    var shortcutIDs: [String: UUID] = [:]
+    var registeredShortcuts: Set<UUID> = []
+    var macObservers: [NSObjectProtocol] = []
+    var screenObservers: [NSObjectProtocol] = []
+    var clipboardWatch: Timer?
+    var clipboardCount = 0
     private var storages: [String: PluginStorage] = [:]
     /// When each plugin last showed a notification at once, for the rate limit.
     private var shownNotifications: [String: [Date]] = [:]
     private var contentRules: WKContentRuleList?
     private var busy: [String: Int] = [:]
-    private var enabled = false
+    private(set) var enabled = false
     private lazy var network = PluginNetwork(userAgent: "Frog/\(AppVersion.current) plugin")
     private let downloads: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
@@ -106,6 +119,28 @@ struct PluginReview: Identifiable {
     var complete: (String, String, String) async throws -> String = { _, _, _ in throw FrogError.message("No model is set up.") }
     /// The pasteboard the bridge reads and writes; tests use their own.
     var pasteboard = NSPasteboard.general
+    /// Where secret settings are kept; tests keep them in memory.
+    var secrets: any PluginSecretStore = PluginKeychain()
+    /// Registers plugin shortcuts in place of the ones registered before, and answers with the keys that failed.
+    var registerShortcuts: (Set<UUID>, [UUID: (name: String, hotkey: Hotkey, action: () -> Void)]) -> [UUID: String] = { _, _ in [:] }
+    /// Throws when something else in Frog answers to the key; the given ids are the plugins' own.
+    var checkShortcut: (Hotkey, Set<UUID>) throws -> Void = { _, _ in }
+    /// Reads the selection in the frontmost app through Accessibility.
+    var captureSelection: () async throws -> any CapturedTextSelection = { try await SelectionService().capture() }
+    /// Runs one of Frog's own actions for a plugin: id, parameters, text.
+    var runFrogAction: (String, [String: String], String?) async throws -> (text: String, json: String) = { id, _, _ in throw ActionError.unknown(id) }
+    /// Asks the user for a folder a plugin may use; nil when they cancel.
+    var pickFolder: (String) async -> URL? = { name in
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Allow"
+        panel.message = "Choose a folder the plugin “\(name)” may read and change."
+        NSApp.activate()
+        return panel.runModal() == .OK ? panel.url : nil
+    }
 
     init(store: PluginStore) {
         self.store = store
@@ -119,19 +154,19 @@ struct PluginReview: Identifiable {
         guard enabled != self.enabled else { return }
         self.enabled = enabled
         if enabled {
+            // Clicking a plugin's notification opens its page; its buttons tell the page.
+            NotificationRouter.shared.register(key: "plugin") { [weak self] action, info in self?.notificationAnswered(action, info) }
             refresh()
-            // Clicking a plugin's notification opens its page.
-            NotificationRouter.shared.register(key: "plugin") { [weak self] _, info in
-                guard let self, let id = info["plugin"], let item = self.item(id), item.runs, item.hasPage else { return }
-                self.openPage(id)
-            }
         } else {
+            NotificationRouter.shared.unregister(key: "plugin")
             stopPages()
+            stopCapabilities()
         }
     }
 
     func stop() {
         stopPages()
+        stopCapabilities()
         enabled = false
     }
 
@@ -155,6 +190,7 @@ struct PluginReview: Identifiable {
             }
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         for id in hosts.keys where items.first(where: { $0.id == id })?.runs != true { unload(id) }
+        syncCapabilities()
     }
 
     func item(_ id: String) -> PluginItem? { items.first { $0.id == id } }
@@ -196,7 +232,7 @@ struct PluginReview: Identifiable {
         host.reload()
     }
 
-    private func contentRuleList() async throws -> WKContentRuleList {
+    func contentRuleList() async throws -> WKContentRuleList {
         if let contentRules { return contentRules }
         guard let store = WKContentRuleListStore.default() else { throw FrogError.message("Plugins cannot start: WebKit has no rule store.") }
         let list = try await store.compileContentRuleList(forIdentifier: "frog-plugin-sandbox-2", encodedContentRuleList: PluginPageSource.contentRules)
@@ -241,9 +277,14 @@ struct PluginReview: Identifiable {
         let package = try PluginPackage.read(folder.standardizedFileURL)
         let id = package.manifest.id
         try store.install(package, source: .folder(folder.standardizedFileURL.path))
+        // A changed plugin.json starts afresh: its page, popup, menu-bar item and shortcuts follow the new one.
+        if hosts[id].map({ $0.manifest != package.manifest }) ?? false { unload(id) }
+        if statusItems[id].map({ _ in popups[id]?.manifest != package.manifest || statusItems[id]?.menubar != package.manifest.menubar }) ?? false {
+            dropCapabilities(id)
+        }
         refresh()
         guard let item = item(id) else { throw FrogError.message("The plugin was installed but could not be read back.") }
-        if item.runs { reload(id) } else { unload(id) }
+        if item.runs { reload(id); popups[id]?.reload() } else { unload(id) }
         return item
     }
 
@@ -297,6 +338,7 @@ struct PluginReview: Identifiable {
         // Another review that is open, such as one a Directory install did not need, stays open.
         if self.review?.id == review.id { self.review = nil }
         unload(id)
+        dropCapabilities(id)
         refresh()
         onApproved(id)
     }
@@ -322,11 +364,16 @@ struct PluginReview: Identifiable {
 
     func remove(_ id: String) {
         unload(id)
+        dropCapabilities(id)
         do {
             try store.remove(id, trash: trash)
             storages[id] = nil
             logs[id] = nil
             removeNotifications(of: id)
+            // Nothing of the plugin stays: its secrets go with its files, and its shortcuts with the next sync.
+            try? secrets.deleteAll(plugin: id)
+            for key in shortcutIDs.keys where key.hasPrefix(Self.shortcutKey(id, "")) { shortcutIDs[key] = nil }
+            shortcutIssues = shortcutIssues.filter { !$0.key.hasPrefix(Self.shortcutKey(id, "")) }
             refresh()
         } catch { report(error) }
     }
@@ -484,7 +531,7 @@ struct PluginReview: Identifiable {
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(PluginWebHost.effectGrace))
             guard let self, self.hosts[id] === host, !host.isShowing, host.runningEffect == nil, host.endedActions == ended,
-                  !host.commandedRecently else { return }
+                  !host.commandedRecently, !self.keepsRunning(id) else { return }
             self.unload(id)
         }
     }
@@ -506,8 +553,10 @@ struct PluginReview: Identifiable {
     /// What a bridge call may change, for the effect an action declares.
     static func effect(of call: String) -> PluginManifestAction.Effect? {
         switch call {
-        case "log", "storage.get", "storage.keys", "clipboard.read", "close": .read
-        case "storage.set", "storage.remove", "clipboard.write", "notify", "notify.cancel", "openURL", "run", "show": .write
+        case "log", "storage.get", "storage.keys", "clipboard.read", "close", "settings.get", "settings.all", "selection.read",
+             "files.folders", "files.list", "files.read", "files.pick", "menubar.resize", "menubar.close": .read
+        case "storage.set", "storage.remove", "clipboard.write", "notify", "notify.cancel", "openURL", "run", "show", "settings.set",
+             "selection.replace", "actions.run", "files.write", "files.trash", "menubar.set": .write
         case "fetch", "ai": .network
         default: nil
         }
@@ -518,7 +567,7 @@ struct PluginReview: Identifiable {
     /// Answers one call from a plugin's page. `PluginWebHost` has checked that it came from that plugin's own page.
     func handle(_ name: String, _ arguments: [String: Any], from host: PluginWebHost) async throws -> Any? {
         let id = host.id
-        guard enabled, hosts[id] === host, let item = item(id), item.runs, let approved = item.record.approved else {
+        guard enabled, hosts[id] === host || popups[id] === host, let item = item(id), item.runs, let approved = item.record.approved else {
             throw FrogError.message("The plugin is not running.")
         }
         // While an action runs, and for a while after, the page does no more than its declared effect.
@@ -538,6 +587,8 @@ struct PluginReview: Identifiable {
             guard value.utf8.count <= maximum else { throw FrogError.message("“\(key)” is longer than \(maximum / 1024) KB.") }
             return value
         }
+
+        if let answer = try await handleCapability(name, arguments, from: host, approved: approved, require: require) { return answer }
 
         switch name {
         case "log":
@@ -561,8 +612,12 @@ struct PluginReview: Identifiable {
 
         case "clipboard.read":
             try require(.clipboardRead)
-            guard host.isShowing || host.commandedRecently || host.runningEffect != nil else {
-                throw FrogError.message("A plugin reads the clipboard only while its page is open or right after one of its commands.")
+            // A background plugin also reads it for a moment after Frog told it the clipboard changed.
+            guard host.isShowing || host.commandedRecently || host.runningEffect != nil
+                    || (host.clipboardChangedRecently && keepsRunning(id)) else {
+                throw FrogError.message(keepsRunning(id)
+                    ? "A plugin reads the clipboard only while its page is open, right after one of its commands, or right after Frog told it the clipboard changed."
+                    : "A plugin reads the clipboard only while its page is open or right after one of its commands.")
             }
             guard !pasteboard.holdsSensitiveText else { return nil }
             return pasteboard.string(forType: .string)
@@ -578,8 +633,19 @@ struct PluginReview: Identifiable {
 
         case "notify":
             try require(.notifications)
+            let buttons = try (arguments["actions"] as? [[String: Any]] ?? []).map { button -> (id: String, title: String) in
+                guard let id = button["id"] as? String, PluginManifest.isValidName(id), let title = button["title"] as? String,
+                      !title.isEmpty, title.count <= 40 else {
+                    throw FrogError.message("A notification button needs an id of lowercase letters, digits and hyphens, and a title of at most 40 characters.")
+                }
+                return (id, title)
+            }
+            guard buttons.count <= 3, Set(buttons.map(\.id)).count == buttons.count else {
+                throw FrogError.message("A notification has at most 3 buttons, each with its own id.")
+            }
             return try await notify(host, title: try text("title", maximum: 400)!, body: try text("body", maximum: 2_000, required: false) ?? "",
-                                    at: (arguments["at"] as? NSNumber)?.doubleValue, tag: try text("id", maximum: 100, required: false))
+                                    at: (arguments["at"] as? NSNumber)?.doubleValue, tag: try text("id", maximum: 100, required: false),
+                                    buttons: buttons)
         case "notify.cancel":
             try require(.notifications)
             let identifier = Self.notificationPrefix(id) + (try text("id", maximum: 100)!)
@@ -634,12 +700,18 @@ struct PluginReview: Identifiable {
                 throw FrogError.message("A script takes at most 50 arguments of 10 KB each.")
             }
             let input = try text("input", maximum: 100_000, required: false)
-            let folder = store.dataFolder(for: id)
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            let folder = try dataFolder(id)
+            let timeout = min(max((arguments["timeout"] as? NSNumber)?.doubleValue ?? 60, 1), 300)
+            // With a stream, the page hears the output as it grows.
+            var onOutput: (@Sendable (String) -> Void)?
+            if let stream = try text("stream", maximum: 40, required: false) {
+                let relay = ScriptOutputRelay { [weak host] output in host?.emit("__script", ["stream": stream, "output": output]) }
+                onOutput = { output in relay.send(output) }
+            }
             return try await limited(id, "run", maximum: 2) {
                 let result = try await ScriptProcess.run(source, arguments: scriptArguments, directory: folder,
                                                          environment: ["FROG_INPUT": input ?? "", "FROG_PLUGIN_ID": id],
-                                                         timeout: 60, outputLimit: 1024 * 1024)
+                                                         timeout: timeout, outputLimit: 1024 * 1024, onOutput: onOutput)
                 return ["output": result.output, "status": Int(result.status), "truncated": result.truncated] as [String: Any]
             }
 
@@ -652,7 +724,8 @@ struct PluginReview: Identifiable {
             openPage(id)
             return nil
         case "close":
-            if !host.isShowing { unload(id) }
+            if host.surface == .popup { statusItems[id]?.closePopup() }
+            else if !host.isShowing, !keepsRunning(id) { unload(id) }
             return nil
 
         default:
@@ -672,15 +745,13 @@ struct PluginReview: Identifiable {
 
     private func storage(_ id: String) throws -> PluginStorage {
         if let storage = storages[id] { return storage }
-        let folder = store.dataFolder(for: id)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let storage = PluginStorage(folder: folder)
+        let storage = PluginStorage(folder: try dataFolder(id))
         storages[id] = storage
         return storage
     }
 
     /// Runs `work` while fewer than `maximum` of the plugin's `kind` calls are running.
-    private func limited<T>(_ id: String, _ kind: String, maximum: Int, _ work: () async throws -> T) async throws -> T {
+    func limited<T>(_ id: String, _ kind: String, maximum: Int, _ work: () async throws -> T) async throws -> T {
         let key = "\(id) \(kind)"
         guard busy[key, default: 0] < maximum else { throw FrogError.message("Wait for the plugin's earlier \(kind) call to finish.") }
         busy[key, default: 0] += 1
@@ -690,7 +761,8 @@ struct PluginReview: Identifiable {
 
     // MARK: Notifications
 
-    private func notify(_ host: PluginWebHost, title: String, body: String, at: Double?, tag: String?) async throws -> String {
+    private func notify(_ host: PluginWebHost, title: String, body: String, at: Double?, tag: String?,
+                        buttons: [(id: String, title: String)] = []) async throws -> String {
         guard Self.notificationsAvailable else { throw FrogError.message("Notifications need the installed Frog app.") }
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FrogError.message("A notification needs a title.") }
         let center = UNUserNotificationCenter.current()
@@ -705,7 +777,11 @@ struct PluginReview: Identifiable {
         content.body = body
         content.sound = .default
         content.threadIdentifier = "plugin.\(host.id)"
-        content.userInfo = ["plugin": host.id]
+        content.userInfo = ["plugin": host.id, "tag": tag]
+        if let category = Self.notificationCategory(host.id, actions: buttons) {
+            NotificationRouter.shared.register(key: "plugin", category: category) { [weak self] action, info in self?.notificationAnswered(action, info) }
+            content.categoryIdentifier = category.identifier
+        }
         var trigger: UNNotificationTrigger?
         if let at {
             let seconds = at / 1000 - Date().timeIntervalSince1970
@@ -743,3 +819,4 @@ struct PluginReview: Identifiable {
         }
     }
 }
+

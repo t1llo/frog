@@ -107,6 +107,19 @@ final class AppModel: ObservableObject {
             return try await self.completeForPlugin(name: name, instructions: instructions, text: text)
         }
         runtime.onApproved = { [weak self] id in self?.pluginApproved(id) }
+        runtime.registerShortcuts = { [weak self] owned, shortcuts in self?.setPluginShortcuts(replacing: owned, with: shortcuts) ?? [:] }
+        runtime.checkShortcut = { [weak self] hotkey, own in try self?.checkShortcutFree(hotkey, except: own) }
+        runtime.captureSelection = { [weak self] in
+            guard let self else { throw CancellationError() }
+            return try await self.captureSelection()
+        }
+        // A plugin runs Frog's own actions as an agent would: only those agents may run, of features that are on.
+        runtime.runFrogAction = { [weak self] id, values, text in
+            guard let self else { throw CancellationError() }
+            guard let action = self.pluginHost.action(id), action.surfaces.contains(.agent) else { throw ActionError.unknown(id) }
+            let result = try await self.pluginHost.run(action.id, ActionInput(values: values, text: text, source: .agent))
+            return (result.text, result.json)
+        }
         runtime.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         pluginRuntime = runtime
         return runtime

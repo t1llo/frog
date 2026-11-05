@@ -259,7 +259,7 @@ extension PluginManifest {
         }
     }
 
-    static func isValidSymbol(_ symbol: String) -> Bool {
+    public static func isValidSymbol(_ symbol: String) -> Bool {
         !symbol.isEmpty && symbol.count <= 60 && symbol.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == ".") }
     }
 }

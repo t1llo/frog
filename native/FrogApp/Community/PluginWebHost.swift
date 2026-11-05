@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import FrogCore
 import UniformTypeIdentifiers
 import WebKit
@@ -7,8 +8,11 @@ import WebKit
 /// website data, cannot navigate away, and reaches Frog only through the `frog` message handler, whose calls
 /// `PluginRuntime` checks against the approved permissions.
 @MainActor final class PluginWebHost: NSObject {
+    /// Where the page shows: the plugin's page in Frog's window, or the popup beneath its menu-bar item.
+    enum Surface: String { case page, popup }
     let id: String
     let manifest: PluginManifest
+    let surface: Surface
     let webView: WKWebView
     private weak var runtime: PluginRuntime?
     private let schemeHandler: PluginSchemeHandler
@@ -23,6 +27,11 @@ import WebKit
     /// The user asked for no more dialogs from this page.
     private var dialogsStopped = false
     var commandedRecently: Bool { lastCommand.map { Date().timeIntervalSince($0) < 10 } ?? false }
+    /// The selection the page read during an action, kept so it can replace it; with when it was read.
+    var capturedSelection: (selection: any CapturedTextSelection, at: Date)?
+    /// When the page last heard that the clipboard changed; a background plugin may read it for a moment after.
+    var clipboardChangedAt: Date?
+    var clipboardChangedRecently: Bool { clipboardChangedAt.map { Date().timeIntervalSince($0) < 10 } ?? false }
     /// The effect of the action that is running; nil while none runs.
     private(set) var runningEffect: PluginManifestAction.Effect?
     /// The effect of the last action that ended, and until when it still holds: work its handler left behind, such
@@ -44,9 +53,10 @@ import WebKit
         didSet { if isShowing != oldValue { emit(isShowing ? "show" : "hide") } }
     }
 
-    init(package: PluginPackage, contentRules: WKContentRuleList?, runtime: PluginRuntime, inspectable: Bool) {
+    init(package: PluginPackage, contentRules: WKContentRuleList?, runtime: PluginRuntime, inspectable: Bool, surface: Surface = .page) {
         id = package.manifest.id
         manifest = package.manifest
+        self.surface = surface
         self.runtime = runtime
         schemeHandler = PluginSchemeHandler(id: package.manifest.id, folder: package.root)
 
@@ -63,10 +73,12 @@ import WebKit
         PluginPageSource.restrict(configuration.preferences)
         if let contentRules { configuration.userContentController.add(contentRules) }
         let info: [String: Any] = ["id": manifest.id, "name": manifest.name, "version": manifest.version,
-                                   "permissions": manifest.permissions.map(\.rawValue), "frog": AppVersion.current]
+                                   "permissions": manifest.permissions.map(\.rawValue), "frog": AppVersion.current,
+                                   "surface": surface.rawValue]
         let infoJSON = (try? JSONSerialization.data(withJSONObject: info)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
         configuration.userContentController.addUserScript(WKUserScript(source: PluginPageSource.bridge(info: infoJSON), injectionTime: .atDocumentStart, forMainFrameOnly: true))
         configuration.userContentController.addUserScript(WKUserScript(source: PluginPageSource.applyTheme(PluginPageSource.themeStyle()), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        configuration.userContentController.addUserScript(WKUserScript(source: PluginPageSource.markSurface(surface.rawValue), injectionTime: .atDocumentStart, forMainFrameOnly: true))
 
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: configuration)
         webView.customUserAgent = "Frog/\(AppVersion.current) Plugin/\(manifest.id)"
@@ -74,15 +86,22 @@ import WebKit
         webView.allowsMagnification = false
         webView.isInspectable = inspectable
         webView.underPageBackgroundColor = .clear
+        // In a popup the page lies on Frog's panel surface, which shows through where the page paints nothing.
+        if surface == .popup { webView.setValue(false, forKey: "drawsBackground") }
         super.init()
         configuration.userContentController.addScriptMessageHandler(PluginMessageProxy(host: self), contentWorld: .page, name: "frog")
         webView.navigationDelegate = self
         webView.uiDelegate = self
     }
 
+    /// The file this host shows: the popup's page, the plugin's page or, for a plugin with commands only, a blank one.
+    var entry: String {
+        if surface == .popup, let popup = manifest.menubar?.popup { return popup }
+        return manifest.entry ?? "_frog/blank.html"
+    }
+
     func load() {
-        // A plugin with commands only still gets a page to run them in.
-        guard let url = URL(string: "\(PluginPageSource.scheme)://\(id)/\(manifest.entry ?? "_frog/blank.html")") else { return }
+        guard let url = URL(string: "\(PluginPageSource.scheme)://\(id)/\(entry)") else { return }
         webView.load(URLRequest(url: url))
     }
 
@@ -156,12 +175,16 @@ import WebKit
         waiters.forEach { $0.resume() }
     }
 
-    /// A PNG of the page. A page no window shows is laid out off screen at 800 × 600 points first.
+    /// A PNG of the page. A page no window shows is laid out off screen first, at 800 × 600 points, or a popup at its size.
     func snapshot() async throws -> Data {
         if webView.window == nil {
-            let window = NSWindow(contentRect: NSRect(x: -20_000, y: -20_000, width: 800, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
+            let size = surface == .popup ? NSSize(width: manifest.menubar?.popupWidth ?? 320, height: manifest.menubar?.popupHeight ?? 360)
+                : NSSize(width: 800, height: 600)
+            let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -20_000, y: -20_000), size: size), styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
-            webView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+            // A popup lies on Frog's panel colour; the picture shows it so.
+            if surface == .popup { window.backgroundColor = NSColor(FrogStyle.opaqueCanvas) }
+            webView.frame = NSRect(origin: .zero, size: size)
             window.contentView?.addSubview(webView)
             window.orderBack(nil)
             offscreen = window
