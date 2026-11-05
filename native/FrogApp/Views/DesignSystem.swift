@@ -85,6 +85,9 @@ enum FrogStyle {
     static let sidebarInset: CGFloat = 8
     /// The bar above a page that holds back and forward and the page's title.
     static let toolbarHeight: CGFloat = 52
+    /// How far below the toolbar its veil fades out over a scrolled page: the gap above a page's first section,
+    /// so at rest the veil covers nothing.
+    static let toolbarFade: CGFloat = space12
     /// Space around a page's content (`FrogPage`) and between its sections.
     static let pagePadding: CGFloat = 20
     static let sectionSpacing: CGFloat = 30

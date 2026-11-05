@@ -57,7 +57,8 @@ struct MainView: View {
             sidebar.frame(width: 208)
                 .padding([.top, .leading, .bottom], FrogStyle.sidebarInset)
             VStack(spacing: 0) {
-                toolbar
+                // Drawn above the page, whose content scrolls up beneath it.
+                toolbar.zIndex(1)
                 selectedPage.id(section).frame(maxWidth: .infinity, maxHeight: .infinity)
                     .environment(\.frogToolbarTitle, true)
                     .onPreferenceChange(FrogPageTitleKey.self) { pageTitle = $0 }
@@ -134,6 +135,18 @@ struct MainView: View {
         .padding(.leading, FrogStyle.space8).padding(.trailing, FrogStyle.space16)
         .frame(height: FrogStyle.toolbarHeight)
         .background { WindowDragRegion().accessibilityHidden(true) }
+        .background(alignment: .top) { toolbarScrim }
+    }
+
+    /// Rex's veil behind the toolbar: the window's own colour, solid behind the title and buttons and fading out
+    /// a little below them, so a page scrolled up beneath dissolves instead of running through the title.
+    private var toolbarScrim: some View {
+        Rectangle().fill(FrogStyle.canvas)
+            .mask(LinearGradient(stops: [.init(color: .black, location: 0),
+                                         .init(color: .black, location: FrogStyle.toolbarHeight / (FrogStyle.toolbarHeight + FrogStyle.toolbarFade)),
+                                         .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
+            .frame(height: FrogStyle.toolbarHeight + FrogStyle.toolbarFade)
+            .allowsHitTesting(false).accessibilityHidden(true)
     }
 
     private func travel(_ route: ToolkitRoute?) {

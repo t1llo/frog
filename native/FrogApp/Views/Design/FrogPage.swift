@@ -12,7 +12,7 @@ struct FrogPage<Content: View>: View {
         ScrollView {
             VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) { content }
                 .padding(.horizontal, FrogStyle.pagePadding).padding(.bottom, FrogStyle.pagePadding)
-                .padding(.top, titleInToolbar ? FrogStyle.space12 : FrogStyle.pagePadding)
+                .padding(.top, titleInToolbar ? FrogStyle.toolbarFade : FrogStyle.pagePadding)
                 .frame(maxWidth: width + FrogStyle.pagePadding * 2)
                 .frame(maxWidth: .infinity, alignment: .top)
                 .minimalScrollbars()
