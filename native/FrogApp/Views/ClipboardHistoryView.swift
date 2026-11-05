@@ -9,6 +9,13 @@ enum ClipboardHistoryLayout {
     static let inset: CGFloat = FrogStyle.panelInset
     static let visibleRows = 9
 
+    /// The row at this distance from the top of the list's content, if there is one there.
+    static func row(at offsetFromTop: CGFloat, count: Int) -> Int? {
+        guard offsetFromTop >= 0, offsetFromTop.isFinite else { return nil }
+        let index = Int(offsetFromTop / rowHeight)
+        return index < count ? index : nil
+    }
+
     static func size(entryCount: Int) -> CGSize {
         let contentHeight = entryCount == 0 ? emptyHeight : CGFloat(min(visibleRows, entryCount)) * rowHeight
         return CGSize(width: width, height: headerHeight + footerHeight + inset * 2 + contentHeight)
@@ -36,8 +43,9 @@ struct ClipboardHistoryView: View {
     let copy: (ClipboardHistoryEntry) -> Void
     let close: () -> Void
     let resize: () -> Void
+    /// The pointer moving over a row; the controller decides whether that selects it.
+    var hover: (UUID) -> Void = { _ in }
     @FocusState private var searching: Bool
-    @State private var hovered: UUID?
 
     var body: some View {
         @Bindable var state = state
@@ -63,13 +71,14 @@ struct ClipboardHistoryView: View {
                         ScrollView {
                             LazyVStack(spacing: 0) {
                                 ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
-                                    row(entry, index: index, selected: index == state.selectedIndex).id(entry.id)
+                                    row(entry, selected: index == state.selectedIndex).id(entry.id)
                                 }
                             }.minimalScrollbars()
                         }
                         .frame(height: CGFloat(min(ClipboardHistoryLayout.visibleRows, entries.count)) * ClipboardHistoryLayout.rowHeight)
                         .onChange(of: state.selectedIndex) { _, index in
-                            if entries.indices.contains(index) { proxy.scrollTo(entries[index].id) }
+                            // A row the pointer chose is already where the pointer is.
+                            if !state.selectionFromPointer, entries.indices.contains(index) { proxy.scrollTo(entries[index].id) }
                         }
                     }
                 }
@@ -107,7 +116,7 @@ struct ClipboardHistoryView: View {
         }.fixedSize()
     }
 
-    private func row(_ entry: ClipboardHistoryEntry, index: Int, selected: Bool) -> some View {
+    private func row(_ entry: ClipboardHistoryEntry, selected: Bool) -> some View {
         HStack(spacing: 10) {
             PluginIconTile(symbol: entry.formatting.isEmpty ? "text.alignleft" : "doc.richtext",
                            tint: entry.formatting.isEmpty ? .orange : .indigo, size: .sidebar)
@@ -116,11 +125,12 @@ struct ClipboardHistoryView: View {
             Text(entry.timestamp, style: .time).font(FrogType.small).foregroundStyle(FrogStyle.muted)
         }
         .padding(.horizontal, 10).frame(height: ClipboardHistoryLayout.rowHeight)
-        .frogRowHighlight(hovering: hovered == entry.id, selected: selected)
-        .onHover { inside in
-            if inside { hovered = entry.id } else if hovered == entry.id { hovered = nil }
-        }
-        .onTapGesture { state.selectedIndex = index }
+        // The pointer moves the selection, so the selection is the only highlight: a second, hover highlight
+        // looked the same and was not the row Return pastes.
+        .frogRowHighlight(hovering: false, selected: selected)
+        .onContinuousHover { phase in if case .active = phase { hover(entry.id) } }
+        // By the item, not by its place, which a copy arriving meanwhile changes.
+        .onTapGesture { state.select(id: entry.id) }
         // Alongside the single click, so selecting never waits for a possible second one.
         .simultaneousGesture(TapGesture(count: 2).onEnded { paste(entry, false) })
         .help("Double-click to paste")

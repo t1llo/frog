@@ -71,6 +71,10 @@ final class ClipboardHistoryController {
     private var delivery: Task<Void, Never>?
     private var operation = UUID()
     private var historyObservation: AnyCancellable?
+    /// The panel opens wherever the pointer is, so only a pointer moved on purpose selects a row.
+    private var pointer = WindowSwitchPointer()
+    /// Selects the row a scroll stopped under the pointer, once the list has moved.
+    private var scrollSelection: Task<Void, Never>?
     private let pasteboard: NSPasteboard
     private let captureTarget: () -> (any ClipboardHistoryPasteTarget)?
     private let waitForRelease: () async throws -> Void
@@ -89,10 +93,9 @@ final class ClipboardHistoryController {
         historyObservation = self.history.$entries.dropFirst().sink { [weak self] entries in
             guard let self else { return }
             // The selection stays on its item when a copy arrives or an item goes.
-            let selectedID = self.state.selected?.id
             self.state.update(entries)
-            self.state.selectedIndex = selectedID.flatMap { id in self.state.visible.firstIndex { $0.id == id } }
-                ?? max(0, min(self.state.selectedIndex, self.state.visible.count - 1))
+            // Rows that move under a pointer at rest do not take the selection.
+            self.pointer.relaid(at: NSEvent.mouseLocation)
             self.resizePanel()
         }
     }
@@ -120,13 +123,18 @@ final class ClipboardHistoryController {
         cancel()
         target = captureTarget()
         state.query = ""
-        state.selectedIndex = 0
+        state.selectFirst()
         let panel = self.panel ?? makePanel()
         self.panel = panel
         resizePanel()
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { [weak self] event in
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .scrollWheel]) { [weak self] event in
             MainActor.assumeIsolated {
                 guard let self else { return event }
+                if event.type == .scrollWheel {
+                    // Scrolling elsewhere in Frog leaves the panel open, as it always did.
+                    if event.window === self.panel { self.pointerScrolled() }
+                    return event
+                }
                 if event.type != .keyDown {
                     if event.window !== self.panel { self.cancel() }
                     return event
@@ -157,7 +165,52 @@ final class ClipboardHistoryController {
             panel.center()
         }
         panel.makeKeyAndOrderFront(nil)
+        pointer.rest(at: NSEvent.mouseLocation)
         state.focusSearch()
+    }
+
+    /// The row under a pointer that moved on purpose becomes the selection, so the one highlighted row is
+    /// always the one Return pastes.
+    private func pointerMoved(over id: UUID) {
+        guard panel?.isVisible == true, pointer.selects(at: NSEvent.mouseLocation) else { return }
+        state.select(id: id, byPointer: true)
+    }
+
+    /// A scroll in the list selects the row it leaves under the pointer: at once, and again once the
+    /// scroll view has caught up with the last event of a flick.
+    private func pointerScrolled() {
+        scrollSelection?.cancel()
+        scrollSelection = Task { [weak self] in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            self?.selectRowUnderPointer()
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled, let self else { return }
+            self.selectRowUnderPointer()
+            self.scrollSelection = nil
+        }
+    }
+
+    /// Return or Command-C right after a scroll acts on the row the scroll stopped at, not one it has not reached yet.
+    private func settleScrollSelection() {
+        guard scrollSelection != nil else { return }
+        scrollSelection?.cancel(); scrollSelection = nil
+        selectRowUnderPointer()
+    }
+
+    private func selectRowUnderPointer() {
+        guard let panel, panel.isVisible, let content = panel.contentView else { return }
+        let location = panel.convertPoint(fromScreen: NSEvent.mouseLocation)
+        guard let scroll = Self.scrollViews(in: content).first(where: { $0.convert($0.bounds, to: nil).contains(location) }),
+              let document = scroll.documentView else { return }
+        let point = document.convert(location, from: nil)
+        let fromTop = document.isFlipped ? point.y : document.bounds.height - point.y
+        guard let index = ClipboardHistoryLayout.row(at: fromTop, count: state.visible.count) else { return }
+        state.select(index: index, byPointer: true)
+    }
+
+    private static func scrollViews(in view: NSView) -> [NSScrollView] {
+        (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
     }
 
     private func makePanel() -> ClipboardPanel {
@@ -166,6 +219,7 @@ final class ClipboardHistoryController {
                                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isReleasedWhenClosed = false; panel.isOpaque = false; panel.backgroundColor = .clear
         panel.hidesOnDeactivate = false; panel.level = .floating
+        panel.acceptsMouseMovedEvents = true
         // A keyboard surface opens in one frame: no zoom or fade from AppKit.
         panel.animationBehavior = .none
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -174,7 +228,8 @@ final class ClipboardHistoryController {
             paste: { [weak self] in self?.choose($0, plainText: $1) },
             copy: { [weak self] in self?.copy($0) },
             close: { [weak self] in self?.hide() },
-            resize: { [weak self] in self?.resizePanel() }))
+            resize: { [weak self] in self?.resizePanel() },
+            hover: { [weak self] in self?.pointerMoved(over: $0) }))
         hosting.sizingOptions = []
         panel.contentView = hosting
         return panel
@@ -185,6 +240,7 @@ final class ClipboardHistoryController {
         if Self.isCopyShortcut(event) {
             // Text selected in the search copies as text does anywhere.
             if let text = panel?.firstResponder as? NSTextView, text.selectedRange().length > 0 { return false }
+            settleScrollSelection()
             if let selected = state.selected { copy(selected) }
             return true
         }
@@ -192,9 +248,14 @@ final class ClipboardHistoryController {
         if Self.isComposing(panel?.firstResponder) { return false }
         switch event.keyCode {
         case 53: hide(); return true
-        case 125: state.selectedIndex = max(0, min(state.visible.count - 1, state.selectedIndex + 1)); return true
-        case 126: state.selectedIndex = max(0, state.selectedIndex - 1); return true
+        case 125, 126:
+            // The keys take the selection back from a scroll still settling and from a resting pointer.
+            scrollSelection?.cancel(); scrollSelection = nil
+            state.moveSelection(by: event.keyCode == 125 ? 1 : -1)
+            pointer.rest(at: NSEvent.mouseLocation)
+            return true
         case 36, 76:
+            settleScrollSelection()
             if let selected = state.selected { choose(selected, plainText: event.modifierFlags.contains(.shift)) }
             return true
         default: return false
@@ -293,6 +354,7 @@ final class ClipboardHistoryController {
 
     func hide(keepingActivationObserver: Bool = false) {
         panel?.orderOut(nil); target = nil
+        scrollSelection?.cancel(); scrollSelection = nil
         state.query = ""
         if let localMonitor { NSEvent.removeMonitor(localMonitor) }; localMonitor = nil
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }; globalMonitor = nil
@@ -335,11 +397,14 @@ private final class ClipboardHistoryHostingView: NSHostingView<ClipboardHistoryV
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
-/// What the open panel shows: the search, the items it matches, and which one is selected.
+/// What the open panel shows: the search, the items it matches, and which one is selected. The selection is
+/// the only highlight, and Return, Command-C and a double click act on exactly that row.
 @MainActor @Observable
 final class ClipboardHistoryPanelState {
-    var query = "" { didSet { if query != oldValue { selectedIndex = 0; refresh() } } }
+    var query = "" { didSet { if query != oldValue { selectedIndex = 0; selectionFromPointer = false; refresh() } } }
     var selectedIndex = 0
+    /// Whether the pointer chose the selected row; the list then does not scroll it out from under the pointer.
+    private(set) var selectionFromPointer = false
     private(set) var visible: [ClipboardHistoryEntry] = []
     /// Changes each time the panel opens, which puts the cursor in the search.
     private(set) var focusRequest = 0
@@ -348,7 +413,39 @@ final class ClipboardHistoryPanelState {
     var selected: ClipboardHistoryEntry? { visible.indices.contains(selectedIndex) ? visible[selectedIndex] : nil }
     var total: Int { entries.count }
 
-    func update(_ entries: [ClipboardHistoryEntry]) { self.entries = entries; refresh() }
+    /// New entries keep the selection on its item: a copy arriving on top moves it down with its row, and an
+    /// item copied again, which comes back as a new entry, stays selected.
+    func update(_ entries: [ClipboardHistoryEntry]) {
+        let previous = selected
+        self.entries = entries; refresh()
+        if let previous, let index = visible.firstIndex(where: { $0.id == previous.id })
+            ?? visible.firstIndex(where: { $0.text == previous.text && $0.formatting == previous.formatting }) {
+            selectedIndex = index
+        } else {
+            selectedIndex = max(0, min(selectedIndex, visible.count - 1))
+        }
+    }
+
+    /// The arrow keys: one row down or up, stopping at the ends.
+    func moveSelection(by offset: Int) {
+        selectionFromPointer = false
+        selectedIndex = max(0, min(visible.count - 1, selectedIndex + offset))
+    }
+
+    func select(id: UUID, byPointer: Bool = false) {
+        guard let index = visible.firstIndex(where: { $0.id == id }) else { return }
+        select(index: index, byPointer: byPointer)
+    }
+
+    /// The top row, as the panel opens.
+    func selectFirst() { selectionFromPointer = false; selectedIndex = 0 }
+
+    func select(index: Int, byPointer: Bool = false) {
+        guard visible.indices.contains(index) else { return }
+        selectionFromPointer = byPointer
+        selectedIndex = index
+    }
+
     func focusSearch() { focusRequest &+= 1 }
     private func refresh() { visible = ClipboardSearch.filter(entries, query: query) }
 }
