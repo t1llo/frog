@@ -6,7 +6,7 @@
   "author": "Frog",
   "homepage": "https://github.com/t1llo/frog/tree/main/plugins/focus-timer",
   "symbol": "timer",
-  "frog": "1.0.47",
+  "frog": "1.0.48",
   "permissions": ["notifications", "menubar", "hotkeys", "background"],
   "menubar": { "symbol": "timer", "popup": "popup.html", "width": 260, "height": 96 },
   "settings": [
