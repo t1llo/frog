@@ -22,9 +22,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import xyz.beffa.frog.companion.clipboard.AutoCopy
 import xyz.beffa.frog.companion.clipboard.IncomingClips
 import xyz.beffa.frog.companion.clipboard.OutgoingItem
 import xyz.beffa.frog.companion.clipboard.fingerprint
@@ -96,6 +98,9 @@ class CompanionController(context: Context) : Session.Handler {
     @Volatile
     private var lastReceivedFingerprint: String? = null
 
+    @Volatile
+    private var lastSentFingerprint: String? = null
+
     private fun initialStatus(): CompanionStatus {
         val mac = store.pairedMac()
         return CompanionStatus(mac != null, mac?.name, Link.OFFLINE)
@@ -150,12 +155,14 @@ class CompanionController(context: Context) : Session.Handler {
 
     // region sending
 
-    suspend fun send(item: OutgoingItem): SendResult {
+    /** [automatic] sends (from the copy watcher) also skip a repeat of the last clip sent. */
+    suspend fun send(item: OutgoingItem, automatic: Boolean = false): SendResult {
         if (store.pairedMac() == null) return SendResult.NotPaired
         if (item.body.isEmpty()) return SendResult.Empty
-        if (item.fingerprint == lastReceivedFingerprint) return SendResult.AlreadyOnMac
+        if (item.fingerprint == lastReceivedFingerprint || (automatic && item.fingerprint == lastSentFingerprint)) return SendResult.AlreadyOnMac
         if (item.body.size > Limits.MAX_CLIP_TCP) return SendResult.TooLarge
 
+        lastSentFingerprint = item.fingerprint
         val id = UUID.randomUUID().toString()
         val uri = if (item.kind == ClipKind.IMAGE) {
             runCatching { incoming.saveImage(id, item.mime, item.body).toString() }.getOrNull()
@@ -241,6 +248,8 @@ class CompanionController(context: Context) : Session.Handler {
 
     override suspend fun onClip(session: Session, clip: Message.Clip): Boolean {
         if (clip.id in receivedIds) return true
+        lastReceivedFingerprint = fingerprint(clip.kind, clip.body)
+        AutoCopy.appliedFromMac()
         val stored = try {
             incoming.store(clip)
         } catch (e: Exception) {
@@ -250,7 +259,6 @@ class CompanionController(context: Context) : Session.Handler {
         receivedIds.addLast(clip.id)
         while (receivedIds.size > Limits.DEDUPE_WINDOW) receivedIds.removeFirst()
         store.saveReceivedIds(receivedIds.toList())
-        lastReceivedFingerprint = fingerprint(clip.kind, clip.body)
 
         val (preview, text, uri) = when (stored) {
             is IncomingClips.Stored.Text -> Triple(stored.text.trim().take(300), stored.text.take(HistoryItem.MAX_TEXT), null)
@@ -306,7 +314,7 @@ class CompanionController(context: Context) : Session.Handler {
                     if (handover != null) runSession(handover, mac)
                 } else {
                     setLink(Link.OFFLINE)
-                    withTimeoutOrNull(backoff) { kick.receive() }
+                    waitForMac(mac, backoff)
                     backoff = (backoff * 2).coerceAtMost(MAX_BACKOFF)
                     continue
                 }
@@ -314,12 +322,45 @@ class CompanionController(context: Context) : Session.Handler {
             setLink(Link.SEARCHING)
             if (System.currentTimeMillis() - startedAt < 10_000) {
                 // The link died right away (e.g. the Mac rejected us); don't spin.
-                withTimeoutOrNull(backoff) { kick.receive() }
+                waitForMac(mac, backoff)
                 backoff = (backoff * 2).coerceAtMost(MAX_BACKOFF)
             } else {
                 backoff = MIN_BACKOFF
             }
         }
+    }
+
+    /**
+     * Waits up to [ms] for a reason to try again: a kick (Wi-Fi came up, a clip to send, the app opened)
+     * or, on Wi-Fi, the Mac's Bonjour service appearing. Its address is remembered, so the next
+     * attempt connects to it straight away instead of waiting out the backoff.
+     */
+    private suspend fun waitForMac(mac: PairedMac, ms: Long) = coroutineScope {
+        val appeared = Channel<Unit>(Channel.CONFLATED)
+        val watcher = if (onLocalNetwork()) {
+            launch {
+                val endpoint = nsd.find(mac.id, ms)
+                if (endpoint != null) {
+                    store.rememberEndpoint(endpoint.host, endpoint.port)
+                    appeared.trySend(Unit)
+                }
+            }
+        } else {
+            null
+        }
+        withTimeoutOrNull(ms) {
+            select {
+                kick.onReceive {}
+                appeared.onReceive {}
+            }
+        }
+        watcher?.cancel()
+    }
+
+    private fun onLocalNetwork(): Boolean {
+        val cm = app.getSystemService(ConnectivityManager::class.java) ?: return false
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
     }
 
     private suspend fun runSession(pipe: BytePipe, mac: PairedMac) {
@@ -433,7 +474,8 @@ class CompanionController(context: Context) : Session.Handler {
     companion object {
         private const val TAG = "FrogCompanion"
         private const val MIN_BACKOFF = 3_000L
-        private const val MAX_BACKOFF = 60_000L
+        // Short, so a Mac that wakes or comes into Bluetooth range is found within seconds.
+        private const val MAX_BACKOFF = 15_000L
         private const val NSD_TIMEOUT_MS = 4_000L
         private const val BLE_SCAN_MS = 10_000L
     }

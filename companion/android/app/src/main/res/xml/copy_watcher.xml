@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notices copies (Copy buttons, "Copied" toasts, the system clipboard overlay) so Frog Companion can
+     send the clip to the Mac. It reads only those labels and keeps nothing; see clipboard/AutoCopy.kt. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeViewClicked|typeNotificationStateChanged|typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/copy_watcher_description"
+    android:isAccessibilityTool="false"
+    android:notificationTimeout="100"
+    android:summary="@string/copy_watcher_summary" />

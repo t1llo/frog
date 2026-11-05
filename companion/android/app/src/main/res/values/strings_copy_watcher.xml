@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="copy_watcher_label">Frog Companion: send copies to Mac</string>
+    <string name="copy_watcher_summary">Sends what you copy to your Mac</string>
+    <string name="copy_watcher_description">When you copy something, including a code you tap in an authenticator app, Frog Companion sends it to your paired Mac over your own Wi-Fi or Bluetooth, end-to-end encrypted.\n\nTo notice a copy, it looks only for Copy buttons, \"Copied\" messages and the system clipboard preview. It does not read, store or send anything else on your screen, and nothing goes to any server.</string>
+</resources>

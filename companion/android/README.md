@@ -3,8 +3,19 @@
 Frog Companion is the Android side of Frog's **Phone** feature. It keeps one Android phone and Frog on your Mac in sync:
 
 - What you copy on the Mac lands on the phone's clipboard. Files are saved to Downloads.
-- The phone sends its clipboard, shared text, photos and files to the Mac with one tap: from the app, the notification, a Quick Settings tile, the launcher shortcut or the share sheet.
-- Android only lets an app read the clipboard while it is on screen, so sending from the phone always takes a tap. There is no background clipboard reading.
+- What you copy on the phone lands on the Mac's clipboard, including codes you tap in an authenticator app, once **Automatic copy** is on.
+- Shared text, photos and files go to the Mac from the share sheet; the notification, a Quick Settings tile and the launcher shortcut send the clipboard with one tap.
+- The history keeps recent clips in both directions; tap one to copy it again.
+
+### Automatic copy
+
+Android 10+ lets only the app on screen, or the keyboard, read the clipboard. Automatic copy is an accessibility service that notices *that* you copied something: a Copy button or menu item, a "Copied" message, or the clipboard preview Android 13+ shows after every copy. It then opens an invisible window for a fraction of a second, reads the clip while that window has focus, and sends it. It doesn't read anything else on screen and keeps nothing.
+
+Turn it on from the card in the app, or Settings → Accessibility → Frog Companion. On Android 13+ an app installed outside the Play Store needs one extra step first: App info → ⋮ → **Allow restricted settings**.
+
+Gboard has no add-on API, so a keyboard extension isn't possible. Automatic copy covers the same ground for every keyboard.
+
+Once paired, the app reconnects on its own: it tries the Mac's last addresses, then Bonjour, then Bluetooth LE, retries at most every 15 seconds, and connects within moments when Wi-Fi comes back or the Mac's Bonjour service appears.
 
 It connects over Wi-Fi when the phone and Mac share a network, and over Bluetooth LE when they don't. Everything is end-to-end encrypted with a key made during pairing. There is no server and no account.
 

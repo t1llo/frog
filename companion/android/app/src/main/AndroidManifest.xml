@@ -112,6 +112,20 @@
                 android:value="false" />
         </service>
 
+        <!-- Automatic copy: notices copies and briefly opens SendClipboardActivity to read and send them. -->
+        <service
+            android:name=".clipboard.CopyWatcherService"
+            android:exported="false"
+            android:label="@string/copy_watcher_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/copy_watcher" />
+        </service>
+
         <receiver
             android:name=".service.BootReceiver"
             android:exported="true">

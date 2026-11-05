@@ -25,7 +25,7 @@ Package: `com.tillo.frogcompanion` · version 1.0.0 (versionCode 1) · minimum A
 > • Everything is end-to-end encrypted with a key created when you pair, stored in Android's secure Keystore.
 > • No ads, no analytics, no tracking.
 >
-> Android only lets the app on screen read the clipboard, so sending from your phone always takes one tap. Frog Companion never reads your clipboard in the background.
+> Turn on Automatic copy and whatever you copy on your phone, even a code you tap in an authenticator app, is on your Mac a moment later. It uses an accessibility service only to notice that you copied something; it reads nothing else on your screen.
 >
 > Getting started
 > 1. In Frog on your Mac, turn on Phone under Features, open Phone and choose Pair a phone.
@@ -58,6 +58,16 @@ Explanation for review: Clipboard contents, shared files and the phone's device 
 | `RECEIVE_BOOT_COMPLETED` | Reconnecting to the paired Mac after a restart. |
 
 The app does not request `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`. When it is battery-optimized, it shows a card that opens the app's own App info page and tells the user to choose Battery → Unrestricted.
+
+### Accessibility API declaration (`CopyWatcherService`)
+
+The prominent disclosure is the Automatic copy card, shown before the user is sent to Accessibility settings; the service's own description repeats it.
+
+- **Core feature:** Clipboard sync from the phone to the user's own paired Mac. Android 10+ blocks background clipboard reads; the service lets the app notice that the user copied something, so the copy is sent without an extra tap.
+- **What it reads:** only the labels of clicked views (to recognise "Copy"), toast text (to recognise "Copied"), and whether the system clipboard overlay appeared (view ids containing `clipboard`). It does not read other screen content, record input or keep any of it.
+- **What it does:** opens the app's own invisible activity for a moment, which reads the clipboard while focused and sends it, end-to-end encrypted, to the paired Mac. Nothing goes to the developer or third parties.
+- **Not an accessibility tool:** `isAccessibilityTool="false"`. The user turns it on and off in Accessibility settings.
+- **Video:** record turning on Automatic copy from the card, tapping a code in an authenticator app, and the code arriving on the Mac.
 
 ### Foreground service declaration (`connectedDevice`)
 

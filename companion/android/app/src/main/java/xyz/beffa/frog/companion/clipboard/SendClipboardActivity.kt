@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.HapticFeedbackConstants
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -19,15 +21,28 @@ import xyz.beffa.frog.companion.service.SendResult
 /**
  * Invisible, animation-free activity that reads the clipboard once it has window focus
  * (Android 10+ only lets the focused app read it), hands the item to the controller and finishes.
- * Used by the notification action, the Quick Settings tile and the launcher shortcut.
+ * Used by the notification action, the Quick Settings tile, the launcher shortcut and, silently,
+ * by the copy watcher ([AutoCopy]) after every copy.
  */
 class SendClipboardActivity : ComponentActivity() {
     private var handled = false
+    private val handler = Handler(Looper.getMainLooper())
+
+    /** A transparent window must never linger over another app: give up if focus doesn't arrive. */
+    private val giveUp = Runnable { if (!handled) { handled = true; close() } }
+
+    private val automatic get() = intent?.getBooleanExtra(EXTRA_AUTOMATIC, false) == true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         noTransition(opening = true)
         handled = savedInstanceState?.getBoolean(KEY_HANDLED) ?: false
+        handler.postDelayed(giveUp, FOCUS_TIMEOUT_MS)
+    }
+
+    override fun onDestroy() {
+        handler.removeCallbacks(giveUp)
+        super.onDestroy()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -39,6 +54,8 @@ class SendClipboardActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handled = false
+        handler.removeCallbacks(giveUp)
+        handler.postDelayed(giveUp, FOCUS_TIMEOUT_MS)
         if (hasWindowFocus()) onWindowFocusChanged(true)
     }
 
@@ -46,6 +63,7 @@ class SendClipboardActivity : ComponentActivity() {
         super.onWindowFocusChanged(hasFocus)
         if (!hasFocus || handled) return
         handled = true
+        handler.removeCallbacks(giveUp)
         val snapshot = runCatching { ContentReader.primaryClip(this) }.getOrNull()
         if (snapshot == null) {
             finishWith(SendResult.Empty, null)
@@ -56,7 +74,7 @@ class SendClipboardActivity : ComponentActivity() {
             val (result, mac) = withContext(Dispatchers.IO) {
                 val controller = CompanionApp.controller(this@SendClipboardActivity)
                 val r = try {
-                    controller.send(ContentReader.fromSnapshot(this@SendClipboardActivity, snapshot))
+                    controller.send(ContentReader.fromSnapshot(this@SendClipboardActivity, snapshot), automatic)
                 } catch (_: TooLargeException) {
                     SendResult.TooLarge
                 } catch (_: Exception) {
@@ -69,7 +87,12 @@ class SendClipboardActivity : ComponentActivity() {
     }
 
     private fun finishWith(result: SendResult, mac: String?) {
-        feedback(this, result, mac, count = 1)
+        // Automatic sends stay quiet; the history and the Mac show them.
+        if (!automatic) feedback(this, result, mac, count = 1)
+        close()
+    }
+
+    private fun close() {
         finish()
         noTransition(opening = false)
     }
@@ -87,10 +110,13 @@ class SendClipboardActivity : ComponentActivity() {
 
     companion object {
         private const val KEY_HANDLED = "handled"
+        private const val EXTRA_AUTOMATIC = "automatic"
+        private const val FOCUS_TIMEOUT_MS = 1_500L
 
-        fun intent(context: Context): Intent =
+        fun intent(context: Context, automatic: Boolean = false): Intent =
             Intent(context, SendClipboardActivity::class.java)
                 .setAction(ACTION_SEND_CLIPBOARD)
+                .putExtra(EXTRA_AUTOMATIC, automatic)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
 
         const val ACTION_SEND_CLIPBOARD = "xyz.beffa.frog.companion.action.SEND_CLIPBOARD"
