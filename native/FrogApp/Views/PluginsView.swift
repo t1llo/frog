@@ -23,6 +23,7 @@ struct PluginsView: View {
     @State private var search = ""
     @State private var link = ""
     @State private var removing: PluginItem?
+    @State private var settings: PluginSettingsTarget?
 
     var body: some View {
         FrogPage {
@@ -51,6 +52,9 @@ struct PluginsView: View {
                   message: Text("Its files and what it stored move to the Trash."),
                   primaryButton: .destructive(Text("Remove")) { plugins.remove(item.id) },
                   secondaryButton: .cancel())
+        }
+        .sheet(item: $settings) { target in
+            PluginSettingsSheet(id: target.id, plugins: plugins) { settings = nil }
         }
     }
 
@@ -90,6 +94,9 @@ struct PluginsView: View {
                 }
                 IconMenu(title: "More about \(item.name)") {
                     Text(source(item))
+                    if item.runs, item.hasSettings {
+                        Button("Settings…", systemImage: "slider.horizontal.3") { settings = PluginSettingsTarget(id: item.id) }
+                    }
                     Button("Remove…", systemImage: "trash", role: .destructive) { removing = item }
                 }
             }
@@ -285,9 +292,21 @@ struct PluginReviewSheet: View {
                         ForEach(manifest.actions, id: \.id) { action in
                             HStack(spacing: 6) {
                                 Text(action.title).font(FrogType.body)
+                                if let shortcut = action.shortcut, let parsed = try? Shortcut(shortcut) {
+                                    FrogBadge(text: HotkeyManager.display(parsed.hotkey))
+                                }
                                 Spacer(minLength: 8)
                                 Text(action.effect.title).font(FrogType.small)
                                     .foregroundStyle(action.effect == .read ? FrogStyle.muted : FrogStyle.ink)
+                            }
+                        }
+                    }
+                    if !manifest.uses.isEmpty {
+                        SectionCaption(text: "Frog actions it can run")
+                        ForEach(manifest.uses, id: \.self) { pattern in
+                            HStack(spacing: 6) {
+                                Text(pattern).font(FrogType.mono)
+                                if review.approved != nil, additions.uses.contains(pattern) { FrogBadge(text: "New", active: true) }
                             }
                         }
                     }
@@ -380,6 +399,7 @@ struct PluginPageView: View {
     let id: String
     @State private var host: PluginWebHost?
     @State private var failure: String?
+    @State private var settings: PluginSettingsTarget?
 
     var body: some View {
         let item = model.plugins.item(id)
@@ -391,6 +411,9 @@ struct PluginPageView: View {
                 Spacer()
                 if case .folder = item?.record.source {
                     IconAction(title: "Reload", symbol: "arrow.clockwise") { model.plugins.reload(id) }
+                }
+                if item?.hasSettings == true {
+                    IconAction(title: "Settings", symbol: "slider.horizontal.3") { settings = PluginSettingsTarget(id: id) }
                 }
             }
             .frame(height: FrogStyle.controlHeight).padding(.horizontal, 20)
@@ -412,8 +435,14 @@ struct PluginPageView: View {
             do { host = try await model.plugins.host(for: id); failure = nil }
             catch { failure = error.localizedDescription }
         }
+        .sheet(item: $settings) { target in
+            PluginSettingsSheet(id: target.id, plugins: model.plugins) { settings = nil }
+        }
     }
 }
+
+/// The plugin whose settings sheet is open.
+struct PluginSettingsTarget: Identifiable { let id: String }
 
 /// Holds the plugin's web view, which outlives the page: a plugin keeps running while another page is shown.
 struct PluginWebContainer: NSViewRepresentable {

@@ -28,6 +28,12 @@ struct PluginItem: Identifiable, Equatable {
     }
     var runs: Bool { record.enabled && manifest != nil && problem == nil && !needsReview }
     var hasPage: Bool { manifest?.entry != nil }
+    /// It declares settings, has shortcuts the user can change or keeps folders the user gave it.
+    var hasSettings: Bool {
+        guard let manifest, let approved = record.approved else { return false }
+        let granted = Set(manifest.permissions).intersection(approved.permissions)
+        return !manifest.settings.isEmpty || (granted.contains(.hotkeys) && !manifest.actions.isEmpty) || granted.contains(.files)
+    }
 }
 
 /// A plugin waiting for the user's yes: one to install from a file or link, or an installed one whose first
