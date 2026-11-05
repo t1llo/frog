@@ -274,7 +274,7 @@ struct PluginReviewSheet: View {
                         Text("It asks for no permissions: it shows its page, keeps its own storage and receives its commands.")
                             .font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
                     } else {
-                        SectionCaption(text: review.approved != nil && additions.permissions.isEmpty && additions.hosts.isEmpty && additions.scripts.isEmpty
+                        SectionCaption(text: review.approved != nil && additions.isEmpty
                                        ? "It asks for nothing new" : "It asks to")
                         ForEach(manifest.permissions, id: \.self) { permission in
                             permissionRow(permission, new: review.approved != nil && additions.permissions.contains(permission))

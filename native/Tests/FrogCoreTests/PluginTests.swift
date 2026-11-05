@@ -104,6 +104,79 @@ final class PluginManifestTests: XCTestCase {
         XCTAssertEqual(added.hosts, ["b.example.com"])
         XCTAssertEqual(added.scripts, ["go"])
     }
+
+    func testAMenuBarItemNeedsItsPermissionAndAPopupActionOrPage() throws {
+        assertInvalid(["menubar": ["symbol": "timer"]], mentions: "menubar permission")
+        assertInvalid(["permissions": ["menubar"]], mentions: "menubar")
+        assertInvalid(["permissions": ["menubar"], "menubar": ["popup": "../popup.html"]], mentions: "inside")
+        assertInvalid(["permissions": ["menubar"], "menubar": ["width": 900]], mentions: "width")
+        assertInvalid(["permissions": ["menubar"], "menubar": ["action": "go"]], mentions: "not one of")
+        assertInvalid(["permissions": ["menubar"], "menubar": ["popup": "popup.html", "action": "go"],
+                       "actions": [["id": "go", "title": "Go", "effect": "write"]]], mentions: "not both")
+        let plugin = try manifest(["permissions": ["menubar"], "menubar": ["symbol": "timer", "title": "25:00", "popup": "popup.html", "height": 200]])
+        XCTAssertEqual(plugin.menubar?.popupHeight, 200)
+        XCTAssertEqual(plugin.menubar?.popupWidth, PluginMenuBar.defaultWidth)
+    }
+
+    func testShortcutsNeedTheHotkeysPermissionAModifierAndNoRequiredParameters() throws {
+        let action: [String: Any] = ["id": "go", "title": "Go", "effect": "write", "shortcut": "ctrl+alt+g"]
+        assertInvalid(["actions": [action]], mentions: "hotkeys")
+        assertInvalid(["permissions": ["hotkeys"]], mentions: "shortcut")
+        assertInvalid(["permissions": ["hotkeys"], "actions": [action.merging(["shortcut": "g"]) { $1 }]], mentions: "ctrl")
+        assertInvalid(["permissions": ["hotkeys"], "actions": [action.merging(["shortcut": "ctrl+alt+"]) { $1 }]], mentions: "look like")
+        assertInvalid(["permissions": ["hotkeys"], "actions": [action.merging(["parameters": [["name": "n", "required": true]]]) { $1 }]], mentions: "parameters")
+        assertInvalid(["permissions": ["hotkeys"], "actions": [action, action.merging(["id": "again"]) { $1 }]], mentions: "Two actions")
+        XCTAssertEqual(try manifest(["permissions": ["hotkeys"], "actions": [action]]).actions.first?.shortcut, "ctrl+alt+g")
+    }
+
+    func testSettingsHaveTypedDefaultsAndSecretsHaveNone() throws {
+        assertInvalid(["settings": [["key": "Bad", "title": "Bad"]]], mentions: "key")
+        assertInvalid(["settings": [["key": "minutes", "title": "Minutes", "type": "integer", "default": "many"]]], mentions: "default")
+        assertInvalid(["settings": [["key": "token", "title": "Token", "type": "secret", "default": "x"]]], mentions: "secret")
+        assertInvalid(["settings": [["key": "mode", "title": "Mode", "type": "choice"]]], mentions: "choices")
+        assertInvalid(["settings": [["key": "a", "title": "A"], ["key": "a", "title": "B"]]], mentions: "same key")
+        assertInvalid(["settings": [["key": "a", "title": "A", "type": "colour"]]], mentions: "type")
+        let plugin = try manifest(["settings": [
+            ["key": "minutes", "title": "Minutes", "type": "integer", "default": 25, "min": 1, "max": 120],
+            ["key": "sound", "title": "Sound", "type": "boolean", "default": true],
+            ["key": "mode", "title": "Mode", "type": "choice", "choices": ["calm", "loud"]],
+            ["key": "token", "title": "Token", "type": "secret"]
+        ]])
+        let minutes = plugin.settings[0]
+        XCTAssertEqual(minutes.initial, .integer(25))
+        XCTAssertEqual(try minutes.accept(.text("30")), .integer(30))
+        XCTAssertThrowsError(try minutes.accept(.integer(500)))
+        XCTAssertEqual(plugin.settings[1].initial, .boolean(true))
+        XCTAssertEqual(plugin.settings[2].initial, .text("calm"))
+        XCTAssertThrowsError(try plugin.settings[2].accept(.text("quiet")))
+        XCTAssertNil(plugin.settings[3].initial)
+        let encoded = try JSONEncoder().encode(plugin)
+        XCTAssertEqual(try PluginManifest.decode(encoded), plugin, "A manifest reads back as it was written")
+    }
+
+    func testUsesNamesFrogActionsOutsideTheBlockedFeatures() throws {
+        assertInvalid(["uses": ["windows.move"]], mentions: "frog-actions")
+        assertInvalid(["permissions": ["frog-actions"]], mentions: "uses")
+        assertInvalid(["permissions": ["frog-actions"], "uses": ["scripts.run"]], mentions: "cannot run scripts")
+        assertInvalid(["permissions": ["frog-actions"], "uses": ["community.*"]], mentions: "cannot run community")
+        assertInvalid(["permissions": ["frog-actions"], "uses": ["windows"]], mentions: "Frog action id")
+        let plugin = try manifest(["permissions": ["frog-actions"], "uses": ["windows.*", "stay-awake.toggle"]])
+        XCTAssertEqual(plugin.grant(scriptHashes: [:]).uses, ["stay-awake.toggle", "windows.*"])
+        XCTAssertTrue(PluginUses.allows("windows.move", patterns: plugin.uses))
+        XCTAssertTrue(PluginUses.allows("stay-awake.toggle", patterns: plugin.uses))
+        XCTAssertFalse(PluginUses.allows("stay-awake.on", patterns: plugin.uses))
+        XCTAssertFalse(PluginUses.allows("scripts.run", patterns: ["scripts.*"]))
+    }
+
+    func testAGrantWithNewUsesNeedsReviewAndOldApprovalsStillRead() throws {
+        let approved = PluginGrant(permissions: [.frogActions], uses: ["windows.*"])
+        XCTAssertTrue(approved.covers(PluginGrant(permissions: [.frogActions], uses: ["windows.*"])))
+        XCTAssertFalse(approved.covers(PluginGrant(permissions: [.frogActions], uses: ["windows.*", "stay-awake.toggle"])))
+        XCTAssertEqual(approved.additions(in: PluginGrant(permissions: [.frogActions], uses: ["stay-awake.toggle"])).uses, ["stay-awake.toggle"])
+        let old = Data(#"{"permissions":["network","teleport"],"hosts":["a.example.com"],"scripts":{}}"#.utf8)
+        let read = try JSONDecoder().decode(PluginGrant.self, from: old)
+        XCTAssertEqual(read, PluginGrant(permissions: [.network], hosts: ["a.example.com"]))
+    }
 }
 
 /// Plugin folders in a temporary directory.
@@ -372,5 +445,40 @@ struct ZipEntry {
         u16(UInt16(entries.count), &archive); u16(UInt16(entries.count), &archive)
         u32(UInt32(directory.count), &archive); u32(start, &archive); u16(0, &archive)
         return archive
+    }
+}
+
+final class PluginFoldersTests: XCTestCase {
+    private var fixture: PluginFixture!
+    override func setUpWithError() throws { fixture = try PluginFixture() }
+    override func tearDown() { fixture.remove() }
+
+    func testAPickedFolderResolvesPathsInsideItOnly() throws {
+        let picked = fixture.root.appendingPathComponent("Notes", isDirectory: true)
+        let outside = fixture.root.appendingPathComponent("Private", isDirectory: true)
+        try FileManager.default.createDirectory(at: picked.appendingPathComponent("sub"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: picked.appendingPathComponent("escape"), withDestinationURL: outside)
+        let folders = PluginFolders(folder: fixture.root.appendingPathComponent("Data", isDirectory: true))
+        let folder = try folders.add(picked)
+        XCTAssertEqual(try folders.add(picked), folder, "Picking the same folder again keeps one entry")
+        XCTAssertEqual(try folders.resolve(folder.id, "sub/new.txt").lastPathComponent, "new.txt")
+        XCTAssertEqual(try folders.resolve(folder.id, "").path, folder.path)
+        for path in ["../Private/x", "/etc/passwd", ".hidden", "escape/secret.txt", "escape"] {
+            XCTAssertThrowsError(try folders.resolve(folder.id, path), path)
+        }
+        XCTAssertThrowsError(try folders.resolve("nope", "a.txt"))
+        try folders.remove(folder.id)
+        XCTAssertEqual(try folders.list(), [])
+    }
+
+    func testSecretsBelongToOnePlugin() throws {
+        let secrets = MemoryPluginSecrets()
+        try secrets.save("abc", key: "token", plugin: "com.example.a")
+        try secrets.save("def", key: "token", plugin: "com.example.b")
+        XCTAssertNil(try secrets.read("token", plugin: "com.example"))
+        try secrets.deleteAll(plugin: "com.example.a")
+        XCTAssertNil(try secrets.read("token", plugin: "com.example.a"))
+        XCTAssertEqual(try secrets.read("token", plugin: "com.example.b"), "def")
     }
 }

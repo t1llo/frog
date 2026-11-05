@@ -5,20 +5,32 @@ import Foundation
 public enum PluginPermission: String, Codable, CaseIterable, Comparable, Sendable {
     case clipboardRead = "clipboard-read"
     case clipboardWrite = "clipboard-write"
+    case selection
     case notifications
     case links
+    case menubar
+    case hotkeys
+    case background
+    case files
     case network
     case ai
+    case frogActions = "frog-actions"
     case scripts
 
     public var title: String {
         switch self {
         case .clipboardRead: "Read the clipboard"
         case .clipboardWrite: "Put text on the clipboard"
+        case .selection: "Read and replace the text you select"
         case .notifications: "Show notifications"
         case .links: "Open web links in your browser"
+        case .menubar: "Add an item to the menu bar"
+        case .hotkeys: "Add keyboard shortcuts"
+        case .background: "Run in the background"
+        case .files: "Read and change files in folders you choose"
         case .network: "Connect to the internet"
         case .ai: "Use your AI model"
+        case .frogActions: "Use Frog's own features"
         case .scripts: "Run shell scripts on this Mac"
         }
     }
@@ -28,16 +40,22 @@ public enum PluginPermission: String, Codable, CaseIterable, Comparable, Sendabl
         switch self {
         case .clipboardRead: "Reads the text you copied. Text a password manager marks as concealed is never given."
         case .clipboardWrite: "Replaces what is on the clipboard with text of its own."
-        case .notifications: "Shows notifications from Frog."
+        case .selection: "Reads the text selected in the app in front, and replaces it, right after you run one of its actions or shortcuts."
+        case .notifications: "Shows notifications from Frog, with buttons that answer the plugin."
         case .links: "Opens web links in your default browser, which can send what is in the link to that site."
+        case .menubar: "Shows its own item in the menu bar, with a popup. Turning the plugin off removes it."
+        case .hotkeys: "Gives the actions listed below keyboard shortcuts that work in every app. You can change or clear them in its settings."
+        case .background: "Starts with Frog and keeps running while its page is closed: its timers run, and it hears when the Mac wakes, the app in front changes or, with clipboard access, the clipboard changes."
+        case .files: "Reads, writes and moves to the Trash files in the folders you pick for it, and only those."
         case .network: "Sends requests to the sites listed below, and only those. It can send them anything the plugin can read."
         case .ai: "Sends text to the model your Writing rules use by default. A cloud model's provider bills you for it."
+        case .frogActions: "Runs the Frog actions listed below, such as moving windows, with the permissions you gave Frog, such as Accessibility."
         case .scripts: "Runs the scripts shown below with your full access to this Mac: your files, apps and accounts, and the permissions you gave Frog, such as Accessibility. Install it only if you trust the author and have read the scripts."
         }
     }
 
-    /// Permissions that can send data off the Mac or act beyond the sandbox, shown with a caution.
-    public var isSensitive: Bool { [.clipboardRead, .network, .ai, .scripts].contains(self) }
+    /// Permissions that can read what you do, send data off the Mac or act beyond the sandbox, shown with a caution.
+    public var isSensitive: Bool { [.clipboardRead, .selection, .background, .files, .network, .ai, .frogActions, .scripts].contains(self) }
 
     public static func < (lhs: Self, rhs: Self) -> Bool {
         allCases.firstIndex(of: lhs)! < allCases.firstIndex(of: rhs)!
@@ -91,9 +109,13 @@ public struct PluginManifestAction: Codable, Equatable, Sendable {
     /// Takes text: from standard input with `frog run --stdin`, or the text selected in the command bar.
     public var input: Bool?
     public var keywords: String?
+    /// The keyboard shortcut it gets, such as `ctrl+alt+f`, with the hotkeys permission. The user can change it.
+    public var shortcut: String?
 
-    public init(id: String, title: String, effect: Effect, parameters: [Parameter] = [], input: Bool? = nil, keywords: String? = nil) {
+    public init(id: String, title: String, effect: Effect, parameters: [Parameter] = [], input: Bool? = nil, keywords: String? = nil,
+                shortcut: String? = nil) {
         self.id = id; self.title = title; self.effect = effect; self.parameters = parameters; self.input = input; self.keywords = keywords
+        self.shortcut = shortcut
     }
 
     public init(from decoder: Decoder) throws {
@@ -108,6 +130,7 @@ public struct PluginManifestAction: Codable, Equatable, Sendable {
         parameters = try values.decodeIfPresent([Parameter].self, forKey: .parameters) ?? []
         input = try values.decodeIfPresent(Bool.self, forKey: .input)
         keywords = try values.decodeIfPresent(String.self, forKey: .keywords)
+        shortcut = try values.decodeIfPresent(String.self, forKey: .shortcut)
     }
 
     /// Option names `frog run` keeps for itself.
@@ -147,6 +170,12 @@ public struct PluginManifest: Codable, Equatable, Sendable {
     public var scripts: [String: String]
     public var commands: [PluginCommand]
     public var actions: [PluginManifestAction]
+    /// Its own menu-bar item, with the menubar permission.
+    public var menubar: PluginMenuBar?
+    /// Settings Frog shows in the plugin's settings, kept for it and read with `frog.settings`.
+    public var settings: [PluginSetting]
+    /// Frog's own actions it may run with `frog.runAction`, with the frog-actions permission: ids or `<plugin>.*`.
+    public var uses: [String]
 
     public static let fileName = "plugin.json"
     public static let defaultSymbol = "puzzlepiece.extension"
@@ -154,14 +183,17 @@ public struct PluginManifest: Codable, Equatable, Sendable {
 
     public init(id: String, name: String, version: String = "1.0.0", description: String, author: String? = nil, homepage: String? = nil,
                 symbol: String? = nil, entry: String? = "index.html", frog: String? = nil, permissions: [PluginPermission] = [],
-                hosts: [String] = [], scripts: [String: String] = [:], commands: [PluginCommand] = [], actions: [PluginManifestAction] = []) {
+                hosts: [String] = [], scripts: [String: String] = [:], commands: [PluginCommand] = [], actions: [PluginManifestAction] = [],
+                menubar: PluginMenuBar? = nil, settings: [PluginSetting] = [], uses: [String] = []) {
         self.id = id; self.name = name; self.version = version; self.description = description; self.author = author
         self.homepage = homepage; self.symbol = symbol; self.entry = entry; self.frog = frog; self.permissions = permissions
         self.hosts = hosts; self.scripts = scripts; self.commands = commands; self.actions = actions
+        self.menubar = menubar; self.settings = settings; self.uses = uses
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, version, description, author, homepage, symbol, entry, frog, permissions, hosts, scripts, commands, actions
+        case menubar, settings, uses
     }
 
     public init(from decoder: Decoder) throws {
@@ -188,6 +220,9 @@ public struct PluginManifest: Codable, Equatable, Sendable {
         scripts = try values.decodeIfPresent([String: String].self, forKey: .scripts) ?? [:]
         commands = try values.decodeIfPresent([PluginCommand].self, forKey: .commands) ?? []
         actions = try values.decodeIfPresent([PluginManifestAction].self, forKey: .actions) ?? []
+        menubar = try values.decodeIfPresent(PluginMenuBar.self, forKey: .menubar)
+        settings = try values.decodeIfPresent([PluginSetting].self, forKey: .settings) ?? []
+        uses = try values.decodeIfPresent([String].self, forKey: .uses) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -206,6 +241,9 @@ public struct PluginManifest: Codable, Equatable, Sendable {
         if !scripts.isEmpty { try values.encode(scripts, forKey: .scripts) }
         if !commands.isEmpty { try values.encode(commands, forKey: .commands) }
         if !actions.isEmpty { try values.encode(actions, forKey: .actions) }
+        try values.encodeIfPresent(menubar, forKey: .menubar)
+        if !settings.isEmpty { try values.encode(settings, forKey: .settings) }
+        if !uses.isEmpty { try values.encode(uses, forKey: .uses) }
     }
 
     /// Reads and checks a manifest's JSON.
@@ -273,6 +311,7 @@ public struct PluginManifest: Codable, Equatable, Sendable {
             if let keywords = command.keywords, keywords.count > 120 { throw PluginError.invalid("A command's keywords must be at most 120 characters.") }
         }
         try validateActions()
+        try validateCapabilities()
         if entry == nil {
             guard !commands.isEmpty || !actions.isEmpty else { throw PluginError.invalid("A plugin needs a page (“entry”), commands or actions.") }
         }
@@ -315,7 +354,7 @@ public struct PluginManifest: Codable, Equatable, Sendable {
     public func grant(scriptHashes: [String: String]) -> PluginGrant {
         var pinned = scripts.keys.reduce(into: [String: String]()) { $0[$1] = scriptHashes[$1] ?? "" }
         if !scripts.isEmpty { pinned[PluginGrant.filesKey] = scriptHashes[PluginGrant.filesKey] ?? "" }
-        return PluginGrant(permissions: permissions, hosts: hosts, scripts: pinned)
+        return PluginGrant(permissions: permissions, hosts: hosts, scripts: pinned, uses: uses)
     }
 
     /// Whether this Frog version is new enough, for a version such as "1.0.40"; a development build always is.

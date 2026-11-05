@@ -210,7 +210,8 @@ public final class PluginStorage: @unchecked Sendable {
     private var values: [String: String]?
     private let lock = NSLock()
 
-    public init(folder: URL) { file = folder.appendingPathComponent("storage.json") }
+    /// `name` is the file in the plugin's data folder: `storage.json` for `frog.storage`, `settings.json` for its settings.
+    public init(folder: URL, name: String = "storage.json") { file = folder.appendingPathComponent(name) }
 
     private func loaded() throws -> [String: String] {
         if let values { return values }

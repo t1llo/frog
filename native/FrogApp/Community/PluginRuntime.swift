@@ -45,7 +45,7 @@ struct PluginReview: Identifiable {
     /// that plugin and keeps its stored data, so the sheet says so and treats it as a new install.
     var replacing: PluginSource? = nil
     var compatible: Bool { package.manifest.runs(on: AppVersion.current) }
-    var additions: (permissions: [PluginPermission], hosts: [String], scripts: [String]) {
+    var additions: PluginGrant.Additions {
         (approved ?? PluginGrant()).additions(in: package.grant)
     }
 }
@@ -408,7 +408,7 @@ struct PluginReview: Identifiable {
         // One click only for a newer version, or a first install, that asks for nothing new: no permission, host or
         // script beyond what was approved, and no action that does more than it did.
         let newer = current.flatMap { PluginVersion($0.version) }.map { installed in PluginVersion(entry.version).map { $0 > installed } ?? false } ?? true
-        if oneClick, newer, review.compatible, review.replacing == nil, additions.permissions.isEmpty, additions.hosts.isEmpty, additions.scripts.isEmpty,
+        if oneClick, newer, review.compatible, review.replacing == nil, additions.isEmpty,
            Self.raisedEffects(package.manifest, over: sameOrigin ? current : nil).isEmpty {
             try approve(review)
             return true

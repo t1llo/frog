@@ -12,22 +12,54 @@ public struct PluginGrant: Codable, Equatable, Sendable {
     public var permissions: [PluginPermission]
     public var hosts: [String]
     public var scripts: [String: String]
+    /// Frog's own actions it may run, as the manifest's `uses` names them.
+    public var uses: [String]
 
-    public init(permissions: [PluginPermission] = [], hosts: [String] = [], scripts: [String: String] = [:]) {
-        self.permissions = permissions.sorted(); self.hosts = hosts.sorted(); self.scripts = scripts
+    public init(permissions: [PluginPermission] = [], hosts: [String] = [], scripts: [String: String] = [:], uses: [String] = []) {
+        self.permissions = permissions.sorted(); self.hosts = hosts.sorted(); self.scripts = scripts; self.uses = uses.sorted()
     }
 
-    /// Whether everything `requested` asks for was approved here: no new permission or host, and every
+    private enum CodingKeys: String, CodingKey { case permissions, hosts, scripts, uses }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        // An approval recorded before a permission existed reads without it; one Frog does not know is left out.
+        let names = try values.decodeIfPresent([String].self, forKey: .permissions) ?? []
+        self.init(permissions: names.compactMap(PluginPermission.init(rawValue:)),
+                  hosts: try values.decodeIfPresent([String].self, forKey: .hosts) ?? [],
+                  scripts: try values.decodeIfPresent([String: String].self, forKey: .scripts) ?? [:],
+                  uses: try values.decodeIfPresent([String].self, forKey: .uses) ?? [])
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(permissions, forKey: .permissions)
+        try values.encode(hosts, forKey: .hosts)
+        try values.encode(scripts, forKey: .scripts)
+        if !uses.isEmpty { try values.encode(uses, forKey: .uses) }
+    }
+
+    /// Whether everything `requested` asks for was approved here: no new permission, host or Frog action, and every
     /// script unchanged.
     public func covers(_ requested: PluginGrant) -> Bool {
         Set(requested.permissions).isSubset(of: permissions) && Set(requested.hosts).isSubset(of: hosts)
-            && requested.scripts.allSatisfy { scripts[$0.key] == $0.value }
+            && requested.scripts.allSatisfy { scripts[$0.key] == $0.value } && Set(requested.uses).isSubset(of: uses)
     }
 
     /// What `requested` asks for beyond this grant, for the review sheet.
-    public func additions(in requested: PluginGrant) -> (permissions: [PluginPermission], hosts: [String], scripts: [String]) {
-        (requested.permissions.filter { !permissions.contains($0) }, requested.hosts.filter { !hosts.contains($0) },
-         requested.scripts.filter { scripts[$0.key] != $0.value }.keys.sorted())
+    public func additions(in requested: PluginGrant) -> Additions {
+        Additions(permissions: requested.permissions.filter { !permissions.contains($0) }, hosts: requested.hosts.filter { !hosts.contains($0) },
+                  scripts: requested.scripts.filter { scripts[$0.key] != $0.value }.keys.sorted(),
+                  uses: requested.uses.filter { !uses.contains($0) })
+    }
+
+    /// What an update asks for that the user has not approved.
+    public struct Additions: Equatable, Sendable {
+        public var permissions: [PluginPermission]
+        public var hosts: [String]
+        public var scripts: [String]
+        public var uses: [String]
+        public var isEmpty: Bool { permissions.isEmpty && hosts.isEmpty && scripts.isEmpty && uses.isEmpty }
     }
 }
 
