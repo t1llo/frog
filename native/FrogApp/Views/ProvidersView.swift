@@ -15,7 +15,7 @@ struct ProvidersView: View {
         model.configuration.providers.filter { search.isEmpty || ($0.name + " " + $0.models.map(\.name).joined(separator: " ")).localizedStandardContains(search) }
     }
     private var sourcePicker: some View {
-        CompactSegments(values: ["Local models", "Providers", "Installed tools"], selected: selectedFilter, width: 290, title: { $0 }) { filter = $0; search = "" }
+        CompactSegments(values: ["Local models", "Providers", "Installed tools"], selected: selectedFilter, title: { $0 }) { filter = $0; search = "" }
     }
 
     var body: some View {
@@ -84,11 +84,11 @@ private struct ProviderRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: provider.kind.localTool != nil ? "terminal" : provider.kind.isLocal ? "desktopcomputer" : "cloud").foregroundStyle(FrogStyle.muted)
+            SymbolTile(symbol: provider.kind.localTool != nil ? "terminal" : provider.kind.isLocal ? "desktopcomputer" : "cloud", size: 28)
             Button { edit(provider) } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(provider.name).font(FrogType.bodyMedium)
-                    Text("\(provider.models.filter { $0.category == .text }.count) text · \(provider.models.filter { $0.category == .audio }.count) speech").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                    Text(provider.name).font(FrogType.row)
+                    Text("\(provider.models.filter { $0.category == .text }.count) text · \(provider.models.filter { $0.category == .audio }.count) speech").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain)
             IconAction(title: "Edit provider", symbol: "pencil") { edit(provider) }
@@ -96,7 +96,7 @@ private struct ProviderRow: View {
                 Button("Duplicate") { var copy = provider; copy.id = UUID(); copy.name += " copy"; edit(copy) }
                 Button("Delete…", role: .destructive) { delete(provider) }
             }
-        }.padding(.vertical, 8).padding(.horizontal, 8)
+        }.padding(.vertical, 8).padding(.horizontal, 8).frame(minHeight: FrogStyle.rowHeight)
             .frogRowHighlight(hovering: hovering).onHover { hovering = $0 }
     }
 }
@@ -163,8 +163,8 @@ struct ProviderEditor: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if step == 0 {
-                    SettingsSection(title: "Service") {
-                        CompactRow(title: "Service") {
+                    FrogSection("Service") {
+                        FrogRow("Service") {
                             FrogDropdown(selection: $provider.kind, options: ProviderKind.allCases, title: { $0.title },
                                          symbol: { $0.isLocal ? "desktopcomputer" : "cloud" })
                         }.onChange(of: provider.kind) { old, new in
@@ -185,7 +185,7 @@ struct ProviderEditor: View {
                     }
                     if step == 1 {
                     if let tool = provider.kind.localTool {
-                        SettingsSection(title: "Existing tool login") {
+                        FrogSection("Existing tool login") {
                             Text("Frog uses \(tool.title)'s saved login. No endpoint or API key is needed here.")
                                 .font(FrogType.body).foregroundStyle(FrogStyle.muted)
                             Text(tool.loginInstructions).font(FrogType.small).foregroundStyle(FrogStyle.muted)
@@ -195,7 +195,7 @@ struct ProviderEditor: View {
                             }
                         }
                     } else {
-                    SettingsSection(title: "Connection") {
+                    FrogSection("Connection") {
                         LabeledField(title: "Base endpoint") { TextField("Base endpoint", text: $provider.endpoint).labelsHidden() }
                         HStack(alignment: .top, spacing: 16) {
                             Text(endpointHint)
@@ -206,7 +206,7 @@ struct ProviderEditor: View {
                             }.buttonStyle(.frog(.ghost)).fixedSize()
                         }
                     }.disabled(testing || discovering)
-                    SettingsSection(title: "Credentials") {
+                    FrogSection("Credentials") {
                         LabeledField(title: hasSavedKey ? "Replacement API key" : "API key") {
                             SecureField("API key", text: $apiKey).disabled(clearKey)
                         }
@@ -217,7 +217,7 @@ struct ProviderEditor: View {
                         }
                         if hasSavedKey {
                             SettingRow(title: "Remove saved key", description: "Leave the field blank to keep your existing key. A replacement is stored only when you save.") {
-                                Toggle("Remove saved API key on save", isOn: $clearKey).toggleStyle(.switch).labelsHidden().controlSize(.small)
+                                Toggle("Remove saved API key on save", isOn: $clearKey).toggleStyle(.frogSwitch).labelsHidden().controlSize(.small)
                                     .onChange(of: clearKey) { _, remove in if remove { apiKey = "" } }
                             }
                         } else {
@@ -229,10 +229,10 @@ struct ProviderEditor: View {
                     }
                     }
                     if step == 2 {
-                    SettingsSection(title: "Your models") {
+                    FrogSection("Your models") {
                         modelSettings
                     }.disabled(testing)
-                    SettingsSection(title: "Take it for a spin") {
+                    FrogSection("Take it for a spin") {
                         SettingRow(title: "Connection test", description: "Send a short sample request using this draft configuration.") {
                             HStack {
                                 if testing { ProgressView().controlSize(.small) }
@@ -313,7 +313,7 @@ struct ProviderEditor: View {
                     .font(FrogType.body).foregroundStyle(FrogStyle.muted)
             }
             SectionCaption(text: "Add a model").padding(.top, 6)
-            CompactRow(title: "Model type") {
+            FrogRow("Model type") {
                 CompactSegments(values: provider.kind.supportsTranscription ? ProviderModel.Category.allCases : [.text], selected: customCategory, title: { $0 == .text ? "Text" : "Speech-to-text" }) { customCategory = $0 }
             }
             HStack(alignment: .bottom, spacing: 10) {

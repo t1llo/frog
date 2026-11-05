@@ -53,15 +53,16 @@ struct WindowCheatSheetContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.space16) {
-            Text("Window shortcuts").font(FrogType.section).accessibilityAddTraits(.isHeader)
+            Text("Window shortcuts").font(FrogType.toolbarTitle).accessibilityAddTraits(.isHeader)
             if sections.isEmpty {
                 Text("No window shortcuts yet. Add them on the Windows page.")
-                    .font(FrogType.body).foregroundStyle(FrogStyle.muted)
+                    .font(FrogType.row).foregroundStyle(FrogStyle.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(sections) { section in
-                VStack(alignment: .leading, spacing: FrogStyle.space6) {
-                    SectionCaption(text: section.title)
+                VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                    Text(L10n.text(section.title)).font(FrogType.section).accessibilityAddTraits(.isHeader)
+                    VStack(spacing: 0) {
                     ForEach(section.items) { item in
                         HStack(spacing: 10) {
                             Group {
@@ -69,20 +70,22 @@ struct WindowCheatSheetContent: View {
                                 else if let command = item.command {
                                     Image(systemName: command.symbol).font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
                                 }
-                            }.frame(width: 24)
-                            Text(item.title).font(FrogType.body)
+                            }.frame(width: 28)
+                            Text(item.title).font(FrogType.row)
                             Spacer(minLength: 8)
                             ShortcutKeyCaps(hotkey: item.hotkey)
                         }
-                        .frame(height: FrogStyle.compactHeight)
+                        .padding(.horizontal, FrogStyle.cardPadding)
+                        .frame(height: FrogStyle.rowHeight)
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(item.title)
                         .accessibilityValue(HotkeyManager.display(item.hotkey))
                     }
+                    }.frogTableSurface()
                 }
             }
         }
-        .padding(FrogStyle.cardPadding)
+        .padding(FrogStyle.sheetPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundStyle(FrogStyle.ink)
     }

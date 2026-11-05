@@ -14,7 +14,7 @@ struct StayAwakePage: View {
             FrogSection {
                 FrogRow("Keep this Mac awake") {
                     Toggle("Keep this Mac awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
-                        .labelsHidden().toggleStyle(.switch)
+                        .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
                 FrogRow("Duration") {
                     FrogDropdown(selected: settings.duration, options: StayAwakeController.DurationChoice.allCases, title: { $0.title }) { choice in
@@ -29,14 +29,14 @@ struct StayAwakePage: View {
                 }
                 FrogRow("Keep the screen on") {
                     Toggle("Keep the screen on", isOn: Binding(get: { settings.keepScreenOn }, set: { on in change { $0.keepScreenOn = on } }))
-                        .labelsHidden().toggleStyle(.switch)
+                        .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
             }
             LidClosedSection(power: power, lid: power.lid, on: settings.lidClosed) { on in change(reveal: true) { $0.lidClosed = on } }
             FrogSection("Menu bar") {
                 FrogRow("Show a cup while on") {
                     Toggle("Show a cup while on", isOn: Binding(get: { settings.menuBarItem }, set: { on in change(reveal: true) { $0.menuBarItem = on } }))
-                        .labelsHidden().toggleStyle(.switch)
+                        .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
                 if settings.menuBarItem {
                     // A session with two hours and twenty minutes of four left.
@@ -82,7 +82,7 @@ private struct LidClosedSection: View {
         FrogSection("Lid closed") {
             FrogRow("Stay awake with the lid closed", caption: on ? nil : "Needs a one-time setup in Terminal.") {
                 Toggle("Stay awake with the lid closed", isOn: Binding(get: { on }, set: set))
-                    .labelsHidden().toggleStyle(.switch)
+                    .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
             if on {
                 FrogRow("Access") {
@@ -139,7 +139,7 @@ struct StayAwakePopupRow: View {
                         .accessibilityLabel("Stay-awake duration").accessibilityValue(power.duration.title)
                 }
                 Toggle("Stay awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
-                    .labelsHidden().toggleStyle(.switch)
+                    .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                     .accessibilityHint("Keep this Mac awake")
             }.frame(height: FrogStyle.compactHeight)
             if choosingDuration && !power.isEnabled {
@@ -162,7 +162,7 @@ struct StayAwakePopupRow: View {
                     .foregroundStyle(power.error == nil ? FrogStyle.muted : FrogStyle.warning).lineLimit(2)
                     .help("Open Stay awake for details.")
             }
-        }.padding(FrogStyle.rowPadding).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+        }.padding(FrogStyle.rowPadding).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
             .padding(.bottom, FrogStyle.space4)
             .task { await power.refresh() }
             .onChange(of: power.isEnabled) { _, _ in choosingDuration = false }

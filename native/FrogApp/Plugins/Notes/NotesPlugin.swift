@@ -138,8 +138,8 @@ struct NotesPage: View {
     var body: some View {
         DocumentsPage(documents: documents, kind: .note, title: "Notes", symbol: "note.text",
                       emptyMessage: "Write one here, or have an agent add one with frog run notes.add.") { note in
-            CompactSegments(values: [false, true], selected: preview, width: 140, compact: true, title: { $0 ? "Preview" : "Edit" }) { preview = $0 }
-            Toggle("Pastes", isOn: documents.binding(note.id, \.pastes)).toggleStyle(.switch).controlSize(.mini)
+            CompactSegments(values: [false, true], selected: preview, compact: true, title: { $0 ? "Preview" : "Edit" }) { preview = $0 }
+            Toggle("Pastes", isOn: documents.binding(note.id, \.pastes)).toggleStyle(.frogSwitch).controlSize(.small)
                 .font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 .help("Choosing it in the command bar pastes its text, with {{date}}, {{time}} and {{clipboard}} filled in")
             CopyAction(labeled: true) {
@@ -149,7 +149,7 @@ struct NotesPage: View {
             if preview {
                 MarkdownPreviewView(markdown: note.text).id(note.id)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                    .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
             } else {
                 DocumentTextEditor(text: documents.binding(note.id, \.text))
             }

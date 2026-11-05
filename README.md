@@ -74,7 +74,7 @@ The same `frog` command lets agents arrange windows, run your scripts, add notes
 | **App cleaner** | Uninstall apps with the files they leave behind, after a review. |
 | **Phone** | Share the clipboard and files with your Android phone over Wi-Fi or Bluetooth, through the Frog Companion app. |
 | **Plugins** | Your own pages and commands, sandboxed, shared as one file. |
-| **Themes** | Eleven themes, including Tokyo Night, and editable config files. |
+| **Themes** | Seventeen themes, including Tokyo Night and Deep Sea, and editable config files. |
 
 <div align="center">
 

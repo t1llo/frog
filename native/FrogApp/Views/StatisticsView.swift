@@ -19,22 +19,22 @@ struct StatisticsView: View {
     }
 
     var body: some View {
-        PageScroll {
+        FrogPage(width: FrogStyle.wideWidth) {
             // The way back sits with the title, its text on the title's edge.
             VStack(alignment: .leading, spacing: FrogStyle.space8) {
                 if let onBack {
                     Button("Settings", systemImage: "chevron.left", action: onBack)
                         .buttonStyle(.frog(.ghost)).padding(.leading, -10)
                 }
-                PageHeader(title: "Statistics")
+                FrogPageHeader(title: "Statistics")
             }
-            SettingsSection(title: "Local statistics") {
-                CompactRow(title: "Record statistics", detail: "Counts only, kept on this Mac.") {
+            FrogSection("Local statistics") {
+                FrogRow("Record statistics", caption: "Counts only, kept on this Mac.") {
                     Toggle("Record statistics", isOn: Binding(get: { statistics.snapshot.recordingEnabled }, set: statistics.setRecordingEnabled))
-                        .labelsHidden().toggleStyle(.switch).disabled(!statistics.loaded)
+                        .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).disabled(!statistics.loaded)
                 }
                 if !statistics.snapshot.recordingEnabled {
-                    Text("Paused. Existing totals remain until you reset them.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                    FrogRowNote(text: "Paused. Existing totals remain until you reset them.")
                 }
                 if let issue = statistics.issue { InlineIssue(message: issue) }
             }
@@ -45,7 +45,7 @@ struct StatisticsView: View {
                 metric("Words dictated", value: totals.words.formatted(), symbol: "text.word.spacing")
                 metric("Words per minute", value: totals.wordsPerMinute.map { $0.formatted(.number.precision(.fractionLength(0))) } ?? "—", symbol: "speedometer")
             }
-            SettingsSection(title: "Rules executed") {
+            FrogSection("Rules executed") {
                 countRow("Successful rule runs", count: totals.ruleRuns)
                 SectionCaption(text: "By kind").padding(.top, 6)
                 ForEach(ActivityRuleKind.allCases, id: \.self) { kind in
@@ -57,8 +57,8 @@ struct StatisticsView: View {
                     countRow(toolTitle(kind), count: totals.toolUses(kind))
                 }
             }
-            SettingsSection(title: "Storage") {
-                CompactRow(title: "Reset all statistics") {
+            FrogSection("Storage") {
+                FrogRow("Reset all statistics") {
                     Button("Reset statistics", role: .destructive) { confirmingReset = true }.buttonStyle(.frog(.destructive))
                 }
             }
@@ -82,7 +82,7 @@ struct StatisticsView: View {
         }.accessibilityElement(children: .combine)
     }
     private func countRow(_ title: String, count: Int) -> some View {
-        CompactRow(title: title) { Text(count.formatted()).font(FrogType.bodyMedium).monospacedDigit() }
+        FrogRow(title) { Text(count.formatted()).font(FrogType.bodyMedium).monospacedDigit() }
     }
     private func duration(_ seconds: Double) -> String {
         let seconds = Int(seconds.rounded(.down))

@@ -70,7 +70,7 @@ struct HistoryView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     if !all.isEmpty {
                         ListToolbar(placeholder: "Search history", search: $search) {
-                            CompactSegments(values: [nil] + filters.map(Optional.some), selected: filter, width: 70 * CGFloat(filters.count + 1),
+                            CompactSegments(values: [nil] + filters.map(Optional.some), selected: filter,
                                             title: { $0?.title ?? "All" }) { filter = $0 }
                         }
                     }
@@ -100,12 +100,10 @@ struct HistoryView: View {
         HStack(spacing: 10) {
             Button { viewing = entry.id } label: {
                 HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: Self.symbol(entry.kind))
-                        .font(.system(size: 13)).foregroundStyle(FrogStyle.muted).frame(width: 18, height: 18)
-                        .accessibilityHidden(true)
+                    SymbolTile(symbol: Self.symbol(entry.kind), size: 28)
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 10) {
-                            Text(entry.ruleName).font(FrogType.bodyMedium).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                            Text(entry.ruleName).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
                             Spacer(minLength: 8)
                             Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
                                 .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
@@ -132,16 +130,12 @@ struct HistoryView: View {
     // MARK: Detail
 
     private func detail(_ entry: HistoryEntry) -> some View {
+        // ⌘[ and the toolbar's Back return to the list first.
         FrogPage(width: FrogStyle.wideWidth) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Button { viewing = nil } label: { Label("History", systemImage: "chevron.left") }
                         .buttonStyle(.frog(.ghost)).keyboardShortcut(.cancelAction)
-                        // ⌘[ goes back too, through a button that is not drawn.
-                        .background {
-                            Button("Back to history") { viewing = nil }.keyboardShortcut("[", modifiers: .command)
-                                .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
-                        }
                     Spacer()
                     if preferences.hideHistoryText { revealButton(entry) }
                     if entry.answer != nil, model.answerNotesEnabled, !hidden(entry) { noteButton(entry) }
@@ -162,7 +156,7 @@ struct HistoryView: View {
                     .onCopyCommand { hidden(entry) ? [] : [NSItemProvider(object: entry.processedText as NSString)] }
                 if note?.id == entry.id, case .failed(let message) = note?.state { InlineIssue(message: message) }
             }
-        }
+        }.frogPageBack("history-entry-\(entry.id)") { viewing = nil }
     }
 
     private func setHistoryEnabled() {

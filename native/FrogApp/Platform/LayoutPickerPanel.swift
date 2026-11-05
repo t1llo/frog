@@ -208,22 +208,22 @@ struct LayoutPickerView: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("Arrange window").font(FrogType.section)
+                    Text("Arrange window").font(FrogType.toolbarTitle)
                     if let name = panel.appName {
-                        Text(name).font(FrogType.body).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                        Text(name).font(FrogType.row).foregroundStyle(FrogStyle.muted).lineLimit(1)
                     }
                     Spacer(minLength: 0)
                 }
                 TextField("Filter layouts", text: $panel.query)
-                    .textFieldStyle(.plain).font(FrogType.body).focused($focused)
-                    .padding(.horizontal, 8)
-                    .frogControlSurface()
+                    .textFieldStyle(.plain).font(FrogType.row).focused($focused)
+                    .padding(.horizontal, FrogStyle.space10)
+                    .frogControlSurface(height: FrogStyle.controlHeight + FrogStyle.space4)
                 if let status = panel.status {
                     Text(status).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding([.horizontal, .top], 14).padding(.bottom, 10)
+            .padding([.horizontal, .top], FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space12)
             if measuring { grid } else {
                 ScrollViewReader { proxy in
                     ScrollView { grid }
@@ -245,17 +245,17 @@ struct LayoutPickerView: View {
     }
 
     private var grid: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: FrogStyle.space16) {
             if panel.picker.sections.isEmpty {
-                Text("No matching layout").font(FrogType.body).foregroundStyle(FrogStyle.muted)
+                Text("No matching layout").font(FrogType.row).foregroundStyle(FrogStyle.muted)
                     .frame(maxWidth: .infinity).padding(.vertical, 18)
             }
             ForEach(panel.picker.sections) { section in
-                VStack(alignment: .leading, spacing: 4) {
-                    SectionCaption(text: section.title)
+                VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                    Text(L10n.text(section.title)).font(FrogType.section).accessibilityAddTraits(.isHeader)
                     ForEach(Array(section.rows.enumerated()), id: \.offset) { _, row in
                         let badges = row.contains { $0.hotkey != nil }
-                        HStack(spacing: 4) {
+                        HStack(spacing: FrogStyle.space6) {
                             ForEach(row) { tile in
                                 LayoutPickerTile(tile: tile, selected: panel.picker.selection == tile.action, showsBadge: badges,
                                                  hover: { panel.hovered(tile.action) }, apply: { panel.apply(tile.action) })
@@ -268,7 +268,7 @@ struct LayoutPickerView: View {
                 }
             }
         }
-        .padding(.horizontal, 14).padding(.bottom, 12)
+        .padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space16)
     }
 }
 
@@ -282,14 +282,15 @@ private struct LayoutPickerTile: View {
     var body: some View {
         VStack(spacing: 4) {
             WindowLayoutGlyph(action: tile.action, size: CGSize(width: 44, height: 28))
-            Text(tile.name).font(FrogType.small).lineLimit(1)
+            Text(tile.name).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
             if showsBadge {
                 if let key = tile.hotkey { ShortcutBadge(text: HotkeyManager.display(key)) }
                 else { Color.clear.frame(height: 24) }
             }
         }
-        .padding(.horizontal, 4).padding(.vertical, 6)
+        .padding(.horizontal, FrogStyle.space4).padding(.vertical, FrogStyle.space10)
         .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous).fill(FrogStyle.card))
         // The pointer moves the selection here, so the selection is the only highlight, as in Frog's other lists.
         .frogRowHighlight(hovering: false, selected: selected)
         .onHover { if $0 { hover() } }

@@ -8,13 +8,15 @@ struct PluginIconTile: View {
         case sidebar = 20
         /// List and table rows.
         case list = 28
+        /// The sidebar's top row, which opens Settings.
+        case hero = 32
         /// Page and card headers.
         case header = 40
 
         fileprivate var radius: CGFloat {
             switch self {
             case .sidebar: FrogStyle.smallRadius
-            case .list: FrogStyle.controlRadius
+            case .list, .hero: FrogStyle.controlRadius
             case .header: FrogStyle.cardRadius
             }
         }

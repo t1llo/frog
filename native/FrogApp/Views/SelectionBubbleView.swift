@@ -70,7 +70,7 @@ struct SelectionBubbleView: View {
     private func barLabel(_ item: BubbleItem) -> some View {
         HStack(spacing: 5) {
             Image(systemName: item.symbol).font(.system(size: 11, weight: .medium))
-                .foregroundStyle(item.answers ? FrogStyle.accent : FrogStyle.muted)
+                .foregroundStyle(FrogStyle.muted)
             Text(item.title).font(FrogType.label).lineLimit(1).truncationMode(.tail).frame(maxWidth: 140, alignment: .leading)
         }
         .padding(.horizontal, 8)
@@ -107,7 +107,8 @@ struct SelectionBubbleView: View {
 
     private func section(_ title: String, _ items: [BubbleItem]) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            SectionCaption(text: title).padding(.horizontal, 8).padding(.top, 4).padding(.bottom, 3)
+            Text(L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.muted).accessibilityAddTraits(.isHeader)
+                .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 4)
             ForEach(items) { item in
                 Button { select(item) } label: { listRow(item) }
                     .buttonStyle(BubbleButtonStyle(pointer: pointer))
@@ -120,14 +121,11 @@ struct SelectionBubbleView: View {
 
     private func listRow(_ item: BubbleItem) -> some View {
         HStack(spacing: FrogStyle.space8) {
-            Image(systemName: item.symbol).font(.system(size: 11, weight: .medium))
-                .foregroundStyle(item.answers ? FrogStyle.accent : FrogStyle.muted)
-                .frame(width: 22, height: 22)
-                .background(item.answers ? FrogStyle.accentSoft : FrogStyle.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-            Text(item.title).font(FrogType.body).lineLimit(1).truncationMode(.tail)
+            PluginIconTile(symbol: item.symbol, tint: item.answers ? FrogStyle.accent : FrogStyle.muted, size: .sidebar)
+            Text(item.title).font(FrogType.row).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 12)
             if let hotkey = item.hotkey {
-                Text(HotkeyManager.display(hotkey)).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                Text(HotkeyManager.display(hotkey)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
                     .fixedSize()
             }
         }
@@ -158,7 +156,7 @@ private struct BubbleButtonStyle: ButtonStyle {
             .background {
                 GeometryReader { proxy in
                     let hovered = pointer.location.map { proxy.frame(in: .named(SelectionBubbleView.space)).contains($0) } ?? false
-                    RoundedRectangle(cornerRadius: FrogStyle.controlRadius)
+                    RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous)
                         .fill(configuration.isPressed || hovered ? FrogStyle.hover : .clear)
                 }
             }

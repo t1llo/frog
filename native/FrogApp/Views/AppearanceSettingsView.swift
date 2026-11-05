@@ -140,98 +140,115 @@ struct AppearanceSettingsView: View {
         _model = ObservedObject(wrappedValue: model)
         _draft = StateObject(wrappedValue: AppearanceDraft(model: model))
     }
-    /// Two sections, Appearance and Glass, sharing one draft.
+    /// As Rex lays out its appearance settings: a card of tile pickers for the colour scheme and the interface
+    /// style, a card of theme cards, and the glass settings only while the interface is glass. One draft.
     var body: some View {
-        SettingsSection(title: "Appearance") { colours }
-        SettingsSection(title: "Glass") { glass }
+        FrogSection("Appearance") { schemeAndStyle }
+        FrogSection("Theme") { themes }
+        if style == .glass { FrogSection("Glass") { glass } }
     }
-    @ViewBuilder private var colours: some View {
-        CompactRow(title: "Appearance") {
-            CompactSegments(values: AppearancePreferences.Mode.allCases, selected: appearance.mode ?? .system, title: { $0.rawValue.capitalized }) { mode in var value = appearance; value.mode = mode; draft.set(value) }
-        }.onDisappear { draft.commit() }
-        CompactRow(title: "Theme") {
-            FrogDropdown(selected: appearance.effectiveTheme, options: AppearancePreferences.Theme.allCases, title: { $0.title }) { theme in
-                var value = appearance; value.theme = theme; value.useThemeAccent = true
-                value.lightPalette = nil; value.darkPalette = nil
+
+    /// Classic is an opaque window and opaque popups; Glass lets the desktop through.
+    enum InterfaceStyle: String, CaseIterable { case classic, glass }
+    private var style: InterfaceStyle {
+        appearance.transparency > 0.005 || (appearance.popupTransparency ?? 0) > 0.005 ? .glass : .classic
+    }
+
+    @ViewBuilder private var schemeAndStyle: some View {
+        HStack(alignment: .top, spacing: FrogStyle.space16) {
+            TileGroup(title: "Color scheme") {
+                ForEach(AppearancePreferences.Mode.allCases, id: \.self) { mode in
+                    AppearanceTile(title: Self.title(mode), selected: (appearance.mode ?? .system) == mode) {
+                        WindowSketch(scheme: mode, glass: false)
+                    } choose: { var value = appearance; value.mode = mode; draft.set(value) }
+                }
+            }
+            Rectangle().fill(FrogStyle.hairline).frame(width: 1).padding(.vertical, FrogStyle.space4).accessibilityHidden(true)
+            TileGroup(title: "Interface style") {
+                ForEach(InterfaceStyle.allCases, id: \.self) { kind in
+                    AppearanceTile(title: kind == .classic ? "Classic" : "Glass", selected: style == kind) {
+                        WindowSketch(scheme: appearance.mode ?? .system, glass: kind == .glass)
+                    } choose: {
+                        guard style != kind else { return }
+                        var value = appearance
+                        Self.setGlass(kind == .glass ? 0.5 : 0, in: &value)
+                        draft.set(value)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }.padding(.vertical, FrogStyle.space10)
+            .onDisappear { draft.commit() }
+        FrogRow("Tint with theme", caption: "Use the theme's own accent color.") {
+            Toggle("Tint with theme", isOn: Binding(get: { appearance.useThemeAccent ?? (appearance.accentHex == "A3D8AF") }, set: { on in
+                var value = appearance; value.useThemeAccent = on
+                if on { value.lightPalette?["accent"] = nil; value.darkPalette?["accent"] = nil }
                 draft.set(value)
+            })).labelsHidden()
+        }
+        if !(appearance.useThemeAccent ?? (appearance.accentHex == "A3D8AF")) {
+            FrogRow("Accent color") {
+                HStack(spacing: 8) {
+                    HStack(spacing: 2) {
+                        Text("#").foregroundStyle(FrogStyle.muted)
+                        TextField("RGB", text: $accentInput).textFieldStyle(.plain).frame(width: 64)
+                            .onSubmit { saveAccent() }.accessibilityLabel("Accent hex color")
+                    }.font(FrogType.body).padding(.horizontal, 10).frogControlSurface(capsule: true)
+                        .onAppear { accentInput = appearance.accentHex }
+                        .onChange(of: appearance.accentHex) { _, value in accentInput = value }
+                    ColorPicker("Accent color", selection: Binding(get: { FrogStyle.accent }, set: { color in
+                        guard let hex = Self.hex(of: NSColor(color)) else { return }
+                        var value = appearance; value.useThemeAccent = false; value.lightPalette?["accent"] = nil; value.darkPalette?["accent"] = nil; value.accentHex = hex; draft.change(value)
+                    }), supportsOpacity: false).labelsHidden()
+                }
             }
         }
-        CompactRow(title: "Accent color") {
-            HStack(spacing: 8) {
-                Button("Reset") { var value = appearance; value.useThemeAccent = true; value.lightPalette?["accent"] = nil; value.darkPalette?["accent"] = nil; draft.set(value) }.buttonStyle(.frog(.ghost))
-                HStack(spacing: 2) {
-                    Text("#").foregroundStyle(FrogStyle.muted)
-                    TextField("RGB", text: $accentInput).textFieldStyle(.plain).frame(width: 58)
-                        .onSubmit { saveAccent() }.accessibilityLabel("Accent hex color")
-                }.font(FrogType.body).padding(.horizontal, 8).frogControlSurface()
-                    .onAppear { accentInput = appearance.accentHex }
-                    .onChange(of: appearance.accentHex) { _, value in accentInput = value }
-                ColorPicker("Accent color", selection: Binding(get: { FrogStyle.accent }, set: { color in
-                    guard let hex = Self.hex(of: NSColor(color)) else { return }
-                    var value = appearance; value.useThemeAccent = false; value.lightPalette?["accent"] = nil; value.darkPalette?["accent"] = nil; value.accentHex = hex; draft.change(value)
-                }), supportsOpacity: false).labelsHidden()
-            }
-        }
-        CompactRow(title: "Custom palette", detail: "palette.light.* and palette.dark.* in the configuration file.") {
+    }
+
+    @ViewBuilder private var themes: some View {
+        ThemeCards(selected: appearance.effectiveTheme) { theme in
+            var value = appearance; value.theme = theme
+            value.lightPalette = nil; value.darkPalette = nil
+            draft.set(value)
+        }.padding(.vertical, FrogStyle.space10)
+        FrogRow("Custom palette", caption: "palette.light.* and palette.dark.* in the configuration file.") {
             Button("Open config") { model.openConfiguration() }
         }
     }
+
+    private static func title(_ mode: AppearancePreferences.Mode) -> String {
+        switch mode {
+        case .system: "Auto"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    /// One setting: how much of the desktop shows through. It applies to the window and every popup alike.
     @ViewBuilder private var glass: some View {
-        CompactRow(title: "Look") {
-            FrogDropdown(selected: AppearancePreferences.Look.matching(appearance), options: AppearancePreferences.Look.allCases.map(Optional.some),
-                         title: { $0?.title ?? "Custom" }, symbol: { $0.map(Self.symbol) }) { look in
-                guard let look else { return }
-                var value = appearance; look.apply(to: &value); draft.set(value)
-            }
-        }
-        amountRow("Window transparency", value: appearance.transparency) { value, amount in value.transparency = amount }
-        amountRow("Popup transparency", detail: "Menus and panels.", value: appearance.popupTransparency ?? 0) { value, amount in value.popupTransparency = amount }
-        CompactRow(title: "Glow", detail: "Light inside panels and the sidebar.") {
-            FrogDropdown(selected: appearance.glow ?? .off, options: AppearancePreferences.Glow.allCases, title: { $0.title }, symbol: Self.symbol) { glow in
-                var value = appearance; value.glow = glow == .off ? nil : glow; draft.set(value)
-            }
-        }
-        if (appearance.glow ?? .off) != .off {
-            amountRow("Glow strength", value: appearance.effectiveGlowStrength) { value, amount in value.glowStrength = amount }
-            CompactRow(title: "Moving light", detail: "Drifts and follows the pointer.") {
-                Toggle("Moving light", isOn: Binding(get: { appearance.glowMotion != false }, set: { on in var value = appearance; value.glowMotion = on ? nil : false; draft.set(value) }))
-                    .labelsHidden()
-            }
-            GlassPreview().padding(.vertical, 10)
+        amountRow("Transparency", detail: "The window, menus and panels.", value: appearance.transparency) { value, amount in
+            Self.setGlass(max(0.05, amount), in: &value)
         }
         if reduceTransparency || contrast == .increased {
-            Text("Off while macOS reduces transparency.")
-                .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+            FrogRowNote(text: "Off while macOS reduces transparency.")
         }
+    }
+    /// Glass is the same transparency everywhere and no glow; zero is Classic.
+    private static func setGlass(_ amount: Double, in value: inout AppearancePreferences) {
+        value.transparency = amount; value.popupTransparency = amount
+        value.glow = nil; value.glowStrength = nil; value.glowMotion = nil
     }
     private var appearance: AppearancePreferences { draft.value ?? model.configuration.preferences.appearance ?? AppearancePreferences() }
     /// A slider from 0 to 100 %, shown at once while dragging and saved when the drag ends.
     private func amountRow(_ title: String, detail: String? = nil, value amount: Double,
                            set: @escaping (inout AppearancePreferences, Double) -> Void) -> some View {
-        CompactRow(title: title, detail: detail) {
+        FrogRow(title, caption: detail) {
             HStack(spacing: 10) {
                 Slider(value: Binding(get: { amount }, set: { amount in var value = appearance; set(&value, amount); draft.change(value) }),
-                       in: 0...1, onEditingChanged: { if !$0 { draft.commit() } }).frame(width: 145)
+                       in: 0...1, onEditingChanged: { if !$0 { draft.commit() } }).frame(width: 145).controlSize(.small)
                     .accessibilityLabel(title)
                 Text("\(Int((amount * 100).rounded()))%").font(FrogType.small).monospacedDigit().frame(width: 32, alignment: .trailing)
             }
-        }
-    }
-    private static func symbol(_ look: AppearancePreferences.Look) -> String {
-        switch look {
-        case .solid: "square.fill"
-        case .frosted: "snowflake"
-        case .glass: "square.on.square.dashed"
-        case .aurora: "sparkles"
-        case .prism: "rainbow"
-        }
-    }
-    private static func symbol(_ glow: AppearancePreferences.Glow) -> String? {
-        switch glow {
-        case .off: nil
-        case .halo: "sun.max"
-        case .aurora: "sparkles"
-        case .prism: "rainbow"
         }
     }
     /// The nearest six-digit sRGB hex of a picked colour.
@@ -248,21 +265,151 @@ struct AppearanceSettingsView: View {
     }
 }
 
-/// A small panel in the shape of the command bar, lit the way Frog's panels are, so a change to the glow shows at
-/// once. The pointer moves its glare.
-private struct GlassPreview: View {
+/// A labelled group of tiles in the Appearance card, as Rex's "Color scheme" and "Interface style".
+private struct TileGroup<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: Content
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: FrogStyle.panelRadius, style: .continuous)
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundStyle(FrogStyle.muted)
-            Text("Search apps, files and commands").font(FrogType.lead).foregroundStyle(FrogStyle.muted)
-            Spacer(minLength: 0)
-            KeyCap("⏎")
+        VStack(alignment: .leading, spacing: FrogStyle.space8) {
+            Text(L10n.text(title)).font(FrogType.body).foregroundStyle(FrogStyle.muted)
+            HStack(alignment: .top, spacing: FrogStyle.space10) { content }
+        }.accessibilityElement(children: .contain).accessibilityLabel(L10n.text(title))
+    }
+}
+
+/// One choice drawn as a picture with its name under it; the chosen one gets Rex's accent ring.
+private struct AppearanceTile<Picture: View>: View {
+    let title: String
+    let selected: Bool
+    @ViewBuilder var picture: Picture
+    let choose: () -> Void
+    @State private var hovering = false
+    var body: some View {
+        Button(action: choose) {
+            VStack(spacing: FrogStyle.space6) {
+                picture
+                    .frame(width: 76, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+                    .padding(3)
+                    .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius + 3, style: .continuous)
+                        .strokeBorder(selected ? FrogStyle.accent : hovering ? FrogStyle.hairline : .clear, lineWidth: 2.5))
+                Text(L10n.text(title)).font(selected ? FrogType.rowMedium : FrogType.body)
+                    .foregroundStyle(selected ? FrogStyle.ink : FrogStyle.muted).lineLimit(1).fixedSize()
+            }.fixedSize().contentShape(Rectangle())
+        }.buttonStyle(.plain).onHover { hovering = $0 }
+            .accessibilityLabel(L10n.text(title)).accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// A tiny Frog window on a backdrop of the accent: light, dark, or split for Auto; frosted for Glass.
+private struct WindowSketch: View {
+    let scheme: AppearancePreferences.Mode
+    let glass: Bool
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [FrogStyle.accent.opacity(0.95), FrogStyle.accent.opacity(0.45)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            switch scheme {
+            case .light: window(dark: false)
+            case .dark: window(dark: true)
+            case .system:
+                ZStack {
+                    window(dark: false)
+                    window(dark: true).mask(DiagonalHalf())
+                }
+            }
         }
-        .padding(.horizontal, 16).frame(height: 56)
-        .frogGlow(.hud, cornerRadius: FrogStyle.panelRadius)
-        .background(FrogStyle.panelSurface, in: shape)
-        .overlay(shape.strokeBorder(FrogStyle.border.opacity(0.8)))
-        .accessibilityElement(children: .ignore).accessibilityLabel("Glow preview")
+    }
+
+    private func window(dark: Bool) -> some View {
+        let base = dark ? Color(white: 0.1) : Color(white: 0.98)
+        let pane = dark ? Color.white.opacity(0.14) : Color.black.opacity(0.08)
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 2) {
+                ForEach([Color.red, .yellow, .green], id: \.self) { Circle().fill($0.opacity(0.85)).frame(width: 4, height: 4) }
+            }
+            RoundedRectangle(cornerRadius: FrogStyle.smallRadius / 2).fill(pane).frame(height: 9)
+            HStack(spacing: 3) {
+                RoundedRectangle(cornerRadius: FrogStyle.smallRadius / 2).fill(pane)
+                RoundedRectangle(cornerRadius: FrogStyle.smallRadius / 2).fill(pane)
+            }
+        }.padding(5)
+            .frame(width: 50, height: 38)
+            .background(base.opacity(glass ? 0.45 : 1), in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius + 2, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: FrogStyle.smallRadius + 2, style: .continuous).strokeBorder(.black.opacity(0.25), lineWidth: 0.5))
+    }
+}
+
+/// The lower-right half of a rectangle, cut corner to corner, for the Auto tile's dark side.
+private struct DiagonalHalf: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { path in
+            path.move(to: CGPoint(x: rect.midX + 6, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.midX - 6, y: rect.maxY))
+            path.closeSubpath()
+        }
+    }
+}
+
+/// Every theme as a small card in its own colours, scrolling sideways, as Rex's theme picker: a sample of text, a
+/// prompt in the accent and a row of the theme's colours. The chosen theme has the accent ring.
+private struct ThemeCards: View {
+    let selected: AppearancePreferences.Theme
+    let choose: (AppearancePreferences.Theme) -> Void
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: FrogStyle.space10) {
+                    ForEach(AppearancePreferences.Theme.allCases, id: \.self) { theme in
+                        ThemeCard(theme: theme, swatch: FrogStyle.swatch(theme, dark: scheme == .dark), selected: theme == selected) { choose(theme) }
+                            .id(theme)
+                    }
+                }.padding(.vertical, 2).padding(.horizontal, 1)
+            }.scrollIndicators(.visible)
+                .onAppear { proxy.scrollTo(selected, anchor: .center) }
+        }
+    }
+}
+
+private struct ThemeCard: View {
+    let theme: AppearancePreferences.Theme
+    let swatch: FrogStyle.ThemeSwatch
+    let selected: Bool
+    let choose: () -> Void
+    @State private var hovering = false
+    var body: some View {
+        Button(action: choose) {
+            VStack(spacing: FrogStyle.space6) {
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack(spacing: 6) {
+                        Text("Aa").font(.system(size: 17)).foregroundStyle(swatch.ink)
+                        Spacer(minLength: 2)
+                        Text("~/").font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(swatch.ink)
+                            .frame(width: 22, height: 18)
+                            .background(swatch.accent.opacity(0.28), in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius, style: .continuous))
+                        RoundedRectangle(cornerRadius: FrogStyle.smallRadius, style: .continuous).fill(swatch.accent).frame(width: 8, height: 18)
+                    }
+                    HStack(spacing: -3) {
+                        ForEach(Array(swatch.dots.enumerated()), id: \.offset) { _, dot in
+                            Circle().fill(dot).frame(width: 12, height: 12)
+                                .overlay(Circle().strokeBorder(swatch.canvas, lineWidth: 1))
+                        }
+                    }
+                }
+                .padding(.horizontal, 10).padding(.vertical, 9)
+                .frame(width: 104, height: 62)
+                .background(swatch.canvas, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous).strokeBorder(swatch.ink.opacity(0.12)))
+                .padding(3)
+                .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius + 3, style: .continuous)
+                    .strokeBorder(selected ? FrogStyle.accent : hovering ? FrogStyle.hairline : .clear, lineWidth: 2.5))
+                Text(L10n.text(theme.title)).font(selected ? FrogType.rowMedium : FrogType.body)
+                    .foregroundStyle(selected ? FrogStyle.ink : FrogStyle.muted).lineLimit(1)
+            }.contentShape(Rectangle())
+        }.buttonStyle(.plain).onHover { hovering = $0 }
+            .accessibilityLabel(L10n.text(theme.title)).accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

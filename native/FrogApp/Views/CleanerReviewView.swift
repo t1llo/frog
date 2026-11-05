@@ -177,7 +177,7 @@ struct CleanerReviewFooter: View {
         }
         .padding(.horizontal, 20).padding(.vertical, 10)
         // The bar sits on the inset fill rather than behind a line; the canvas below keeps the scrolled page from showing through.
-        .background(FrogStyle.inset).background(FrogStyle.canvas)
+        .background(FrogStyle.card).background(FrogStyle.canvas)
     }
 }
 

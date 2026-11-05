@@ -76,20 +76,20 @@ struct DesignGallery: View {
             FrogRow("Appearance") {
                 CompactSegments(values: ["System", "Light", "Dark"], selected: mode, title: { $0 }) { mode = $0 }
             }
-            FrogRow("Open at login") { Toggle("Open at login", isOn: $launch).labelsHidden().toggleStyle(.switch) }
+            FrogRow("Open at login") { Toggle("Open at login", isOn: $launch).labelsHidden().toggleStyle(.frogSwitch) }
         }
     }
 
     private var rows: some View {
         FrogSection("Rows", accessory: { Button("Add") {}.buttonStyle(.frog(compact: true)) }) {
             FrogRow("Clipboard history", caption: "⌘⇧V opens it.", icon: { PluginIconTile(symbol: "doc.on.clipboard", tint: Self.tints[0].1) }) {
-                Toggle("Clipboard history", isOn: .constant(true)).labelsHidden().toggleStyle(.switch)
+                Toggle("Clipboard history", isOn: .constant(true)).labelsHidden().toggleStyle(.frogSwitch)
             }
             FrogRow("Dictation", icon: { PluginIconTile(symbol: "mic.fill", tint: Self.tints[1].1) }) {
                 ShortcutBadge(text: "⌥Space")
             }
             FrogRow("Sounds", caption: "Plays a tick when a recording starts.") {
-                Toggle("Sounds", isOn: $sounds).labelsHidden().toggleStyle(.switch)
+                Toggle("Sounds", isOn: $sounds).labelsHidden().toggleStyle(.frogSwitch)
             }
             FrogRow("Period") {
                 FrogDropdown(selection: $period, options: ["Day", "Week", "Month"], width: 90, compact: true, title: { $0 })

@@ -44,22 +44,33 @@ enum FrogStyle {
     static let smallRadius: CGFloat = 4
     /// Buttons, fields, dropdowns, segmented controls, list rows and their highlight, menu rows, symbol tiles,
     /// and blocks inside a popup.
-    static let controlRadius: CGFloat = 6
+    static let controlRadius: CGFloat = 8
     /// Cards, grouped settings, lists, previews and sheets' inner surfaces.
-    static let cardRadius: CGFloat = 10
-    /// Popups, menus and floating panels.
-    static let panelRadius: CGFloat = 12
+    static let cardRadius: CGFloat = 12
+    /// Popups, menus and floating panels: as round as Rex's sheets and macOS's windows.
+    static let panelRadius: CGFloat = 18
+    /// The main window's sidebar panel, inset 8 from the window's corner.
+    static let sidebarRadius: CGFloat = 14
     /// Small floating status pills, 36 points tall.
     static let pillRadius: CGFloat = 18
     /// Buttons, fields, dropdowns, search boxes and segmented controls.
     static let controlHeight: CGFloat = 28
     /// The same controls in popups, panel headers and dense rows.
     static let compactHeight: CGFloat = 24
-    /// The least height of a `FrogRow` in a `FrogSection` card.
+    /// The least height of a `FrogRow` in a `FrogSection` card: Rex's 38-point settings row.
     static let rowHeight: CGFloat = 38
+    /// Where a `FrogRow`'s text and its separator start inside a section card, and where a section's heading and
+    /// the note under a card line up: 10 from the card's edge, as in Rex.
+    static let rowInset: CGFloat = 10
+    /// A row of the main window's sidebar.
+    static let sidebarRowHeight: CGFloat = 32
+    /// How far the main window's sidebar panel floats in from the window's edges.
+    static let sidebarInset: CGFloat = 8
+    /// The bar above a page that holds back and forward and the page's title.
+    static let toolbarHeight: CGFloat = 52
     /// Space around a page's content (`FrogPage`) and between its sections.
-    static let pagePadding: CGFloat = 24
-    static let sectionSpacing: CGFloat = 24
+    static let pagePadding: CGFloat = 20
+    static let sectionSpacing: CGFloat = 30
     /// The spacing scale for gaps, stacks and paddings: 2 between a title and its caption, 4 inside a label,
     /// 6 and 8 between controls, 10 between blocks inside a card, 12 between a row's icon, text and control,
     /// 16 between groups. docs/design.md says which goes where.
@@ -83,9 +94,37 @@ enum FrogStyle {
     /// Dashboards, tables and grids (`FrogPage(width: FrogStyle.wideWidth)`, `PageScroll`).
     static let wideWidth: CGFloat = 1080
     /// A hovered row or control. Neutral, so it reads the same in every theme; `selection` marks what is chosen.
-    static var hover: Color { ink.opacity(0.06) }
+    static var hover: Color { inkLayer(light: 0.05, dark: 0.05) }
     /// A control held down.
     static var pressed: Color { ink.opacity(0.1) }
+    /// Cards and section cards: a thin layer of the text colour over the page, so a card lifts off the
+    /// background in every theme without a border.
+    static var card: Color { inkLayer(light: 0.035, dark: 0.05) }
+    /// Buttons, fields, dropdowns and search boxes: one step above a card.
+    static var control: Color { inkLayer(light: 0.06, dark: 0.1) }
+    /// The line `FrogSection` draws between the rows of a card. Views never draw one themselves.
+    static var separator: Color { inkLayer(light: 0.09, dark: 0.15) }
+    /// The open page in the sidebar: neutral, like the hover, only stronger.
+    static var sidebarSelection: Color { selection }
+    /// The faint edge of a pane or popup, as Rex draws it: the sidebar panel, `frogPanel()` and the window switcher.
+    static var hairline: Color { inkLayer(light: 0.1, dark: 0.12) }
+    /// Glass panels: the light that catches the top of the pane, and its brighter top edge.
+    static var glassSheen: Color { whiteLayer(light: 0.18, dark: 0.05) }
+    static var glassEdge: Color { whiteLayer(light: 0.7, dark: 0.22) }
+    private static func whiteLayer(light: Double, dark: Double) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            NSColor.white.withAlphaComponent(appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light)
+        })
+    }
+    private static func inkLayer(light: Double, dark: Double) -> Color {
+        let ink = ink
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            var resolved = NSColor(ink)
+            appearance.performAsCurrentDrawingAppearance { resolved = resolved.usingColorSpace(.sRGB) ?? resolved }
+            return resolved.withAlphaComponent(isDark ? dark : light)
+        })
+    }
     static var canvas: AnyShapeStyle { adaptiveSurface(themed(\.canvas), strength: 0.85) }
     static var sidebar: AnyShapeStyle { adaptiveSurface(themed(\.sidebar), strength: 0.85) }
     static var surface: AnyShapeStyle { adaptiveSurface(themed(\.surface), strength: 0.78) }
@@ -120,25 +159,42 @@ enum FrogStyle {
     }
     private static var presetAccent: Color {
         if usesThemeAccent {
-            switch FrogAppearance.shared.settings.effectiveTheme {
-            case .frog: return adaptive(light: 0x397A4C, dark: 0xA3D8AF)
-            case .tokyoNight: return adaptive(light: 0x34548A, dark: 0x7AA2F7)
-            case .catppuccin: return adaptive(light: 0x8839EF, dark: 0xCBA6F7)
-            case .nord: return adaptive(light: 0x466A83, dark: 0x88C0D0)
-            case .gruvbox: return adaptive(light: 0x9D5500, dark: 0xFABD2F)
-            case .dracula: return adaptive(light: 0x7040AE, dark: 0xBD93F9)
-            case .rosePine: return adaptive(light: 0xA35169, dark: 0xEBBCBA)
-            case .solarized: return adaptive(light: 0x217EAF, dark: 0x2AA198)
-            case .everforest: return adaptive(light: 0x587D37, dark: 0xA7C080)
-            case .graphite: return adaptive(light: 0x555D69, dark: 0xB8C1D0)
-            case .minimal: return adaptive(light: 0x3C4149, dark: 0xD0D6E0)
-            }
+            let value = themeAccent(FrogAppearance.shared.settings.effectiveTheme)
+            return adaptive(light: value.light, dark: value.dark)
         }
         let rgb = UInt32(FrogAppearance.shared.settings.accentHex, radix: 16) ?? 0xA3D8AF
         return Color(red: Double((rgb >> 16) & 255) / 255, green: Double((rgb >> 8) & 255) / 255, blue: Double(rgb & 255) / 255)
     }
+    private static func themeAccent(_ theme: AppearancePreferences.Theme) -> (light: UInt32, dark: UInt32) {
+        switch theme {
+        case .frog: (0x397A4C, 0xA3D8AF)
+        case .tokyoNight: (0x34548A, 0x7AA2F7)
+        case .catppuccin: (0x8839EF, 0xCBA6F7)
+        case .nord: (0x466A83, 0x88C0D0)
+        case .gruvbox: (0x9D5500, 0xFABD2F)
+        case .dracula: (0x7040AE, 0xBD93F9)
+        case .rosePine: (0xA35169, 0xEBBCBA)
+        case .solarized: (0x217EAF, 0x2AA198)
+        case .everforest: (0x587D37, 0xA7C080)
+        case .graphite: (0x555D69, 0xB8C1D0)
+        case .minimal: (0x3C4149, 0xD0D6E0)
+        // After palettes of the Rex terminal.
+        case .wool: (0x0B60ED, 0x4582F9)
+        case .pewter: (0x696969, 0x898989)
+        case .deepSea: (0x2F7D68, 0x57E7C1)
+        case .inkwell: (0x5A6FA1, 0x88A7F1)
+        case .polarNight: (0x5E7487, 0x96B7D6)
+        case .eggshell: (0x1D6ACE, 0x3D7FD4)
+        }
+    }
     static var accentSoft: Color { accent.opacity(0.15) }
-    static var selection: Color { accent.opacity(0.13) }
+    /// Text and symbols on an accent fill: the primary button, a chosen segment. Light accents of dark themes
+    /// take the dark surface colour, dark accents of light themes take white.
+    static var onAccent: Color { panelSurface }
+    /// The track of a switch that is off, and of one that is on in a window that is not in front.
+    static var switchTrack: Color { inkLayer(light: 0.12, dark: 0.16) }
+    /// What is chosen: a neutral raised layer, as Rex marks its selected tab and row. The accent shows state.
+    static var selection: Color { inkLayer(light: 0.08, dark: 0.1) }
     static var ink: Color { themed(\.ink) }
     static var muted: Color { themed(\.muted) }
 
@@ -164,8 +220,8 @@ enum FrogStyle {
     private struct Tones {
         var good, warning, critical: (light: UInt32, dark: UInt32)
     }
-    private static var presetTones: Tones {
-        switch FrogAppearance.shared.settings.effectiveTheme {
+    private static func presetTones(_ theme: AppearancePreferences.Theme) -> Tones {
+        switch theme {
         case .frog: Tones(good: (0x2F8F4E, 0x8FD9A0), warning: (0xB7791F, 0xE8B866), critical: (0xC8443C, 0xF07F78))
         case .tokyoNight: Tones(good: (0x33635C, 0x9ECE6A), warning: (0x8F5E15, 0xE0AF68), critical: (0x8C4351, 0xF7768E))
         case .catppuccin: Tones(good: (0x40A02B, 0xA6E3A1), warning: (0xDF8E1D, 0xF9E2AF), critical: (0xD20F39, 0xF38BA8))
@@ -177,10 +233,17 @@ enum FrogStyle {
         case .everforest: Tones(good: (0x6F8A00, 0xA7C080), warning: (0xC98F00, 0xDBBC7F), critical: (0xE0473F, 0xE67E80))
         case .graphite: Tones(good: (0x3E8E5A, 0x7FC796), warning: (0xB7791F, 0xDDB46A), critical: (0xC4453F, 0xE87C7C))
         case .minimal: Tones(good: (0x2B8A57, 0x4CB782), warning: (0xB7791F, 0xF2C94C), critical: (0xD0443C, 0xEB5757))
+        case .wool: Tones(good: (0x14661E, 0x46BD3F), warning: (0x995C00, 0xCE9923), critical: (0xC6242C, 0xFF7368))
+        // Pewter is grey through and through, so status keeps Graphite's tones to stay readable.
+        case .pewter: Tones(good: (0x3E8E5A, 0x7FC796), warning: (0xB7791F, 0xDDB46A), critical: (0xC4453F, 0xE87C7C))
+        case .deepSea: Tones(good: (0x3F8D6A, 0x59CA98), warning: (0x927D43, 0xD1B361), critical: (0xC85E5C, 0xDD6866))
+        case .inkwell: Tones(good: (0x608D68, 0x83C08D), warning: (0x947C4F, 0xD5B171), critical: (0xC3626D, 0xD86C79))
+        case .polarNight: Tones(good: (0x638865, 0x86B989), warning: (0x937C53, 0xD4B277), critical: (0xBE646E, 0xD36F7A))
+        case .eggshell: Tones(good: (0x357C3B, 0x5FB066), warning: (0x906302, 0xD19A2E), critical: (0xB2493C, 0xE0705F))
         }
     }
     private static func tone(_ key: KeyPath<Tones, (light: UInt32, dark: UInt32)>, _ name: String) -> Color {
-        let preset = presetTones[keyPath: key], settings = FrogAppearance.shared.settings
+        let settings = FrogAppearance.shared.settings, preset = presetTones(settings.effectiveTheme)[keyPath: key]
         return adaptive(light: settings.lightPalette?[name].flatMap { UInt32($0, radix: 16) } ?? preset.light,
                         dark: settings.darkPalette?[name].flatMap { UInt32($0, radix: 16) } ?? preset.dark)
     }
@@ -189,7 +252,7 @@ enum FrogStyle {
         var canvas, sidebar, surface, inset, border, ink, muted: UInt32
     }
     private static func palette(dark: Bool) -> Palette {
-        var palette = presetPalette(dark: dark)
+        var palette = presetPalette(FrogAppearance.shared.settings.effectiveTheme, dark: dark)
         let overrides = dark ? FrogAppearance.shared.settings.darkPalette : FrogAppearance.shared.settings.lightPalette
         let roles: [(String, WritableKeyPath<Palette, UInt32>)] = [
             ("background", \.canvas), ("sidebar", \.sidebar), ("surface", \.surface), ("inset", \.inset),
@@ -200,8 +263,8 @@ enum FrogStyle {
         }
         return palette
     }
-    private static func presetPalette(dark: Bool) -> Palette {
-        switch (FrogAppearance.shared.settings.effectiveTheme, dark) {
+    private static func presetPalette(_ theme: AppearancePreferences.Theme, dark: Bool) -> Palette {
+        switch (theme, dark) {
         case (.frog, false): Palette(canvas: 0xFFFFFF, sidebar: 0xF7F7F5, surface: 0xFFFFFF, inset: 0xF5F5F4, border: 0xE2E2DF, ink: 0x252525, muted: 0x73736F)
         case (.frog, true): Palette(canvas: 0x191919, sidebar: 0x151515, surface: 0x1E1E1F, inset: 0x242424, border: 0x383839, ink: 0xE8E8E8, muted: 0xA0A0A3)
         case (.tokyoNight, false): Palette(canvas: 0xE1E2E7, sidebar: 0xD5D6DB, surface: 0xEBECF0, inset: 0xDADBE0, border: 0xB4B5BD, ink: 0x343B58, muted: 0x565F89)
@@ -224,7 +287,38 @@ enum FrogStyle {
         case (.graphite, true): Palette(canvas: 0x17191D, sidebar: 0x121418, surface: 0x202329, inset: 0x272B32, border: 0x393F49, ink: 0xE4E7EC, muted: 0xA1A9B5)
         case (.minimal, false): Palette(canvas: 0xFFFFFF, sidebar: 0xF5F5F6, surface: 0xFFFFFF, inset: 0xF0F0F2, border: 0xE4E4E8, ink: 0x23252A, muted: 0x6B6F76)
         case (.minimal, true): Palette(canvas: 0x0F1011, sidebar: 0x08090A, surface: 0x141516, inset: 0x1C1C1F, border: 0x2A2C32, ink: 0xF7F8F8, muted: 0x8A8F98)
+        // After palettes of the Rex terminal: Merino, Silver Point, Abyssal Trench, Ink Meridian, Midnight Tundra and
+        // Porcelain Morning. A palette Rex has in one appearance only borrows the other's neutrals from Porcelain
+        // Morning or Silver Point Dark, with its accent and tones made readable on them.
+        case (.wool, false): Palette(canvas: 0xF6F7F9, sidebar: 0xECEEF2, surface: 0xF8F9FB, inset: 0xFAFBFC, border: 0xD1D2D5, ink: 0x202328, muted: 0x6A6D71)
+        case (.wool, true): Palette(canvas: 0x0C0E11, sidebar: 0x131519, surface: 0x101319, inset: 0x1E2023, border: 0x424549, ink: 0xE7EDF3, muted: 0x83878B)
+        case (.pewter, false): Palette(canvas: 0xF4F4F4, sidebar: 0xEAEAEA, surface: 0xF6F7F9, inset: 0xF7F9FA, border: 0xCFCFCF, ink: 0x1A1A1A, muted: 0x6A6A6A)
+        case (.pewter, true): Palette(canvas: 0x131313, sidebar: 0x1A1A1A, surface: 0x171717, inset: 0x232323, border: 0x474747, ink: 0xB4B4B4, muted: 0x898989)
+        case (.deepSea, false): Palette(canvas: 0xF7F9FA, sidebar: 0xEEEFF0, surface: 0xF9FBFC, inset: 0xFAFBFC, border: 0xD0D3D6, ink: 0x303A42, muted: 0x666E75)
+        case (.deepSea, true): Palette(canvas: 0x07101B, sidebar: 0x0E1621, surface: 0x0B141E, inset: 0x17202B, border: 0x3A4652, ink: 0xBCCCD8, muted: 0x798894)
+        case (.inkwell, false): Palette(canvas: 0xF7F9FA, sidebar: 0xEEEFF0, surface: 0xF9FBFC, inset: 0xFAFBFC, border: 0xD0D3D6, ink: 0x303A42, muted: 0x666E75)
+        case (.inkwell, true): Palette(canvas: 0x111622, sidebar: 0x181D28, surface: 0x161A25, inset: 0x222632, border: 0x444A59, ink: 0xCDD6E9, muted: 0x858D9E)
+        case (.polarNight, false): Palette(canvas: 0xF7F9FA, sidebar: 0xEEEFF0, surface: 0xF9FBFC, inset: 0xFAFBFC, border: 0xD0D3D6, ink: 0x303A42, muted: 0x666E75)
+        case (.polarNight, true): Palette(canvas: 0x0F141B, sidebar: 0x161B21, surface: 0x13181E, inset: 0x1F242B, border: 0x424951, ink: 0xCBD4DD, muted: 0x838B94)
+        case (.eggshell, false): Palette(canvas: 0xF7F9FA, sidebar: 0xEEEFF0, surface: 0xF9FBFC, inset: 0xFAFBFC, border: 0xD0D3D6, ink: 0x303A42, muted: 0x666E75)
+        case (.eggshell, true): Palette(canvas: 0x131313, sidebar: 0x1A1A1A, surface: 0x171717, inset: 0x232323, border: 0x474747, ink: 0xB4B4B4, muted: 0x898989)
         }
+    }
+    /// A theme's own colours in one appearance, whatever theme is in use, for the theme picker's cards.
+    struct ThemeSwatch {
+        let canvas, surface, ink, muted, accent: Color
+        /// The row of dots under a card's sample: the theme's text, accent and status colours.
+        let dots: [Color]
+    }
+    static func swatch(_ theme: AppearancePreferences.Theme, dark: Bool) -> ThemeSwatch {
+        func color(_ value: UInt32) -> Color {
+            Color(.sRGB, red: Double((value >> 16) & 255) / 255, green: Double((value >> 8) & 255) / 255, blue: Double(value & 255) / 255)
+        }
+        let palette = presetPalette(theme, dark: dark), tones = presetTones(theme), accent = themeAccent(theme)
+        let pick = { (pair: (light: UInt32, dark: UInt32)) in color(dark ? pair.dark : pair.light) }
+        return ThemeSwatch(canvas: color(palette.canvas), surface: color(palette.surface), ink: color(palette.ink),
+                           muted: color(palette.muted), accent: pick(accent),
+                           dots: [color(palette.ink), pick(tones.critical), pick(tones.good), pick(tones.warning), pick(accent), color(palette.muted)])
     }
     private static func themed(_ key: KeyPath<Palette, UInt32>) -> Color {
         adaptive(light: palette(dark: false)[keyPath: key], dark: palette(dark: true)[keyPath: key])
@@ -242,16 +336,22 @@ enum FrogStyle {
 
 /// Frog's type scale. Every text in the app uses one of these; docs/design.md says which goes where.
 enum FrogType {
-    /// Page titles.
+    /// Large titles inside a page, such as a dashboard's headline. A page's own title is `toolbarTitle`.
     static let title = Font.system(size: 19, weight: .semibold)
+    /// The open page's title in the bar above it.
+    static let toolbarTitle = Font.system(size: 15, weight: .semibold)
+    /// Row titles in section cards and sidebar rows.
+    static let row = Font.system(size: 13)
+    /// The open sidebar row, and a hero row's title.
+    static let rowMedium = Font.system(size: 13, weight: .semibold)
     /// Section headings, popup titles and empty-state titles.
     static let section = Font.system(size: 13, weight: .semibold)
     /// Page subtitles and empty-state messages.
     static let lead = Font.system(size: 13)
     /// Row titles, list items, field text, dropdown values and menu rows.
-    static let body = Font.system(size: 12)
+    static let body = Font.system(size: 13)
     /// Buttons and the titles of settings and cards.
-    static let bodyMedium = Font.system(size: 12, weight: .medium)
+    static let bodyMedium = Font.system(size: 13, weight: .medium)
     /// Row descriptions, secondary lines and compact controls.
     static let small = Font.system(size: 11)
     /// Small group labels above content, and compact buttons.
@@ -272,8 +372,8 @@ extension View {
     }
     /// The fill and hairline every bordered control shares: secondary buttons, dropdowns, fields, search boxes,
     /// segmented controls and shortcut badges.
-    func frogControlSurface(hovering: Bool = false, pressed: Bool = false, height: CGFloat? = FrogStyle.controlHeight) -> some View {
-        modifier(FrogControlSurface(hovering: hovering, pressed: pressed, height: height))
+    func frogControlSurface(hovering: Bool = false, pressed: Bool = false, height: CGFloat? = FrogStyle.controlHeight, capsule: Bool = false) -> some View {
+        modifier(FrogControlSurface(hovering: hovering, pressed: pressed, height: height, capsule: capsule))
     }
     /// A row that highlights on hover and when chosen, as in lists, menus and the sidebar.
     func frogRowHighlight(hovering: Bool, selected: Bool = false) -> some View {
@@ -286,7 +386,7 @@ private struct RowHighlight: ViewModifier {
     let selected: Bool
     @Environment(\.frogKeyboardSurface) private var keyboardSurface
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: FrogStyle.controlRadius)
+        let shape = RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous)
         content.background {
             shape.fill(selected ? FrogStyle.selection : hovering ? FrogStyle.hover : .clear)
                 .animation(FrogMotion.hover(hovering, keyboardSurface: keyboardSurface), value: hovering)
@@ -344,12 +444,70 @@ extension ToggleStyle where Self == FrogCheckboxStyle {
     static var frogCheckbox: FrogCheckboxStyle { FrogCheckboxStyle() }
 }
 
+/// Rex's switch: a 36 by 18 track, accent when on, with a wide light knob. In a window that is not in front an
+/// on switch goes grey, as macOS does. Every on/off setting uses it; the label is the row's title.
+struct FrogSwitchStyle: ToggleStyle {
+    func makeBody(configuration: ToggleStyleConfiguration) -> FrogSwitch { FrogSwitch(configuration: configuration) }
+}
+
+extension ToggleStyle where Self == FrogSwitchStyle {
+    static var frogSwitch: FrogSwitchStyle { FrogSwitchStyle() }
+}
+
+struct FrogSwitch: View {
+    let configuration: ToggleStyleConfiguration
+    @Environment(\.controlActiveState) private var activeState
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.controlSize) private var controlSize
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.compactRowTitle) private var rowTitle
+    @Environment(\.self) private var values
+
+    /// `.labelsHidden()` reaches a custom style only through `labelsVisibility`, which macOS 14 lacks.
+    private var labelsShown: Bool {
+        if #available(macOS 15, *) { return values.labelsVisibility != .hidden }
+        return true
+    }
+
+    var body: some View {
+        let on = configuration.isOn
+        let mini = controlSize == .mini
+        let size = mini ? CGSize(width: 28, height: 14) : CGSize(width: 36, height: 18)
+        let knob = CGSize(width: size.width * 0.66, height: size.height - 4)
+        let active = activeState == .key || activeState == .active
+        HStack(spacing: FrogStyle.space8) {
+            // In a row the row's title names the switch, as with `.labelsHidden()`.
+            if rowTitle == nil && labelsShown { configuration.label }
+            ZStack(alignment: on ? .trailing : .leading) {
+                Capsule(style: .continuous).fill(on && active ? FrogStyle.accent : FrogStyle.switchTrack)
+                Capsule(style: .continuous)
+                    .fill(on ? Color.white.opacity(0.92) : (scheme == .dark ? Color(white: 0.9) : .white))
+                    .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.2), radius: 1, y: 0.5)
+                    .frame(width: knob.width, height: knob.height).padding(2)
+            }
+            .frame(width: size.width, height: size.height)
+            .overlay { if contrast == .increased { Capsule(style: .continuous).strokeBorder(FrogStyle.ink.opacity(0.6)) } }
+            .animation(reduceMotion ? nil : FrogMotion.slide, value: on)
+            .contentShape(Capsule())
+            .onTapGesture { if enabled { configuration.isOn.toggle() } }
+        }
+        .opacity(enabled ? 1 : 0.45)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityValue(on ? L10n.text("On") : L10n.text("Off"))
+        .accessibilityAction { if enabled { configuration.isOn.toggle() } }
+    }
+}
+
 private struct FrogCardSurface: ViewModifier {
     @Environment(\.colorSchemeContrast) private var contrast
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: FrogStyle.cardRadius)
-        content.background(FrogStyle.surface, in: shape).clipShape(shape)
-            .overlay(shape.strokeBorder(contrast == .increased ? FrogStyle.muted : FrogStyle.border.opacity(0.5)))
+        let shape = RoundedRectangle(cornerRadius: FrogStyle.cardRadius, style: .continuous)
+        // No border: the card is a thin layer over the page. Increase Contrast brings the outline back.
+        content.background(FrogStyle.card, in: shape).clipShape(shape)
+            .overlay { if contrast == .increased { shape.strokeBorder(FrogStyle.muted) } }
     }
 }
 
@@ -357,19 +515,22 @@ private struct FrogControlSurface: ViewModifier {
     let hovering: Bool
     let pressed: Bool
     let height: CGFloat?
+    /// Buttons and search boxes are capsules in Rex; fields keep the rounded rectangle.
+    let capsule: Bool
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.frogKeyboardSurface) private var keyboardSurface
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: FrogStyle.controlRadius)
+        let shape = RoundedRectangle(cornerRadius: capsule ? (height ?? FrogStyle.controlHeight) / 2 : FrogStyle.controlRadius, style: .continuous)
         content.frame(minHeight: height)
             .background {
                 ZStack {
-                    shape.fill(FrogStyle.inset)
+                    shape.fill(FrogStyle.control)
                     shape.fill(pressed ? FrogStyle.pressed : hovering ? FrogStyle.hover : .clear)
                         .animation(FrogMotion.hover(hovering || pressed, keyboardSurface: keyboardSurface), value: hovering || pressed)
                 }
             }
-            .overlay(shape.strokeBorder(contrast == .increased ? FrogStyle.muted : FrogStyle.border.opacity(0.5)))
+            // A filled control needs no outline; Increase Contrast brings it back.
+            .overlay { if contrast == .increased { shape.strokeBorder(FrogStyle.muted) } }
             .contentShape(shape)
     }
 }
@@ -377,12 +538,24 @@ private struct FrogControlSurface: ViewModifier {
 private struct FrogPanelSurface: ViewModifier {
     let corner: CGFloat
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     func body(content: Content) -> some View {
         let settings = FrogAppearance.shared.settings
+        let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
+        let glass = settings.effectiveTransparency(popup: true, reduceTransparency: reduceTransparency, increasedContrast: contrast == .increased) > 0
         content.frogSurface(.hud, cornerRadius: corner)
         .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
-        .clipShape(RoundedRectangle(cornerRadius: corner))
-        .overlay(RoundedRectangle(cornerRadius: corner).strokeBorder(contrast == .increased ? FrogStyle.ink : FrogStyle.border.opacity(0.8)))
+        .clipShape(shape)
+        // A faint edge, as Rex outlines its panes; glass is lit along its top edge; Increase Contrast makes it solid.
+        .overlay {
+            if contrast == .increased {
+                shape.strokeBorder(FrogStyle.ink)
+            } else if glass {
+                shape.strokeBorder(LinearGradient(colors: [FrogStyle.glassEdge, FrogStyle.hairline, FrogStyle.hairline], startPoint: .top, endPoint: .bottom))
+            } else {
+                shape.strokeBorder(FrogStyle.hairline)
+            }
+        }
         .preferredColorScheme(settings.mode == .dark ? .dark : settings.mode == .light ? .light : nil)
         .environment(\.frogPopupSurface, true)
     }
@@ -429,22 +602,24 @@ private struct FrogButtonBody: View {
 
     /// A press answers on the down event: a deeper fill and, unless motion is reduced, a slight shrink.
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: FrogStyle.controlRadius)
+        // Rex's buttons are capsules.
+        let shape = Capsule(style: .continuous)
         let pressed = configuration.isPressed && enabled
         let hovered = hovering && enabled
         let fade = FrogMotion.hover(hovered || pressed, keyboardSurface: keyboardSurface)
         let label = configuration.label
             .font(compact ? FrogType.label : FrogType.bodyMedium).lineLimit(1)
-            .padding(.horizontal, compact ? 8 : 10)
+            .padding(.horizontal, compact ? 10 : 12)
             .foregroundStyle(foreground)
             .frame(minHeight: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
         Group {
             switch kind {
             case .secondary, .destructive:
-                label.frogControlSurface(hovering: hovered, pressed: pressed, height: nil)
+                label.frogControlSurface(hovering: hovered, pressed: pressed, height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight, capsule: true)
             case .primary:
                 label.background {
-                    shape.fill(FrogStyle.ink.opacity(pressed ? 0.76 : hovered ? 0.86 : 1)).animation(fade, value: hovered || pressed)
+                    // The accent, as Rex fills its one main action.
+                    shape.fill(FrogStyle.accent.opacity(pressed ? 0.76 : hovered ? 0.88 : 1)).animation(fade, value: hovered || pressed)
                 }.contentShape(shape)
             case .ghost:
                 label.background {
@@ -460,7 +635,7 @@ private struct FrogButtonBody: View {
 
     private var foreground: Color {
         switch kind {
-        case .primary: FrogStyle.panelSurface
+        case .primary: FrogStyle.onAccent
         case .secondary: FrogStyle.ink
         case .ghost: hovering ? FrogStyle.ink : FrogStyle.muted
         case .destructive: FrogStyle.critical
@@ -539,7 +714,7 @@ struct SymbolTile: View {
     var body: some View {
         Image(systemName: symbol).font(.system(size: size * 0.4, weight: .medium))
             .foregroundStyle(FrogStyle.muted).frame(width: size, height: size)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+            .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
             .accessibilityHidden(true)
     }
 }
@@ -551,7 +726,7 @@ struct FrogBadge: View {
         Text(L10n.text(text)).font(FrogType.caption.weight(.semibold))
             .foregroundStyle(active ? FrogStyle.accent : FrogStyle.muted)
             .padding(.horizontal, 6).padding(.vertical, 3)
-            .background(active ? AnyShapeStyle(FrogStyle.accentSoft) : FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius))
+            .background(active ? AnyShapeStyle(FrogStyle.accentSoft) : AnyShapeStyle(FrogStyle.control), in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius, style: .continuous))
     }
 }
 
@@ -733,8 +908,9 @@ extension FrogEmptyState where Actions == EmptyView {
 struct FrogMark: View {
     private static let image = FrogResources.bundle.url(forResource: "FrogLogo", withExtension: "png")
         .flatMap { NSImage(contentsOf: $0) } ?? NSImage(named: NSImage.applicationIconName) ?? NSImage()
+    var size: CGFloat = 46
     var body: some View {
         Image(nsImage: Self.image).resizable().interpolation(.high).scaledToFit()
-            .frame(width: 46, height: 46).accessibilityHidden(true)
+            .frame(width: size, height: size).accessibilityHidden(true)
     }
 }

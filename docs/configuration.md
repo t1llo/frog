@@ -15,10 +15,8 @@ UI edits update the same files, preserving comments, ordering, whitespace and un
 # Appearance follows macOS; the preset supplies every unspecified color.
 appearance = system
 theme = tokyoNight
-transparency = 0.15
-popup-transparency = 0
-glow = halo
-glow-strength = 0.6
+transparency = 0.5
+popup-transparency = 0.5
 
 feature.command-bar = true
 feature.usage = true
@@ -127,7 +125,7 @@ Omit rules/cancel shortcuts for no binding. Clipboard defaults to `cmd+shift+v`;
 
 ### Themes and semantic colors
 
-`appearance`: `system`, `light`, `dark`. `theme`: `minimal`, `frog`, `tokyoNight`, `catppuccin`, `nord`, `gruvbox`, `dracula`, `rosePine`, `solarized`, `everforest`, `graphite`. Without a `theme` line Frog uses `minimal`, a gray and white theme with a gray accent.
+`appearance`: `system`, `light`, `dark`. `theme`: `minimal`, `frog`, `tokyoNight`, `catppuccin`, `nord`, `gruvbox`, `dracula`, `rosePine`, `solarized`, `everforest`, `graphite`, `wool`, `pewter`, `deepSea`, `inkwell`, `polarNight`, `eggshell`. Without a `theme` line Frog uses `minimal`, a gray and white theme with a gray accent.
 
 Every preset supplies a coordinated light and dark palette. Override any of these roles independently with `palette.light.<role>` / `palette.dark.<role>`:
 
@@ -150,7 +148,7 @@ Colors are six RGB hex digits, optionally prefixed with `#`. Overrides inherit a
 
 `transparency` and `popup-transparency` independently range from 0 (opaque) to 1. The whole window and all Frog popups use a real, active native `NSVisualEffectView` with behind-window backdrop blur; text is never blurred or faded. Popup fields/cards use their popup setting, independent of the main window. Inset controls retain a stronger tint for readability. Visible pixels blend the palette with the blurred material. Native macOS controls, system status colors and content images retain their platform/content colors.
 
-`glow` is `off` (the default), `halo`, `aurora` or `prism`: a light drawn by a Metal shader inside Frog's panels (command bar, clipboard history, window switcher, every popup) and, softer, in the window's sidebar, with a glare along the panel's edge nearest the light. `glow-strength` ranges from 0 to 1 (0.6 when left out). Setting `glow-motion` to `false` keeps the light still instead of drifting and following the pointer. Settings → Glass → Look sets transparency and glow together (Solid, Frosted, Clear glass, Aurora, Prism).
+Settings → Appearance → Interface style chooses Classic (opaque) or Glass. Glass has one Transparency slider, which sets `transparency` and `popup-transparency` to the same value, so the window and every popup look alike. `glow`, `glow-strength` and `glow-motion` are still read, so older files load, but nothing draws a glow any more; choosing Glass or Classic removes them.
 
 **Reduce Transparency** or **Increase Contrast** in macOS accessibility settings makes Frog surfaces opaque and turns the glow off without changing your saved values. Increased Contrast also strengthens panel outlines. The `frog` theme keeps its black surfaces and green accent in dark mode.
 

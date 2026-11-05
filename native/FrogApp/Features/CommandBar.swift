@@ -761,39 +761,29 @@ private final class CommandBarPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 struct CommandBarView: View {
-    static let size = NSSize(width: 600, height: 390)
+    static let size = NSSize(width: 640, height: 440)
     @ObservedObject var bar: CommandBar
     @FocusState private var focused: Bool
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").foregroundStyle(FrogStyle.muted)
-                    .frame(width: 24, height: 40).overlay { WindowDragRegion(onDragEnd: bar.finishDragging).help("Drag to move") }
-                if let argument = bar.argument {
-                    Label(argument.title, systemImage: argument.symbol).font(FrogType.label).lineLimit(1)
-                        .foregroundStyle(FrogStyle.accent).padding(.horizontal, 8).frame(height: FrogStyle.compactHeight)
-                        .background(FrogStyle.accentSoft, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-                }
-                TextField(bar.argument?.placeholder ?? "Search", text: $bar.query)
-                    .textFieldStyle(.plain).font(FrogType.lead).focused($focused)
-                if bar.showsPositionReset {
-                    IconAction(title: "Center command bar", symbol: "scope") { bar.center() }
-                }
-            }.padding(.horizontal, 14).frame(height: 50)
+            searchField.padding(.horizontal, FrogStyle.space12).padding(.top, FrogStyle.space12).padding(.bottom, FrogStyle.space6)
                 .background(WindowDragRegion(onDragEnd: bar.finishDragging))
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 2) {
+                    LazyVStack(spacing: FrogStyle.space2) {
                         ForEach(Array(bar.results.enumerated()), id: \.element.id) { index, result in
                             CommandResultRow(bar: bar, result: result, iconKey: bar.iconPath(for: result), selected: index == bar.selection)
                                 .equatable().id(result.id)
                         }
                         if bar.results.isEmpty {
                             Text(bar.argument == nil ? "No results" : "Type, then press Return")
-                                .font(FrogType.body).foregroundStyle(FrogStyle.muted).padding(28)
+                                .font(FrogType.row).foregroundStyle(FrogStyle.muted).padding(FrogStyle.sectionSpacing)
                         }
-                    }.padding(6)
-                }.onChange(of: bar.selection) { _, value in
+                    }.padding(FrogStyle.listInset)
+                }
+                // `.never`, not `.hidden`: with "Show scroll bars: Always" macOS shows a hidden indicator anyway.
+                .scrollIndicators(.never)
+                .onChange(of: bar.selection) { _, value in
                     if bar.results.indices.contains(value) { proxy.scrollTo(bar.results[value].id) }
                 }
             }
@@ -801,6 +791,25 @@ struct CommandBarView: View {
             // Opening, typing and the arrow keys are instant: nothing inside the bar animates.
             .transaction { $0.animation = nil }
             .onAppear { focused = true }.onChange(of: bar.invocation) { focused = true }
+    }
+
+    /// The search field is a control layer inside the panel, as Rex's search box is.
+    private var searchField: some View {
+        HStack(spacing: FrogStyle.space10) {
+            Image(systemName: "magnifyingglass").font(.system(size: 13, weight: .medium)).foregroundStyle(FrogStyle.muted)
+                .frame(width: 20, height: 36).overlay { WindowDragRegion(onDragEnd: bar.finishDragging).help("Drag to move") }
+            if let argument = bar.argument {
+                Label(argument.title, systemImage: argument.symbol).font(FrogType.label).lineLimit(1)
+                    .foregroundStyle(FrogStyle.ink).padding(.horizontal, FrogStyle.space8).frame(height: FrogStyle.compactHeight)
+                    .background(FrogStyle.hover, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+            }
+            TextField(bar.argument?.placeholder ?? "Search", text: $bar.query)
+                .textFieldStyle(.plain).font(FrogType.lead).focused($focused)
+            if bar.showsPositionReset {
+                IconAction(title: "Center command bar", symbol: "scope") { bar.center() }
+            }
+        }.padding(.horizontal, FrogStyle.space12)
+            .frogControlSurface(height: 40, capsule: true)
     }
 }
 
@@ -815,19 +824,23 @@ private struct CommandResultRow: View, Equatable {
         lhs.bar === rhs.bar && lhs.result == rhs.result && lhs.iconKey == rhs.iconKey && lhs.selected == rhs.selected
     }
 
-    /// The keyboard's row takes the selection colour, the pointer's the hover fill, as rows in every Frog list do.
+    /// The keyboard's row is a neutral raised layer, the pointer's the faint hover layer, as in Rex's lists.
     var body: some View {
         Button {
             if let index = bar.results.firstIndex(where: { $0.id == result.id }) { bar.choose(index) }
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: FrogStyle.space12) {
                 CommandResultIcon(bar: bar, result: result, key: iconKey)
-                Text(result.title).font(FrogType.body).lineLimit(1)
-                Spacer(minLength: 10)
-                Text(result.subtitle).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1).frame(maxWidth: 180, alignment: .trailing)
-                Image(systemName: "return").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.muted)
-                    .frame(width: 12).opacity(selected ? 1 : 0)
-            }.padding(.horizontal, 8).frame(height: 36)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(result.title).font(FrogType.row).lineLimit(1)
+                    if !result.subtitle.isEmpty {
+                        Text(result.subtitle).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
+                    }
+                }
+                Spacer(minLength: FrogStyle.space10)
+                Image(systemName: "return").font(.system(size: 11, weight: .semibold)).foregroundStyle(FrogStyle.muted)
+                    .frame(width: 14).opacity(selected ? 1 : 0)
+            }.padding(.horizontal, FrogStyle.space10).frame(height: FrogStyle.rowHeight)
                 .frogRowHighlight(hovering: hovering, selected: selected)
         }.buttonStyle(.plain).onHover { hovering = $0 }
     }
@@ -847,12 +860,8 @@ private struct CommandResultIcon: View {
     var body: some View {
         Group {
             if let icon { Image(nsImage: icon).resizable() }
-            else {
-                Image(systemName: result.symbol).font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(result.isFrogCommand ? FrogStyle.accent : FrogStyle.muted).frame(width: 24, height: 24)
-                    .background(result.isFrogCommand ? FrogStyle.accentSoft : FrogStyle.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-            }
-        }.frame(width: 24, height: 24)
+            else { PluginIconTile(symbol: result.symbol, tint: result.isFrogCommand ? FrogStyle.accent : FrogStyle.muted, size: .list) }
+        }.frame(width: 28, height: 28)
             .task(id: [result.id, key]) {
                 guard key != nil else { icon = nil; return }
                 // The icon shown stays until its replacement is read, so a changing key never flashes the symbol.

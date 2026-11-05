@@ -276,11 +276,12 @@ final class ClaudeAccountLabels {
         let trimmed = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maximumLength))
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let taken = Set(accounts.filter { $0.slotPath != account.slotPath }.map { label(for: $0).lowercased() })
-        let label = Self.unique(trimmed.isEmpty ? account.defaultLabel : trimmed, taken: taken)
+        // Not `label`: that would shadow `label(for:)` above, which Swift 6.2.3 rejects as a circular reference.
+        let kept = Self.unique(trimmed.isEmpty ? account.defaultLabel : trimmed, taken: taken)
         var entries = entries
-        entries[account.slotPath, default: Entry()].label = label == account.defaultLabel ? nil : label
+        entries[account.slotPath, default: Entry()].label = kept == account.defaultLabel ? nil : kept
         self.entries = entries
-        return label
+        return kept
     }
 
     /// The menu bar has room for the first six characters.

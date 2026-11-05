@@ -16,7 +16,7 @@ struct HiddenBarPage: View {
             }
             FrogSection {
                 FrogRow("Hide again automatically") {
-                    Toggle("Hide again automatically", isOn: binding(\.autoHide, reveal: true)).labelsHidden().toggleStyle(.switch)
+                    Toggle("Hide again automatically", isOn: binding(\.autoHide, reveal: true)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
                 if plugin.settings.autoHide {
                     FrogRow("After") {
@@ -25,13 +25,13 @@ struct HiddenBarPage: View {
                     }
                 }
                 FrogRow("Hide when Frog starts") {
-                    Toggle("Hide when Frog starts", isOn: binding(\.startHidden)).labelsHidden().toggleStyle(.switch)
+                    Toggle("Hide when Frog starts", isOn: binding(\.startHidden)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
                 FrogRow("Show on hover") {
-                    Toggle("Show on hover", isOn: binding(\.showOnHover)).labelsHidden().toggleStyle(.switch)
+                    Toggle("Show on hover", isOn: binding(\.showOnHover)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
                 FrogRow("Always-hidden section", caption: "Icons left of a second divider stay hidden.") {
-                    Toggle("Always-hidden section", isOn: binding(\.alwaysHiddenSection)).labelsHidden().toggleStyle(.switch)
+                    Toggle("Always-hidden section", isOn: binding(\.alwaysHiddenSection)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
                 FrogRow("Shortcut") {
                     HotkeyRecorder(hotkey: Binding(get: { plugin.settings.shortcut?.hotkey },
@@ -101,7 +101,7 @@ private struct HiddenBarArrangement: View {
                 Image(nsImage: NativeOrganizerStatusItems.arrowImage(expanded: organizer.isExpanded))
             }.frame(maxWidth: .infinity)
         }.font(.system(size: 14)).padding(.vertical, 16).padding(.horizontal, 18).foregroundStyle(FrogStyle.ink)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+            .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(organizer.isExpanded ? "Menu bar: hidden icons shown" : "Menu bar: icons hidden")
     }

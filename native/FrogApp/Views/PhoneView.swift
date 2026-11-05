@@ -142,7 +142,7 @@ private struct PhoneSendSection: View {
         FrogSection("Send") {
             FrogRow("Send copies automatically", caption: "Text and images. Never passwords or keys.") {
                 Toggle("Send copies automatically", isOn: Binding(get: { phone.autoSend }, set: { plugin.setAutoSend($0) }))
-                    .labelsHidden().toggleStyle(.switch)
+                    .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
             // Sending by hand needs a phone to send to.
             if !phone.phones.isEmpty {

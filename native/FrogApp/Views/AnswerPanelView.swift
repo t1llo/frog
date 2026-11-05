@@ -14,14 +14,14 @@ struct AnswerPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-                .padding(.leading, 12).padding(.trailing, 6).padding(.vertical, 5)
+                .padding(.leading, 14).padding(.trailing, 8).padding(.vertical, 8)
                 .background(WindowDragRegion())
                 .measured(ChromeHeightKey.self)
             // Before the first text and after a failure without any, the status line follows the header directly.
             if hasContent {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        answer.padding(.horizontal, 12).padding(.top, 2).padding(.bottom, 10)
+                        answer.padding(.horizontal, 14).padding(.top, 2).padding(.bottom, 12)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .measured(ContentHeightKey.self)
                     }
@@ -82,7 +82,7 @@ struct AnswerPanelView: View {
                 if let pending = session.pendingQuestion, !session.turns.isEmpty { question(pending).id(Self.followUpID) }
                 if !session.partial.isEmpty { AnswerMarkdown(text: session.partial) }
             }
-            .font(FrogType.body)
+            .font(FrogType.row)
             .textSelection(.enabled)
         }
     }
@@ -113,7 +113,7 @@ struct AnswerPanelView: View {
                 }
             }
             .buttonStyle(.frog(compact: true))
-            .padding(.horizontal, 12).padding(.vertical, 6)
+            .padding(.horizontal, 14).padding(.vertical, 8)
             .accessibilityElement(children: .combine)
         }
     }
@@ -122,9 +122,9 @@ struct AnswerPanelView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 2) {
                 TextField(L10n.text(followUpPlaceholder), text: $model.question)
-                    .textFieldStyle(.plain).font(FrogType.body)
-                    .padding(.horizontal, 8)
-                    .frogControlSurface(height: FrogStyle.compactHeight)
+                    .textFieldStyle(.plain).font(FrogType.row)
+                    .padding(.horizontal, 10)
+                    .frogControlSurface(height: FrogStyle.controlHeight)
                     // It stays enabled while the answer runs, so it keeps focus and the next question can be typed.
                     .disabled(followUpBlocked)
                     .onSubmit { model.ask(model.question) }
@@ -148,7 +148,7 @@ struct AnswerPanelView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.leading, 8).padding(.trailing, 6).padding(.vertical, 6)
+        .padding(.leading, 10).padding(.trailing, 8).padding(.vertical, 10)
     }
 
     // MARK: State

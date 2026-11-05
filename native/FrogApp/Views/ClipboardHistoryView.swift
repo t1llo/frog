@@ -2,11 +2,11 @@ import SwiftUI
 
 enum ClipboardHistoryLayout {
     static let width: CGFloat = 520
-    static let headerHeight: CGFloat = 48
-    static let footerHeight: CGFloat = 32
-    static let rowHeight: CGFloat = 34
+    static let headerHeight: CGFloat = 56
+    static let footerHeight: CGFloat = 36
+    static let rowHeight: CGFloat = 40
     static let emptyHeight: CGFloat = 64
-    static let inset: CGFloat = 6
+    static let inset: CGFloat = 8
     static let visibleRows = 9
 
     static func size(entryCount: Int) -> CGSize {
@@ -45,16 +45,18 @@ struct ClipboardHistoryView: View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(FrogStyle.muted).frame(width: 18)
-                TextField("Search clipboard", text: $state.query).textFieldStyle(.plain).font(FrogType.lead)
+                TextField("Search clipboard", text: $state.query).textFieldStyle(.plain).font(FrogType.row)
                     .focused($searching)
                 IconAction(title: "Close", symbol: "xmark", action: close)
             }
-            .padding(.leading, 14).padding(.trailing, 8).frame(height: ClipboardHistoryLayout.headerHeight)
+            .padding(.leading, 12).padding(.trailing, 4)
+            .frogControlSurface(height: 36, capsule: true)
+            .padding(.horizontal, ClipboardHistoryLayout.inset).frame(height: ClipboardHistoryLayout.headerHeight)
 
             Group {
                 if entries.isEmpty {
                     Text(state.query.isEmpty ? "Copied text shows here" : "No matches")
-                        .font(FrogType.body).foregroundStyle(FrogStyle.muted)
+                        .font(FrogType.row).foregroundStyle(FrogStyle.muted)
                         .frame(maxWidth: .infinity).frame(height: ClipboardHistoryLayout.emptyHeight)
                 } else {
                     ScrollViewReader { proxy in
@@ -93,7 +95,8 @@ struct ClipboardHistoryView: View {
             hint("Copy", keys: ["⌘", "C"])
         }
         .padding(.horizontal, 14).frame(height: ClipboardHistoryLayout.footerHeight)
-        .frame(maxWidth: .infinity).background(FrogStyle.inset)
+        // Rex's sheet footer: the panel's own colour under a thin line.
+        .frame(maxWidth: .infinity).overlay(alignment: .top) { Rectangle().fill(FrogStyle.hairline).frame(height: 1) }
         .accessibilityElement(children: .combine)
     }
 
@@ -106,14 +109,13 @@ struct ClipboardHistoryView: View {
 
     private func row(_ entry: ClipboardHistoryEntry, index: Int, selected: Bool) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: entry.formatting.isEmpty ? "text.alignleft" : "doc.richtext")
-                .font(.system(size: 12)).foregroundStyle(selected ? FrogStyle.accent : FrogStyle.muted)
-                .frame(width: 18).accessibilityHidden(true)
-            Text(entry.preview).font(FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
+            PluginIconTile(symbol: entry.formatting.isEmpty ? "text.alignleft" : "doc.richtext",
+                           tint: entry.formatting.isEmpty ? .orange : .indigo, size: .sidebar)
+            Text(entry.preview).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(entry.timestamp, style: .time).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+            Text(entry.timestamp, style: .time).font(FrogType.small).foregroundStyle(FrogStyle.muted)
         }
-        .padding(.horizontal, 8).frame(height: ClipboardHistoryLayout.rowHeight)
+        .padding(.horizontal, 10).frame(height: ClipboardHistoryLayout.rowHeight)
         .frogRowHighlight(hovering: hovered == entry.id, selected: selected)
         .onHover { inside in
             if inside { hovered = entry.id } else if hovered == entry.id { hovered = nil }

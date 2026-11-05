@@ -379,7 +379,8 @@ extension AgentCommands {
         }
 
         var summary: String {
-            AgentTable.render([
+            // Typed, so the compiler checks the table in reasonable time.
+            let rows: [[String]] = [
                 ["Plugin", "\(name) \(version) (\(id))"],
                 ["Page", page ?? "none, commands only"],
                 ["Commands", commands.isEmpty ? "none" : commands.joined(separator: ", ")],
@@ -387,7 +388,9 @@ extension AgentCommands {
                 ["Permissions", permissions.isEmpty ? "none" : permissions.joined(separator: ", ")],
                 ["Hosts", hosts.isEmpty ? "none" : hosts.joined(separator: ", ")],
                 ["Files", "\(files), \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))"]
-            ] + (scripts.isEmpty ? [] : [["Scripts", scripts.joined(separator: ", ")]]))
+            ]
+            let scriptRows: [[String]] = scripts.isEmpty ? [] : [["Scripts", scripts.joined(separator: ", ")]]
+            return AgentTable.render(rows + scriptRows)
         }
     }
 

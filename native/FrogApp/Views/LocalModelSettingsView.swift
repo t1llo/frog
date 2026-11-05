@@ -13,32 +13,29 @@ struct LocalModelSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            SettingsSection(title: "Memory") {
-                CompactRow(title: "Unload idle models") {
+            FrogSection("Memory") {
+                FrogRow("Unload idle models") {
                     FrogDropdown(selected: prefs.idleUnloadSeconds, options: [0] + LocalModelSettingsView.idleUnloadChoices,
                                  title: { LocalModelSettings.idleTitle(seconds: $0) }) { seconds in update { $0.idleUnloadSeconds = seconds } }
                 }
-                CompactRow(title: model.localModels.loaded.isEmpty ? "No models loaded" : "Models in memory", detail: LocalModelSettings.inMemory(model.localModels.loaded, catalog: model.configuration.modelCatalog)) {
+                FrogRow(model.localModels.loaded.isEmpty ? "No models loaded" : "Models in memory", caption: LocalModelSettings.inMemory(model.localModels.loaded, catalog: model.configuration.modelCatalog)) {
                     Button("Unload now") { Task { await model.localModels.unload() } }.disabled(model.localModels.loaded.isEmpty || model.localModels.busy || model.dictating)
                 }
             }
-            SettingsSection(title: "Storage") {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(model.localModels.root.path).font(FrogType.caption).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
-                    Spacer(minLength: 8)
-                    if let use = LocalModelSettings.diskUse(model.localModels.totalDiskUse(of: model.localModels.installed)) {
-                        Text(use).font(FrogType.caption).foregroundStyle(FrogStyle.muted).fixedSize()
-                    }
+            FrogSection("Storage") {
+                FrogRow("Model folder", caption: model.localModels.root.path) {
+                    HStack(spacing: 8) {
+                        Button("Use default") { setModelFolder(model.localModels.defaultDirectory) }.buttonStyle(.frog(.ghost)).disabled(model.localModels.root == model.localModels.defaultDirectory)
+                        Button("Choose…") { chooseModelFolder() }
+                        Button("Show in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: model.localModels.root.path) }
+                    }.disabled(model.localModels.busy || !model.localModels.progress.isEmpty || model.dictating)
+                }.textSelection(.enabled)
+                if let use = LocalModelSettings.diskUse(model.localModels.totalDiskUse(of: model.localModels.installed)) {
+                    FrogRow("Disk used") { Text(use).font(FrogType.body).foregroundStyle(FrogStyle.muted) }
                 }
-                HStack {
-                    Button("Choose folder…") { chooseModelFolder() }
-                    Button("Use default") { setModelFolder(model.localModels.defaultDirectory) }.buttonStyle(.frog(.ghost)).disabled(model.localModels.root == model.localModels.defaultDirectory)
-                    Spacer()
-                    Button("Show in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: model.localModels.root.path) }
-                }.disabled(model.localModels.busy || !model.localModels.progress.isEmpty || model.dictating)
             }
         }
-        .toggleStyle(.switch).controlSize(.small)
+        .toggleStyle(.frogSwitch).controlSize(.small)
         .confirmationDialog(modelFolderChange?.title ?? "Use another model folder?", isPresented: Binding(get: { pendingModelFolder != nil }, set: { if !$0 { pendingModelFolder = nil } }), titleVisibility: .visible) {
             Button("Use new folder") { if let url = pendingModelFolder { pendingModelFolder = nil; applyModelFolder(url) } }
             Button("Cancel", role: .cancel) { pendingModelFolder = nil }

@@ -13,7 +13,8 @@ struct SearchBox: View {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(FrogStyle.muted) }
                     .buttonStyle(.plain).accessibilityLabel("Clear search")
             }
-        }.font(FrogType.body).padding(.horizontal, 8).frogControlSurface()
+        // A capsule, as Rex draws its search fields.
+        }.font(FrogType.body).padding(.horizontal, 10).frogControlSurface(capsule: true)
     }
     @ViewBuilder private var field: some View {
         let field = TextField(L10n.text(placeholder), text: $text).textFieldStyle(.plain)
@@ -31,7 +32,13 @@ struct FilterTag: View {
             Text(L10n.text(title)).font(selected ? FrogType.bodyMedium : FrogType.body)
                 .padding(.horizontal, 10).frame(height: FrogStyle.controlHeight)
                 .foregroundStyle(selected || hovering ? FrogStyle.ink : FrogStyle.muted)
-                .frogRowHighlight(hovering: hovering, selected: selected)
+                // A control-sized tag: the faint hover layer at rest, the control layer under the pointer, and
+                // the neutral raised layer with a hairline when chosen, as Rex marks a selection.
+                .background(selected ? FrogStyle.selection : hovering ? FrogStyle.control : FrogStyle.hover,
+                            in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous)
+                    .strokeBorder(selected ? FrogStyle.hairline : .clear))
+                .contentShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
         }.buttonStyle(.plain).onHover { hovering = $0 }.accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -109,6 +116,8 @@ struct RowControlName: ViewModifier {
     }
 }
 
+/// Rex's dropdown: the value in plain text and a small round button with an up-and-down chevron. It hugs its
+/// value up to `width` and sits on the trailing side; a hover lays the faint layer behind both.
 struct CompactDropdownLabel: View {
     let value: String
     var symbol: String? = nil
@@ -120,14 +129,21 @@ struct CompactDropdownLabel: View {
     @State private var hovering = false
     private var compact: Bool { height < FrogStyle.controlHeight }
     var body: some View {
+        let knob: CGFloat = compact ? 16 : 20
         HStack(spacing: compact ? 5 : 7) {
             if let symbol { Image(systemName: symbol).foregroundStyle(FrogStyle.muted) }
             Text(value).lineLimit(1).truncationMode(.middle)
-            Spacer(minLength: 2)
-            Image(systemName: "chevron.down").font(.system(size: 9, weight: .medium)).foregroundStyle(FrogStyle.muted)
+            Image(systemName: "chevron.up.chevron.down").font(.system(size: compact ? 7 : 9, weight: .bold))
+                .foregroundStyle(FrogStyle.ink.opacity(0.85))
+                .frame(width: knob, height: knob)
+                .background(Circle().fill(pressed || hovering ? FrogStyle.pressed : FrogStyle.control))
         }.font(compact ? FrogType.small : FrogType.body).foregroundStyle(FrogStyle.ink)
-            .padding(.horizontal, 8).frame(width: width, height: height)
-            .frogControlSurface(hovering: hovering, pressed: pressed, height: height).onHover { hovering = $0 }
+            .padding(.leading, compact ? 7 : 9).padding(.trailing, (height - knob) / 2)
+            .frame(height: height)
+            .background(Capsule(style: .continuous).fill(hovering || pressed ? FrogStyle.hover : .clear))
+            .frame(maxWidth: width, alignment: .trailing)
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
     }
 }
 
@@ -158,29 +174,33 @@ private struct CompactOptionStyle: PrimitiveButtonStyle {
     }
 }
 
+/// Rex's segmented control: a capsule with the chosen segment filled with the accent (grey while the window is not
+/// in front). Segments are as wide as their labels unless a `width` is given, which splits it evenly.
 struct CompactSegments<Value: Hashable>: View {
     let values: [Value]
     let selected: Value
-    var width: CGFloat = 220
-    /// Popup headers: the height and outline of a bordered `IconAction` beside it.
+    var width: CGFloat? = nil
+    /// Popup headers: the height of a bordered `IconAction` beside it.
     var compact = false
     let title: (Value) -> String
     let choose: (Value) -> Void
     @Namespace private var thumb
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.controlActiveState) private var activeState
     /// One thumb behind all the labels slides to the chosen segment, so it never covers a label on the way. With
     /// Reduce Motion each segment has its own thumb, and they fade from one to the other.
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 0) {
             ForEach(values, id: \.self) { value in
                 Button { choose(value) } label: {
                     Text(L10n.text(title(value)))
-                        .font(compact ? (selected == value ? FrogType.label : FrogType.small) : (selected == value ? FrogType.bodyMedium : FrogType.body))
-                        .lineLimit(1).frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .foregroundStyle(selected == value ? FrogStyle.ink : FrogStyle.muted)
+                        .font(compact ? FrogType.small : FrogType.body)
+                        .lineLimit(1).padding(.horizontal, compact ? 9 : 12)
+                        .frame(maxWidth: width == nil ? nil : .infinity, maxHeight: .infinity)
+                        .foregroundStyle(selected == value && active ? FrogStyle.onAccent : FrogStyle.ink)
                         .background { if reduceMotion && selected == value { thumbShape } }
                         .matchedGeometryEffect(id: value, in: thumb)
-                        .contentShape(Rectangle())
+                        .contentShape(Capsule())
                 }.buttonStyle(.plain).accessibilityAddTraits(selected == value ? .isSelected : [])
             }
         }
@@ -189,14 +209,15 @@ struct CompactSegments<Value: Hashable>: View {
                 thumbShape.matchedGeometryEffect(id: selected, in: thumb, isSource: false)
             }
         }
-        .padding(2).frame(width: width, height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
-            .frogControlSurface(height: nil)
-            .animation(reduceMotion ? FrogMotion.reveal : FrogMotion.slide, value: selected)
+        .frame(width: width, height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
+        .background(Capsule(style: .continuous).fill(FrogStyle.control))
+        .animation(reduceMotion ? FrogMotion.reveal : FrogMotion.slide, value: selected)
     }
 
+    private var active: Bool { activeState == .key || activeState == .active }
+
     private var thumbShape: some View {
-        RoundedRectangle(cornerRadius: FrogStyle.smallRadius).fill(FrogStyle.surface)
-            .shadow(color: .black.opacity(0.08), radius: 1, y: 0.5)
+        Capsule(style: .continuous).fill(active ? FrogStyle.accent : FrogStyle.pressed)
     }
 }
 

@@ -38,7 +38,7 @@ struct SystemMonitorMenuBarSection: View {
     var body: some View {
         FrogSection("Menu bar") {
             FrogRow("Show in the menu bar") {
-                Toggle("Show in the menu bar", isOn: binding(\.menuBarItem)).labelsHidden().toggleStyle(.switch)
+                Toggle("Show in the menu bar", isOn: binding(\.menuBarItem)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
             if settings.menuBarItem {
                 MenuBarPreviewStrip(image: MenuBarMeter.image(SystemMonitorStatusItemController.face(Self.sample, settings: settings, dark: scheme == .dark)))
@@ -269,7 +269,7 @@ private struct OverviewCard: ViewModifier {
         if wide {
             content.padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .topLeading).frogTableSurface()
         } else {
-            content.padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+            content.padding(8).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
         }
     }
 }

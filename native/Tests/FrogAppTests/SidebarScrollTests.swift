@@ -18,7 +18,7 @@ final class SidebarScrollTests: XCTestCase {
         window.contentView = NSHostingView(rootView: MainView().environmentObject(model))
         window.orderFrontRegardless()
         try await Task.sleep(for: .milliseconds(600))
-        let scroll = try XCTUnwrap(descendants(window.contentView!).compactMap { $0 as? NSScrollView }.first { $0.frame.width < 200 })
+        let scroll = try XCTUnwrap(descendants(window.contentView!).compactMap { $0 as? NSScrollView }.first { $0.frame.width < 260 })
         func y() -> CGFloat { scroll.contentView.bounds.origin.y }
         func choose(_ feature: FeatureID) async throws {
             model.toolkit.select(.feature(feature))
@@ -69,7 +69,7 @@ final class SidebarScrollTests: XCTestCase {
         window.contentView = host
         window.orderFrontRegardless()
         try await Task.sleep(for: .milliseconds(600))
-        let scroll = try XCTUnwrap(descendants(host).compactMap { $0 as? NSScrollView }.first { $0.frame.width < 200 })
+        let scroll = try XCTUnwrap(descendants(host).compactMap { $0 as? NSScrollView }.first { $0.frame.width < 260 })
         XCTAssertGreaterThan(scroll.contentView.bounds.origin.y, 0, "The list scrolled to the row")
         let clearance = try await self.clearance("App cleaner", in: scroll, of: host)
         XCTAssertGreaterThanOrEqual(clearance, fade - 1, "The row shows clear of the bottom fade")

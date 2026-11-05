@@ -22,11 +22,11 @@ struct ExplainView: View {
                     if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
                     FrogRow("Model") { RuleModelPicker(rule: Binding(get: { rule }, set: save)) }
                     FrogRow("Surrounding text", caption: "Sends the sentence around the selection too.") {
-                        Toggle("Surrounding text", isOn: setting(\.context)).labelsHidden().toggleStyle(.switch)
+                        Toggle("Surrounding text", isOn: setting(\.context)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                     }
                     if bubbleOn {
                         FrogRow("In the selection bubble") {
-                            Toggle("In the selection bubble", isOn: ruleBinding(rule, \.showsInBubble)).labelsHidden().toggleStyle(.switch)
+                            Toggle("In the selection bubble", isOn: ruleBinding(rule, \.showsInBubble)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                         }
                     }
                 }
@@ -46,7 +46,7 @@ struct ExplainView: View {
             FrogRow("Save to note", caption: "Adds Save to note to the answer panel.") {
                 Toggle("Save to note", isOn: Binding(get: { settings.notes.on }, set: { value in
                     withAnimation(reduceMotion ? nil : FrogMotion.reveal) { update { $0.notes.on = value } }
-                })).labelsHidden().toggleStyle(.switch)
+                })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
             if settings.notes.on {
                 Group {
@@ -75,7 +75,7 @@ struct ExplainView: View {
                         }
                     }
                     FrogRow("Open after saving") {
-                        Toggle("Open after saving", isOn: setting(\.notes.open)).labelsHidden().toggleStyle(.switch)
+                        Toggle("Open after saving", isOn: setting(\.notes.open)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                     }
                 }.transition(.opacity.combined(with: .offset(y: -4)))
             }

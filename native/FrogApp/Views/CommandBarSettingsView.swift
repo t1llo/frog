@@ -43,7 +43,7 @@ private struct CommandChoicesSection: View {
             FrogRow("Learn from your choices", caption: "Rows you pick move up. Kept on this Mac.") {
                 Toggle("Learn from your choices", isOn: Binding(get: { plugin.settings.learnChoices }, set: { on in
                     plugin.save { $0.learnChoices = on }
-                })).labelsHidden().toggleStyle(.switch)
+                })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
             if plugin.settings.learnChoices || choices.issue != nil {
                 FrogRow(remembered) {

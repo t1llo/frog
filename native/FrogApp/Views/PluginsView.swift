@@ -33,7 +33,7 @@ struct PluginsView: View {
                 IconAction(title: "Install a plugin file", symbol: "square.and.arrow.down") { chooseFile() }
             }
             HStack(spacing: 8) {
-                CompactSegments(values: PluginsTab.allCases, selected: tab, width: 320, title: \.title) { tab = $0 }
+                CompactSegments(values: PluginsTab.allCases, selected: tab, title: \.title) { tab = $0 }
                 Spacer()
                 if tab == .browse, !plugins.registry.isEmpty {
                     SearchBox(placeholder: "Search the directory", text: $search).frame(width: 220)
@@ -85,7 +85,7 @@ struct PluginsView: View {
                     if plugins.running.contains(item.id) { FrogBadge(text: "Running") }
                     if item.runs, item.hasPage { Button("Open") { model.openPlugin(item.id) }.buttonStyle(.frog(compact: true)) }
                     Toggle("", isOn: Binding(get: { item.record.enabled }, set: { plugins.setEnabled(item.id, $0) }))
-                        .toggleStyle(.switch).controlSize(.small).labelsHidden()
+                        .toggleStyle(.frogSwitch).controlSize(.small).labelsHidden()
                         .accessibilityLabel("\(item.name) on")
                 }
                 IconMenu(title: "More about \(item.name)") {
@@ -307,7 +307,7 @@ struct PluginReviewSheet: View {
                                 ScrollView {
                                     Text((try? review.package.scriptText(name)) ?? "The script could not be read.")
                                         .font(FrogType.mono).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                                }.frame(maxHeight: 160).padding(8).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                                }.frame(maxHeight: 160).padding(8).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
                             } label: {
                                 HStack(spacing: 6) {
                                     Text(name).font(FrogType.mono)

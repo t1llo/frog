@@ -14,6 +14,7 @@ struct PreferencesView: View {
         ScrollViewReader { proxy in
         FrogPage {
             FrogPageHeader(title: "Settings")
+            SettingsHero(model: model)
             FrogSection("General") {
                 FrogRow("Start at login") { Toggle("Start at login", isOn: Binding(get: { model.startAtLogin }, set: model.setStartAtLogin)).labelsHidden() }
                 if model.loginNeedsAttention {
@@ -57,7 +58,7 @@ struct PreferencesView: View {
                     }
                 }
             }
-            SettingsSection(title: "Updates") { UpdateSettingsView() }
+            FrogSection("Updates") { UpdateSettingsView() }.id("updates")
             FrogSection("Errors") {
                 FrogRow(model.recentErrors.isEmpty ? "None recorded" : "\(model.recentErrors.count) recorded") {
                     if !model.recentErrors.isEmpty {
@@ -89,7 +90,7 @@ struct PreferencesView: View {
                     }
                 }
             }.sheet(item: $legalDocument) { LegalDocumentView(document: $0) }
-        }.toggleStyle(.switch).controlSize(.small)
+        }.toggleStyle(.frogSwitch).controlSize(.small)
             .onAppear { model.refreshSystemStatus(forceLoginStatus: true) }
             .task(id: permissionsRequest.id) {
                 guard permissionsRequest.id != nil else { return }
@@ -130,6 +131,44 @@ struct PreferencesView: View {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]; panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { pendingConfiguration = try ConfigurationFile.read(from: url); confirmingImport = true } catch { model.report(error) }
+    }
+}
+
+/// The card at the top of Settings, in the manner of Rex's server card: the app's mark, its name, a status line,
+/// and the most useful action on the trailing side (installing a downloaded update, else the permission that is
+/// missing, else a check for updates).
+private struct SettingsHero: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject private var updater = UpdateService.shared
+    @ObservedObject private var readiness = UpdateReadiness.shared
+    private var version: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0" }
+    private var missing: String? {
+        if !model.accessibilityGranted { return "Allow Accessibility" }
+        if !DictationController.microphoneGranted { return "Allow Microphone" }
+        return nil
+    }
+    var body: some View {
+        HStack(spacing: FrogStyle.space12) {
+            FrogMark(size: 44)
+            VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                Text("Frog").font(FrogType.section).foregroundStyle(FrogStyle.ink)
+                if let missing {
+                    Label(missing, systemImage: "exclamationmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.warning)
+                } else if let ready = readiness.version {
+                    Text("Version \(version), \(ready) is ready").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                } else {
+                    Text("Version \(version), up to date").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                }
+            }
+            Spacer(minLength: FrogStyle.space12)
+            if readiness.version != nil {
+                Button("Install and Relaunch…") { updater.check() }.buttonStyle(.frog(.primary))
+            } else {
+                Button("Check for Updates") { updater.check() }.disabled(!updater.canCheck)
+            }
+        }
+        .padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -232,11 +271,11 @@ struct HistoryLimitsView: View {
         _draft = StateObject(wrappedValue: HistoryLimitsDraft(model: model))
     }
     var body: some View {
-        CompactRow(title: "Maximum entries") {
+        FrogRow("Maximum entries") {
             FrogDropdown(selected: limits.entries, options: Self.choices(Self.entryChoices, current: limits.entries),
                          title: { "\($0)" }) { entries in var next = limits; next.entries = entries; choose(next) }
         }
-        CompactRow(title: "Retention") {
+        FrogRow("Retention") {
             FrogDropdown(selected: limits.days, options: Self.choices(Self.dayChoices, current: limits.days),
                          title: Self.days) { days in var next = limits; next.days = days; choose(next) }
         }.onDisappear { draft.cancel() }

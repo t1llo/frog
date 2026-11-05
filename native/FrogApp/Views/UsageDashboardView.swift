@@ -49,7 +49,7 @@ struct UsageAccountsNotice: View {
                 Button("Not now") { usage.dismissAccountsNotice() }.buttonStyle(.frog(compact: compact))
             }
         }.padding(compact ? 8 : 14).frame(maxWidth: .infinity, alignment: .leading)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: compact ? FrogStyle.controlRadius : FrogStyle.cardRadius))
+            .background(FrogStyle.card, in: RoundedRectangle(cornerRadius: compact ? FrogStyle.controlRadius : FrogStyle.cardRadius))
             .accessibilityElement(children: .contain)
     }
 }
@@ -366,7 +366,7 @@ struct UsageActivityNotes: View {
         }
         if usage.loaded, usage.readingOlderActivity {
             HStack(spacing: 6) {
-                ProgressView().controlSize(.mini)
+                ProgressView().controlSize(.small)
                 Text("Reading older logs…")
             }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).padding(.vertical, compact ? 0 : 6)
                 .help("The newest calls are counted first; the rest of the month follows.")
@@ -402,7 +402,7 @@ private struct UsageTokenTotals: View {
                                 .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                             Text(usage.format(total.value, metric: total.name)).font(GraphStyle.figure).monospacedDigit()
                         }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(selected ? AnyShapeStyle(FrogStyle.selection) : AnyShapeStyle(FrogStyle.inset),
+                            .background(selected ? AnyShapeStyle(FrogStyle.selection) : AnyShapeStyle(FrogStyle.card),
                                         in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
                             .contentShape(Rectangle())
                     }.buttonStyle(.plain)
@@ -479,7 +479,7 @@ private struct UsageClaudeSection: View {
                 FrogRow("Each account") {
                     Toggle("Each account", isOn: Binding(get: { usage.preferences.claudeAccounts }, set: { on in
                         var next = usage.preferences; next.claudeAccounts = on; usage.updatePreferences(next)
-                    })).labelsHidden().toggleStyle(.switch)
+                    })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }.help("Live readings need a Claude Code sign-in per account.")
             }
             if usage.claudeAccountsEnabled {
@@ -570,7 +570,7 @@ private struct UsageAccountSettingsRow: View {
                 }
                 Spacer(minLength: 8)
                 Toggle("Include", isOn: Binding(get: { account.included }, set: { usage.setAccountIncluded(account.id, $0) }))
-                    .labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                    .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                     .help("Counts in the menu bar and in combined limits")
             }
             // A line of their own, so a long folder name is not cut short beside the label.
@@ -578,7 +578,7 @@ private struct UsageAccountSettingsRow: View {
                 ForEach(account.sources, id: \.self) { source in
                     Text(source).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
                         .padding(.horizontal, 6).padding(.vertical, 3)
-                        .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius))
+                        .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius))
                         .help(source)
                 }
                 if let note = account.mergedNote {
@@ -650,7 +650,7 @@ private struct UsageMenuBarSection: View {
         let settings = plugin.settings
         FrogSection("Menu bar") {
             FrogRow("Show in the menu bar") {
-                Toggle("Show in the menu bar", isOn: binding(\.menuBarItem)).labelsHidden().toggleStyle(.switch)
+                Toggle("Show in the menu bar", isOn: binding(\.menuBarItem)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
             if settings.menuBarItem {
                 MenuBarPreviewStrip(image: preview).padding(.vertical, 6)

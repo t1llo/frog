@@ -28,8 +28,8 @@ For isolated manual testing, launch the executable with `FROG_DATA_DIRECTORY` po
 Frog starts as a menu-bar accessory without restoring a main window. Open the window from the menu bar, reopen an already-running Frog from Finder, or pass `--settings` explicitly. `--background` always suppresses the window. `scripts/check-app-launch.py` checks the packaged activation policy and visible windows using isolated settings with shortcuts disabled.
 
 Mr. Usage display choices round-trip in `preferences.toolkit.usage`; credentials,
-readings and cooldowns remain machine-local. Appearance includes eleven themes and
-independent `popupTransparency` (0–1, absent means opaque), using the shared themed
+readings and cooldowns remain machine-local. Appearance includes seventeen themes and
+one Glass transparency (0–1) for the window and popups, using the shared themed
 panel material. Command search reuses its app catalog/icons, discovers linked app
 bundles such as Safari, and indexes windows independently. Measure cold and warm
 opening separately before making latency claims. Native action catalogs are

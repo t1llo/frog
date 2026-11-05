@@ -24,7 +24,7 @@ struct DictationPage: View {
                 MicrophoneRow(dictation: dictation, selection: feature.settings.microphone) { feature.selectMicrophone($0) }
                 FrogRow("Mute Mac audio") {
                     Toggle("Mute Mac audio", isOn: Binding(get: { feature.settings.muteAudio },
-                                                           set: { value in feature.update { $0.muteAudio = value } })).labelsHidden()
+                                                           set: { value in feature.update { $0.muteAudio = value } })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
                 FrogRow("Cancel shortcut", caption: "Escape always cancels.") {
                     HotkeyRecorder(hotkey: Binding(get: { feature.settings.cancelShortcut?.hotkey }, set: { value in
@@ -32,7 +32,7 @@ struct DictationPage: View {
                     }), purpose: .recordingCancel)
                 }
             }
-        }.toggleStyle(.switch).controlSize(.small)
+        }.toggleStyle(.frogSwitch).controlSize(.small)
     }
 
     private func add() {
@@ -56,7 +56,7 @@ private struct DictationRuleSection: View {
     var body: some View {
         FrogSection(rule.name, accessory: {
             RecordButton(rule: rule, dictation: dictation, feature: feature)
-            Toggle("Enable \(rule.name)", isOn: binding(\.enabled)).labelsHidden().controlSize(.mini)
+            Toggle("Enable \(rule.name)", isOn: binding(\.enabled)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             IconMenu(title: "More for \(rule.name)") {
                 Button("Rename…") { renaming = true }
                 Button("Delete", role: .destructive) {
@@ -73,7 +73,7 @@ private struct DictationRuleSection: View {
     @ViewBuilder private var rows: some View {
         FrogRow("Shortcut") {
             HStack(spacing: 8) {
-                CompactSegments(values: RecordingMode.allCases, selected: rule.action?.recordingMode ?? .toggle, width: 150,
+                CompactSegments(values: RecordingMode.allCases, selected: rule.action?.recordingMode ?? .toggle,
                                 title: { $0 == .hold ? "Hold" : "Toggle" }) { mode in save { $0.action?.recordingMode = mode } }
                 HotkeyRecorder(hotkey: binding(\.hotkey))
             }
@@ -90,7 +90,7 @@ private struct DictationRuleSection: View {
                          item: cleanupItem) { choice in save { choice.apply(to: &$0) } }
         }
         FrogRow("Output") {
-            CompactSegments(values: TranscriptOutput.allCases, selected: rule.action?.output ?? .copy, width: 150,
+            CompactSegments(values: TranscriptOutput.allCases, selected: rule.action?.output ?? .copy,
                             title: { $0 == .copy ? "Copy" : "Paste" }) { output in save { $0.action?.output = output } }
         }
         FrogRow("Popup while recording") {

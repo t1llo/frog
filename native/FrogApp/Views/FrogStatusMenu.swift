@@ -38,28 +38,37 @@ struct FrogStatusMenu: View {
                                     title: { id in tabs.first { $0.id == id }?.tabTitle ?? "Frog" }) { selectedTab = $0 }
                         .accessibilityElement(children: .contain).accessibilityLabel("Menu view")
                 }
-            }.padding(.horizontal, 8).frame(height: 40)
+            }.padding(.horizontal, FrogStyle.space6).frame(height: 40)
 
-            if let tab = tabs.first(where: { $0.id == shown }) {
-                tab.content()
-            } else {
-                ForEach(host.menuRows) { $0.content() }
-                if model.isProcessing { action("Cancel processing", symbol: "xmark") { model.cancelProcessing() } }
-                if let error = model.errorMessage {
-                    HStack(alignment: .top) {
-                        Text(String(error.prefix(500))).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
-                            .lineLimit(3).help("Full details are in Settings → Errors.")
-                        Spacer(minLength: 0)
-                        IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)
-                    }.padding(8)
+            VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                if let tab = tabs.first(where: { $0.id == shown }) {
+                    tab.content()
+                } else {
+                    VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                        ForEach(host.menuRows) { $0.content() }
+                        if model.isProcessing {
+                            action("Cancel processing", symbol: "xmark", tint: FrogStyle.critical) { model.cancelProcessing() }
+                        }
+                    }.padding(FrogStyle.listInset).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
+                    if let error = model.errorMessage {
+                        HStack(alignment: .top) {
+                            Text(String(error.prefix(500))).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
+                                .lineLimit(3).help("Full details are in Settings → Errors.")
+                            Spacer(minLength: 0)
+                            IconAction(title: "Dismiss error", symbol: "xmark", action: model.dismissError)
+                        }.padding(FrogStyle.rowPadding).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
+                    }
                 }
+                VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                    UpdateReadyRow { dismiss(); UpdateService.shared.installReadyUpdate() }
+                    action(model.setupPresented ? "Set up Frog…" : "Open Frog", symbol: "arrow.up.forward.app", key: "⌘,",
+                           tint: FrogStyle.accent) {
+                        dismiss(); model.showSettings()
+                    }.keyboardShortcut(",")
+                    action("Quit Frog", symbol: "power", key: "⌘Q") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
+                }.padding(FrogStyle.listInset).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
             }
-            UpdateReadyRow { dismiss(); UpdateService.shared.installReadyUpdate() }
-            action(model.setupPresented ? "Set up Frog…" : "Open Frog", symbol: "arrow.up.forward.app", key: "⌘,") {
-                dismiss(); model.showSettings()
-            }.keyboardShortcut(",")
-            action("Quit Frog", symbol: "power", key: "⌘Q") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
-        }.padding(6).frame(width: 292).fixedSize(horizontal: false, vertical: true)
+        }.padding(FrogStyle.space8).frame(width: 292).fixedSize(horizontal: false, vertical: true)
             .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()
             .background(MenuWindowSizing())
@@ -70,8 +79,9 @@ struct FrogStatusMenu: View {
             }
     }
 
-    private func action(_ title: String, symbol: String, key: String? = nil, perform: @escaping () -> Void) -> some View {
-        MenuActionRow(title: title, symbol: symbol, key: key, action: perform)
+    private func action(_ title: String, symbol: String, key: String? = nil, tint: Color = FrogStyle.muted,
+                        perform: @escaping () -> Void) -> some View {
+        MenuActionRow(title: title, symbol: symbol, key: key, tint: tint, action: perform)
     }
 }
 
@@ -84,7 +94,7 @@ struct MenuBarOrganizerNotice: View {
                 Text(notice).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                     .lineLimit(3).help("Open Hidden bar for details.")
                 Spacer(minLength: 0)
-            }.padding(8)
+            }.padding(FrogStyle.rowPadding)
         }
     }
 }
@@ -101,7 +111,8 @@ struct PhoneMenuRow: View {
     var body: some View {
         let connected = phone.overall != .offline
         MenuActionRow(title: "Phone", symbol: connected ? "iphone" : "iphone.slash",
-                      key: L10n.text(phone.statusText), dot: connected ? FrogStyle.good : nil, closes: true, action: open)
+                      key: L10n.text(phone.statusText), dot: connected ? FrogStyle.good : nil,
+                      tint: connected ? FrogStyle.good : FrogStyle.muted, closes: true, action: open)
     }
 }
 
@@ -112,19 +123,21 @@ struct MenuActionRow: View {
     var key: String? = nil
     /// A status dot before `key`, such as green for a connected phone.
     var dot: Color? = nil
+    /// The colour of the icon tile; neutral unless the row has a meaning of its own.
+    var tint: Color = FrogStyle.muted
     /// Closes the popup first, for rows that open something else.
     var closes = false
     let action: () -> Void
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         Button { if closes { dismiss() }; action() } label: {
-            HStack(spacing: 8) {
-                Image(systemName: symbol).frame(width: 16).foregroundStyle(FrogStyle.muted)
-                Text(L10n.text(title))
+            HStack(spacing: FrogStyle.space10) {
+                PluginIconTile(symbol: symbol, tint: tint, size: .sidebar)
+                Text(L10n.text(title)).font(FrogType.row)
                 Spacer()
-                if let dot { Circle().fill(dot).frame(width: 7, height: 7) }
-                if let key { Text(key).font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
-            }.padding(.horizontal, 8).frame(height: FrogStyle.controlHeight).contentShape(Rectangle())
+                if let dot { Circle().fill(dot).frame(width: 6, height: 6) }
+                if let key { Text(key).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
+            }.padding(.horizontal, FrogStyle.rowPadding).frame(height: FrogStyle.rowHeight - 8).contentShape(Rectangle())
         }.buttonStyle(MenuRowStyle())
     }
 }

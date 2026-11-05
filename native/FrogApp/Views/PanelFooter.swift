@@ -34,7 +34,8 @@ struct PanelFooter: View {
         .padding(.horizontal, FrogStyle.cardPadding)
         .frame(height: 32)
         .frame(maxWidth: .infinity)
-        .background(FrogStyle.inset)
+        // Rex's sheet footer: the panel's own colour under a thin line.
+        .overlay(alignment: .top) { Rectangle().fill(FrogStyle.hairline).frame(height: 1) }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
     }
@@ -57,7 +58,6 @@ struct KeyCap: View {
         Text(key).font(FrogType.label).foregroundStyle(FrogStyle.muted)
             .frame(minWidth: 18, minHeight: 18)
             .padding(.horizontal, 3)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius))
-            .overlay(RoundedRectangle(cornerRadius: FrogStyle.smallRadius).strokeBorder(FrogStyle.border.opacity(0.6)))
+            .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius, style: .continuous))
     }
 }

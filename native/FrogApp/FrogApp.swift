@@ -71,10 +71,14 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
             created.titleVisibility = .hidden
             created.titlebarAppearsTransparent = true
             created.toolbarStyle = .unified
+            // An empty toolbar makes the title bar 52 points tall, as Rex's: the window's buttons sit inside the
+            // sidebar panel, level with back and forward, and the window gets macOS's larger corners.
+            created.toolbar = NSToolbar(identifier: "FrogMain")
+            created.titlebarSeparatorStyle = .none
             created.backgroundColor = .clear
             created.isOpaque = false
             created.setContentSize(NSSize(width: 800, height: 580))
-            created.contentMinSize = NSSize(width: 740, height: 520)
+            created.contentMinSize = NSSize(width: 800, height: 520)
             created.isReleasedWhenClosed = false
             created.isRestorable = false
             created.delegate = self

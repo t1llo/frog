@@ -45,27 +45,29 @@ private struct ShortcutReferenceContent: View {
     let groups: ShortcutReferencePanel.Groups
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.space16) {
-            Text("Frog shortcuts").font(FrogType.section).accessibilityAddTraits(.isHeader)
+            Text("Frog shortcuts").font(FrogType.toolbarTitle).accessibilityAddTraits(.isHeader)
             ForEach(groups, id: \.group) { section in
-                VStack(alignment: .leading, spacing: FrogStyle.space6) {
-                    SectionCaption(text: section.group.title)
+                VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                    Text(L10n.text(section.group.title)).font(FrogType.section).accessibilityAddTraits(.isHeader)
+                    VStack(spacing: 0) {
                     ForEach(section.items) { item in
                         HStack(spacing: 10) {
-                            Text(L10n.text(item.title)).font(FrogType.body).lineLimit(1)
+                            Text(L10n.text(item.title)).font(FrogType.row).lineLimit(1)
                             Spacer(minLength: 8)
                             ShortcutKeyCaps(hotkey: item.hotkey)
-                        }.frame(minHeight: FrogStyle.compactHeight)
+                        }.padding(.horizontal, FrogStyle.cardPadding).frame(minHeight: FrogStyle.rowHeight)
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel(L10n.text(item.title))
                             .accessibilityValue(HotkeyManager.display(item.hotkey))
                     }
+                    }.frogTableSurface()
                 }
             }
             if groups.isEmpty {
                 Text("No shortcuts yet. Give a Writing or Dictation action a shortcut, or add one in Shortcuts.")
-                    .font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                    .font(FrogType.row).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             }
-        }.padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
+        }.padding(FrogStyle.sheetPadding).frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

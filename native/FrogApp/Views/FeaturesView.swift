@@ -58,7 +58,7 @@ struct PluginsCatalogView: View {
                     defer { pending.remove(plugin.id) }
                     do { try await host.setEnabled(plugin.id, on) } catch { model.report(error) }
                 }
-            })).labelsHidden().toggleStyle(.switch).controlSize(.small).disabled(pending.contains(plugin.id))
+            })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).disabled(pending.contains(plugin.id))
         }.padding(.horizontal, FrogStyle.rowPadding).padding(.vertical, FrogStyle.space6).frogHoverRow()
     }
 }

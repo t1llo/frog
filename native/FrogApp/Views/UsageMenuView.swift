@@ -13,9 +13,10 @@ struct UsageMenuTab: View {
                 Spacer(minLength: 6)
                 IconAction(title: "Refresh", symbol: "arrow.clockwise") { usage.refresh() }
                 IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", action: openPage)
-            }.padding(.horizontal, 8).padding(.bottom, 6)
-            UsageMenuContent(usage: usage).padding(.horizontal, 8).padding(.bottom, 8)
-            UsageMenuFooter(usage: usage).padding(.horizontal, 8).padding(.bottom, 4)
+            }.padding(.bottom, FrogStyle.space8)
+            UsageMenuContent(usage: usage).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
+                .frogTableSurface()
+            UsageMenuFooter(usage: usage).padding(.horizontal, FrogStyle.space6).padding(.top, FrogStyle.space8)
         }
         .background(FeatureVisibility { usage.setPresented($0, for: .menu) })
     }
@@ -44,27 +45,30 @@ struct UsageStatusPopover: View {
                 Spacer(minLength: 6)
                 UsageProviderDropdown(usage: usage)
                 IconAction(title: "Refresh", symbol: "arrow.clockwise", bordered: true) { usage.refresh() }
-            }.padding(.horizontal, 8).frame(height: 40)
-            UsageMenuContent(usage: usage).padding(.horizontal, 8).padding(.top, 4).padding(.bottom, 12)
+            }.padding(.horizontal, FrogStyle.space6).frame(height: 40)
+            UsageMenuContent(usage: usage).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
+                .frogTableSurface().padding(.bottom, FrogStyle.space8)
+            VStack(alignment: .leading, spacing: FrogStyle.space2) {
             // At most one account is offered live readings or a sign-in: the first that needs one.
             if let account = accounts.first(where: \.needsLiveSetup) {
-                MenuActionRow(title: "Set up live readings for \(account.label)…", symbol: "person.crop.circle.badge.plus") {
+                MenuActionRow(title: "Set up live readings for \(account.label)…", symbol: "person.crop.circle.badge.plus", tint: FrogStyle.warning) {
                     liveSetup(account)
                 }.help(account.status ?? "")
             } else if let account = accounts.first(where: \.needsSignIn) {
-                MenuActionRow(title: ClaudeSignIn.accountSignInTitle(account), symbol: "person.crop.circle.badge.checkmark") {
+                MenuActionRow(title: ClaudeSignIn.accountSignInTitle(account), symbol: "person.crop.circle.badge.checkmark", tint: FrogStyle.warning) {
                     accountSignIn(account)
                 }.disabled(account.checkingSignIn).help(account.warning ?? account.status ?? "")
             } else if provider == "Claude", accounts.isEmpty, usage.needsClaudeSignIn {
                 MenuActionRow(title: usage.checkingClaudeSignIn ? "Checking Claude Code’s login…" : "Sign in to Claude Code…",
-                              symbol: "person.crop.circle.badge.checkmark", action: signIn)
+                              symbol: "person.crop.circle.badge.checkmark", tint: FrogStyle.warning, action: signIn)
                     .disabled(usage.checkingClaudeSignIn).help(usage.status(provider: provider))
             }
             UpdateReadyRow(install: installUpdate)
-            MenuActionRow(title: "Open LLM usage", symbol: "arrow.up.forward.app", action: openDashboard)
-            UsageMenuFooter(usage: usage).padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 4)
+            MenuActionRow(title: "Open LLM usage", symbol: "arrow.up.forward.app", tint: FrogStyle.accent, action: openDashboard)
+            }.padding(FrogStyle.listInset).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
+            UsageMenuFooter(usage: usage).padding(.horizontal, FrogStyle.space6).padding(.top, FrogStyle.space8)
         }
-        .padding(6).frame(width: Self.width).fixedSize(horizontal: false, vertical: true)
+        .padding(FrogStyle.space8).frame(width: Self.width).fixedSize(horizontal: false, vertical: true)
         .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
         .frogPanel()
         .environment(\.locale, L10n.locale)

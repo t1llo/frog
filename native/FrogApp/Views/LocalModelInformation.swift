@@ -6,7 +6,8 @@ struct LocalModelInformation: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            PageHeader(title: item.name, subtitle: item.runtimeName)
+            // A sheet is its own window, so its header keeps the title.
+            FrogPageHeader(title: item.name, subtitle: item.runtimeName).environment(\.frogToolbarTitle, false)
             Text(item.languages).font(FrogType.body)
             VStack(alignment: .leading, spacing: 8) {
                 SectionCaption(text: "Download source")
@@ -44,7 +45,8 @@ struct AddLocalModelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            PageHeader(title: "Add Hugging Face model", subtitle: "MLX text, WhisperKit speech, or supported Parakeet sources.")
+            FrogPageHeader(title: "Add Hugging Face model", subtitle: "MLX text, WhisperKit speech, or supported Parakeet sources.")
+                .environment(\.frogToolbarTitle, false)
             TextField("https://huggingface.co/owner/model", text: $source).textFieldStyle(.plain).font(FrogType.body)
                 .padding(.horizontal, 8).frogControlSurface()
                 .disabled(loading).onSubmit { inspect() }

@@ -35,8 +35,14 @@ private struct MenuBarDesignTile: View {
                 Text(title).font(chosen ? FrogType.label : FrogType.small)
                     .foregroundStyle(chosen ? FrogStyle.ink : FrogStyle.muted)
             }
-            .padding(7).frame(maxWidth: .infinity)
-            .frogRowHighlight(hovering: hovering, selected: chosen)
+            .padding(FrogStyle.space8).frame(maxWidth: .infinity)
+            // A card per design, as Rex lays out its choices: the card layer at rest, the neutral raised
+            // layer with a hairline when chosen.
+            .background(chosen ? FrogStyle.selection : hovering ? FrogStyle.hover : FrogStyle.card,
+                        in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: FrogStyle.cardRadius, style: .continuous)
+                .strokeBorder(chosen ? FrogStyle.hairline : .clear))
+            .contentShape(RoundedRectangle(cornerRadius: FrogStyle.cardRadius, style: .continuous))
         }.buttonStyle(.plain).onHover { hovering = $0 }
             .accessibilityLabel(title).accessibilityAddTraits(chosen ? .isSelected : [])
     }
@@ -50,7 +56,7 @@ struct MenuBarPreviewStrip: View {
         Image(nsImage: image).renderingMode(image.isTemplate ? .template : .original)
             .foregroundStyle(scheme == .dark ? Color.white : Color.black)
             .frame(maxWidth: .infinity).frame(height: FrogStyle.controlHeight)
-            .background(scheme == .dark ? Color(white: 0.16) : Color(white: 0.93), in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius))
+            .background(scheme == .dark ? Color(white: 0.16) : Color(white: 0.93), in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius, style: .continuous))
             .accessibilityHidden(true)
     }
 }

@@ -24,20 +24,9 @@ final class ScrollAppearanceTests: XCTestCase {
         window.contentView = host; host.layoutSubtreeIfNeeded()
         XCTAssertFalse(window.isOpaque)
         XCTAssertEqual(window.backgroundColor, .clear)
-        XCTAssertEqual(host.layer?.cornerRadius, 12, "The native host must clip system-added background siblings to the popup outline")
+        XCTAssertEqual(host.layer?.cornerRadius, FrogStyle.panelRadius, "The native host must clip system-added background siblings to the popup outline")
         XCTAssertEqual(host.layer?.masksToBounds, true)
-        let effects = descendants(host).compactMap { $0 as? NSVisualEffectView }
-        let effect: NSVisualEffectView
-        if FrogSurfaceRendering.glassAvailable {
-            // macOS 26 draws a translucent popup as one Liquid Glass surface; a material behind it would blur twice.
-            XCTAssertTrue(effects.isEmpty, "A glass popup has no second backdrop")
-            // The material popups use before macOS 26, drawn on its own.
-            let material = NSHostingView(rootView: FrogWindowMaterial(popup: true, cornerRadius: FrogStyle.panelRadius).frame(width: 320, height: 100))
-            window.contentView = material; material.layoutSubtreeIfNeeded()
-            effect = try XCTUnwrap(descendants(material).compactMap { $0 as? NSVisualEffectView }.first)
-        } else {
-            effect = try XCTUnwrap(effects.first)
-        }
+        let effect = try XCTUnwrap(descendants(host).compactMap { $0 as? NSVisualEffectView }.first)
         XCTAssertEqual(effect.blendingMode, .behindWindow)
         XCTAssertEqual(effect.material, .popover)
         XCTAssertEqual(effect.state, .active)

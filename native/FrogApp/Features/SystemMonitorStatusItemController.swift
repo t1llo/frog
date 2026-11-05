@@ -102,13 +102,13 @@ struct SystemMonitorStatusPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
-                Image(systemName: "gauge.medium").foregroundStyle(FrogStyle.muted)
+                PluginIconTile(symbol: "gauge.medium", tint: FrogStyle.accent, size: .sidebar)
                 Text("System").font(FrogType.section)
                 Spacer()
                 IconAction(title: "Open System monitor", symbol: "arrow.up.forward.app", action: openPage)
-            }.padding(.horizontal, 8).frame(height: 40)
+            }.padding(.horizontal, FrogStyle.space6).frame(height: 40)
             SystemMonitorView(monitor: monitor, presenter: .statusPopup)
-        }.padding(6).frame(width: 292).fixedSize(horizontal: false, vertical: true)
+        }.padding(FrogStyle.space8).frame(width: 292).fixedSize(horizontal: false, vertical: true)
             .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()
             .environment(\.locale, L10n.locale)

@@ -47,14 +47,13 @@ struct AgentSettingsView: View {
     private var access: Bool { model.configuration.preferences.toolkitSettings.agentAccess == true }
 
     var body: some View {
-        SettingsSection(title: "Agents") {
-            CompactRow(title: "Let AI agents use Frog") {
+        FrogSection("Agents") {
+            FrogRow("Let AI agents use Frog") {
                 Toggle("Let AI agents use Frog", isOn: Binding(get: { access }, set: { value in
                     do { try model.setAgentAccess(value) } catch { model.report(error) }
-                })).labelsHidden()
+                })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
-            if access, let issue = server.issue { Text(issue).font(FrogType.caption).foregroundStyle(FrogStyle.warning).fixedSize(horizontal: false, vertical: true) }
-            SectionCaption(text: "Command and skills").padding(.top, 6)
+            if access, let issue = server.issue { FrogRowNote(text: issue, tone: FrogStyle.warning) }
             AgentToolRow(installation: installation)
             ForEach(AgentInstaller.skillFolders) { folder in
                 AgentSkillRow(installation: installation, folder: folder)
@@ -69,7 +68,7 @@ private struct AgentToolRow: View {
     private var installer: AgentInstaller { installation.installer }
 
     var body: some View {
-        CompactRow(title: "Command line tool", detail: detail) {
+        FrogRow("Command line tool", caption: detail) {
             HStack(spacing: 10) {
                 switch installation.tool {
                 case .unavailable: EmptyView()
@@ -89,13 +88,13 @@ private struct AgentToolRow: View {
         if installation.tool == .installed, !installation.shellFindsTool {
             let path = AgentInstaller.pathLine(shell: AgentInstaller.loginShell)
             HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("If Terminal can’t find frog, add this line to \(path.file):").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                VStack(alignment: .leading, spacing: FrogStyle.space4) {
+                    Text("If Terminal can’t find frog, add this line to \(path.file):").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                     Text(path.line).font(FrogType.mono).textSelection(.enabled)
                 }
                 Spacer(minLength: 8)
                 CopyAction(title: "Copy line") { ViewActions.copy(path.line) }
-            }
+            }.padding(.vertical, FrogStyle.space10)
         }
     }
 
@@ -115,7 +114,7 @@ private struct AgentSkillRow: View {
     private var installer: AgentInstaller { installation.installer }
 
     var body: some View {
-        CompactRow(title: folder.title, detail: detail) {
+        FrogRow(folder.title, caption: detail) {
             HStack(spacing: 10) {
                 switch installation.state(folder) {
                 case .notInstalled:

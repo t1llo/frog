@@ -13,29 +13,22 @@ struct LocalToolProvidersView: View {
     @State private var modelError: String?
 
     var body: some View {
-        SettingsSection(title: "Coding tools", accessory: {
+        FrogSection("Coding tools", footer: nil, accessory: {
             HStack(spacing: 8) {
                 if refreshing { ProgressView().controlSize(.small) }
                 Button("Refresh") { Task { await refresh() } }.buttonStyle(.frog(compact: true)).disabled(refreshing)
             }
         }) {
-            Text("Uses your CLI login. Your plan's limits apply.")
-                .font(FrogType.small).foregroundStyle(FrogStyle.muted)
             ForEach(statuses) { status in
-                HStack(alignment: .top) {
-                    Image(systemName: status.installed ? "checkmark.circle" : "circle.dashed")
-                        .foregroundStyle(status.installed ? FrogStyle.accent : FrogStyle.muted)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(status.kind.title).font(FrogType.bodyMedium)
-                        Text(status.detail).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                    }
-                    Spacer()
-                }
+                FrogRow(status.kind.title, caption: status.detail, icon: {
+                    Image(systemName: status.installed ? "checkmark.circle.fill" : "circle.dashed")
+                        .foregroundStyle(status.installed ? FrogStyle.accent : FrogStyle.muted).frame(width: 20)
+                }, control: { EmptyView() })
             }
-            CompactRow(title: "Tool") {
+            FrogRow("Tool") {
                 FrogDropdown(selection: $selected, options: LocalToolKind.allCases, title: { $0.title })
             }
-            HStack {
+            HStack(spacing: FrogStyle.space8) {
                 TextField("Tool default, or model ID", text: $model)
                     .textFieldStyle(.plain).font(FrogType.body).padding(.horizontal, 8).frogControlSurface()
                     .accessibilityLabel("Coding-tool model")
@@ -43,14 +36,12 @@ struct LocalToolProvidersView: View {
                              title: { id in models.first { $0.id == id }?.name ?? id }).buttonTitle { _ in "Models" }
                 Button("Use model") { onSelect(selected, model.trimmingCharacters(in: .whitespacesAndNewlines)) }
                     .buttonStyle(.frog(.primary)).disabled(!canSelect)
-            }
-            if let modelError { Text(modelError).font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
+            }.padding(.vertical, FrogStyle.space10)
+            if let modelError { FrogRowNote(text: modelError) }
             if selected == .opencode {
-                Text("OpenCode keeps its own CLI history, independently of Frog's history setting.")
-                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                FrogRowNote(text: "OpenCode keeps its own CLI history, independently of Frog's history setting.")
             }
-            Text("Claude Desktop alone has no supported headless interface. Sign in or change accounts in the tool itself.")
-                .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+            FrogRowNote(text: "Uses your CLI login and your plan's limits. Claude Desktop alone has no supported headless interface; sign in or change accounts in the tool itself.")
         }
         .task { await refresh() }
         .task(id: selected) {

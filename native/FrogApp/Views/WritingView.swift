@@ -46,7 +46,7 @@ struct WritingView: View {
                     Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { value in
                         var updated = rule; updated.enabled = value
                         do { try model.saveRule(updated) } catch { model.report(error) }
-                    })).labelsHidden().toggleStyle(.switch)
+                    })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                     IconAction(title: "Edit \(rule.name)", symbol: "pencil") { editing = rule }
                 }
             }
@@ -84,7 +84,7 @@ struct WritingBubbleSection: View {
             FrogRow("Show after you select text") {
                 Toggle("Show after you select text", isOn: Binding(get: { bubble.on }, set: { value in
                     withAnimation(reduceMotion ? nil : FrogMotion.reveal) { update { $0.on = value } }
-                })).labelsHidden().toggleStyle(.switch)
+                })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
             if let status = SelectionBubblePolicy.status(bubbleEnabled: bubble.on, accessibilityTrusted: model.accessibilityGranted) {
                 HStack(spacing: 10) {
@@ -133,7 +133,7 @@ struct WritingBubbleSection: View {
     private func toggle(_ title: String, _ key: WritableKeyPath<WritingConfig.Bubble, Bool>) -> some View {
         FrogRow(title) {
             Toggle(title, isOn: Binding(get: { bubble[keyPath: key] }, set: { value in update { $0[keyPath: key] = value } }))
-                .labelsHidden().toggleStyle(.switch)
+                .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
         }
     }
 
@@ -227,7 +227,7 @@ struct WritingRuleEditor: View {
             HStack(spacing: 16) {
                 TextField("Name your rule", text: $rule.name).textFieldStyle(.plain).font(FrogType.title)
                     .accessibilityLabel("Rule name")
-                Toggle("On", isOn: $rule.enabled).toggleStyle(.switch).controlSize(.mini).font(FrogType.small)
+                Toggle("On", isOn: $rule.enabled).toggleStyle(.frogSwitch).controlSize(.small).font(FrogType.small)
             }.padding(FrogStyle.sheetPadding)
             ScrollView {
                 VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
@@ -238,9 +238,9 @@ struct WritingRuleEditor: View {
                     FrogSection("Starts from") {
                         FrogRow("Shortcut") { HotkeyRecorder(hotkey: $rule.hotkey) }
                         if bubble {
-                            FrogRow("Selection bubble") { Toggle("Selection bubble", isOn: $rule.showsInBubble).labelsHidden().toggleStyle(.switch) }
+                            FrogRow("Selection bubble") { Toggle("Selection bubble", isOn: $rule.showsInBubble).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small) }
                         }
-                        FrogRow("Command bar") { Toggle("Command bar", isOn: $rule.showsInCommandBar).labelsHidden().toggleStyle(.switch) }
+                        FrogRow("Command bar") { Toggle("Command bar", isOn: $rule.showsInCommandBar).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small) }
                     }
                     FrogSection("Then") {
                         FrogRow("Result") {
@@ -302,7 +302,8 @@ struct WritingTryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            FrogPageHeader(title: rule.name, subtitle: model.ruleModelLabel(rule))
+            // A sheet is its own window, so its header keeps the title.
+            FrogPageHeader(title: rule.name, subtitle: model.ruleModelLabel(rule)).environment(\.frogToolbarTitle, false)
             TextEditor(text: $input).font(FrogType.body).scrollContentBackground(.hidden)
                 .padding(8).frame(height: 120).frogControlSurface(height: nil)
                 .accessibilityLabel("Text to try").disabled(run != nil)

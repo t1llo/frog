@@ -197,7 +197,7 @@ struct ScriptsPage: View {
                 ScrollView {
                     Text(runner.output).font(FrogType.mono).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(8)
-                }.frame(height: 150).background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                }.frame(height: 150).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
             }
         }
     }

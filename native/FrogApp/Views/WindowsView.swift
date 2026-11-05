@@ -54,9 +54,9 @@ struct WindowsView: View {
 
     private var snap: some View {
         FrogSection("Snap") {
-            FrogRow("Drag to screen edges") { Toggle("Drag to screen edges", isOn: binding(\.dragToSnap)).labelsHidden().toggleStyle(.switch) }
+            FrogRow("Drag to screen edges") { Toggle("Drag to screen edges", isOn: binding(\.dragToSnap)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small) }
             FrogRow("Restore size when dragged away") {
-                Toggle("Restore size when dragged away", isOn: binding(\.restoreOnDrag)).labelsHidden().toggleStyle(.switch)
+                Toggle("Restore size when dragged away", isOn: binding(\.restoreOnDrag)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }.disabled(!settings.dragToSnap)
             FrogRow("Zones while holding Shift") {
                 FrogDropdown(selected: settings.zoneOverlay ? Optional(settings.zones) : nil,
@@ -81,7 +81,7 @@ struct WindowsView: View {
             FrogRow("Layout picker", caption: "Every layout as a picture") {
                 HStack(spacing: 10) {
                     commandRecorder(.layoutPicker).disabled(!settings.layoutPicker)
-                    Toggle("Layout picker", isOn: binding(\.layoutPicker)).labelsHidden().toggleStyle(.switch)
+                    Toggle("Layout picker", isOn: binding(\.layoutPicker)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
             }
             FrogRow("Cheat sheet", caption: "Hold to see every window shortcut") { commandRecorder(.cheatSheet) }
@@ -95,13 +95,13 @@ struct WindowsView: View {
                              title: { "\($0) pt" }) { gap in plugin.update { $0.gap = gap } }
             }
             FrogRow("Cycle sizes when pressed again", caption: "½, ⅔ and ⅓") {
-                Toggle("Cycle sizes when pressed again", isOn: binding(\.cycleSizes)).labelsHidden().toggleStyle(.switch)
+                Toggle("Cycle sizes when pressed again", isOn: binding(\.cycleSizes)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
             FrogRow("Thirds top to bottom on tall displays") {
-                Toggle("Thirds top to bottom on tall displays", isOn: binding(\.portraitThirds)).labelsHidden().toggleStyle(.switch)
+                Toggle("Thirds top to bottom on tall displays", isOn: binding(\.portraitThirds)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
             FrogRow("Leave room for Stage Manager") {
-                Toggle("Leave room for Stage Manager", isOn: binding(\.respectStageManager)).labelsHidden().toggleStyle(.switch)
+                Toggle("Leave room for Stage Manager", isOn: binding(\.respectStageManager)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
         }
     }

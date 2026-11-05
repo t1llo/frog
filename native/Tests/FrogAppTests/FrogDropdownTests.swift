@@ -16,11 +16,10 @@ final class FrogDropdownTests: XCTestCase {
     }
 
     func testSurfacesAreOpaqueUntilTransparencyIsAskedFor() {
-        XCTAssertEqual(FrogSurfaceRendering.choose(.hud, amount: 0, glassAvailable: true), .opaque)
-        XCTAssertEqual(FrogSurfaceRendering.choose(.hud, amount: 0.4, glassAvailable: true), .glass)
-        XCTAssertEqual(FrogSurfaceRendering.choose(.hud, amount: 0.4, glassAvailable: false), .material)
-        XCTAssertEqual(FrogSurfaceRendering.choose(.popover, amount: 0.4, glassAvailable: true), .tint, "A popover brings its own glass")
-        XCTAssertEqual(FrogSurfaceRendering.choose(.window, amount: 0.4, glassAvailable: true), .material, "Glass is for chrome, not content")
+        XCTAssertEqual(FrogSurfaceRendering.choose(.hud, amount: 0), .opaque)
+        XCTAssertEqual(FrogSurfaceRendering.choose(.hud, amount: 0.4), .material, "Every panel blurs the same way")
+        XCTAssertEqual(FrogSurfaceRendering.choose(.popover, amount: 0.4), .tint, "A popover brings its own glass")
+        XCTAssertEqual(FrogSurfaceRendering.choose(.window, amount: 0.4), .material)
     }
 
     /// Without a search field the list takes the keys: it opens on the chosen row, Down moves, Return chooses,

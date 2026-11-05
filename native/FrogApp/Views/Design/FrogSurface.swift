@@ -16,8 +16,6 @@ enum FrogSurfaceKind {
 
     /// Popovers and panels follow the popup transparency; windows and sidebars the window transparency.
     var isPopup: Bool { self == .popover || self == .hud }
-    /// Panels and sidebars carry the glow. A window's content stays calm, and a popover's material is the system's.
-    var glows: Bool { self == .hud || self == .sidebar }
     fileprivate var material: NSVisualEffectView.Material {
         switch self {
         case .window: .underWindowBackground
@@ -26,30 +24,22 @@ enum FrogSurfaceKind {
         }
     }
     fileprivate var defaultRadius: CGFloat { self == .hud ? FrogStyle.panelRadius : 0 }
-    /// How much of the transparency setting reaches the tint: popups keep at least half their fill, so text on
-    /// them stays readable over anything.
-    fileprivate var strength: Double { isPopup ? 0.5 : 0.85 }
+    /// How much of the transparency setting reaches the tint, the same for every kind, so one setting looks the
+    /// same on the window, the command bar, the switchers and clipboard history. At 100 % a fifth of the fill stays.
+    fileprivate var strength: Double { 0.8 }
 }
 
 extension View {
     /// Frog's one background for windows, sidebars, popovers and floating panels.
     ///
     /// - Opaque (transparency 0, Reduce Transparency or Increase Contrast): a plain fill, no blur at all.
-    /// - Translucent on macOS 26 and later: one Liquid Glass surface (`glassEffect`) for sidebars and panels.
-    /// - Translucent before macOS 26, and windows: an `NSVisualEffectView` with the kind's material.
+    /// - Translucent: an `NSVisualEffectView` blur under the theme's colour, and on a panel a light edge and sheen,
+    ///   like a pane of frosted glass. Liquid Glass is not used: it changes its brightness with what lies behind,
+    ///   so two panels with the same setting would look different.
     ///
     /// Put it once on the root of a popup, never on its rows.
     func frogSurface(_ kind: FrogSurfaceKind, cornerRadius: CGFloat? = nil) -> some View {
         modifier(FrogSurfaceModifier(kind: kind, radius: cornerRadius ?? kind.defaultRadius))
-    }
-}
-
-extension View {
-    /// The glow of a surface that draws its own fill rather than `frogSurface`, such as the main window's sidebar.
-    /// Put it just inside the fill, so the light lies over the fill and under the content:
-    /// `.frogGlow(.sidebar).background(FrogStyle.sidebar)`.
-    func frogGlow(_ kind: FrogSurfaceKind, cornerRadius: CGFloat = 0) -> some View {
-        modifier(FrogGlowModifier(kind: kind, radius: cornerRadius))
     }
 }
 
@@ -63,56 +53,19 @@ private struct FrogSurfaceModifier: ViewModifier {
         let amount = FrogAppearance.shared.settings.effectiveTransparency(
             popup: kind.isPopup, reduceTransparency: reduceTransparency, increasedContrast: contrast == .increased)
         content
-            .frogGlow(kind, cornerRadius: radius)
             .background { FrogSurfaceBackground(kind: kind, radius: radius, amount: amount) }
             .environment(\.frogPopupSurface, kind.isPopup)
     }
 }
 
-/// Panels glow fully, drift and follow the pointer; a sidebar glows softer, stays still and has no glare.
-private struct FrogGlowModifier: ViewModifier {
-    let kind: FrogSurfaceKind
-    let radius: CGFloat
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.colorSchemeContrast) private var contrast
-    @State private var pointer = FrogGlowPointer()
-
-    func body(content: Content) -> some View {
-        let settings = FrogAppearance.shared.settings
-        let glow = kind.glows ? settings.effectiveGlow(reduceTransparency: reduceTransparency, increasedContrast: contrast == .increased) : .off
-        let panel = kind == .hud
-        let moving = panel && settings.glowMotion != false
-        if glow == .off {
-            content
-        } else {
-            content
-                .background {
-                    FrogGlow(style: glow, strength: settings.effectiveGlowStrength * (panel ? 1 : 0.6), radius: radius,
-                             rim: panel ? 1 : 0, moving: moving, pointer: panel ? pointer : nil)
-                        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-                }
-                .onGeometryChange(for: CGSize.self) { $0.size } action: { pointer.size = $0 }
-                .onContinuousHover { phase in if moving { pointer.update(phase) } }
-        }
-    }
-}
-
 /// Exposed for tests: which way a surface is drawn.
 enum FrogSurfaceRendering: Equatable {
-    case opaque, tint, glass, material
+    case opaque, tint, material
 
-    static func choose(_ kind: FrogSurfaceKind, amount: Double, glassAvailable: Bool) -> FrogSurfaceRendering {
+    static func choose(_ kind: FrogSurfaceKind, amount: Double) -> FrogSurfaceRendering {
         if amount <= 0 { return .opaque }
         if kind == .popover { return .tint }
-        if glassAvailable, kind != .window { return .glass }
         return .material
-    }
-
-    static var glassAvailable: Bool {
-        #if compiler(>=6.2)
-        if #available(macOS 26, *) { return true }
-        #endif
-        return false
     }
 }
 
@@ -125,7 +78,9 @@ private struct FrogSurfaceBackground: View {
         switch kind {
         case .window: FrogStyle.opaqueCanvas
         case .sidebar: FrogStyle.opaqueSidebar
-        case .popover, .hud: FrogStyle.panelSurface
+        // A panel is the window's own colour, as Rex draws its sheets and palettes on its canvas.
+        case .hud: FrogStyle.opaqueCanvas
+        case .popover: FrogStyle.panelSurface
         }
     }
 
@@ -133,31 +88,18 @@ private struct FrogSurfaceBackground: View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         let tint = color.opacity(1 - amount * kind.strength)
         ZStack {
-            switch FrogSurfaceRendering.choose(kind, amount: amount, glassAvailable: FrogSurfaceRendering.glassAvailable) {
+            switch FrogSurfaceRendering.choose(kind, amount: amount) {
             case .opaque: shape.fill(color)
             case .tint: shape.fill(tint)
-            case .glass: GlassBackdrop(shape: shape, tint: tint)
-            case .material: FrogWindowMaterial(popup: kind.isPopup, cornerRadius: radius > 0 ? radius : nil, material: kind.material).overlay(shape.fill(tint))
+            case .material:
+                FrogWindowMaterial(popup: kind.isPopup, cornerRadius: radius > 0 ? radius : nil, material: kind.material)
+                    .overlay(shape.fill(tint))
+                    // Light catching the top of the pane, as on a sheet of glass.
+                    .overlay { if kind == .hud { shape.fill(LinearGradient(colors: [FrogStyle.glassSheen, .clear], startPoint: .top, endPoint: .center)) } }
             }
             // A borderless panel has to be clear itself for the rounded surface to show its corners.
             if kind == .hud { FrogClearWindow(cornerRadius: radius).accessibilityHidden(true) }
         }
-    }
-}
-
-private struct GlassBackdrop: View {
-    let shape: RoundedRectangle
-    let tint: Color
-    var body: some View {
-        #if compiler(>=6.2)
-        if #available(macOS 26, *) {
-            shape.fill(tint).glassEffect(.regular, in: shape)
-        } else {
-            shape.fill(tint)
-        }
-        #else
-        shape.fill(tint)
-        #endif
     }
 }
 

@@ -11,7 +11,7 @@ struct CleanerAppsView: View {
         let apps = cleaner.visibleApps
         VStack(alignment: .leading, spacing: 10) {
             ListToolbar(placeholder: "Search apps", search: $cleaner.search) {
-                CompactSegments(values: CleanerAppSort.allCases, selected: cleaner.sort, width: 140, title: \.title) { cleaner.sort = $0 }
+                CompactSegments(values: CleanerAppSort.allCases, selected: cleaner.sort, title: \.title) { cleaner.sort = $0 }
             }
             .onSubmit { if let row = apps.first(where: { $0.id == highlighted }) ?? apps.first { open(row) } }
             if apps.isEmpty {
