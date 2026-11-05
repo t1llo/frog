@@ -136,18 +136,21 @@ internal object CopySignals {
         "コピー", "复制", "複製", "복사",
     )
 
-    /** Toast and overlay text after a copy. */
+    /**
+     * "Copied" in toasts. Only past-tense verbs: the bare word for "clipboard" also appears in Android's own
+     * "<app> pasted from your clipboard" notice, which must never count as a copy.
+     */
     private val copiedText = Regex(
-        "copied|kopiert|zwischenablage|copié|presse-papiers|copiado|portapapeles|copiato|appunti|gekopieerd|klembord|" +
-            "skopiowano|schowka|kopierad|urklipp|kopieret|kopioitu|zkopírováno|kopyalandı|скопирован|буфер обмена|" +
-            "コピーしました|クリップボード|已复制|已複製|剪贴板|복사됨|클립보드",
+        "\\bcopied\\b|\\bkopiert\\b|\\bcopié|\\bcopiad[oa]\\b|\\bcopiat[oa]\\b|\\bgekopieerd\\b|\\bskopiowan|" +
+            "\\bkopierad|\\bkopieret\\b|\\bkopioitu|zkopírován|kopyalandı|скопирован|コピーしました|已复制|已複製|복사됨|복사되었습니다",
         RegexOption.IGNORE_CASE,
     )
 
     fun isCopy(event: AccessibilityEvent): Boolean = when (event.eventType) {
         AccessibilityEvent.TYPE_VIEW_CLICKED -> isCopyLabel(label(event))
+        // Apps' own toasts only: Android's toasts (package "android") include the clipboard-read notice.
         AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED ->
-            event.className?.contains("Toast") == true && copiedText.containsMatchIn(text(event))
+            event.packageName != "android" && event.className?.contains("Toast") == true && copiedText.containsMatchIn(text(event))
         AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED, AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ->
             event.packageName == SYSTEM_UI && isClipboardOverlay(event)
         else -> false
@@ -160,16 +163,40 @@ internal object CopySignals {
 
     fun isCopiedMessage(text: String): Boolean = copiedText.containsMatchIn(text)
 
+    /**
+     * The Android 13+ clipboard overlay, shown after every copy (also when an authenticator copies a code).
+     * It opens as a systemui FrameLayout window whose event text is the clip's preview; on phones that
+     * expose its views, they are named clipboard_*. Other systemui windows (shade, volume, screenshot)
+     * announce their own titles, listed in [systemUiTitles].
+     */
     private fun isClipboardOverlay(event: AccessibilityEvent): Boolean {
-        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && copiedText.containsMatchIn(text(event))) return true
-        val source = event.source ?: return false
-        return try {
-            hasClipboardId(source, depth = 0)
-        } finally {
-            @Suppress("DEPRECATION")
-            if (Build.VERSION.SDK_INT < 33) source.recycle()
+        val source = event.source
+        if (source != null) {
+            try {
+                if (hasClipboardId(source, depth = 0)) return true
+            } finally {
+                @Suppress("DEPRECATION")
+                if (Build.VERSION.SDK_INT < 33) source.recycle()
+            }
         }
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return false
+        if (event.className != "android.widget.FrameLayout") return false
+        return isOverlayPreview(text(event))
     }
+
+    /** A clip preview, not the title of another systemui window. */
+    fun isOverlayPreview(text: String): Boolean {
+        val t = text.trim()
+        if (t.isEmpty()) return false
+        if (copiedText.containsMatchIn(t)) return true
+        return systemUiTitles.none { t.contains(it, ignoreCase = true) }
+    }
+
+    private val systemUiTitles = listOf(
+        "notification", "quick settings", "volume", "screenshot", "lock screen", "lockscreen", "status bar", "navigation",
+        "power menu", "recent", "overview", "keyguard", "brightness", "media output", "cast", "bluetooth", "internet", "wi-fi",
+        "battery", "do not disturb", "alarm", "Benachrichtigung", "Schnelleinstellungen", "Lautstärke", "Sperrbildschirm",
+    )
 
     /** The system overlay's views are named clipboard_* (clipboard_preview, clipboard_ui, …). */
     private fun hasClipboardId(node: AccessibilityNodeInfo, depth: Int): Boolean {
