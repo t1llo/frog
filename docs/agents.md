@@ -49,6 +49,21 @@ pbpaste | frog run notes.add --title "Title" --stdin
 - Relative paths are read from the folder you run `frog` in.
 - When Frog is not running, `frog` starts it in the background and waits for it.
 
+## Build a feature
+
+Ask your agent for something Frog cannot do yet, even in one sentence, such as "a menu-bar timer that tells me to stand up every hour". With the skill installed it builds a [plugin](plugins.md) that is a whole feature: a page in Frog's sidebar, a menu-bar item with a popup, global shortcuts, actions for the command bar, settings, and work in the background, styled like Frog itself.
+
+```sh
+frog plugin guide                                      # the reference the agent follows
+frog plugin new ~/Plugins/stand-up --with menubar,hotkey,background,settings
+frog plugin validate ~/Plugins/stand-up                # hints for what is missing or unused
+frog plugin install ~/Plugins/stand-up                 # you approve it in Frog's window
+frog plugin snapshot <id> --popup                      # a picture of the popup, to check it
+frog run community.<id>.<action>                       # run one of its actions
+```
+
+You approve each plugin's permissions in Frog's window before it runs, and again when an update asks for more; the agent cannot. Settings that hold keys or tokens go to the Keychain, never into the plugin's files.
+
 Exit codes:
 
 | Code | Meaning |

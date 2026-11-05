@@ -7,7 +7,7 @@ enum AgentSkill {
     /// The skill's name, which is also the name of its folder.
     static let name = "frog"
     /// Raise it whenever `text` changes, so Settings offers Update to installs of an older one.
-    static let version = 4
+    static let version = 5
     /// The frontmatter key that marks a skill Frog wrote, with its version.
     static let marker = "frog-skill-version"
 
@@ -49,10 +49,12 @@ enum AgentSkill {
 
     ## Plugins
 
-    A plugin adds a feature of the user's own to Frog: a page in its sidebar, rows in its command bar, and actions that `frog run` and shortcuts run, built from HTML, CSS and JavaScript that run in a sandbox. When the user asks for one, or for something Frog cannot do yet:
+    A plugin adds a whole feature of the user's own to Frog, as complete as the built-in ones: a page in its sidebar, a menu-bar item with a popup, global shortcuts, actions for the command bar and `frog run`, settings with secrets in the Keychain, and work in the background that hears when the Mac wakes, locks or changes app. With the permissions the user approves it can read and replace the selection, use folders the user picks, run Frog's own actions such as moving windows, and ask the user's AI model. It is built from HTML, CSS and JavaScript that run in a sandbox, styled with Frog's own tokens and components. When the user asks for one, even in one sentence, or for something Frog cannot do yet:
 
     - Run `frog plugin guide` first and follow it; it is the reference for the Frog that is running.
-    - Build it in a folder with `frog plugin new`, check it with `frog plugin validate`, install it with `frog plugin install`, and look at it with `frog plugin snapshot` and `frog plugin logs` until it does what the user asked.
+    - Plan the whole feature: its page, actions, and which of menu bar, shortcut, background and settings it needs. `frog actions` lists Frog's own actions it can run.
+    - Start it with `frog plugin new <folder> --with menubar,hotkey,background,settings` (only the parts it needs), check it with `frog plugin validate` and fix every hint, install it with `frog plugin install`, and look at it with `frog plugin snapshot` (and `--popup`) and `frog plugin logs` until it does what the user asked.
+    - Ask for the fewest permissions. Never put keys or tokens in its files: declare a `secret` setting the user fills in.
     - `frog plugin publish` prints the directory entry to submit when the user wants to share it.
     - The user approves a plugin's first install, and any update that asks for more access, in Frog's window. You cannot approve it; tell them it is waiting.
     - Remove a plugin only when the user asks.
