@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.text.format.DateUtils
 import android.text.format.Formatter
 import android.util.Size
@@ -11,22 +12,21 @@ import android.view.HapticFeedbackConstants
 import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -42,24 +42,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -69,10 +61,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -80,7 +72,6 @@ import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -90,7 +81,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import xyz.beffa.frog.companion.R
+import xyz.beffa.frog.companion.clipboard.AutoCopy
 import xyz.beffa.frog.companion.clipboard.ContentReader
+import xyz.beffa.frog.companion.clipboard.OutgoingItem
 import xyz.beffa.frog.companion.clipboard.TooLargeException
 import xyz.beffa.frog.companion.data.DeliveryState
 import xyz.beffa.frog.companion.data.Direction
@@ -101,7 +94,7 @@ import xyz.beffa.frog.companion.service.CompanionStatus
 import xyz.beffa.frog.companion.service.Link
 import xyz.beffa.frog.companion.service.SendResult
 
-/** Narrows the Recent list, like Frog's FilterTag row on the Mac. */
+/** Narrows the Recent list. */
 enum class HistoryFilter(val title: String, val kind: ClipKind?) {
     ALL("All", null), TEXT("Text", ClipKind.TEXT), IMAGES("Images", ClipKind.IMAGE), FILES("Files", ClipKind.FILE)
 }
@@ -119,39 +112,65 @@ fun HomeScreen(controller: CompanionController, status: CompanionStatus, onOpenS
             value = System.currentTimeMillis()
         }
     }
+    var copied by remember { mutableStateOf<String?>(null) }
+    var copies by remember { mutableIntStateOf(0) }
+    LaunchedEffect(copies) {
+        if (copies == 0) return@LaunchedEffect
+        delay(FrogMotion.CONFIRMATION_MS)
+        copied = null
+    }
+
+    fun send(read: () -> OutgoingItem?) {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    read()?.let { controller.send(it) } ?: SendResult.Empty
+                } catch (_: TooLargeException) {
+                    SendResult.TooLarge
+                } catch (_: Exception) {
+                    SendResult.Empty
+                }
+            }
+            val message = sendMessage(result) ?: "Sending to ${status.macName ?: "your Mac"}"
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     HomeContent(
         status = status,
         history = history,
         now = now,
         openedAt = openedAt,
+        copiedId = copied,
+        autoCopy = rememberAutoCopyState(),
         onSend = {
             // The app has window focus here, so it may read the clipboard directly.
             val snapshot = runCatching { ContentReader.primaryClip(context) }.getOrNull()
             if (snapshot == null) {
                 Toast.makeText(context, "Clipboard is empty", Toast.LENGTH_SHORT).show()
-                return@HomeContent
-            }
-            scope.launch {
-                val result = withContext(Dispatchers.IO) {
-                    try {
-                        controller.send(ContentReader.fromSnapshot(context, snapshot))
-                    } catch (_: TooLargeException) {
-                        SendResult.TooLarge
-                    } catch (_: Exception) {
-                        SendResult.Empty
-                    }
-                }
-                sendMessage(result)?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+            } else {
+                send { ContentReader.fromSnapshot(context, snapshot) }
             }
         },
         onCopy = { item ->
-            if (copyAgain(context, item)) Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+            // Your Mac has this clip already: the copy overlay must not send it straight back.
+            AutoCopy.appliedFromMac()
+            if (copyToPhone(context, item)) {
+                copied = item.id
+                copies++
+                // Android 13+ confirms every copy with its own overlay.
+                if (Build.VERSION.SDK_INT < 33) Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "This one is no longer on your phone", Toast.LENGTH_SHORT).show()
+            }
         },
+        onResend = { item -> send { outgoing(context, item) } },
         onOpenSettings = onOpenSettings,
         onAddTile = { requestAddSendTile(context) },
         backgroundReady = rememberBackgroundReady(),
         onOpenBatterySettings = { openBatterySettings(context) },
+        onOpenAutoCopy = { openAutoCopySettings(context) },
+        onOpenAppInfo = { openAutoCopyAppInfo(context) },
     )
 }
 
@@ -165,133 +184,83 @@ private fun sendMessage(result: SendResult): String? = when (result) {
     SendResult.Empty -> "Clipboard is empty"
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeContent(
     status: CompanionStatus,
     history: List<HistoryItem>,
     now: Long,
     openedAt: Long,
+    autoCopy: AutoCopyState,
     onSend: () -> Unit,
     onCopy: (HistoryItem) -> Unit,
+    onResend: (HistoryItem) -> Unit,
     onOpenSettings: () -> Unit,
     onAddTile: () -> Unit,
     backgroundReady: Boolean,
     onOpenBatterySettings: () -> Unit,
+    onOpenAutoCopy: () -> Unit,
+    onOpenAppInfo: () -> Unit,
+    copiedId: String? = null,
     showAddTile: Boolean = canRequestTile,
 ) {
     val frog = frogColors
     var filter by rememberSaveable { mutableStateOf(HistoryFilter.ALL) }
     val shown = remember(history, filter) { history.filter { filter.kind == null || it.kind == filter.kind } }
 
-    Scaffold(
-        containerColor = frog.canvas,
-        topBar = {
-            TopAppBar(
-                title = { Text("Frog Companion", style = FrogType.title, color = frog.ink) },
-                actions = {
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = frog.muted)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = frog.canvas),
+    FrogScreen(
+        title = "Frog Companion",
+        leading = { FrogMark(30.dp) },
+        actions = {
+            FrogIconButton(
+                rememberVectorPainter(Icons.Filled.Settings),
+                contentDescription = "Settings",
+                onClick = onOpenSettings,
+                filled = false,
+                iconSize = 22.dp,
             )
         },
     ) { padding ->
         LazyColumn(
             contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = padding.calculateTopPadding() + 4.dp,
-                bottom = padding.calculateBottomPadding() + 24.dp,
+                start = FrogSize.pagePadding,
+                end = FrogSize.pagePadding,
+                top = padding.calculateTopPadding() + 8.dp,
+                bottom = padding.calculateBottomPadding() + 32.dp,
             ),
             modifier = Modifier.fillMaxSize(),
         ) {
-            item(key = "status") { StatusCard(status) }
-            if (status.paired) {
-                item(key = "background") {
-                    BackgroundAccess(backgroundReady, onOpenBatterySettings, Modifier.padding(top = 12.dp))
+            item(key = "mac") { MacCard(status, onSend) }
+            item(key = "background") {
+                BackgroundAccess(backgroundReady, onOpenBatterySettings, Modifier.padding(top = 12.dp))
+            }
+            if (!autoCopy.on) {
+                item(key = "autocopy") {
+                    AutoCopyCard(autoCopy, onOpenAutoCopy, onOpenAppInfo, Modifier.padding(top = 12.dp))
                 }
             }
-            item(key = "send") { SendButton(onSend, Modifier.padding(top = 12.dp)) }
-            item(key = "send-hint") { SendHint(showAddTile, onAddTile, Modifier.padding(top = 8.dp, bottom = 20.dp)) }
-            item(key = "recent-title") {
-                SectionCaption("Recent", trailing = if (history.isEmpty()) null else "${history.size}")
+            item(key = "how") {
+                HowToSend(autoCopy.on, showAddTile, onAddTile, Modifier.padding(top = FrogSize.sectionSpacing))
             }
+            item(key = "recent-title") { RecentHeader(history.size, Modifier.padding(top = FrogSize.sectionSpacing)) }
             if (history.isNotEmpty()) {
-                item(key = "filters") { FilterRow(filter, history) { filter = it } }
+                item(key = "filters") {
+                    val kinds = HistoryFilter.entries.filter { f ->
+                        // A kind with nothing in it stays out of the way, unless it is the current one.
+                        f.kind == null || f == filter || history.any { it.kind == f.kind }
+                    }
+                    if (kinds.size > 2) {
+                        FrogSegments(kinds, filter, { it.title }, { filter = it }, Modifier.padding(bottom = 6.dp))
+                    }
+                }
             }
-            historyCard(shown, history.isEmpty(), filter, now, openedAt, status.macName, onCopy)
-        }
-    }
-}
-
-// Status ---------------------------------------------------------------------------------------
-
-@Composable
-private fun StatusCard(status: CompanionStatus) {
-    val reduced = LocalReducedMotion.current
-    val frog = frogColors
-    val dotColor by animateColorAsState(
-        targetValue = when (status.link) {
-            Link.WIFI -> frog.good
-            Link.BLUETOOTH -> frog.link
-            Link.SEARCHING -> frog.warning
-            Link.OFFLINE -> frog.muted.copy(alpha = 0.5f)
-        },
-        animationSpec = motionSpec(reduced),
-        label = "dot",
-    )
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(FrogRadius.card))
-            .background(frog.surface)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier.size(44.dp).clip(RoundedCornerShape(FrogRadius.control)).background(frog.accentSoft),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(painterResource(R.drawable.ic_frog_glyph), contentDescription = null, tint = frog.accent, modifier = Modifier.size(26.dp))
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                status.macName ?: "Your Mac",
-                style = FrogType.section,
-                color = frog.ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(2.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(8.dp).clip(CircleShape).background(dotColor))
-                Spacer(Modifier.width(6.dp))
-                AnimatedContent(
-                    targetState = status.link,
-                    transitionSpec = {
-                        if (reduced) {
-                            fadeIn(motionSpec(true)) togetherWith fadeOut(motionSpec(true))
-                        } else {
-                            (fadeIn(motionSpec(false)) + slideInVertically(motionSpec(false)) { it / 4 } +
-                                scaleIn(motionSpec(false), initialScale = 0.95f)) togetherWith fadeOut(motionSpec(false, 120))
-                        }
-                    },
-                    label = "link",
-                ) { link ->
+            historyCard(shown, history.isEmpty(), filter, now, openedAt, status.macName, copiedId, onCopy, onResend)
+            if (history.isNotEmpty()) {
+                item(key = "recent-footer") {
                     Text(
-                        when (link) {
-                            Link.WIFI -> "Connected over Wi-Fi"
-                            Link.BLUETOOTH -> "Connected over Bluetooth"
-                            Link.SEARCHING -> "Looking for your Mac"
-                            Link.OFFLINE -> "Offline. Frog Companion keeps trying."
-                        },
+                        "Tap to copy on this phone. Hold to send to your Mac again.",
                         style = FrogType.small,
                         color = frog.muted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = FrogSize.cardPadding, end = FrogSize.cardPadding, top = 8.dp),
                     )
                 }
             }
@@ -299,140 +268,130 @@ private fun StatusCard(status: CompanionStatus) {
     }
 }
 
-@Composable
-private fun SendButton(onSend: () -> Unit, modifier: Modifier = Modifier) {
-    val view = LocalView.current
-    val reduced = LocalReducedMotion.current
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (pressed && !reduced) 0.97f else 1f,
-        animationSpec = tween(120, easing = EaseOutStrong),
-        label = "press",
-    )
+// Mac --------------------------------------------------------------------------------------------
 
-    Button(
-        onClick = {
-            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
-            onSend()
+@Composable
+private fun MacCard(status: CompanionStatus, onSend: () -> Unit) {
+    val reduced = LocalReducedMotion.current
+    val view = LocalView.current
+    val frog = frogColors
+    val dotColor by animateColorAsState(
+        targetValue = when (status.link) {
+            Link.WIFI -> frog.good
+            Link.BLUETOOTH -> frog.series
+            Link.SEARCHING -> frog.warning
+            Link.OFFLINE -> frog.muted.copy(alpha = 0.6f)
         },
-        interactionSource = interaction,
-        shape = RoundedCornerShape(FrogRadius.control),
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        colors = ButtonDefaults.buttonColors(),
-        modifier = modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
+        animationSpec = motionSpec(reduced),
+        label = "dot",
+    )
+    FrogCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SymbolTile(R.drawable.ic_laptop, size = 40.dp, tint = frog.ink)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    status.macName ?: "Your Mac",
+                    style = FrogType.section,
+                    color = frog.ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StatusDot(dotColor, 7.dp)
+                    Spacer(Modifier.width(6.dp))
+                    AnimatedContent(
+                        targetState = status.link,
+                        transitionSpec = {
+                            if (reduced) {
+                                fadeIn(motionSpec(true)) togetherWith fadeOut(motionSpec(true))
+                            } else {
+                                (fadeIn(motionSpec(false)) + slideInVertically(motionSpec(false)) { it / 4 }) togetherWith
+                                    fadeOut(motionSpec(false, FrogMotion.EXIT_MS))
+                            }
+                        },
+                        label = "link",
+                    ) { link ->
+                        Text(
+                            linkText(link),
+                            style = FrogType.small,
+                            color = frog.muted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        FrogButton(
+            "Send clipboard",
+            onClick = {
+                view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                onSend()
             },
-    ) {
-        Icon(painterResource(R.drawable.ic_dir_sent), contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text("Send clipboard", style = FrogType.bodyMedium)
+            kind = FrogButtonKind.Primary,
+            size = FrogButtonSize.Hero,
+            fill = true,
+            icon = R.drawable.ic_dir_sent,
+        )
     }
 }
 
+fun linkText(link: Link): String = when (link) {
+    Link.WIFI -> "Connected over Wi-Fi"
+    Link.BLUETOOTH -> "Connected over Bluetooth"
+    Link.SEARCHING -> "Looking for your Mac"
+    Link.OFFLINE -> "Offline. Frog Companion keeps trying."
+}
+
 /**
- * How to send from the phone. Android lets an app read the clipboard only while it is on screen,
- * so every send from the phone starts with a tap; these are the places to tap.
+ * How to send from the phone. Android lets an app read the clipboard only while it is on screen, so
+ * every send from the phone starts with a tap, unless automatic copy is on.
  */
 @Composable
-private fun SendHint(showAddTile: Boolean, onAddTile: () -> Unit, modifier: Modifier = Modifier) {
-    val frog = frogColors
-    Column(modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
-        Text("How to send from your phone", style = FrogType.label, color = frog.ink)
-        Text(
-            "Copies from your Mac arrive here on their own. Android lets apps read your clipboard " +
-                "only when you tap, so from the phone it takes one tap:",
-            style = FrogType.small,
-            color = frog.muted,
-            modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
-        )
-        SendWay("Selected text", "Tap Send to Mac in the menu next to Copy. It copies the text too.")
-        SendWay(
-            "Codes and links copied with a tap",
-            "Swipe down and tap the Send to Mac tile, or Send clipboard in the notification. " +
-                "Send to device in the copy preview is Quick Share, which can't reach Frog.",
-        )
-        SendWay("Photos and files", "Share them and choose Send to Mac.")
+private fun HowToSend(autoCopyOn: Boolean, showAddTile: Boolean, onAddTile: () -> Unit, modifier: Modifier = Modifier) {
+    FrogSection(
+        "How to send",
+        modifier = modifier,
+        footer = "Copies from your Mac arrive here on their own.",
+    ) {
+        row { FrogRow("Selected text", caption = "Send to Mac in the menu next to Copy.") }
+        row {
+            FrogRow(
+                "Codes and links",
+                caption = if (autoCopyOn) {
+                    "Sent on their own while automatic copy is on."
+                } else {
+                    "The Send to Mac tile, or Send clipboard in the notification."
+                },
+            )
+        }
+        row { FrogRow("Photos and files", caption = "Share them and choose Send to Mac.") }
         if (showAddTile) {
-            Box(
-                Modifier
-                    .padding(top = 2.dp)
-                    .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(FrogRadius.control))
-                    .clickable(role = Role.Button, onClick = onAddTile)
-                    .padding(horizontal = 4.dp),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                Text("Add the Send to Mac tile", style = FrogType.label, color = frog.accent)
+            row {
+                FrogRow("Send to Mac tile", caption = "One tap in Quick Settings") {
+                    FrogButton("Add", onAddTile, size = FrogButtonSize.Compact)
+                }
             }
         }
     }
 }
 
+// Recent -------------------------------------------------------------------------------------------
+
 @Composable
-private fun SendWay(title: String, detail: String) {
+private fun RecentHeader(count: Int, modifier: Modifier = Modifier) {
     val frog = frogColors
-    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(title, style = FrogType.small, color = frog.ink)
-        Text(detail, style = FrogType.small, color = frog.muted)
-    }
-}
-
-// Recent -------------------------------------------------------------------------------------
-
-/** A small medium-weight label above content, like Frog's SectionCaption. */
-@Composable
-private fun SectionCaption(title: String, trailing: String? = null) {
-    val frog = frogColors
-    Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, style = FrogType.label, color = frog.muted, modifier = Modifier.weight(1f))
-        if (trailing != null) Text(trailing, style = FrogType.caption, color = frog.muted)
-    }
-}
-
-@Composable
-private fun FilterRow(selected: HistoryFilter, history: List<HistoryItem>, onSelect: (HistoryFilter) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        modifier.fillMaxWidth().heightIn(min = 28.dp).padding(horizontal = FrogSize.cardPadding),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        for (f in HistoryFilter.entries) {
-            // A kind with nothing in it stays out of the way, as long as it isn't the current one.
-            if (f.kind != null && f != selected && history.none { it.kind == f.kind }) continue
-            FilterTag(f.title, f == selected) { onSelect(f) }
-        }
+        Text("Recent", style = FrogType.section, color = frog.ink, modifier = Modifier.weight(1f))
+        if (count > 0) Text("$count", style = FrogType.caption, color = frog.muted)
     }
-}
-
-/**
- * Frog's FilterTag: plain text, muted until chosen; the chosen one is medium weight on the
- * selection fill. The touch target is 48 dp tall around a 32 dp tag.
- */
-@Composable
-private fun FilterTag(title: String, selected: Boolean, onClick: () -> Unit) {
-    val frog = frogColors
-    val reduced = LocalReducedMotion.current
-    val fill by animateColorAsState(if (selected) frog.selection else Color.Transparent, motionSpec(reduced, 150), label = "tag")
-    Box(
-        Modifier
-            .heightIn(min = 48.dp)
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick, interactionSource = null, indication = null),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            title,
-            style = if (selected) FrogType.label else FrogType.small,
-            color = if (selected) frog.ink else frog.muted,
-            modifier = Modifier
-                .clip(RoundedCornerShape(FrogRadius.control))
-                .background(fill)
-                .padding(horizontal = 12.dp, vertical = 7.dp),
-        )
-    }
+    Spacer(Modifier.height(8.dp))
 }
 
 /** Where a piece sits in the one card that holds the list, so the pieces join into one surface. */
@@ -451,7 +410,9 @@ private fun LazyListScope.historyCard(
     now: Long,
     openedAt: Long,
     macName: String?,
+    copiedId: String?,
     onCopy: (HistoryItem) -> Unit,
+    onResend: (HistoryItem) -> Unit,
 ) {
     if (shown.isEmpty()) {
         item(key = "empty") { EmptyHistory(if (nothingAtAll) null else filter, macName) }
@@ -463,41 +424,45 @@ private fun LazyListScope.historyCard(
         Box(
             Modifier
                 .fillMaxWidth()
-                .background(frogColors.surface, segmentShape(first, last))
-                .padding(start = 6.dp, end = 6.dp, top = if (first) 6.dp else 1.dp, bottom = if (last) 6.dp else 1.dp),
+                .background(frogColors.card, segmentShape(first, last))
+                .padding(
+                    start = FrogSize.listInset,
+                    end = FrogSize.listInset,
+                    top = if (first) FrogSize.listInset else 1.dp,
+                    bottom = if (last) FrogSize.listInset else 1.dp,
+                ),
         ) {
-            HistoryRow(item, now, isNew = item.timeMillis > openedAt, macName = macName, onCopy = onCopy)
+            HistoryRow(item, now, isNew = item.timeMillis > openedAt, macName, copied = item.id == copiedId, onCopy, onResend)
         }
     }
 }
 
 @Composable
 private fun EmptyHistory(filter: HistoryFilter?, macName: String?) {
-    val frog = frogColors
-    val (title, message) = when (filter?.kind) {
-        null -> "Nothing here yet" to
-            "Copy something on ${macName ?: "your Mac"} and it shows up here. To send from your phone, " +
-            "tap Send clipboard, use the Quick Settings tile, or share to Frog Companion."
-        ClipKind.TEXT -> "No text yet" to "Copied text from either side shows up here."
-        ClipKind.IMAGE -> "No images yet" to "Copied images and shared photos show up here."
-        ClipKind.FILE -> "No files yet" to "Files from your Mac are saved to Downloads and listed here."
+    val (icon, title, message) = when (filter?.kind) {
+        null -> Triple(
+            R.drawable.ic_copy,
+            "Nothing here yet",
+            "Copy something on ${macName ?: "your Mac"} and it shows up here.",
+        )
+        ClipKind.TEXT -> Triple(R.drawable.ic_kind_text, "No text yet", "Copied text from either side shows up here.")
+        ClipKind.IMAGE -> Triple(R.drawable.ic_kind_image, "No images yet", "Copied images and shared photos show up here.")
+        ClipKind.FILE -> Triple(R.drawable.ic_kind_file, "No files yet", "Files from your Mac are saved to Downloads.")
     }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(FrogRadius.card))
-            .background(frog.surface)
-            .padding(horizontal = 24.dp, vertical = 28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(title, style = FrogType.bodyMedium, color = frog.ink)
-        Spacer(Modifier.height(4.dp))
-        Text(message, style = FrogType.small, color = frog.muted, textAlign = TextAlign.Center)
-    }
+    Box(Modifier.fillMaxWidth().frogCard()) { FrogEmptyState(icon, title, message) }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun HistoryRow(item: HistoryItem, now: Long, isNew: Boolean, macName: String?, onCopy: (HistoryItem) -> Unit) {
+private fun HistoryRow(
+    item: HistoryItem,
+    now: Long,
+    isNew: Boolean,
+    macName: String?,
+    copied: Boolean,
+    onCopy: (HistoryItem) -> Unit,
+    onResend: (HistoryItem) -> Unit,
+) {
     val context = LocalContext.current
     val view = LocalView.current
     val reduced = LocalReducedMotion.current
@@ -505,10 +470,14 @@ private fun HistoryRow(item: HistoryItem, now: Long, isNew: Boolean, macName: St
     val frog = frogColors
     val appear = remember(item.id) { Animatable(if (isNew && !reduced) 0f else 1f) }
     LaunchedEffect(item.id) {
-        if (appear.value < 1f) appear.animateTo(1f, tween(MOTION_MS, easing = EaseOutStrong))
+        if (appear.value < 1f) appear.animateTo(1f, tween(FrogMotion.REVEAL_MS, easing = EaseOutStrong))
     }
     val offsetPx = with(density) { 6.dp.toPx() }
     val pending = pendingLabel(item)
+    val onPhone = item.text != null || item.uri != null
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val fill = pressFill(pressed, androidx.compose.ui.graphics.Color.Transparent, frog.pressed)
 
     Row(
         Modifier
@@ -516,20 +485,42 @@ private fun HistoryRow(item: HistoryItem, now: Long, isNew: Boolean, macName: St
             .graphicsLayer {
                 val v = appear.value
                 alpha = v
-                scaleX = 0.95f + 0.05f * v
-                scaleY = 0.95f + 0.05f * v
                 translationY = (1f - v) * offsetPx
             }
             .clip(RoundedCornerShape(FrogRadius.control))
-            .clickable(onClickLabel = "Copy") {
-                view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
-                onCopy(item)
-            }
+            .background(fill)
+            .combinedClickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = onPhone,
+                role = Role.Button,
+                onClickLabel = "Copy",
+                onLongClickLabel = "Send to Mac again",
+                onLongClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    onResend(item)
+                },
+                onClick = {
+                    view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                    onCopy(item)
+                },
+            )
             .heightIn(min = 56.dp)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
+            .padding(start = 10.dp, end = 2.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Leading(item)
+        Crossfade(copied, animationSpec = motionSpec(reduced), label = "copied") { done ->
+            if (done) {
+                Box(
+                    Modifier.size(36.dp).clip(RoundedCornerShape(FrogRadius.control)).background(frog.good.copy(alpha = 0.14f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Filled.Check, contentDescription = "Copied", tint = frog.good, modifier = Modifier.size(18.dp))
+                }
+            } else {
+                Leading(item)
+            }
+        }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -545,7 +536,7 @@ private fun HistoryRow(item: HistoryItem, now: Long, isNew: Boolean, macName: St
                 Icon(
                     painterResource(if (sent) R.drawable.ic_dir_sent else R.drawable.ic_dir_received),
                     contentDescription = if (sent) "Sent" else "Received",
-                    tint = frog.muted,
+                    tint = if (sent) frog.muted else frog.accent,
                     modifier = Modifier.size(12.dp),
                 )
                 Spacer(Modifier.width(4.dp))
@@ -563,6 +554,17 @@ private fun HistoryRow(item: HistoryItem, now: Long, isNew: Boolean, macName: St
                 }
             }
         }
+        if (onPhone) {
+            FrogIconButton(
+                painterResource(R.drawable.ic_dir_sent),
+                contentDescription = "Send to Mac again",
+                onClick = { onResend(item) },
+                visualSize = 32.dp,
+                iconSize = 16.dp,
+            )
+        } else {
+            Spacer(Modifier.width(8.dp))
+        }
     }
 }
 
@@ -571,7 +573,7 @@ private fun title(item: HistoryItem): String = when (item.kind) {
     else -> item.name ?: item.preview.ifBlank { if (item.kind == ClipKind.IMAGE) "Image" else "File" }
 }
 
-/** A 36 dp tile: the image itself for images, otherwise the kind's icon on the inset fill. */
+/** A 36 dp tile: the image itself for images, otherwise the kind's icon on the control fill. */
 @Composable
 private fun Leading(item: HistoryItem) {
     val context = LocalContext.current
@@ -585,13 +587,11 @@ private fun Leading(item: HistoryItem) {
             }
         }
         thumb?.let {
-            Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = tile.background(frog.inset))
+            Image(bitmap = it.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = tile.background(frog.control))
             return
         }
     }
-    Box(tile.background(frog.inset), contentAlignment = Alignment.Center) {
-        Icon(painterResource(kindIcon(item.kind)), contentDescription = null, tint = frog.muted, modifier = Modifier.size(18.dp))
-    }
+    SymbolTile(kindIcon(item.kind), size = 36.dp)
 }
 
 @DrawableRes
@@ -621,13 +621,21 @@ private fun pendingLabel(item: HistoryItem): String? = when {
     else -> null
 }
 
-private fun copyAgain(context: Context, item: HistoryItem): Boolean {
+/** Puts a history item on the phone's clipboard: its text, or its image or file through the content resolver. */
+private fun copyToPhone(context: Context, item: HistoryItem): Boolean {
     item.text?.let {
         ContentReader.copyText(context, it)
         return true
     }
     val uri = item.uri ?: return false
     return runCatching { ContentReader.copyUri(context, Uri.parse(uri), item.name ?: "Frog Companion") }.isSuccess
+}
+
+/** The item as something to send again. Reads files, so call it off the main thread. */
+private fun outgoing(context: Context, item: HistoryItem): OutgoingItem? {
+    item.text?.let { return OutgoingItem.text(it) }
+    val uri = Uri.parse(item.uri ?: return null)
+    return if (item.kind == ClipKind.IMAGE) ContentReader.image(context, uri) else ContentReader.file(context, uri)
 }
 
 // Previews (placeholder data only) ----------------------------------------------------------------
@@ -657,18 +665,22 @@ private fun sampleHistory(): List<HistoryItem> {
 
 @Composable
 private fun HomePreview(history: List<HistoryItem>, link: Link, dark: Boolean = false, backgroundReady: Boolean = true) {
-    FrogTheme(dark = dark, dynamicColor = false) {
+    FrogTheme(dark = dark) {
         HomeContent(
             status = CompanionStatus(paired = true, macName = "Studio Mac", link = link),
             history = history,
             now = PREVIEW_NOW,
             openedAt = PREVIEW_NOW,
+            autoCopy = AutoCopyState(on = false, mayNeedRestrictedSettings = true),
             onSend = {},
             onCopy = {},
+            onResend = {},
             onOpenSettings = {},
             onAddTile = {},
             backgroundReady = backgroundReady,
             onOpenBatterySettings = {},
+            onOpenAutoCopy = {},
+            onOpenAppInfo = {},
             showAddTile = true,
         )
     }

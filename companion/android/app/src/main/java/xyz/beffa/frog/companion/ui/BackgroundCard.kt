@@ -17,12 +17,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,7 +28,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import xyz.beffa.frog.companion.R
 
 /**
  * Whether Android lets the app run unrestricted in the background, re-checked each time the app
@@ -66,8 +64,8 @@ fun rememberBackgroundReady(): Boolean {
 
 /**
  * The background-access step, shown rather than explained: a small picture of the battery page
- * with the option to choose marked in Frog green, and one button that opens that page. Once it is
- * done the card fades into a compact "Runs in the background" chip.
+ * with the option to choose marked in the good tone, and one button that opens that page. Once it is
+ * done the card fades into a compact "Runs in the background" pill.
  */
 @Composable
 fun BackgroundAccess(ready: Boolean, onOpen: () -> Unit, modifier: Modifier = Modifier) {
@@ -89,36 +87,29 @@ fun BackgroundAccess(ready: Boolean, onOpen: () -> Unit, modifier: Modifier = Mo
 @Composable
 private fun SetupCard(onOpen: () -> Unit) {
     val frog = frogColors
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(FrogRadius.card))
-            .background(frog.surface)
-            .padding(14.dp),
-    ) {
+    FrogCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(8.dp).clip(CircleShape).background(frog.warning))
-            Spacer(Modifier.width(8.dp))
-            Text("Keep it running", style = FrogType.section, color = frog.ink)
+            SymbolTile(R.drawable.ic_battery, size = 32.dp, tint = frog.warning, background = frog.warning.copy(alpha = 0.14f))
+            Spacer(Modifier.width(12.dp))
+            Text("Keep it running", style = FrogType.section, color = frog.ink, modifier = Modifier.weight(1f))
         }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Let Frog Companion run in the background, so copies arrive while the screen is off.",
+            style = FrogType.small,
+            color = frog.muted,
+        )
         Spacer(Modifier.height(12.dp))
         BatteryPageMock()
-        Spacer(Modifier.height(12.dp))
-        Button(
-            onClick = onOpen,
-            shape = RoundedCornerShape(FrogRadius.control),
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-        ) {
-            Text("Open battery settings", style = FrogType.bodyMedium)
-        }
+        Spacer(Modifier.height(4.dp))
+        FrogButton("Open battery settings", onOpen, kind = FrogButtonKind.Secondary, fill = true)
     }
 }
 
 /**
  * A neutral miniature of the system battery page: App info › Battery, then the three choices,
- * with Unrestricted (ColorOS: Allow background activity) picked and marked in Frog green. Purely
- * decorative; screen readers hear one sentence instead.
+ * with Unrestricted (ColorOS: Allow background activity) picked and marked in the good tone. Purely
+ * decorative; screen readers hear nothing of it, the card's sentence says it.
  */
 @Composable
 private fun BatteryPageMock() {
@@ -127,12 +118,12 @@ private fun BatteryPageMock() {
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(FrogRadius.control))
-            .background(frog.inset)
-            .padding(10.dp)
+            .background(frog.control)
+            .padding(FrogSize.listInset)
             .clearAndSetSemantics { },
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Row(Modifier.padding(start = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(start = 10.dp, top = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("App info", style = FrogType.caption, color = frog.muted)
             Text("  ›  ", style = FrogType.caption, color = frog.muted)
             Text("Battery", style = FrogType.caption.copy(fontWeight = FontWeight.Medium), color = frog.ink)
@@ -150,10 +141,9 @@ private fun MockOption(title: String, note: String?, chosen: Boolean) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(FrogRadius.small))
-            .background(if (chosen) green.copy(alpha = 0.14f) else frog.surface)
-            .then(if (chosen) Modifier.border(1.5.dp, green, RoundedCornerShape(FrogRadius.small)) else Modifier)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .clip(RoundedCornerShape(FrogRadius.control - FrogSize.listInset))
+            .background(if (chosen) green.copy(alpha = 0.14f) else androidx.compose.ui.graphics.Color.Transparent)
+            .padding(horizontal = 10.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -180,21 +170,10 @@ private fun MockOption(title: String, note: String?, chosen: Boolean) {
     }
 }
 
-/** Frog's status pill: a capsule with a check, in the good tone. */
+/** Once it is done: Frog's status pill. */
 @Composable
 private fun ReadyChip() {
-    val frog = frogColors
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(percent = 50))
-            .background(frog.good.copy(alpha = 0.14f))
-            .padding(start = 10.dp, end = 14.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Filled.Check, contentDescription = null, tint = frog.good, modifier = Modifier.size(16.dp))
-        Spacer(Modifier.width(6.dp))
-        Text("Runs in the background", style = FrogType.label, color = frog.ink)
-    }
+    FrogStatusPill("Runs in the background")
 }
 
 fun isIgnoringBatteryOptimizations(context: Context): Boolean =
@@ -229,18 +208,18 @@ private const val ACTION_APP_BATTERY_PAGE = "android.settings.VIEW_ADVANCED_POWE
 
 @Preview(name = "Background access, to do", widthDp = 393, showBackground = true)
 @Composable
-fun BackgroundAccessPreview() = FrogTheme(dynamicColor = false) {
+fun BackgroundAccessPreview() = FrogTheme(dark = false) {
     Box(Modifier.background(frogColors.canvas).padding(16.dp)) { BackgroundAccess(ready = false, onOpen = {}) }
 }
 
 @Preview(name = "Background access, done", widthDp = 393, showBackground = true)
 @Composable
-fun BackgroundAccessReadyPreview() = FrogTheme(dynamicColor = false) {
+fun BackgroundAccessReadyPreview() = FrogTheme(dark = false) {
     Box(Modifier.background(frogColors.canvas).padding(16.dp)) { BackgroundAccess(ready = true, onOpen = {}) }
 }
 
 @Preview(name = "Background access, dark", widthDp = 393, showBackground = true)
 @Composable
-fun BackgroundAccessDarkPreview() = FrogTheme(dark = true, dynamicColor = false) {
+fun BackgroundAccessDarkPreview() = FrogTheme(dark = true) {
     Box(Modifier.background(frogColors.canvas).padding(16.dp)) { BackgroundAccess(ready = false, onOpen = {}) }
 }

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A laptop, for the paired Mac. Tinted by the caller. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:strokeColor="#FF000000" android:strokeWidth="1.8" android:strokeLineJoin="round"
+        android:pathData="M6.5,5.5h11a1.5,1.5 0,0 1,1.5 1.5v8h-14v-8a1.5,1.5 0,0 1,1.5 -1.5z" />
+    <path android:strokeColor="#FF000000" android:strokeWidth="1.8" android:strokeLineCap="round"
+        android:pathData="M3,18.5h18" />
+</vector>

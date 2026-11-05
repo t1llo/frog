@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A battery on its side, for running in the background. Tinted by the caller. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:strokeColor="#FF000000" android:strokeWidth="1.8" android:strokeLineJoin="round"
+        android:pathData="M5,7.5h11a1.5,1.5 0,0 1,1.5 1.5v6a1.5,1.5 0,0 1,-1.5 1.5h-11a1.5,1.5 0,0 1,-1.5 -1.5v-6a1.5,1.5 0,0 1,1.5 -1.5z" />
+    <path android:strokeColor="#FF000000" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M20.5,10.5v3" />
+    <path android:fillColor="#FF000000" android:pathData="M6,10h7v4h-7z" />
+</vector>
