@@ -608,10 +608,14 @@ struct PluginReview: Identifiable {
             guard (try? JSONSerialization.jsonObject(with: Data(json.utf8), options: .fragmentsAllowed)) != nil else {
                 throw FrogError.message("Storage keeps JSON values only.")
             }
-            try storage(id).set(try text("key", maximum: 1_000)!, json: json)
+            let key = try text("key", maximum: 1_000)!
+            try storage(id).set(key, json: json)
+            storageChanged(id, key, by: host)
             return nil
         case "storage.remove":
-            try storage(id).set(try text("key", maximum: 1_000)!, json: nil)
+            let key = try text("key", maximum: 1_000)!
+            try storage(id).set(key, json: nil)
+            storageChanged(id, key, by: host)
             return nil
         case "storage.keys":
             return try storage(id).keys()
@@ -737,6 +741,11 @@ struct PluginReview: Identifiable {
         default:
             throw FrogError.message("Frog has no “\(name)”.")
         }
+    }
+
+    /// Tells the plugin's other page, its popup or its page, that a key changed.
+    private func storageChanged(_ id: String, _ key: String, by host: PluginWebHost) {
+        for other in [hosts[id], popups[id]].compactMap({ $0 }) where other !== host { other.emit("storage", ["key": key]) }
     }
 
     /// Follows a link the page activated, when it may open links.

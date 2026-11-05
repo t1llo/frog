@@ -125,6 +125,38 @@ import XCTest
         XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("plugin.json").path), "The source folder stays")
     }
 
+    func testAnAgentStartsAWholeFeatureThatValidatesAndShowsItsPopup() async throws {
+        try await enablePlugins()
+        let unknown = await run("plugin", "new", "bad", "--with", "menubar,teleport")
+        XCTAssertEqual(unknown.exitCode, AgentExit.usage)
+        let started = await run("plugin", "new", "tally", "--id", "com.example.tally", "--with", "menubar,hotkey,background,settings")
+        XCTAssertEqual(started.exitCode, 0, started.error)
+        let folder = directory.appendingPathComponent("tally", isDirectory: true)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("popup.html").path))
+
+        let checked = try object(await run("plugin", "validate", "tally", json: true))
+        XCTAssertEqual(checked["hints"] as? [String], [], "The feature template follows its own guide")
+        let package = try PluginPackage.read(folder)
+        XCTAssertEqual(Set(package.manifest.permissions), [.menubar, .hotkeys, .background])
+        XCTAssertEqual(package.manifest.actions.first?.shortcut, "ctrl+alt+shift+c")
+        XCTAssertEqual(package.manifest.settings.map(\.key), ["step"])
+
+        _ = await run("plugin", "install", "tally")
+        try model.plugins.approve(try XCTUnwrap(model.plugins.review))
+        let picture = directory.appendingPathComponent("popup.png")
+        let snapshot = await run("plugin", "snapshot", "tally", "--popup", "--output", picture.path)
+        XCTAssertEqual(snapshot.exitCode, 0, snapshot.error)
+        XCTAssertEqual(try Data(contentsOf: picture).prefix(4), Data([0x89, 0x50, 0x4E, 0x47]), "A PNG")
+
+        try model.plugins.setSetting("com.example.tally", "step", .integer(5))
+        await model.pluginHost.syncAndWait()
+        let counted = await run("run", "community.com.example.tally.count")
+        XCTAssertEqual(counted.output, "Counted 5 times.", counted.error)
+        XCTAssertNotNil(model.plugins.loadedHost("com.example.tally"), "A background plugin keeps running")
+        model.plugins.remove("com.example.tally")
+        XCTAssertTrue(model.plugins.statusItems.isEmpty, "Removing it removes its menu-bar item")
+    }
+
     func testAPackedFileOpensItsReviewWithoutInstalling() async throws {
         try await enablePlugins()
         _ = await run("plugin", "new", "shared", "--id", "com.example.shared")

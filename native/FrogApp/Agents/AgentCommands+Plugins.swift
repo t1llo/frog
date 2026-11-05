@@ -11,21 +11,26 @@ extension AgentCommands {
                 let guide = try pluginGuide()
                 return AgentResult(["guide": guide], text: guide)
             },
-            AgentCommand(words: ["plugin", "new"], arguments: "<folder> [--name NAME] [--id ID]", summary: "Start a plugin from a template.",
+            AgentCommand(words: ["plugin", "new"], arguments: "<folder> [--name NAME] [--id ID] [--with menubar,hotkey,background,settings]",
+                         summary: "Start a plugin, or a whole feature, from a template.",
                          details: """
                          Creates the folder with a plugin.json, an index.html styled like Frog and an app.js with one \
                          action. The folder must not exist yet, or be empty. The name defaults to the folder's; the id \
                          defaults to local.<folder>. Give a plugin you will share an id you own, such as \
                          io.github.<user>.<name>: the id never changes between versions, and its storage belongs to it.
 
-                         Example: frog plugin new ~/Plugins/pull-requests --name "Pull requests" --id io.github.jane.pull-requests
-                         """, options: ["name", "id"]) { call in
+                         --with adds working parts of a feature, each with its permission: menubar (a menu-bar item and \
+                         its popup.html), hotkey (a shortcut for the action), background (runs from Frog's start and \
+                         hears the Mac wake) and settings (rows in its settings sheet the page reads).
+
+                         Example: frog plugin new ~/Plugins/pull-requests --name "Pull requests" --id io.github.jane.pull-requests --with menubar,hotkey
+                         """, options: ["name", "id", "with"]) { call in
                 try newPlugin(call)
             },
             AgentCommand(words: ["plugin", "validate"], arguments: "<folder>", summary: "Check a plugin's manifest and files.",
                          details: "Reads the folder as installing it would, and points out what would not work in Frog.") { call in
                 let package = try PluginPackage.read(call.path(try call.argument(0, "folder")))
-                let report = PackageReport(package, hints: hints(for: package))
+                let report = PackageReport(package, hints: hints(for: package, model: call.model))
                 var lines = [report.summary]
                 lines += report.hints.map { "Hint: \($0)" }
                 return AgentResult(report, text: lines.joined(separator: "\n"))
@@ -91,17 +96,24 @@ extension AgentCommands {
                 guard !lines.isEmpty else { return AgentResult(lines, text: "\(item.name) has logged nothing since Frog started.") }
                 return AgentResult(Array(lines), text: lines.map { "\($0.time) \($0.level.padding(toLength: 5, withPad: " ", startingAt: 0)) \($0.text)" }.joined(separator: "\n"))
             },
-            AgentCommand(words: ["plugin", "snapshot"], arguments: "<id> [--output FILE]", summary: "Save a picture of a plugin's page.",
+            AgentCommand(words: ["plugin", "snapshot"], arguments: "<id> [--popup] [--output FILE]", summary: "Save a picture of a plugin's page or popup.",
                          details: """
                          Loads the page if it is not running and saves a PNG of it, 800 by 600 points unless the page is \
-                         open in Frog's window. Look at the picture to check the layout. Without --output it goes to a \
+                         open in Frog's window. With --popup, the popup of its menu-bar item at the size plugin.json gives \
+                         it, on Frog's panel colour. Look at the picture to check the layout. Without --output it goes to a \
                          temporary folder; the answer gives the path.
 
                          Example: frog plugin snapshot local.word-counter --output /tmp/word-counter.png
-                         """, options: ["output"], feature: .plugins) { call in
+                         """, options: ["output"], flags: ["popup"], feature: .plugins) { call in
                 let item = try runnable(call)
-                guard item.hasPage else { throw AgentCommandError.failed("\(item.name) has no page; it only has commands.") }
-                let png = try await call.model.plugins.snapshot(item.id)
+                let png: Data
+                if call.flag("popup") {
+                    guard item.manifest?.menubar?.popup != nil else { throw AgentCommandError.failed("\(item.name) has no popup in plugin.json.") }
+                    png = try await call.model.plugins.popupHost(for: item.id).snapshot()
+                } else {
+                    guard item.hasPage else { throw AgentCommandError.failed("\(item.name) has no page; it only has commands.") }
+                    png = try await call.model.plugins.snapshot(item.id)
+                }
                 let file = try snapshotFile(call, id: item.id)
                 try png.write(to: file, options: .atomic)
                 return AgentResult(["path": file.path], text: file.path)
@@ -147,20 +159,44 @@ extension AgentCommands {
             throw AgentCommandError.usage("“\(id)” is not a plugin id: use 3 to 64 lowercase letters, digits, dots and hyphens, such as io.github.jane.\(slug.isEmpty ? "plugin" : slug).")
         }
         guard (1...40).contains(name.count), !name.contains(where: \.isNewline) else { throw AgentCommandError.usage("Give the plugin a name of 1 to 40 characters with --name.") }
+        let parts = Set((call.option("with") ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty })
+        if let unknown = parts.subtracting(PluginTemplate.Part.allCases.map(\.rawValue)).sorted().first {
+            throw AgentCommandError.usage("--with takes \(PluginTemplate.Part.allCases.map(\.rawValue).joined(separator: ", ")), not “\(unknown)”.")
+        }
+        let with = Set(parts.compactMap(PluginTemplate.Part.init(rawValue:)))
 
-        let manifest: [String: Any] = [
+        var action: [String: Any] = ["id": "count", "title": "Count \(name)", "effect": "write"]
+        var permissions: [String] = []
+        var manifest: [String: Any] = [
             "id": id, "name": name, "version": "1.0.0", "description": "What \(name) does, in one sentence.",
-            "symbol": "puzzlepiece.extension", "frog": PluginVersion(AppVersion.current) != nil ? AppVersion.current : "1.0.40",
-            "permissions": [String](),
-            "actions": [["id": "count", "title": "Count \(name)", "effect": "write"]]
+            "symbol": "puzzlepiece.extension", "frog": PluginVersion(AppVersion.current) != nil ? AppVersion.current : "1.0.40"
         ]
+        if with.contains(.menubar) {
+            permissions.append("menubar")
+            manifest["menubar"] = ["symbol": "puzzlepiece.extension", "popup": "popup.html", "width": 300, "height": 200]
+        }
+        if with.contains(.hotkey) {
+            permissions.append("hotkeys")
+            action["shortcut"] = "ctrl+alt+shift+c"
+        }
+        if with.contains(.background) { permissions.append("background") }
+        if with.contains(.settings) {
+            manifest["settings"] = [["key": "step", "title": "Count by", "type": "integer", "default": 1, "min": 1, "max": 100,
+                                     "help": "How much each count adds."]]
+        }
+        manifest["permissions"] = permissions
+        manifest["actions"] = [action]
         let json = try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         let escaped = name.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
-        let files: [(String, Data)] = [
+        var files: [(String, Data)] = [
             ("plugin.json", json + Data("\n".utf8)),
             ("index.html", Data(PluginTemplate.page(name: escaped).utf8)),
-            ("app.js", Data(PluginTemplate.script.utf8))
+            ("app.js", Data(PluginTemplate.script(with).utf8))
         ]
+        if with.contains(.menubar) {
+            files.append(("popup.html", Data(PluginTemplate.popup(name: escaped).utf8)))
+            files.append(("popup.js", Data(PluginTemplate.popupScript.utf8)))
+        }
         try manager.createDirectory(at: folder, withIntermediateDirectories: true)
         for (path, data) in files { try data.write(to: folder.appendingPathComponent(path), options: .withoutOverwriting) }
         let package = try PluginPackage.read(folder)
@@ -172,9 +208,13 @@ extension AgentCommands {
     }
 
     /// What would not work in Frog, though the package reads.
-    private static func hints(for package: PluginPackage) -> [String] {
+    private static func hints(for package: PluginPackage, model: AppModel) -> [String] {
         var hints: [String] = []
         let manifest = package.manifest
+        let code = package.files.filter { $0.path.hasSuffix(".js") || $0.path.hasSuffix(".html") }.compactMap {
+            try? PluginPackage.readFile(package.root.appendingPathComponent($0.path), maximumBytes: 2 * 1024 * 1024)
+        }.map { String(decoding: $0, as: UTF8.self) }
+        func calls(_ text: String) -> Bool { code.contains { $0.contains(text) } }
         if let needed = manifest.frog, PluginVersion(AppVersion.current) != nil, needed.compare(AppVersion.current, options: .numeric) == .orderedDescending {
             hints.append("It needs Frog \(needed), and this Frog is \(AppVersion.current).")
         }
@@ -189,13 +229,34 @@ extension AgentCommands {
         if !manifest.hosts.isEmpty, !manifest.permissions.contains(.network) { hints.append("It lists hosts but does not ask for the network permission.") }
         if !manifest.scripts.isEmpty, !manifest.permissions.contains(.scripts) { hints.append("It lists scripts but does not ask for the scripts permission.") }
         if manifest.entry == nil, manifest.commands.isEmpty { hints.append("It has neither a page nor commands, so nothing can open it.") }
-        if !manifest.actions.isEmpty {
-            let code = package.files.filter { $0.path.hasSuffix(".js") || $0.path.hasSuffix(".html") }.compactMap {
-                try? PluginPackage.readFile(package.root.appendingPathComponent($0.path), maximumBytes: 2 * 1024 * 1024)
-            }.map { String(decoding: $0, as: UTF8.self) }
-            if !code.contains(where: { $0.contains("frog.action(") }) {
-                hints.append("It lists actions, but no file calls frog.action(\"<id>\", handler) to answer them.")
+        if !manifest.actions.isEmpty, !calls("frog.action(") {
+            hints.append("It lists actions, but no file calls frog.action(\"<id>\", handler) to answer them.")
+        }
+        if let popup = manifest.menubar?.popup {
+            if let data = try? PluginPackage.readFile(package.root.appendingPathComponent(popup), maximumBytes: 2 * 1024 * 1024) {
+                if !String(decoding: data, as: UTF8.self).contains("/_frog/frog.css") {
+                    hints.append("\(popup) does not link /_frog/frog.css, so the popup will not look like Frog.")
+                }
+            } else {
+                hints.append("The menu-bar popup \(popup) is not in the folder.")
             }
+        }
+        if !manifest.settings.isEmpty, !calls("frog.settings") {
+            hints.append("It declares settings, but no file reads them with frog.settings.get or frog.settings.all.")
+        }
+        if manifest.permissions.contains(.background), !calls("frog.on(") {
+            hints.append("It runs in the background but listens for no events; frog.on(\"wake\"), \"app\" or \"clipboard\" tell it what happens.")
+        }
+        // The keys and actions this Frog has: a shortcut already taken, or a Frog action that does not exist.
+        for action in manifest.actions {
+            guard let text = action.shortcut, let shortcut = try? Shortcut(text) else { continue }
+            if let owner = model.shortcutOwner(of: shortcut.hotkey, except: Set(model.plugins.shortcutIDs.filter { $0.key.hasPrefix(manifest.id + "/") }.values)) {
+                hints.append("\(text) for “\(action.id)” is already used by \(owner); the user can change it in the plugin's settings, but pick another.")
+            }
+        }
+        let frogActions = model.pluginHost.actions.filter { $0.surfaces.contains(.agent) }.map(\.id)
+        for pattern in manifest.uses where !frogActions.contains(where: { PluginUses.allows($0, patterns: [pattern]) }) {
+            hints.append("“\(pattern)” in uses names no action of a feature that is on; `frog actions` lists them.")
         }
         return hints
     }
@@ -464,6 +525,9 @@ extension AgentCommands {
 
 /// The files `frog plugin new` starts a plugin with: a page that uses Frog's stylesheet and the `frog` object.
 enum PluginTemplate {
+    /// What `--with` adds.
+    enum Part: String, CaseIterable { case menubar, hotkey, background, settings }
+
     static func page(name: String) -> String {
         """
         <!doctype html>
@@ -495,6 +559,73 @@ enum PluginTemplate {
         """
     }
 
+    static func script(_ parts: Set<Part>) -> String {
+        var script = Self.script
+        if parts.contains(.settings) {
+            script = script.replacingOccurrences(of: "  const step = 1;\n", with: "  // The user sets the step in the plugin's settings sheet.\n  const step = (await frog.settings.get(\"step\")) ?? 1;\n")
+        }
+        if parts.contains(.menubar) {
+            script = script.replacingOccurrences(of: "  $(\"count\").textContent = count;\n}", with: "  $(\"count\").textContent = count;\n  // The count beside the menu-bar item.\n  await frog.menubar.set({ title: String(count) });\n}")
+        }
+        if parts.contains(.background) {
+            script += """
+
+            // A background plugin runs from Frog's start, with no window open, and hears what happens on the Mac.
+            frog.on("wake", () => console.log(`The Mac woke up; counted ${count} times so far.`));
+
+            """
+        }
+        return script
+    }
+
+    static func popup(name: String) -> String {
+        """
+        <!doctype html>
+        <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <meta name="color-scheme" content="light dark">
+          <title>\(name)</title>
+          <link rel="stylesheet" href="/_frog/frog.css">
+        </head>
+        <body>
+          <main class="frog-page">
+            <div class="frog-row">
+              <div class="frog-stat frog-spacer"><strong id="count">0</strong><span>Times counted</span></div>
+              <button id="add" class="frog-primary">Count</button>
+            </div>
+            <p id="error" class="frog-error" role="alert" hidden></p>
+          </main>
+          <script src="popup.js"></script>
+        </body>
+        </html>
+
+        """
+    }
+
+    static let popupScript = """
+    // The popup beneath the menu-bar item: a page of its own that shares storage and settings with index.html.
+    const $ = (id) => document.getElementById(id);
+
+    function showError(error) {
+      $("error").textContent = error?.message ?? String(error);
+      $("error").hidden = false;
+    }
+
+    async function render() { $("count").textContent = (await frog.storage.get("count")) ?? 0; }
+
+    // Storing the count tells index.html, which shows it in the menu bar too.
+    $("add").addEventListener("click", async () => {
+      try {
+        await frog.storage.set("count", ((await frog.storage.get("count")) ?? 0) + 1);
+        await render();
+      } catch (error) { showError(error); }
+    });
+    frog.on("show", () => render().catch(showError));
+    render().catch(showError);
+
+    """
+
     static let script = """
     // Runs inside Frog. `frog` is Frog's API; every call returns a promise. See `frog plugin guide`.
     const $ = (id) => document.getElementById(id);
@@ -505,10 +636,15 @@ enum PluginTemplate {
       $("error").hidden = false;
     }
 
-    async function add() {
-      count += 1;
+    async function render() {
+      count = (await frog.storage.get("count")) ?? 0;
       $("count").textContent = count;
-      await frog.storage.set("count", count);
+    }
+
+    async function add() {
+      const step = 1;
+      await frog.storage.set("count", ((await frog.storage.get("count")) ?? 0) + step);
+      await render();
     }
 
     $("add").addEventListener("click", () => add().catch(showError));
@@ -520,10 +656,9 @@ enum PluginTemplate {
       return { text: `Counted ${count} times.`, count };
     });
 
-    frog.storage.get("count").then((saved) => {
-      count = saved ?? 0;
-      $("count").textContent = count;
-    }).catch(showError);
+    // Another page of the plugin, such as its popup, stored something.
+    frog.on("storage", () => render().catch(showError));
+    render().catch(showError);
 
     """
 }

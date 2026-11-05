@@ -183,7 +183,6 @@ import WebKit
             let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -20_000, y: -20_000), size: size), styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             // A popup lies on Frog's panel colour; the picture shows it so.
-            if surface == .popup { window.backgroundColor = NSColor(FrogStyle.opaqueCanvas) }
             webView.frame = NSRect(origin: .zero, size: size)
             window.contentView?.addSubview(webView)
             window.orderBack(nil)
@@ -200,7 +199,20 @@ import WebKit
         try? await Task.sleep(for: .milliseconds(300))
         let configuration = WKSnapshotConfiguration()
         configuration.afterScreenUpdates = true
-        let image = try await webView.takeSnapshot(configuration: configuration)
+        var image = try await webView.takeSnapshot(configuration: configuration)
+        if surface == .popup {
+            // The popup's page has no background of its own: the picture puts it on the panel colour it lies on in
+            // the appearance it draws in.
+            let canvas = NSImage(size: image.size)
+            canvas.lockFocus()
+            webView.effectiveAppearance.performAsCurrentDrawingAppearance {
+                (NSColor(FrogStyle.opaqueCanvas).usingColorSpace(.sRGB) ?? .windowBackgroundColor).setFill()
+            }
+            NSRect(origin: .zero, size: image.size).fill()
+            image.draw(in: NSRect(origin: .zero, size: image.size))
+            canvas.unlockFocus()
+            image = canvas
+        }
         guard let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
               let png = bitmap.representation(using: .png, properties: [:]) else { throw FrogError.message("Could not make a picture of the page.") }
         return png
