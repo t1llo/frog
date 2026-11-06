@@ -283,8 +283,9 @@ struct WritingRuleEditor: View {
             if let issue { InlineIssue(message: issue).padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space10) }
             FrogSheetButtons {
                 if existing {
-                    Button("Delete", systemImage: "trash", role: .destructive) { deleting = true }.buttonStyle(.frog(.destructive))
-                    Button("Save as copy", systemImage: "square.on.square") { saveCopy() }.buttonStyle(.frog(.ghost)).disabled(!named)
+                    // Two pills like Cancel and Save beside them, words only: the colour alone says which one removes.
+                    Button("Delete", role: .destructive) { deleting = true }.buttonStyle(.frog(.destructive))
+                    Button("Save as copy") { saveCopy() }.buttonStyle(.frog()).frogDisabled(named ? nil : "Name the rule first")
                 }
             } trailing: {
                 FrogCancelButton { dismiss() }
