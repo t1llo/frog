@@ -52,6 +52,8 @@ struct FrogDropdown<Value: Hashable>: View {
     var buttonTitle: ((Value) -> String)? = nil
     /// Why the chosen value keeps something from working; the button then leads with a warning mark.
     var warning: String? = nil
+    /// The button takes only the width its value needs, so a label can sit right against it.
+    var fitsContent = false
 
     @State private var showing = false
     @Environment(\.frogDropdownOpenTick) private var openTick
@@ -65,7 +67,7 @@ struct FrogDropdown<Value: Hashable>: View {
         Button { showing.toggle() } label: {
             EmptyView()
         }
-        .buttonStyle(DropdownTriggerStyle(value: value, symbol: current?.symbol, width: width,
+        .buttonStyle(DropdownTriggerStyle(value: value, symbol: current?.symbol, width: fitsContent ? nil : width,
                                           height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight, open: showing,
                                           warning: warning != nil))
         .help(warning.map { L10n.text($0) } ?? value)
@@ -135,13 +137,19 @@ extension FrogDropdown {
     func warning(_ reason: String?) -> Self {
         var copy = self; copy.warning = reason; return copy
     }
+
+    /// The button as wide as its value and no wider, such as "Time limit" followed by its value in a footer.
+    /// The list keeps `width` (at least 240).
+    func fitToContent() -> Self {
+        var copy = self; copy.fitsContent = true; return copy
+    }
 }
 
 /// The dropdown's button: the shared control surface, darker while pressed or open.
 private struct DropdownTriggerStyle: ButtonStyle {
     let value: String
     let symbol: String?
-    let width: CGFloat
+    let width: CGFloat?
     let height: CGFloat
     let open: Bool
     var warning = false
@@ -154,7 +162,7 @@ private struct DropdownTriggerStyle: ButtonStyle {
 private struct DropdownTrigger: View {
     let value: String
     let symbol: String?
-    let width: CGFloat
+    let width: CGFloat?
     let height: CGFloat
     let pressed: Bool
     var warning = false

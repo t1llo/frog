@@ -140,7 +140,8 @@ struct RowControlName: ViewModifier {
 struct CompactDropdownLabel: View {
     let value: String
     var symbol: String? = nil
-    var width: CGFloat = 220
+    /// The most it grows to, its value ending on the trailing edge; `nil` takes only the width its value needs.
+    var width: CGFloat? = 220
     /// `FrogStyle.controlHeight`, or `FrogStyle.compactHeight` in popups and panel headers.
     var height: CGFloat = FrogStyle.controlHeight
     /// Held down, or its list is open.
@@ -149,6 +150,7 @@ struct CompactDropdownLabel: View {
     /// button, so the control and its problem read as one.
     var warning = false
     @State private var hovering = false
+    @Environment(\.frogRowAccessory) private var inRow
     private var compact: Bool { height < FrogStyle.controlHeight }
     var body: some View {
         let knob: CGFloat = compact ? 16 : 20
@@ -165,9 +167,13 @@ struct CompactDropdownLabel: View {
             .padding(.leading, compact ? 7 : 9).padding(.trailing, (height - knob) / 2)
             .frame(height: height)
             .background(Capsule(style: .continuous).fill(hovering || pressed ? FrogStyle.hover : .clear))
-            .frame(maxWidth: width, alignment: .trailing)
+            .frame(maxWidth: width ?? .infinity, alignment: .trailing)
+            .fixedSize(horizontal: width == nil, vertical: false)
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
+            // In a row the knob ends on the content edge, level with a switch or button; only the hover fill reaches
+            // past it.
+            .padding(.trailing, inRow ? -(height - knob) / 2 : 0)
     }
 }
 

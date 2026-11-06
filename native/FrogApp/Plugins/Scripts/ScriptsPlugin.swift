@@ -193,7 +193,7 @@ struct ScriptsPage: View {
                 Text("Time limit").foregroundStyle(FrogStyle.muted).lineLimit(1)
                 FrogDropdown(selected: timeout, options: ScriptsSettings.timeouts.contains(timeout) ? ScriptsSettings.timeouts : (ScriptsSettings.timeouts + [timeout]).sorted(),
                              width: 120, compact: true, title: Self.duration) { timeout = $0; setTimeout($0) }
-                    .fixedSize()
+                    .fitToContent()
                     .help("Frog stops any script that runs longer")
             }
         }
