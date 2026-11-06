@@ -82,6 +82,8 @@ struct OnboardingView: View {
     // MARK: Welcome
 
     private var welcome: some View {
+        // The mark, the words and the actions as one group in the middle, so nothing floats apart; a little more room
+        // below than above sets it at the optical centre.
         VStack(spacing: 0) {
             Spacer(minLength: 0)
             VStack(spacing: FrogStyle.space16) {
@@ -92,7 +94,6 @@ struct OnboardingView: View {
                         .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true).frame(maxWidth: 380)
                 }
             }
-            Spacer(minLength: 0)
             VStack(spacing: FrogStyle.space10) {
                 // The one hero action: taller and wider than a page's buttons.
                 Button { go(to: .plugins) } label: {
@@ -103,8 +104,11 @@ struct OnboardingView: View {
                     Button("Skip setup") { model.finishSetup() }.buttonStyle(.frog(.ghost))
                 }
                 if let issue { InlineIssue(message: issue) }
-            }.padding(.bottom, FrogStyle.pagePadding + 4)
-        }.padding(.horizontal, FrogStyle.pagePadding + 4).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }.padding(.top, 40)
+            Spacer(minLength: 0)
+            Spacer(minLength: 0).frame(maxHeight: 40)
+        }.padding(.horizontal, FrogStyle.pagePadding + 4).padding(.vertical, FrogStyle.pagePadding + 4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: Header and footer
@@ -122,15 +126,19 @@ struct OnboardingView: View {
         }.frame(maxWidth: .infinity)
     }
 
-    private var title: String { step.title }
+    /// The summary says "all set" only when nothing is left open.
+    private var title: String {
+        guard step == .done, let open = openSteps, open > 0 else { return step.title }
+        return "Frog is ready"
+    }
 
     /// Frog works once setup ends, so the summary always closes as done; what was skipped is optional and is said
     /// here, not in the headline.
     private var subtitle: String {
         guard step == .done, let open = openSteps else { return step.subtitle }
         return open == 0 ? "Everything is ready. You can change it any time in Settings."
-            : open == 1 ? "Frog is ready. Set up the optional step now or later in Settings."
-            : "Frog is ready. Set up the \(open) optional steps now or later in Settings."
+            : open == 1 ? "One optional step is left. Set it up now or later in Settings."
+            : "\(open) optional steps are left. Set them up now or later in Settings."
     }
 
     private var footer: some View {
@@ -202,6 +210,9 @@ private struct OnboardingScroll<Content: View>: View {
     @State private var viewport: CGFloat = 0
 
     private var more: Bool { bottom - viewport > 24 }
+    /// How far the content fades, and the clear band under it that holds "More below".
+    private static var fade: CGFloat { 24 }
+    private static var band: CGFloat { FrogStyle.controlHeight }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -218,7 +229,17 @@ private struct OnboardingScroll<Content: View>: View {
                 })
             }
             .coordinateSpace(name: "onboardingScroll")
-            .scrollIndicators(.never).bottomScrollFade()
+            .scrollIndicators(.never)
+            // The content fades out above a clear band at the bottom, and "More below" sits in that band, so it never
+            // covers a heading or a row; the content keeps the band's height clear once scrolled to the end.
+            .contentMargins(.bottom, Self.fade + Self.band, for: .scrollContent)
+            .mask {
+                VStack(spacing: 0) {
+                    Rectangle()
+                    LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: Self.fade)
+                    Color.clear.frame(height: more ? Self.band : 0)
+                }
+            }
             .background(GeometryReader { geometry in
                 Color.clear.onAppear { viewport = geometry.size.height }
                     .onChange(of: geometry.size.height) { _, height in viewport = height }
@@ -228,7 +249,7 @@ private struct OnboardingScroll<Content: View>: View {
                     Button { withAnimation(FrogMotion.reveal) { proxy.scrollTo("end", anchor: .bottom) } } label: {
                         Label("More below", systemImage: "chevron.down")
                     }
-                    .buttonStyle(.frog(.secondary, compact: true)).padding(.bottom, FrogStyle.space4)
+                    .buttonStyle(.frog(.secondary, compact: true)).frame(height: Self.band)
                 }
             }
             .onChange(of: step) { _, _ in proxy.scrollTo("start", anchor: .top) }
@@ -354,9 +375,11 @@ private struct OnboardingPluginTile: View {
                     .lineLimit(1).minimumScaleFactor(0.85)
                 Spacer(minLength: 0)
                 // A tick says what is on; the tile itself stays plain, so a grid of features that are all on stays calm.
+                // A white tick on the accent disc, which stays bright on a dark card.
                 Image(systemName: on ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 14, weight: on ? .regular : .light))
-                    .foregroundStyle(on ? FrogStyle.accent : FrogStyle.placeholder)
+                    .font(.system(size: 16, weight: on ? .regular : .light))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(on ? FrogStyle.onAccent : FrogStyle.placeholder, on ? FrogStyle.accent : FrogStyle.placeholder)
                     .contentTransition(.symbolEffect(.replace)).accessibilityHidden(true)
             }
             .padding(.vertical, FrogStyle.space8).padding(.leading, FrogStyle.space8).padding(.trailing, FrogStyle.space8)
@@ -385,10 +408,11 @@ private struct OnboardingModels: View {
         FrogSection("Recommended models", footer: LocalModels.supported ? "More models, and any from Hugging Face, are in Models." : "Local models need Apple silicon. Add a provider in the next step instead.", accessory: {
             if LocalModels.supported, missing.count > 1 {
                 Button("Download both") { for item in missing { local.download(item) } }.buttonStyle(.frog(.ghost, compact: true))
+                    .padding(.trailing, -FrogButtonStyle.horizontalPadding(compact: true))
             }
         }) {
             ForEach(pair) { item in
-                FrogRow(item.name, caption: "\(item.kind == .audio ? "For dictation" : "For writing rules") · \(item.downloadSize)", icon: {
+                FrogRow(item.name, caption: "\(item.downloadSize) · \(item.kind == .audio ? "For dictation" : "For writing rules")", icon: {
                     PluginIconTile(mark: .model(item))
                 }, control: {
                     HStack(spacing: 8) {
@@ -420,7 +444,9 @@ private struct OnboardingProviders: View {
         VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 6) {
             // Coding tools all sign in the same way, so it is said once under the list rather than on every row.
             FrogSection("Found on this Mac", footer: found?.contains { $0.kind.localTool != nil } == true ? "Coding tools use their own sign-in, so no API key is needed." : nil, accessory: {
+                // The ghost link's text ends where the buttons below end; only its hover fill reaches past.
                 Button("Add with an API key…") { editing = ProviderConfiguration() }.buttonStyle(.frog(.ghost, compact: true))
+                    .padding(.trailing, -FrogButtonStyle.horizontalPadding(compact: true))
             }) {
                 if let found {
                     if found.isEmpty { FrogRow("Nothing found", caption: "Claude Code, Codex, OpenCode, Ollama or LM Studio show here once installed.") }

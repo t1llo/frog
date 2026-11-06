@@ -50,9 +50,9 @@ struct OnboardingPermissions: View {
         let needed = OnboardingPermissionSupport.needed(model)
         let later = Self.askedLater(OnboardingPermissionSupport.wanted(model))
         VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 6) {
-            FrogSection("Needed by your tools", footer: later) {
+            FrogSection("Needed by your features", footer: later) {
                 if needed.isEmpty {
-                    FrogRow("Nothing to allow", caption: "The tools you chose need no permissions.")
+                    FrogRow("Nothing to allow", caption: "The features you chose need no permissions.")
                 }
                 ForEach(needed, id: \.self) { permission in
                     FrogRow(permission.title, caption: Self.reason(permission), icon: {
