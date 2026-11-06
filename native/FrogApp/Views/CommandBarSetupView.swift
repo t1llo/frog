@@ -12,14 +12,16 @@ struct CommandBarSetupView: View {
     private var assigned: Bool { plugin?.settings.shortcut.hotkey == shortcut }
 
     var body: some View {
-        FrogSection("Use instead of Spotlight", footer: "To switch back, choose another shortcut here, then turn Spotlight’s on again.") {
-            FrogRow("Free ⌘Space", caption: "Keyboard Shortcuts → Spotlight: turn off “Show Spotlight search”.") {
+        FrogSection("Use instead of Spotlight") {
+            FrogRow("Free ⌘Space", caption: "In Keyboard Shortcuts → Spotlight, turn off “Show Spotlight search”.") {
                 Button("Keyboard Settings") {
                     guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.keyboard?Shortcuts") else { return }
                     if !NSWorkspace.shared.open(url) { issue = "Open System Settings → Keyboard → Keyboard Shortcuts → Spotlight." }
                 }.buttonStyle(.frog())
             }
-            FrogRow("Give ⌘Space to Frog", caption: assigned && plugin?.shortcutIssue == nil ? "Set. Press ⌘Space to try it." : nil) {
+            FrogRow("Give ⌘Space to Frog", caption: assigned && plugin?.shortcutIssue == nil
+                    ? "Set. Press ⌘Space to try it. To switch back, choose another shortcut."
+                    : "To switch back later, choose another shortcut and turn Spotlight’s on again.") {
                 Button(assigned ? "Try again" : "Use ⌘Space") {
                     do { try model.useCommandBarShortcut(shortcut); issue = nil }
                     catch { issue = error.localizedDescription }

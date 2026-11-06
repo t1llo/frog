@@ -22,12 +22,13 @@ struct CleanerConfirmationSheet: View {
 
     var body: some View {
         let plan = pending.plan, prompt = pending.prompt
-        VStack(alignment: .leading, spacing: 12) {
-            Text(prompt.title).font(FrogType.section).fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: FrogStyle.space16) {
+            Text(prompt.title).font(FrogType.title).tracking(-0.4).fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(removals, id: \.item.id) { removal in itemRow(removal.item) }
-                }.padding(6)
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(removals, id: \.item.id) { removal in itemRow(removal) }
+                }.padding(FrogStyle.listInset)
             }
             .frame(maxHeight: 260).fixedSize(horizontal: false, vertical: true)
             .frogTableSurface()
@@ -39,10 +40,10 @@ struct CleanerConfirmationSheet: View {
                     }
                 }
             }
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(prompt.notes, id: \.self) { note in
-                    Text(note).font(FrogType.small).fixedSize(horizontal: false, vertical: true)
-                }
+            // One paragraph rather than a stack of loose lines; the rows above mark what Finder moves.
+            if !prompt.notes.isEmpty {
+                Text(prompt.notes.joined(separator: " ")).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    .lineSpacing(2).fixedSize(horizontal: false, vertical: true).padding(.horizontal, FrogStyle.rowInset)
             }
             if !plan.refused.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -86,15 +87,26 @@ struct CleanerConfirmationSheet: View {
         }
     }
 
-    private func itemRow(_ item: CleanerItem) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: item.kind.symbol).font(.system(size: 11)).foregroundStyle(FrogStyle.muted)
-                .frame(width: 16).accessibilityHidden(true)
+    private func itemRow(_ removal: PlannedRemoval) -> some View {
+        let item = removal.item
+        return HStack(spacing: FrogStyle.space8) {
+            icon(for: item).frame(width: 18, height: 18).accessibilityHidden(true)
             Text(roots.displayPath(item.url)).font(FrogType.body).lineLimit(1).truncationMode(.middle)
+                .help(item.url.path)
             if item.owner == .administrator { FrogBadge(text: "Needs password") }
+            else if removal.route == .finder { FrogBadge(text: "Finder").help("Finder moves this item to the Trash") }
             Spacer(minLength: 8)
             Text(size(of: item)).font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)
-        }.padding(.horizontal, 8).padding(.vertical, 5)
+        }.padding(.horizontal, FrogStyle.rowPadding - 2).frame(minHeight: 30)
+    }
+
+    /// The app's own icon; a folder or file symbol for the rest.
+    @ViewBuilder private func icon(for item: CleanerItem) -> some View {
+        if item.kind == .application {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path)).resizable().interpolation(.high)
+        } else {
+            Image(systemName: item.kind.symbol).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
+        }
     }
 
     private func size(of item: CleanerItem) -> String {

@@ -49,8 +49,8 @@ struct OnboardingPermissions: View {
     var body: some View {
         let needed = OnboardingPermissionSupport.needed(model)
         let later = Self.askedLater(OnboardingPermissionSupport.wanted(model))
-        VStack(alignment: .leading, spacing: FrogStyle.space16) {
-            FrogSection(footer: later) {
+        VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 6) {
+            FrogSection("Needed by your tools", footer: later) {
                 if needed.isEmpty {
                     FrogRow("Nothing to allow", caption: "The tools you chose need no permissions.")
                 }
@@ -64,9 +64,12 @@ struct OnboardingPermissions: View {
                 }
             }
             if needed.contains(.accessibility), !granted.contains(.accessibility) {
-                Label("Grant opens the list in System Settings. Drag Frog's icon from the small panel into it, then switch Frog on.",
-                      systemImage: "hand.draw").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                    .labelStyle(.titleAndIcon).padding(.horizontal, FrogStyle.rowInset)
+                // How the one permission macOS cannot ask for is given, as three short steps.
+                FrogSection("Allowing Accessibility") {
+                    hint(1, "Grant opens Accessibility in System Settings.")
+                    hint(2, "Drag Frog's icon from the small panel into the list.")
+                    hint(3, "Switch Frog on. This step updates by itself.")
+                }
             }
         }
         .animation(reduceMotion ? FrogMotion.reveal : FrogMotion.check, value: granted)
@@ -78,6 +81,15 @@ struct OnboardingPermissions: View {
             }
         }
         .onDisappear { PermissionDragHelper.shared.hide() }
+    }
+
+    private func hint(_ number: Int, _ text: String) -> some View {
+        HStack(spacing: FrogStyle.space10) {
+            Text("\(number)").font(FrogType.label.monospacedDigit()).foregroundStyle(FrogStyle.muted)
+                .frame(width: 20, height: 20).background(FrogStyle.control, in: Circle()).accessibilityHidden(true)
+            Text(L10n.text(text)).font(FrogType.row).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }.frame(minHeight: 32)
     }
 
     @ViewBuilder private func control(for permission: MacPermission) -> some View {

@@ -291,46 +291,98 @@ struct WritingRuleEditor: View {
 
 // MARK: Try
 
-/// Runs a rule on text typed here, without touching any app or the clipboard.
+/// Runs a rule on text typed here, without touching any app or the clipboard. The rule's model can be chosen here;
+/// that choice is saved to the rule, since the rule runs as saved.
 struct WritingTryView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    let rule: Rule
+    @State private var rule: Rule
     @State private var input = ""
     @State private var result = ""
     @State private var issue: String?
     @State private var run: Task<Void, Never>?
 
+    init(rule: Rule) { _rule = State(initialValue: rule) }
+
+    private var hasModel: Bool { (try? model.resolved(rule)) != nil }
+    private var hasText: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// Why Run waits, said beside it rather than left to a greyed button.
+    private var waiting: String? {
+        if run != nil { return nil }
+        if !hasModel { return "Choose a model first" }
+        if !hasText { return "Type some text first" }
+        if model.isProcessing { return "Frog is busy with another rule" }
+        return nil
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: FrogStyle.space16) {
             // A sheet is its own window, so its header keeps the title.
-            FrogPageHeader(title: rule.name, subtitle: model.ruleModelLabel(rule)).environment(\.frogToolbarTitle, false)
-            TextEditor(text: $input).font(FrogType.body).scrollContentBackground(.hidden)
-                .padding(8).frame(height: 120).frogControlSurface(height: nil)
-                .accessibilityLabel("Text to try").disabled(run != nil)
-            if let issue { InlineIssue(message: issue) }
-            if !result.isEmpty {
-                ScrollView { Text(result).font(FrogType.body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
-                    .padding(8).frogControlSurface(height: nil)
-            } else { Spacer(minLength: 0) }
-            HStack {
-                if run != nil {
-                    ProgressView().controlSize(.small)
-                    Button("Cancel") { run?.cancel() }
-                } else if !result.isEmpty {
-                    Button("Copy", systemImage: "doc.on.doc") {
-                        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(result, forType: .string)
+            FrogPageHeader(title: "Try \(rule.name)") {
+                RuleModelPicker(rule: Binding(get: { rule }, set: { choose($0) }))
+            }.environment(\.frogToolbarTitle, false)
+            VStack(alignment: .leading, spacing: FrogStyle.space6) {
+                SectionCaption(text: "Text").padding(.leading, FrogStyle.rowInset)
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $input).font(FrogType.body).scrollContentBackground(.hidden)
+                        .accessibilityLabel("Text to try").disabled(run != nil)
+                    if input.isEmpty {
+                        Text("Type or paste text to try the rule on").font(FrogType.body).foregroundStyle(FrogStyle.muted.opacity(0.7))
+                            .padding(.leading, 5).allowsHitTesting(false).accessibilityHidden(true)
                     }
                 }
-                Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Run", systemImage: "play.fill", action: start).buttonStyle(.frog(.primary))
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || run != nil || model.isProcessing)
+                .padding(FrogStyle.space8).frame(height: 120).frogControlSurface(height: nil, radius: FrogStyle.controlRadius)
             }
-        }.padding(FrogStyle.sheetPadding).frame(width: 520, height: 460).foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas)
+            VStack(alignment: .leading, spacing: FrogStyle.space6) {
+                HStack {
+                    SectionCaption(text: "Result")
+                    Spacer()
+                    if !result.isEmpty {
+                        CopyAction { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(result, forType: .string) }
+                    }
+                }.padding(.leading, FrogStyle.rowInset).frame(height: 20)
+                Group {
+                    if let issue {
+                        InlineIssue(message: issue).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    } else if run != nil {
+                        HStack(spacing: FrogStyle.space8) {
+                            ProgressView().controlSize(.small)
+                            Text("Running…").font(FrogType.body).foregroundStyle(FrogStyle.muted)
+                        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    } else if result.isEmpty {
+                        Text("The result shows here. Nothing is pasted or copied.").font(FrogType.body)
+                            .foregroundStyle(FrogStyle.muted.opacity(0.7))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    } else {
+                        ScrollView {
+                            Text(result).font(FrogType.body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+                .padding(.horizontal, FrogStyle.space12).padding(.vertical, FrogStyle.space10)
+                .frame(height: 120).frogTableSurface()
+            }
+            HStack(spacing: FrogStyle.space8) {
+                if let waiting { Text(L10n.text(waiting)).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
+                Spacer()
+                if run != nil {
+                    Button("Stop") { run?.cancel() }
+                } else {
+                    Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+                }
+                Button("Run", systemImage: "play.fill", action: start).buttonStyle(.frog(.primary))
+                    .keyboardShortcut(.return, modifiers: .command).help("Run (⌘↩)")
+                    .disabled(!hasText || !hasModel || run != nil || model.isProcessing)
+            }
+        }.padding(FrogStyle.sheetPadding).frame(width: 540).foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas)
             .background(FrogWindowMaterial()).buttonStyle(FrogButtonStyle()).tint(FrogStyle.accent)
             .onDisappear { run?.cancel() }
+    }
+
+    /// A model picked here is saved to the rule, which runs as it is saved.
+    private func choose(_ updated: Rule) {
+        rule = updated
+        do { try model.saveRule(updated) } catch { issue = error.localizedDescription }
     }
 
     private func start() {
