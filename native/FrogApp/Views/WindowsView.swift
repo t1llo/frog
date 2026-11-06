@@ -45,26 +45,17 @@ struct WindowsView: View {
         let assigned = rules.values.filter { $0.hotkey != nil }.count
         // Grouped as the cheat sheet groups them; a layout without a shortcut shows nothing until pointed at.
         return FrogSection("Layouts") {
-            Text(verbatim: "\(assigned) of \(rules.count)").font(FrogType.small.monospacedDigit())
-                .accessibilityLabel(L10n.text("\(assigned) of \(rules.count) layouts have a shortcut"))
+            Text(verbatim: assigned == 1 ? L10n.text("1 shortcut set") : "\(assigned) \(L10n.text("shortcuts set"))")
+                .font(FrogType.small.monospacedDigit())
         } content: {
             if let suggestion { FrogRowNote(text: suggestion) }
             ForEach(Self.layoutGroups, id: \.title) { group in
                 VStack(alignment: .leading, spacing: 0) {
                     SectionCaption(text: group.title).padding(.top, FrogStyle.space10)
-                    // Two equal columns that read top to bottom (Left, Center, Right third, then the two-thirds), each
-                    // cell the same height with its caps on the column's trailing edge; a gap stays empty.
-                    Grid(horizontalSpacing: FrogStyle.space16 * 2, verticalSpacing: 0) {
-                        ForEach(group.rows.indices, id: \.self) { index in
-                            GridRow {
-                                ForEach(0..<2, id: \.self) { column in
-                                    if let action = group.rows[index][column], let rule = rules[action] {
-                                        LayoutShortcutCell(rule: rule, issue: model.hotkeyErrors[rule.id], model: model)
-                                    } else {
-                                        Color.clear.frame(maxWidth: .infinity, minHeight: FrogStyle.rowHeight)
-                                    }
-                                }
-                            }
+                    // One layout per row, in the cheat sheet's order, with every shortcut in the same trailing column.
+                    ForEach(group.actions, id: \.self) { action in
+                        if let rule = rules[action] {
+                            LayoutShortcutCell(rule: rule, issue: model.hotkeyErrors[rule.id], model: model)
                         }
                     }
                 }
@@ -109,7 +100,7 @@ struct WindowsView: View {
     }
 
     private var sizes: some View {
-        FrogSection("Sizes") {
+        FrogSection("Tiling") {
             FrogRow("Gap between windows") {
                 FrogDropdown(selected: settings.gap, options: Self.gapChoices(including: settings.gap), width: 180,
                              title: { "\($0) pt" }) { gap in plugin.update { $0.gap = gap } }
@@ -135,22 +126,22 @@ struct WindowsView: View {
         return (a, first.offset) < (b, second.offset)
     }.map(\.element)
 
-    /// The cheat sheet's groups, laid out in two columns of related layouts: each row is a pair, nil an empty cell.
-    /// Restore joins Displays rather than standing alone; a layout added later lands in its group's last row.
-    static let layoutGroups: [(title: String, rows: [[WindowAction?]])] = {
-        var groups: [(title: String, rows: [[WindowAction?]])] = [
-            ("Halves", [[.leftHalf, .rightHalf], [.topHalf, .bottomHalf]]),
-            ("Quarters", [[.topLeft, .topRight], [.bottomLeft, .bottomRight]]),
-            ("Thirds", [[.leftThird, .leftTwoThirds], [.centerThird, .rightTwoThirds], [.rightThird, nil]]),
-            ("Sizes", [[.maximize, .center], [.toggleFullScreen, .centeredSmall], [.minimize, .centeredMedium], [nil, .centeredLarge]]),
-            ("Displays", [[.nextDisplay, .previousDisplay], [.restore, nil]])
+    /// The cheat sheet's groups, one layout per row. Restore joins Displays rather than standing alone; a layout added
+    /// later lands at its group's end.
+    static let layoutGroups: [(title: String, actions: [WindowAction])] = {
+        var groups: [(title: String, actions: [WindowAction])] = [
+            ("Halves", [.leftHalf, .rightHalf, .topHalf, .bottomHalf]),
+            ("Quarters", [.topLeft, .topRight, .bottomLeft, .bottomRight]),
+            ("Thirds", [.leftThird, .centerThird, .rightThird, .leftTwoThirds, .rightTwoThirds]),
+            ("Sizes", [.maximize, .toggleFullScreen, .minimize, .center, .centeredSmall, .centeredMedium, .centeredLarge]),
+            ("Displays", [.nextDisplay, .previousDisplay, .restore])
         ]
-        let placed = Set(groups.flatMap { $0.rows.joined().compactMap { $0 } })
+        let placed = Set(groups.flatMap(\.actions))
         for action in layoutOrder where !placed.contains(action) {
             var title = WindowCheatSheet.group(for: action)
             if title == "Undo" { title = "Displays" }
             let index = groups.firstIndex { $0.title == title } ?? { groups.append((title, [])); return groups.count - 1 }()
-            groups[index].rows.append([action, nil])
+            groups[index].actions.append(action)
         }
         return groups
     }()
@@ -204,7 +195,7 @@ struct WindowsView: View {
     }
 }
 
-/// One layout in the grid: its picture, its name and its shortcut. Recording a shortcut turns the layout on,
+/// One layout row: its picture, its name and its shortcut. Recording a shortcut turns the layout on,
 /// clearing it turns it off.
 private struct LayoutShortcutCell: View {
     let rule: Rule
@@ -236,7 +227,7 @@ private struct LayoutShortcutCell: View {
             // the pointer or keyboard focus is.
             .opacity(active ? 1 : 0)
         }
-        // Every cell the same height, whether or not its caps show, so the names share a line across the columns.
+        // Every row the same height, whether or not its caps show.
         .frame(maxWidth: .infinity, minHeight: FrogStyle.rowHeight, maxHeight: FrogStyle.rowHeight)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
