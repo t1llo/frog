@@ -33,11 +33,13 @@ struct PluginIconTile: View {
     let symbol: String
     let tint: Color
     var size: Size = .list
-    @Environment(\.self) private var environment
+    // Only what a tint resolves differently under, so the tile does not redraw for every environment change.
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: size.radius, style: .continuous)
-        let fill = Self.fill(for: tint, in: environment)
+        let fill = Self.fill(for: tint, colorScheme: colorScheme, contrast: contrast)
         Image(systemName: symbol)
             .font(.system(size: size.rawValue * 0.52, weight: .medium))
             .symbolRenderingMode(.monochrome)
@@ -51,10 +53,36 @@ struct PluginIconTile: View {
             .accessibilityHidden(true)
     }
 
-    /// The colour the tile is filled with, or nil for a neutral tile. Exposed for tests.
-    static func fill(for tint: Color, in environment: EnvironmentValues) -> Color? {
-        let resolved = tint.resolve(in: environment)
-        let color = NSColor(srgbRed: CGFloat(resolved.red), green: CGFloat(resolved.green), blue: CGFloat(resolved.blue), alpha: 1)
+    private struct FillKey: Hashable {
+        let tint: Color
+        let colorScheme: ColorScheme
+        let contrast: ColorSchemeContrast
+    }
+    /// Resolved fills by tint and appearance; a list of tiles shares a handful of tints.
+    @MainActor private static var fills: [FillKey: Color?] = [:]
+
+    /// The colour the tile is filled with, or nil for a neutral tile, worked out once per tint and appearance.
+    @MainActor static func fill(for tint: Color, colorScheme: ColorScheme, contrast: ColorSchemeContrast) -> Color? {
+        let key = FillKey(tint: tint, colorScheme: colorScheme, contrast: contrast)
+        if let fill = fills[key] { return fill }
+        let appearance: NSAppearance.Name = switch (colorScheme, contrast) {
+        case (.dark, .increased): .accessibilityHighContrastDarkAqua
+        case (.dark, _): .darkAqua
+        case (_, .increased): .accessibilityHighContrastAqua
+        default: .aqua
+        }
+        var color = NSColor(tint)
+        NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
+            // getHue needs RGB components; a colour without them counts as a mid grey.
+            color = color.usingColorSpace(.sRGB) ?? NSColor(srgbRed: 0.5, green: 0.5, blue: 0.5, alpha: 1)
+        }
+        let fill = fill(for: tint, resolved: color)
+        if fills.count > 256 { fills.removeAll() }
+        fills[key] = fill
+        return fill
+    }
+
+    private static func fill(for tint: Color, resolved color: NSColor) -> Color? {
         var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
         color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
         // A near-white or near-black grey (a grey theme's accent): no colour of its own, and a glaring or heavy
