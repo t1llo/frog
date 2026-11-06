@@ -4,8 +4,8 @@ import SwiftUI
 
 /// The page Notes and Scripts share: the list down the side, headed by its search, and the chosen item in one card
 /// that fills the page's height. The card has the item's own actions along its top (`toolbar`, then "…"), its text,
-/// and a slim footer band with what belongs to that item or to running it (`footer`). An item's title is its name in
-/// the list, renamed in place there (double-click, "Rename" or right after adding), so the card never repeats it.
+/// and a slim footer row with what belongs to that item or to running it (`footer`). An item's title heads its text in
+/// the card, renamed in place there or in the list (double-click, "Rename" or right after adding).
 struct DocumentsPage<Toolbar: View, Content: View, Footer: View>: View {
     @ObservedObject var documents: LocalDocuments
     let kind: UtilityDocument.Kind
@@ -129,9 +129,7 @@ struct DocumentsPage<Toolbar: View, Content: View, Footer: View>: View {
                     }
                     Spacer(minLength: 0)
                     if item.pastes {
-                        Image(systemName: "text.insert").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                            .help("Pastes when picked in the command bar")
-                            .accessibilityLabel("Pastes when picked")
+                        FrogBadge(text: "Pastes").help("Pastes when picked in the command bar")
                     }
                 }
                 .padding(.horizontal, FrogStyle.rowInset)
@@ -171,15 +169,26 @@ struct DocumentsPage<Toolbar: View, Content: View, Footer: View>: View {
             .frame(height: Self.barHeight)
             .padding(.leading, FrogStyle.cardPadding).padding(.trailing, FrogStyle.space8)
             VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                // The item's name heads its text, as a document's title does, and is renamed in place.
+                FrogTextField(placeholder: "Untitled", text: documents.binding(item.id, \.title))
+                    .textFieldStyle(.plain).font(FrogType.title).tracking(-0.3)
+                    .accessibilityLabel(kind == .note ? "Note title" : "Script title")
+                    .help("Click to rename")
                 ForEach(item.files, id: \.self) { url in fileRow(url) }
                 content(item)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(.horizontal, FrogStyle.cardPadding).padding(.bottom, FrogStyle.space10)
-            // When it was last edited, then the item's own options, ending on the card's content edge.
-            FrogFooter(.card) { DocumentEditedText(date: item.modified) } actions: {
-                HStack(spacing: FrogStyle.space8) { footer(item) }.font(FrogType.small)
+            // When it was last edited, then the item's own options, ending on the card's content edge: a row on the
+            // card's own fill, as the bar along its top is, rather than a band of another shade.
+            HStack(spacing: FrogStyle.space8) {
+                DocumentEditedText(date: item.modified).foregroundStyle(FrogStyle.muted).lineLimit(1).layoutPriority(2)
+                Spacer(minLength: FrogStyle.space8)
+                HStack(spacing: FrogStyle.space8) { footer(item) }.layoutPriority(1)
             }
+            .font(FrogType.small)
+            .frame(height: Self.barHeight)
+            .padding(.horizontal, FrogStyle.cardPadding)
         }
         .frogRowAccessory()
         .frogTableSurface()
