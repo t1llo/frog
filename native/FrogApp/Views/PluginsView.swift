@@ -25,6 +25,12 @@ struct PluginsView: View {
     @State private var removing: PluginItem?
     @State private var settings: PluginSettingsTarget?
 
+    /// `tab` opens the page on another tab than Installed, for pictures of each tab.
+    init(plugins: PluginRuntime, tab: PluginsTab = .installed) {
+        self.plugins = plugins
+        _tab = State(initialValue: tab)
+    }
+
     var body: some View {
         FrogPage {
             FrogPageHeader(title: "Community plugins", subtitle: "Each runs in its own sandbox, with only the access you approve.") {

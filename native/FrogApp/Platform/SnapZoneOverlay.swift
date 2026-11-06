@@ -63,13 +63,13 @@ final class SnapZoneOverlay {
 }
 
 @MainActor
-private final class SnapZoneOverlayModel: ObservableObject {
+final class SnapZoneOverlayModel: ObservableObject {
     @Published var layout: SnapZoneLayout?
 }
 
 /// Tiles with a window's corner radius, a 1 pt accent outline and the layout's name; the one under
 /// the pointer filled with the accent at 30 %.
-private struct SnapZoneOverlayView: View {
+struct SnapZoneOverlayView: View {
     @ObservedObject var model: SnapZoneOverlayModel
 
     var body: some View {

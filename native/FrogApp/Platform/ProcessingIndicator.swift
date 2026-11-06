@@ -50,11 +50,7 @@ final class ProcessingIndicator {
         }
         guard let panel else { return }
         panel.alphaValue = 1
-        panel.contentView = NSHostingView(rootView: HStack(spacing: 8) {
-            if let symbol { Image(systemName: symbol).foregroundStyle(warning ? FrogStyle.warning : FrogStyle.accent) }
-            else { ProgressView().controlSize(.small) }
-            Text(text).font(FrogType.label).lineLimit(1)
-        }.frame(width: 200, height: 36).frogPanel(pill: true))
+        panel.contentView = NSHostingView(rootView: ProcessingPill(symbol: symbol, warning: warning, text: text))
         if !panel.isVisible, let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main {
             panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - 100, y: screen.visibleFrame.minY + 24))
         }
@@ -69,4 +65,18 @@ final class ProcessingIndicator {
     }
 
     func hide() { dismissal?.cancel(); dismissal = nil; processing = false; panel?.orderOut(nil) }
+}
+
+/// The indicator's pill: a spinner or a symbol, and a short text.
+struct ProcessingPill: View {
+    let symbol: String?
+    let warning: Bool
+    let text: String
+    var body: some View {
+        HStack(spacing: 8) {
+            if let symbol { Image(systemName: symbol).foregroundStyle(warning ? FrogStyle.warning : FrogStyle.accent) }
+            else { ProgressView().controlSize(.small) }
+            Text(text).font(FrogType.label).lineLimit(1)
+        }.frame(width: 200, height: 36).frogPanel(pill: true)
+    }
 }

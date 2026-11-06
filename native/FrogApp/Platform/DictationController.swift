@@ -660,7 +660,7 @@ enum DictationPopupLayout {
     }
 }
 
-private struct DictationPopup: View {
+struct DictationPopup: View {
     @ObservedObject var controller: DictationController
     @State private var copiedPartial = false
     @State private var closeHovering = false

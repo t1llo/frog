@@ -50,7 +50,7 @@ final class PermissionDragHelper {
 
     static let shared = PermissionDragHelper()
     private static let settingsBundleID = "com.apple.systempreferences"
-    private static let panelSize = CGSize(width: 308, height: 64)
+    static let panelSize = CGSize(width: 308, height: 64)
 
     private(set) var pane: PrivacyPane?
     private var panel: NSPanel?
@@ -170,7 +170,7 @@ private final class HelperPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-private struct PermissionDragHelperView: View {
+struct PermissionDragHelperView: View {
     let pane: PrivacyPane
     let url: URL
     let image: NSImage

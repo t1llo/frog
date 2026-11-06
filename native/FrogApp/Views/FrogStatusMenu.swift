@@ -20,7 +20,13 @@ struct FrogStatusMenu: View {
     @State private var selectedTab = Self.frogTab
 
     static let popupName = "Frog"
-    private static let frogTab = "frog"
+    static let frogTab = "frog"
+
+    /// `tab` opens the popup on a plugin's tab rather than Frog's own, for pictures of each tab.
+    init(model: AppModel, tab: String = Self.frogTab) {
+        self.model = model
+        _selectedTab = State(initialValue: tab)
+    }
 
     var body: some View {
         let host = model.pluginHost

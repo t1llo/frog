@@ -10,6 +10,10 @@ struct ProvidersView: View {
     @State private var filter: String?
     @State private var kind: LocalModelDescriptor.Kind = .audio
     @State private var search = ""
+
+    /// `filter` opens the page on one of its sources, for pictures of each.
+    init(filter: String? = nil) { _filter = State(initialValue: filter) }
+
     private var selectedFilter: String { filter ?? (model.localModels.installed.isEmpty ? "Providers" : "Local models") }
     private var providers: [ProviderConfiguration] {
         model.configuration.providers.filter { search.isEmpty || ($0.name + " " + $0.models.map(\.name).joined(separator: " ")).localizedStandardContains(search) }

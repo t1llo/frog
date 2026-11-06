@@ -28,7 +28,7 @@ final class ShortcutReferencePanel {
     }
 }
 
-private struct ShortcutReferenceView: View {
+struct ShortcutReferenceView: View {
     let groups: ShortcutReferencePanel.Groups
     let height: CGFloat
     var body: some View {
@@ -41,7 +41,7 @@ private struct ShortcutReferenceView: View {
 }
 
 /// The same layout as the window cheat sheet: a title, then each group under its caption, every row with its keys.
-private struct ShortcutReferenceContent: View {
+struct ShortcutReferenceContent: View {
     let groups: ShortcutReferencePanel.Groups
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.space16) {

@@ -138,10 +138,7 @@ final class SecureInputNoticePanel {
             panel = created
         }
         guard let panel else { return }
-        let host = NSHostingView(rootView: HStack(spacing: 8) {
-            Image(systemName: "lock").foregroundStyle(FrogStyle.warning)
-            Text(message).font(FrogType.label).lineLimit(1)
-        }.padding(.horizontal, 14).frame(height: 36).frogPanel(pill: true))
+        let host = NSHostingView(rootView: SecureInputPill(message: message))
         let size = host.fittingSize
         panel.contentView = host
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main {
@@ -156,4 +153,15 @@ final class SecureInputNoticePanel {
     }
 
     func hide() { dismissal?.cancel(); dismissal = nil; panel?.orderOut(nil) }
+}
+
+/// The notice's pill: a lock and the message.
+struct SecureInputPill: View {
+    let message: String
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "lock").foregroundStyle(FrogStyle.warning)
+            Text(message).font(FrogType.label).lineLimit(1)
+        }.padding(.horizontal, 14).frame(height: 36).frogPanel(pill: true)
+    }
 }

@@ -183,7 +183,7 @@ private struct RecordButton: View {
     }
 }
 
-private struct RenameSheet: View {
+struct RenameSheet: View {
     @State var name: String
     let save: (String) -> Void
     @Environment(\.dismiss) private var dismiss

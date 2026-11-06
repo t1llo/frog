@@ -1471,7 +1471,10 @@ final class AppModel: ObservableObject {
     }
     func cancelProcessing() { processingTask?.cancel(); status = "Cancelling…" }
 
-    func showShortcuts() {
+    func showShortcuts() { shortcutPanel.show(groups: shortcutReferenceGroups) }
+
+    /// The keys the shortcut reference panel lists, grouped.
+    var shortcutReferenceGroups: ShortcutReferencePanel.Groups {
         let preferences = configuration.preferences
         // App and Mac command keys are the Shortcuts plugin's bindings now, listed with the other plugins' keys.
         var items = ShortcutReference.items(configuration: configuration,
@@ -1482,7 +1485,7 @@ final class AppModel: ObservableObject {
         for (id, shortcut) in pluginShortcuts.sorted(by: { $0.value.name < $1.value.name }) where !listed.contains(shortcut.hotkey) {
             items.append(ShortcutReferenceItem(id: id.uuidString, title: shortcut.name, hotkey: shortcut.hotkey, group: .shortcuts))
         }
-        shortcutPanel.show(groups: ShortcutReference.grouped(items))
+        return ShortcutReference.grouped(items)
     }
 
     func saveWorkflowPreferences(_ value: WorkflowPreferences) throws {

@@ -12,6 +12,9 @@ struct HistoryView: View {
     @State private var deleting: HistoryEntry?
     @State private var note: NoteProgress?
 
+    /// `viewing` opens one entry's detail rather than the list, for pictures of it.
+    init(viewing: UUID? = nil) { _viewing = State(initialValue: viewing) }
+
     private var preferences: Preferences { model.configuration.preferences }
     /// With Hide history text on, texts stay masked until revealed, and are masked again when the page closes.
     private func hidden(_ entry: HistoryEntry) -> Bool { preferences.hideHistoryText && !visibility.revealed.contains(entry.id) }
