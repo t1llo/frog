@@ -277,7 +277,7 @@ struct PluginReviewSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: FrogStyle.space12) {
                 HStack(alignment: .center, spacing: FrogStyle.space12) {
-                    SymbolTile(symbol: PluginSymbol.name(manifest.displaySymbol), size: 44)
+                    PluginIconTile(symbol: PluginSymbol.name(manifest.displaySymbol), tint: PluginTint.purple.color, size: .header)
                     VStack(alignment: .leading, spacing: FrogStyle.space2) {
                         Text(updating ? "Update \(manifest.name)?" : "Install \(manifest.name)?").font(FrogType.title).tracking(-0.4)
                             .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
