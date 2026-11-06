@@ -28,6 +28,14 @@ public enum LocalToolKind: String, Codable, CaseIterable, Identifiable, Sendable
         case .opencode: "Install OpenCode V2, then connect your provider in OpenCode with /connect."
         }
     }
+    /// How to sign in once the tool is installed: the step `loginInstructions` gives after installing it.
+    public var signInInstructions: String {
+        switch self {
+        case .claudeCode: "Run claude auth login in your terminal to sign in. Claude Desktop alone is not supported."
+        case .codex: "Run codex login in your terminal to sign in."
+        case .opencode: "Connect your provider in OpenCode with /connect."
+        }
+    }
     /// Suggestions, not claims about the account's entitlements. Empty means CLI default.
     public var suggestedModels: [LocalToolModel] {
         let defaults = [LocalToolModel(id: "", name: "Tool default")]

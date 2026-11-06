@@ -33,7 +33,7 @@ struct LocalToolProvidersView: View {
                         }
                     }
                 }
-                if statuses.isEmpty, refreshing { FrogRowNote(text: "Looking for coding tools…") }
+                if statuses.isEmpty, refreshing { FrogLoadingNote(text: "Looking for coding tools…") }
             }
             // Which tool and model Frog's rules use; the tool is named here so the model below is clearly its.
             FrogSection("Use with Frog's rules",

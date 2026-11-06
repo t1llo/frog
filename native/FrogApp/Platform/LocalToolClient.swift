@@ -72,7 +72,7 @@ actor LocalToolClient {
             else {
                 switch authentication {
                 case .signedIn: detail = "Existing CLI login found. Model access is checked when you run a rule."
-                case .signedOut: detail = kind.loginInstructions
+                case .signedOut: detail = kind.signInInstructions
                 case .unknown: detail = "Installed; login status could not be verified. Check your login in \(kind.title)."
                 case .notChecked: detail = "Installed; login not checked."
                 }
@@ -433,7 +433,7 @@ enum LocalToolOutput {
         // bounded streams only inside the invocation; expose an allowlisted diagnosis.
         let output = String(decoding: result.stderr + result.stdout, as: UTF8.self).lowercased()
         if ["unauthorized", "not logged in", "authentication", "login required", "401"].contains(where: output.contains) {
-            return .message("\(kind.title) needs a valid CLI login. \(kind.loginInstructions)")
+            return .message("\(kind.title) needs a valid CLI login. \(kind.signInInstructions)")
         }
         if ["rate limit", "quota", "429"].contains(where: output.contains) { return .message("\(kind.title) reached its usage limit. Check your plan and retry later.") }
         if ["unknown option", "unexpected argument", "unrecognized"].contains(where: output.contains) { return .message("Update \(kind.title); its CLI does not support Frog's text-only options.") }
