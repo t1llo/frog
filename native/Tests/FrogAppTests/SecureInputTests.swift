@@ -81,7 +81,7 @@ final class SecureInputTests: XCTestCase {
         let helper = URL(fileURLWithPath: "/Applications/Vault.app/Contents/Frameworks/Vault Helper (Renderer).app")
         XCTAssertEqual(SecureInput.application(helper).path, "/Applications/Vault.app")
         XCTAssertEqual(SecureInput.application(URL(fileURLWithPath: "/Applications/Vault.app")).path, "/Applications/Vault.app")
-        XCTAssertEqual(SecureInput.summary(waiting), "Window switcher paused: Bitwarden is asking for a password")
+        XCTAssertEqual(SecureInput.summary(waiting), "Window switcher paused: Bitwarden needs a password")
         XCTAssertTrue(SecureInput.status(SecureInput.Holder()).hasPrefix("Paused: another app is asking for a password."))
     }
 }
