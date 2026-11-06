@@ -11,7 +11,7 @@ struct WritingView: View {
 
     var body: some View {
         FrogPage {
-            FrogPageHeader(title: "Writing", subtitle: "Select text in any app and press a rule's shortcut to rewrite it.") {
+            FrogPageHeader(title: "Writing", subtitle: "Select text in any app and press a rule's shortcut to rewrite it or get an answer.") {
                 // The same add button as Add rule on Dictation.
                 FrogAddButton("Add rule") {
                     editing = model.configuration.newRule(category: .text, installed: model.localModels.installed)
@@ -66,12 +66,16 @@ struct WritingView: View {
                        })
     }
 
-    /// Its model, and what it does with the result when that is not the usual replacing ("Copy · Llama 3.2"), in one
+    /// Its model, and what it does with the result when that is not the usual replacing ("Copies the result · Llama 3.2"), in one
     /// line; the shortcut is drawn as caps beside the controls. A rule without a model names none: the mark beside its
     /// controls says so once.
     private func caption(_ rule: Rule) -> String? {
         var parts: [String] = []
-        if rule.textOutput != .replace { parts.append(rule.textOutput.title) }
+        switch rule.textOutput {
+        case .replace: break
+        case .copy: parts.append(L10n.text("Copies the result"))
+        case .panel: parts.append(L10n.text("Shows the answer in a panel"))
+        }
         if model.ruleHasModel(rule) { parts.append(model.ruleModelLabel(rule)) }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
