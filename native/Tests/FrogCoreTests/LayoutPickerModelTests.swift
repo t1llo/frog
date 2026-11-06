@@ -6,7 +6,7 @@ final class LayoutPickerModelTests: XCTestCase {
         let model = LayoutPickerModel(hotkeys: [:])
         XCTAssertEqual(model.sections.map(\.title), ["Halves", "Quarters", "Thirds", "Sizes", "More"])
         XCTAssertEqual(model.sections[0].tiles.map(\.action), [.leftHalf, .rightHalf, .topHalf, .bottomHalf])
-        XCTAssertEqual(model.sections[2].rows.map { $0.map(\.action) }, [[.leftThird, .centerThird, .rightThird], [.leftTwoThirds, .rightTwoThirds]])
+        XCTAssertEqual(model.sections[2].rows.map { $0.map(\.action) }, [[.leftThird, .centerThird, .rightThird, .leftTwoThirds, .rightTwoThirds]])
         XCTAssertEqual(model.sections[3].tiles.map(\.action), [.maximize, .centeredSmall, .centeredMedium, .centeredLarge])
         XCTAssertEqual(model.sections[4].tiles.map(\.action), [.center, .restore, .nextDisplay, .previousDisplay])
         XCTAssertEqual(model.selection, .leftHalf)
@@ -54,13 +54,10 @@ final class LayoutPickerModelTests: XCTestCase {
         XCTAssertEqual(model.selection, .topLeft, "Right at the end of a row goes on to the next row")
         model.move(.down)
         XCTAssertEqual(model.selection, .leftThird)
-        for _ in 0..<2 { model.move(.right) }
-        XCTAssertEqual(model.selection, .rightThird)
+        for _ in 0..<4 { model.move(.right) }
+        XCTAssertEqual(model.selection, .rightTwoThirds)
         model.move(.down)
-        XCTAssertEqual(model.selection, .rightTwoThirds, "A shorter row keeps its last tile")
-        model.move(.down)
-        XCTAssertEqual(model.selection, .centeredSmall)
-        for _ in 0..<2 { model.move(.right) }
+        XCTAssertEqual(model.selection, .centeredLarge, "A shorter row keeps its last tile")
         model.move(.down)
         XCTAssertEqual(model.selection, .previousDisplay)
         model.move(.up)

@@ -1,7 +1,7 @@
 import Foundation
 
 /// What the layout picker lists and which tile is selected: the layouts that place the window,
-/// grouped as the cheat sheet groups them, four tiles to a row, filtered by the typed text.
+/// grouped as the cheat sheet groups them, four tiles to a row (five for the thirds), filtered by the typed text.
 public struct LayoutPickerModel: Equatable, Sendable {
     public struct Tile: Equatable, Sendable, Identifiable {
         public var action: WindowAction
@@ -41,13 +41,14 @@ public struct LayoutPickerModel: Equatable, Sendable {
         public var title: String
         public var tiles: [Tile]
         public var id: String { title }
-        /// The tiles in rows of `LayoutPickerModel.columns`; two-thirds start a row of their own under the thirds,
-        /// so every row lines up in the same four columns.
+        /// How many tiles one of its rows holds: four, and five for Thirds, whose three thirds and two two-thirds
+        /// share one full row rather than leaving holes in a second one.
+        public var columns: Int { title == "Thirds" ? 5 : LayoutPickerModel.columns }
+        /// The tiles in rows of `columns`.
         public var rows: [[Tile]] {
             var rows: [[Tile]] = []
             for tile in tiles {
-                if rows.isEmpty || rows[rows.count - 1].count == LayoutPickerModel.columns
-                    || (tile.action == .leftTwoThirds && !rows[rows.count - 1].isEmpty) { rows.append([]) }
+                if rows.isEmpty || rows[rows.count - 1].count == columns { rows.append([]) }
                 rows[rows.count - 1].append(tile)
             }
             return rows
