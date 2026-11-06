@@ -4,12 +4,10 @@ import FrogCore
 /// Turns Frog's built-in features on and off, by sidebar category. Each plugin's settings are on its own page.
 struct PluginsCatalogView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var search = ""
     @State private var pending = Set<String>()
 
     private var groups: [(category: PluginCategory, plugins: [PluginInfo])] {
         let infos = model.pluginHost.descriptors.map(\.info)
-            .filter { search.isEmpty || ($0.name + " " + $0.summary).localizedStandardContains(search) }
         return PluginCategory.allCases.compactMap { category in
             let plugins = infos.filter { $0.category == category }
             return plugins.isEmpty ? nil : (category, plugins)
@@ -19,26 +17,23 @@ struct PluginsCatalogView: View {
     var body: some View {
         FrogPage {
             FrogPageHeader(title: "Features", subtitle: "Turn Frog's built-in features on or off. Each has its own page.")
-            ListToolbar(placeholder: "Find a feature", search: $search)
-            let groups = groups
-            if groups.isEmpty {
-                FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another word.")
-            } else {
-                ForEach(groups, id: \.category) { group in
-                    // Captioned like a `FrogSection`, so this page reads like the others.
-                    VStack(alignment: .leading, spacing: FrogStyle.space8) {
-                        FrogSectionHeader(group.category.title)
-                        VStack(spacing: FrogStyle.space2) {
-                            ForEach(group.plugins) { row($0) }
-                        }.padding(FrogStyle.listInset).frogTableSurface()
-                    }
+            // No search of its own: the sidebar's search above already finds features, and two fields stacked
+            // one under the other read as two different searches.
+            ForEach(groups, id: \.category) { group in
+                // Captioned like a `FrogSection`, so this page reads like the others.
+                VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                    FrogSectionHeader(group.category.title)
+                    VStack(spacing: FrogStyle.space2) {
+                        ForEach(group.plugins) { row($0) }
+                    }.padding(FrogStyle.listInset).frogTableSurface()
                 }
             }
         }
     }
 
     /// A feature: its tile, name and summary, its switch, and a chevron that opens its page while it is on (the whole
-    /// row does). A feature that will not work yet has one mark beside its name; its page says why and how to fix it.
+    /// row does). A feature that will not work yet says why in place of its summary, in the warning colour behind one
+    /// mark; its page says how to fix it.
     private func row(_ plugin: PluginInfo) -> some View {
         let host = model.pluginHost
         let enabled = host.enabled(plugin.id)
@@ -46,11 +41,13 @@ struct PluginsCatalogView: View {
         return HStack(spacing: 12) {
             PluginIconTile(symbol: plugin.symbol, tint: plugin.tint.color, size: .list)
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: FrogStyle.space6) {
-                    Text(L10n.text(plugin.name)).font(FrogType.bodyMedium)
-                    if let problem { ProblemMark(help: problem) }
+                Text(L10n.text(plugin.name)).font(FrogType.row)
+                if let problem {
+                    Label(L10n.text(problem), systemImage: "exclamationmark.triangle.fill")
+                        .font(FrogType.small).foregroundStyle(FrogStyle.warning).lineLimit(1).help(problem)
+                } else {
+                    Text(L10n.text(plugin.summary)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
                 }
-                Text(L10n.text(plugin.summary)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
             }.frame(maxWidth: .infinity, alignment: .leading)
             Toggle(plugin.name, isOn: Binding(get: { enabled }, set: { on in
                 pending.insert(plugin.id)
