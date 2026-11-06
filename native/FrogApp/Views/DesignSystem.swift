@@ -652,7 +652,7 @@ struct FrogButtonStyle: ButtonStyle {
         case primary
         /// Every other action.
         case secondary
-        /// Actions that sit beside content, such as Reset or Skip: no fill until hovered.
+        /// Actions that sit beside content, such as Reset or Skip: the label in ink with no fill until hovered.
         case ghost
         /// Removes or deletes something.
         case destructive
@@ -745,7 +745,8 @@ private struct FrogButtonBody: View {
         return switch kind {
         case .primary: FrogStyle.onAccent
         case .secondary: FrogStyle.ink
-        case .ghost: hovering ? FrogStyle.ink : FrogStyle.muted
+        // Ink, never muted: a muted word with no fill is how a disabled button reads.
+        case .ghost: FrogStyle.ink
         case .destructive: FrogStyle.critical
         }
     }
