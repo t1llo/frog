@@ -34,13 +34,13 @@ struct CleanerCommandApp {
             guard let path = paths[app.id] else { return nil }
             return CommandBarRow(
                 record: SearchRecord(id: CleanerCommand.rowID(path: path), title: "Uninstall \(app.title)",
-                                     subtitle: "App cleaner · Review before anything moves", symbol: "trash.circle"),
+                                     subtitle: "Review before anything moves", keywords: "app cleaner", symbol: "trash"),
                 placement: .leading,
                 primary: CommandRowAction(title: "Open review") { @MainActor [weak model = context.model] in
                     guard let model, let cleaner = model.cleanerPlugin?.cleaner else { return }
                     model.openFeature(.cleaner)
                     await cleaner.open(URL(fileURLWithPath: path))
-                })
+                }, tint: .red)
         }
     }
 }

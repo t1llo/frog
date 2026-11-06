@@ -38,7 +38,7 @@ import FrogCore
         bar.prepareResults(model, frontPID: nil)
         bar.query = "2+3"
         let first = try XCTUnwrap(bar.results.first)
-        XCTAssertEqual(first, SearchRecord(id: "calculation:2+3", title: "5", subtitle: "Calculation · Copy result", symbol: "equal.circle"))
+        XCTAssertEqual(first, SearchRecord(id: "calculation:2+3", title: "5", subtitle: "2+3", symbol: "equal"))
         bar.choose(0)
         for _ in 0..<200 where chosen == 0 { try await Task.sleep(for: .milliseconds(5)) }
         XCTAssertEqual(pasteboard.string(forType: .string), "5")
@@ -55,7 +55,7 @@ import FrogCore
         bar.query = "frog"
         let frog = try? XCTUnwrap(bar.results.first { $0.id == "emoji:🐸" })
         XCTAssertEqual(frog?.title, "🐸  Frog")
-        XCTAssertEqual(frog?.subtitle, "Emoji · Copy")
+        XCTAssertEqual(frog?.subtitle, "")
         XCTAssertEqual(frog?.symbol, "face.smiling")
         bar.query = "rocket"
         XCTAssertEqual(bar.results.first?.id, "emoji:🚀")
