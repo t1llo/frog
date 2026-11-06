@@ -11,6 +11,10 @@ struct MainView: View {
     @State private var sidebarQuery = ""
     /// The title the open page's header hands up, shown in the toolbar.
     @State private var pageTitle: String?
+    /// The one-line subtitle the open page's header hands up, shown under the title.
+    @State private var pageSubtitle: String?
+    /// How wide the open page's column grows, so the toolbar's actions end where its cards do.
+    @State private var pageWidth = FrogStyle.pageWidth
     /// Pages visited before and after the open one, for back and forward.
     @State private var history = PageHistory()
     /// A step back inside the open page, which Back takes first.
@@ -60,11 +64,13 @@ struct MainView: View {
             sidebar.frame(width: 208)
                 .padding([.top, .leading, .bottom], FrogStyle.sidebarInset)
             VStack(spacing: 0) {
-                // Drawn above the page, whose content scrolls up beneath it.
-                toolbar.zIndex(1)
+                // Room for the toolbar, which is drawn over the page so its content scrolls up beneath it.
+                Color.clear.frame(height: FrogStyle.toolbarHeight)
                 selectedPage.id(section).frame(maxWidth: .infinity, maxHeight: .infinity)
                     .environment(\.frogToolbarTitle, true)
                     .onPreferenceChange(FrogPageTitleKey.self) { pageTitle = $0 }
+                    .onPreferenceChange(FrogPageSubtitleKey.self) { pageSubtitle = $0 }
+                    .onPreferenceChange(FrogPageWidthKey.self) { pageWidth = $0 ?? FrogStyle.pageWidth }
                     .onPreferenceChange(FrogPageBackKey.self) { pageBack = $0 }
                 // Errors are occasional: the banner rises into place (fades with Reduce Motion) and leaves a little faster.
                 // The page beside it does not animate.
@@ -83,7 +89,10 @@ struct MainView: View {
                             .transition(.asymmetric(insertion: reduceMotion ? .opacity : .offset(y: 8).combined(with: .opacity), removal: .opacity))
                     }
                 }.animation(model.errorMessage == nil ? FrogMotion.exit : FrogMotion.reveal, value: model.errorMessage)
-            }.clipped()
+            }
+            // The page's header actions are views, so they come up as a preference read here rather than state.
+            .overlayPreferenceValue(FrogPageActionsKey.self, alignment: .top) { toolbar(actions: $0?.view) }
+            .clipped()
                 .sheet(item: Binding(get: { model.pluginReview }, set: { if $0 == nil { model.pluginRuntime?.dismissReview() } })) { review in
                     PluginReviewSheet(review: review, plugins: model.plugins) { model.report($0) }
                 }
@@ -114,23 +123,36 @@ struct MainView: View {
 
     // MARK: Toolbar
 
-    /// The open page's title, on the page's content edge, so the title, the subtitle, the section headings and
-    /// the cards below share one left edge. A step inside a page shows where it came from first, as a
-    /// breadcrumb ("Settings › Statistics") whose first part goes back. Back and forward sit in the sidebar,
-    /// beside the window's buttons. The whole bar drags the window.
-    private var toolbar: some View {
-        HStack(spacing: FrogStyle.space6) {
-            if let parent = breadcrumbParent {
-                FrogBreadcrumbLink(title: parent.title, action: parent.action)
-                Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(FrogStyle.muted).accessibilityHidden(true)
+    /// The open page's header, as a Mac window shows its title: the title, with the one-line subtitle under it,
+    /// on the page's content edge, and the page's actions on the trailing side, ending where the page's column
+    /// does. Title and subtitle together sit level with the window's buttons. A step inside a page shows where it
+    /// came from first, as a breadcrumb ("Settings › Statistics") whose first part goes back. Back and forward sit
+    /// in the sidebar, beside the window's buttons. The bar drags the window.
+    private func toolbar(actions: AnyView?) -> some View {
+        HStack(spacing: FrogStyle.space16) {
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: FrogStyle.space6) {
+                    if let parent = breadcrumbParent {
+                        FrogBreadcrumbLink(title: parent.title, action: parent.action)
+                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(FrogStyle.muted).accessibilityHidden(true)
+                    }
+                    Text(pageTitle ?? fallbackTitle).font(FrogType.toolbarTitle).foregroundStyle(FrogStyle.ink)
+                        .lineLimit(1).accessibilityAddTraits(.isHeader)
+                }
+                if let pageSubtitle {
+                    Text(pageSubtitle).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                        .lineLimit(1).truncationMode(.tail).help(pageSubtitle)
+                }
             }
-            Text(pageTitle ?? fallbackTitle).font(FrogType.toolbarTitle).foregroundStyle(FrogStyle.ink)
-                .lineLimit(1).accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
+            // The actions keep their size; a long subtitle is the one to shorten.
+            if let actions { HStack(spacing: FrogStyle.space8) { actions }.fixedSize() }
         }
+        .frame(maxWidth: pageWidth, alignment: .leading)
         // Level with the window's buttons, which the 52-point title bar centres 26 points down.
-        .padding(.leading, FrogStyle.pagePadding).padding(.trailing, FrogStyle.space16)
+        .padding(.horizontal, FrogStyle.pagePadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: FrogStyle.toolbarHeight)
         .background { WindowDragRegion().accessibilityHidden(true) }
         .background(alignment: .top) { toolbarScrim }
@@ -193,7 +215,8 @@ struct MainView: View {
     // MARK: Sidebar
 
     /// A panel floating inside the window: search, Frog's own row for Settings, then the plugins in their
-    /// groups, Community pages, and Models and Plugins. Groups are set apart by space alone.
+    /// groups and Community pages, which scroll, and Models, Features and Settings pinned at the bottom. Groups are
+    /// set apart by space alone.
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             // The window's buttons sit in this strip, centred 26 points down the window like back and forward
@@ -240,7 +263,6 @@ struct MainView: View {
                             }.padding(.bottom, FrogStyle.space12)
                                 .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Community"))
                         }
-                        ForEach(workspaceNavigation.filter { matches($0.title) }) { navigationButton($0).id($0.id) }
                         if !sidebarQuery.isEmpty && !anyMatch {
                             Text(L10n.text("No matches")).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                                 .padding(.horizontal, FrogStyle.space8).padding(.top, FrogStyle.space4)
@@ -251,6 +273,17 @@ struct MainView: View {
                 // a row already in view stays where it is. A window that opens on a page shows its row too.
                 .onAppear { reveal(section, in: proxy) }
                 .onChange(of: section) { _, route in reveal(route, in: proxy) }
+            }
+            // Models, Features and Settings stay pinned under the list, so the open one is always in view and
+            // Settings is always one click away, however long the plugin list grows.
+            let workspace = workspaceNavigation.filter { matches($0.title) }
+            if !workspace.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(workspace) { navigationButton($0) }
+                }
+                .padding(.horizontal, FrogStyle.sidebarRowInset).padding(.top, FrogStyle.space4)
+                .padding(.bottom, FrogStyle.sidebarRowInset)
+                .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Frog"))
             }
         }
         .background(FrogStyle.sidebar, in: RoundedRectangle(cornerRadius: FrogStyle.sidebarRadius, style: .continuous))

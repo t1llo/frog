@@ -14,14 +14,71 @@ struct FrogPage<Content: View>: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) { content }
+            // A header that hands everything up to the toolbar takes no room, and no section spacing either.
+            FrogPageStack(spacing: FrogStyle.sectionSpacing) { content }
                 .frame(maxWidth: width, alignment: .leading)
                 .padding(.horizontal, FrogStyle.pagePadding).padding(.bottom, FrogStyle.pagePadding)
                 .padding(.top, titleInToolbar ? FrogStyle.toolbarFade : FrogStyle.pagePadding)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .minimalScrollbars()
         }
+        // The toolbar lines its actions up with the column's trailing edge.
+        .preference(key: FrogPageWidthKey.self, value: width)
     }
+}
+
+/// A leading-aligned column like `VStack`, except that a subview with no height takes no spacing either, so a
+/// page header that draws nothing in the page (its title, subtitle and actions are in the toolbar) leaves no gap.
+struct FrogPageStack: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        var height: CGFloat = 0, width: CGFloat = 0, placed = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+            guard size.height > 0 else { continue }
+            height += size.height + (placed > 0 ? spacing : 0)
+            width = max(width, size.width); placed += 1
+        }
+        return CGSize(width: proposal.width ?? width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY, placed = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+            if size.height <= 0 {
+                subview.place(at: CGPoint(x: bounds.minX, y: y), proposal: ProposedViewSize(width: bounds.width, height: 0))
+                continue
+            }
+            if placed > 0 { y += spacing }
+            subview.place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading,
+                          proposal: ProposedViewSize(width: bounds.width, height: size.height))
+            y += size.height; placed += 1
+        }
+    }
+}
+
+/// How wide the open page's column grows (`FrogPage`'s width), so the toolbar's actions end where its cards do.
+struct FrogPageWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat? = nil
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) { value = value ?? nextValue() }
+}
+
+/// The open page's one-line subtitle, which `FrogPageHeader` hands up to the toolbar to show under the title.
+struct FrogPageSubtitleKey: PreferenceKey {
+    static let defaultValue: String? = nil
+    static func reduce(value: inout String?, nextValue: () -> String?) { value = value ?? nextValue() }
+}
+
+/// The open page's header actions, which `FrogPageHeader` hands up to the toolbar's trailing side.
+struct FrogPageActions {
+    let view: AnyView
+}
+
+struct FrogPageActionsKey: PreferenceKey {
+    static let defaultValue: FrogPageActions? = nil
+    static func reduce(value: inout FrogPageActions?, nextValue: () -> FrogPageActions?) { value = value ?? nextValue() }
 }
 
 /// The open page's title, which `FrogPageHeader` hands up to the main window's toolbar.
@@ -41,9 +98,10 @@ extension EnvironmentValues {
     }
 }
 
-/// The top of a page: its title, at most one line of subtitle, and the page's actions on the trailing side.
-/// In the main window the title sits in the toolbar beside back and forward, so the header keeps only the
-/// subtitle and actions, and takes no room when it has neither.
+/// The top of a page: its title, at most one line of subtitle under it, and the page's actions on the trailing
+/// side, level with them. In the main window all three go up to the toolbar, as a Mac window shows its title and
+/// subtitle: the title level with the window's buttons, the subtitle under it, the actions at the column's
+/// trailing edge. The header then takes no room in the page. A sheet draws them itself.
 struct FrogPageHeader<Actions: View>: View {
     let title: String
     var subtitle: String? = nil
@@ -53,6 +111,19 @@ struct FrogPageHeader<Actions: View>: View {
     var body: some View {
         let hasSubtitle = subtitle.map { !$0.isEmpty } ?? false
         let hasActions = Actions.self != EmptyView.self
+        if titleInToolbar {
+            // Zero-sized, so `FrogPage` gives it no spacing; it only carries the header up to the toolbar.
+            Color.clear.frame(width: 0, height: 0).accessibilityHidden(true)
+                .preference(key: FrogPageTitleKey.self, value: L10n.text(title))
+                .preference(key: FrogPageSubtitleKey.self, value: hasSubtitle ? subtitle.map { L10n.text($0) } : nil)
+                .preference(key: FrogPageActionsKey.self,
+                            value: hasActions ? FrogPageActions(view: AnyView(actions.frogRowAccessory(false))) : nil)
+        } else {
+            sheetHeader(hasSubtitle: hasSubtitle, hasActions: hasActions)
+        }
+    }
+
+    @ViewBuilder private func sheetHeader(hasSubtitle: Bool, hasActions: Bool) -> some View {
         Group {
             if !titleInToolbar || hasSubtitle || hasActions {
                 HStack(alignment: .center, spacing: FrogStyle.space16) {
@@ -70,7 +141,7 @@ struct FrogPageHeader<Actions: View>: View {
                         }
                     }.frame(maxWidth: .infinity, minHeight: FrogStyle.controlHeight, alignment: .leading)
                         .overlay { WindowDragRegion().accessibilityHidden(true) }
-                    if hasActions { HStack(spacing: FrogStyle.space8) { actions } }
+                    if hasActions { HStack(spacing: FrogStyle.space8) { actions }.frogRowAccessory(false) }
                 }
             }
         }.preference(key: FrogPageTitleKey.self, value: L10n.text(title))
@@ -86,8 +157,8 @@ extension FrogPageHeader where Actions == EmptyView {
 /// A group of rows: an optional heading above one rounded card, and an optional one-sentence footer. Rows are
 /// set apart by their height and a little space, never by lines.
 ///
-/// One edge: the heading, the card and the footer start on the page's content edge, the same edge as the
-/// toolbar's title and the page's subtitle; the rows' text sits `rowInset` inside the card.
+/// Two edges: the card starts on the page's content edge, the same edge as the toolbar's title and subtitle;
+/// the heading, the rows' text and the footer all start `rowInset` inside it, so a section reads down one line.
 struct FrogSection<Content: View, Accessory: View>: View {
     var title: String? = nil
     var footer: String? = nil
@@ -110,16 +181,17 @@ struct FrogSection<Content: View, Accessory: View>: View {
                 .frogTableSurface()
             if let footer {
                 Text(L10n.text(footer)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .fixedSize(horizontal: false, vertical: true).padding(.horizontal, FrogStyle.rowInset)
             }
         }
     }
 }
 
-/// The one heading of a group of content on a page or in a sheet: `FrogType.section` in the text colour, on the
-/// content edge, with optional trailing actions (a count, a button, a menu) at a control's height. `FrogSection`
-/// draws it; a page that groups its own content (a list, a grid) puts it above the group so every heading on the
-/// page looks the same. Inside a card or popup, a sub-group starts with a `SectionCaption` instead.
+/// The one heading of a group of content on a page or in a sheet: `FrogType.section` in the text colour,
+/// `rowInset` in from the content edge, where the text of the rows in the card below starts, with optional
+/// trailing actions (a count, a button, a menu) ending where the rows' controls end. `FrogSection` draws it; a page
+/// that groups its own content (a list, a grid) puts it above the group so every heading on the page looks the
+/// same. Inside a card or popup, a sub-group starts with a `SectionCaption` instead.
 struct FrogSectionHeader<Accessory: View>: View {
     let title: String
     @ViewBuilder var accessory: Accessory
@@ -135,8 +207,8 @@ struct FrogSectionHeader<Accessory: View>: View {
                     .accessibilityAddTraits(.isHeader)
             }
             Spacer(minLength: FrogStyle.space8)
-            accessory.font(FrogType.small).foregroundStyle(FrogStyle.muted)
-        }.frame(minHeight: FrogStyle.compactHeight)
+            accessory.font(FrogType.small).foregroundStyle(FrogStyle.muted).frogRowAccessory()
+        }.frame(minHeight: FrogStyle.compactHeight).padding(.horizontal, FrogStyle.rowInset)
     }
 }
 
@@ -175,7 +247,7 @@ struct FrogRow<Control: View, Icon: View>: View {
             Spacer(minLength: 12)
             // Every on/off setting in a row is Rex's switch.
             control.fixedSize(horizontal: true, vertical: false).environment(\.compactRowTitle, title)
-                .toggleStyle(.frogSwitch)
+                .toggleStyle(.frogSwitch).frogRowAccessory()
         }
         .padding(.vertical, FrogStyle.space6)
         .frame(minHeight: FrogStyle.rowHeight)

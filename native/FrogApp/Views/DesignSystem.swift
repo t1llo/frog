@@ -74,9 +74,6 @@ enum FrogStyle {
     static let controlHeight: CGFloat = 28
     /// The same controls in popups, panel headers and dense rows.
     static let compactHeight: CGFloat = 24
-    /// The least width of a recorded shortcut, as a `ShortcutBadge` or a `HotkeyRecorder`'s button, so a column of
-    /// them lines up whatever their keys; a longer one grows.
-    static let shortcutMinWidth: CGFloat = 56
     /// The least height of a `FrogRow` in a `FrogSection` card: Rex's 38-point settings row.
     static let rowHeight: CGFloat = 38
     /// Where a `FrogRow`'s text and its separator start inside a section card, and where a section's heading and
@@ -199,7 +196,9 @@ enum FrogStyle {
         case .solarized: (0x217EAF, 0x2AA198)
         case .everforest: (0x587D37, 0xA7C080)
         case .graphite: (0x555D69, 0xB8C1D0)
-        case .minimal: (0x3C4149, 0xD0D6E0)
+        // Linear's indigo: a grey accent filled primary buttons and chosen segments with near-black in light and a
+        // washed-out grey in dark, and left switches to borrow green.
+        case .minimal: (0x5E6AD2, 0x5E6AD2)
         // After palettes of the Rex terminal.
         case .wool: (0x0B60ED, 0x4582F9)
         case .pewter: (0x696969, 0x898989)
@@ -210,31 +209,52 @@ enum FrogStyle {
         }
     }
     static var accentSoft: Color { accent.opacity(0.15) }
-    /// Text and symbols on an accent fill: the primary button, a chosen segment. Light accents of dark themes
-    /// take the dark surface colour, dark accents of light themes take white.
-    static var onAccent: Color { panelSurface }
-    /// The track of a switch that is off: a neutral grey in every theme.
-    static var switchTrack: Color { inkLayer(light: 0.12, dark: 0.18) }
-    /// The track of a switch that is on. The accent when it has a colour of its own; a near-grey accent (Minimal,
-    /// Graphite, Pewter) would look like the off track or like ink, so those take the theme's green instead.
-    static var switchOn: Color {
-        let accent = accent, good = good
+    /// Text and symbols on an accent fill: the primary button, a chosen segment, a ticked checkbox. White, unless
+    /// the accent is so light (the pastel accents of dark themes) that the theme's dark surface reads better on it.
+    static var onAccent: Color {
+        let accent = accent, surface = panelSurface, ink = ink
         return Color(nsColor: NSColor(name: nil) { appearance in
-            var resolved = NSColor(accent), fallback = NSColor(good)
+            var fill = NSColor(accent), dark = NSColor(surface), text = NSColor(ink)
             appearance.performAsCurrentDrawingAppearance {
-                resolved = resolved.usingColorSpace(.sRGB) ?? resolved
-                fallback = fallback.usingColorSpace(.sRGB) ?? fallback
+                fill = fill.usingColorSpace(.sRGB) ?? fill
+                dark = dark.usingColorSpace(.sRGB) ?? dark
+                text = text.usingColorSpace(.sRGB) ?? text
             }
-            return resolved.saturationComponent < 0.22 ? fallback : resolved
+            // The dark candidate: a dark theme's surface, or a light theme's text.
+            if dark.frogLuminance > 0.4 { dark = text }
+            // White wins a near tie: it is how macOS letters an accent fill.
+            return contrast(fill, .white) >= contrast(fill, dark) * 0.8 ? .white : dark
         })
     }
-    /// An on switch in a window that is not in front: grey, as macOS draws it, but darker than off.
+    /// WCAG contrast between two sRGB colours.
+    private static func contrast(_ a: NSColor, _ b: NSColor) -> Double {
+        let (x, y) = (a.frogLuminance, b.frogLuminance)
+        return (max(x, y) + 0.05) / (min(x, y) + 0.05)
+    }
+    /// The track of a switch that is off: a neutral grey in every theme.
+    static var switchTrack: Color { inkLayer(light: 0.12, dark: 0.18) }
+    /// The track of a switch that is on: the accent, the one colour of selection, primary actions and switches.
+    /// Green stays with success. A grey theme's accent (Graphite, Pewter) is a deep grey in light and a light grey
+    /// in dark, both clear of the off track.
+    static var switchOn: Color { accent }
+    /// An on switch in a window that is not in front, or one that cannot be changed: grey, as macOS draws it, but
+    /// darker than off.
     static var switchOnInactive: Color { inkLayer(light: 0.38, dark: 0.42) }
-    /// How a disabled control is drawn: its normal look, faded. Buttons, switches, checkboxes and dropdowns alike.
-    static let disabledOpacity: Double = 0.4
+    /// How a disabled control is drawn: its normal look, faded. Switches, checkboxes and dropdowns alike; a
+    /// disabled button fades its fill but keeps its label in `muted`, so it still says what it would do.
+    static let disabledOpacity: Double = 0.5
+    /// The band under a popup's footer (`PanelFooter`, `FrogPopupFooter`): a shade darker than the panel, which
+    /// sets the footer apart without a line.
+    static var footerBand: Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            NSColor.black.withAlphaComponent(appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 0.16 : 0.03)
+        })
+    }
     /// What is chosen: a neutral raised layer, as Rex marks its selected tab and row. The accent shows state.
     static var selection: Color { inkLayer(light: 0.08, dark: 0.1) }
     static var ink: Color { themed(\.ink) }
+    /// Secondary text: captions, subtitles, hints, disabled labels and key cap glyphs. Every theme's muted keeps
+    /// at least 4.5:1 on its cards, so text is never faded further than this; `placeholder` is the one lighter step.
     static var muted: Color { themed(\.muted) }
     /// A text field's placeholder: tertiary, a step lighter than `muted`, so an empty field never looks filled in.
     static var placeholder: Color { muted.opacity(0.72) }
@@ -418,8 +438,9 @@ extension View {
     /// The fill and hairline every bordered control shares: secondary buttons, dropdowns, fields, search boxes,
     /// segmented controls and shortcut badges.
     /// `radius` overrides the corner, as for a field nested in a panel's corner (`FrogStyle.nestedRadius`).
-    func frogControlSurface(hovering: Bool = false, pressed: Bool = false, height: CGFloat? = FrogStyle.controlHeight, capsule: Bool = false, radius: CGFloat? = nil) -> some View {
-        modifier(FrogControlSurface(hovering: hovering, pressed: pressed, height: height, capsule: capsule, radius: radius))
+    /// `faded` draws the fill of a disabled control at `disabledOpacity`, leaving its content to say how it reads.
+    func frogControlSurface(hovering: Bool = false, pressed: Bool = false, height: CGFloat? = FrogStyle.controlHeight, capsule: Bool = false, radius: CGFloat? = nil, faded: Bool = false) -> some View {
+        modifier(FrogControlSurface(hovering: hovering, pressed: pressed, height: height, capsule: capsule, radius: radius, faded: faded))
     }
     /// A row that highlights on hover and when chosen, as in lists, menus and the sidebar.
     func frogRowHighlight(hovering: Bool, selected: Bool = false) -> some View {
@@ -491,9 +512,9 @@ extension ToggleStyle where Self == FrogCheckboxStyle {
 }
 
 /// The on/off switch: a 36 by 20 capsule track with a round knob 2 points in. On fills the track with
-/// `switchOn` (the accent, or the theme's green when the accent is a grey that would not read as "on"); off is
-/// the neutral `switchTrack`. In a window that is not in front an on switch keeps a darker grey than off, so the
-/// two still differ by more than the knob's side. Every on/off setting uses it; the label is the row's title.
+/// `switchOn`, the accent; off is the neutral `switchTrack`. In a window that is not in front, and while disabled,
+/// an on switch keeps a darker grey than off, so the two still differ by more than the knob's side. Every on/off
+/// setting uses it; the label is the row's title.
 struct FrogSwitchStyle: ToggleStyle {
     func makeBody(configuration: ToggleStyleConfiguration) -> FrogSwitch { FrogSwitch(configuration: configuration) }
 }
@@ -530,7 +551,9 @@ struct FrogSwitch: View {
             // In a row the row's title names the switch, as with `.labelsHidden()`.
             if rowTitle == nil && labelsShown { configuration.label }
             ZStack(alignment: on ? .trailing : .leading) {
-                Capsule(style: .continuous).fill(on ? (active ? FrogStyle.switchOn : FrogStyle.switchOnInactive) : FrogStyle.switchTrack)
+                // A switch that cannot be changed is drawn as macOS draws one: an on track turns grey rather than a
+                // pale wash of the accent, and the whole control fades.
+                Capsule(style: .continuous).fill(on ? (active && enabled ? FrogStyle.switchOn : FrogStyle.switchOnInactive) : FrogStyle.switchTrack)
                 Circle().fill(Color.white)
                     .shadow(color: .black.opacity(0.22), radius: 1, y: 0.5)
                     .frame(width: knob, height: knob).padding(2)
@@ -566,6 +589,7 @@ private struct FrogControlSurface: ViewModifier {
     /// Buttons and search boxes are capsules in Rex; fields keep the rounded rectangle.
     let capsule: Bool
     let radius: CGFloat?
+    var faded = false
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.frogKeyboardSurface) private var keyboardSurface
     func body(content: Content) -> some View {
@@ -573,7 +597,7 @@ private struct FrogControlSurface: ViewModifier {
         content.frame(minHeight: height)
             .background {
                 ZStack {
-                    shape.fill(FrogStyle.control)
+                    shape.fill(FrogStyle.control).opacity(faded ? FrogStyle.disabledOpacity : 1)
                     shape.fill(pressed ? FrogStyle.pressed : hovering ? FrogStyle.hover : .clear)
                         .animation(FrogMotion.hover(hovering || pressed, keyboardSurface: keyboardSurface), value: hovering || pressed)
                 }
@@ -633,6 +657,9 @@ struct FrogButtonStyle: ButtonStyle {
     init(_ kind: Kind = .secondary, compact: Bool = false) { self.kind = kind; self.compact = compact }
     /// The space either side of a button's label.
     static func horizontalPadding(compact: Bool) -> CGFloat { compact ? 10 : 12 }
+    /// How tall a button is: `compactHeight` (24) when compact or in a row (`frogRowAccessory`), else
+    /// `controlHeight` (28), the height of every page header and sheet action.
+    static func height(compact: Bool) -> CGFloat { compact ? FrogStyle.compactHeight : FrogStyle.controlHeight }
     init(primary: Bool) { kind = primary ? .primary : .secondary }
 
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
@@ -664,12 +691,15 @@ private struct FrogButtonBody: View {
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.frogKeyboardSurface) private var keyboardSurface
+    @Environment(\.frogRowAccessory) private var inRow
     @State private var hovering = false
 
     /// A press answers on the down event: a deeper fill and, unless motion is reduced, a slight shrink.
     var body: some View {
         // Rex's buttons are capsules.
         let shape = Capsule(style: .continuous)
+        let compact = compact || inRow
+        let height = FrogButtonStyle.height(compact: compact)
         let pressed = configuration.isPressed && enabled
         let hovered = hovering && enabled
         let fade = FrogMotion.hover(hovered || pressed, keyboardSurface: keyboardSurface)
@@ -677,13 +707,14 @@ private struct FrogButtonBody: View {
             .font(compact ? FrogType.label : FrogType.bodyMedium).lineLimit(1)
             .padding(.horizontal, FrogButtonStyle.horizontalPadding(compact: compact))
             .foregroundStyle(foreground)
-            .frame(minHeight: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
+            .frame(minHeight: height)
         Group {
-            // One disabled look for every kind: the secondary pill, faded. A disabled primary keeps no accent, so
-            // it never reads as a grey button that is broken, and a disabled ghost stays plain text.
+            // One disabled look for every kind: the secondary pill with its fill faded and its label in `muted`, so
+            // it still reads. A disabled primary keeps no accent, so it never reads as a grey button that is
+            // broken, and a disabled ghost stays plain text.
             switch enabled || kind == .ghost ? kind : .secondary {
             case .secondary, .destructive:
-                label.frogControlSurface(hovering: hovered, pressed: pressed, height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight, capsule: true)
+                label.frogControlSurface(hovering: hovered, pressed: pressed, height: height, capsule: true, faded: !enabled)
             case .primary:
                 label.background {
                     // The accent, as Rex fills its one main action.
@@ -697,12 +728,11 @@ private struct FrogButtonBody: View {
         }
         // Only the scale springs: whatever the action changes inside the button on release stays an instant cut.
         .animation(keyboardSurface ? nil : FrogMotion.press) { $0.scaleEffect(pressed && !reduceMotion && !keyboardSurface ? 0.97 : 1) }
-        .opacity(enabled ? 1 : FrogStyle.disabledOpacity)
         .onHover { hovering = $0 }
     }
 
     private var foreground: Color {
-        if !enabled { return kind == .ghost ? FrogStyle.muted : FrogStyle.ink }
+        if !enabled { return FrogStyle.muted }
         return switch kind {
         case .primary: FrogStyle.onAccent
         case .secondary: FrogStyle.ink
@@ -768,6 +798,23 @@ struct PageScroll<Content: View>: View {
     }
 }
 
+private struct FrogRowAccessoryKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    /// True for the control of a row (`FrogRow`, or a page's own row marked `frogRowAccessory()`): its buttons and
+    /// icon actions are `compactHeight` (24), so every action beside a row's text is one height. Page header and
+    /// sheet actions stay `controlHeight` (28).
+    var frogRowAccessory: Bool {
+        get { self[FrogRowAccessoryKey.self] }
+        set { self[FrogRowAccessoryKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// Marks the trailing controls of a row a page draws itself, so its buttons are the 24-point row height, as in
+    /// a `FrogRow`.
+    func frogRowAccessory(_ on: Bool = true) -> some View { environment(\.frogRowAccessory, on) }
+}
+
 private struct FrogDenseContainerKey: EnvironmentKey { static let defaultValue = false }
 extension EnvironmentValues {
     /// True inside a card (`frogTableSurface`, `FrogCard`, `FrogSection`) or a popup (`frogPanel`), where a
@@ -779,8 +826,8 @@ extension EnvironmentValues {
 }
 
 /// A label above a group of content. Inside a card or a popup it is the small muted caption of a sub-group; on a
-/// page or in a sheet, outside any card, it is drawn as the one section heading (`FrogSectionHeader`), so a page
-/// never shows two heading styles side by side.
+/// page or in a sheet, outside any card, it is drawn as the one section heading (`FrogSectionHeader`), `rowInset`
+/// in from the content edge like every heading, so a page never shows two heading styles or two heading edges.
 struct SectionCaption: View {
     let text: String
     @Environment(\.frogDenseContainer) private var dense
@@ -791,6 +838,7 @@ struct SectionCaption: View {
         } else {
             Text(L10n.text(text)).font(FrogType.section)
                 .foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
+                .padding(.horizontal, FrogStyle.rowInset)
         }
     }
 }
@@ -819,15 +867,12 @@ struct FrogBadge: View {
     }
 }
 
-/// A recorded shortcut as one chip ("⌃⌥Space"): `compactHeight` tall and at least `shortcutMinWidth` wide, so a column
-/// of them lines up whatever their keys. Hints that only name keys use `KeyCaps`.
+/// A recorded shortcut shown where it cannot be changed (a layout tile, a plugin's action list): the same caps as
+/// every other shortcut, one per key (`KeyCaps`). A shortcut that can be changed is a `HotkeyRecorder`.
 struct ShortcutBadge: View {
     let text: String
     var body: some View {
-        // One line always; in a narrow layout tile a four-modifier shortcut shrinks a little instead of wrapping.
-        Text(text).font(FrogType.bodyMedium).lineLimit(1).minimumScaleFactor(0.8)
-            .padding(.horizontal, 8).frame(minWidth: FrogStyle.shortcutMinWidth).modifier(CompactActionSurface())
-            .accessibilityLabel("Shortcut: \(text)")
+        KeyCaps(text).accessibilityLabel("Shortcut: \(text)")
     }
 }
 
@@ -899,12 +944,13 @@ struct IconMenu<Items: View>: View {
 }
 
 /// The icon of `IconAction` and `IconMenu`: on a 24-point control surface when `bordered`, else a muted symbol
-/// that darkens on a 28-point hover fill.
+/// that darkens on a hover fill, 28 points (24 in a row, beside its other actions).
 private struct IconLabel: View {
     let symbol: String
     let destructive: Bool
     let bordered: Bool
     let hovering: Bool
+    @Environment(\.frogRowAccessory) private var inRow
     var body: some View {
         if bordered {
             Image(systemName: symbol).font(FrogType.label).contentTransition(.symbolEffect(.replace))
@@ -913,7 +959,7 @@ private struct IconLabel: View {
         } else {
             Image(systemName: symbol).font(.system(size: 13, weight: .medium)).contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(destructive ? FrogStyle.critical : hovering ? FrogStyle.ink : FrogStyle.muted)
-                .frame(width: FrogStyle.controlHeight, height: FrogStyle.controlHeight)
+                .frame(width: FrogButtonStyle.height(compact: inRow), height: FrogButtonStyle.height(compact: inRow))
                 .frogRowHighlight(hovering: hovering)
         }
     }
@@ -972,15 +1018,28 @@ struct SettingRow<Control: View>: View {
     }
 }
 
-/// An empty list or page: a symbol, a title, one sentence and, when there is one, the action that fills it.
+/// An empty list or page: a symbol, a title, one sentence and, when there is one, the action that fills it. The
+/// symbol is drawn large (30 points) in `muted`, as macOS draws an empty view; a feature's empty page passes its
+/// `tint` to show the feature's own tile instead.
 struct FrogEmptyState<Actions: View>: View {
     let symbol: String
     let title: String
     let message: String
+    var tint: PluginTint? = nil
     @ViewBuilder var actions: Actions
+    init(symbol: String, title: String, message: String, tint: PluginTint? = nil, @ViewBuilder actions: () -> Actions) {
+        self.symbol = symbol; self.title = title; self.message = message; self.tint = tint; self.actions = actions()
+    }
     var body: some View {
         VStack(spacing: 10) {
-            SymbolTile(symbol: symbol, size: 32)
+            Group {
+                if let tint {
+                    PluginIconTile(symbol: symbol, tint: tint.color, size: .header)
+                } else {
+                    Image(systemName: symbol).font(.system(size: 30, weight: .regular)).symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(FrogStyle.muted).frame(height: 40)
+                }
+            }.padding(.bottom, FrogStyle.space2).accessibilityHidden(true)
             Text(L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.ink)
             Text(L10n.text(message)).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
                 .multilineTextAlignment(.center).lineSpacing(4).frame(maxWidth: 340)
@@ -991,8 +1050,8 @@ struct FrogEmptyState<Actions: View>: View {
 }
 
 extension FrogEmptyState where Actions == EmptyView {
-    init(symbol: String, title: String, message: String) {
-        self.init(symbol: symbol, title: title, message: message) { EmptyView() }
+    init(symbol: String, title: String, message: String, tint: PluginTint? = nil) {
+        self.init(symbol: symbol, title: title, message: message, tint: tint) { EmptyView() }
     }
 }
 
@@ -1003,5 +1062,17 @@ struct FrogMark: View {
     var body: some View {
         Image(nsImage: Self.image).resizable().interpolation(.high).scaledToFit()
             .frame(width: size, height: size).accessibilityHidden(true)
+    }
+}
+
+extension NSColor {
+    /// Relative luminance (WCAG) of an sRGB colour.
+    var frogLuminance: Double {
+        let color = usingColorSpace(.sRGB) ?? self
+        func linear(_ value: CGFloat) -> Double {
+            let v = Double(value)
+            return v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(color.redComponent) + 0.7152 * linear(color.greenComponent) + 0.0722 * linear(color.blueComponent)
     }
 }

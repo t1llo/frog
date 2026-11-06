@@ -21,7 +21,8 @@ struct FrogPopupHeader<Trailing: View>: View {
     }
 }
 
-/// The bottom of every status item popup, under a hairline: a muted status on the left, Close and Escape on the right.
+/// The bottom of every status item popup, on the footer band: a muted status on the left, Close and Escape on the
+/// right.
 struct FrogPopupFooter<Status: View>: View {
     @ViewBuilder var status: Status
 
@@ -32,9 +33,8 @@ struct FrogPopupFooter<Status: View>: View {
             Text(L10n.text("Close")).font(FrogType.label).foregroundStyle(FrogStyle.ink)
             KeyCap("esc")
         }
-        .padding(.horizontal, FrogStyle.cardPadding).frame(height: 32).frame(maxWidth: .infinity)
-        // As `PanelFooter`: the panel's own colour under a thin line.
-        .overlay(alignment: .top) { Rectangle().fill(FrogStyle.hairline).frame(height: 1) }
+        // As `PanelFooter`: a band a shade darker than the panel, no line.
+        .frogFooterBand()
     }
 }
 
@@ -88,5 +88,119 @@ struct FrogCodeChip: View {
             .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius, style: .continuous))
             .contentShape(Rectangle())
         }.buttonStyle(.plain).help("Copy \(text)").accessibilityLabel("Copy \(text)")
+    }
+}
+
+// MARK: Add buttons
+
+/// The one way a page or section offers to add something: a secondary pill with a plus, "Add rule", "Add app".
+/// In a page header (28 tall) or a section header (24, like the rows' actions). When adding means choosing what
+/// to add first, use `FrogAddMenu`, which adds the menu chevron.
+struct FrogAddButton: View {
+    let title: String
+    let action: () -> Void
+    init(_ title: String, action: @escaping () -> Void) { self.title = title; self.action = action }
+
+    var body: some View {
+        Button(action: action) { FrogAddLabel(title: title, menu: false) }
+            .buttonStyle(.frog()).accessibilityLabel(L10n.text(title))
+    }
+}
+
+/// `FrogAddButton` that opens a menu of what to add ("Add app" › the running apps): the same pill with a small
+/// chevron after the title, which only a menu has.
+struct FrogAddMenu<Items: View>: View {
+    let title: String
+    @ViewBuilder var items: Items
+    init(_ title: String, @ViewBuilder items: () -> Items) { self.title = title; self.items = items() }
+    @State private var hovering = false
+    @Environment(\.frogRowAccessory) private var inRow
+    @Environment(\.isEnabled) private var enabled
+
+    var body: some View {
+        let height = FrogButtonStyle.height(compact: inRow)
+        Menu { items } label: {
+            FrogAddLabel(title: title, menu: true)
+                .font(inRow ? FrogType.label : FrogType.bodyMedium)
+                .foregroundStyle(enabled ? FrogStyle.ink : FrogStyle.muted)
+                .padding(.horizontal, FrogButtonStyle.horizontalPadding(compact: inRow))
+                .frogControlSurface(hovering: hovering && enabled, height: height, capsule: true, faded: !enabled)
+        }
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+        .onHover { hovering = $0 }.accessibilityLabel(L10n.text(title))
+    }
+}
+
+/// The label of `FrogAddButton` and `FrogAddMenu`: a plus, the title and, for a menu, a chevron.
+private struct FrogAddLabel: View {
+    let title: String
+    let menu: Bool
+    var body: some View {
+        HStack(spacing: FrogStyle.space4) {
+            Image(systemName: "plus").font(.system(size: 10, weight: .bold)).accessibilityHidden(true)
+            Text(L10n.text(title)).lineLimit(1)
+            if menu {
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+                    .padding(.leading, FrogStyle.space2).accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+// MARK: Sheet buttons
+
+/// The row of buttons at the bottom of every sheet: what removes something (Delete) alone on the leading side,
+/// then Cancel next to the primary action on the trailing side, the primary last, as macOS places them.
+///
+///     FrogSheetButtons {
+///         Button("Delete", role: .destructive) { … }.buttonStyle(.frog(.destructive))
+///     } trailing: {
+///         FrogCancelButton { dismiss() }
+///         FrogPrimaryButton("Save", disabledReason: named ? nil : "Name the rule first") { save() }
+///     }
+struct FrogSheetButtons<Leading: View, Trailing: View>: View {
+    @ViewBuilder var leading: Leading
+    @ViewBuilder var trailing: Trailing
+
+    init(@ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
+        self.leading = leading(); self.trailing = trailing()
+    }
+
+    var body: some View {
+        HStack(spacing: FrogStyle.space8) {
+            leading
+            Spacer(minLength: FrogStyle.space8)
+            trailing
+        }
+        .frogRowAccessory(false)
+        .padding(.horizontal, FrogStyle.sheetPadding).padding(.top, FrogStyle.space12).padding(.bottom, FrogStyle.sheetPadding)
+    }
+}
+
+extension FrogSheetButtons where Leading == EmptyView {
+    init(@ViewBuilder trailing: () -> Trailing) { self.init(leading: { EmptyView() }, trailing: trailing) }
+}
+
+/// A sheet's Cancel: a secondary button that Escape presses.
+struct FrogCancelButton: View {
+    var title = "Cancel"
+    let action: () -> Void
+    init(_ title: String = "Cancel", action: @escaping () -> Void) { self.title = title; self.action = action }
+    var body: some View {
+        Button(L10n.text(title), action: action).buttonStyle(.frog()).keyboardShortcut(.cancelAction)
+    }
+}
+
+/// A sheet's main action: the primary button that Return presses, disabled with its reason while it cannot run.
+struct FrogPrimaryButton: View {
+    let title: String
+    var disabledReason: String? = nil
+    let action: () -> Void
+    init(_ title: String, disabledReason: String? = nil, action: @escaping () -> Void) {
+        self.title = title; self.disabledReason = disabledReason; self.action = action
+    }
+    var body: some View {
+        Button(L10n.text(title), action: action).buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
+            .frogDisabled(disabledReason)
     }
 }

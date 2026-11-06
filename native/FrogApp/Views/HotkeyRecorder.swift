@@ -22,14 +22,18 @@ struct HotkeyRecorder: View {
         VStack(alignment: .trailing, spacing: 4) {
             HStack(spacing: 6) {
                 let text = recording ? L10n.text("Press shortcut…") : hotkey.map(HotkeyManager.display) ?? L10n.text(emptyTitle)
-                // A secondary control in the sans font, like every other button beside it.
-                Button {
-                    recording.toggle(); hint = nil
-                } label: {
-                    // One width for every recorded shortcut, so a column of recorders lines up; a longer one grows.
-                    Text(text).frame(minWidth: hotkey == nil || recording ? nil
-                        : FrogStyle.shortcutMinWidth - 2 * FrogButtonStyle.horizontalPadding(compact: false))
-                }.buttonStyle(.frog()).accessibilityLabel("Shortcut: \(text)")
+                Group {
+                    if let hotkey, !recording {
+                        // A recorded shortcut is caps, one per key, as everywhere else Frog shows one; clicking
+                        // them records a new one.
+                        Button { recording = true; hint = nil } label: { RecordedKeys(hotkey: hotkey) }
+                            .buttonStyle(.plain)
+                    } else {
+                        // Recording, or nothing recorded yet: a secondary button in the sans font, like every other
+                        // action beside it.
+                        Button { recording.toggle(); hint = nil } label: { Text(text) }.buttonStyle(.frog())
+                    }
+                }.accessibilityLabel("Shortcut: \(text)")
                     .help(recording ? "Press a new shortcut, or Escape to cancel." : "Click to change shortcut")
                 if showsClearButton && (hotkey != nil || recording) {
                     Button { hotkey = nil; recording = false; hint = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(FrogStyle.muted) }
@@ -118,5 +122,22 @@ struct KeyCapture: NSViewRepresentable {
             }
             return true
         }
+    }
+}
+
+/// A recorded shortcut in a `HotkeyRecorder`: its caps on a faint hover fill, so they read as the control they are.
+private struct RecordedKeys: View {
+    let hotkey: Hotkey
+    @State private var hovering = false
+    @Environment(\.frogKeyboardSurface) private var keyboardSurface
+    var body: some View {
+        KeyCaps(hotkey: hotkey)
+            .padding(.horizontal, FrogStyle.space4).frame(height: FrogStyle.compactHeight)
+            .background {
+                Capsule(style: .continuous).fill(hovering ? FrogStyle.hover : .clear)
+                    .animation(FrogMotion.hover(hovering, keyboardSurface: keyboardSurface), value: hovering)
+            }
+            .contentShape(Capsule())
+            .onHover { hovering = $0 }
     }
 }
