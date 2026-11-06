@@ -80,7 +80,9 @@ extension Configuration {
                 action.showRecordingPopup = action.showRecordingPopup ?? workflow.showDictationPopup
                 action.transcriptionLanguage = action.transcriptionLanguage ?? workflow.transcriptionLanguage
                 rules[index].action = action
-                if rules[index].preset, rules[index].name == "Dictate", rules[index].hotkey == nil,
+                // The preset was called "Dictate"; every other place says "Dictation", so the untouched preset follows.
+                if rules[index].preset, rules[index].name == "Dictate" { rules[index].name = Rule.dictationPreset.name }
+                if rules[index].preset, rules[index].name == Rule.dictationPreset.name, rules[index].hotkey == nil,
                    !rules.contains(where: { $0.enabled && $0.hotkey == Rule.dictationPreset.hotkey }) {
                     rules[index].hotkey = Rule.dictationPreset.hotkey
                 }

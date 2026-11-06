@@ -85,7 +85,7 @@ public struct WorkflowPreferences: Codable, Equatable, Sendable {
 extension Rule {
     public var category: RuleCategory { action?.category ?? .text }
     public static var dictationPreset: Rule {
-        var rule = Rule(name: "Dictate", instructions: "Clean up this transcript. Fix punctuation, spelling and obvious speech recognition mistakes. Preserve meaning and language. Return only the corrected text, without commentary.", hotkey: Hotkey(keyCode: 49, modifiers: 2048), preset: true)
+        var rule = Rule(name: "Dictation", instructions: "Clean up this transcript. Fix punctuation, spelling and obvious speech recognition mistakes. Preserve meaning and language. Return only the corrected text, without commentary.", hotkey: Hotkey(keyCode: 49, modifiers: 2048), preset: true)
         rule.action = RuleAction(category: .audio)
         return rule
     }
