@@ -284,8 +284,9 @@ struct WritingRuleEditor: View {
                             FrogRow("Model", caption: .attributed(Self.missingModel)) { RuleModelPicker(rule: $rule, marksMissing: false) }
                         }
                     }
-                }.padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space16).minimalScrollbars()
+                }.padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space4).minimalScrollbars()
             }
+            .bottomScrollFade()
             if let issue { InlineIssue(message: issue).padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space10) }
             FrogSheetButtons {
                 if existing {
@@ -403,7 +404,7 @@ struct WritingTryView: View {
                     } else {
                         ScrollView {
                             Text(result).font(FrogType.body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                        }
+                        }.bottomScrollFade(height: FrogStyle.space10)
                     }
                 }
                 .padding(.horizontal, FrogStyle.rowInset).padding(.vertical, FrogStyle.space10)

@@ -378,7 +378,7 @@ struct PluginReviewSheet: View {
                                     ScrollView {
                                         Text((try? review.package.scriptText(name)) ?? "The script could not be read.")
                                             .font(FrogType.mono).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                                    }.frame(maxHeight: 160).padding(8).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                                    }.bottomScrollFade(height: FrogStyle.space10).frame(maxHeight: 160).padding(8).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
                                         .padding(.bottom, FrogStyle.space8)
                                 } label: {
                                     HStack(spacing: 6) {

@@ -99,7 +99,7 @@ struct AddLocalModelView: View {
                             }
                         }
                     }
-                }.frame(maxHeight: 250).fixedSize(horizontal: false, vertical: true)
+                }.frame(maxHeight: 250).fixedSize(horizontal: false, vertical: true).bottomScrollFade()
             }
             FrogSheetButtons(padded: false) {
                 if loading {

@@ -33,8 +33,10 @@ struct CleanerConfirmationSheet: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(removals, id: \.item.id) { removal in itemRow(removal) }
-                }.padding(FrogStyle.listInset)
+                }.padding([.horizontal, .top], FrogStyle.listInset)
             }
+            // The fade stands in for the list's bottom inset, so a long list fades out instead of cutting a row.
+            .bottomScrollFade(height: FrogStyle.space8)
             .frame(maxHeight: 260).fixedSize(horizontal: false, vertical: true)
             .frogTableSurface()
             if let denied = prompt.finderDenied {

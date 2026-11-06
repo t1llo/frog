@@ -76,8 +76,8 @@ struct LegalDocumentView: View {
                             }
                         }
                         .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, FrogStyle.cardPadding).padding(.vertical, FrogStyle.space16)
-                    }.frame(maxHeight: 420).fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, FrogStyle.cardPadding).padding(.top, FrogStyle.space16)
+                    }.bottomScrollFade(height: FrogStyle.space16).frame(maxHeight: 420).fixedSize(horizontal: false, vertical: true)
                 } else {
                     ReadOnlyText(text: text).frame(height: 360)
                 }

@@ -61,7 +61,7 @@ struct PluginSettingsSheet: View {
                         }
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(maxHeight: 440).fixedSize(horizontal: false, vertical: true)
+            }.frame(maxHeight: 440).fixedSize(horizontal: false, vertical: true).bottomScrollFade()
             FrogSheetButtons(padded: false) { FrogPrimaryButton("Done", action: done) }
         }
         .padding(FrogStyle.sheetPadding).frame(width: 520)

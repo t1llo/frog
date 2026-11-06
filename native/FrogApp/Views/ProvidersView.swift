@@ -312,10 +312,11 @@ struct ProviderEditor: View {
                     }
                     }
                     if let validation { InlineIssue(message: validation) }
-                }.padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space12).minimalScrollbars()
+                }.padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space4).minimalScrollbars()
             }
-            // As tall as the step, up to a limit: the short steps leave no empty half, the long one scrolls.
-            .frame(maxHeight: 460).fixedSize(horizontal: false, vertical: true)
+            // As tall as the step, up to a limit: the short steps leave no empty half, the long one scrolls and
+            // fades out above the buttons rather than cutting a line in half.
+            .frame(maxHeight: 460).fixedSize(horizontal: false, vertical: true).bottomScrollFade()
             // A multi-step sheet: Back between Cancel and the main button.
             FrogSheetButtons {
                 FrogCancelButton { testTask?.cancel(); discoveryTask?.cancel(); dismiss() }
