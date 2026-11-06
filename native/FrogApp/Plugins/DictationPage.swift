@@ -76,7 +76,10 @@ private struct DictationRuleSection: View {
                 Button("Delete rule", role: .destructive) {
                     do { try model.deleteRule(id: rule.id) } catch { model.report(error) }
                 }.buttonStyle(.frog(.destructiveGhost))
-            }.frame(minHeight: FrogStyle.rowHeight)
+            }
+            // Row actions are 24 tall, and the last word ends where the switches above end.
+            .frogRowAccessory().padding(.trailing, -FrogButtonStyle.horizontalPadding(compact: true))
+            .frame(minHeight: FrogStyle.rowHeight)
         }
         .sheet(isPresented: $renaming) {
             RenameSheet(name: rule.name, kind: "dictation rule") { name in save { $0.name = name } }
