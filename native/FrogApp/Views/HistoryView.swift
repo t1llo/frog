@@ -484,71 +484,46 @@ private struct HistoryDetail: View {
     }
 }
 
-/// What a rewrite changed, word by word: insertions marked in the result, removals struck through in the original.
+/// What a rewrite changed: letters put in marked in the result, letters taken out struck through in the original.
 /// Only for texts short enough to compare at once; longer ones are shown plain, a page at a time.
 struct HistoryDiff {
     let original: AttributedString
     let result: AttributedString
-    /// Words taken out and put in, for the heading's count.
-    let removedWords: Int
+    /// Words replaced, put in and taken out, for the heading's count. They match what is marked.
+    let changedWords: Int
     let addedWords: Int
+    let removedWords: Int
 
     static let maxLength = 8_000
 
-    /// "3 words changed", with what was added or removed beyond that ("2 words changed · 1 added"), or one side when
-    /// the other is none ("4 words removed").
+    /// "3 words changed", with what was added or removed beyond that ("2 words changed · 1 added").
     var summary: String {
         func words(_ count: Int) -> String { count == 1 ? L10n.text("1 word") : "\(count) \(L10n.text("words"))" }
-        switch (removedWords, addedWords) {
-        case (0, let added): return "\(words(added)) \(L10n.text("added"))"
-        case (let removed, 0): return "\(words(removed)) \(L10n.text("removed"))"
-        default:
-            let changed = "\(words(min(removedWords, addedWords))) \(L10n.text("changed"))"
-            if addedWords > removedWords { return "\(changed) · \(addedWords - removedWords) \(L10n.text("added"))" }
-            if removedWords > addedWords { return "\(changed) · \(removedWords - addedWords) \(L10n.text("removed"))" }
-            return changed
-        }
+        var parts: [String] = []
+        if changedWords > 0 { parts.append("\(words(changedWords)) \(L10n.text("changed"))") }
+        if addedWords > 0 { parts.append(parts.isEmpty ? "\(words(addedWords)) \(L10n.text("added"))" : "\(addedWords) \(L10n.text("added"))") }
+        if removedWords > 0 { parts.append(parts.isEmpty ? "\(words(removedWords)) \(L10n.text("removed"))" : "\(removedWords) \(L10n.text("removed"))") }
+        return parts.isEmpty ? L10n.text("Only spacing changed") : parts.joined(separator: " · ")
     }
 
     init?(original: String, result: String) {
         guard !original.isEmpty, !result.isEmpty, original != result,
               original.count <= Self.maxLength, result.count <= Self.maxLength else { return nil }
-        let old = Self.tokens(original), new = Self.tokens(result)
-        let difference = new.difference(from: old)
-        var removed = Set<Int>(), inserted = Set<Int>()
-        for change in difference {
-            switch change {
-            case .remove(let offset, _, _): removed.insert(offset)
-            case .insert(let offset, _, _): inserted.insert(offset)
-            }
-        }
-        removedWords = removed.filter { !old[$0].allSatisfy(\.isWhitespace) }.count
-        addedWords = inserted.filter { !new[$0].allSatisfy(\.isWhitespace) }.count
-        self.original = Self.attributed(old, marked: removed, color: FrogStyle.critical, strike: true)
-        self.result = Self.attributed(new, marked: inserted, color: FrogStyle.good, strike: false)
+        let diff = TextDiff(original: original, result: result)
+        changedWords = diff.changedWords
+        addedWords = diff.addedWords
+        removedWords = diff.removedWords
+        self.original = Self.attributed(diff.original, color: FrogStyle.critical, strike: true)
+        self.result = Self.attributed(diff.result, color: FrogStyle.good, strike: false)
     }
 
-    /// Words and the spaces between them, so spacing survives and only words are marked.
-    static func tokens(_ text: String) -> [String] {
-        var tokens: [String] = []
-        var current = ""
-        var currentIsSpace: Bool?
-        for character in text {
-            let space = character.isWhitespace
-            if currentIsSpace != nil, space != currentIsSpace { tokens.append(current); current = "" }
-            current.append(character); currentIsSpace = space
-        }
-        if !current.isEmpty { tokens.append(current) }
-        return tokens
-    }
-
-    private static func attributed(_ tokens: [String], marked: Set<Int>, color: Color, strike: Bool) -> AttributedString {
+    private static func attributed(_ segments: [TextDiff.Segment], color: Color, strike: Bool) -> AttributedString {
         var text = AttributedString()
-        for (index, token) in tokens.enumerated() {
-            var part = AttributedString(token)
-            if marked.contains(index), !token.allSatisfy(\.isWhitespace) {
+        for segment in segments {
+            var part = AttributedString(segment.text)
+            if segment.changed {
                 part.backgroundColor = color.opacity(0.2)
-                // A line under or through the word too, so a mark on one narrow letter ("I") still shows.
+                // A line under or through the letters too, so a mark on one narrow letter ("I", ".") still shows.
                 if strike { part.swiftUI.strikethroughStyle = Text.LineStyle(pattern: .solid, color: color); part.foregroundColor = FrogStyle.muted }
                 else { part.swiftUI.underlineStyle = Text.LineStyle(pattern: .solid, color: color) }
             }

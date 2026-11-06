@@ -5,9 +5,11 @@ import XCTest
 
 @MainActor
 final class HistoryDiffTests: XCTestCase {
-    func testTokensKeepWordsAndSpacesApart() {
-        XCTAssertEqual(HistoryDiff.tokens("one  two\nthree"), ["one", "  ", "two", "\n", "three"])
-        XCTAssertEqual(HistoryDiff.tokens(""), [])
+    func testAnAddedPeriodMarksOnlyThePeriodAndCountsOneWord() throws {
+        let diff = try XCTUnwrap(HistoryDiff(original: "i saw it yesterday", result: "I saw it yesterday."))
+        let marked = diff.result.runs.filter { $0.backgroundColor != nil }.map { String(diff.result[$0.range].characters) }
+        XCTAssertEqual(marked, ["I", "."])
+        XCTAssertEqual(diff.summary, "2 words changed")
     }
 
     func testMarksRemovedWordsInTheOriginalAndInsertedWordsInTheResult() throws {
