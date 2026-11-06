@@ -680,8 +680,15 @@ struct DictationPopup: View {
                                 Label(device.name, systemImage: controller.selectedMicrophoneID == device.uid ? "checkmark" : "mic")
                             }
                         }
-                    } label: { Image(systemName: "mic.fill").foregroundStyle(FrogStyle.accent) }
-                    .menuStyle(.borderlessButton).fixedSize()
+                    } label: {
+                        // The microphone and a chevron that reads as a menu, on a compact control surface.
+                        HStack(spacing: FrogStyle.space4) {
+                            Image(systemName: "mic.fill").font(FrogType.label).foregroundStyle(FrogStyle.accent)
+                            Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(FrogStyle.muted)
+                        }.padding(.horizontal, FrogStyle.space8).frame(height: FrogStyle.compactHeight)
+                            .background(FrogStyle.control, in: Capsule())
+                    }
+                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
                     .help("Change microphone").accessibilityLabel("Change microphone")
                     .simultaneousGesture(TapGesture().onEnded { controller.refreshMicrophones() })
                 }
