@@ -40,11 +40,3 @@ struct FrogLoadingNote: View {
         .accessibilityElement(children: .combine)
     }
 }
-
-extension View {
-    /// Shows skeleton bars in place of this view's text while `loading` is true, keeping its size. For a value
-    /// whose final width is known only roughly: `Text(value).frogSkeleton(loading, width: 48)`.
-    @ViewBuilder func frogSkeleton(_ loading: Bool, width: CGFloat = 40, height: CGFloat = 12) -> some View {
-        if loading { FrogSkeleton(width: width, height: height) } else { self }
-    }
-}

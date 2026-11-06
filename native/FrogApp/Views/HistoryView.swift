@@ -177,8 +177,6 @@ struct HistoryView: View {
         do { try model.savePreferences(preferences) } catch { model.report(error) }
     }
 
-    static func symbol(_ filter: HistoryFilter) -> String { feature(filter).symbol }
-
     /// The feature that made an entry, whose icon its row shows: Writing, Explain or Dictation.
     static func feature(_ filter: HistoryFilter) -> PluginInfo {
         switch filter { case .text: WritingPlugin.info; case .answers: ExplainPlugin.info; case .audio: DictationPlugin.info }

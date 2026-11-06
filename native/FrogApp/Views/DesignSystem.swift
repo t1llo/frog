@@ -74,6 +74,9 @@ enum FrogStyle {
     static let controlHeight: CGFloat = 28
     /// The same controls in popups, panel headers and dense rows.
     static let compactHeight: CGFloat = 24
+    /// The least width of a recorded shortcut, as a `ShortcutBadge` or a `HotkeyRecorder`'s button, so a column of
+    /// them lines up whatever their keys; a longer one grows.
+    static let shortcutMinWidth: CGFloat = 56
     /// The least height of a `FrogRow` in a `FrogSection` card: Rex's 38-point settings row.
     static let rowHeight: CGFloat = 38
     /// Where a `FrogRow`'s text and its separator start inside a section card, and where a section's heading and
@@ -628,6 +631,8 @@ struct FrogButtonStyle: ButtonStyle {
     var compact = false
 
     init(_ kind: Kind = .secondary, compact: Bool = false) { self.kind = kind; self.compact = compact }
+    /// The space either side of a button's label.
+    static func horizontalPadding(compact: Bool) -> CGFloat { compact ? 10 : 12 }
     init(primary: Bool) { kind = primary ? .primary : .secondary }
 
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
@@ -670,7 +675,7 @@ private struct FrogButtonBody: View {
         let fade = FrogMotion.hover(hovered || pressed, keyboardSurface: keyboardSurface)
         let label = configuration.label
             .font(compact ? FrogType.label : FrogType.bodyMedium).lineLimit(1)
-            .padding(.horizontal, compact ? 10 : 12)
+            .padding(.horizontal, FrogButtonStyle.horizontalPadding(compact: compact))
             .foregroundStyle(foreground)
             .frame(minHeight: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
         Group {
@@ -814,15 +819,14 @@ struct FrogBadge: View {
     }
 }
 
-/// A recorded shortcut as one chip ("⌃⌥Space"): `compactHeight` tall and at least `minWidth` wide, so a column
+/// A recorded shortcut as one chip ("⌃⌥Space"): `compactHeight` tall and at least `shortcutMinWidth` wide, so a column
 /// of them lines up whatever their keys. Hints that only name keys use `KeyCaps`.
 struct ShortcutBadge: View {
-    static let minWidth: CGFloat = 56
     let text: String
     var body: some View {
         // One line always; in a narrow layout tile a four-modifier shortcut shrinks a little instead of wrapping.
         Text(text).font(FrogType.bodyMedium).lineLimit(1).minimumScaleFactor(0.8)
-            .padding(.horizontal, 8).frame(minWidth: Self.minWidth).modifier(CompactActionSurface())
+            .padding(.horizontal, 8).frame(minWidth: FrogStyle.shortcutMinWidth).modifier(CompactActionSurface())
             .accessibilityLabel("Shortcut: \(text)")
     }
 }

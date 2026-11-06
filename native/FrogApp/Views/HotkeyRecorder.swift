@@ -4,8 +4,6 @@ import FrogCore
 
 /// A focused native control consumes recording keystrokes without installing a global or local monitor.
 struct HotkeyRecorder: View {
-    /// The least width of a recorded shortcut's chip, inside the button's padding.
-    static let chipMinWidth: CGFloat = 52
     @EnvironmentObject private var model: AppModel
     @Binding var hotkey: Hotkey?
     var showsClearButton = true
@@ -29,7 +27,8 @@ struct HotkeyRecorder: View {
                     recording.toggle(); hint = nil
                 } label: {
                     // One width for every recorded shortcut, so a column of recorders lines up; a longer one grows.
-                    Text(text).frame(minWidth: hotkey == nil || recording ? nil : Self.chipMinWidth)
+                    Text(text).frame(minWidth: hotkey == nil || recording ? nil
+                        : FrogStyle.shortcutMinWidth - 2 * FrogButtonStyle.horizontalPadding(compact: false))
                 }.buttonStyle(.frog()).accessibilityLabel("Shortcut: \(text)")
                     .help(recording ? "Press a new shortcut, or Escape to cancel." : "Click to change shortcut")
                 if showsClearButton && (hotkey != nil || recording) {
