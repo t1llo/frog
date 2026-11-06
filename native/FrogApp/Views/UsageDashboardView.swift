@@ -384,16 +384,13 @@ private struct UsageTokenTotals: View {
     let chart: UsageChart
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                // A label the size of the totals' names under it, the figure in the text size.
-                Text("Total tokens").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                Spacer()
-                Text(usage.format(chart.totalTokens, metric: "Input")).font(FrogType.body).monospacedDigit()
-            }
-                .help("Uncached input, cache reads, cache writes and output.")
-            // The chart's own metric is the figure above it; the others sit here, two by two, and choosing one makes it the chart's.
-            // A plain grid on the card, the names on the card's text edge; the hover fill reaches past it.
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: FrogStyle.space4), GridItem(.flexible())], spacing: FrogStyle.space2) {
+            // Every total is the same stat: its name over its figure. Total tokens leads; the chart's own metric is the
+            // figure above the chart, and choosing any other makes it the chart's. A plain grid on the card, the names
+            // on the card's text edge; the hover fill reaches past it.
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: FrogStyle.space4), GridItem(.flexible(), spacing: FrogStyle.space4),
+                                GridItem(.flexible())], spacing: FrogStyle.space2) {
+                UsageTokenTotal(title: "Total tokens", value: usage.format(chart.totalTokens, metric: "Input"), choosable: false)
+                    .help("Uncached input, cache reads, cache writes and output.")
                 ForEach(chart.totals.filter { $0.name != usage.preferences.metric }) { total in
                     Button {
                         var next = usage.preferences; next.metric = total.name; usage.updatePreferences(next)
@@ -412,6 +409,7 @@ private struct UsageTokenTotals: View {
 private struct UsageTokenTotal: View {
     let title: String
     let value: String
+    var choosable = true
     @State private var hovering = false
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.space2) {
@@ -420,7 +418,7 @@ private struct UsageTokenTotal: View {
         }.padding(.horizontal, FrogStyle.rowPadding).padding(.vertical, FrogStyle.space6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .frogRowHighlight(hovering: hovering)
+            .frogRowHighlight(hovering: hovering && choosable)
             .onHover { hovering = $0 }
     }
 }
@@ -777,6 +775,22 @@ struct UsageTrendChart: View {
             .help(showsBars ? "The line is the running total for the period. The bars are each \(hourly ? "hour" : "day")’s amount." : "The line is the running total for the period.")
             if let first = steps.first, let last = steps.last {
                 GraphAxis(leading: label(first.date, long: false), trailing: label(last.date, long: false))
+            }
+            // Two kinds of mark, so a key names both: the line's running total and the bars' amount per bucket, with
+            // the busiest bucket's figure, as the bars have no scale of their own.
+            if showsBars, let busiest = steps.max(by: { $0.amount < $1.amount }) {
+                HStack(spacing: FrogStyle.space16) {
+                    HStack(spacing: 5) {
+                        Capsule().fill(FrogStyle.series).frame(width: 12, height: 2)
+                        Text("Running total")
+                    }
+                    HStack(spacing: 5) {
+                        Capsule().fill(FrogStyle.series.opacity(0.45)).frame(width: 4, height: 9)
+                        Text("\(hourly ? L10n.text("Each hour") : L10n.text("Each day")) · \(L10n.text("busiest")) \(format(busiest.amount)), \(label(busiest.date, long: true))")
+                    }
+                    Spacer(minLength: 0)
+                }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1).padding(.top, FrogStyle.space4)
+                    .accessibilityElement(children: .combine)
             }
         }
     }
