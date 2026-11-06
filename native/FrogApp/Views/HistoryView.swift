@@ -59,12 +59,8 @@ struct HistoryView: View {
         let empty = HistoryEmptyState.describing(all: all, shown: shown, filter: filter, search: search)
         let filters = HistoryFilter.visible(explainEnabled: preferences.featureEnabled(.explain),
                                             hasAnswers: all.contains { $0.kind == .answers })
-        return FrogPage(width: FrogStyle.wideWidth) {
-            FrogPageHeader(title: "History") {
-                IconMenu(title: "History actions", bordered: false) {
-                    Button("Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }.disabled(all.isEmpty)
-                }
-            }
+        return FrogPage {
+            FrogPageHeader(title: "History")
             if !preferences.historyEnabled, all.isEmpty {
                 FrogEmptyState(symbol: "clock.arrow.circlepath", title: "History is off", message: "Turn it on to keep results on this Mac.") {
                     Button("Turn on") { setHistoryEnabled() }.buttonStyle(.frog(.primary))
@@ -72,9 +68,15 @@ struct HistoryView: View {
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     if !all.isEmpty {
-                        ListToolbar(placeholder: "Search history", search: $search) {
-                            CompactSegments(values: [nil] + filters.map(Optional.some), selected: filter,
-                                            title: { $0?.title ?? "All" }) { filter = $0 }
+                        // The page's menu sits beside the search, so no row above the list holds it alone.
+                        HStack(spacing: FrogStyle.space8) {
+                            ListToolbar(placeholder: "Search history", search: $search) {
+                                CompactSegments(values: [nil] + filters.map(Optional.some), selected: filter,
+                                                title: { $0?.title ?? "All" }) { filter = $0 }
+                            }
+                            IconMenu(title: "History actions", bordered: false) {
+                                Button("Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }
+                            }
                         }
                     }
                     if !preferences.historyEnabled {
@@ -102,14 +104,16 @@ struct HistoryView: View {
     private func row(_ entry: HistoryEntry) -> some View {
         HStack(spacing: 10) {
             Button { viewing = entry.id } label: {
-                HStack(alignment: .top, spacing: 10) {
-                    SymbolTile(symbol: Self.symbol(entry.kind), size: 28)
+                HStack(alignment: .top, spacing: 12) {
+                    let feature = Self.feature(entry.kind)
+                    PluginIconTile(symbol: feature.symbol, tint: feature.tint.color, size: .list)
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 10) {
                             Text(entry.ruleName).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
                             Spacer(minLength: 8)
-                            Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
+                            Text(RecentTimestamp.text(entry.timestamp))
                                 .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                                .help(entry.timestamp.formatted(date: .complete, time: .shortened))
                         }
                         Text(hidden(entry) ? "\(Self.mask) · Click to reveal"
                              : entry.processedText.isEmpty ? L10n.text("No transcript available") : HistoryPreview.text(entry.processedText))
@@ -133,33 +137,38 @@ struct HistoryView: View {
     // MARK: Detail
 
     private func detail(_ entry: HistoryEntry) -> some View {
-        // ⌘[ and the toolbar's Back return to the list first.
-        FrogPage(width: FrogStyle.wideWidth) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Button { viewing = nil } label: { Label("History", systemImage: "chevron.left") }
-                        .buttonStyle(.frog(.ghost)).keyboardShortcut(.cancelAction)
-                    Spacer()
-                    if preferences.hideHistoryText { revealButton(entry) }
-                    if entry.answer != nil, model.answerNotesEnabled, !hidden(entry) { noteButton(entry) }
-                    IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = entry }
-                }.frame(height: FrogStyle.controlHeight)
-                FrogPageHeader(title: entry.ruleName, subtitle: entry.timestamp.formatted(date: .abbreviated, time: .shortened))
-                interruptionStatus(entry)
-                Group {
-                    if hidden(entry) {
-                        VStack(spacing: 12) {
-                            Image(systemName: "eye.slash").foregroundStyle(FrogStyle.muted)
-                            Button("Reveal text") { visibility.revealed.insert(entry.id) }
-                        }.frame(maxWidth: .infinity).padding(32)
-                    } else {
-                        HistoryDetail(entry: entry).padding(14)
-                    }
-                }.frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
-                    .onCopyCommand { hidden(entry) ? [] : [NSItemProvider(object: entry.processedText as NSString)] }
-                if note?.id == entry.id, case .failed(let message) = note?.state { InlineIssue(message: message) }
+        // The toolbar's Back and ⌘[ (and Escape) return to the list; the entry's name takes the toolbar's title.
+        FrogPage {
+            FrogPageHeader(title: entry.ruleName, subtitle: Self.detailSubtitle(entry)) {
+                if preferences.hideHistoryText { revealButton(entry) }
+                if entry.answer != nil, model.answerNotesEnabled, !hidden(entry) { noteButton(entry) }
+                IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = entry }
             }
+            .background {
+                Button("Back to History") { viewing = nil }.keyboardShortcut(.cancelAction)
+                    .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+            }
+            interruptionStatus(entry)
+            Group {
+                if hidden(entry) {
+                    VStack(spacing: 12) {
+                        Image(systemName: "eye.slash").foregroundStyle(FrogStyle.muted)
+                        Button("Reveal text") { visibility.revealed.insert(entry.id) }
+                    }.frame(maxWidth: .infinity).padding(32).frogTableSurface()
+                } else {
+                    HistoryDetail(entry: entry)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+                .onCopyCommand { hidden(entry) ? [] : [NSItemProvider(object: entry.processedText as NSString)] }
+            if note?.id == entry.id, case .failed(let message) = note?.state { InlineIssue(message: message) }
         }.frogPageBack("history-entry-\(entry.id)") { viewing = nil }
+    }
+
+    /// When, and with what: "Today 13:14 · Ollama · llama3.2".
+    static func detailSubtitle(_ entry: HistoryEntry) -> String {
+        let source: [String] = entry.answer.map { [$0.application ?? ""] } ?? []
+        return ([RecentTimestamp.text(entry.timestamp)] + source + [entry.providerName, entry.model, entry.targetLanguage])
+            .filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private func setHistoryEnabled() {
@@ -168,8 +177,11 @@ struct HistoryView: View {
         do { try model.savePreferences(preferences) } catch { model.report(error) }
     }
 
-    static func symbol(_ filter: HistoryFilter) -> String {
-        switch filter { case .text: "text.alignleft"; case .answers: "questionmark.bubble"; case .audio: "waveform" }
+    static func symbol(_ filter: HistoryFilter) -> String { feature(filter).symbol }
+
+    /// The feature that made an entry, whose icon its row shows: Writing, Explain or Dictation.
+    static func feature(_ filter: HistoryFilter) -> PluginInfo {
+        switch filter { case .text: WritingPlugin.info; case .answers: ExplainPlugin.info; case .audio: DictationPlugin.info }
     }
 
     static func metadata(_ filter: HistoryFilter, _ entry: HistoryEntry) -> String {
@@ -342,37 +354,41 @@ private struct HistoryDetail: View {
     @State private var copied: String?
 
     var body: some View {
-        // Sections are set apart by space and their captions.
-        VStack(alignment: .leading, spacing: 20) {
+        // One card per text, each under its own heading, as sections on the other pages.
+        VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
             if let answer = entry.answer {
                 answerSections(answer)
+            } else if let diff = HistoryDiff(original: entry.originalText, result: entry.processedText) {
+                // A rewrite: what changed is marked in both texts.
+                section("Result", copying: entry.processedText) {
+                    Text(diff.result).font(FrogType.lead).lineSpacing(4).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                section("Original", copying: entry.originalText) {
+                    Text(diff.original).font(FrogType.lead).lineSpacing(4).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                }
             } else {
-                metadataLine([entry.providerName, entry.model, entry.targetLanguage])
                 textSection("Result", text: entry.processedText)
-                textSection("Original", text: entry.originalText)
+                if !entry.originalText.isEmpty { textSection("Original", text: entry.originalText) }
             }
-        }.padding(.top, 4)
-            .foregroundStyle(FrogStyle.ink).buttonStyle(FrogButtonStyle())
-    }
-
-    private func metadataLine(_ parts: [String]) -> some View {
-        Text(parts.filter { !$0.isEmpty }.joined(separator: " · "))
-            .font(FrogType.small).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
+        }
+        .foregroundStyle(FrogStyle.ink).buttonStyle(FrogButtonStyle())
     }
 
     /// An answer: the first answer, its follow-ups, then what was asked about.
     @ViewBuilder
     private func answerSections(_ answer: AnswerRecord) -> some View {
-        metadataLine([answer.application ?? "", entry.providerName, entry.model])
         textSection("Answer", text: entry.processedText)
         if !answer.followUps.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                sectionHeader("Follow-ups", copying: answer.followUps.map { "\($0.question)\n\n\($0.answer)" }.joined(separator: "\n\n"))
-                ForEach(Array(answer.followUps.enumerated()), id: \.offset) { _, turn in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(turn.question).font(FrogType.label).textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                        HistoryLongText(text: turn.answer, lineSpacing: 4)
+            section("Follow-ups", copying: answer.followUps.map { "\($0.question)\n\n\($0.answer)" }.joined(separator: "\n\n")) {
+                VStack(alignment: .leading, spacing: FrogStyle.space16) {
+                    ForEach(Array(answer.followUps.enumerated()), id: \.offset) { _, turn in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(turn.question).font(FrogType.bodyMedium).textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                            HistoryLongText(text: turn.answer, lineSpacing: 4)
+                        }
                     }
                 }
             }
@@ -384,19 +400,69 @@ private struct HistoryDetail: View {
     }
 
     private func textSection(_ title: String, text: String) -> some View {
-            VStack(alignment: .leading, spacing: 12) {
-                sectionHeader(title, copying: text)
-                HistoryLongText(text: text, lineSpacing: 4)
-            }
+        section(title, copying: text) { HistoryLongText(text: text, lineSpacing: 4) }
     }
 
-    private func sectionHeader(_ title: String, copying text: String) -> some View {
-        HStack {
-            SectionCaption(text: title)
-            Spacer()
+    /// A heading with Copy beside it, and the text in a card under it.
+    private func section<Content: View>(_ title: String, copying text: String, @ViewBuilder content: () -> Content) -> some View {
+        FrogSection(title, accessory: {
             Button(L10n.text(copied == title ? "Copied" : "Copy"), systemImage: copied == title ? "checkmark" : "doc.on.doc") {
                 ViewActions.copy(text); copied = title
-            }.buttonStyle(.frog(compact: true)).accessibilityLabel("Copy \(title.lowercased())").disabled(text.isEmpty)
+            }.buttonStyle(.frog(.ghost, compact: true)).accessibilityLabel("Copy \(title.lowercased())").disabled(text.isEmpty)
+        }) {
+            content().padding(.vertical, FrogStyle.space12)
         }
+    }
+}
+
+/// What a rewrite changed, word by word: insertions marked in the result, removals struck through in the original.
+/// Only for texts short enough to compare at once; longer ones are shown plain, a page at a time.
+struct HistoryDiff {
+    let original: AttributedString
+    let result: AttributedString
+
+    static let maxLength = 8_000
+
+    init?(original: String, result: String) {
+        guard !original.isEmpty, !result.isEmpty, original != result,
+              original.count <= Self.maxLength, result.count <= Self.maxLength else { return nil }
+        let old = Self.tokens(original), new = Self.tokens(result)
+        let difference = new.difference(from: old)
+        var removed = Set<Int>(), inserted = Set<Int>()
+        for change in difference {
+            switch change {
+            case .remove(let offset, _, _): removed.insert(offset)
+            case .insert(let offset, _, _): inserted.insert(offset)
+            }
+        }
+        self.original = Self.attributed(old, marked: removed, color: FrogStyle.critical, strike: true)
+        self.result = Self.attributed(new, marked: inserted, color: FrogStyle.good, strike: false)
+    }
+
+    /// Words and the spaces between them, so spacing survives and only words are marked.
+    static func tokens(_ text: String) -> [String] {
+        var tokens: [String] = []
+        var current = ""
+        var currentIsSpace: Bool?
+        for character in text {
+            let space = character.isWhitespace
+            if currentIsSpace != nil, space != currentIsSpace { tokens.append(current); current = "" }
+            current.append(character); currentIsSpace = space
+        }
+        if !current.isEmpty { tokens.append(current) }
+        return tokens
+    }
+
+    private static func attributed(_ tokens: [String], marked: Set<Int>, color: Color, strike: Bool) -> AttributedString {
+        var text = AttributedString()
+        for (index, token) in tokens.enumerated() {
+            var part = AttributedString(token)
+            if marked.contains(index), !token.allSatisfy(\.isWhitespace) {
+                part.backgroundColor = color.opacity(0.16)
+                if strike { part.strikethroughStyle = .single; part.foregroundColor = FrogStyle.muted }
+            }
+            text += part
+        }
+        return text
     }
 }
