@@ -22,18 +22,14 @@ struct HotkeyRecorder: View {
         VStack(alignment: .trailing, spacing: 4) {
             HStack(spacing: 6) {
                 let text = recording ? L10n.text("Press shortcut…") : hotkey.map(HotkeyManager.display) ?? L10n.text(emptyTitle)
-                Group {
-                    if let hotkey, !recording {
-                        // A recorded shortcut is caps, one per key, as everywhere else Frog shows one; clicking
-                        // them records a new one.
-                        Button { recording = true; hint = nil } label: { RecordedKeys(hotkey: hotkey) }
-                            .buttonStyle(.plain)
-                    } else {
-                        // Recording, or nothing recorded yet: a secondary button in the sans font, like every other
-                        // action beside it.
-                        Button { recording.toggle(); hint = nil } label: { Text(text) }.buttonStyle(.frog())
-                    }
-                }.accessibilityLabel("Shortcut: \(text)")
+                // One button whose label changes, so keyboard focus stays on it when a recording starts from
+                // the keyboard. A recorded shortcut is caps, one per key, as everywhere else Frog shows one;
+                // recording, or nothing recorded yet, is a secondary button in the sans font.
+                let caps = recording ? nil : hotkey
+                Button { recording.toggle(); hint = nil } label: {
+                    if let caps { RecordedKeys(hotkey: caps) } else { Text(text) }
+                }.buttonStyle(RecorderButtonStyle(caps: caps != nil))
+                    .accessibilityLabel("Shortcut: \(text)")
                     .help(recording ? "Press a new shortcut, or Escape to cancel." : "Click to change shortcut")
                 if showsClearButton && (hotkey != nil || recording) {
                     Button { hotkey = nil; recording = false; hint = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(FrogStyle.muted) }
@@ -57,6 +53,15 @@ struct HotkeyRecorder: View {
         }
             // A recorder that comes back on screen must not still claim to be recording.
             .onDisappear { recording = false; hint = nil; model.endShortcutRecording(id) }
+    }
+}
+
+/// Plain for the recorded caps, which draw their own hover; Frog's secondary button for text.
+private struct RecorderButtonStyle: ButtonStyle {
+    let caps: Bool
+    @ViewBuilder func makeBody(configuration: ButtonStyleConfiguration) -> some View {
+        if caps { configuration.label.opacity(configuration.isPressed ? 0.7 : 1) }
+        else { FrogButtonStyle.frog().makeBody(configuration: configuration) }
     }
 }
 
