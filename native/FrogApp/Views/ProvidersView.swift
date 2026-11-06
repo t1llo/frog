@@ -120,6 +120,17 @@ private struct ProviderRow: View {
     }
 }
 
+/// A link's title with its arrow after it, as in "Open ↗", like the links of a model's information sheet.
+private struct ProviderLinkLabel: View {
+    let title: String
+    var body: some View {
+        HStack(spacing: FrogStyle.space4) {
+            Text(L10n.text(title))
+            Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .semibold)).accessibilityHidden(true)
+        }
+    }
+}
+
 struct ProviderEditor: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -185,7 +196,7 @@ struct ProviderEditor: View {
                     if step == 0 {
                     FrogSection(footer: serviceNote) {
                         // The tab is the Service step; the row names what it chooses, so the two do not repeat each other.
-                        FrogRow("Provider", caption: provider.kind.isLocal ? "Runs on this Mac" : provider.kind.localTool != nil ? "Installed tool" : "Cloud API") {
+                        FrogRow("Provider", caption: provider.kind.isLocal ? "Runs on this Mac." : provider.kind.localTool != nil ? "Uses the tool installed on this Mac." : "Runs in the cloud.") {
                             FrogDropdown(selection: $provider.kind, options: ProviderKind.allCases, title: { $0.title },
                                          symbol: { ServiceMark.provider($0).symbol })
                         }.onChange(of: provider.kind) { old, new in
@@ -197,24 +208,20 @@ struct ProviderEditor: View {
                             testResult = nil; issue = nil
                         }
                         if provider.kind.isLocal {
-                            FrogRow("Setup guide", caption: "How to install \(provider.kind.title.replacingOccurrences(of: " (local)", with: "")) and download a model") {
-                                Link(destination: provider.kind.setupURL) {
-                                    Label("Open", systemImage: "arrow.up.right")
-                                }.buttonStyle(.frog(compact: true))
+                            FrogRow("Setup guide", caption: "Install \(provider.kind.title.replacingOccurrences(of: " (local)", with: "")) and download a model.") {
+                                Link(destination: provider.kind.setupURL) { ProviderLinkLabel(title: "Open") }
+                                    .buttonStyle(.frog(compact: true))
                             }
                         }
                     }.disabled(testing || discovering)
                     }
                     if step == 1 {
                     if let tool = provider.kind.localTool {
-                        FrogSection("Existing tool login") {
-                            Text("Frog uses \(tool.title)'s saved login. No endpoint or API key is needed here.")
-                                .font(FrogType.body).foregroundStyle(FrogStyle.muted)
-                            Text(tool.loginInstructions).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                            if tool == .opencode {
-                                Text("OpenCode keeps its own CLI history, independently of Frog's history setting.")
-                                    .font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                            }
+                        FrogSection("Sign-in", footer: tool == .opencode ? "OpenCode keeps its own history, whatever Frog's history setting." : nil) {
+                            FrogRow("Uses \(tool.title)'s own sign-in", caption: "No endpoint or API key is needed.", icon: {
+                                PluginIconTile(mark: .provider(provider.kind))
+                            }, control: { EmptyView() })
+                            FrogRowNote(text: tool.loginInstructions)
                         }
                     } else {
                     FrogSection("Connection") {
@@ -234,17 +241,17 @@ struct ProviderEditor: View {
                         }
                         if !provider.kind.isLocal && provider.kind != .compatible {
                             Link(destination: provider.kind.setupURL) {
-                                Label(provider.kind == .gemini ? "Get an API key in Google AI Studio" : "Get an API key for \(provider.kind.title)", systemImage: "arrow.up.right.square")
-                            }.buttonStyle(.frog(.ghost))
+                                ProviderLinkLabel(title: provider.kind == .gemini ? "Get an API key in Google AI Studio" : "Get an API key for \(provider.kind.title)")
+                            }.buttonStyle(.frog(.ghost)).padding(.leading, -FrogButtonStyle.horizontalPadding(compact: false))
                         }
                         if hasSavedKey {
-                            SettingRow(title: "Remove saved key", description: "Leave the field blank to keep your existing key. A replacement is stored only when you save.") {
+                            FrogRow("Remove saved key", caption: "Leave the field blank to keep the saved key.") {
                                 Toggle("Remove saved API key on save", isOn: $clearKey).toggleStyle(.frogSwitch).labelsHidden().controlSize(.small)
                                     .onChange(of: clearKey) { _, remove in if remove { apiKey = "" } }
                             }
                         } else {
-                            Label("Saved securely in Keychain. Optional for local-only services.", systemImage: "lock.shield")
-                                .font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                            Label("Kept in the Keychain. Local services need none.", systemImage: "lock.shield")
+                                .font(FrogType.small).foregroundStyle(FrogStyle.muted).padding(.vertical, FrogStyle.space8)
                         }
                         if let credentialHint { InlineIssue(message: credentialHint) }
                     }.disabled(testing || discovering)
@@ -255,8 +262,8 @@ struct ProviderEditor: View {
                         modelSettings
                     }.disabled(testing)
                     FrogSection("Take it for a spin") {
-                        SettingRow(title: "Connection test", description: "Send a short sample request using this draft configuration.") {
-                            HStack {
+                        FrogRow("Connection test", caption: "Sends a short sample request with these settings.") {
+                            HStack(spacing: FrogStyle.space8) {
                                 if testing { FrogSpinner() }
                                 Button(testing ? "Testing…" : "Test connection") { test() }
                                     .disabled(validation != nil || testing || discovering || model.isTestingProvider)
@@ -264,8 +271,8 @@ struct ProviderEditor: View {
                             }
                         }
                         if let testResult {
-                            Label(testResult, systemImage: "checkmark.circle.fill").font(FrogType.body)
-                                .foregroundStyle(FrogStyle.accent).textSelection(.enabled)
+                            Label(testResult, systemImage: "checkmark.circle.fill").font(FrogType.small)
+                                .foregroundStyle(FrogStyle.good).textSelection(.enabled).padding(.vertical, FrogStyle.space8)
                         }
                         if let issue { InlineIssue(message: issue) }
                     }
@@ -275,13 +282,10 @@ struct ProviderEditor: View {
             }
             // As tall as the step, up to a limit: the short steps leave no empty half, the long one scrolls.
             .frame(maxHeight: 460).fixedSize(horizontal: false, vertical: true)
-            // As in setup: Back steps on the leading side, Cancel waits beside the main button.
+            // A multi-step sheet: Back between Cancel and the main button.
             FrogSheetButtons {
-                if step > 0 {
-                    Button("Back") { step -= 1 }.buttonStyle(.frog(.ghost)).padding(.leading, -10)
-                }
-            } trailing: {
                 FrogCancelButton { testTask?.cancel(); discoveryTask?.cancel(); dismiss() }
+                if step > 0 { Button("Back") { step -= 1 } }
                 FrogPrimaryButton(step < 2 && !isSaved ? "Continue" : "Save",
                                   disabledReason: testing ? "Testing the connection…" : discovering ? "Finding models…"
                                   : (step == 2 || isSaved) ? validation : nil) {
@@ -300,7 +304,7 @@ struct ProviderEditor: View {
     }
 
     private var serviceNote: String {
-        if provider.kind.localTool != nil { return "Requests run invisibly through your installed tool and its existing login." }
+        if provider.kind.localTool != nil { return "Requests run in the background through your installed tool and its own sign-in." }
         if provider.kind.isLocal { return "Local servers such as Ollama and LM Studio run outside Frog; start yours before you use it." }
         return "Frog sends the text you run a rule on to \(provider.kind.title), with your API key."
     }
@@ -322,7 +326,7 @@ struct ProviderEditor: View {
 
     private var modelSettings: some View {
         Group {
-            Text("Choose the models available to your rules.").font(FrogType.body).foregroundStyle(FrogStyle.muted)
+            FrogRowNote(text: "Choose the models your rules can use.")
             if provider.kind.isLocal || provider.kind.localTool != nil {
                 HStack {
                     Button(discovering ? "Finding models…" : "Find installed models", systemImage: "arrow.clockwise") { discover() }.disabled(discovering)
