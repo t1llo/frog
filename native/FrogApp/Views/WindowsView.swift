@@ -43,7 +43,7 @@ struct WindowsView: View {
         let rules = Dictionary(uniqueKeysWithValues: WindowAction.shortcutRows(configured: model.configuration.rules)
             .compactMap { rule in rule.action?.windowAction.map { ($0, rule) } })
         let unset = rules.values.filter { $0.hotkey == nil }.count
-        return FrogSection("Layouts", footer: unset == 0 ? nil : "Point at a layout to add its shortcut, or use Suggested shortcuts for all of them.") {
+        return FrogSection("Layouts", footer: unset == 0 ? nil : "Click a layout's empty slot to record its shortcut, or use Suggested shortcuts for all of them.") {
             if let suggestion { FrogRowNote(text: suggestion) }
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24)], spacing: 0) {
                 ForEach(Self.layoutOrder) { action in
@@ -171,8 +171,8 @@ private struct LayoutShortcutCell: View {
     let rule: Rule
     let issue: String?
     @ObservedObject var model: AppModel
-    /// A layout without a shortcut shows its Add button dimmed until pointed at, so the grid stays quiet; it is in
-    /// full while recording or focused from the keyboard.
+    /// A layout without a shortcut shows a dim empty slot, so the grid says what is assigned and stays quiet; pointed
+    /// at, recording or focused from the keyboard, the slot becomes the Record button.
     @State private var hovering = false
     @State private var recording = false
     @FocusState private var focused: Bool
@@ -186,12 +186,21 @@ private struct LayoutShortcutCell: View {
                 Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10)).foregroundStyle(FrogStyle.warning).help(issue)
             }
             Spacer(minLength: 8)
+            let active = rule.hotkey != nil || hovering || recording || focused
             HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: { value in
                 var updated = rule; updated.hotkey = value; updated.enabled = value != nil
                 do { try model.saveRule(updated) } catch { model.report(error) }
-            }), emptyTitle: "Add", recordingChanged: { recording = $0 })
+            }), emptyTitle: "Record", recordingChanged: { recording = $0 })
             .focused($focused)
-            .opacity(rule.hotkey != nil || hovering || recording || focused ? 1 : 0.4)
+            .opacity(active ? 1 : 0)
+            .overlay(alignment: .trailing) {
+                if !active {
+                    // The empty slot: a dash where the shortcut would be, at a recorded chip's width.
+                    Text(verbatim: "—").font(FrogType.body).foregroundStyle(FrogStyle.placeholder)
+                        .frame(width: FrogStyle.shortcutMinWidth, height: FrogStyle.controlHeight)
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                }
+            }
         }
         .frame(minHeight: FrogStyle.rowHeight)
         .contentShape(Rectangle())
