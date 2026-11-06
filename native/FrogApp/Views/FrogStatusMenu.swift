@@ -184,9 +184,9 @@ struct StayAwakeMenuRow: View {
         VStack(alignment: .leading, spacing: FrogStyle.space2) {
             HStack(spacing: FrogStyle.space10) {
                 PluginIconTile(symbol: power.isEnabled ? "cup.and.saucer.fill" : "cup.and.saucer", tint: StayAwakePlugin.info.tint.color, size: .sidebar)
-                Text(L10n.text("Stay awake")).font(FrogType.row).lineLimit(1).fixedSize()
+                // Truncates rather than pushing the controls out where a translation runs long.
+                Text(L10n.text("Stay awake")).font(FrogType.row).lineLimit(1)
                 Spacer(minLength: FrogStyle.space6)
-                if power.isBusy { FrogSpinner(size: .mini) }
                 if power.isEnabled {
                     Text(power.deadline.map { "Until \($0.formatted(date: .omitted, time: .shortened))" } ?? "Until turned off")
                         .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
@@ -199,6 +199,9 @@ struct StayAwakeMenuRow: View {
                 Toggle("Stay awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
                     .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                     .accessibilityHint("Keep this Mac awake")
+                    // While a change is under way the spinner takes the switch's place, so the row needs no extra width.
+                    .opacity(power.isBusy ? 0 : 1)
+                    .overlay { if power.isBusy { FrogSpinner(size: .mini) } }
             }.padding(.leading, FrogStyle.rowPadding).padding(.trailing, FrogStyle.space6).frame(height: FrogStyle.rowHeight - 8)
             if let message = power.error ?? power.notice {
                 Text(String(message.prefix(300))).font(FrogType.caption)
