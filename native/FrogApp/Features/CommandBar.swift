@@ -981,7 +981,8 @@ struct CommandBarView: View {
         let selected = bar.results.indices.contains(bar.selection) ? bar.results[bar.selection] : nil
         let actions = bar.selectedActions
         return PanelFooter(symbol: bar.argument?.symbol ?? "magnifyingglass", name: bar.argument?.title ?? "Command bar",
-                           primaryTitle: selected.flatMap { bar.primaryTitle(for: $0) }, showsActions: !actions.isEmpty)
+                           primaryTitle: selected.flatMap { bar.primaryTitle(for: $0) }, showsActions: !actions.isEmpty,
+                           closeTitle: bar.argument == nil ? "Close" : "Back")
     }
 }
 
@@ -1146,14 +1147,15 @@ private struct CommandLayoutTile: View {
             if let symbol = WindowLayoutGlyph.symbol(for: action) {
                 Image(systemName: symbol).font(.system(size: size * 0.52, weight: .medium)).foregroundStyle(.white)
             } else {
-                // A screen as wide as a tile's symbol: 12 by 9 points, centred.
+                // A screen a little wider than a tile's symbol, 14 by 10 points, centred, so a quarter or a third
+                // still shows its area as clearly as a half does.
                 Canvas { context, canvas in
-                    let screenCorner: CGFloat = 1.5, areaCorner: CGFloat = 0.5
-                    let bounds = CGRect(x: (canvas.width - 12) / 2, y: (canvas.height - 9) / 2, width: 12, height: 9)
+                    let screenCorner: CGFloat = 2, areaCorner: CGFloat = 0.75
+                    let bounds = CGRect(x: (canvas.width - 14) / 2, y: (canvas.height - 10) / 2, width: 14, height: 10)
                     context.stroke(Path(roundedRect: bounds, cornerRadius: screenCorner), with: .color(.white), lineWidth: 1.2)
                     if let area = WindowLayoutGlyph.area(for: action) {
                         let fill = CGRect(x: bounds.minX + area.minX * bounds.width, y: bounds.minY + area.minY * bounds.height,
-                                          width: area.width * bounds.width, height: area.height * bounds.height).insetBy(dx: 1.8, dy: 1.8)
+                                          width: area.width * bounds.width, height: area.height * bounds.height).insetBy(dx: 1.4, dy: 1.4)
                         context.fill(Path(roundedRect: fill, cornerRadius: areaCorner), with: .color(.white))
                     }
                 }

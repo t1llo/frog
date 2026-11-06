@@ -69,11 +69,15 @@ struct FrogFooterHint: View {
     }
 }
 
-/// The footer of a keyboard panel (command bar, window switcher, layout picker): which panel this is, then what
-/// Return, ⌘K and Escape do.
+/// The footer of a keyboard panel (command bar, window switcher, layout picker): which panel this is, with its icon
+/// and, muted after a `·`, a count ("Window switcher · 23 windows"), then what Return, ⌘K and Escape do. Every
+/// launcher and panel footer reads this way: the surface's name and icon on the left, primary ↩, Actions ⌘K and
+/// Close esc on the right.
 struct PanelFooter: View {
     let symbol: String
     let name: String
+    /// A count or state after the name ("23 windows").
+    var detail: String? = nil
     /// The selected row's primary action; nil hides the Return hint.
     var primaryTitle: String?
     var showsActions = true
@@ -83,7 +87,8 @@ struct PanelFooter: View {
     var body: some View {
         FrogFooter {
             Image(systemName: symbol).font(FrogType.label)
-            Text(L10n.text(name))
+            // One text, so the dot sits evenly between the name and its count.
+            Text(verbatim: [L10n.text(name), detail].compactMap { $0 }.joined(separator: " · ")).monospacedDigit()
         } actions: {
             if let primaryTitle { FrogFooterHint(primaryTitle, keys: "↩") }
             if showsActions { FrogFooterHint("Actions", keys: "⌘K") }
@@ -98,7 +103,8 @@ struct PanelFooter: View {
         if let primaryTitle { parts.append("\(L10n.text(primaryTitle)), \(L10n.text("Return"))") }
         if showsActions { parts.append("\(L10n.text("Actions")), \(L10n.text("Command K"))") }
         if let closeTitle { parts.append("\(L10n.text(closeTitle)), \(L10n.text("Escape"))") }
-        return parts.isEmpty ? L10n.text(name) : parts.joined(separator: ". ")
+        let title = [L10n.text(name), detail].compactMap { $0 }.joined(separator: ", ")
+        return parts.isEmpty ? title : ([title] + parts).joined(separator: ". ")
     }
 }
 
@@ -127,10 +133,13 @@ struct KeyCap: View {
 
     var body: some View {
         let size = compact ? Self.compactSize : Self.size
+        // A single glyph (⌘, ↩, K) is exactly a square, whatever the glyph's own width, so the caps of every row end
+        // and line up on one edge; only a word key (Space, esc) grows sideways.
+        let single = key.count == 1
         // The glyph in the text colour, softened: `muted` on the cap's fill fell under 4.5:1 in dark themes.
         Text(key).font(compact ? FrogType.caption : FrogType.label).foregroundStyle(FrogStyle.ink.opacity(0.8)).lineLimit(1).fixedSize()
-            .padding(.horizontal, compact ? FrogStyle.space2 : FrogStyle.space4)
-            .frame(minWidth: size, minHeight: size, maxHeight: size)
+            .padding(.horizontal, single ? 0 : compact ? FrogStyle.space2 : FrogStyle.space4)
+            .frame(minWidth: size, maxWidth: single ? size : nil, minHeight: size, maxHeight: size)
             .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius, style: .continuous))
     }
 }

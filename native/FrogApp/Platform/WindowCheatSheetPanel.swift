@@ -54,48 +54,34 @@ struct WindowCheatSheetView: View {
     }
 }
 
-/// The title and the grouped rows, without the panel around them.
+/// The title and the grouped rows, without the panel around them: the shortcut reference's layout.
 struct WindowCheatSheetContent: View {
     let sections: [WindowCheatSheet.Section]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: FrogStyle.space16) {
-            Text("Window shortcuts").font(FrogType.title).accessibilityAddTraits(.isHeader)
+        ShortcutPanelLayout(title: "Window shortcuts") {
             if sections.isEmpty {
                 // Shown only while its key is held, so it cannot offer a button: it says where the shortcuts are set.
                 FrogEmptyState(symbol: "rectangle.split.2x1", title: "No window shortcuts yet",
                                message: "Give layouts a key in Frog → Windows, then hold this shortcut to see them here.",
                                tint: .purple)
                     .frogTableSurface()
-            }
-            ForEach(sections) { section in
-                VStack(alignment: .leading, spacing: FrogStyle.space8) {
-                    Text(L10n.text(section.title)).font(FrogType.section).accessibilityAddTraits(.isHeader)
-                    VStack(spacing: 0) {
-                    ForEach(section.items) { item in
-                        HStack(spacing: 10) {
-                            Group {
+            } else {
+                ShortcutPanelCard {
+                    ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
+                        ShortcutPanelCaption(title: section.title, first: index == 0)
+                        ForEach(section.items) { item in
+                            ShortcutPanelRow(title: item.title, hotkey: item.hotkey) {
                                 if let action = item.action { WindowLayoutGlyph(action: action) }
                                 else if let command = item.command {
                                     Image(systemName: command.symbol).font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
                                 }
-                            }.frame(width: 28)
-                            Text(item.title).font(FrogType.row)
-                            Spacer(minLength: 8)
-                            KeyCaps(hotkey: item.hotkey)
+                            }
+                            .accessibilityLabel(item.title)
                         }
-                        .padding(.horizontal, FrogStyle.cardPadding)
-                        .frame(height: FrogStyle.rowHeight)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(item.title)
-                        .accessibilityValue(HotkeyManager.display(item.hotkey))
                     }
-                    }.frogTableSurface()
                 }
             }
         }
-        .padding(FrogStyle.sheetPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .foregroundStyle(FrogStyle.ink)
     }
 }

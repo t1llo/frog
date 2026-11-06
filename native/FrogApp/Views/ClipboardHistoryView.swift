@@ -187,7 +187,10 @@ struct ClipboardHistoryView: View {
     /// as everywhere on the Mac, so it needs no hint of its own: four crowded the band.
     private func footer(count: Int) -> some View {
         FrogFooter {
-            Text(count == 1 ? "1 item" : "\(count) items")
+            // The surface and its icon first, like every launcher's footer, then the count.
+            Image(systemName: ClipboardPlugin.info.symbol).font(FrogType.label)
+            Text(verbatim: L10n.text(ClipboardPlugin.info.name) + " · "
+                 + (count == 1 ? L10n.text("1 item") : String(format: L10n.text("%d items"), count))).monospacedDigit()
         } actions: {
             FrogFooterHint("Paste", keys: "↩")
             FrogFooterHint("Plain text", keys: "⇧↩")

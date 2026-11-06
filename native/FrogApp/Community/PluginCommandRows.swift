@@ -4,6 +4,9 @@ import FrogCore
 /// A row to open each plugin's page, one per command its plugin.json lists, and one per action that needs no
 /// parameter, for plugins that run.
 @MainActor final class PluginCommandRows: CommandBarRowProviding {
+    /// A community plugin's tile colour, the same as its sidebar row and popup header.
+    static let tint = PluginTint.purple
+
     func rows(in context: CommandBarContext) -> [CommandBarRow] {
         let model = context.model
         guard model.configuration.preferences.featureEnabled(.plugins), let runtime = model.pluginRuntime else { return [] }
@@ -14,7 +17,8 @@ import FrogCore
             if item.hasPage {
                 rows.append(CommandBarRow(
                     record: SearchRecord(id: "plugin:\(item.id)", title: item.name, subtitle: "Plugin", keywords: manifest.description, symbol: symbol),
-                    primary: CommandRowAction(title: "Open") { @MainActor [weak model] in model?.openPlugin(item.id) }))
+                    primary: CommandRowAction(title: "Open") { @MainActor [weak model] in model?.openPlugin(item.id) },
+                    tint: Self.tint))
             }
             for command in manifest.commands {
                 rows.append(CommandBarRow(
@@ -22,7 +26,7 @@ import FrogCore
                                          keywords: command.keywords ?? "", symbol: symbol),
                     primary: CommandRowAction(title: command.opensPage && item.hasPage ? "Open" : "Run") { @MainActor [weak model] in
                         try await model?.plugins.run(command: command.id, of: item.id)
-                    }))
+                    }, tint: Self.tint))
             }
             // Actions that need nothing typed run from here too; those with parameters run from shortcuts and agents.
             for action in manifest.actions where !action.parameters.contains(where: { $0.required == true }) {
@@ -32,7 +36,7 @@ import FrogCore
                                          keywords: action.keywords ?? "", symbol: symbol),
                     primary: CommandRowAction(title: "Run") { @MainActor [weak model] in
                         _ = try await model?.pluginHost.run(id, ActionInput(source: .commandBar))
-                    }))
+                    }, tint: Self.tint))
             }
             return rows
         }
