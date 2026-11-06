@@ -169,7 +169,7 @@ struct CleanerReviewFooter: View {
                 .frogDisabled(count == 0 ? "Tick the files to move first" : ![.reviewing, .idle].contains(cleaner.phase) ? "Frog is still working" : nil)
         }
         // A card in the page's column, lined up with the lists above it, rather than a band across the window.
-        .padding(.horizontal, FrogStyle.rowInset + FrogStyle.space4).padding(.vertical, FrogStyle.space10)
+        .padding(.horizontal, FrogStyle.rowInset).padding(.vertical, FrogStyle.space10)
         .frogTableSurface()
         .frame(maxWidth: FrogStyle.pageWidth, alignment: .leading)
         .padding(.horizontal, FrogStyle.pagePadding).padding(.vertical, FrogStyle.space10)
