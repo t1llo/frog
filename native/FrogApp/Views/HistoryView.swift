@@ -13,6 +13,8 @@ struct HistoryView: View {
     @State private var note: NoteProgress?
     /// The entry whose text was just copied from the header, so its button says Copied.
     @State private var copiedEntry: UUID?
+    /// The row under the pointer, whose actions take the time's place.
+    @State private var hoveredEntry: UUID?
 
     /// `viewing` opens one entry's detail rather than the list, for pictures of it.
     init(viewing: UUID? = nil) { _viewing = State(initialValue: viewing) }
@@ -116,11 +118,11 @@ struct HistoryView: View {
                         HStack(spacing: 10) {
                             Text(entry.ruleName).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
                             Spacer(minLength: 8)
+                            // The row's actions take the time's place while the pointer is over it.
                             RecentTimestampText(date: entry.timestamp)
                                 .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                                 .help(entry.timestamp.formatted(date: .complete, time: .shortened))
-                            // Room for the row's actions, which sit on this line beside the time.
-                            Color.clear.frame(width: actionsWidth)
+                                .opacity(hoveredEntry == entry.id ? 0 : 1)
                         }
                         Text(hidden(entry) ? "\(Self.mask) · Click to reveal"
                              : entry.processedText.isEmpty ? L10n.text("No transcript available") : HistoryPreview.text(entry.processedText))
@@ -132,12 +134,18 @@ struct HistoryView: View {
                 }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain).help("Open entry")
         }
-        // The actions share the title's line with the time, rather than floating in a column of their own.
+        // The actions sit on the title's line in the time's place, shown only while the pointer is over the row, so
+        // a list of entries is not a column of copy icons. The context menu copies too.
         .overlay(alignment: .topTrailing) {
-            HStack(spacing: 0) {
-                if preferences.hideHistoryText { revealButton(entry) }
-                CopyAction(title: "Copy result") { ViewActions.copy(entry.processedText) }.disabled(entry.processedText.isEmpty || hidden(entry))
-            }.frame(height: 16)
+            if hoveredEntry == entry.id {
+                HStack(spacing: 0) {
+                    if preferences.hideHistoryText { revealButton(entry) }
+                    CopyAction(title: "Copy result") { ViewActions.copy(entry.processedText) }.disabled(entry.processedText.isEmpty || hidden(entry))
+                }.frame(height: 16)
+            }
+        }
+        .onHover { inside in
+            if inside { hoveredEntry = entry.id } else if hoveredEntry == entry.id { hoveredEntry = nil }
         }
         .padding(.horizontal, 8).padding(.vertical, 8).frogHoverRow()
             .contextMenu {
@@ -146,9 +154,6 @@ struct HistoryView: View {
                 Button("Delete entry", systemImage: "trash", role: .destructive) { deleting = entry }
             }
     }
-
-    /// The width the row's icon actions take beside the time.
-    private var actionsWidth: CGFloat { preferences.hideHistoryText ? 2 * FrogStyle.controlHeight : FrogStyle.controlHeight }
 
     // MARK: Detail
 
@@ -212,8 +217,9 @@ struct HistoryView: View {
         switch filter { case .text: WritingPlugin.info; case .answers: ExplainPlugin.info; case .audio: DictationPlugin.info }
     }
 
+    /// What made it: "Ollama · llama3.2". The row's tile already names the feature.
     static func metadata(_ filter: HistoryFilter, _ entry: HistoryEntry) -> String {
-        [filter.title, entry.providerName, entry.model].filter { !$0.isEmpty }.joined(separator: " · ")
+        [entry.providerName, entry.model].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     @ViewBuilder
@@ -479,13 +485,18 @@ struct HistoryDiff {
 
     static let maxLength = 8_000
 
-    /// "2 words out · 3 in", or one side when the other is none.
+    /// "3 words changed", with what was added or removed beyond that ("2 words changed · 1 added"), or one side when
+    /// the other is none ("4 words removed").
     var summary: String {
         func words(_ count: Int) -> String { count == 1 ? L10n.text("1 word") : "\(count) \(L10n.text("words"))" }
         switch (removedWords, addedWords) {
         case (0, let added): return "\(words(added)) \(L10n.text("added"))"
         case (let removed, 0): return "\(words(removed)) \(L10n.text("removed"))"
-        default: return "\(words(removedWords)) \(L10n.text("out")) · \(addedWords) \(L10n.text("in"))"
+        default:
+            let changed = "\(words(min(removedWords, addedWords))) \(L10n.text("changed"))"
+            if addedWords > removedWords { return "\(changed) · \(addedWords - removedWords) \(L10n.text("added"))" }
+            if removedWords > addedWords { return "\(changed) · \(removedWords - addedWords) \(L10n.text("removed"))" }
+            return changed
         }
     }
 

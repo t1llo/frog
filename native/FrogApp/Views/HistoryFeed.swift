@@ -5,7 +5,8 @@ import FrogCore
 enum HistoryFilter: String, CaseIterable, Identifiable {
     case text, answers, audio
     var id: Self { self }
-    var title: String { switch self { case .text: "Text"; case .answers: "Answers"; case .audio: "Audio" } }
+    /// Named after the feature that made the entries, as everywhere else in Frog.
+    var title: String { switch self { case .text: "Writing"; case .answers: "Explain"; case .audio: "Dictation" } }
 
     /// Answers appears while Explain is on, and stays while saved answers remain.
     static func visible(explainEnabled: Bool, hasAnswers: Bool) -> [HistoryFilter] {

@@ -20,6 +20,12 @@ final class HistoryDiffTests: XCTestCase {
         XCTAssertEqual(marked, ["slow"])
     }
 
+    func testSummaryCountsChangedWordsThenWhatWasAddedOrRemoved() throws {
+        XCTAssertEqual(try XCTUnwrap(HistoryDiff(original: "the quick fox", result: "the slow fox")).summary, "1 word changed")
+        XCTAssertEqual(try XCTUnwrap(HistoryDiff(original: "a b", result: "c d e")).summary, "2 words changed · 1 added")
+        XCTAssertEqual(try XCTUnwrap(HistoryDiff(original: "a b c", result: "a")).summary, "2 words removed")
+    }
+
     func testNoDiffForEqualEmptyOrLongTexts() {
         XCTAssertNil(HistoryDiff(original: "same", result: "same"))
         XCTAssertNil(HistoryDiff(original: "", result: "text"))
