@@ -2,7 +2,8 @@ import SwiftUI
 
 enum ClipboardHistoryLayout {
     static let width: CGFloat = 520
-    static let headerHeight: CGFloat = 56
+    /// The search field (36) a panel inset from the top; the list's own inset keeps the same gap under it.
+    static let headerHeight: CGFloat = FrogStyle.panelInset + 36
     static let footerHeight: CGFloat = 32
     static let rowHeight: CGFloat = 40
     static let emptyHeight: CGFloat = 64
@@ -72,7 +73,8 @@ enum ClipboardContentKind: Equatable, Sendable {
         case .path: "folder"
         case .color: "paintpalette"
         case .number: "number"
-        case .code: "chevron.left.forwardslash.chevron.right"
+        // Not the angle brackets or bare braces, which are OpenCode's and Codex's marks.
+        case .code: "ellipsis.curlybraces"
         case .richText: "doc.richtext"
         case .text: "text.alignleft"
         }
@@ -145,7 +147,8 @@ struct ClipboardHistoryView: View {
             }.frame(height: 28)
             .padding(.leading, 12).padding(.trailing, 4)
             .frogControlSurface(height: 36, radius: FrogStyle.controlRadius)
-            .padding(.horizontal, ClipboardHistoryLayout.inset).frame(height: ClipboardHistoryLayout.headerHeight)
+            .padding(.horizontal, ClipboardHistoryLayout.inset).padding(.top, ClipboardHistoryLayout.inset)
+            .frame(height: ClipboardHistoryLayout.headerHeight)
 
             Group {
                 if entries.isEmpty {
@@ -200,6 +203,7 @@ struct ClipboardHistoryView: View {
             Text(entry.preview).font(kind == .code ? FrogType.mono : FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             RecentTimestampText(date: entry.timestamp, shownAt: state.openedAt).font(FrogType.small).foregroundStyle(FrogStyle.muted).monospacedDigit()
+                .padding(.leading, FrogStyle.space6)
                 .help(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
         }
         .padding(.horizontal, 10).frame(height: ClipboardHistoryLayout.rowHeight)
