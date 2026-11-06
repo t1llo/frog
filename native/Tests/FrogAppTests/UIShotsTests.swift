@@ -111,12 +111,11 @@ final class UIShotsTests: XCTestCase {
             sample.model.plugins.popups[sample.focusTimerID] = nil
             // The page in the popup Frog draws around it: the header with the plugin's tile, and Close beneath.
             let menubar = try XCTUnwrap(package.manifest.menubar)
-            let width = CGFloat(menubar.popupWidth)
+            let pageSize = PluginPopupLayout.pageSize(menubar)
             let image = try XCTUnwrap(NSImage(data: page))
             let shell = PluginPopupShell(name: package.manifest.name, symbol: menubar.symbol ?? package.manifest.displaySymbol,
-                                         width: width, hasPage: true, openPage: {}) {
-                Image(nsImage: image).resizable()
-                    .frame(width: width - 2 * FrogStyle.panelCardInset, height: CGFloat(menubar.popupHeight))
+                                         width: PluginPopupLayout.panelWidth(contentWidth: CGFloat(menubar.popupWidth)), hasPage: true, openPage: {}) {
+                Image(nsImage: image).resizable().frame(width: pageSize.width, height: pageSize.height)
             }
             let png = try await render(shell, size: nil, appearance: appearance, backdrop: true)
             try write(png, "popup-focus-timer-\(name)")

@@ -178,9 +178,8 @@ import WebKit
     /// A PNG of the page. A page no window shows is laid out off screen first, at 800 × 600 points, or a popup at its size.
     func snapshot() async throws -> Data {
         if webView.window == nil {
-            // A popup's page is as wide as the popup less the inset its panel keeps, as `PluginPopupView` lays it out.
-            let size = surface == .popup ? NSSize(width: CGFloat(manifest.menubar?.popupWidth ?? 320) - 2 * FrogStyle.panelCardInset,
-                                                  height: CGFloat(manifest.menubar?.popupHeight ?? 360))
+            // A popup's page is its declared content size and the stylesheet's margin, as `PluginPopupView` lays it out.
+            let size: NSSize = surface == .popup ? PluginPopupLayout.pageSize(manifest.menubar ?? PluginMenuBar())
                 : NSSize(width: 800, height: 600)
             let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -20_000, y: -20_000), size: size), styleMask: [.borderless], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
