@@ -46,7 +46,8 @@ struct WritingView: View {
                     }
                 }
             }
-            FrogSection("Rules") {
+            // No headings on this page: the rules card and the bubble card each say what they are in their rows.
+            FrogSection {
                 ForEach(rules) { rule in row(rule) }
             }
         }
@@ -66,13 +67,13 @@ struct WritingView: View {
                        })
     }
 
-    /// Its model, and what it does with the result when that is not the usual replacing ("Copies the result · Llama 3.2"), in one
-    /// line; the shortcut is drawn as caps beside the controls. A rule without a model names none: the mark beside its
-    /// controls says so once.
+    /// What it does with the result and its model ("Copies the result · Llama 3.2"), in one line, so every row has a caption;
+    /// the shortcut is drawn as caps beside the controls. A rule without a model names none: the mark beside its controls
+    /// says so once.
     private func caption(_ rule: Rule) -> String? {
         var parts: [String] = []
         switch rule.textOutput {
-        case .replace: break
+        case .replace: parts.append(L10n.text("Replaces the selection"))
         case .copy: parts.append(L10n.text("Copies the result"))
         case .panel: parts.append(L10n.text("Shows the answer in a panel"))
         }
@@ -98,9 +99,9 @@ struct WritingBubbleSection: View {
     private var bubble: WritingConfig.Bubble { plugin.settings.bubble }
 
     var body: some View {
-        FrogSection("Selection bubble") {
-            FrogRow("Show after you select text") {
-                Toggle("Show after you select text", isOn: Binding(get: { bubble.on }, set: { value in
+        FrogSection {
+            FrogRow("Selection bubble", caption: "Offers your rules after you select text.") {
+                Toggle("Selection bubble", isOn: Binding(get: { bubble.on }, set: { value in
                     withAnimation(reduceMotion ? nil : FrogMotion.reveal) { update { $0.on = value } }
                 })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
@@ -251,8 +252,16 @@ struct WritingRuleEditor: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
                     FrogSection("Instructions") {
-                        TextEditor(text: $rule.instructions).font(FrogType.body).scrollContentBackground(.hidden)
-                            .frame(height: 90).padding(.vertical, 8).accessibilityLabel("Instructions")
+                        // An empty box says what goes in it, on the editor's own text inset.
+                        ZStack(alignment: .topLeading) {
+                            TextEditor(text: $rule.instructions).font(FrogType.body).scrollContentBackground(.hidden)
+                                .accessibilityLabel("Instructions")
+                            if rule.instructions.isEmpty {
+                                Text("Tell the model what to do with the selected text, such as “Fix spelling and grammar. Keep my wording.”")
+                                    .font(FrogType.body).foregroundStyle(FrogStyle.placeholder)
+                                    .padding(.leading, 5).allowsHitTesting(false).accessibilityHidden(true)
+                            }
+                        }.frame(height: 90).padding(.vertical, 8)
                     }
                     FrogSection("Starts from") {
                         FrogRow("Shortcut") { HotkeyRecorder(hotkey: $rule.hotkey) }
@@ -267,7 +276,13 @@ struct WritingRuleEditor: View {
                                 rule.action?.textOutput = output == .replace ? nil : output
                             }
                         }
-                        FrogRow("Model") { RuleModelPicker(rule: $rule) }
+                        // Without a model the row says why in a warning caption, the one sign of it in this sheet,
+                        // instead of a bare triangle on the picker.
+                        if model.ruleHasModel(rule) {
+                            FrogRow("Model") { RuleModelPicker(rule: $rule) }
+                        } else {
+                            FrogRow("Model", caption: .attributed(Self.missingModel)) { RuleModelPicker(rule: $rule, marksMissing: false) }
+                        }
                     }
                 }.padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space16).minimalScrollbars()
             }
@@ -294,6 +309,12 @@ struct WritingRuleEditor: View {
                     do { try model.deleteRule(id: rule.id); dismiss() } catch { issue = error.localizedDescription }
                 }
             }
+    }
+
+    private static var missingModel: AttributedString {
+        var text = AttributedString(L10n.text("The rule cannot run until it has one."))
+        text.swiftUI.foregroundColor = FrogStyle.warning
+        return text
     }
 
     /// Saves the draft as a new rule without a shortcut; the original stays as it was saved.
@@ -335,7 +356,8 @@ struct WritingTryView: View {
     }
     /// Why Run waits, said beside it rather than left to a greyed button.
     private var waiting: String? {
-        if run != nil || !hasModel { return nil }
+        if run != nil { return nil }
+        if !hasModel { return "Choose a model above to run it" }
         if !hasText { return "Type some text first" }
         if model.isProcessing { return "Frog is busy with another rule" }
         return nil
@@ -388,7 +410,7 @@ struct WritingTryView: View {
                 .frame(height: 120).frogTableSurface()
             }
             FrogSheetButtons(padded: false) {
-                // A missing model is marked once, on the model menu above, not again here.
+                // The model menu above carries the mark; this says why Run waits, next to Run.
                 if let waiting {
                     Text(L10n.text(waiting)).font(FrogType.body).foregroundStyle(FrogStyle.muted)
                 }
