@@ -54,6 +54,8 @@ private actor ApplicationIconCache {
 
     private static func isLaunchable(_ path: String) -> Bool {
         guard path.hasSuffix(".app") else { return true }
+        // An iPhone or iPad app installed on the Mac keeps its bundle in a wrapper, with no executable at the top.
+        if FileManager.default.fileExists(atPath: path + "/WrappedBundle") { return true }
         guard let executable = Bundle(path: path)?.executableURL else { return false }
         return FileManager.default.isExecutableFile(atPath: executable.path)
     }
