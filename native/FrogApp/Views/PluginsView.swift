@@ -84,8 +84,8 @@ struct PluginsView: View {
         }
     }
 
-    /// One installed plugin with one line of caption: what it does, truncated after that, with the version beside its name and
-    /// the rest (the full description, its actions, where it came from) in the help and its menu.
+    /// One installed plugin with up to two lines of caption: what it does, with the version beside its name and the
+    /// rest (its actions, where it came from) in the help and its menu.
     private func installedRow(_ item: PluginItem) -> some View {
         HStack(spacing: 12) {
             PluginIconTile(symbol: PluginSymbol.name(item.symbol), tint: PluginTint.purple.color)
@@ -98,7 +98,7 @@ struct PluginsView: View {
                 }
                 Text(L10n.text(item.problem ?? item.manifest?.description ?? ""))
                     .font(FrogType.small).foregroundStyle(item.problem == nil ? FrogStyle.muted : FrogStyle.warning)
-                    .lineLimit(1).truncationMode(.tail)
+                    .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .help(item.problem ?? [item.manifest?.description, caption(item)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n"))
