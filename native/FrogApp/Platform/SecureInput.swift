@@ -159,9 +159,6 @@ final class SecureInputNoticePanel {
 struct SecureInputPill: View {
     let message: String
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "lock").foregroundStyle(FrogStyle.warning)
-            Text(message).font(FrogType.label).lineLimit(1)
-        }.padding(.horizontal, 14).frame(height: 36).frogPanel(pill: true)
+        FrogNoticePill(symbol: "lock", tone: FrogStyle.warning, text: message)
     }
 }

@@ -261,8 +261,8 @@ final class UIShotsTests: XCTestCase {
         try await popup("notice-working") { ProcessingPill(symbol: nil, warning: false, text: "Working…") }
         let done = ProcessingIndicator.appearance(of: .done)
         try await popup("notice-done") { ProcessingPill(symbol: done.symbol, warning: false, text: done.text) }
-        let failed = ProcessingIndicator.appearance(of: .failed("No model"))
-        try await popup("notice-failed") { ProcessingPill(symbol: failed.symbol, warning: true, text: failed.text) }
+        let failed = ProcessingIndicator.appearance(of: .failed("Ollama is not running."))
+        try await popup("notice-failed") { ProcessingPill(symbol: failed.symbol, warning: true, text: failed.text, detail: failed.detail) }
         try await popup("notice-secure-input") {
             SecureInputPill(message: SecureInput.summary(SecureInput.Holder(pid: 1, name: "1Password", frontmost: false)))
         }
