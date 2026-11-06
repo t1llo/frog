@@ -21,9 +21,9 @@ struct ExplainView: View {
                 if !model.ruleHasModel(rule) {
                     ModelMissingNotice(feature: "Explain", speech: false) { pickerRequest.open(rule.id) }
                 }
-                // Two cards without headings: how Explain is asked, then where answers are kept. A heading per row
-                // only repeated the row's own title.
-                FrogSection {
+                // Two cards, each under its heading, as on Command bar and Clipboard: how Explain is asked, then where
+                // answers are kept.
+                FrogSection("Asking") {
                     FrogRow("Shortcut", caption: "Select text in any app, then press it.") { HotkeyRecorder(hotkey: ruleBinding(rule, \.hotkey)) }
                     if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
                     // The notice above already says Explain has no model, so the picker asks without a second mark.
@@ -63,7 +63,7 @@ struct ExplainView: View {
     }
 
     private var notes: some View {
-        FrogSection {
+        FrogSection("Answers") {
             FrogRow("Save answers to notes", caption: "Adds a Save to note button to the answer panel.") {
                 Toggle("Save answers to notes", isOn: Binding(get: { settings.notes.on }, set: { value in
                     withAnimation(reduceMotion ? nil : FrogMotion.reveal) { update { $0.notes.on = value } }

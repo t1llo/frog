@@ -14,10 +14,10 @@ struct StayAwakePage: View {
                 // Only a session that runs is worth a pill (with its time left); off, the switch below says it.
                 if power.isEnabled { FrogStatePill(text: power.statusText, on: true) }
             }
-            // No headings: each card's first row names it (the session, the lid, the menu bar icon), and a heading
-            // above a one-row card only repeated that row.
-            FrogSection {
-                FrogRow("Keep this Mac awake", caption: "Starts a session now.") {
+            // Every card under a heading, as on the other pages: the session, the lid, the menu bar. The session's first
+            // row says where it stands ("On until 17:30", or that the Mac sleeps as usual).
+            FrogSection("Session") {
+                FrogRow("Keep this Mac awake", caption: power.isEnabled ? power.statusText : "Off. Your Mac sleeps as usual.") {
                     Toggle("Keep this Mac awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
                         .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
@@ -39,7 +39,7 @@ struct StayAwakePage: View {
                 }
             }
             LidClosedSection(power: power, lid: power.lid, on: settings.lidClosed) { on in change(reveal: true) { $0.lidClosed = on } }
-            FrogSection {
+            FrogSection("Menu bar") {
                 FrogRow("Menu bar icon", caption: "Shows in the menu bar while this Mac is kept awake.") {
                     Toggle("Menu bar icon", isOn: Binding(get: { settings.menuBarItem }, set: { on in change(reveal: true) { $0.menuBarItem = on } }))
                         .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
@@ -85,7 +85,7 @@ private struct LidClosedSection: View {
     let set: (Bool) -> Void
 
     var body: some View {
-        FrogSection {
+        FrogSection("Lid closed") {
             FrogRow("Stay awake with the lid closed", caption: on ? "Turns off sleep for the whole Mac." : "Needs a one-time setup in Terminal.") {
                 Toggle("Stay awake with the lid closed", isOn: Binding(get: { on }, set: set))
                     .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
