@@ -379,7 +379,7 @@ final class StayAwakeTests: XCTestCase {
         XCTAssertLessThan(size.height, 275, "The default popup must hug its rows rather than expand into empty gaps")
         // The header, Stay awake's row in its card, the inset above and below them, and the footer band.
         let header: CGFloat = 40, footer: CGFloat = 32
-        let card = FrogStyle.rowHeight - 8 + 2 * FrogStyle.listInset
+        let card = FrogStyle.menuRowHeight + 2 * FrogStyle.listInset
         XCTAssertGreaterThanOrEqual(size.height, header + 2 * FrogStyle.panelCardInset + card + footer - 1)
     }
 

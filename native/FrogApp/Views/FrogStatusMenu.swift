@@ -192,7 +192,7 @@ struct StayAwakeMenuRow: View {
                     .padding(.leading, FrogStyle.space6)
             }
             // The switch ends where the command rows' keys do, `rowPadding` in.
-            .padding(.horizontal, FrogStyle.rowPadding).frame(height: FrogStyle.rowHeight - 8)
+            .padding(.horizontal, FrogStyle.rowPadding).frame(height: FrogStyle.menuRowHeight)
             if let message = power.error ?? power.notice {
                 Text(String(message.prefix(300))).font(FrogType.caption)
                     .foregroundStyle(power.error == nil ? FrogStyle.muted : FrogStyle.warning).lineLimit(2)
@@ -228,7 +228,7 @@ struct MenuActionRow: View {
                 if let dot { Circle().fill(dot).frame(width: 6, height: 6) }
                 if let key { Text(key).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
                 if let shortcut, !shortcut.isEmpty { KeyCaps(shortcut) }
-            }.padding(.horizontal, FrogStyle.rowPadding).frame(height: FrogStyle.rowHeight - 8).contentShape(Rectangle())
+            }.padding(.horizontal, FrogStyle.rowPadding).frame(height: FrogStyle.menuRowHeight).contentShape(Rectangle())
         }.buttonStyle(MenuRowStyle())
     }
 }

@@ -75,7 +75,7 @@ private struct DictationRuleSection: View {
                 Button("Rename…") { renaming = true }.buttonStyle(.frog(.ghost))
                 Button("Delete rule", role: .destructive) {
                     do { try model.deleteRule(id: rule.id) } catch { model.report(error) }
-                }.buttonStyle(.frog(.ghost))
+                }.buttonStyle(.frog(.destructiveGhost))
             }.frame(minHeight: FrogStyle.rowHeight)
         }
         .sheet(isPresented: $renaming) {

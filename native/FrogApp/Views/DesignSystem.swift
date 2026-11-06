@@ -77,8 +77,11 @@ enum FrogStyle {
     static let controlHeight: CGFloat = 28
     /// The same controls in popups, panel headers and dense rows.
     static let compactHeight: CGFloat = 24
-    /// The least height of a `FrogRow` in a `FrogSection` card: Rex's 38-point settings row.
-    static let rowHeight: CGFloat = 38
+    /// The least height of a `FrogRow` in a `FrogSection` card: a 28-point control with `space6` above and below,
+    /// so a row with a dropdown or segments is as tall as one with a switch.
+    static let rowHeight: CGFloat = controlHeight + 2 * space6
+    /// A row of a menu-bar menu's card (`MenuActionRow`, Stay awake): denser than a settings row.
+    static let menuRowHeight: CGFloat = 30
     /// The one row recipe: where a row's icon or text starts and where its control, time or caps end inside any
     /// card, and where a section's heading and the note under a card line up. It is `cardPadding`, the same 14 a
     /// list reaches with `listInset` around its rows and `rowPadding` inside them, so a `FrogSection` row, a list
@@ -691,6 +694,9 @@ struct FrogButtonStyle: ButtonStyle {
         case ghost
         /// Removes or deletes something.
         case destructive
+        /// A ghost that removes or deletes something, such as Delete rule beside Rename: the label in the critical
+        /// colour with no fill until hovered.
+        case destructiveGhost
     }
     var kind: Kind = .secondary
     /// 24 points tall, for popups, panel headers and dense rows.
@@ -755,7 +761,7 @@ private struct FrogButtonBody: View {
             // One disabled look for every kind: the secondary pill with its fill faded and its label in `muted`, so
             // it still reads. A disabled primary keeps no accent, so it never reads as a grey button that is
             // broken, and a disabled ghost stays plain text.
-            switch enabled || kind == .ghost ? kind : .secondary {
+            switch enabled || kind == .ghost || kind == .destructiveGhost ? kind : .secondary {
             case .secondary, .destructive:
                 label.frogControlSurface(hovering: hovered, pressed: pressed, height: height, capsule: true, faded: !enabled)
             case .primary:
@@ -763,7 +769,7 @@ private struct FrogButtonBody: View {
                     // The accent, as Rex fills its one main action.
                     shape.fill(FrogStyle.accent.opacity(pressed ? 0.76 : hovered ? 0.88 : 1)).animation(fade, value: hovered || pressed)
                 }.contentShape(shape)
-            case .ghost:
+            case .ghost, .destructiveGhost:
                 label.background {
                     shape.fill(pressed ? FrogStyle.pressed : hovered ? FrogStyle.hover : .clear).animation(fade, value: hovered || pressed)
                 }.contentShape(shape)
@@ -772,7 +778,7 @@ private struct FrogButtonBody: View {
         // Only the scale springs: whatever the action changes inside the button on release stays an instant cut.
         .animation(keyboardSurface ? nil : FrogMotion.press) { $0.scaleEffect(pressed && !reduceMotion && !keyboardSurface ? 0.97 : 1) }
         .onHover { hovering = $0 }
-        .padding(.trailing, kind == .ghost && trailingGhost ? -FrogButtonStyle.horizontalPadding(compact: compact) : 0)
+        .padding(.trailing, (kind == .ghost || kind == .destructiveGhost) && trailingGhost ? -FrogButtonStyle.horizontalPadding(compact: compact) : 0)
     }
 
     private var foreground: Color {
@@ -782,7 +788,7 @@ private struct FrogButtonBody: View {
         case .secondary: FrogStyle.ink
         // Ink, never muted: a muted word with no fill is how a disabled button reads.
         case .ghost: FrogStyle.ink
-        case .destructive: FrogStyle.critical
+        case .destructive, .destructiveGhost: FrogStyle.critical
         }
     }
 }
