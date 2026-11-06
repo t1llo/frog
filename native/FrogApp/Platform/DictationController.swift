@@ -636,8 +636,6 @@ final class DictationController: ObservableObject {
     }
 }
 
-/// Geometry is based on rendered text, so a short preview doesn't reserve a large blank area.
-@MainActor
 /// How a recording stops, as the dictation popup's footer shows it: "Stop ⌥Space", "Release to stop ⌥Space", or
 /// only Stop while the app that started it (`caller`) stops it.
 struct DictationStopHint: Equatable {
@@ -646,6 +644,8 @@ struct DictationStopHint: Equatable {
     var caller: String?
 }
 
+/// Geometry is based on rendered text, so a short preview doesn't reserve a large blank area.
+@MainActor
 enum DictationPopupLayout {
     static let maximumHeight = 220.0
     static let maximumTranscriptHeight = 104.0

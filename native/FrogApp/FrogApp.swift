@@ -91,8 +91,16 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
             let previous = created.frameRect(forContentRect: NSRect(origin: .zero, size: MainView.previousDefaultSize)).size
             if created.frame.size == previous {
                 var frame = created.frame
-                let grown = created.frameRect(forContentRect: NSRect(origin: .zero, size: MainView.defaultSize)).size
-                frame.origin.y -= grown.height - frame.height
+                var grown = created.frameRect(forContentRect: NSRect(origin: .zero, size: MainView.defaultSize)).size
+                // Its top-left stays put, and it stays on its screen, rather than growing past the Dock.
+                let top = frame.maxY
+                if let visible = (created.screen ?? NSScreen.main)?.visibleFrame {
+                    grown = NSSize(width: min(grown.width, max(visible.width, frame.width)), height: min(grown.height, max(visible.height, frame.height)))
+                    frame.origin.x = max(min(frame.minX, visible.maxX - grown.width), visible.minX)
+                    frame.origin.y = max(min(top - grown.height, visible.maxY - grown.height), visible.minY)
+                } else {
+                    frame.origin.y = top - grown.height
+                }
                 frame.size = grown
                 created.setFrame(frame, display: false)
             }
