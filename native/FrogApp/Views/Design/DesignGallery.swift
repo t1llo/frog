@@ -203,7 +203,7 @@ struct DesignGallery: View {
             FrogLoadingNote(text: "Looking for apps…")
             HStack(spacing: FrogStyle.space8) {
                 FrogNoticePill(symbol: "checkmark", text: "Done")
-                FrogNoticePill(symbol: "exclamationmark.circle", tone: FrogStyle.warning, text: "Ollama is not running", detail: "Details in the Frog menu")
+                FrogNoticePill(symbol: "exclamationmark.circle", tone: FrogStyle.warning, text: "Ollama is not running", action: ("Show details", {}))
             }.padding(.vertical, FrogStyle.space10)
         }
     }
