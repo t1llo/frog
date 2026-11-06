@@ -41,7 +41,7 @@ final class UIShotsTests: XCTestCase {
         try await mainWindow(sample)
         try await menuBar(sample)
         try await keyboardPanels(sample)
-        try await answerAndBubble()
+        try await answerAndBubble(sample)
         try await dictation(root: root.appendingPathComponent("dictation", isDirectory: true))
         try await notices(sample)
         try await setup(sample)
@@ -120,7 +120,8 @@ final class UIShotsTests: XCTestCase {
             // Frog answers a popup's calls only from the popup it opened.
             sample.model.plugins.popups[sample.focusTimerID] = host
             host.load()
-            let page = try await host.snapshot()
+            // Transparent around its card, so the shell's panel shows through as it does on screen.
+            let page = try await host.snapshot(onCanvas: false)
             host.stop()
             sample.model.plugins.popups[sample.focusTimerID] = nil
             // The page in the popup Frog draws around it: the header with the plugin's tile, and Close beneath.
@@ -220,7 +221,7 @@ final class UIShotsTests: XCTestCase {
     Developers make retries safe by sending a unique `request-id` that the server remembers.
     """
 
-    private func answerAndBubble() async throws {
+    private func answerAndBubble(_ sample: SampleFrog) async throws {
         func session(_ change: (inout AnswerSession) -> Void) -> AnswerSession {
             var session = AnswerSession(rule: Rule.explainPreset, modelName: "gpt-5-mini", modelLabel: "gpt-5-mini · OpenAI",
                                         selection: "Requests must be idempotent so that retries are safe.", context: nil,
@@ -247,22 +248,24 @@ final class UIShotsTests: XCTestCase {
             try await popup(name, size: CGSize(width: AnswerPanelController.width, height: max(height, 60))) { AnswerPanelView(model: panel) }
         }
 
-        let shortcut = Hotkey(keyCode: 8, modifiers: 4096 | 512)
-        let items = [
-            BubbleItem(id: UUID(), title: "Explain", symbol: SelectionBubbleItems.answerSymbol, answers: true,
-                       hotkey: Hotkey(keyCode: 14, modifiers: 4096 | 2048)),
-            BubbleItem(id: UUID(), title: "Define", symbol: SelectionBubbleItems.answerSymbol, answers: true),
-            BubbleItem(id: UUID(), title: "Proofread", symbol: SelectionBubbleItems.writingSymbol, answers: false, hotkey: shortcut),
-            BubbleItem(id: UUID(), title: "Polish email", symbol: SelectionBubbleItems.writingSymbol, answers: false),
-            BubbleItem(id: UUID(), title: "Translate to German", symbol: SelectionBubbleItems.writingSymbol, answers: false)
-        ]
+        // The sample's own rules, as the bubble builds its items from them: Explain with the shortcut its page shows,
+        // Define, and the Writing rules, each with its own glyph.
+        let rules = sample.model.configuration.rules
+        let names = ["Explain", "Define", "Proofread", "Polish email", "Translate to German"]
+        let items = names.compactMap { name in rules.first { $0.name == name } }.map { rule in
+            BubbleItem(id: rule.id, title: rule.name, symbol: SelectionBubbleItems.symbol(for: rule), answers: rule.answersInPanel,
+                       hotkey: rule.hotkey)
+        }
         let pointer = BubblePointer()
         try await popup("selection-bubble") {
             SelectionBubbleView(visible: Array(items.prefix(3)), more: Array(items.dropFirst(3)), expanded: false, pointer: pointer,
                                 select: { _ in }, expand: {})
         }
+        // The pointer over Define, so the list's hover is pictured too.
+        let overDefine = BubblePointer()
+        overDefine.location = CGPoint(x: 60, y: 76)
         try await popup("selection-bubble-expanded") {
-            SelectionBubbleView(visible: Array(items.prefix(3)), more: Array(items.dropFirst(3)), expanded: true, pointer: pointer,
+            SelectionBubbleView(visible: Array(items.prefix(3)), more: Array(items.dropFirst(3)), expanded: true, pointer: overDefine,
                                 select: { _ in }, expand: {})
         }
     }
@@ -399,11 +402,13 @@ final class UIShotsTests: XCTestCase {
         }
     }
 
-    /// A sheet: its own window, so it lies on the window's canvas with the window's corners.
+    /// A sheet: its own window, so it lies on the window's canvas and is clipped to the window's corners, as macOS
+    /// clips a sheet's window. A sheet's own square background never shows past them.
     private func sheet<Content: View>(_ name: String, _ view: () -> Content) async throws {
         let content = view()
+        let shape = RoundedRectangle(cornerRadius: FrogStyle.windowRadius, style: .continuous)
         try await popup(name) {
-            content.background(FrogStyle.opaqueCanvas, in: RoundedRectangle(cornerRadius: FrogStyle.windowRadius, style: .continuous))
+            content.background(FrogStyle.opaqueCanvas).clipShape(shape)
         }
     }
 
@@ -429,12 +434,25 @@ final class UIShotsTests: XCTestCase {
             host.layoutSubtreeIfNeeded()
         }
         fit()
+        // Nothing has keyboard focus, as in a window that has just opened before the user clicks: a text view that
+        // took first responder here drew its insertion point as a stray dot at its top-left corner.
+        window.makeFirstResponder(nil)
         try await Task.sleep(for: settle)
         fit()
+        window.makeFirstResponder(nil)
+        hideInsertionIndicators(in: host)
         XCTAssertGreaterThan(host.bounds.width, 1); XCTAssertGreaterThan(host.bounds.height, 1)
         let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
         return try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+    }
+
+    /// An offscreen text view still draws its insertion indicator, a two-pixel accent dot at its top-left corner,
+    /// though nothing has focus: a window that has just opened shows no caret, so the pictures hide it.
+    private func hideInsertionIndicators(in view: NSView) {
+        if let text = view as? NSTextView { text.insertionPointColor = .clear }
+        if view is NSTextInsertionIndicator { view.isHidden = true }
+        view.subviews.forEach(hideInsertionIndicators)
     }
 
     private func write(_ png: Data, _ file: String) throws {
@@ -478,20 +496,33 @@ private final class SampleFrog {
         for feature in FeatureID.allCases { configuration.preferences.setFeature(feature, enabled: true) }
         configuration.preferences.historyEnabled = true
         configuration.rules.append(.dictationPreset)
+        // Explain on ⌃⌥E, as someone who set its shortcut has it, and a second answer rule for the bubble.
+        var explain = Rule.explainPreset
+        explain.hotkey = Hotkey(keyCode: 14, modifiers: 4096 | 2048)
+        var define = Rule(name: "Define", instructions: "Define the selected word in one sentence.")
+        define.action = RuleAction(category: .text)
+        define.action?.textOutput = .panel
+        configuration.rules += [explain, define]
         configuration.providers = [ProviderConfiguration(name: "Ollama", kind: .ollama)]
         try ConfigurationStore(directory: root).save(configuration)
+        // Changed at different times, so the lists' times say something.
+        let now = Date()
         try await UtilityDocumentStore(directory: root.appendingPathComponent("Toolkit")).save([
-            UtilityDocument(kind: .note, title: "Email signature", text: "Best,\nAnna\n{{date}}", pastes: true),
-            UtilityDocument(kind: .note, title: "Meeting notes", text: "# Standup\n- Ship the release\n- Update the website"),
-            UtilityDocument(kind: .script, title: "Clean downloads", text: "find ~/Downloads -mtime +30 -delete")
+            UtilityDocument(kind: .note, title: "Email signature", text: "Best,\nAnna\n{{date}}", modified: now.addingTimeInterval(-3 * 86_400), pastes: true),
+            UtilityDocument(kind: .note, title: "Meeting notes", text: "# Standup\n- Ship the release\n- Update the website", modified: now.addingTimeInterval(-25 * 60)),
+            UtilityDocument(kind: .script, title: "Clean downloads", text: "find ~/Downloads -mtime +30 -delete", modified: now.addingTimeInterval(-26 * 3_600))
         ], revision: 0)
 
         pasteboard = NSPasteboard(name: .init("frog-ui-shots-\(UUID().uuidString)"))
         history = ClipboardHistoryStore(pasteboard: pasteboard, gate: ClipboardHistoryCaptureGate())
         history.configure(enabled: true, automaticallyPoll: false)
-        for text in ["brew install --cask frog", "Thanks, see you at 3!", "https://frog.beffa.xyz/docs/command-bar/",
-                     "Meeting moved to Thursday", "func greet(_ name: String) -> String {\n    \"Hello, \\(name)\"\n}",
-                     "git push origin main"] { history.recordCopiedText(text) }
+        // Copied over the last few days, oldest first, so the times down the list differ as they would.
+        let copies: [(String, TimeInterval)] = [
+            ("brew install --cask frog", 4 * 86_400), ("Thanks, see you at 3!", 27 * 3_600),
+            ("https://frog.beffa.xyz/docs/command-bar/", 3 * 3_600), ("Meeting moved to Thursday", 47 * 60),
+            ("func greet(_ name: String) -> String {\n    \"Hello, \\(name)\"\n}", 12 * 60), ("git push origin main", 20)
+        ]
+        for (text, ago) in copies { history.recordCopiedText(text, at: now.addingTimeInterval(-ago)) }
 
         let fixtures = root.appendingPathComponent("fixtures", isDirectory: true)
         try Self.writeCodexLog(in: fixtures)
@@ -581,35 +612,45 @@ private final class SampleFrog {
         try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted]).write(to: file)
     }
 
-    /// A day of Codex sessions with the plan's limits, as Codex logs them.
+    /// A week of Codex sessions, heavier on some days than others, with the plan's limits as Codex logs them: the
+    /// activity chart pictures a working week, not a single day's spike.
     private static func writeCodexLog(in fixtures: URL) throws {
-        let folder = fixtures.appendingPathComponent("codex/sessions/2026/11/06", isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let now = Date()
         let format = ISO8601DateFormatter()
+        let calendar = Calendar(identifier: .gregorian)
         func line(_ date: Date, _ type: String, _ payload: [String: Any]) throws -> Data {
             try JSONSerialization.data(withJSONObject: ["timestamp": format.string(from: date), "type": type, "payload": payload]) + Data("\n".utf8)
         }
-        var data = try line(now.addingTimeInterval(-6 * 3_600), "session_meta", ["id": "sample-thread", "model_provider": "openai"])
-        data += try line(now.addingTimeInterval(-6 * 3_600), "turn_context", ["model": "gpt-5.5", "model_provider": "openai"])
-        var total = (input: 0, output: 0, cached: 0)
-        for step in 0..<24 {
-            let date = now.addingTimeInterval(Double(step - 24) * 900)
-            let last = (input: 18_000 + step * 900, output: 2_400 + step * 70, cached: 12_000 + step * 400)
-            total = (total.input + last.input, total.output + last.output, total.cached + last.cached)
-            func usage(_ value: (input: Int, output: Int, cached: Int)) -> [String: Any] {
-                ["input_tokens": value.input, "cached_input_tokens": value.cached, "output_tokens": value.output,
-                 "reasoning_output_tokens": 0, "total_tokens": value.input + value.output]
-            }
-            let limits: [String: Any] = [
-                "primary": ["used_percent": 20 + step * 2, "window_minutes": 300, "resets_at": now.addingTimeInterval(5_400).timeIntervalSince1970],
-                "secondary": ["used_percent": 31 + step / 2, "window_minutes": 10_080, "resets_at": now.addingTimeInterval(3 * 86_400).timeIntervalSince1970],
-                "plan_type": "plus"
-            ]
-            data += try line(date, "event_msg", ["type": "token_count", "rate_limits": limits,
-                                                 "info": ["total_token_usage": usage(total), "last_token_usage": usage(last)]])
+        func usage(_ value: (input: Int, output: Int, cached: Int)) -> [String: Any] {
+            ["input_tokens": value.input, "cached_input_tokens": value.cached, "output_tokens": value.output,
+             "reasoning_output_tokens": 0, "total_tokens": value.input + value.output]
         }
-        try data.write(to: folder.appendingPathComponent("rollout-2026-11-06T09-00-00-sample.jsonl"))
+        // Turns per day, oldest first; today is the last.
+        let turns = [14, 9, 0, 18, 11, 21, 24]
+        for (index, count) in turns.enumerated() where count > 0 {
+            let daysAgo = turns.count - 1 - index
+            let end = daysAgo == 0 ? now.addingTimeInterval(-15 * 60) : calendar.date(byAdding: .day, value: -daysAgo, to: now)!.addingTimeInterval(-3 * 3_600)
+            let parts = calendar.dateComponents([.year, .month, .day], from: end)
+            let folder = fixtures.appendingPathComponent(String(format: "codex/sessions/%04d/%02d/%02d", parts.year!, parts.month!, parts.day!), isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let begin = end.addingTimeInterval(-Double(count) * 900)
+            var data = try line(begin, "session_meta", ["id": "sample-thread-\(index)", "model_provider": "openai"])
+            data += try line(begin, "turn_context", ["model": "gpt-5.5", "model_provider": "openai"])
+            var total = (input: 0, output: 0, cached: 0)
+            for step in 0..<count {
+                let date = begin.addingTimeInterval(Double(step + 1) * 900)
+                let last = (input: 18_000 + step * 900, output: 2_400 + step * 70, cached: 12_000 + step * 400)
+                total = (total.input + last.input, total.output + last.output, total.cached + last.cached)
+                let limits: [String: Any] = [
+                    "primary": ["used_percent": 20 + step * 2, "window_minutes": 300, "resets_at": now.addingTimeInterval(5_400).timeIntervalSince1970],
+                    "secondary": ["used_percent": 31 + step / 2, "window_minutes": 10_080, "resets_at": now.addingTimeInterval(3 * 86_400).timeIntervalSince1970],
+                    "plan_type": "plus"
+                ]
+                data += try line(date, "event_msg", ["type": "token_count", "rate_limits": limits,
+                                                     "info": ["total_token_usage": usage(total), "last_token_usage": usage(last)]])
+            }
+            try data.write(to: folder.appendingPathComponent("rollout-\(index)-sample.jsonl"))
+        }
     }
 }
 

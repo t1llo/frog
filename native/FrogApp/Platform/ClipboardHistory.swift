@@ -326,10 +326,11 @@ final class ClipboardHistoryStore: ObservableObject {
 
     /// Explicitly include Frog results even if a subsequent compatibility Copy
     /// temporarily suppresses clipboard polling/restores that same result.
-    func recordCopiedText(_ text: String) {
+    /// `at` is when it was copied: now, or an earlier moment for sample data.
+    func recordCopiedText(_ text: String, at date: Date = Date()) {
         guard enabled, !text.isEmpty, text.utf8.count <= Self.textLimit, ClipboardSecret.detect(text) == nil else { return }
         epoch = UUID(); pendingCount = nil; pendingAttempts = 0
-        record(ClipboardHistoryEntry(text: text))
+        record(ClipboardHistoryEntry(text: text, timestamp: date))
         changeCount = pasteboard.changeCount
     }
 
