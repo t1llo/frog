@@ -53,12 +53,19 @@ final class SelectionBubbleItemsTests: XCTestCase {
         XCTAssertEqual(titles(result.visible), ["Explain", "Proofread"])
     }
 
+    func testSymbolsTellRulesApartByWhatTheyDo() {
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: answer("Define")), "book")
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: writing("Translate to German")), "globe")
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: Rule.explainPreset), SelectionBubbleItems.answerSymbol)
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: writing("Make it rhyme")), SelectionBubbleItems.writingSymbol)
+    }
+
     func testWritingRulesOnlyInEditableFieldsWithWritingOn() {
         var dictation = Rule.dictationPreset
         dictation.enabled = true
         let rules = [writing("Proofread"), Rule.explainPreset, dictation]
         XCTAssertEqual(titles(items(rules).visible), ["Explain", "Proofread"], "only text rules")
-        XCTAssertEqual(items(rules).visible.last?.symbol, SelectionBubbleItems.writingSymbol)
+        XCTAssertEqual(items(rules).visible.last?.symbol, "checkmark.circle")
         XCTAssertEqual(items(rules).visible.last?.answers, false)
         XCTAssertEqual(titles(items(rules, editable: false).visible), ["Explain"])
         XCTAssertEqual(titles(items(rules, writing: false).visible), ["Explain"])

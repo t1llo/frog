@@ -431,6 +431,24 @@ public enum SelectionBubbleItems {
     public static let answerSymbol = "questionmark.bubble"
     public static let writingSymbol = "text.alignleft"
 
+    /// A glyph that tells rules apart by what they do, read from the rule's name; any other rule keeps the
+    /// answer or writing glyph.
+    public static func symbol(for rule: Rule) -> String {
+        let name = rule.name.lowercased()
+        let glyphs: [([String], String)] = [
+            (["translat"], "globe"),
+            (["defin", "meaning", "dictionary"], "book"),
+            (["summar", "tl;dr", "key points"], "list.bullet"),
+            (["spelling", "proofread", "grammar", "typo"], "checkmark.circle"),
+            (["email", "mail", "reply"], "envelope"),
+            (["shorter", "shorten", "concise"], "arrow.down.right.and.arrow.up.left"),
+            (["polish", "rewrite", "improve", "tone", "friendl"], "wand.and.stars"),
+            (["code", "regex", "sql"], "chevron.left.forwardslash.chevron.right")
+        ]
+        if let match = glyphs.first(where: { words, _ in words.contains { name.contains($0) } }) { return match.1 }
+        return rule.answersInPanel ? answerSymbol : writingSymbol
+    }
+
     /// Every rule the bubble can offer, in its order: the Explain rule while Explain is on, then the Writing rules.
     /// The Writing page lists these to choose which ones the bubble shows.
     public static func candidates(rules: [Rule], explainEnabled: Bool, writingEnabled: Bool) -> [Rule] {
@@ -448,7 +466,7 @@ public enum SelectionBubbleItems {
         let all = candidates(rules: rules, explainEnabled: explainEnabled, writingEnabled: writingEnabled)
             .filter { $0.showsInBubble && ($0.textOutput != .replace || editable) && configured($0) }
             .map { BubbleItem(id: $0.id, title: $0.name.trimmingCharacters(in: .whitespacesAndNewlines),
-                              symbol: $0.answersInPanel ? answerSymbol : writingSymbol, answers: $0.answersInPanel,
+                              symbol: symbol(for: $0), answers: $0.answersInPanel,
                               hotkey: $0.hotkey) }
         guard all.count > visibleLimit else { return (all, []) }
         let shown = max(visibleLimit - 1, 0)
