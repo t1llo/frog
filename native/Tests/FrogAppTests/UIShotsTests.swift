@@ -321,10 +321,9 @@ final class UIShotsTests: XCTestCase {
 
     private func setup(_ sample: SampleFrog) async throws {
         for step in OnboardingView.Step.allCases {
-            // Setup is a sheet on the main window, whose window clips it to its corners, so it is pictured clipped.
+            // Setup is a sheet on the main window; `sheet` clips it to the window's corners.
             try await sheet("setup-\(step.rawValue + 1)-\(step)") {
                 OnboardingView(step: step.rawValue).environmentObject(sample.model)
-                    .clipShape(RoundedRectangle(cornerRadius: FrogStyle.windowRadius, style: .continuous))
             }
         }
     }
