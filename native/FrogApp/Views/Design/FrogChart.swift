@@ -77,14 +77,26 @@ struct FrogChartChip<Content: View>: View {
 
 /// 0, 50 and 100 % at a chart's left edge, away from the newest readings, drawn over the plot so it keeps its width.
 struct FrogChartScaleLabels: View {
+    /// The plot's padding above 100% and below 0%, as the chart's `chartYScale` range sets it.
+    var inset: CGFloat = 6
+
     var body: some View {
-        ZStack(alignment: .leading) {
-            Text("100%").frame(maxHeight: .infinity, alignment: .top)
-            Text("50%")
-            Text("0%").frame(maxHeight: .infinity, alignment: .bottom)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .font(FrogType.caption).monospacedDigit().foregroundStyle(FrogStyle.muted).padding(.leading, 6).padding(.vertical, 3)
-            .allowsHitTesting(false).accessibilityHidden(true)
+        // Each label sits clear of its gridline, never on it: 100% just under the top line, 50% and 0% just over
+        // theirs, so the dashes never run through the figures.
+        GeometryReader { proxy in
+            let top = inset, bottom = proxy.size.height - inset
+            ZStack(alignment: .topLeading) {
+                label("100%").padding(.top, top + 2)
+                label("50%").frame(height: max(0, (top + bottom) / 2 - 2), alignment: .bottom)
+                label("0%").frame(height: max(0, bottom - 2), alignment: .bottom)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .padding(.leading, 6)
+        .allowsHitTesting(false).accessibilityHidden(true)
+    }
+
+    private func label(_ text: String) -> some View {
+        Text(text).font(FrogType.caption).monospacedDigit().foregroundStyle(FrogStyle.muted)
     }
 }
 

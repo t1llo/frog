@@ -35,7 +35,7 @@ struct FrogStatusMenu: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 header(tabs: tabs, shown: shown)
-                VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                VStack(alignment: .leading, spacing: FrogStyle.panelCardGap) {
                     if let tab = tabs.first(where: { $0.id == shown }) {
                         // A tab's own views observe their own models, so an unrelated AppModel change need not rebuild them.
                         MenuTabBody(id: tab.id, build: tab.content).equatable()
@@ -188,7 +188,11 @@ struct StayAwakeMenuRow: View {
                     // While a change is under way the spinner takes the switch's place, so the row needs no extra width.
                     .opacity(power.isBusy ? 0 : 1)
                     .overlay { if power.isBusy { FrogSpinner(size: .mini) } }
-            }.padding(.leading, FrogStyle.rowPadding).padding(.trailing, FrogStyle.space6).frame(height: FrogStyle.rowHeight - 8)
+                    // Apart from the duration, so the two controls read as two, not one crowded cluster.
+                    .padding(.leading, FrogStyle.space6)
+            }
+            // The switch ends where the command rows' keys do, `rowPadding` in.
+            .padding(.horizontal, FrogStyle.rowPadding).frame(height: FrogStyle.rowHeight - 8)
             if let message = power.error ?? power.notice {
                 Text(String(message.prefix(300))).font(FrogType.caption)
                     .foregroundStyle(power.error == nil ? FrogStyle.muted : FrogStyle.warning).lineLimit(2)
