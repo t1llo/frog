@@ -20,9 +20,9 @@ struct SystemMonitorPage: View {
 
     var body: some View {
         FrogPage {
-            FrogPageHeader(title: "System monitor", subtitle: "CPU, GPU and memory over the last 10 minutes, and free space on your Mac")
+            FrogPageHeader(title: "System monitor", subtitle: "CPU and GPU over the last 10 minutes, memory and space on your Mac")
             VStack(alignment: .leading, spacing: FrogStyle.space8) {
-                FrogSectionHeader("Load and storage")
+                FrogSectionHeader("Load")
                 SystemMonitorView(monitor: monitor, presenter: .page, wide: true)
             }
             SystemMonitorMenuBarSection(settings: plugin.settings) { plugin.update($0) }
@@ -84,97 +84,105 @@ struct SystemMonitorOverview: View {
         let sample = inspectedSample
         // Cards a popup's card gap apart in a popup; on the page, where cards stand alone, 16.
         VStack(spacing: wide ? FrogStyle.space16 : FrogStyle.panelCardGap) {
+            // CPU and GPU: one legend entry per line in the graph, each with its dot.
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top, spacing: 8) {
+                HStack(alignment: .top, spacing: FrogStyle.space16) {
                     legend("CPU", color: FrogStyle.series, recorded: sample.map(\.cpu), now: snapshot.cpu)
                         .help("Busy time across all CPU cores.")
                     legend("GPU", color: FrogStyle.seriesSecondary, recorded: sample.map(\.gpu), now: snapshot.gpu)
                         .help("The busiest GPU, when its driver reports it.")
-                    memory(sample)
                 }
-                if history.count < 2 {
-                    // Hold the graph's place, so the card does not grow when the first readings arrive. The figures'
-                    // skeleton bars and the footer's "Measuring…" already say they are being measured, so the graph
-                    // adds no third note.
-                    FrogChartPlaceholder(height: wide ? 150 : 54) { EmptyView() }.accessibilityLabel("Measuring")
-                } else {
-                    SystemMonitorGraph(history: history, inspected: $inspected, sample: sample, wide: wide).equatable().frame(height: wide ? 150 : 54)
+                HStack(spacing: 0) {
+                    if wide { FrogChartScaleGutter(height: 150) }
+                    if history.count < 2 {
+                        // Hold the graph's place, so the card does not grow when the first readings arrive. The figures'
+                        // skeleton bars and the footer's "Measuring…" already say they are being measured, so the graph
+                        // adds no third note.
+                        FrogChartPlaceholder(height: wide ? 150 : 54) { EmptyView() }.accessibilityLabel("Measuring")
+                    } else {
+                        SystemMonitorGraph(history: history, inspected: $inspected, sample: sample, wide: wide).equatable().frame(height: wide ? 150 : 54)
+                    }
                 }
                 GraphAxis(leading: GraphStyle.ago(SystemMonitorGraph.span), trailing: "Now")
+                    .padding(.leading, wide ? FrogChart.scaleGutter : 0)
             }.modifier(OverviewCard(wide: wide))
-            if let storage = snapshot.storage {
-                storageLine(storage).modifier(OverviewCard(wide: wide))
-            } else if snapshot.cpu == .measuring {
-                // Every Mac has a startup disk: hold its place so the card does not push the rest down later.
-                storagePlaceholder.modifier(OverviewCard(wide: wide))
+            // Memory and the startup disk: what is used of each, the figure and its meter saying the same thing.
+            if snapshot.storage != nil || snapshot.memory != nil || snapshot.cpu == .measuring {
+                section(wide ? "Memory and storage" : nil) {
+                    // Side by side on the page; one above the other in the narrow popup, where each needs the width.
+                    let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: FrogStyle.space16 * 2))
+                                      : AnyLayout(VStackLayout(alignment: .leading, spacing: FrogStyle.space12))
+                    layout {
+                        memory(sample)
+                        storage
+                    }.modifier(OverviewCard(wide: wide))
+                }
             }
             if let power = powerLine {
-                if wide {
-                    // On the page the battery is its own section, so "Load and storage" heads only what it names.
-                    VStack(alignment: .leading, spacing: FrogStyle.space8) {
-                        FrogSectionHeader("Power")
-                        power.modifier(OverviewCard(wide: wide))
-                    }.padding(.top, FrogStyle.sectionSpacing - FrogStyle.space16)
-                } else {
-                    power.modifier(OverviewCard(wide: wide))
-                }
+                section(wide ? "Power" : nil) { power.modifier(OverviewCard(wide: wide)) }
             }
         }.accessibilityElement(children: .contain).accessibilityLabel("System overview")
     }
 
-    /// Memory now, or as recorded at the moment under the pointer.
-    private func memory(_ sample: SystemMonitorSample?) -> some View {
-        let fraction = sample != nil ? sample?.memory : snapshot.memory?.fraction
-        let level = fraction.map { FrogStyle.level($0, warning: 0.8, critical: 0.92) }
-        // No dot: memory has no line in the graph, only its meter, like CPU's and GPU's.
-        return GraphLegend(color: nil, title: "Memory") {
-            if let fraction, let level {
-                Text(percent(.value(fraction))).font(GraphStyle.legendValue(page: wide)).monospacedDigit()
-                    .frame(height: wide ? 34 : 24, alignment: .leading)
-                meter(fraction, color: level)
-            } else if sample != nil {
-                Text("—").font(FrogType.small).frame(height: wide ? 34 : 24, alignment: .leading)
-            } else {
-                MeasuringValue(wide: wide)
-            }
-        }.frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .combine)
-            .help(snapshot.memory.map { "\(bytes($0.used)) of \(bytes($0.total)) in use" } ?? "")
+    /// On the page, a card under a heading of its own, a section's gap below the one above; in a popup, the card.
+    @ViewBuilder private func section<Content: View>(_ title: String?, @ViewBuilder content: () -> Content) -> some View {
+        if let title {
+            VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                FrogSectionHeader(title)
+                content()
+            }.padding(.top, FrogStyle.sectionSpacing - FrogStyle.space16)
+        } else {
+            content()
+        }
     }
 
-    /// Free space on the startup volume, with a meter of what is used.
-    private func storageLine(_ storage: SystemMonitorStorage) -> some View {
+    /// Memory in use now, or as recorded at the moment under the pointer.
+    private func memory(_ sample: SystemMonitorSample?) -> some View {
+        let total = snapshot.memory?.total
+        let fraction = sample != nil ? sample?.memory : snapshot.memory?.fraction
+        return usage(title: "Memory", symbol: "memorychip",
+                     used: fraction.flatMap { fraction in total.map { Int64(Double($0) * fraction) } }, total: total, fraction: fraction,
+                     level: { FrogStyle.level($0, warning: 0.8, critical: 0.92) }, format: bytes,
+                     recordedWithout: sample != nil && fraction == nil)
+            .help("Memory in use as Activity Monitor counts it: app memory, wired and compressed.")
+    }
+
+    /// Space used on the startup disk, as Finder counts it.
+    private var storage: some View {
+        let storage = snapshot.storage
+        return usage(title: "Storage", symbol: "internaldrive",
+                     used: storage.map { $0.total - $0.available }, total: storage?.total, fraction: storage?.usedFraction,
+                     level: { FrogStyle.level($0, warning: 0.85, critical: 0.95) }, format: diskBytes, recordedWithout: false)
+            .help(storage.map { "\(diskBytes($0.available)) free, counting what macOS can clear." } ?? "")
+    }
+
+    /// One block of the memory and storage card: its title, what is used ("312 GB used of 494 GB") and a meter of it.
+    private func usage(title: String, symbol: String, used: Int64?, total: Int64?, fraction: Double?,
+                       level: (Double) -> Color, format: (Int64) -> String, recordedWithout: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                cardTitle("Storage", symbol: "internaldrive")
-                Text(diskBytes(storage.available)).font(GraphStyle.figure).monospacedDigit()
-                Text("free").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                Spacer(minLength: 4)
-                Text("of \(diskBytes(storage.total))").font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                cardTitle(title, symbol: symbol)
+                if let used, let total {
+                    Text(format(used)).font(GraphStyle.figure).monospacedDigit()
+                    Text("used of \(format(total))").font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                } else if recordedWithout {
+                    Text("—").font(FrogType.small)
+                } else {
+                    Spacer(minLength: 4)
+                    FrogSkeleton(width: 56, height: 12)
+                }
             }
-            meter(storage.usedFraction, color: FrogStyle.level(storage.usedFraction, warning: 0.85, critical: 0.95))
-        }.accessibilityElement(children: .combine)
-            .help("Space free on the startup disk, counting what macOS can clear, as Finder shows it.")
+            meter(fraction ?? 0, color: fraction.map(level) ?? FrogStyle.accent)
+        }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .combine)
     }
 
-    /// The title of the storage and battery cards, in the legend's style (`GraphLegend`), so every block of the
+    /// The title of the memory, storage and battery blocks, in the legend's style (`GraphLegend`), so every block of the
     /// overview is headed alike: a small muted symbol where the legend has its dot, and a small muted name.
     private func cardTitle(_ title: String, symbol: String) -> some View {
         HStack(spacing: 5) {
             Image(systemName: symbol).font(FrogType.caption).accessibilityHidden(true)
             Text(L10n.text(title)).font(FrogType.small).lineLimit(1)
         }.foregroundStyle(FrogStyle.muted).fixedSize()
-    }
-
-    private var storagePlaceholder: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                cardTitle("Storage", symbol: "internaldrive")
-                Spacer(minLength: 4)
-                FrogSkeleton(width: 56, height: 12)
-            }
-            meter(0, color: FrogStyle.accent)
-        }.accessibilityElement(children: .combine)
     }
 
     /// The battery's charge and state, what the Mac draws, the battery's temperature, and the
@@ -418,7 +426,6 @@ struct SystemMonitorGraph: View, Equatable {
         .chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
         .chartXSelection(value: $inspected)
         .frogChartPlot(compact: !wide)
-        .overlay { if wide { FrogChartScaleLabels() } }
         .overlay(alignment: FrogChart.chipAlignment(pointerAt: pointer(window))) {
             if let sample, let end = history.last?.time { chip(sample, end: end) }
         }

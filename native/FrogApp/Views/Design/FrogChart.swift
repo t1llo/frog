@@ -20,6 +20,9 @@ enum FrogChart {
 
     /// Room the plot keeps at its ends so the live dot and its halo are never cut off by the clip.
     static let endInset: CGFloat = 8
+    /// The column left of a percentage chart for its scale (`FrogChartScaleGutter`), so the labels never sit on the
+    /// plot; the time axis under it starts this far in, under the plot's left edge.
+    static let scaleGutter: CGFloat = 42
     /// Which corner the chip takes: away from the pointer, so it never covers what it names.
     static func chipAlignment(pointerAt fraction: Double) -> Alignment { fraction > 0.5 ? .topLeading : .topTrailing }
 }
@@ -75,28 +78,27 @@ struct FrogChartChip<Content: View>: View {
     }
 }
 
-/// 0, 50 and 100 % at a chart's left edge, away from the newest readings, drawn over the plot so it keeps its width.
-struct FrogChartScaleLabels: View {
+/// The 100%, 50% and 0% of a percentage chart in a column to its left, each centred on its gridline, as Activity
+/// Monitor and Stocks label their scales, so no label sits on a line or on the plot.
+struct FrogChartScaleGutter: View {
+    let height: CGFloat
     /// The plot's padding above 100% and below 0%, as the chart's `chartYScale` range sets it.
     var inset: CGFloat = 6
 
     var body: some View {
-        // Each label sits clear of its gridline, never on it: 100% just under the top line, 50% and 0% just over
-        // theirs, so the dashes never run through the figures.
-        GeometryReader { proxy in
-            let top = inset, bottom = proxy.size.height - inset
-            ZStack(alignment: .topLeading) {
-                label("100%").padding(.top, top + 2)
-                label("50%").frame(height: max(0, (top + bottom) / 2 - 2), alignment: .bottom)
-                label("0%").frame(height: max(0, bottom - 2), alignment: .bottom)
-            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        let top = inset, bottom = height - inset
+        ZStack(alignment: .topLeading) {
+            label("100%").position(x: FrogChart.scaleGutter / 2 - 4, y: top)
+            label("50%").position(x: FrogChart.scaleGutter / 2 - 4, y: (top + bottom) / 2)
+            label("0%").position(x: FrogChart.scaleGutter / 2 - 4, y: bottom)
         }
-        .padding(.leading, 6)
+        .frame(width: FrogChart.scaleGutter, height: height)
         .allowsHitTesting(false).accessibilityHidden(true)
     }
 
     private func label(_ text: String) -> some View {
         Text(text).font(FrogType.caption).monospacedDigit().foregroundStyle(FrogStyle.muted)
+            .fixedSize().frame(width: FrogChart.scaleGutter - 8, alignment: .trailing)
     }
 }
 
