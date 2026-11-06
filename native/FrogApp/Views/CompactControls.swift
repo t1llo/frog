@@ -17,8 +17,27 @@ struct SearchBox: View {
         }.font(FrogType.body).padding(.horizontal, 10).frogControlSurface(capsule: true)
     }
     @ViewBuilder private var field: some View {
-        let field = TextField(L10n.text(placeholder), text: $text).textFieldStyle(.plain)
+        let field = FrogTextField(placeholder: placeholder, text: $text)
         if let focus { field.focused(focus) } else { field }
+    }
+}
+
+/// A plain text field whose placeholder is drawn in `FrogStyle.placeholder`, a step lighter than muted text, so
+/// an empty field never reads as filled in. Put it inside `LabeledField` or on `frogControlSurface()`.
+struct FrogTextField: View {
+    let placeholder: String
+    @Binding var text: String
+    var body: some View {
+        // macOS draws a plain field's own placeholder nearly as dark as its text and ignores a styled prompt, so
+        // the field draws none and this one sits behind it while the field is empty.
+        TextField("", text: $text).textFieldStyle(.plain)
+            .accessibilityLabel(L10n.text(placeholder))
+            .background(alignment: .leading) {
+                if text.isEmpty {
+                    Text(L10n.text(placeholder)).foregroundStyle(FrogStyle.placeholder).lineLimit(1)
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                }
+            }
     }
 }
 

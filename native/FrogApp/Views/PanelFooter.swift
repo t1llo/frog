@@ -49,15 +49,41 @@ struct PanelFooter: View {
     }
 }
 
-/// One key of a shortcut, drawn as a small cap.
+/// One key of a shortcut, drawn as a small cap: 18 points tall and at least as wide, so ⌘ and K are the same
+/// square and a word key (Space, esc) grows only sideways. Hints in footers and lists use caps; a recorded
+/// shortcut that can be clicked to change is a `ShortcutBadge` chip instead.
 struct KeyCap: View {
+    static let size: CGFloat = 18
     let key: String
     init(_ key: String) { self.key = key }
 
     var body: some View {
-        Text(key).font(FrogType.label).foregroundStyle(FrogStyle.muted)
-            .frame(minWidth: 18, minHeight: 18)
-            .padding(.horizontal, 3)
+        Text(key).font(FrogType.label).foregroundStyle(FrogStyle.muted).lineLimit(1).fixedSize()
+            .padding(.horizontal, FrogStyle.space4)
+            .frame(minWidth: Self.size, minHeight: Self.size, maxHeight: Self.size)
             .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius, style: .continuous))
+    }
+}
+
+/// A whole shortcut as caps, one per key: "⌃⌥Space" is ⌃, ⌥ and Space. Modifier glyphs each take a cap; what
+/// follows them is the key.
+struct KeyCaps: View {
+    let keys: [String]
+    init(_ shortcut: String) { keys = Self.split(shortcut) }
+
+    var body: some View {
+        HStack(spacing: 3) { ForEach(Array(keys.enumerated()), id: \.offset) { KeyCap($0.element) } }
+            .accessibilityElement(children: .ignore).accessibilityLabel(keys.joined())
+    }
+
+    static func split(_ shortcut: String) -> [String] {
+        let modifiers: Set<Character> = ["⌃", "⌥", "⇧", "⌘"]
+        var keys: [String] = [], rest = Substring(shortcut.trimmingCharacters(in: .whitespaces))
+        while let first = rest.first, modifiers.contains(first) {
+            keys.append(String(first)); rest = rest.dropFirst()
+        }
+        let key = rest.trimmingCharacters(in: .whitespaces)
+        if !key.isEmpty { keys.append(key) }
+        return keys
     }
 }

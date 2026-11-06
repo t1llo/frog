@@ -121,7 +121,7 @@ enum FrogStyle {
     static var card: Color { inkLayer(light: 0.035, dark: 0.05) }
     /// Buttons, fields, dropdowns and search boxes: one step above a card.
     static var control: Color { inkLayer(light: 0.06, dark: 0.1) }
-    /// The line `FrogSection` draws between the rows of a card. Views never draw one themselves.
+    /// The faint line colour handed to plugin pages' stylesheet. Frog's own cards set their rows apart by space.
     static var separator: Color { inkLayer(light: 0.09, dark: 0.15) }
     /// The open page in the sidebar: neutral, like the hover, only stronger.
     static var sidebarSelection: Color { selection }
@@ -210,12 +210,31 @@ enum FrogStyle {
     /// Text and symbols on an accent fill: the primary button, a chosen segment. Light accents of dark themes
     /// take the dark surface colour, dark accents of light themes take white.
     static var onAccent: Color { panelSurface }
-    /// The track of a switch that is off, and of one that is on in a window that is not in front.
-    static var switchTrack: Color { inkLayer(light: 0.12, dark: 0.16) }
+    /// The track of a switch that is off: a neutral grey in every theme.
+    static var switchTrack: Color { inkLayer(light: 0.12, dark: 0.18) }
+    /// The track of a switch that is on. The accent when it has a colour of its own; a near-grey accent (Minimal,
+    /// Graphite, Pewter) would look like the off track or like ink, so those take the theme's green instead.
+    static var switchOn: Color {
+        let accent = accent, good = good
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            var resolved = NSColor(accent), fallback = NSColor(good)
+            appearance.performAsCurrentDrawingAppearance {
+                resolved = resolved.usingColorSpace(.sRGB) ?? resolved
+                fallback = fallback.usingColorSpace(.sRGB) ?? fallback
+            }
+            return resolved.saturationComponent < 0.22 ? fallback : resolved
+        })
+    }
+    /// An on switch in a window that is not in front: grey, as macOS draws it, but darker than off.
+    static var switchOnInactive: Color { inkLayer(light: 0.38, dark: 0.42) }
+    /// How a disabled control is drawn: its normal look, faded. Buttons, switches, checkboxes and dropdowns alike.
+    static let disabledOpacity: Double = 0.4
     /// What is chosen: a neutral raised layer, as Rex marks its selected tab and row. The accent shows state.
     static var selection: Color { inkLayer(light: 0.08, dark: 0.1) }
     static var ink: Color { themed(\.ink) }
     static var muted: Color { themed(\.muted) }
+    /// A text field's placeholder: tertiary, a step lighter than `muted`, so an empty field never looks filled in.
+    static var placeholder: Color { muted.opacity(0.72) }
 
     /// Status tones from each theme's own palette: comfortably fine, worth watching, at the limit.
     static var good: Color { tone(\.good, "good") }
@@ -385,7 +404,7 @@ enum FrogType {
 extension View {
     /// Popups and floating panels. `pill` is for 36-point status pills.
     func frogPanel(pill: Bool = false) -> some View {
-        modifier(FrogPanelSurface(corner: pill ? FrogStyle.pillRadius : FrogStyle.panelRadius))
+        modifier(FrogPanelSurface(corner: pill ? FrogStyle.pillRadius : FrogStyle.panelRadius, pill: pill))
     }
     /// The card every grouped surface uses: lists, tables, settings groups, previews.
     func frogTableSurface() -> some View {
@@ -453,7 +472,7 @@ struct FrogCheckbox: View {
                     Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(FrogStyle.panelSurface)
                         .scaleEffect(configuration.isOn || reduceMotion ? 1 : 0.8).opacity(configuration.isOn ? 1 : 0)
                         .accessibilityHidden(true)
-                }.frame(width: 14, height: 14).animation(FrogMotion.check, value: configuration.isOn).opacity(enabled ? 1 : 0.45)
+                }.frame(width: 14, height: 14).animation(FrogMotion.check, value: configuration.isOn).opacity(enabled ? 1 : FrogStyle.disabledOpacity)
                 configuration.label
             }.contentShape(Rectangle())
         }.buttonStyle(.plain)
@@ -466,8 +485,10 @@ extension ToggleStyle where Self == FrogCheckboxStyle {
     static var frogCheckbox: FrogCheckboxStyle { FrogCheckboxStyle() }
 }
 
-/// Rex's switch: a 36 by 18 track, accent when on, with a wide light knob. In a window that is not in front an
-/// on switch goes grey, as macOS does. Every on/off setting uses it; the label is the row's title.
+/// The on/off switch: a 36 by 20 capsule track with a round knob 2 points in. On fills the track with
+/// `switchOn` (the accent, or the theme's green when the accent is a grey that would not read as "on"); off is
+/// the neutral `switchTrack`. In a window that is not in front an on switch keeps a darker grey than off, so the
+/// two still differ by more than the knob's side. Every on/off setting uses it; the label is the row's title.
 struct FrogSwitchStyle: ToggleStyle {
     func makeBody(configuration: ToggleStyleConfiguration) -> FrogSwitch { FrogSwitch(configuration: configuration) }
 }
@@ -481,7 +502,6 @@ struct FrogSwitch: View {
     @Environment(\.controlActiveState) private var activeState
     @Environment(\.isEnabled) private var enabled
     @Environment(\.controlSize) private var controlSize
-    @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.compactRowTitle) private var rowTitle
@@ -493,21 +513,22 @@ struct FrogSwitch: View {
         return true
     }
 
+    /// The track and knob, the size of macOS's own small switch: 36 by 20, or 28 by 16 for `.mini`.
+    static func size(mini: Bool) -> CGSize { mini ? CGSize(width: 28, height: 16) : CGSize(width: 36, height: 20) }
+
     var body: some View {
         let on = configuration.isOn
-        let mini = controlSize == .mini
-        let size = mini ? CGSize(width: 28, height: 14) : CGSize(width: 36, height: 18)
-        let knob = CGSize(width: size.width * 0.66, height: size.height - 4)
+        let size = Self.size(mini: controlSize == .mini)
+        let knob = size.height - 4
         let active = activeState == .key || activeState == .active
         HStack(spacing: FrogStyle.space8) {
             // In a row the row's title names the switch, as with `.labelsHidden()`.
             if rowTitle == nil && labelsShown { configuration.label }
             ZStack(alignment: on ? .trailing : .leading) {
-                Capsule(style: .continuous).fill(on && active ? FrogStyle.accent : FrogStyle.switchTrack)
-                Capsule(style: .continuous)
-                    .fill(on ? Color.white.opacity(0.92) : (scheme == .dark ? Color(white: 0.9) : .white))
-                    .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.2), radius: 1, y: 0.5)
-                    .frame(width: knob.width, height: knob.height).padding(2)
+                Capsule(style: .continuous).fill(on ? (active ? FrogStyle.switchOn : FrogStyle.switchOnInactive) : FrogStyle.switchTrack)
+                Circle().fill(Color.white)
+                    .shadow(color: .black.opacity(0.22), radius: 1, y: 0.5)
+                    .frame(width: knob, height: knob).padding(2)
             }
             .frame(width: size.width, height: size.height)
             .overlay { if contrast == .increased { Capsule(style: .continuous).strokeBorder(FrogStyle.ink.opacity(0.6)) } }
@@ -515,7 +536,7 @@ struct FrogSwitch: View {
             .contentShape(Capsule())
             .onTapGesture { if enabled { configuration.isOn.toggle() } }
         }
-        .opacity(enabled ? 1 : 0.45)
+        .opacity(enabled ? 1 : FrogStyle.disabledOpacity)
         // VoiceOver reads a system switch named by the toggle's label, even where the label is not drawn. The
         // explicit style keeps the stand-in from drawing this style again.
         .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label }.toggleStyle(.switch) }
@@ -527,7 +548,8 @@ private struct FrogCardSurface: ViewModifier {
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: FrogStyle.cardRadius, style: .continuous)
         // No border: the card is a thin layer over the page. Increase Contrast brings the outline back.
-        content.background(FrogStyle.card, in: shape).clipShape(shape)
+        content.environment(\.frogDenseContainer, true)
+            .background(FrogStyle.card, in: shape).clipShape(shape)
             .overlay { if contrast == .increased { shape.strokeBorder(FrogStyle.muted) } }
     }
 }
@@ -559,13 +581,17 @@ private struct FrogControlSurface: ViewModifier {
 
 private struct FrogPanelSurface: ViewModifier {
     let corner: CGFloat
+    /// A status pill: a true capsule. A continuous corner as large as half the height flattens the round ends
+    /// into short straight edges, which read as stray strokes beside the pill.
+    var pill = false
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     func body(content: Content) -> some View {
         let settings = FrogAppearance.shared.settings
-        let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: corner, style: pill ? .circular : .continuous)
         let glass = settings.effectiveTransparency(popup: true, reduceTransparency: reduceTransparency, increasedContrast: contrast == .increased) > 0
-        content.frogSurface(.hud, cornerRadius: corner)
+        content.environment(\.frogDenseContainer, true)
+        .frogSurface(.hud, cornerRadius: corner, cornerStyle: pill ? .circular : .continuous)
         .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
         .clipShape(shape)
         // A faint edge, as Rex outlines its panes; glass is lit along its top edge; Increase Contrast makes it solid.
@@ -613,6 +639,17 @@ extension ButtonStyle where Self == FrogButtonStyle {
     }
 }
 
+extension View {
+    /// Disables a control and says why: `reason` nil enables it; otherwise the control fades and its tooltip and
+    /// VoiceOver hint give the reason ("Choose a model first"). Use it for a disabled primary action, so it never
+    /// sits there greyed out without a word.
+    func frogDisabled(_ reason: String?) -> some View {
+        disabled(reason != nil)
+            .help(reason.map { L10n.text($0) } ?? "")
+            .accessibilityHint(reason.map { L10n.text($0) } ?? "")
+    }
+}
+
 private struct FrogButtonBody: View {
     let configuration: ButtonStyleConfiguration
     let kind: FrogButtonStyle.Kind
@@ -635,7 +672,9 @@ private struct FrogButtonBody: View {
             .foregroundStyle(foreground)
             .frame(minHeight: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight)
         Group {
-            switch kind {
+            // One disabled look for every kind: the secondary pill, faded. A disabled primary keeps no accent, so
+            // it never reads as a grey button that is broken, and a disabled ghost stays plain text.
+            switch enabled || kind == .ghost ? kind : .secondary {
             case .secondary, .destructive:
                 label.frogControlSurface(hovering: hovered, pressed: pressed, height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight, capsule: true)
             case .primary:
@@ -651,12 +690,13 @@ private struct FrogButtonBody: View {
         }
         // Only the scale springs: whatever the action changes inside the button on release stays an instant cut.
         .animation(keyboardSurface ? nil : FrogMotion.press) { $0.scaleEffect(pressed && !reduceMotion && !keyboardSurface ? 0.97 : 1) }
-        .opacity(enabled ? 1 : 0.4)
+        .opacity(enabled ? 1 : FrogStyle.disabledOpacity)
         .onHover { hovering = $0 }
     }
 
     private var foreground: Color {
-        switch kind {
+        if !enabled { return kind == .ghost ? FrogStyle.muted : FrogStyle.ink }
+        return switch kind {
         case .primary: FrogStyle.onAccent
         case .secondary: FrogStyle.ink
         case .ghost: hovering ? FrogStyle.ink : FrogStyle.muted
@@ -721,12 +761,30 @@ struct PageScroll<Content: View>: View {
     }
 }
 
-/// A small label above a group of content inside a card or panel. Page sections use `SettingsSection`.
+private struct FrogDenseContainerKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    /// True inside a card (`frogTableSurface`, `FrogCard`, `FrogSection`) or a popup (`frogPanel`), where a
+    /// heading is a small sub-group caption rather than a section heading.
+    var frogDenseContainer: Bool {
+        get { self[FrogDenseContainerKey.self] }
+        set { self[FrogDenseContainerKey.self] = newValue }
+    }
+}
+
+/// A label above a group of content. Inside a card or a popup it is the small muted caption of a sub-group; on a
+/// page or in a sheet, outside any card, it is drawn as the one section heading (`FrogSectionHeader`), so a page
+/// never shows two heading styles side by side.
 struct SectionCaption: View {
     let text: String
+    @Environment(\.frogDenseContainer) private var dense
     var body: some View {
-        Text(L10n.text(text)).font(FrogType.label)
-            .foregroundStyle(FrogStyle.muted).accessibilityAddTraits(.isHeader)
+        if dense {
+            Text(L10n.text(text)).font(FrogType.label)
+                .foregroundStyle(FrogStyle.muted).accessibilityAddTraits(.isHeader)
+        } else {
+            Text(L10n.text(text)).font(FrogType.section)
+                .foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
+        }
     }
 }
 
@@ -752,12 +810,15 @@ struct FrogBadge: View {
     }
 }
 
+/// A recorded shortcut as one chip ("⌃⌥Space"): `compactHeight` tall and at least `minWidth` wide, so a column
+/// of them lines up whatever their keys. Hints that only name keys use `KeyCaps`.
 struct ShortcutBadge: View {
+    static let minWidth: CGFloat = 56
     let text: String
     var body: some View {
         // One line always; in a narrow layout tile a four-modifier shortcut shrinks a little instead of wrapping.
         Text(text).font(FrogType.bodyMedium).lineLimit(1).minimumScaleFactor(0.8)
-            .padding(.horizontal, 8).modifier(CompactActionSurface())
+            .padding(.horizontal, 8).frame(minWidth: Self.minWidth).modifier(CompactActionSurface())
             .accessibilityLabel("Shortcut: \(text)")
     }
 }

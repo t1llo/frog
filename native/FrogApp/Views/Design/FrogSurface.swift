@@ -38,14 +38,15 @@ extension View {
     ///   so two panels with the same setting would look different.
     ///
     /// Put it once on the root of a popup, never on its rows.
-    func frogSurface(_ kind: FrogSurfaceKind, cornerRadius: CGFloat? = nil) -> some View {
-        modifier(FrogSurfaceModifier(kind: kind, radius: cornerRadius ?? kind.defaultRadius))
+    func frogSurface(_ kind: FrogSurfaceKind, cornerRadius: CGFloat? = nil, cornerStyle: RoundedCornerStyle = .continuous) -> some View {
+        modifier(FrogSurfaceModifier(kind: kind, radius: cornerRadius ?? kind.defaultRadius, style: cornerStyle))
     }
 }
 
 private struct FrogSurfaceModifier: ViewModifier {
     let kind: FrogSurfaceKind
     let radius: CGFloat
+    let style: RoundedCornerStyle
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -53,7 +54,7 @@ private struct FrogSurfaceModifier: ViewModifier {
         let amount = FrogAppearance.shared.settings.effectiveTransparency(
             popup: kind.isPopup, reduceTransparency: reduceTransparency, increasedContrast: contrast == .increased)
         content
-            .background { FrogSurfaceBackground(kind: kind, radius: radius, amount: amount) }
+            .background { FrogSurfaceBackground(kind: kind, radius: radius, style: style, amount: amount) }
             .environment(\.frogPopupSurface, kind.isPopup)
     }
 }
@@ -72,6 +73,7 @@ enum FrogSurfaceRendering: Equatable {
 private struct FrogSurfaceBackground: View {
     let kind: FrogSurfaceKind
     let radius: CGFloat
+    let style: RoundedCornerStyle
     let amount: Double
 
     private var color: Color {
@@ -85,7 +87,7 @@ private struct FrogSurfaceBackground: View {
     }
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: radius, style: style)
         let tint = color.opacity(1 - amount * kind.strength)
         ZStack {
             switch FrogSurfaceRendering.choose(kind, amount: amount) {
