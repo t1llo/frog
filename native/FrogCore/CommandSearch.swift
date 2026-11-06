@@ -109,14 +109,23 @@ public enum CommandSearch {
     }
 
     /// The best score of one typed word in a row: fuzzily in its title or aliases, else as written in the rest.
+    /// A title match whose letters are neither one run nor word starts ("w…i…n" in "Writing") ranks below the word
+    /// as written anywhere in the row: "win" asks for the rows that say "window" before those that happen to hold
+    /// its letters.
     private static func match(_ word: String, _ pattern: [UInt32], in record: SearchRecord, scratch: FuzzyMatch.Scratch) -> Int32? {
         var best = FuzzyMatch.score(pattern, in: record.fuzzyTitle, scratch: scratch)
         for alias in record.fuzzyAliases {
             if let score = FuzzyMatch.score(pattern, in: alias, scratch: scratch), score > (best ?? 0) { best = score }
         }
+        let written = Int32(pattern.count) * Weights.keyword
         // Scattered letters in a long title are noise: each character must earn most of a plain match.
-        if let found = best, found >= Int32(pattern.count) * (FuzzyMatch.scoreMatch - 4) { return found }
-        return record.searchText.contains(word) ? Int32(pattern.count) * Weights.keyword : nil
+        if let found = best, found >= Int32(pattern.count) * (FuzzyMatch.scoreMatch - 4) {
+            let texts = [record.fuzzyTitle] + record.fuzzyAliases
+            if record.searchTitle.contains(word) || record.aliases.contains(where: { $0.contains(word) })
+                || texts.contains(where: { FuzzyMatch.matchesAtWordStarts(pattern, in: $0) }) { return found }
+            return record.searchText.contains(word) ? written : written - Int32(pattern.count)
+        }
+        return record.searchText.contains(word) ? written : nil
     }
 
     private static let applicationContext: Set<String> = ["open", "launch", "app"]

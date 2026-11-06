@@ -42,6 +42,18 @@ final class FuzzyRankingTests: XCTestCase {
         XCTAssertEqual(CommandSearch.results([studio, safari], query: "vis code").map(\.id), ["app:code"])
     }
 
+    func testTheWordAsWrittenRanksAboveItsLettersScatteredInATitle() {
+        let windows = SearchRecord(id: "page:windows", title: "Windows", subtitle: "Snap and tile windows with keys")
+        let writing = SearchRecord(id: "page:writing", title: "Writing", subtitle: "Rewrite selected text with your rules")
+        let brew = SearchRecord(id: "clip:brew", title: "brew install --cask frog", subtitle: "Code")
+        let half = SearchRecord(id: "layout:left", title: "Left half", subtitle: "Arrange front window")
+        XCTAssertEqual(CommandSearch.results([writing, brew, half, windows], query: "win").map(\.id),
+                       ["page:windows", "layout:left", "page:writing", "clip:brew"])
+        // Initials are not scattered: "lh" still finds Left half by its title, ahead of a row that only says it.
+        let note = SearchRecord(id: "note:lh", title: "Shelf", keywords: "lh")
+        XCTAssertEqual(CommandSearch.results([note, half], query: "lh").map(\.id), ["layout:left", "note:lh"])
+    }
+
     func testFrecencyMovesAnEquallyGoodRowUpButNotPastABetterTierAndAWeekHalvesIt() {
         let calculator = SearchRecord(id: "app:calc", title: "Calculator", prominent: true)
         let calendar = SearchRecord(id: "app:cal", title: "Calendar", prominent: true)
