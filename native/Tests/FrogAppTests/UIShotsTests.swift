@@ -175,6 +175,10 @@ final class UIShotsTests: XCTestCase {
         }
 
         let picker = LayoutPickerPanel()
+        // ⌃⌥← and ⌃⌥→ on the halves and ⌃⌥↩ on Maximize, so the tiles show their caps.
+        picker.picker = LayoutPickerModel(hotkeys: [.leftHalf: Hotkey(keyCode: 123, modifiers: 4096 | 2048),
+                                                    .rightHalf: Hotkey(keyCode: 124, modifiers: 4096 | 2048),
+                                                    .maximize: Hotkey(keyCode: 36, modifiers: 4096 | 2048)])
         try await popup("window-layouts") { LayoutPickerView(panel: picker, measuring: true) }
 
         let preferences = model.configuration.preferences
@@ -247,10 +251,10 @@ final class UIShotsTests: XCTestCase {
         let items = [
             BubbleItem(id: UUID(), title: "Explain", symbol: SelectionBubbleItems.answerSymbol, answers: true,
                        hotkey: Hotkey(keyCode: 14, modifiers: 4096 | 2048)),
-            BubbleItem(id: UUID(), title: "Define", symbol: "book", answers: true),
-            BubbleItem(id: UUID(), title: "Proofread", symbol: "checkmark.circle", answers: false, hotkey: shortcut),
-            BubbleItem(id: UUID(), title: "Polish email", symbol: "envelope", answers: false),
-            BubbleItem(id: UUID(), title: "Translate to German", symbol: "globe", answers: false)
+            BubbleItem(id: UUID(), title: "Define", symbol: SelectionBubbleItems.answerSymbol, answers: true),
+            BubbleItem(id: UUID(), title: "Proofread", symbol: SelectionBubbleItems.writingSymbol, answers: false, hotkey: shortcut),
+            BubbleItem(id: UUID(), title: "Polish email", symbol: SelectionBubbleItems.writingSymbol, answers: false),
+            BubbleItem(id: UUID(), title: "Translate to German", symbol: SelectionBubbleItems.writingSymbol, answers: false)
         ]
         let pointer = BubblePointer()
         try await popup("selection-bubble") {
