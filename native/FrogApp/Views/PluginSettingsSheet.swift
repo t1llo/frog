@@ -20,7 +20,7 @@ struct PluginSettingsSheet: View {
                     Text("Settings").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }
             }
-            ScrollView {
+            FrogSheetScroll(maxHeight: 440) {
                 VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 6) {
                     if let manifest, let item {
                         if !manifest.settings.isEmpty {
@@ -61,7 +61,7 @@ struct PluginSettingsSheet: View {
                         }
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(maxHeight: 440).fixedSize(horizontal: false, vertical: true).bottomScrollFade()
+            }
             FrogSheetButtons(padded: false) { FrogPrimaryButton("Done", action: done) }
         }
         .padding(FrogStyle.sheetPadding).frame(width: 520)

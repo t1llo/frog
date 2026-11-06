@@ -66,7 +66,7 @@ struct LegalDocumentView: View {
                 if short {
                     // A short text such as the licence reads as prose: its hard-wrapped lines joined into paragraphs in
                     // the body font, and the sheet as tall as the text, with no empty card under it.
-                    ScrollView {
+                    FrogSheetScroll(maxHeight: 420) {
                         VStack(alignment: .leading, spacing: FrogStyle.space10) {
                             ForEach(Array(LegalDocument.paragraphs(text).enumerated()), id: \.offset) { index, paragraph in
                                 let style = LegalDocument.style(of: paragraph, at: index)
@@ -76,8 +76,8 @@ struct LegalDocumentView: View {
                             }
                         }
                         .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, FrogStyle.cardPadding).padding(.top, FrogStyle.space16)
-                    }.bottomScrollFade(height: FrogStyle.space16).frame(maxHeight: 420).fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, FrogStyle.cardPadding).padding(.vertical, FrogStyle.space16)
+                    }
                 } else {
                     ReadOnlyText(text: text).frame(height: 360)
                 }
