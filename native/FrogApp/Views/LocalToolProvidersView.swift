@@ -56,9 +56,10 @@ struct LocalToolProvidersView: View {
                 if selected == .opencode {
                     FrogRowNote(text: "OpenCode keeps its own CLI history, independently of Frog's history setting.")
                 }
-                FrogRow("Add as a provider", caption: selectReason) {
-                    Button("Use \(selected.title)") { onSelect(selected, model.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                FrogRow("Add \(selected.title) as a provider", caption: selectReason) {
+                    Button("Add") { onSelect(selected, model.trimmingCharacters(in: .whitespacesAndNewlines)) }
                         .buttonStyle(.frog(.primary)).frogDisabled(canSelect ? nil : selectReason)
+                        .accessibilityLabel("Add \(selected.title) as a provider")
                 }
             }
         }

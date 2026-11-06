@@ -116,7 +116,7 @@ public struct LocalModelDescriptor: Codable, Identifiable, Equatable, Sendable {
         case Self.recommendedSpeechModelID: "Fast, accurate dictation · 25 European languages"
         case "whisper-large-v3-turbo-626mb": "Broad multilingual coverage · 99+ languages"
         case Self.recommendedTextModelID: "Fast corrections and short rewrites · 201 languages"
-        case "qwen3.5-0.8b": "Smallest and fastest · spelling and punctuation"
+        case "qwen3.5-0.8b": "Smallest and fastest, for spelling and punctuation"
         default: nil
         }
     }

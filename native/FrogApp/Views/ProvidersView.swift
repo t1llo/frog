@@ -57,11 +57,15 @@ struct ProvidersView: View {
                                    tint: search.isEmpty ? .indigo : nil)
                         .frogTableSurface()
                 } else {
-                    VStack(spacing: 2) {
-                        ForEach(providers) { provider in
-                            ProviderRow(provider: provider, edit: { editing = $0 }, delete: { deleting = $0 })
-                        }
-                    }.padding(FrogStyle.listInset).frogTableSurface()
+                    // Headed like the lists of the other tabs.
+                    VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                        FrogSectionHeader("Connected")
+                        VStack(spacing: 2) {
+                            ForEach(providers) { provider in
+                                ProviderRow(provider: provider, edit: { editing = $0 }, delete: { deleting = $0 })
+                            }
+                        }.padding(FrogStyle.listInset).frogTableSurface()
+                    }
                 }
             }
         }
@@ -99,20 +103,25 @@ private struct ProviderRow: View {
                     Text(Self.caption(provider)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain)
-            IconAction(title: "Edit provider", symbol: "pencil") { edit(provider) }
+            // One overflow control: editing is the row's own click and the first item here.
             IconMenu(title: "Provider actions", bordered: false) {
-                Button("Duplicate") { var copy = provider; copy.id = UUID(); copy.name += " copy"; edit(copy) }
-                Button("Delete…", role: .destructive) { delete(provider) }
+                Button("Edit…", systemImage: "pencil") { edit(provider) }
+                Button("Duplicate", systemImage: "plus.square.on.square") { var copy = provider; copy.id = UUID(); copy.name += " copy"; edit(copy) }
+                Button("Delete…", systemImage: "trash", role: .destructive) { delete(provider) }
             }
         }.padding(.vertical, 8).padding(.horizontal, FrogStyle.rowPadding).frame(minHeight: FrogStyle.rowHeight)
             .frogRowHighlight(hovering: hovering).onHover { hovering = $0 }
     }
 
-    /// The service it talks to and what it offers: "Ollama (local) · 1 text model".
+    /// Where it runs and what it offers, without repeating its name: "Local server · 1 text model",
+    /// "Cloud API · 3 text models", or the service's name when the provider was given a name of its own.
     static func caption(_ provider: ProviderConfiguration) -> String {
         let text = provider.models.filter { $0.category == .text }.count
         let speech = provider.models.filter { $0.category == .audio }.count
-        var parts = [provider.kind.title]
+        let service = provider.kind.title.replacingOccurrences(of: " (local)", with: "")
+        let named = !provider.name.localizedCaseInsensitiveContains(service)
+        let place = provider.kind.isLocal ? "Local server" : provider.kind.localTool != nil ? "Coding tool" : "Cloud API"
+        var parts = [named ? service : place]
         if text > 0 { parts.append(text == 1 ? "1 text model" : "\(text) text models") }
         if speech > 0 { parts.append(speech == 1 ? "1 speech model" : "\(speech) speech models") }
         if text == 0, speech == 0 { parts.append("No models yet") }
