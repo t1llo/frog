@@ -240,9 +240,11 @@ input.frog-switch:focus { box-shadow: none; }
    above and Close beneath; the page is one card on it, as the content of Frog's own popups is: the card's fill and
    corners, its content 14px in, and 8px under it, as Frog's own popups keep above their footer. Frog adds this
    room to the page's frame (PluginPopupLayout), so the manifest's width and height stay the content's own room. */
-/* A transparent image keeps the root from taking the body's fill, which CSS would otherwise spread over the whole view. */
-:root[data-frog-surface="popup"] { background: transparent linear-gradient(transparent, transparent); }
-:root[data-frog-surface="popup"] body { font-size: 13px; padding: 14px; margin: 0 0 8px; background: var(--frog-card); border-radius: var(--frog-radius-card); }
+/* The card is drawn behind the body, not as its background: WebKit spreads a body's background over the whole
+   view, which laid a second card's shade around the card, as a band above Close. The body itself stays clear. */
+:root[data-frog-surface="popup"], :root[data-frog-surface="popup"] body { background: transparent; }
+:root[data-frog-surface="popup"] body { font-size: 13px; padding: 14px; margin: 0 0 8px; border-radius: var(--frog-radius-card); position: relative; isolation: isolate; }
+:root[data-frog-surface="popup"] body::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--frog-card); border-radius: inherit; pointer-events: none; }
 :root[data-frog-surface="popup"] .frog-page { padding: 0; gap: 12px; max-width: none; }
 :root[data-frog-surface="popup"] button { min-height: var(--frog-compact-height); padding: 0 10px; font-size: 12px; }
 :root[data-frog-surface="popup"] .frog-list { background: transparent; padding: 0; margin: 0 -8px; }

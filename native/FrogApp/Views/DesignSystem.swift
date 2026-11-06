@@ -59,6 +59,9 @@ enum FrogStyle {
     static let panelRadius: CGFloat = controlRadius + panelInset
     /// The gap between a popup's edge and a card inside it, such as the menu-bar menus' groups.
     static let panelCardInset: CGFloat = panelRadius - cardRadius
+    /// The gap between two cards in a popup or a menu tab: the same as their inset from the popup's edge, so every
+    /// card in every menu sits the same distance from its neighbours and the panel.
+    static let panelCardGap: CGFloat = panelCardInset
     /// The main window's corner: macOS 26 rounds a window with a toolbar to about 28 points (measured).
     static var windowRadius: CGFloat {
         if #available(macOS 26, *) { return 28 }
@@ -76,11 +79,17 @@ enum FrogStyle {
     static let compactHeight: CGFloat = 24
     /// The least height of a `FrogRow` in a `FrogSection` card: Rex's 38-point settings row.
     static let rowHeight: CGFloat = 38
-    /// Where a `FrogRow`'s text and its separator start inside a section card, and where a section's heading and
-    /// the note under a card line up: 10 from the card's edge, as in Rex.
-    static let rowInset: CGFloat = 10
-    /// A row of the main window's sidebar.
-    static let sidebarRowHeight: CGFloat = 32
+    /// The one row recipe: where a row's icon or text starts and where its control, time or caps end inside any
+    /// card, and where a section's heading and the note under a card line up. It is `cardPadding`, the same 14 a
+    /// list reaches with `listInset` around its rows and `rowPadding` inside them, so a `FrogSection` row, a list
+    /// row and a popup's content start and end on the same two lines on every page.
+    static let rowInset: CGFloat = cardPadding
+    /// A row of the main window's sidebar: macOS's own 28-point sidebar row, so the whole list fits the window's
+    /// default height.
+    static let sidebarRowHeight: CGFloat = 28
+    /// The gap between the sidebar's groups, under Frog's row, above the pinned rows and under the search field:
+    /// one value, so the groups read as evenly spaced.
+    static let sidebarGroupGap: CGFloat = space10
     /// How far the main window's sidebar panel floats in from the window's edges.
     static let sidebarInset: CGFloat = 8
     /// The bar above a page that holds back and forward and the page's title.
@@ -213,6 +222,29 @@ enum FrogStyle {
         }
     }
     static var accentSoft: Color { accent.opacity(0.15) }
+    /// The accent as text or a small glyph on a card or `accentSoft`: the accent itself where it reads, otherwise
+    /// eased toward white in dark (toward black in light) until it reaches 4.5:1 on the surface, so "Recommended"
+    /// and other accent words stay legible with a dark theme's deep accents.
+    static var accentText: Color {
+        let accent = accent, surface = panelSurface
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            var fill = NSColor(accent), back = NSColor(surface)
+            appearance.performAsCurrentDrawingAppearance {
+                fill = fill.usingColorSpace(.sRGB) ?? fill
+                back = back.usingColorSpace(.sRGB) ?? back
+            }
+            let toward: NSColor = back.frogLuminance > 0.4 ? .black : .white
+            var color = fill, step = 0.0
+            while contrast(color, back) < 4.5 && step < 0.8 {
+                step += 0.1
+                color = fill.blended(withFraction: step, of: toward) ?? color
+            }
+            return color
+        })
+    }
+    /// A skeleton bar standing for a value still being measured: a step stronger than a control, so it shows on a
+    /// light card, where the control fill all but vanished.
+    static var skeleton: Color { inkLayer(light: 0.11, dark: 0.14) }
     /// Text and symbols on an accent fill: the primary button, a chosen segment, a ticked checkbox. White, unless
     /// the accent is so light (the pastel accents of dark themes) that the theme's dark surface reads better on it.
     static var onAccent: Color {
@@ -412,6 +444,9 @@ enum FrogType {
     /// Sheet titles, setup step titles and standalone panels (the shortcut reference): one step under a page's
     /// title, so a sheet never outranks the page it opens from. Also big figures inside a card.
     static let title = Font.system(size: 17, weight: .semibold)
+    /// What is typed into a keyboard panel's borderless search line (command bar, clipboard history), a step
+    /// larger than the rows under it, as Raycast sets its query.
+    static let query = Font.system(size: 15)
     /// Row titles in section cards and sidebar rows.
     static let row = Font.system(size: 13)
     /// The open sidebar row, and a hero row's title.
@@ -907,7 +942,7 @@ struct FrogBadge: View {
     private var foreground: Color {
         switch tone {
         case .neutral: FrogStyle.muted
-        case .accent: FrogStyle.accent
+        case .accent: FrogStyle.accentText
         case .warning: FrogStyle.warning
         }
     }

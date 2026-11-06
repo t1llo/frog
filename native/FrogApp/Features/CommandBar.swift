@@ -440,9 +440,7 @@ import SwiftUI
         }
         if !typed {
             let files = fileRecords.prefix(4)
-            // The bar's own settings page is no suggestion inside the bar.
-            let commands = records.lazy.filter { ($0.id.hasPrefix("feature:") || $0.id.hasPrefix("rule:")) && $0.id != "feature:\(FeatureID.commandBar.rawValue)" }.prefix(4)
-            preferred += files + commands
+            preferred += files + Self.starterSuggestions(records)
             preferred += applications.suggested
         }
         suggestionIDs = typed ? [] : Set(preferred.map(\.id))
@@ -460,6 +458,18 @@ import SwiftUI
         }
         leadingIDs = Set(leading.map(\.id))
         return leading + ranked + trailing
+    }
+
+    /// What the bar suggests before anything is typed or learned: a mix of what it can do, so the first rows are
+    /// not all pages. Two rules, one feature command and one window layout, then pages up to five rows. The bar's
+    /// own settings page is no suggestion inside the bar.
+    static func starterSuggestions(_ records: [SearchRecord], limit: Int = 5) -> [SearchRecord] {
+        func first(_ count: Int, _ prefixes: String...) -> [SearchRecord] {
+            Array(records.lazy.filter { record in prefixes.contains { record.id.hasPrefix($0) } }.prefix(count))
+        }
+        let doing = first(2, "rule:") + first(1, "action:") + first(1, "layout:")
+        let pages = records.lazy.filter { $0.id.hasPrefix("feature:") && $0.id != "feature:\(FeatureID.commandBar.rawValue)" }
+        return doing + pages.prefix(max(0, limit - doing.count))
     }
 
     // MARK: Groups and actions
@@ -939,31 +949,31 @@ struct CommandBarView: View {
             .onAppear { focused = true }.onChange(of: bar.invocation) { focused = true }
     }
 
-    /// The search field is a control layer inside the panel, as Rex's search box is.
+    /// The search line is borderless, as Raycast's: the magnifier in the rows' icon column and the query, a step
+    /// larger than the rows, starting where their titles do. Space, not a box, sets it apart from the list.
     private var searchField: some View {
         HStack(spacing: FrogStyle.space10) {
-            Image(systemName: "magnifyingglass").font(.system(size: 13, weight: .medium)).foregroundStyle(FrogStyle.muted)
-                .frame(width: 20, height: 36).overlay { WindowDragRegion(onDragEnd: bar.finishDragging).help("Drag to move") }
+            Image(systemName: "magnifyingglass").font(.system(size: 15, weight: .medium)).foregroundStyle(FrogStyle.muted)
+                .frame(width: 22, height: 36).overlay { WindowDragRegion(onDragEnd: bar.finishDragging).help("Drag to move") }
             if let argument = bar.argument {
                 Label(argument.title, systemImage: argument.symbol).font(FrogType.label).lineLimit(1)
                     .foregroundStyle(FrogStyle.ink).padding(.horizontal, FrogStyle.space8).frame(height: FrogStyle.compactHeight)
-                    .background(FrogStyle.hover, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+                    .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
             }
             // The field draws no placeholder of its own, which macOS sets nearly as dark as typed text; this one is lighter.
             TextField("", text: $bar.query)
-                .textFieldStyle(.plain).font(FrogType.lead).focused($focused)
+                .textFieldStyle(.plain).font(FrogType.query).focused($focused)
                 .accessibilityLabel(L10n.text(bar.argument?.placeholder ?? "Search apps, commands and files"))
                 .background(alignment: .leading) {
                     if bar.query.isEmpty {
-                        Text(L10n.text(bar.argument?.placeholder ?? "Search apps, commands and files")).font(FrogType.lead)
+                        Text(L10n.text(bar.argument?.placeholder ?? "Search apps, commands and files")).font(FrogType.query)
                             .foregroundStyle(FrogStyle.placeholder).lineLimit(1).allowsHitTesting(false).accessibilityHidden(true)
                     }
                 }
             if bar.showsPositionReset {
                 IconAction(title: "Center command bar", symbol: "scope") { bar.center() }
             }
-        }.padding(.horizontal, FrogStyle.space12)
-            .frogControlSurface(height: 40, radius: FrogStyle.controlRadius)
+        }.padding(.horizontal, FrogStyle.rowPadding).frame(height: 40)
     }
 
     /// Where the bar is on the left; what Return does and the actions on the right.

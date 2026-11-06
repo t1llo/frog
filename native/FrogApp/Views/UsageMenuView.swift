@@ -9,7 +9,7 @@ struct UsageMenuTab: View {
     let openPage: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: FrogStyle.listInset) {
+        VStack(alignment: .leading, spacing: FrogStyle.panelCardGap) {
             // When the limits were read on the leading side, where the row has room for it: in Frog's footer it
             // left Settings only its caps.
             HStack(spacing: FrogStyle.space6) {
@@ -76,7 +76,7 @@ struct UsageStatusPopover: View {
                     UsageRefreshAction(usage: usage, bordered: true)
                     IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", bordered: true, action: openDashboard)
                 }
-                VStack(alignment: .leading, spacing: FrogStyle.listInset) {
+                VStack(alignment: .leading, spacing: FrogStyle.panelCardGap) {
                     UsageMenuCards(usage: usage)
                     // Only what needs doing: at most one account is offered live readings or a sign-in, the first that needs one.
                     if setup != nil || signInAccount != nil || claudeSignIn || readiness.version != nil {

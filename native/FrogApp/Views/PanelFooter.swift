@@ -61,9 +61,10 @@ struct FrogFooterHint: View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: FrogStyle.space6) {
                 Text(L10n.text(title)).font(FrogType.label).foregroundStyle(FrogStyle.ink).lineLimit(1)
-                KeyCaps(keys)
+                // An action without keys (Stop on a rule with no shortcut) is its word alone.
+                if !keys.isEmpty { KeyCaps(keys) }
             }.padding(.horizontal, FrogStyle.space6).fixedSize()
-            KeyCaps(keys).padding(.horizontal, FrogStyle.space6).fixedSize().help(L10n.text(title))
+            if !keys.isEmpty { KeyCaps(keys).padding(.horizontal, FrogStyle.space6).fixedSize().help(L10n.text(title)) }
         }
     }
 }

@@ -605,7 +605,11 @@ struct PluginPopupShell<Content: View>: View {
                 }
                 content
             }.padding([.horizontal, .top], FrogStyle.panelCardInset)
-            FrogPopupFooter { EmptyView() }
+            // The status says whose popup this is, as Frog's own popups say what their content is.
+            FrogPopupFooter {
+                Image(systemName: "puzzlepiece.extension").accessibilityHidden(true)
+                Text(L10n.text("Community plugin"))
+            }
         }
         .frame(width: width).fixedSize(horizontal: false, vertical: true)
         .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)

@@ -7,7 +7,7 @@ import FrogCore
 /// Created once and reused: hidden, never released.
 @MainActor
 final class LayoutPickerPanel: ObservableObject {
-    static let width: CGFloat = 440
+    static let width: CGFloat = 480
     static let maximumHeight: CGFloat = 620
 
     /// Set only by `show`, and by the screenshot harness to picture shortcuts.
@@ -210,22 +210,22 @@ struct LayoutPickerView: View {
             // As the other keyboard panels: the search on top, the panel named once, in the footer. The window
             // being arranged is named at the search's end.
             VStack(alignment: .leading, spacing: 8) {
+                // Borderless, as the command bar's and clipboard history's search lines: the query on the grid's edge.
                 HStack(spacing: FrogStyle.space8) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .medium)).foregroundStyle(FrogStyle.muted)
+                    Image(systemName: "magnifyingglass").font(.system(size: 15, weight: .medium)).foregroundStyle(FrogStyle.muted)
                     TextField("", text: $panel.query)
-                        .textFieldStyle(.plain).font(FrogType.row).focused($focused)
+                        .textFieldStyle(.plain).font(FrogType.query).focused($focused)
                         .accessibilityLabel(L10n.text("Filter layouts"))
                         .background(alignment: .leading) {
                             if panel.query.isEmpty {
-                                Text(L10n.text("Filter layouts")).font(FrogType.row).foregroundStyle(FrogStyle.placeholder)
+                                Text(L10n.text("Filter layouts")).font(FrogType.query).foregroundStyle(FrogStyle.placeholder)
                                     .lineLimit(1).allowsHitTesting(false).accessibilityHidden(true)
                             }
                         }
                     if let name = panel.appName {
                         Text(name).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).fixedSize()
                     }
-                }.padding(.horizontal, FrogStyle.space10)
-                    .frogControlSurface(height: FrogStyle.controlHeight + FrogStyle.space4)
+                }.frame(height: FrogStyle.controlHeight + FrogStyle.space4)
                 if let status = panel.status {
                     Text(status).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
                         .fixedSize(horizontal: false, vertical: true)
@@ -258,11 +258,13 @@ struct LayoutPickerView: View {
                 Text("No matching layout").font(FrogType.row).foregroundStyle(FrogStyle.muted)
                     .frame(maxWidth: .infinity).padding(.vertical, 18)
             }
+            // Every tile keeps a slot for its caps while any layout has a shortcut, so all tiles are one height and
+            // their labels share a line across rows and sections.
+            let badges = panel.picker.sections.contains { $0.rows.contains { $0.contains { $0.hotkey != nil } } }
             ForEach(panel.picker.sections) { section in
                 VStack(alignment: .leading, spacing: FrogStyle.space8) {
                     Text(L10n.text(section.title)).font(FrogType.section).accessibilityAddTraits(.isHeader)
                     ForEach(Array(section.rows.enumerated()), id: \.offset) { _, row in
-                        let badges = row.contains { $0.hotkey != nil }
                         HStack(spacing: FrogStyle.space6) {
                             ForEach(row) { tile in
                                 LayoutPickerTile(tile: tile, selected: panel.picker.selection == tile.action, showsBadge: badges,
@@ -281,6 +283,8 @@ struct LayoutPickerView: View {
 }
 
 private struct LayoutPickerTile: View {
+    /// One line of `small`, fixed so every tile is the same height whatever its label.
+    static let labelHeight: CGFloat = 14
     let tile: LayoutPickerModel.Tile
     let selected: Bool
     let showsBadge: Bool
@@ -290,8 +294,8 @@ private struct LayoutPickerTile: View {
     var body: some View {
         VStack(spacing: 4) {
             WindowLayoutGlyph(action: tile.action, size: CGSize(width: 44, height: 28))
-            Text(tile.name).font(FrogType.small).foregroundStyle(FrogStyle.ink).lineLimit(1).minimumScaleFactor(0.85)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(tile.name).font(FrogType.small).foregroundStyle(FrogStyle.ink).lineLimit(1).minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true).frame(height: Self.labelHeight)
             if showsBadge {
                 // One cap tall with or without a shortcut, so a row's tiles match; a long shortcut takes smaller
                 // caps rather than widening its tile out of the grid.
@@ -304,7 +308,8 @@ private struct LayoutPickerTile: View {
                 }.frame(minWidth: 0, maxWidth: .infinity).frame(height: KeyCap.size)
             }
         }
-        .padding(.horizontal, FrogStyle.space6).padding(.vertical, FrogStyle.space10)
+        // 10 at the sides, so the longest label ("Previous display") keeps clear of the tile's edge.
+        .padding(.horizontal, FrogStyle.space10).padding(.vertical, FrogStyle.space10)
         .frame(maxWidth: .infinity)
         .background(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous).fill(selected ? FrogStyle.selection : FrogStyle.card))
         // A choice best seen is ringed in the accent, as the theme tiles are. The pointer moves the selection here,

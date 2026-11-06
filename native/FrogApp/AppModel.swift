@@ -1599,7 +1599,7 @@ final class AppModel: ObservableObject {
         isProcessing = true
         processingForAgent = agentReply != nil
         status = "\(rule.name)…"
-        if manualText == nil { showIndicatorWorking() }
+        if manualText == nil { showIndicatorWorking(rule: rule.name) }
         let historyTicket = historyTicket()
         processingTask = Task { [weak self] in
             guard let self else { return }
@@ -1685,8 +1685,9 @@ final class AppModel: ObservableObject {
         if background, showsProcessingIndicator { processingIndicator.show(outcome, rule: rule) }
     }
 
-    private func showIndicatorWorking() {
-        if showsProcessingIndicator { processingIndicator.showWorking() }
+    private func showIndicatorWorking(rule: String) {
+        processingIndicator.showDetails = { [weak self] in self?.showSettings() }
+        if showsProcessingIndicator { processingIndicator.showWorking(rule: rule) }
     }
 
     private var showsProcessingIndicator: Bool {

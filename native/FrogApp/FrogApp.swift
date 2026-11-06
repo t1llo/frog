@@ -65,7 +65,7 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
     private func showWindow() {
         if window == nil {
             let content = FrogHostingView(rootView: MainView().environmentObject(model))
-            let created = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 580), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+            let created = NSWindow(contentRect: NSRect(origin: .zero, size: MainView.defaultSize), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
             created.contentView = content
             created.title = "Frog"
             created.titleVisibility = .hidden
@@ -77,8 +77,8 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
             created.titlebarSeparatorStyle = .none
             created.backgroundColor = .clear
             created.isOpaque = false
-            created.setContentSize(NSSize(width: 800, height: 580))
-            created.contentMinSize = NSSize(width: 800, height: 520)
+            created.setContentSize(MainView.defaultSize)
+            created.contentMinSize = MainView.minimumSize
             created.isReleasedWhenClosed = false
             created.isRestorable = false
             created.delegate = self
@@ -87,6 +87,15 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
             // login; the first time it opens centered.
             created.setFrameAutosaveName(Self.windowFrameName)
             created.setFrameUsingName(Self.windowFrameName)
+            // A window saved at the old default size never chose it: it grows to the new default once, in place.
+            let previous = created.frameRect(forContentRect: NSRect(origin: .zero, size: MainView.previousDefaultSize)).size
+            if created.frame.size == previous {
+                var frame = created.frame
+                let grown = created.frameRect(forContentRect: NSRect(origin: .zero, size: MainView.defaultSize)).size
+                frame.origin.y -= grown.height - frame.height
+                frame.size = grown
+                created.setFrame(frame, display: false)
+            }
             window = created
         }
         // Frog joins the Dock and Command-Tab while its window is open, like any app with a window, and leaves

@@ -54,6 +54,9 @@ struct ClipboardPage: View {
                         LazyVStack(spacing: 2) {
                             ForEach(found.prefix(Self.shown)) { entry in ClipboardPageRow(entry: entry, store: store) }
                         }
+                        // The list recipe: rows padded rowPadding, `listInset` from the card, so the tiles start
+                        // `rowInset` in, on the field's and the headings' edge, as on every page.
+                        .padding(.horizontal, FrogStyle.listInset - FrogStyle.rowInset)
                     }
                 }.padding(.vertical, 10)
             }
@@ -85,7 +88,7 @@ private struct ClipboardPageRow: View {
             ZStack(alignment: .trailing) {
                 // As far in from the trailing edge as the tile is from the leading one.
                 RecentTimestampText(date: entry.timestamp).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                    .fixedSize().padding(.trailing, FrogStyle.space6)
+                    .fixedSize()
                     .opacity(hovering ? 0 : 1)
                 HStack(spacing: FrogStyle.space2) {
                     CopyAction { store.copy(entry) }
@@ -96,7 +99,7 @@ private struct ClipboardPageRow: View {
                 .accessibilityHidden(!hovering)
             }
         }
-        .padding(.leading, FrogStyle.space8).padding(.trailing, FrogStyle.space2).frame(minHeight: 32)
+        .padding(.horizontal, FrogStyle.rowPadding).frame(minHeight: 32)
         .contentShape(Rectangle())
         .frogRowHighlight(hovering: hovering)
         .onHover { hovering = $0 }

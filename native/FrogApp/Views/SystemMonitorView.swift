@@ -82,8 +82,8 @@ struct SystemMonitorOverview: View {
 
     var body: some View {
         let sample = inspectedSample
-        // Cards a popup's 8 apart in a popup; on the page, where cards stand alone, 16.
-        VStack(spacing: wide ? FrogStyle.space16 : FrogStyle.space8) {
+        // Cards a popup's card gap apart in a popup; on the page, where cards stand alone, 16.
+        VStack(spacing: wide ? FrogStyle.space16 : FrogStyle.panelCardGap) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 8) {
                     legend("CPU", color: FrogStyle.series, recorded: sample.map(\.cpu), now: snapshot.cpu)
@@ -109,7 +109,15 @@ struct SystemMonitorOverview: View {
                 storagePlaceholder.modifier(OverviewCard(wide: wide))
             }
             if let power = powerLine {
-                power.modifier(OverviewCard(wide: wide))
+                if wide {
+                    // On the page the battery is its own section, so "Load and storage" heads only what it names.
+                    VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                        FrogSectionHeader("Power")
+                        power.modifier(OverviewCard(wide: wide))
+                    }.padding(.top, FrogStyle.sectionSpacing - FrogStyle.space16)
+                } else {
+                    power.modifier(OverviewCard(wide: wide))
+                }
             }
         }.accessibilityElement(children: .contain).accessibilityLabel("System overview")
     }

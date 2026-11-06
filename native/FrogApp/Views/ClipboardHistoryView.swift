@@ -129,14 +129,15 @@ struct ClipboardHistoryView: View {
         @Bindable var state = state
         let entries = state.visible
         VStack(spacing: 0) {
+            // Borderless, as the command bar's: the magnifier in the rows' icon column, the query where their text starts.
             HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").foregroundStyle(FrogStyle.muted).frame(width: 18)
+                Image(systemName: "magnifyingglass").font(.system(size: 15, weight: .medium)).foregroundStyle(FrogStyle.muted).frame(width: 20)
                 // The field's own placeholder is nearly as dark as typed text; this one is lighter.
-                TextField("", text: $state.query).textFieldStyle(.plain).font(FrogType.row)
+                TextField("", text: $state.query).textFieldStyle(.plain).font(FrogType.query)
                     .focused($searching).accessibilityLabel(L10n.text("Search clipboard"))
                     .background(alignment: .leading) {
                         if state.query.isEmpty {
-                            Text(L10n.text("Search clipboard")).font(FrogType.row).foregroundStyle(FrogStyle.placeholder)
+                            Text(L10n.text("Search clipboard")).font(FrogType.query).foregroundStyle(FrogStyle.placeholder)
                                 .lineLimit(1).allowsHitTesting(false).accessibilityHidden(true)
                         }
                     }
@@ -144,9 +145,8 @@ struct ClipboardHistoryView: View {
                 if !state.query.isEmpty {
                     IconAction(title: "Clear search", symbol: "xmark.circle.fill") { state.query = ""; searching = true }
                 }
-            }.frame(height: 28)
-            .padding(.leading, 12).padding(.trailing, 4)
-            .frogControlSurface(height: 36, radius: FrogStyle.controlRadius)
+            }.frame(height: 36)
+            .padding(.leading, 10).padding(.trailing, 4)
             .padding(.horizontal, ClipboardHistoryLayout.inset).padding(.top, ClipboardHistoryLayout.inset)
             .frame(height: ClipboardHistoryLayout.headerHeight)
 

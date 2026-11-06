@@ -165,8 +165,9 @@ struct AnswerPanelView: View {
                 }
                 if model.offersNotes {
                     let saved = model.noteState == .saved
-                    PanelIcon(symbol: saved ? "checkmark" : "square.and.arrow.down", title: saved ? "Saved to note" : "Save to note",
-                              help: "Save to note (⌘S)", active: saved) { model.saveNote() }
+                    // Labelled: a bare tray-and-arrow reads as download, not as a note.
+                    PanelIcon(symbol: saved ? "checkmark" : "note.text.badge.plus", title: saved ? "Saved to note" : "Save to note",
+                              label: saved ? "Saved" : "Save", help: "Save to note (⌘S)", active: saved) { model.saveNote() }
                         .disabled(saved || !model.canSaveNote)
                 }
             }
@@ -217,10 +218,11 @@ struct AnswerPanelView: View {
 
 /// One of the panel's actions as a small icon, named for VoiceOver, with its shortcut on hover: an `IconAction` at the
 /// compact height, which keeps its own help text. An active one, such as a pinned panel or a copied answer, takes the
-/// accent colour.
+/// accent colour. With `label` the icon carries a short word after it, for an action its glyph alone does not name.
 private struct PanelIcon: View {
     let symbol: String
     let title: String
+    var label: String? = nil
     var help: String? = nil
     var active = false
     let action: () -> Void
@@ -229,10 +231,14 @@ private struct PanelIcon: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 12, weight: .medium))
-                .foregroundStyle(active ? FrogStyle.accent : hovering && enabled ? FrogStyle.ink : FrogStyle.muted)
-                .frame(width: FrogStyle.compactHeight, height: FrogStyle.compactHeight)
-                .frogRowHighlight(hovering: hovering && enabled)
+            HStack(spacing: FrogStyle.space4) {
+                Image(systemName: symbol).font(.system(size: 12, weight: .regular))
+                if let label { Text(L10n.text(label)).font(FrogType.small).lineLimit(1).fixedSize() }
+            }
+            .foregroundStyle(active ? FrogStyle.accent : hovering && enabled ? FrogStyle.ink : FrogStyle.muted)
+            .padding(.horizontal, label == nil ? 0 : FrogStyle.space8)
+            .frame(minWidth: FrogStyle.compactHeight, minHeight: FrogStyle.compactHeight, maxHeight: FrogStyle.compactHeight)
+            .frogRowHighlight(hovering: hovering && enabled)
         }
         .buttonStyle(.plain).opacity(enabled || active ? 1 : 0.4)
         .onHover { hovering = $0 }
