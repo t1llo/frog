@@ -203,7 +203,7 @@ final class CommandBarPlugin: LegacyPlugin, FrogPlugin {
         [MenuContribution(id: "command-bar.open", order: 20) { [weak self] in
             AnyView(MenuActionRow(title: "Command bar", symbol: "magnifyingglass",
                                   key: HotkeyManager.display(self?.settings.shortcut.hotkey ?? CommandBarSettings.defaultShortcut.hotkey),
-                                  closes: true) {
+                                  tint: Self.info.tint.color, closes: true) {
                 self?.show()
             })
         }]

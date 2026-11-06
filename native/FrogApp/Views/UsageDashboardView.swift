@@ -196,14 +196,15 @@ struct UsageLimitView: View {
     let now: Date
     var compact = false
     private var fraction: Double { window.percentage.isFinite ? min(1, max(0, window.percentage / 100)) : 0 }
-    /// Nearly used is critical whatever the pace; otherwise the bar says how the window is going.
+    /// One meaning for every bar: neutral on pace, green under it, orange ahead of it, red nearly used whatever the pace.
+    /// A window without a pace is neutral until it runs low.
     private var meterColor: Color {
         if fraction >= 0.95 { return FrogStyle.critical }
         switch window.pace(at: now) {
         case "Ahead of pace": return FrogStyle.warning
         case "Under pace": return FrogStyle.good
-        case nil: return FrogStyle.level(fraction, warning: 0.8, critical: 0.95)
-        default: return FrogStyle.accent
+        case nil: return fraction >= 0.8 ? FrogStyle.warning : FrogStyle.seriesSecondary
+        default: return FrogStyle.seriesSecondary
         }
     }
     private func paceColor(_ pace: String) -> Color {
@@ -392,9 +393,9 @@ private struct UsageTokenTotals: View {
                 Text(usage.format(chart.totalTokens, metric: "Input")).monospacedDigit()
             }.font(FrogType.body)
                 .help("Uncached input, cache reads, cache writes and output.")
+            // The chart's own metric is the figure above it; the others sit here, two by two, and choosing one makes it the chart's.
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
-                ForEach(chart.totals) { total in
-                    let selected = total.name == usage.preferences.metric
+                ForEach(chart.totals.filter { $0.name != usage.preferences.metric }) { total in
                     Button {
                         var next = usage.preferences; next.metric = total.name; usage.updatePreferences(next)
                     } label: {
@@ -403,11 +404,9 @@ private struct UsageTokenTotals: View {
                                 .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                             Text(usage.format(total.value, metric: total.name)).font(GraphStyle.figure).monospacedDigit()
                         }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(selected ? AnyShapeStyle(FrogStyle.selection) : AnyShapeStyle(FrogStyle.card),
-                                        in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                            .background(FrogStyle.card, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
                             .contentShape(Rectangle())
-                    }.buttonStyle(.plain)
-                        .accessibilityAddTraits(selected ? .isSelected : [])
+                    }.buttonStyle(.plain).help("Show \(total.label == "API cost" ? "the API estimate" : total.label.lowercased()) in the chart")
                 }
             }
         }
@@ -727,7 +726,8 @@ struct UsageTrendChart: View {
                         .interpolationMethod(.monotone).foregroundStyle(FrogChart.areaFill(FrogStyle.series))
                         .accessibilityHidden(true)
                 }
-                ForEach(steps) { step in
+                // Daily amounts on the page; a popup's small chart keeps to the line, where one lone bar read as a stray mark.
+                ForEach(compact ? [] : steps) { step in
                     BarMark(x: .value("Date", step.date), y: .value("Amount", step.bar), width: .fixed(compact ? 2 : 4))
                         .cornerRadius(FrogStyle.smallRadius)
                         .foregroundStyle(FrogStyle.series.opacity(selected == nil ? 0.32 : selected?.id == step.id ? 0.9 : 0.18))

@@ -120,7 +120,7 @@ struct SystemMonitorOverview: View {
             } else if sample != nil {
                 Text("—").font(FrogType.small).frame(height: wide ? 34 : 24, alignment: .leading)
             } else {
-                Text(percent(.measuring)).font(FrogType.small).frame(height: wide ? 34 : 24, alignment: .leading)
+                MeasuringValue(wide: wide)
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
@@ -147,7 +147,7 @@ struct SystemMonitorOverview: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Label("Storage", systemImage: "internaldrive").font(FrogType.label)
                 Spacer(minLength: 4)
-                Text(percent(.measuring)).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                MeasuringBar(width: 56, height: 8)
             }
             meter(0, color: FrogStyle.accent)
         }.accessibilityElement(children: .combine)
@@ -244,8 +244,12 @@ struct SystemMonitorOverview: View {
 
     private func legend(_ title: String, color: Color, text: String) -> some View {
         GraphLegend(color: color, title: title) {
-            Text(text).font(text.hasSuffix("%") ? GraphStyle.legendValue(page: wide) : FrogType.small)
-                .monospacedDigit().frame(height: wide ? 34 : 24, alignment: .leading)
+            if text == percent(.measuring) {
+                MeasuringValue(wide: wide)
+            } else {
+                Text(text).font(text.hasSuffix("%") ? GraphStyle.legendValue(page: wide) : FrogType.small)
+                    .monospacedDigit().frame(height: wide ? 34 : 24, alignment: .leading)
+            }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -273,6 +277,25 @@ struct SystemMonitorOverview: View {
     /// Disk sizes in decimal units, as Finder shows them.
     private func diskBytes(_ count: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: count, countStyle: .file)
+    }
+}
+
+/// A figure that has no reading yet: a quiet bar the width of a number, so only the graph says "Measuring…".
+private struct MeasuringValue: View {
+    let wide: Bool
+    var body: some View {
+        MeasuringBar(width: wide ? 72 : 48, height: wide ? 16 : 12)
+            .frame(height: wide ? 34 : 24, alignment: .leading)
+            .accessibilityLabel("Measuring")
+    }
+}
+
+private struct MeasuringBar: View {
+    let width: CGFloat
+    let height: CGFloat
+    var body: some View {
+        RoundedRectangle(cornerRadius: FrogStyle.smallRadius, style: .continuous).fill(FrogStyle.control)
+            .frame(width: width, height: height)
     }
 }
 
