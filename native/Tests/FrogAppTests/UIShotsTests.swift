@@ -69,7 +69,10 @@ final class UIShotsTests: XCTestCase {
         if let cleaner = model.cleanerPlugin?.cleaner, wanted("page-cleaner-review") {
             await cleaner.open(sample.cleanerApp)
             await cleaner.waitForSizes()
-            try await page("page-cleaner-review", width: 760) { model.cleanerPlugin!.page()!.environmentObject(model) }
+            // In the window, so the toolbar's "App cleaner › Name" breadcrumb is pictured too.
+            model.toolkit.select(.feature(.cleaner))
+            try await page("page-cleaner-review", settle: .milliseconds(500)) { MainView().environmentObject(model) }
+            cleaner.closeReview()
         }
     }
 
