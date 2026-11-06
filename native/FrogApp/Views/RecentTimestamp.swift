@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// When something happened, as lists show it: in the Mac's own date and time format, relative while it is recent.
-/// "Just now", "12 min ago", "Today 13:14", "Yesterday 09:02", "Monday 18:40", then "Nov 2, 13:14" (and the year
-/// once it is not this year's).
+/// When something happened, as lists show it, in one short form that reads down a column as Mail's does: relative
+/// while it is recent, then the time today, then the day. "Just now", "12 min ago", "13:14", "Yesterday", "Monday",
+/// then "Nov 2" (and the year once it is not this year's), in the Mac's own date and time format. `full` is the
+/// whole date and time, for a tooltip.
 enum RecentTimestamp {
     static func text(_ date: Date, now: Date = Date(), calendar: Calendar = .autoupdatingCurrent,
                      locale: Locale = .autoupdatingCurrent) -> String {
@@ -11,17 +12,23 @@ enum RecentTimestamp {
         if seconds >= 0, seconds < 3_600 {
             return Duration.seconds(seconds).formatted(.units(allowed: [.minutes], width: .abbreviated)) + " " + L10n.text("ago")
         }
-        let time = date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, calendar: calendar))
-        if calendar.isDate(date, inSameDayAs: now) { return L10n.text("Today") + " " + time }
+        if calendar.isDate(date, inSameDayAs: now) {
+            return date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, calendar: calendar))
+        }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
-            return L10n.text("Yesterday") + " " + time
+            return L10n.text("Yesterday")
         }
         if seconds > 0, seconds < 6 * 86_400 {
-            return date.formatted(Date.FormatStyle(locale: locale, calendar: calendar).weekday(.wide)) + " " + time
+            return date.formatted(Date.FormatStyle(locale: locale, calendar: calendar).weekday(.wide))
         }
         var day = Date.FormatStyle(locale: locale, calendar: calendar).month(.abbreviated).day()
         if !calendar.isDate(date, equalTo: now, toGranularity: .year) { day = day.year() }
-        return date.formatted(day) + ", " + time
+        return date.formatted(day)
+    }
+
+    /// The whole date and time, for the tooltip of a short timestamp: "6 Nov 2026 at 19:40".
+    static func full(_ date: Date) -> String {
+        date.formatted(date: .abbreviated, time: .shortened)
     }
 }
 
@@ -34,5 +41,6 @@ struct RecentTimestampText: View {
     var body: some View {
         // The clock, not the schedule's minute-aligned date, which can fall before an item copied this minute.
         TimelineView(.everyMinute) { _ in Text(RecentTimestamp.text(date, now: max(Date(), shownAt))) }
+            .monospacedDigit().lineLimit(1).help(RecentTimestamp.full(date))
     }
 }

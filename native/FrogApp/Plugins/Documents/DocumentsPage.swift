@@ -122,7 +122,10 @@ struct DocumentsPage<Toolbar: View, Content: View, Footer: View>: View {
                 HStack(spacing: FrogStyle.space6) {
                     VStack(alignment: .leading, spacing: FrogStyle.space2) {
                         Text(item.shownTitle).font(FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
-                        Text(Self.detail(item)).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                        // Worked out again every minute, so "Just now" moves on while the page stays open.
+                        TimelineView(.everyMinute) { _ in
+                            Text(Self.detail(item)).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                        }
                     }
                     Spacer(minLength: 0)
                     if item.pastes {
@@ -145,7 +148,7 @@ struct DocumentsPage<Toolbar: View, Content: View, Footer: View>: View {
 
     private static var rowHeight: CGFloat { 44 }
 
-    /// "Today 18:07 · Best, Anna": when it last changed, then its first line.
+    /// "18:07 · Best, Anna": when it last changed, then its first line.
     private static func detail(_ item: UtilityDocument) -> String {
         // Stops at the first line with text, so a long note is not split whole for every row on every keystroke.
         var first: String?
@@ -269,13 +272,15 @@ struct DocumentTextEditor: View {
     }
 }
 
-/// When an item was last changed, for its card's footer: "Edited just now", "Edited 12 min ago", "Edited Today 18:07".
+/// When an item was last changed, for its card's footer: "Edited just now", "Edited 12 min ago", "Edited 18:07",
+/// "Edited yesterday".
 struct DocumentEditedText: View {
     let date: Date
     var body: some View {
         TimelineView(.everyMinute) { _ in
             let when = RecentTimestamp.text(date)
-            Text(L10n.text("Edited") + " " + (when == L10n.text("Just now") ? L10n.text("just now") : when)).lineLimit(1)
+            let lowered = [L10n.text("Just now"): L10n.text("just now"), L10n.text("Yesterday"): L10n.text("yesterday")]
+            Text(L10n.text("Edited") + " " + (lowered[when] ?? when)).lineLimit(1).help(RecentTimestamp.full(date))
         }
     }
 }
