@@ -16,7 +16,13 @@ struct ShortcutsSettingsView: View {
             FrogPageHeader(title: "Shortcuts", subtitle: "Keys that open apps and run actions from anywhere")
             if let unreadable = plugin.unreadable { FrogRowNote(text: unreadable, tone: FrogStyle.warning) }
             FrogSection("Apps", accessory: { addApp }) {
-                if apps.isEmpty { FrogRowNote(text: catalog.scanned ? "Add an app, then record its keys." : "Looking for apps…") }
+                if apps.isEmpty, catalog.scanned { FrogRowNote(text: "Add an app, then record its keys.") }
+                else if apps.isEmpty {
+                    HStack(spacing: FrogStyle.space8) {
+                        ProgressView().controlSize(.small)
+                        Text("Looking for apps…").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    }.frame(maxWidth: .infinity, minHeight: FrogStyle.rowHeight, alignment: .leading)
+                }
                 ForEach(apps, id: \.self) { index in
                     row(index) {
                         if let app = bindings[index].app, let url = ShortcutsPlugin.applicationURL(app, path: bindings[index].with["path"]) {

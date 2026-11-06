@@ -19,9 +19,10 @@ struct CommandBarSetupView: View {
                     if !NSWorkspace.shared.open(url) { issue = "Open System Settings → Keyboard → Keyboard Shortcuts → Spotlight." }
                 }.buttonStyle(.frog())
             }
+            // Both rows carry a caption, so they are the same height; switching back is said where it happens.
             FrogRow("Give ⌘Space to Frog", caption: assigned && plugin?.shortcutIssue == nil
-                    ? "Set. Press ⌘Space to try it. To switch back, choose another shortcut."
-                    : "To switch back later, choose another shortcut and turn Spotlight’s on again.") {
+                    ? "Set. Press ⌘Space to try it. To switch back, choose another shortcut, then turn Spotlight’s on again."
+                    : "Then ⌘Space opens Frog’s command bar.") {
                 Button(assigned ? "Try again" : "Use ⌘Space") {
                     do { try model.useCommandBarShortcut(shortcut); issue = nil }
                     catch { issue = error.localizedDescription }

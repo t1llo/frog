@@ -17,7 +17,7 @@ struct ExplainView: View {
         FrogPage {
             FrogPageHeader(title: "Explain", subtitle: "Select text, press the shortcut, read the answer.")
             if let rule = plugin.rule {
-                FrogSection("Explain") {
+                FrogSection("Shortcut & model") {
                     FrogRow("Shortcut", caption: "Select text in any app, then press it.") { HotkeyRecorder(hotkey: ruleBinding(rule, \.hotkey)) }
                     if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
                     FrogRow("Model", caption: "Writes the answer.") { RuleModelPicker(rule: Binding(get: { rule }, set: save)) }
@@ -47,7 +47,12 @@ struct ExplainView: View {
                     Toggle("Show Explain in the bubble", isOn: ruleBinding(rule, \.showsInBubble)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
             } else {
-                FrogRow("Selection bubble is off", caption: "Turn it on in Writing to offer Explain after you select text. The shortcut works either way.") { EmptyView() }
+                // A notice, not a setting: the bubble is switched on the Writing page.
+                FrogRow("The selection bubble is off", caption: "The shortcut works either way.", icon: {
+                    Image(systemName: "info.circle").font(.system(size: 14)).foregroundStyle(FrogStyle.muted)
+                }) {
+                    Button("Turn on in Writing") { model.toolkit.select(.feature(.writing)) }
+                }
             }
         }
     }

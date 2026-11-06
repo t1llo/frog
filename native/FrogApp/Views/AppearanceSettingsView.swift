@@ -163,7 +163,7 @@ struct AppearanceSettingsView: View {
                     } choose: { var value = appearance; value.mode = mode; draft.set(value) }
                 }
             }
-            Rectangle().fill(FrogStyle.hairline).frame(width: 1).padding(.vertical, FrogStyle.space4).accessibilityHidden(true)
+            Spacer().frame(width: FrogStyle.space16)
             TileGroup(title: "Interface style") {
                 ForEach(InterfaceStyle.allCases, id: \.self) { kind in
                     AppearanceTile(title: kind == .classic ? "Classic" : "Glass", selected: style == kind) {
@@ -292,7 +292,7 @@ private struct AppearanceTile<Picture: View>: View {
                     .clipShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
                     .padding(3)
                     .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius + 3, style: .continuous)
-                        .strokeBorder(selected ? FrogStyle.accent : hovering ? FrogStyle.hairline : .clear, lineWidth: 2.5))
+                        .strokeBorder(selected ? FrogStyle.accent : hovering ? FrogStyle.hairline : .clear, lineWidth: 2))
                 Text(L10n.text(title)).font(selected ? FrogType.rowMedium : FrogType.body)
                     .foregroundStyle(selected ? FrogStyle.ink : FrogStyle.muted).lineLimit(1).fixedSize()
             }.fixedSize().contentShape(Rectangle())
@@ -353,24 +353,19 @@ private struct DiagonalHalf: Shape {
     }
 }
 
-/// Every theme as a small card in its own colours, scrolling sideways, as Rex's theme picker: a sample of text, a
+/// Every theme as a small card in its own colours, in a grid that shows them all at once: a sample of text, a
 /// prompt in the accent and a row of the theme's colours. The chosen theme has the accent ring.
 private struct ThemeCards: View {
     let selected: AppearancePreferences.Theme
     let choose: (AppearancePreferences.Theme) -> Void
     @Environment(\.colorScheme) private var scheme
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: FrogStyle.space10) {
-                    ForEach(AppearancePreferences.Theme.allCases, id: \.self) { theme in
-                        ThemeCard(theme: theme, swatch: FrogStyle.swatch(theme, dark: scheme == .dark), selected: theme == selected) { choose(theme) }
-                            .id(theme)
-                    }
-                }.padding(.vertical, 2).padding(.horizontal, 1)
-            }.scrollIndicators(.visible)
-                .onAppear { proxy.scrollTo(selected, anchor: .center) }
-        }
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 112), spacing: FrogStyle.space10, alignment: .top)],
+                  alignment: .leading, spacing: FrogStyle.space12) {
+            ForEach(AppearancePreferences.Theme.allCases, id: \.self) { theme in
+                ThemeCard(theme: theme, swatch: FrogStyle.swatch(theme, dark: scheme == .dark), selected: theme == selected) { choose(theme) }
+            }
+        }.padding(.vertical, FrogStyle.space10)
     }
 }
 
@@ -400,12 +395,12 @@ private struct ThemeCard: View {
                     }
                 }
                 .padding(.horizontal, 10).padding(.vertical, 9)
-                .frame(width: 104, height: 62)
+                .frame(maxWidth: .infinity).frame(height: 62)
                 .background(swatch.canvas, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous).strokeBorder(swatch.ink.opacity(0.12)))
                 .padding(3)
                 .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius + 3, style: .continuous)
-                    .strokeBorder(selected ? FrogStyle.accent : hovering ? FrogStyle.hairline : .clear, lineWidth: 2.5))
+                    .strokeBorder(selected ? FrogStyle.accent : hovering ? FrogStyle.hairline : .clear, lineWidth: 2))
                 Text(L10n.text(theme.title)).font(selected ? FrogType.rowMedium : FrogType.body)
                     .foregroundStyle(selected ? FrogStyle.ink : FrogStyle.muted).lineLimit(1)
             }.contentShape(Rectangle())

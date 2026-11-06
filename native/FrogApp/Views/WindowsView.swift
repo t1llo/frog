@@ -42,7 +42,8 @@ struct WindowsView: View {
     private var layouts: some View {
         let rules = Dictionary(uniqueKeysWithValues: WindowAction.shortcutRows(configured: model.configuration.rules)
             .compactMap { rule in rule.action?.windowAction.map { ($0, rule) } })
-        return FrogSection("Layouts") {
+        let unset = rules.values.filter { $0.hotkey == nil }.count
+        return FrogSection("Layouts", footer: unset == 0 ? nil : "Point at a layout to add its shortcut, or use Suggested shortcuts for all of them.") {
             if let suggestion { FrogRowNote(text: suggestion) }
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24)], spacing: 0) {
                 ForEach(Self.layoutOrder) { action in
@@ -55,9 +56,9 @@ struct WindowsView: View {
     private var snap: some View {
         FrogSection("Snap") {
             FrogRow("Drag to screen edges") { Toggle("Drag to screen edges", isOn: binding(\.dragToSnap)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small) }
-            FrogRow("Restore size when dragged away") {
+            FrogRow("Restore size when dragged away", caption: settings.dragToSnap ? nil : "Works with Drag to screen edges.") {
                 Toggle("Restore size when dragged away", isOn: binding(\.restoreOnDrag)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
-            }.disabled(!settings.dragToSnap)
+            }.disabled(!settings.dragToSnap).opacity(settings.dragToSnap ? 1 : 0.6)
             FrogRow("Zones while holding Shift") {
                 FrogDropdown(selected: settings.zoneOverlay ? Optional(settings.zones) : nil,
                              options: [nil] + WindowsSettings.Zones.allCases.map(Optional.some), width: 180,
@@ -170,6 +171,8 @@ private struct LayoutShortcutCell: View {
     let rule: Rule
     let issue: String?
     @ObservedObject var model: AppModel
+    /// A layout without a shortcut shows its Add button only while pointed at, so the grid stays quiet.
+    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -184,7 +187,10 @@ private struct LayoutShortcutCell: View {
                 var updated = rule; updated.hotkey = value; updated.enabled = value != nil
                 do { try model.saveRule(updated) } catch { model.report(error) }
             }), emptyTitle: "Add")
+            .opacity(rule.hotkey != nil || hovering ? 1 : 0)
         }
         .frame(minHeight: FrogStyle.rowHeight)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 }

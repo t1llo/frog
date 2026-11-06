@@ -464,15 +464,18 @@ private final class SampleFrog {
         try await Task.sleep(for: .seconds(2))
 
         // History: a writing result, an answer and a dictation.
+        var answer = HistoryEntry(timestamp: Date().addingTimeInterval(-3_600), originalText: "Requests must be idempotent so that retries are safe.",
+                                  processedText: "Doing it again changes nothing: a request sent twice has the same effect as one.",
+                                  ruleName: "Explain", providerName: "OpenAI", model: "gpt-5-mini")
+        answer.answer = AnswerRecord(context: nil, application: "Safari", source: nil, followUps: [])
+        var dictated = HistoryEntry(timestamp: Date().addingTimeInterval(-86_400), originalText: "",
+                                    processedText: "Remind me to send the invoice on Friday and book the train to Zurich.",
+                                    ruleName: "Dictate", providerName: "Parakeet", model: "parakeet-ultra")
+        dictated.category = .audio
         let entries = [
             HistoryEntry(timestamp: Date().addingTimeInterval(-120), originalText: "i think we should of shipped it yesterday",
                          processedText: "I think we should have shipped it yesterday.", ruleName: "Proofread", providerName: "Ollama", model: "llama3.2"),
-            HistoryEntry(timestamp: Date().addingTimeInterval(-3_600), originalText: "Requests must be idempotent so that retries are safe.",
-                         processedText: "Doing it again changes nothing: a request sent twice has the same effect as one.",
-                         ruleName: "Explain", providerName: "OpenAI", model: "gpt-5-mini"),
-            HistoryEntry(timestamp: Date().addingTimeInterval(-86_400), originalText: "",
-                         processedText: "Remind me to send the invoice on Friday and book the train to Zurich.",
-                         ruleName: "Dictate", providerName: "Parakeet", model: "parakeet-ultra")
+            answer, dictated
         ]
         for entry in entries { _ = try model.historyStore.append(entry, preferences: model.configuration.preferences) }
         model.refreshHistory()

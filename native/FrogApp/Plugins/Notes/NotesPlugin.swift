@@ -136,10 +136,10 @@ struct NotesPage: View {
     @State private var preview = false
 
     var body: some View {
-        DocumentsPage(documents: documents, kind: .note, title: "Notes", symbol: "note.text",
+        DocumentsPage(documents: documents, kind: .note, title: "Notes", subtitle: "Markdown notes, and text the command bar pastes.", symbol: "note.text",
                       emptyMessage: "Write one here, or have an agent add one with frog run notes.add.") { note in
             CompactSegments(values: [false, true], selected: preview, compact: true, title: { $0 ? "Preview" : "Edit" }) { preview = $0 }
-            Toggle("Pastes", isOn: documents.binding(note.id, \.pastes)).toggleStyle(.frogSwitch).controlSize(.small)
+            Toggle("Paste on pick", isOn: documents.binding(note.id, \.pastes)).toggleStyle(.frogSwitch).controlSize(.small)
                 .font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 .help("Choosing it in the command bar pastes its text, with {{date}}, {{time}} and {{clipboard}} filled in")
             CopyAction(labeled: true) {

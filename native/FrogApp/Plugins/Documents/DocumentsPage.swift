@@ -8,6 +8,7 @@ struct DocumentsPage<Controls: View, Content: View, Footer: View>: View {
     @ObservedObject var documents: LocalDocuments
     let kind: UtilityDocument.Kind
     let title: String
+    var subtitle: String? = nil
     let symbol: String
     let emptyMessage: String
     @ViewBuilder let controls: (UtilityDocument) -> Controls
@@ -30,28 +31,33 @@ struct DocumentsPage<Controls: View, Content: View, Footer: View>: View {
     private var current: UtilityDocument? { all.first { $0.id == selected } }
 
     var body: some View {
-        FrogPage(width: FrogStyle.wideWidth) {
-            FrogPageHeader(title: title) {
-                if !all.isEmpty { SearchBox(placeholder: "Search", text: $search).frame(width: 200) }
+        FrogPage {
+            FrogPageHeader(title: title, subtitle: subtitle) {
+                if !all.isEmpty { SearchBox(placeholder: "Search", text: $search).frame(width: 180) }
                 Button("New", systemImage: "plus") {
                     search = ""
                     selected = documents.add(UtilityDocument(kind: kind, title: kind.newItemTitle))
-                }.buttonStyle(.frog(.primary)).disabled(!documents.loaded)
+                }.disabled(!documents.loaded)
             }
             if let issue = documents.issue { notice(issue) }
             if let unreadable = documents.unreadable { notice(unreadable.message) }
             if documents.loaded, all.isEmpty {
                 FrogEmptyState(symbol: symbol, title: "No \(title.lowercased()) yet", message: emptyMessage).frogTableSurface()
+                footer()
             } else if documents.loaded {
-                HStack(alignment: .top, spacing: 16) {
-                    list.frame(width: 210, height: Self.height)
-                    Group {
-                        if let current { editor(current) }
-                        else { FrogEmptyState(symbol: symbol, title: shown.isEmpty ? "Nothing matches" : "Choose one", message: "") }
+                // The list runs down the side as a source list, without a card of its own; the editor and the
+                // plugin's settings for it share the column beside it.
+                HStack(alignment: .top, spacing: FrogStyle.space16) {
+                    list.frame(width: 200).frame(minHeight: Self.height, alignment: .top)
+                    VStack(alignment: .leading, spacing: FrogStyle.space16) {
+                        Group {
+                            if let current { editor(current) }
+                            else { FrogEmptyState(symbol: symbol, title: shown.isEmpty ? "Nothing matches" : "Choose one", message: "") }
+                        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        footer()
                     }.frame(maxWidth: .infinity).frame(height: Self.height, alignment: .top)
                 }
             }
-            footer()
         }
         .task {
             await documents.load()
@@ -81,17 +87,21 @@ struct DocumentsPage<Controls: View, Content: View, Footer: View>: View {
                             Spacer(minLength: 0)
                             if item.pastes {
                                 Image(systemName: "text.badge.plus").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-                                    .help("Pastes from the command bar")
+                                    .help("Pastes when picked in the command bar")
                             }
                         }
-                        .padding(.horizontal, FrogStyle.rowPadding)
+                        .padding(.horizontal, FrogStyle.rowInset)
                         .frame(maxWidth: .infinity, minHeight: FrogStyle.controlHeight, alignment: .leading)
                         .contentShape(Rectangle())
                         .frogHoverRow(selected: item.id == selected)
                     }.buttonStyle(.plain).onDrag { provider(item) }
                 }
-            }.padding(FrogStyle.listInset)
-        }.frogTableSurface()
+                if shown.isEmpty {
+                    Text("Nothing matches").font(FrogType.body).foregroundStyle(FrogStyle.muted)
+                        .padding(.horizontal, FrogStyle.rowInset).frame(maxWidth: .infinity, minHeight: FrogStyle.controlHeight, alignment: .leading)
+                }
+            }
+        }.minimalScrollbars()
     }
 
     private func editor(_ item: UtilityDocument) -> some View {
@@ -153,9 +163,9 @@ struct DocumentsPage<Controls: View, Content: View, Footer: View>: View {
 }
 
 extension DocumentsPage where Footer == EmptyView {
-    init(documents: LocalDocuments, kind: UtilityDocument.Kind, title: String, symbol: String, emptyMessage: String,
+    init(documents: LocalDocuments, kind: UtilityDocument.Kind, title: String, subtitle: String? = nil, symbol: String, emptyMessage: String,
          @ViewBuilder controls: @escaping (UtilityDocument) -> Controls, @ViewBuilder content: @escaping (UtilityDocument) -> Content) {
-        self.init(documents: documents, kind: kind, title: title, symbol: symbol, emptyMessage: emptyMessage,
+        self.init(documents: documents, kind: kind, title: title, subtitle: subtitle, symbol: symbol, emptyMessage: emptyMessage,
                   controls: controls, content: content, footer: { EmptyView() })
     }
 }

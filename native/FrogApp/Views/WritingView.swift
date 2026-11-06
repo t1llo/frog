@@ -11,10 +11,11 @@ struct WritingView: View {
 
     var body: some View {
         FrogPage {
-            FrogPageHeader(title: "Writing") {
+            FrogPageHeader(title: "Writing", subtitle: "Select text in any app and press a rule's shortcut to rewrite it.") {
+                // The same secondary button as New rule on Dictation.
                 Button("New rule", systemImage: "plus") {
                     editing = model.configuration.newRule(category: .text, installed: model.localModels.installed)
-                }.buttonStyle(.frog(.primary)).keyboardShortcut("n", modifiers: .command)
+                }.keyboardShortcut("n", modifiers: .command)
             }
             rules
             WritingBubbleSection(plugin: plugin)
