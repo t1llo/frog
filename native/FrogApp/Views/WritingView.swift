@@ -52,12 +52,18 @@ struct WritingView: View {
         }
     }
 
+    private var everyEnabledRuleMissing: Bool {
+        let enabled = plugin.rules.filter(\.enabled)
+        return !enabled.isEmpty && enabled.allSatisfy { !model.ruleHasModel($0) }
+    }
+
     private func row(_ rule: Rule) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             FrogRow(rule.name, caption: caption(rule)) {
                 HStack(spacing: 8) {
                     // The mark leads, so every row's caps end on the same edge, just before Try.
-                    if rule.enabled, !model.ruleHasModel(rule) {
+                    // The notice above names the problem; a row is marked only to single out which rules it means.
+                    if rule.enabled, !model.ruleHasModel(rule), !everyEnabledRuleMissing {
                         Button { editing = rule } label: { ProblemMark(help: "No model chosen: click to choose one") }
                             .buttonStyle(.plain)
                     }
@@ -390,12 +396,8 @@ struct WritingTryView: View {
                 .frame(height: 120).frogTableSurface()
             }
             FrogSheetButtons(padded: false) {
-                if run == nil, !hasModel {
-                    // The one problem that stops the rule: a warning, pointing at the model menu above.
-                    Label { Text("No model yet. Choose one above.") } icon: {
-                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(FrogStyle.warning)
-                    }.font(FrogType.body).foregroundStyle(FrogStyle.ink)
-                } else if let waiting {
+                // A missing model is marked once, on the model menu above, not again here.
+                if let waiting {
                     Text(L10n.text(waiting)).font(FrogType.body).foregroundStyle(FrogStyle.muted)
                 }
             } trailing: {

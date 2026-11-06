@@ -54,6 +54,7 @@ struct FrogDropdown<Value: Hashable>: View {
     var warning: String? = nil
 
     @State private var showing = false
+    @Environment(\.frogDropdownOpenTick) private var openTick
     @Environment(\.compactRowTitle) private var rowTitle
     @Environment(\.isEnabled) private var enabled
 
@@ -70,6 +71,7 @@ struct FrogDropdown<Value: Hashable>: View {
         .help(warning.map { L10n.text($0) } ?? value)
         .accessibilityHint(warning.map { L10n.text($0) } ?? "")
         .modifier(RowControlName(title: rowTitle, value: value))
+        .onChange(of: openTick) { _, tick in if tick > 0 { showing = true } }
         .popover(isPresented: $showing, arrowEdge: .bottom) {
             FrogDropdownList(sections: sections, selected: selected, item: item, searchPrompt: searchPrompt,
                              emptyMessage: emptyMessage, footnote: footnote,
@@ -315,5 +317,14 @@ struct FrogDropdownRow: View {
         }
         .buttonStyle(.plain).disabled(item.disabled)
         .accessibilityAddTraits(chosen ? .isSelected : [])
+    }
+}
+
+private struct FrogDropdownOpenTickKey: EnvironmentKey { static let defaultValue = 0 }
+extension EnvironmentValues {
+    /// A dropdown opens its list each time this rises above zero: how a notice's button opens the control it names.
+    var frogDropdownOpenTick: Int {
+        get { self[FrogDropdownOpenTickKey.self] }
+        set { self[FrogDropdownOpenTickKey.self] = newValue }
     }
 }

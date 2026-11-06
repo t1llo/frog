@@ -8,6 +8,7 @@ struct DictationPage: View {
     let dictation: DictationController
 
     private var rules: [Rule] { model.configuration.rules.filter { $0.category == .audio } }
+    @State private var pickerRequest = ModelPickerOpenRequest()
 
     var body: some View {
         FrogPage {
@@ -18,8 +19,8 @@ struct DictationPage: View {
                 }
                 FrogAddButton("Add rule") { add() }
             }
-            if rules.contains(where: { $0.enabled && !model.ruleHasModel($0) }) {
-                ModelMissingNotice(feature: "Dictation", speech: true)
+            if let missing = rules.first(where: { $0.enabled && !model.ruleHasModel($0) }) {
+                ModelMissingNotice(feature: "Dictation", speech: true) { pickerRequest.open(missing.id) }
             }
             if rules.isEmpty {
                 FrogEmptyState(symbol: DictationPlugin.info.symbol, title: "No dictation rules", message: "Add one to choose its shortcut and model.",
@@ -41,6 +42,7 @@ struct DictationPage: View {
                 }
             }
         }.toggleStyle(.frogSwitch).controlSize(.small)
+        .environment(\.modelPickerOpenRequest, pickerRequest)
     }
 
     private func add() {

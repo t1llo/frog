@@ -9,6 +9,7 @@ struct ExplainView: View {
     @State private var notesFile = ""
     @State private var notesFileIssue: String?
     @FocusState private var editingFile: Bool
+    @State private var pickerRequest = ModelPickerOpenRequest()
 
     private var settings: ExplainConfig { plugin.settings }
     private var bubbleOn: Bool { model.selectionBubble?.settings.on == true }
@@ -17,7 +18,9 @@ struct ExplainView: View {
         FrogPage {
             FrogPageHeader(title: "Explain", subtitle: "Select text, press the shortcut, read the answer.")
             if let rule = plugin.rule {
-                if !model.ruleHasModel(rule) { ModelMissingNotice(feature: "Explain", speech: false) }
+                if !model.ruleHasModel(rule) {
+                    ModelMissingNotice(feature: "Explain", speech: false) { pickerRequest.open(rule.id) }
+                }
                 FrogSection("Shortcut & model") {
                     FrogRow("Shortcut", caption: "Select text in any app, then press it.") { HotkeyRecorder(hotkey: ruleBinding(rule, \.hotkey)) }
                     if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
@@ -42,6 +45,7 @@ struct ExplainView: View {
                 }
             }
         }
+        .environment(\.modelPickerOpenRequest, pickerRequest)
     }
 
     /// Whether Explain is one of the buttons in the selection bubble. The bubble itself is set up on the Writing page.

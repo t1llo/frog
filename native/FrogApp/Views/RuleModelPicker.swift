@@ -45,7 +45,9 @@ struct RuleModelPicker: View {
         // A rule without a model cannot run: the button asks for one, led by a warning mark inside it, instead of
         // reading like an ordinary value. That mark is the control's one sign; the page says it once in a notice.
         dropdown(local: choices(local: true), external: choices(local: false))
+            .environment(\.frogDropdownOpenTick, openRequest.ruleID == rule.id ? openRequest.tick : 0)
     }
+    @Environment(\.modelPickerOpenRequest) private var openRequest
 
     private func dropdown(local: [RuleModelSelection?], external: [RuleModelSelection?]) -> some View {
         FrogDropdown(selected: selected, sections: [
@@ -98,18 +100,35 @@ struct ProblemNotice<Action: View>: View {
     }
 }
 
-/// "Explain won't work yet": shown above a feature's sections while its rule has no model. With nothing to choose
-/// from, it leads to Models; otherwise the flagged Model row below is where to choose.
+/// Asks the `RuleModelPicker` of one rule to open its list, so a notice's "Choose model" lands in the control it
+/// names. Each new request carries a higher `tick`.
+struct ModelPickerOpenRequest: Equatable {
+    var ruleID: Rule.ID?
+    var tick = 0
+    mutating func open(_ id: Rule.ID) { ruleID = id; tick += 1 }
+}
+private struct ModelPickerOpenRequestKey: EnvironmentKey { static let defaultValue = ModelPickerOpenRequest() }
+extension EnvironmentValues {
+    var modelPickerOpenRequest: ModelPickerOpenRequest {
+        get { self[ModelPickerOpenRequestKey.self] }
+        set { self[ModelPickerOpenRequestKey.self] = newValue }
+    }
+}
+
+/// "Explain won't work yet": the one warning of a page, above its sections, always with the button that fixes it:
+/// "Choose model" opens the flagged picker (`choose`), and with nothing to choose from "Open Models" leads there.
 struct ModelMissingNotice: View {
     @EnvironmentObject private var model: AppModel
     let feature: String
     let speech: Bool
+    let choose: () -> Void
     var body: some View {
         let choices = model.hasModelChoices(speech: speech)
         ProblemNotice(title: "\(feature) won't work yet",
-                      message: choices ? "Choose a \(speech ? "speech" : "text") model below."
+                      message: choices ? "Choose a \(speech ? "speech" : "text") model for it."
                                        : "Download a \(speech ? "speech" : "text") model or connect a provider first.") {
-            if !choices { Button("Open Models") { model.toolkit.select(.models) }.buttonStyle(.frog(.primary)) }
+            if choices { Button("Choose model", action: choose).buttonStyle(.frog(.primary)) }
+            else { Button("Open Models") { model.toolkit.select(.models) }.buttonStyle(.frog(.primary)) }
         }
     }
 }
