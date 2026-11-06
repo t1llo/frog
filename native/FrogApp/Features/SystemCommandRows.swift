@@ -14,7 +14,7 @@ import FrogCore
                           primary: CommandRowAction(title: "Run") {
                 guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message(CommandBarContext.targetChanged) }
                 perform(action)
-            })
+            }, tint: .gray)
         }
     }
 }

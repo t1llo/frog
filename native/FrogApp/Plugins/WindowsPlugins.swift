@@ -236,7 +236,7 @@ extension WindowsSettings {
     var menu: [MenuContribution] {
         guard let controller, pickerAvailable else { return [] }
         return [MenuContribution(id: "windows.arrange", order: 40) { [weak controller] in
-            AnyView(MenuActionRow(title: "Arrange window…", symbol: "rectangle.split.2x1", closes: true) {
+            AnyView(MenuActionRow(title: "Arrange window…", symbol: "rectangle.split.2x1", tint: PluginTint.purple.color, closes: true) {
                 controller?.handle(.layoutPicker, pressed: true)
             })
         }]

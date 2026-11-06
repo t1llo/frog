@@ -26,8 +26,8 @@ public struct LayoutPickerModel: Equatable, Sendable {
             case .centeredSmall: "50%"
             case .centeredMedium: "70%"
             case .centeredLarge: "90%"
-            case .nextDisplay: "Next"
-            case .previousDisplay: "Previous"
+            case .nextDisplay: "Next display"
+            case .previousDisplay: "Prior display"
             case .restore: "Restore"
             case .minimize: "Minimize"
             case .toggleFullScreen: "Full screen"
@@ -51,8 +51,13 @@ public struct LayoutPickerModel: Equatable, Sendable {
     public enum Direction: Sendable { case left, right, up, down }
 
     public static let columns = 5
-    /// The section titles in order; the cheat sheet's, without its commands.
-    public static let sectionTitles = ["Halves", "Quarters", "Thirds", "Sizes", "Displays", "Undo"]
+    /// The section titles in order: the cheat sheet's, without its commands, and with its two short groups,
+    /// Displays and Undo, in one row of their own.
+    public static let sectionTitles = ["Halves", "Quarters", "Thirds", "Sizes", "More"]
+    static func group(for action: WindowAction) -> String {
+        let group = WindowCheatSheet.group(for: action)
+        return group == "Displays" || group == "Undo" ? "More" : group
+    }
     /// Minimize and full screen leave nothing to place, so the picker does not offer them.
     public static let offered = WindowAction.allCases.filter { $0 != .minimize && $0 != .toggleFullScreen }
 
@@ -104,7 +109,7 @@ public struct LayoutPickerModel: Equatable, Sendable {
     static func sections(query: String, hotkeys: [WindowAction: Hotkey]) -> [Section] {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return sectionTitles.compactMap { title in
-            let tiles = offered.filter { WindowCheatSheet.group(for: $0) == title }
+            let tiles = offered.filter { group(for: $0) == title }
                 .map { Tile(action: $0, hotkey: hotkeys[$0]) }
                 .filter { tile in
                     text.isEmpty || [tile.title, tile.name, title].contains { $0.localizedCaseInsensitiveContains(text) }

@@ -100,3 +100,38 @@ private final class StatusPopupPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override func cancelOperation(_ sender: Any?) { onCancel?() }
 }
+
+/// The top of every status item popup: the feature's tile and name, then its actions on the trailing side.
+/// Its content starts where the cards' text does.
+struct StatusPopupHeader<Trailing: View>: View {
+    let symbol: String
+    let tint: PluginTint
+    let title: String
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: FrogStyle.space8) {
+            PluginIconTile(symbol: symbol, tint: tint.color, size: .sidebar)
+            Text(L10n.text(title)).font(FrogType.section).lineLimit(1).fixedSize()
+            Spacer(minLength: FrogStyle.space6)
+            trailing
+        }.padding(.horizontal, FrogStyle.cardPadding).frame(height: 40)
+    }
+}
+
+/// The bottom of every status item popup, under a hairline: a muted status on the left, Close and Escape on the right.
+struct StatusPopupFooter<Status: View>: View {
+    @ViewBuilder var status: Status
+
+    var body: some View {
+        HStack(spacing: FrogStyle.space6) {
+            status.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+            Spacer(minLength: FrogStyle.space8)
+            Text(L10n.text("Close")).font(FrogType.label).foregroundStyle(FrogStyle.ink)
+            KeyCap("esc")
+        }
+        .padding(.horizontal, FrogStyle.cardPadding).frame(height: 32).frame(maxWidth: .infinity)
+        // As `PanelFooter`: the panel's own colour under a thin line.
+        .overlay(alignment: .top) { Rectangle().fill(FrogStyle.hairline).frame(height: 1) }
+    }
+}

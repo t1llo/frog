@@ -13,7 +13,8 @@ import FrogCore
         return (actions?(host) ?? host.actions).filter { $0.surfaces.contains(.commandBar) }.compactMap { action in
             let required = action.parameters.filter(\.required)
             guard required.count <= 1 else { return nil }
-            let plugin = host.descriptor(action.pluginID)?.info.name ?? "Frog"
+            let info = host.descriptor(action.pluginID)?.info
+            let plugin = info?.name ?? "Frog"
             let record = SearchRecord(id: "action:\(action.id)", title: action.title, subtitle: plugin,
                                       keywords: "\(plugin) \(action.keywords)", symbol: action.symbol)
             // Through the host, which checks the values, unless the actions were handed in.
@@ -21,13 +22,13 @@ import FrogCore
                 ? { [weak host, id = action.id] input in _ = try await host?.run(id, input) }
                 : { input in _ = try await action.run(input) }
             guard let parameter = required.first else {
-                return CommandBarRow(record: record, primary: CommandRowAction(title: "Run") { try await run(ActionInput(source: .commandBar)) })
+                return CommandBarRow(record: record, primary: CommandRowAction(title: "Run") { try await run(ActionInput(source: .commandBar)) }, tint: info?.tint)
             }
             let prompt = CommandRowPrompt(placeholder: parameter.help.isEmpty ? parameter.name.capitalized : parameter.help,
                                           options: Self.options(parameter.kind)) { value in
                 try await run(ActionInput(values: [parameter.name: value], source: .commandBar))
             }
-            return CommandBarRow(record: record, primary: CommandRowAction(title: "Run", prompt: prompt) {})
+            return CommandBarRow(record: record, primary: CommandRowAction(title: "Run", prompt: prompt) {}, tint: info?.tint)
         }
     }
 

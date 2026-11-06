@@ -35,6 +35,89 @@ enum ClipboardHistoryLayout {
     }
 }
 
+/// What a copied text looks like, so a list can tell a link from code or a sentence at a glance.
+enum ClipboardContentKind: Equatable {
+    case link, email, path, color, number, code, richText, text
+
+    init(_ text: String, formatted: Bool = false) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let single = !trimmed.contains("\n")
+        let lower = trimmed.lowercased()
+        if single, !trimmed.contains(" "), lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.hasPrefix("www.") { self = .link }
+        else if single, !trimmed.contains(" "), trimmed.matches(#"^[^@\s]+@[^@\s]+\.[a-zA-Z]{2,}$"#) { self = .email }
+        else if single, trimmed.hasPrefix("/") || trimmed.hasPrefix("~/"), trimmed.count < 400 { self = .path }
+        else if single, trimmed.matches(#"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"#) { self = .color }
+        else if single, !trimmed.isEmpty, trimmed.matches(#"^[-+]?[0-9][0-9.,\s]*%?$"#) { self = .number }
+        else if Self.looksLikeCode(trimmed) { self = .code }
+        else { self = formatted ? .richText : .text }
+    }
+
+    /// Shell commands and source code: punctuation prose rarely has, or a command line's first word.
+    private static func looksLikeCode(_ text: String) -> Bool {
+        let commands = ["git ", "brew ", "npm ", "cd ", "swift ", "sudo ", "ls ", "curl ", "make ", "python", "pip ", "docker ", "ssh ", "./", "$ "]
+        if commands.contains(where: { text.hasPrefix($0) }) { return true }
+        let marks = ["{", "}", "();", "=>", "->", "==", "!=", "&&", "||", "</", "/>", "func ", "let ", "const ", "def ", "import ", "return "]
+        return marks.filter { text.contains($0) }.count >= 2
+    }
+
+    var symbol: String {
+        switch self {
+        case .link: "link"
+        case .email: "envelope"
+        case .path: "folder"
+        case .color: "paintpalette"
+        case .number: "number"
+        case .code: "chevron.left.forwardslash.chevron.right"
+        case .richText: "doc.richtext"
+        case .text: "text.alignleft"
+        }
+    }
+
+    var tint: PluginTint {
+        switch self {
+        case .link: .blue
+        case .email: .teal
+        case .path: .indigo
+        case .color: .pink
+        case .number: .gray
+        case .code: .purple
+        case .richText: .indigo
+        case .text: .orange
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .link: "Link"
+        case .email: "Email address"
+        case .path: "Path"
+        case .color: "Colour"
+        case .number: "Number"
+        case .code: "Code"
+        case .richText: "Formatted text"
+        case .text: "Text"
+        }
+    }
+}
+
+private extension String {
+    func matches(_ pattern: String) -> Bool { range(of: pattern, options: .regularExpression) != nil }
+}
+
+/// When something happened, as a list shows it: "Now", "2 min ago", the time today in the Mac's own format,
+/// "Yesterday", the weekday this week, then the date.
+enum RecentTime {
+    static func text(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let seconds = now.timeIntervalSince(date)
+        if seconds < 60 { return L10n.text("Now") }
+        if seconds < 3600 { return "\(Int(seconds / 60)) min ago" }
+        if calendar.isDate(date, inSameDayAs: now) { return date.formatted(date: .omitted, time: .shortened) }
+        if calendar.isDateInYesterday(date) { return L10n.text("Yesterday") }
+        if seconds < 6 * 86_400 { return date.formatted(.dateTime.weekday(.wide)) }
+        return date.formatted(date: .abbreviated, time: .omitted)
+    }
+}
+
 /// The clipboard history panel: a search that has the cursor, the items it matches, and the keys. Nothing in
 /// it animates; it is opened by keyboard many times a day.
 struct ClipboardHistoryView: View {
@@ -45,6 +128,8 @@ struct ClipboardHistoryView: View {
     let resize: () -> Void
     /// The pointer moving over a row; the controller decides whether that selects it.
     var hover: (UUID) -> Void = { _ in }
+    /// The moment the relative times are counted from; the panel is opened fresh each time.
+    var now = Date()
     @FocusState private var searching: Bool
 
     var body: some View {
@@ -118,11 +203,12 @@ struct ClipboardHistoryView: View {
 
     private func row(_ entry: ClipboardHistoryEntry, selected: Bool) -> some View {
         HStack(spacing: 10) {
-            PluginIconTile(symbol: entry.formatting.isEmpty ? "text.alignleft" : "doc.richtext",
-                           tint: entry.formatting.isEmpty ? .orange : .indigo, size: .sidebar)
+            let kind = ClipboardContentKind(entry.preview, formatted: !entry.formatting.isEmpty)
+            PluginIconTile(symbol: kind.symbol, tint: kind.tint.color, size: .sidebar).help(L10n.text(kind.title))
             Text(entry.preview).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(entry.timestamp, style: .time).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+            Text(RecentTime.text(entry.timestamp, now: now)).font(FrogType.small).foregroundStyle(FrogStyle.muted).monospacedDigit()
+                .help(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
         }
         .padding(.horizontal, 10).frame(height: ClipboardHistoryLayout.rowHeight)
         // The pointer moves the selection, so the selection is the only highlight: a second, hover highlight

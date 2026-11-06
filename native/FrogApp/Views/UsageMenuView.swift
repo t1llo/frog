@@ -8,15 +8,18 @@ struct UsageMenuTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
+            HStack(spacing: FrogStyle.space6) {
                 UsageProviderDropdown(usage: usage)
-                Spacer(minLength: 6)
+                Spacer(minLength: FrogStyle.space6)
                 IconAction(title: "Refresh", symbol: "arrow.clockwise") { usage.refresh() }
                 IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", action: openPage)
-            }.padding(.bottom, FrogStyle.space8)
-            UsageMenuContent(usage: usage).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
+            }.padding(.leading, FrogStyle.space6).padding(.bottom, FrogStyle.space8)
+            // When and where the limits were read closes the card, so the popup keeps one footer: Frog's own.
+            VStack(alignment: .leading, spacing: FrogStyle.space12) {
+                UsageMenuContent(usage: usage)
+                UsageMenuFooter(usage: usage)
+            }.padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
                 .frogTableSurface()
-            UsageMenuFooter(usage: usage).padding(.horizontal, FrogStyle.space6).padding(.top, FrogStyle.space8)
         }
         .background(FeatureVisibility { usage.setPresented($0, for: .menu) })
     }
@@ -36,44 +39,52 @@ struct UsageStatusPopover: View {
     /// "Sign in to Claude Code for B…", for an account whose own Claude Code login is gone.
     var accountSignIn: (UsageAccountSummary) -> Void = { _ in }
 
+    @ObservedObject private var readiness = UpdateReadiness.shared
+
     var body: some View {
         let provider = usage.preferences.provider
         let accounts = Self.shownAccounts(usage)
+        let setup = accounts.first(where: \.needsLiveSetup)
+        let signInAccount = setup == nil ? accounts.first(where: \.needsSignIn) : nil
+        let claudeSignIn = setup == nil && signInAccount == nil && provider == "Claude" && accounts.isEmpty && usage.needsClaudeSignIn
         VStack(alignment: .leading, spacing: 0) {
+            StatusPopupHeader(symbol: LLMUsagePlugin.info.symbol, tint: LLMUsagePlugin.info.tint, title: "LLM usage") {
+                UsageProviderDropdown(usage: usage)
+                IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", bordered: true, action: openDashboard)
+            }
             VStack(alignment: .leading, spacing: FrogStyle.listInset) {
-                HStack(spacing: FrogStyle.space6) {
-                    Text("LLM usage").font(FrogType.section).fixedSize()
-                    Spacer(minLength: FrogStyle.space6)
-                    UsageProviderDropdown(usage: usage)
-                    IconAction(title: "Refresh", symbol: "arrow.clockwise", bordered: true) { usage.refresh() }
-                }.padding(.horizontal, FrogStyle.panelInset - FrogStyle.panelCardInset).frame(height: 40)
                 UsageMenuLimitsBlock(usage: usage).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
                     .frogTableSurface()
                 UsageCompactActivity(usage: usage).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
                     .frogTableSurface()
-                VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                    // At most one account is offered live readings or a sign-in: the first that needs one.
-                    if let account = accounts.first(where: \.needsLiveSetup) {
-                        MenuActionRow(title: "Set up live readings for \(account.label)…", symbol: "person.crop.circle.badge.plus", tint: FrogStyle.warning) {
-                            liveSetup(account)
-                        }.help(account.status ?? "")
-                    } else if let account = accounts.first(where: \.needsSignIn) {
-                        MenuActionRow(title: ClaudeSignIn.accountSignInTitle(account), symbol: "person.crop.circle.badge.checkmark", tint: FrogStyle.warning) {
-                            accountSignIn(account)
-                        }.disabled(account.checkingSignIn).help(account.warning ?? account.status ?? "")
-                    } else if provider == "Claude", accounts.isEmpty, usage.needsClaudeSignIn {
-                        MenuActionRow(title: usage.checkingClaudeSignIn ? "Checking Claude Code’s login…" : "Sign in to Claude Code…",
-                                      symbol: "person.crop.circle.badge.checkmark", tint: FrogStyle.warning, action: signIn)
-                            .disabled(usage.checkingClaudeSignIn).help(usage.status(provider: provider))
-                    }
-                    UpdateReadyRow(install: installUpdate)
-                    MenuActionRow(title: "Open LLM usage", symbol: "arrow.up.forward.app", tint: FrogStyle.accent, action: openDashboard)
-                }.padding(FrogStyle.listInset).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
-            }.padding(FrogStyle.panelCardInset)
-            // The footer sits under a hairline, as in the other popups.
-            UsageMenuFooter(usage: usage).padding(.horizontal, FrogStyle.cardPadding).frame(height: 32).frame(maxWidth: .infinity)
-                .overlay(alignment: .top) { Rectangle().fill(FrogStyle.hairline).frame(height: 1) }
+                // Only what needs doing: at most one account is offered live readings or a sign-in, the first that needs one.
+                if setup != nil || signInAccount != nil || claudeSignIn || readiness.version != nil {
+                    VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                        if let account = setup {
+                            MenuActionRow(title: "Set up live readings for \(account.label)…", symbol: "person.crop.circle.badge.plus", tint: FrogStyle.warning) {
+                                liveSetup(account)
+                            }.help(account.status ?? "")
+                        } else if let account = signInAccount {
+                            MenuActionRow(title: ClaudeSignIn.accountSignInTitle(account), symbol: "person.crop.circle.badge.checkmark", tint: FrogStyle.warning) {
+                                accountSignIn(account)
+                            }.disabled(account.checkingSignIn).help(account.warning ?? account.status ?? "")
+                        } else if claudeSignIn {
+                            MenuActionRow(title: usage.checkingClaudeSignIn ? "Checking Claude Code’s login…" : "Sign in to Claude Code…",
+                                          symbol: "person.crop.circle.badge.checkmark", tint: FrogStyle.warning, action: signIn)
+                                .disabled(usage.checkingClaudeSignIn).help(usage.status(provider: provider))
+                        }
+                        UpdateReadyRow(install: installUpdate)
+                    }.padding(FrogStyle.listInset).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
+                }
+            }.padding(.bottom, FrogStyle.space8)
+            StatusPopupFooter {
+                HStack(spacing: FrogStyle.space4) {
+                    UsageMenuFooter(usage: usage, showsSource: false)
+                    IconAction(title: "Refresh", symbol: "arrow.clockwise") { usage.refresh() }
+                }
+            }
         }
+        .padding(FrogStyle.panelCardInset)
         .frame(width: Self.width).fixedSize(horizontal: false, vertical: true)
         .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
         .frogPanel()
@@ -148,7 +159,7 @@ struct UsageExtraUsageBlock: View {
     @ObservedObject var usage: UsageDashboardModel
     var body: some View {
         if let extra = usage.extraUsage(provider: usage.preferences.provider) {
-            let tint = extra.fraction.map { FrogStyle.level($0, warning: 0.8, critical: 0.95) } ?? FrogStyle.accent
+            let tint = extra.fraction.map { $0 >= 0.8 ? FrogStyle.level($0, warning: 0.8, critical: 0.95) : FrogStyle.seriesSecondary } ?? FrogStyle.seriesSecondary
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("Extra usage").font(FrogType.bodyMedium)
@@ -219,6 +230,8 @@ private struct UsageCompactActivity: View {
 /// When the limits were read and where from; one entry per account while each is shown.
 private struct UsageMenuFooter: View {
     @ObservedObject var usage: UsageDashboardModel
+    /// Off in the popup's footer, which is narrow; the source is then on hover.
+    var showsSource = true
     var body: some View {
         let provider = usage.preferences.provider
         let accounts = UsageStatusPopover.shownAccounts(usage)
@@ -228,13 +241,15 @@ private struct UsageMenuFooter: View {
             } else {
                 HStack(spacing: 4) {
                     Text(usage.planUpdatedAt(provider: provider).map { "Updated \(UsageStatusPopover.age(of: $0, at: context.date))" } ?? "No plan reading yet")
-                        .help(usage.status(provider: provider))
+                        .help([usage.planSource(provider: provider), usage.status(provider: provider)].compactMap { $0 }.joined(separator: "\n"))
                     if let warning = usage.planWarning(provider: provider) {
                         Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning)
                             .help(warning).accessibilityLabel(warning)
                     }
-                    Spacer()
-                    if let source = usage.planSource(provider: provider) { Text(source) }
+                    if showsSource {
+                        Spacer()
+                        if let source = usage.planSource(provider: provider) { Text(source) }
+                    }
                 }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
             }
         }
@@ -282,7 +297,7 @@ private struct UsageMiniMeter: View {
                         .help(reset.formatted(date: .abbreviated, time: .shortened))
                 }
             }.font(FrogType.caption).lineLimit(1)
-            FrogMeter(fraction: fraction, tint: FrogStyle.level(fraction, warning: 0.8, critical: 0.95), size: .compact)
+            FrogMeter(fraction: fraction, tint: fraction >= 0.8 ? FrogStyle.level(fraction, warning: 0.8, critical: 0.95) : FrogStyle.seriesSecondary, size: .compact)
         }.frame(maxWidth: .infinity)
     }
 }

@@ -8,17 +8,18 @@ import FrogCore
         // Record IDs keep the feature names they had before plugins, so learned choices still count.
         var rows = model.pluginHost.sidebar.flatMap(\.plugins).map { plugin in
             let id = BuiltinPlugins.legacyFeatures[plugin.id].map { "feature:\($0.rawValue)" } ?? "plugin-page:\(plugin.id)"
-            return CommandBarRow(record: SearchRecord(id: id, title: plugin.name, subtitle: "Frog", keywords: "frog plugin \(plugin.summary)", symbol: plugin.symbol),
-                                 primary: CommandRowAction(title: "Open") { [weak model] in model?.pluginHost.open(plugin.id) })
+            return CommandBarRow(record: SearchRecord(id: id, title: plugin.name, subtitle: plugin.summary, keywords: "frog plugin", symbol: plugin.symbol),
+                                 primary: CommandRowAction(title: "Open") { [weak model] in model?.pluginHost.open(plugin.id) }, tint: plugin.tint)
         }
-        rows.append(CommandBarRow(record: SearchRecord(id: "features", title: "Plugins", subtitle: "Frog", keywords: "frog features manage turn on off", symbol: "puzzlepiece.extension"),
-                                  primary: CommandRowAction(title: "Open") { [weak model] in model?.toolkit.select(.features); model?.showSettings() }))
-        var routes: [(ToolkitRoute, String, String)] = [(.settings, "Settings", "gearshape"), (.models, "Models", "cpu")]
+        rows.append(CommandBarRow(record: SearchRecord(id: "features", title: "Plugins", subtitle: "Turn features on and off", keywords: "frog features manage turn on off", symbol: "puzzlepiece.extension"),
+                                  primary: CommandRowAction(title: "Open") { [weak model] in model?.toolkit.select(.features); model?.showSettings() }, tint: .green))
+        var routes: [(ToolkitRoute, String, String, String, PluginTint)] = [(.settings, "Settings", "gearshape.fill", "Appearance, startup and updates", .gray),
+                                                                           (.models, "Models", "cpu", "Local models and providers", .indigo)]
         // History is a feature: with it off, nothing in the command bar leads to it.
-        if model.pluginEnabled("history") { routes.append((.history, "History", "clock.arrow.circlepath")) }
-        for (route, title, symbol) in routes {
-            rows.append(CommandBarRow(record: SearchRecord(id: "route:\(title)", title: title, subtitle: "Frog", keywords: "frog preferences configuration", symbol: symbol),
-                                      primary: CommandRowAction(title: "Open") { [weak model] in model?.toolkit.select(route); model?.showSettings() }))
+        if model.pluginEnabled("history") { routes.append((.history, "History", "clock.arrow.circlepath", "Earlier results of your rules", .gray)) }
+        for (route, title, symbol, subtitle, tint) in routes {
+            rows.append(CommandBarRow(record: SearchRecord(id: "route:\(title)", title: title, subtitle: subtitle, keywords: "frog preferences configuration", symbol: symbol),
+                                      primary: CommandRowAction(title: "Open") { [weak model] in model?.toolkit.select(route); model?.showSettings() }, tint: tint))
         }
         return rows
     }
@@ -30,7 +31,7 @@ import FrogCore
         let copy = context.copy, pasteboard = context.pasteboard
         func row(_ id: String, _ title: String, _ subtitle: String, _ symbol: String, _ run: @escaping () throws -> Void) -> CommandBarRow {
             CommandBarRow(record: SearchRecord(id: "quick:\(id)", title: title, subtitle: subtitle, symbol: symbol),
-                          primary: CommandRowAction(title: "Copy") { try run() })
+                          primary: CommandRowAction(title: "Copy") { try run() }, tint: .gray)
         }
         return [
             row("uuid", "Generate UUID", "Copy a new UUID", "number") { copy(UUID().uuidString) },

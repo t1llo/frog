@@ -8,7 +8,9 @@ function render() {
   const left = timeLeft();
   $("time").textContent = format(left);
   $("progress").style.setProperty("--value", String(1 - left / (minutes() * 60_000)));
-  $("status").textContent = running() || paused() ? status() : `${settings.length} minutes`;
+  // The clock already says how long the next session is, so the idle line just says it is ready.
+  $("mode").textContent = timer.mode === "break" && !idle() ? "Break" : "Focus";
+  $("status").textContent = running() || paused() ? status() : "Ready";
   $("toggle").textContent = running() ? "Pause" : paused() ? "Resume" : "Start";
   $("reset").hidden = idle();
   const count = finishedToday();

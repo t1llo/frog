@@ -101,27 +101,27 @@ struct FrogStatusMenu: View {
         }.padding(.horizontal, FrogStyle.space6).accessibilityElement(children: .combine)
     }
 
-    /// Secondary actions under a hairline, with their shortcuts as key caps.
+    /// Secondary actions under a hairline: short labels, each shortcut in one cap, so neither label is ever cut.
     private var footer: some View {
         HStack(spacing: FrogStyle.space4) {
-            footerButton(model.setupPresented ? "Set up Frog…" : "Open Frog", symbol: "arrow.up.forward.app", key: "\u{2318}", key2: ",",
-                         tint: FrogStyle.accent) { dismiss(); model.showSettings() }.keyboardShortcut(",")
-            Spacer(minLength: 0)
-            footerButton("Quit Frog", symbol: "power", key: "\u{2318}", key2: "Q", tint: FrogStyle.muted) {
+            footerButton(model.setupPresented ? "Set up Frog" : "Settings", symbol: "gearshape", keys: "\u{2318},") {
+                dismiss(); model.showSettings()
+            }.keyboardShortcut(",")
+            Spacer(minLength: FrogStyle.space8)
+            footerButton("Quit", symbol: "power", keys: "\u{2318}Q") {
                 NSApplication.shared.terminate(nil)
             }.keyboardShortcut("q")
-        }.padding(.horizontal, FrogStyle.space4).padding(.top, FrogStyle.space4)
+        }.padding(.horizontal, FrogStyle.space2).padding(.top, FrogStyle.space4)
             .overlay(alignment: .top) { Rectangle().fill(FrogStyle.hairline).frame(height: 1) }
     }
 
-    private func footerButton(_ title: String, symbol: String, key: String, key2: String, tint: Color,
-                              perform: @escaping () -> Void) -> some View {
+    private func footerButton(_ title: String, symbol: String, keys: String, perform: @escaping () -> Void) -> some View {
         Button(action: perform) {
             HStack(spacing: FrogStyle.space6) {
-                Image(systemName: symbol).font(FrogType.label).foregroundStyle(tint)
-                Text(L10n.text(title)).font(FrogType.small).lineLimit(1)
-                HStack(spacing: 3) { KeyCap(key); KeyCap(key2) }
-            }.padding(.horizontal, FrogStyle.space8).frame(height: FrogStyle.controlHeight).contentShape(Rectangle())
+                Image(systemName: symbol).font(FrogType.label).foregroundStyle(FrogStyle.muted)
+                Text(L10n.text(title)).font(FrogType.small).lineLimit(1).fixedSize()
+                KeyCap(keys)
+            }.padding(.horizontal, FrogStyle.space6).frame(height: FrogStyle.controlHeight).contentShape(Rectangle())
         }.buttonStyle(MenuRowStyle())
     }
 }
@@ -161,7 +161,7 @@ struct PhoneMenuRow: View {
         let connected = phone.overall != .offline
         MenuActionRow(title: "Phone", symbol: connected ? "iphone" : "iphone.slash",
                       key: L10n.text(phone.statusText), dot: connected ? FrogStyle.good : nil,
-                      tint: connected ? FrogStyle.good : FrogStyle.muted, closes: true, action: open)
+                      tint: connected ? PluginTint.green.color : PluginTint.gray.color, closes: true, action: open)
     }
 }
 
@@ -172,8 +172,8 @@ struct MenuActionRow: View {
     var key: String? = nil
     /// A status dot before `key`, such as green for a connected phone.
     var dot: Color? = nil
-    /// The colour of the icon tile; neutral unless the row has a meaning of its own.
-    var tint: Color = FrogStyle.muted
+    /// The colour of the icon tile: the feature's own colour, or a fixed grey that reads the same in light and dark.
+    var tint: Color = PluginTint.gray.color
     /// Closes the popup first, for rows that open something else.
     var closes = false
     let action: () -> Void

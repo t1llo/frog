@@ -105,20 +105,24 @@ import SwiftUI
     isolated deinit { stop() }
 }
 
-/// The overview from Frog's System tab, on its own beneath the menu-bar item.
+/// The overview from Frog's System tab, on its own beneath the menu-bar item, in the popup template: the
+/// feature's header, the overview, and a footer that says whether readings are live.
 struct SystemMonitorStatusPopover: View {
     @ObservedObject var monitor: SystemMonitor
     let openPage: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 7) {
-                PluginIconTile(symbol: "gauge.medium", tint: FrogStyle.accent, size: .sidebar)
-                Text("System").font(FrogType.section)
-                Spacer()
+            StatusPopupHeader(symbol: SystemMonitorPlugin.info.symbol, tint: SystemMonitorPlugin.info.tint, title: "System") {
                 IconAction(title: "Open System monitor", symbol: "arrow.up.forward.app", bordered: true, action: openPage)
-            }.padding(.horizontal, FrogStyle.space6).frame(height: 40)
+            }
             SystemMonitorView(monitor: monitor, presenter: .statusPopup).padding(.bottom, FrogStyle.space8)
-            PanelFooter(symbol: "gauge.medium", name: "System", showsActions: false, closeTitle: "Close")
+            StatusPopupFooter {
+                let live = monitor.history.count >= 2
+                HStack(spacing: FrogStyle.space6) {
+                    Circle().fill(live ? FrogStyle.good : FrogStyle.muted).frame(width: 6, height: 6)
+                    Text(L10n.text(live ? "Live" : "Measuring…"))
+                }
+            }
         }.padding(FrogStyle.panelCardInset).frame(width: 292).fixedSize(horizontal: false, vertical: true)
             .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()

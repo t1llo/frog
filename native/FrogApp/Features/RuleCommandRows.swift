@@ -11,11 +11,11 @@ import FrogCore
         }.map { rule in
             CommandBarRow(record: SearchRecord(id: "rule:\(rule.id)", title: rule.action?.systemAction?.title ?? rule.name,
                                                subtitle: rule.answersInPanel ? "Shows the answer in a panel" : "Run \(rule.category.title.lowercased()) rule",
-                                               symbol: rule.category == .audio ? "waveform" : "command"),
+                                               symbol: rule.category == .audio ? "waveform" : SelectionBubbleItems.symbol(for: rule)),
                           primary: CommandRowAction(title: "Run") { [weak model] in
                 guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message(CommandBarContext.targetChanged) }
                 model?.runRuleFromCommandBar(rule.id)
-            })
+            }, tint: rule.category == .audio ? .red : rule.answersInPanel ? .teal : .green)
         }
     }
 }
@@ -30,7 +30,7 @@ import FrogCore
                           primary: CommandRowAction(title: "Arrange") { [weak model] in
                 guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message(CommandBarContext.targetChanged) }
                 model?.runWindowAction(action)
-            })
+            }, tint: .purple)
         }
     }
 }

@@ -13,7 +13,7 @@ final class WindowSwitcherLayoutTests: XCTestCase {
     func testAlwaysRoomForOneRowAndNeverMoreThanTheVisibleRows() {
         XCTAssertEqual(WindowSwitcherLayout.size(windowCount: 0).height, WindowSwitcherLayout.size(windowCount: 1).height)
         XCTAssertEqual(WindowSwitcherLayout.size(windowCount: 0, queryVisible: true).height,
-                       2 * FrogStyle.panelInset + WindowSwitcherLayout.rowHeight + WindowSwitcherLayout.queryLineHeight)
+                       2 * FrogStyle.panelInset + WindowSwitcherLayout.rowHeight + WindowSwitcherLayout.queryLineHeight + WindowSwitcherLayout.footerHeight)
         XCTAssertEqual(WindowSwitcherLayout.size(windowCount: 50).height,
                        WindowSwitcherLayout.size(windowCount: WindowSwitcherLayout.visibleRows).height)
     }
