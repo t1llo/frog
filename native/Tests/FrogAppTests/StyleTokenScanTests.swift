@@ -89,6 +89,36 @@ final class StyleTokenScanTests: XCTestCase {
         try assertNoMatch(#"Text\(.*\.font\(\.system\(size: 9\)\)"#, "use FrogType.caption")
     }
 
+    /// A search sits in the row above the list it filters (`ListToolbar`), never in a header or beside an add button.
+    /// The sidebar, a dropdown's own list and the gallery keep their own field.
+    func testSearchSitsInTheListToolbar() throws {
+        try assertNoMatch(#"\bSearchBox\("#, "put the search in a ListToolbar above the list it filters",
+                          except: ["Views/CompactControls.swift", "Views/MainView.swift", "Views/Design/FrogDropdown.swift",
+                                   "Views/Design/DesignGallery.swift"])
+    }
+
+    /// Every popup, panel and menu has one footer, `FrogFooter`; nothing draws its own band.
+    func testEveryFooterIsFrogFooter() throws {
+        try assertNoMatch(#"\.frogFooterBand\(\)"#, "use FrogFooter, PanelFooter or FrogPopupFooter",
+                          except: ["Views/PanelFooter.swift"])
+    }
+
+    /// One cap per key: a shortcut of several keys is `KeyCaps`, never one `KeyCap` holding them all.
+    func testShortcutsAreOneCapPerKey() throws {
+        try assertNoMatch(#"\bKeyCap\("[⌃⌥⇧⌘][^"]+"|\bKeyCap\(shortcut|\bKeyCap\(action\.keys"#, "use KeyCaps, one cap per key")
+    }
+
+    /// Glyphs mean one thing: a ring or dot reads as record, so Stop is `stop.fill`; `plus` only adds.
+    func testGlyphsMeanOneThing() throws {
+        try assertNoMatch(#""stop\.circle(\.fill)?""#, "use stop.fill for Stop")
+        try assertNoMatch(#"case \.center: name = "plus""#, "use rectangle.center.inset.filled for Center")
+    }
+
+    /// Services take their tile from `ServiceMark`, so none falls back to a generic computer, terminal or server.
+    func testServicesUseTheirOwnMark() throws {
+        try assertNoMatch(#"PluginIconTile\(symbol: [^)]*"(desktopcomputer|server\.rack|terminal\.fill)""#, "use PluginIconTile(mark: ServiceMark…)")
+    }
+
     private func assertNoMatch(_ pattern: String, _ advice: String, except files: Set<String> = [],
                                file: StaticString = #filePath, line: UInt = #line) throws {
         let expression = try NSRegularExpression(pattern: pattern)
