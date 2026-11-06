@@ -82,7 +82,8 @@ struct SystemMonitorOverview: View {
 
     var body: some View {
         let sample = inspectedSample
-        VStack(spacing: FrogStyle.space8) {
+        // Cards a popup's 8 apart in a popup; on the page, where cards stand alone, 16.
+        VStack(spacing: wide ? FrogStyle.space16 : FrogStyle.space8) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 8) {
                     legend("CPU", color: FrogStyle.series, text: sample.map { percent($0.cpu) } ?? percent(snapshot.cpu))
@@ -93,7 +94,8 @@ struct SystemMonitorOverview: View {
                 }
                 if history.count < 2 {
                     // Hold the graph's place, so the card does not grow when the first readings arrive. The figures'
-                    // skeleton bars already say they are being measured, so the graph adds no second note.
+                    // skeleton bars and the footer's "Measuring…" already say they are being measured, so the graph
+                    // adds no third note.
                     FrogChartPlaceholder(height: wide ? 150 : 54) { EmptyView() }.accessibilityLabel("Measuring")
                 } else {
                     SystemMonitorGraph(history: history, inspected: $inspected, sample: sample, wide: wide).equatable().frame(height: wide ? 150 : 54)
@@ -117,7 +119,8 @@ struct SystemMonitorOverview: View {
         let fraction = sample != nil ? sample?.memory : snapshot.memory?.fraction
         let level = fraction.map { FrogStyle.level($0, warning: 0.8, critical: 0.92) }
         // The dot is the meter's colour, so the three figures read as one legend.
-        return GraphLegend(color: level ?? FrogStyle.placeholder, title: "Memory") {
+        // Before the first reading it is the colour memory shows while it is fine, so the legend has its colours at once.
+        return GraphLegend(color: level ?? FrogStyle.series, title: "Memory") {
             if let fraction, let level {
                 Text(percent(.value(fraction))).font(GraphStyle.legendValue(page: wide)).monospacedDigit()
                     .frame(height: wide ? 34 : 24, alignment: .leading)
