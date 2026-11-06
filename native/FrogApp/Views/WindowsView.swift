@@ -206,7 +206,8 @@ private struct LayoutShortcutCell: View {
             if let issue {
                 Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10)).foregroundStyle(FrogStyle.warning).help(issue)
             }
-            Spacer(minLength: 8)
+            // Room for the recorder's hover clear button, so it never covers the name in a narrow column.
+            Spacer(minLength: HotkeyRecorder.clearButtonRoom)
             let active = rule.hotkey != nil || hovering || recording || focused
             HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: { value in
                 var updated = rule; updated.hotkey = value; updated.enabled = value != nil

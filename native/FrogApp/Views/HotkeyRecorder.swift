@@ -42,7 +42,7 @@ struct HotkeyRecorder: View {
                     .overlay(alignment: .leading) {
                         if clearable {
                             Button(action: clear) {
-                                Image(systemName: "xmark.circle.fill").foregroundStyle(FrogStyle.muted)
+                                Image(systemName: "xmark.circle.fill").font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
                                     .padding(.trailing, FrogStyle.space6).frame(height: FrogStyle.compactHeight).contentShape(Rectangle())
                             }
                             .buttonStyle(.plain).help(L10n.text("Clear shortcut")).accessibilityHidden(true)
@@ -72,6 +72,10 @@ struct HotkeyRecorder: View {
             // A recorder that comes back on screen must not still claim to be recording.
             .onDisappear { recording = false; hint = nil; model.endShortcutRecording(id) }
     }
+
+    /// How far the hover clear button reaches before the caps. A narrow row keeps at least this much free before its
+    /// recorder, so the button never lands on the row's title.
+    static let clearButtonRoom: CGFloat = 13 + FrogStyle.space6 + FrogStyle.space4
 
     private var clearable: Bool { showsClearButton && (hotkey != nil || recording) }
     private func clear() { hotkey = nil; recording = false; hint = nil }
@@ -156,6 +160,7 @@ private struct RecordedKeys: View {
     let hotkey: Hotkey
     @State private var hovering = false
     @Environment(\.frogKeyboardSurface) private var keyboardSurface
+    @Environment(\.frogRowAccessory) private var inRow
     var body: some View {
         KeyCaps(hotkey: hotkey)
             .padding(.horizontal, FrogStyle.space4).frame(height: FrogStyle.compactHeight)
@@ -165,5 +170,8 @@ private struct RecordedKeys: View {
             }
             .contentShape(Capsule())
             .onHover { hovering = $0 }
+            // In a row the last cap ends on the content edge, as a switch or button does; only the hover fill
+            // reaches past it.
+            .padding(.trailing, inRow ? -FrogStyle.space4 : 0)
     }
 }
