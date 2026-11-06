@@ -3,7 +3,7 @@ import Carbon
 import FrogCore
 import SwiftUI
 
-/// ⌘Space for Frog instead of Spotlight. Shared by first-run setup and the Command bar page.
+/// ⌘Space for Frog instead of Spotlight: two rows that sit in the Command bar page's Shortcut card.
 struct CommandBarSetupView: View {
     @EnvironmentObject private var model: AppModel
     @State private var issue: String?
@@ -12,8 +12,8 @@ struct CommandBarSetupView: View {
     private var assigned: Bool { plugin?.settings.shortcut.hotkey == shortcut }
 
     var body: some View {
-        FrogSection("Use instead of Spotlight") {
-            FrogRow("Free ⌘Space", caption: "In Keyboard Shortcuts → Spotlight, turn off “Show Spotlight search”.") {
+        Group {
+            FrogRow("Free ⌘Space from Spotlight", caption: "In Keyboard Shortcuts → Spotlight, turn off “Show Spotlight search”.") {
                 Button("Keyboard Settings") {
                     guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.keyboard?Shortcuts") else { return }
                     if !NSWorkspace.shared.open(url) { issue = "Open System Settings → Keyboard → Keyboard Shortcuts → Spotlight." }

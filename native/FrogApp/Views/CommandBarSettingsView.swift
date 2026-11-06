@@ -11,16 +11,17 @@ struct CommandBarSettingsView: View {
                 Button("Open") { plugin.show() }.buttonStyle(.frog())
             }
             FrogSection("Shortcut") {
-                FrogRow("Open the bar") {
+                FrogRow("Open the bar", caption: "Works in any app.") {
                     HotkeyRecorder(hotkey: Binding(get: { plugin.settings.shortcut.hotkey }, set: { key in
                         guard let key, let shortcut = try? Shortcut(key) else { return }
                         plugin.save { $0.shortcut = shortcut }
                     }), showsClearButton: false)
                 }
-                if let issue = plugin.shortcutIssue { FrogRowNote(text: issue, tone: FrogStyle.warning) }
+                // Using ⌘Space instead of Spotlight is part of choosing the shortcut, so it shares the card;
+                // its own rows say a shortcut problem, so the note is not repeated above them.
+                CommandBarSetupView()
             }
             CommandChoicesSection(plugin: plugin, choices: model.commandChoices)
-            CommandBarSetupView()
         }
     }
 }
