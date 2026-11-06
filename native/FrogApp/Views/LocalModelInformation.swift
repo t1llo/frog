@@ -1,35 +1,56 @@
 import SwiftUI
 import FrogCore
 
+/// A local model's facts as a table, with its links in one row.
 struct LocalModelInformation: View {
     let item: LocalModelDescriptor
     @Environment(\.dismiss) private var dismiss
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: FrogStyle.space16) {
             // A sheet is its own window, so its header keeps the title.
-            FrogPageHeader(title: item.name, subtitle: item.runtimeName).environment(\.frogToolbarTitle, false)
-            Text(item.languages).font(FrogType.body)
-            VStack(alignment: .leading, spacing: 8) {
-                SectionCaption(text: "Download source")
-                Text(item.repository).font(FrogType.body).textSelection(.enabled)
-                if let variant = item.variant { Text("Variant: \(variant)").font(FrogType.caption).textSelection(.enabled) }
-                HStack { Link("Model card ↗", destination: item.sourceURL); Link("Download files ↗", destination: item.filesURL) }
-            }
-            if let original = item.originalRepository, let url = URL(string: "https://huggingface.co/\(original)") {
-                VStack(alignment: .leading, spacing: 6) {
-                    SectionCaption(text: "Original model")
-                    Link(original + " ↗", destination: url)
+            FrogPageHeader(title: item.name, subtitle: "\(item.kind == .audio ? "Speech" : "Text") model · runs on this Mac after download")
+                .environment(\.frogToolbarTitle, false)
+            FrogSection {
+                fact("Languages", item.languages)
+                fact("Runtime", item.runtimeName)
+                fact("Download", item.downloadSize, note: "Memory use while running can be higher.")
+                fact("Source", item.repository)
+                if let variant = item.variant { fact("Variant", variant) }
+                if let original = item.originalRepository { fact("Based on", original) }
+                fact("License", item.license ?? "See the model card")
+                if item.backend == .whisperKit {
+                    FrogRowNote(text: "WhisperKit also installs the matching tokenizer from the upstream Hugging Face model.")
                 }
             }
-            Text("Download size: \(item.downloadSize). Runtime memory use can be higher.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-            Text("License: \(item.license ?? "See model card")").font(FrogType.caption)
-            if item.backend == .whisperKit {
-                Text("WhisperKit also installs the matching tokenizer from the upstream Hugging Face model.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-            }
-            Text("Runs locally after download.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-            HStack { Spacer(); Button("Done") { dismiss() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction) }
-        }.padding(FrogStyle.sheetPadding).frame(width: 450).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
+            HStack(spacing: FrogStyle.space8) {
+                Link(destination: item.sourceURL) { Label("Model card", systemImage: "arrow.up.right") }
+                Link(destination: item.filesURL) { Label("Files", systemImage: "arrow.up.right") }
+                if let original = item.originalRepository, let url = URL(string: "https://huggingface.co/\(original)") {
+                    Link(destination: url) { Label("Original model", systemImage: "arrow.up.right") }
+                }
+                Spacer()
+                Button("Done") { dismiss() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
+            }.labelStyle(TrailingIconLabelStyle())
+        }.padding(FrogStyle.sheetPadding).frame(width: 480).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
             .buttonStyle(.frog()).environment(\.locale, L10n.locale)
+    }
+
+    /// One fact: a dim label on the left, the value on the right.
+    private func fact(_ label: String, _ value: String, note: String? = nil) -> some View {
+        FrogRow(label) {
+            VStack(alignment: .trailing, spacing: FrogStyle.space2) {
+                Text(value).font(FrogType.body).foregroundStyle(FrogStyle.ink).textSelection(.enabled)
+                    .lineLimit(1).truncationMode(.middle).help(value)
+                if let note { Text(L10n.text(note)).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
+            }.frame(maxWidth: 300, alignment: .trailing)
+        }
+    }
+}
+
+/// A link's arrow after its text, as in "Model card ↗".
+private struct TrailingIconLabelStyle: LabelStyle {
+    func makeBody(configuration: LabelStyleConfiguration) -> some View {
+        HStack(spacing: FrogStyle.space4) { configuration.title; configuration.icon.font(.system(size: 10, weight: .semibold)) }
     }
 }
 
@@ -44,42 +65,51 @@ struct AddLocalModelView: View {
     @State private var inspection: Task<Void, Never>?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let empty = source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        VStack(alignment: .leading, spacing: FrogStyle.space16) {
             FrogPageHeader(title: "Add Hugging Face model", subtitle: "MLX text, WhisperKit speech, or supported Parakeet sources.")
                 .environment(\.frogToolbarTitle, false)
-            TextField("https://huggingface.co/owner/model", text: $source).textFieldStyle(.plain).font(FrogType.body)
-                .padding(.horizontal, 8).frogControlSurface()
-                .disabled(loading).onSubmit { inspect() }
-                .onChange(of: source) { _, _ in candidates = []; issue = nil }
-            Button("Example: huggingface.co/mlx-community/Qwen3-0.6B-4bit") { source = "https://huggingface.co/mlx-community/Qwen3-0.6B-4bit" }
-                .buttonStyle(.frog(.ghost)).disabled(loading)
-            HStack {
-                Button("Check source") { inspect() }.buttonStyle(.frog(.primary)).disabled(loading || source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                if loading { ProgressView().controlSize(.small) }
+            VStack(alignment: .leading, spacing: FrogStyle.space6) {
+                TextField("", text: $source, prompt: Text("https://huggingface.co/owner/model").foregroundStyle(FrogStyle.muted.opacity(0.6)))
+                    .textFieldStyle(.plain).font(FrogType.body)
+                    .padding(.horizontal, FrogStyle.space10).frogControlSurface(radius: FrogStyle.controlRadius)
+                    .accessibilityLabel("Hugging Face link")
+                    .disabled(loading).onSubmit { inspect() }
+                    .onChange(of: source) { _, _ in candidates = []; issue = nil }
+                // Under the field's text, not indented past it: a quiet line the user can click to fill it in.
+                HStack(spacing: FrogStyle.space4) {
+                    Text("For example").foregroundStyle(FrogStyle.muted)
+                    Button("huggingface.co/mlx-community/Qwen3-0.6B-4bit") { source = "https://huggingface.co/mlx-community/Qwen3-0.6B-4bit" }
+                        .buttonStyle(.plain).foregroundStyle(FrogStyle.ink).underline().disabled(loading)
+                }.font(FrogType.small).padding(.leading, FrogStyle.space10)
             }
-            if let issue { Text(issue).font(FrogType.caption).foregroundStyle(FrogStyle.warning).textSelection(.enabled) }
+            if let issue { InlineIssue(message: issue).textSelection(.enabled) }
             if !candidates.isEmpty {
                 ScrollView {
-                    VStack(spacing: 2) {
+                    FrogSection {
                         ForEach(candidates) { item in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(item.name).font(FrogType.bodyMedium)
-                                    Text(item.runtimeName).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                                }
-                                Spacer()
+                            FrogRow(item.name, caption: item.runtimeName) {
                                 Button(model.configuration.modelCatalog.contains(where: { $0.id == item.id }) ? "Show model" : "Add model") {
                                     do { try model.addLocalModel(item); onAdded(item); dismiss() } catch { issue = error.localizedDescription }
-                                }
-                            }.padding(8)
+                                }.buttonStyle(.frog(compact: true))
+                            }
                         }
-                    }.padding(6).frogTableSurface()
-                }.frame(maxHeight: 250)
+                    }
+                }.frame(maxHeight: 250).fixedSize(horizontal: false, vertical: true)
             }
-            Text("Checking reads metadata. Download installs the model separately. Use MLX, WhisperKit or a supported Parakeet conversion.")
-                .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-            HStack { Spacer(); Button("Cancel") { inspection?.cancel(); dismiss() }.keyboardShortcut(.cancelAction) }
-        }.padding(FrogStyle.sheetPadding).frame(width: 520).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
+            HStack(spacing: FrogStyle.space8) {
+                if loading {
+                    ProgressView().controlSize(.small)
+                    Text("Reading the model's details…").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                } else {
+                    Text("Checking reads only its details.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                }
+                Spacer()
+                Button("Cancel") { inspection?.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Check source") { inspect() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
+                    .disabled(loading || empty)
+            }
+        }.padding(FrogStyle.sheetPadding).frame(width: 540).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
             .buttonStyle(.frog()).environment(\.locale, L10n.locale)
             .onDisappear { inspection?.cancel() }
     }
