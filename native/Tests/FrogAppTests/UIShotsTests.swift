@@ -138,6 +138,12 @@ final class UIShotsTests: XCTestCase {
             SwitcherWindow(id: UUID(), pid: 5, appName: "Calendar", title: "November", minimized: false, hidden: false)
         ]
         switcher.selected = switcher.windows[1].id
+        // macOS's own apps, so the rows show real icons as they do on a Mac.
+        for (pid, path) in [(1, "/Applications/Safari.app"), (2, "/System/Applications/Notes.app"), (3, "/System/Applications/Utilities/Terminal.app"),
+                            (4, "/System/Applications/Mail.app"), (5, "/System/Applications/Calendar.app")] where FileManager.default.fileExists(atPath: path) {
+            switcher.icons[pid_t(pid)] = NSWorkspace.shared.icon(forFile: path)
+        }
+        switcher.shortcuts[2] = "⌥N"
         try await popup("window-switcher", size: WindowSwitcherLayout.size(windowCount: switcher.windows.count)) {
             WindowSwitcherOverlay(model: switcher, choose: { _ in }, hover: { _ in })
         }
@@ -195,7 +201,7 @@ final class UIShotsTests: XCTestCase {
         let states: [(String, AnswerSession, (AnswerPanelModel) -> Void)] = [
             ("answer-panel", session { $0.apply(.text(Self.answer)); $0.complete() }, { $0.offersNotes = true; $0.canSaveNote = true }),
             ("answer-panel-streaming", session { $0.apply(.text(String(Self.answer.prefix(120)))) }, { _ in }),
-            ("answer-panel-failed", session { $0.fail("Ollama is not running. Start it and try again.") }, { $0.recovery = .retry })
+            ("answer-panel-failed", session { $0.modelName = "qwen3:4b"; $0.modelLabel = "qwen3:4b · Ollama"; $0.fail("Ollama is not running. Start it and try again.") }, { $0.recovery = .retry })
         ]
         for (name, session, configure) in states where wanted(name) {
             let panel = AnswerPanelModel()
@@ -215,10 +221,10 @@ final class UIShotsTests: XCTestCase {
         let items = [
             BubbleItem(id: UUID(), title: "Explain", symbol: SelectionBubbleItems.answerSymbol, answers: true,
                        hotkey: Hotkey(keyCode: 14, modifiers: 4096 | 2048)),
-            BubbleItem(id: UUID(), title: "Define", symbol: SelectionBubbleItems.answerSymbol, answers: true),
-            BubbleItem(id: UUID(), title: "Proofread", symbol: SelectionBubbleItems.writingSymbol, answers: false, hotkey: shortcut),
-            BubbleItem(id: UUID(), title: "Polish email", symbol: SelectionBubbleItems.writingSymbol, answers: false),
-            BubbleItem(id: UUID(), title: "Translate to German", symbol: SelectionBubbleItems.writingSymbol, answers: false)
+            BubbleItem(id: UUID(), title: "Define", symbol: "book", answers: true),
+            BubbleItem(id: UUID(), title: "Proofread", symbol: "checkmark.circle", answers: false, hotkey: shortcut),
+            BubbleItem(id: UUID(), title: "Polish email", symbol: "envelope", answers: false),
+            BubbleItem(id: UUID(), title: "Translate to German", symbol: "globe", answers: false)
         ]
         let pointer = BubblePointer()
         try await popup("selection-bubble") {
@@ -235,9 +241,13 @@ final class UIShotsTests: XCTestCase {
 
     private func dictation(root: URL) async throws {
         guard wanted("dictation-popup") else { return }
+        // The recording reads 0:14 once it is under way, so the timer matches the sentence already transcribed.
+        final class SampleClock { var started = false }
+        let clock = SampleClock(), start = ContinuousClock.now
         try ConfigurationStore(directory: root).save(Configuration())
         let controller = DictationController(makeRecorder: { SampleRecording() }, authorize: { true }, copy: { _ in },
-                                             monitorKeys: false, inputDevices: { [] }, presentsPopup: false)
+                                             monitorKeys: false, inputDevices: { [] },
+                                             now: { start.advanced(by: clock.started ? .seconds(14) : .zero) }, presentsPopup: false)
         let model = AppModel(dataDirectory: root, registerShortcuts: false, readKey: { _ in nil }, dictationController: controller,
                              systemStatusTick: { try await Task.sleep(for: .seconds(3_600)) })
         defer { controller.cancel(); model.shutdown() }
@@ -248,6 +258,7 @@ final class UIShotsTests: XCTestCase {
         rule.action?.showRecordingPopup = false
         model.startDictation(rule)
         await controller.waitForWork()
+        clock.started = true
         controller.updatePreview("Let's move the design review to Thursday afternoon, and send the new screenshots before then.")
         controller.refreshRecordingFeedback(elapsed: 14)
         let frame = DictationPopupLayout.frame(phase: controller.phase, text: controller.liveText,
