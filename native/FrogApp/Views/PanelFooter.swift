@@ -6,17 +6,11 @@ import FrogCore
 /// colour followed by its keys as caps ("Paste ↩", "Close esc"). `PanelFooter`, `FrogPopupFooter`, the Frog menu and
 /// clipboard history all draw this; nothing else draws a footer.
 struct FrogFooter<Status: View, Actions: View>: View {
-    /// Where the footer sits: `.panel` along the bottom of a popup or floating panel, whose hint buttons reach past
-    /// the band's inset with their hover fill; `.card` along the bottom of a card (the Notes and Scripts editor),
-    /// whose actions are controls that end on the card's content edge.
-    enum Placement { case panel, card }
-
-    var placement: Placement = .panel
     @ViewBuilder var status: Status
     @ViewBuilder var actions: Actions
 
-    init(_ placement: Placement = .panel, @ViewBuilder status: () -> Status, @ViewBuilder actions: () -> Actions) {
-        self.placement = placement; self.status = status(); self.actions = actions()
+    init(@ViewBuilder status: () -> Status, @ViewBuilder actions: () -> Actions) {
+        self.status = status(); self.actions = actions()
     }
 
     var body: some View {
@@ -30,7 +24,7 @@ struct FrogFooter<Status: View, Actions: View>: View {
             // Hints that are buttons reach past the edge only with their hover fill; their own 6-point padding is
             // the gap between them.
             HStack(spacing: FrogStyle.space4) { actions }
-                .padding(.trailing, placement == .panel ? -FrogStyle.space6 : 0).layoutPriority(1)
+                .padding(.trailing, -FrogStyle.space6).layoutPriority(1)
         }
         .frogFooterBand()
         .accessibilityElement(children: .contain)
