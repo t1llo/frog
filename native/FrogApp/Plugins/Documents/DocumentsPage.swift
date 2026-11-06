@@ -147,8 +147,12 @@ struct DocumentsPage<Toolbar: View, Content: View, Footer: View>: View {
 
     /// "Today 18:07 · Best, Anna": when it last changed, then its first line.
     private static func detail(_ item: UtilityDocument) -> String {
-        let first = item.text.split(whereSeparator: \.isNewline).lazy
-            .map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty }
+        // Stops at the first line with text, so a long note is not split whole for every row on every keystroke.
+        var first: String?
+        item.text.enumerateLines { line, stop in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty { first = trimmed; stop = true }
+        }
         let time = RecentTimestamp.text(item.modified)
         guard let first else { return time + " · " + L10n.text(item.files.isEmpty ? "Empty" : "Files") }
         return time + " · " + first
@@ -190,6 +194,8 @@ struct DocumentsPage<Toolbar: View, Content: View, Footer: View>: View {
     }
 
     private func startRenaming(_ id: UUID) {
+        // A rename still open on another item keeps what was typed, rather than taking this item's title.
+        if renaming != nil, renaming != id { commitRename() }
         draftTitle = all.first { $0.id == id }?.title ?? ""
         renaming = id
         DispatchQueue.main.async { renameFocused = true }
