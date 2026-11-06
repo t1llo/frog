@@ -96,7 +96,11 @@ private struct ClipboardPageRow: View {
         .frogRowHighlight(hovering: hovering)
         .onHover { hovering = $0 }
         .contextMenu { menu }
+        // The hover actions are hidden from VoiceOver until hovered, so the row itself offers every one of them.
+        .accessibilityElement(children: .combine)
         .accessibilityAction(named: Text("Copy")) { store.copy(entry) }
+        .accessibilityAction(named: Text("Copy as plain text")) { store.copy(entry, plainText: true) }
+        .accessibilityAction(named: Text("Remove")) { store.delete(id: entry.id) }
     }
 
     @ViewBuilder private var menu: some View {
