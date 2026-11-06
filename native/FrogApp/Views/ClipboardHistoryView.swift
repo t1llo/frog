@@ -35,8 +35,9 @@ enum ClipboardHistoryLayout {
     }
 }
 
-/// What a copied text looks like, so a list can tell a link from code or a sentence at a glance.
-enum ClipboardContentKind: Equatable {
+/// What a copied text looks like, so a list can tell a link from code or a sentence at a glance. Each
+/// `ClipboardHistoryEntry` works its kind out once, from its full text.
+enum ClipboardContentKind: Equatable, Sendable {
     case link, email, path, color, number, code, richText, text
 
     init(_ text: String, formatted: Bool = false) {
@@ -44,13 +45,17 @@ enum ClipboardContentKind: Equatable {
         let single = !trimmed.contains("\n")
         let lower = trimmed.lowercased()
         if single, !trimmed.contains(" "), lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.hasPrefix("www.") { self = .link }
-        else if single, !trimmed.contains(" "), trimmed.matches(#"^[^@\s]+@[^@\s]+\.[a-zA-Z]{2,}$"#) { self = .email }
+        else if single, !trimmed.contains(" "), Self.emailPattern.matches(trimmed) { self = .email }
         else if single, trimmed.hasPrefix("/") || trimmed.hasPrefix("~/"), trimmed.count < 400 { self = .path }
-        else if single, trimmed.matches(#"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"#) { self = .color }
-        else if single, !trimmed.isEmpty, trimmed.matches(#"^[-+]?[0-9][0-9.,\s]*%?$"#) { self = .number }
+        else if single, Self.colorPattern.matches(trimmed) { self = .color }
+        else if single, !trimmed.isEmpty, Self.numberPattern.matches(trimmed) { self = .number }
         else if Self.looksLikeCode(trimmed) { self = .code }
         else { self = formatted ? .richText : .text }
     }
+
+    private static let emailPattern = try! NSRegularExpression(pattern: #"^[^@\s]+@[^@\s]+\.[a-zA-Z]{2,}$"#)
+    private static let colorPattern = try! NSRegularExpression(pattern: #"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"#)
+    private static let numberPattern = try! NSRegularExpression(pattern: #"^[-+]?[0-9][0-9.,\s]*%?$"#)
 
     /// Shell commands and source code: punctuation prose rarely has, or a command line's first word.
     private static func looksLikeCode(_ text: String) -> Bool {
@@ -100,8 +105,10 @@ enum ClipboardContentKind: Equatable {
     }
 }
 
-private extension String {
-    func matches(_ pattern: String) -> Bool { range(of: pattern, options: .regularExpression) != nil }
+private extension NSRegularExpression {
+    func matches(_ text: String) -> Bool {
+        firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+    }
 }
 
 /// The clipboard history panel: a search that has the cursor, the items it matches, and the keys. Nothing in
@@ -187,7 +194,7 @@ struct ClipboardHistoryView: View {
 
     private func row(_ entry: ClipboardHistoryEntry, selected: Bool) -> some View {
         HStack(spacing: 10) {
-            let kind = ClipboardContentKind(entry.preview, formatted: !entry.formatting.isEmpty)
+            let kind = entry.kind
             PluginIconTile(symbol: kind.symbol, tint: kind.tint.color, size: .sidebar).help(L10n.text(kind.title))
             Text(entry.preview).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)

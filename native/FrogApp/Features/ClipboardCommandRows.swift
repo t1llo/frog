@@ -18,7 +18,7 @@ import FrogCore
         let target = context.pasteTarget, retention = store.retentionGeneration, pasteboard = context.pasteboard
         let waitForRelease = context.waitForRelease, toolUse = context.toolUse
         return (pending ?? store.entries).filter { !$0.isSensitive }.map { entry in
-            let kind = ClipboardContentKind(entry.preview, formatted: !entry.formatting.isEmpty)
+            let kind = entry.kind
             let copy = CommandRowAction(title: "Copy") { [weak model] in
                 guard let model, model.configuration.preferences.featureEnabled(.clipboard), model.clipboardHistoryStore.copy(entry) else {
                     throw FrogError.message("The clipboard item is no longer available.")

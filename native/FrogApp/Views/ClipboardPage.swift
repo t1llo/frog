@@ -73,7 +73,7 @@ private struct ClipboardPageRow: View {
     var body: some View {
         HStack(spacing: 10) {
             // The same kind tile as the clipboard history panel.
-            let kind = ClipboardContentKind(entry.preview, formatted: !entry.formatting.isEmpty)
+            let kind = entry.kind
             PluginIconTile(symbol: kind.symbol, tint: kind.tint.color, size: .sidebar).help(L10n.text(kind.title))
                 .accessibilityLabel(L10n.text(kind.title))
             Text(entry.preview).font(kind == .code ? FrogType.mono : FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
