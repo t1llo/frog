@@ -49,6 +49,21 @@ final class RuleConfigurationTests: XCTestCase {
         XCTAssertEqual(try ConfigurationFile.decode(ConfigurationFile.encode(config)), config)
     }
 
+    func testOnlyTheUntouchedDictationPresetTakesItsNewNameEveryLaunchAndOnce() {
+        var config = Configuration()
+        config.explicitRuleModels = true
+        var old = Rule.dictationPreset; old.name = "Dictate"
+        var renamed = Rule.dictationPreset; renamed.id = UUID(); renamed.name = "Notes by voice"
+        var handMade = Rule.dictationPreset; handMade.id = UUID(); handMade.preset = false; handMade.name = "Dictate"
+        let text = Rule(name: "Dictate", preset: true)
+        config.rules = [old, renamed, handMade, text]
+        config.adoptExplicitRuleSettings(installed: [])
+        XCTAssertEqual(config.rules.map(\.name), ["Dictation", "Notes by voice", "Dictate", "Dictate"])
+        let once = config
+        config.adoptExplicitRuleSettings(installed: [])
+        XCTAssertEqual(config, once)
+    }
+
     func testMigrationKeepsTheAppearanceSomeoneChoseOrLeftOut() {
         for mode in [nil, .system, .light] as [AppearancePreferences.Mode?] {
             var config = Configuration()
