@@ -122,7 +122,7 @@ struct DesignGallery: View {
                 HStack(spacing: 8) {
                     Button("Save") {}.buttonStyle(.frog(.primary))
                     Button("Cancel") {}
-                    Button("Reset") {}.buttonStyle(.frog(.ghost))
+                    Button("Skip") {}.buttonStyle(.frog(.ghost))
                     Button("Delete") {}.buttonStyle(.frog(.destructive))
                     Button("Disabled") {}.disabled(true)
                     Button("Use model") {}.buttonStyle(.frog(.primary)).frogDisabled("Choose a model first")
@@ -130,8 +130,7 @@ struct DesignGallery: View {
                 HStack(spacing: 8) {
                     Button("Compact") {}.buttonStyle(.frog(.primary, compact: true))
                     Button("Compact") {}.buttonStyle(.frog(compact: true))
-                    Button("Ghost") {}.buttonStyle(.frog(.ghost, compact: true))
-                    IconAction(title: "Copy", symbol: "doc.on.doc") {}
+                                        IconAction(title: "Copy", symbol: "doc.on.doc") {}
                     IconAction(title: "Remove", symbol: "trash", destructive: true) {}
                     IconAction(title: "Add", symbol: "plus", bordered: true) {}
                     IconMenu(title: "More") { Button("Rename") {} }

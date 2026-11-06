@@ -1,8 +1,10 @@
 import SwiftUI
 import FrogCore
 
-/// The answer next to a selection: one quiet line for the rule and its model, the answer and its follow-ups, what is
-/// happening now, and a field for the next question with the actions as icons beside it.
+/// The answer next to a selection: one quiet line for the rule and its model, the answer and its follow-ups, a failure
+/// or the limit with its fix, a field for the next question, and the shared footer band: what is happening on the
+/// leading side ("Answering…" with a breathing dot) and the actions with their keys on the trailing side, Stop ⌘. and
+/// Close esc while it runs, Copy ⌘↩, Save ⌘S and Close esc once it is done, as in every other panel.
 struct AnswerPanelView: View {
     @ObservedObject var model: AnswerPanelModel
     @State private var contentHeight: CGFloat = 0
@@ -43,7 +45,8 @@ struct AnswerPanelView: View {
                 statusLine
                 // A stop without any answer has nothing to ask about, copy or save. A failure without one offers only
                 // its fix (Retry) on the status line: a field that could not be used until then only got in the way.
-                if hasAnswer || model.session?.phase.isRunning == true { footer }
+                if hasAnswer || model.session?.phase.isRunning == true { followUp }
+                footer
             }
             .measured(ChromeHeightKey.self)
         }
@@ -74,9 +77,9 @@ struct AnswerPanelView: View {
                 }
             }
             Spacer(minLength: 8)
+            // Close is in the footer with its key; the pin is the header's one control, as it belongs to the panel.
             let pinTitle = model.pinned ? "Stop keeping open" : "Keep open"
             PanelIcon(symbol: model.pinned ? "pin.fill" : "pin", title: pinTitle, active: model.pinned) { model.togglePin() }
-            PanelIcon(symbol: "xmark", title: "Close", help: "Close (Esc)") { model.close() }
         }
         .foregroundStyle(FrogStyle.muted).lineLimit(1)
     }
@@ -89,11 +92,8 @@ struct AnswerPanelView: View {
                     AnswerMarkdown(text: turn.answer)
                 }
                 if let pending = session.pendingQuestion, !session.turns.isEmpty { question(pending).id(Self.followUpID) }
-                if !session.partial.isEmpty {
-                    // A trailing ellipsis marks the stream as still coming; it leaves once the answer is done.
-                    let streaming = session.phase == .streaming
-                    AnswerMarkdown(text: streaming ? Self.trimmedForCaret(session.partial) + " …" : session.partial)
-                }
+                // The footer says the answer is still coming, so the text carries no marker of its own.
+                if !session.partial.isEmpty { AnswerMarkdown(text: session.partial) }
             }
             .font(FrogType.body).lineSpacing(3)
             .textSelection(.enabled)
@@ -102,11 +102,6 @@ struct AnswerPanelView: View {
 
     private static let followUpID = "follow-up"
 
-    /// The stream without its trailing spaces, so the ellipsis sits right after the last word.
-    static func trimmedForCaret(_ text: String) -> String {
-        String(text.reversed().drop(while: { $0 == " " || $0 == "\n" }).reversed())
-    }
-
     /// Space sets each follow-up apart from the answer before it.
     private func question(_ text: String) -> some View {
         Text(text).font(FrogType.label).foregroundStyle(FrogStyle.muted)
@@ -114,13 +109,13 @@ struct AnswerPanelView: View {
             .padding(.top, 8)
     }
 
-    /// A note that could not be saved takes the line until the next action.
+    /// How the answer ended when that needs saying (a failure, Stopped, the limit) with its fix; a note that could not
+    /// be saved takes the line until the next action. While the answer runs, the footer says what is happening.
     @ViewBuilder private var statusLine: some View {
-        if let session = model.session, let line = noteFailure ?? session.statusLine {
+        if let session = model.session, !session.phase.isRunning || noteFailure != nil, let line = noteFailure ?? session.statusLine {
             HStack(spacing: 8) {
-                if noteFailure == nil, session.phase.isPending { PulseDot() }
-                else if failed || noteFailure != nil {
-                    Image(systemName: "exclamationmark.triangle.fill").font(FrogType.small).foregroundStyle(FrogStyle.warning)
+                if failed || noteFailure != nil {
+                    Image(systemName: ProcessingIndicator.failureSymbol).font(FrogType.small).foregroundStyle(FrogStyle.warning)
                         .accessibilityHidden(true)
                 }
                 // The triangle carries the warning colour; the message stays readable in the text colour.
@@ -141,44 +136,49 @@ struct AnswerPanelView: View {
         }
     }
 
-    private var footer: some View {
+    /// The next question, the panel's full width. It stays enabled while the answer runs, so it keeps focus and the
+    /// next question can be typed, then asked with Return once the answer is done.
+    private var followUp: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 2) {
-                // The shared field, so its placeholder is the lighter placeholder grey in light as in dark.
-                FrogTextField(placeholder: followUpPlaceholder, text: $model.question)
-                    .font(FrogType.row)
-                    .padding(.horizontal, FrogStyle.rowInset)
-                    .frogControlSurface(height: FrogStyle.controlHeight, radius: FrogStyle.controlRadius)
-                    // It stays enabled while the answer runs, so it keeps focus and the next question can be typed.
-                    .disabled(followUpBlocked || (failed && !hasAnswer))
-                    .onSubmit { model.ask(model.question) }
-                    .accessibilityLabel(L10n.text("Ask a follow-up"))
-                    .padding(.trailing, 4)
-                if model.session?.phase.isRunning == true {
-                    StopButton { model.stop() }
-                }
-                // A failure without any answer has nothing to copy, so it offers no Copy at all.
-                if hasAnswer || !failed {
-                    PanelIcon(symbol: model.copied ? "checkmark" : "doc.on.doc", title: model.copied ? "Copied" : "Copy",
-                              help: "Copy (⌘↩)", active: model.copied) { model.copy() }
-                        .disabled(!hasAnswer)
-                }
-                if model.offersNotes {
-                    let saved = model.noteState == .saved
-                    // Labelled: a bare tray-and-arrow reads as download, not as a note.
-                    PanelIcon(symbol: saved ? "checkmark" : "note.text.badge.plus", title: saved ? "Saved to note" : "Save to note",
-                              label: saved ? "Saved" : "Save", help: "Save to note (⌘S)", active: saved) { model.saveNote() }
-                        .disabled(saved || !model.canSaveNote)
-                }
-            }
+            // The shared field, so its placeholder is the lighter placeholder grey in light as in dark.
+            FrogTextField(placeholder: followUpPlaceholder, text: $model.question)
+                .font(FrogType.row)
+                .padding(.horizontal, FrogStyle.rowInset)
+                .frogControlSurface(height: FrogStyle.controlHeight, radius: FrogStyle.controlRadius)
+                .disabled(followUpBlocked || (failed && !hasAnswer))
+                .onSubmit { model.ask(model.question) }
+                .accessibilityLabel(L10n.text("Ask a follow-up"))
             if let message = model.followUpMessage {
                 Text(message).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        // Field and icons sit a panel inset from the edge, so their 10-point corners nest in the panel's 18.
+        // The field sits a panel inset from the edge, so its 10-point corners nest in the panel's 18.
         .padding(FrogStyle.panelInset)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The shared footer band. While the answer runs: what is happening and Stop; once it is done: Copy and, with
+    /// notes on, Save, each turning into what it did ("Copied", "Saved"). Close always, last.
+    private var footer: some View {
+        let running = model.session?.phase.isRunning == true
+        return FrogFooter {
+            if running {
+                PulseDot()
+                Text(L10n.text(model.session?.statusLine ?? "Answering…"))
+            }
+        } actions: {
+            if running {
+                FrogFooterHint("Stop", keys: "⌘.") { model.stop() }
+            } else {
+                if hasAnswer { FrogFooterHint(model.copied ? "Copied" : "Copy", keys: "⌘↩") { model.copy() } }
+                if model.offersNotes && hasAnswer {
+                    if model.noteState == .saved { FrogFooterHint("Saved", keys: "") }
+                    else if model.canSaveNote { FrogFooterHint("Save", keys: "⌘S") { model.saveNote() }.help(L10n.text("Save to note")) }
+                }
+            }
+            FrogFooterHint("Close", keys: "esc") { model.close() }
+        }
     }
 
     // MARK: State
@@ -246,34 +246,15 @@ private struct PanelIcon: View {
     }
 }
 
-/// Stops the answer while it runs: a round button with the stop glyph, the size of the icons beside it, filled so
-/// it reads as the one thing to press, never a bare square that looks like a record mark.
-private struct StopButton: View {
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "stop.fill").font(.system(size: 8, weight: .bold))
-                .foregroundStyle(FrogStyle.ink)
-                .frame(width: FrogStyle.compactHeight, height: FrogStyle.compactHeight)
-                .background(Circle().fill(hovering ? FrogStyle.pressed : FrogStyle.control))
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help(L10n.text("Stop (⌘.)")).accessibilityLabel(L10n.text("Stop"))
-    }
-}
-
 /// A quiet dot that breathes while the answer is on its way; it holds still under Reduce Motion.
 private struct PulseDot: View {
     @State private var on = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
+        // The repeating animation reaches the opacity only: scoped to the whole view it also carried the dot's first
+        // position along, so it slid in from the panel's corner when the footer appeared.
         Circle().fill(FrogStyle.muted).frame(width: 6, height: 6)
-            .opacity(on || reduceMotion ? 0.9 : 0.35)
-            .animation(reduceMotion ? nil : FrogMotion.pulse, value: on)
+            .animation(reduceMotion ? nil : FrogMotion.pulse) { $0.opacity(on || reduceMotion ? 0.9 : 0.35) }
             .onAppear { on = true }
             .accessibilityHidden(true)
     }

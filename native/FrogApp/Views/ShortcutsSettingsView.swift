@@ -65,9 +65,9 @@ struct ShortcutsSettingsView: View {
                 HotkeyRecorder(hotkey: Binding(get: { binding.key?.hotkey }, set: { hotkey in
                     do { try plugin.setKey(hotkey.flatMap { try? Shortcut($0) }, at: index) } catch { model.report(error) }
                 }), showsClearButton: false)
-                Button { save(plugin.bindings.enumerated().filter { $0.offset != index }.map(\.element)) } label: {
-                    Image(systemName: "minus")
-                }.buttonStyle(.frog(.ghost)).help("Remove").accessibilityLabel("Remove \(plugin.title(of: binding))")
+                IconAction(title: "Remove \(plugin.title(of: binding))", symbol: "xmark") {
+                    save(plugin.bindings.enumerated().filter { $0.offset != index }.map(\.element))
+                }.help("Remove")
             }
         }
     }

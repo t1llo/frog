@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // Small components shared across surfaces: the status item popups' header and footer, a page's state pill,
 // commands in text, and badges.
@@ -121,6 +122,54 @@ struct FrogAddLabel: View {
                     .padding(.leading, FrogStyle.space2).accessibilityHidden(true)
             }
         }
+    }
+}
+
+// MARK: Sheet body
+
+/// The scrolling body of a sheet, between its header and its `FrogSheetButtons`. The sheet grows with its content up
+/// to `maxHeight` (and never taller than the screen leaves room for), so a sheet whose content fits shows all of it,
+/// with nothing faded or cut under its buttons. Only content taller than that scrolls, and only then does its bottom
+/// edge fade above the buttons, with that much empty margin after the last row, so scrolled to the end the last row
+/// and footnote sit whole above the fade.
+///
+///     FrogSheetScroll { FrogSection("Then") { … } }
+///     FrogSheetButtons { … } trailing: { … }
+///
+/// No sheet sets its own `frame(maxHeight:)`, `fixedSize` or `bottomScrollFade()` around its body.
+struct FrogSheetScroll<Content: View>: View {
+    /// The tallest the body grows before it scrolls.
+    var maxHeight: CGFloat = FrogSheetScrollMetrics.maxHeight
+    @ViewBuilder var content: Content
+    @State private var contentHeight: CGFloat = 0
+
+    init(maxHeight: CGFloat = FrogSheetScrollMetrics.maxHeight, @ViewBuilder content: () -> Content) {
+        self.maxHeight = maxHeight; self.content = content()
+    }
+
+    var body: some View {
+        let limit = min(maxHeight, FrogSheetScrollMetrics.screenLimit)
+        let overflows = contentHeight > limit + 0.5
+        ScrollView {
+            content.frame(maxWidth: .infinity, alignment: .leading)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+        }
+        .scrollIndicators(overflows ? .automatic : .never)
+        // Always the same modifier, so the content keeps its state when the sheet starts or stops scrolling.
+        .bottomScrollFade(height: overflows ? FrogSheetScrollMetrics.fade : 0)
+        .frame(maxHeight: limit).fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+enum FrogSheetScrollMetrics {
+    /// Tall enough for every sheet Frog has to show its whole body in the default window.
+    static let maxHeight: CGFloat = 560
+    /// The fade above the buttons while the body scrolls: tall enough to read as a fade, not as a cut line.
+    static let fade: CGFloat = FrogStyle.space16 * 2
+    /// What the screen leaves for a sheet's body once its header, buttons and the menu bar are taken off.
+    @MainActor static var screenLimit: CGFloat {
+        guard let screen = NSScreen.main else { return maxHeight }
+        return max(240, screen.visibleFrame.height - 260)
     }
 }
 

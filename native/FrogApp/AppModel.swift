@@ -1605,8 +1605,10 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             var ended = RuleOutcome.done
             var produced: String?
+            /// What the done pill names after the rule: "3 words changed", "Copied".
+            var summary: String?
             defer {
-                self.finish(ended, rule: rule.name, background: manualText == nil)
+                self.finish(ended, rule: rule.name, summary: summary, background: manualText == nil)
                 agentReply?(ended, produced)
                 self.isProcessing = false; self.processingForAgent = false; self.processingTask = nil
             }
@@ -1637,7 +1639,9 @@ final class AppModel: ObservableObject {
                 if selection != nil, rule.textOutput == .copy {
                     self.writeClipboard(result)
                     self.clipboardHistoryStore.recordCopiedText(result)
+                    summary = L10n.text("Copied")
                 } else if let selection {
+                    summary = text == result ? L10n.text("No changes") : HistoryDiff(original: text, result: result)?.summary
                     do { try await selection.replace(with: result) }
                     catch is CancellationError { throw CancellationError() }
                     catch {
@@ -1680,9 +1684,9 @@ final class AppModel: ObservableObject {
 
     /// `background`: a shortcut ran the rule, so the processing indicator shows how it ended.
     /// `rule` names what failed in the status pill ("Proofread failed: …").
-    private func finish(_ outcome: RuleOutcome, rule: String? = nil, background: Bool) {
+    private func finish(_ outcome: RuleOutcome, rule: String? = nil, summary: String? = nil, background: Bool) {
         ruleOutcome = outcome
-        if background, showsProcessingIndicator { processingIndicator.show(outcome, rule: rule) }
+        if background, showsProcessingIndicator { processingIndicator.show(outcome, rule: rule, summary: summary) }
     }
 
     private func showIndicatorWorking(rule: String) {

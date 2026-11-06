@@ -79,7 +79,7 @@ private struct PhonePairingSection: View {
                         Text("Scan with Frog Companion").font(FrogType.section).foregroundStyle(FrogStyle.ink)
                         Text("The code works for 10 minutes.").font(FrogType.body).foregroundStyle(FrogStyle.muted)
                         FrogLoadingNote(text: "Waiting for your phone…")
-                        Button("Cancel", action: close).buttonStyle(.frog(.ghost, compact: true)).padding(.top, 6)
+                        Button("Cancel", action: close).buttonStyle(.frog(compact: true)).padding(.top, 6)
                     }
                     Spacer(minLength: 0)
                 }.padding(.vertical, 12)
@@ -173,7 +173,7 @@ private struct PhoneRecentsSection: View {
 
     var body: some View {
         FrogSection("Recent", accessory: {
-            Button("Clear") { withAnimation(FrogMotion.exit) { phone.clearRecents() } }.buttonStyle(.frog(.ghost, compact: true))
+            Button("Clear") { withAnimation(FrogMotion.exit) { phone.clearRecents() } }.buttonStyle(.frog(compact: true))
         }) {
             ForEach(phone.recents) { item in PhoneRecentRow(item: item) }
         }
@@ -214,7 +214,7 @@ private struct PhoneRecentRow: View {
             }
             Spacer(minLength: 8)
             if let url = item.fileURL, item.direction == .received {
-                IconAction(title: "Show in Finder", symbol: "folder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                IconAction(title: "Show in Finder", symbol: "arrow.up.forward") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             }
         }.padding(.vertical, 6).frame(minHeight: FrogStyle.rowHeight)
     }

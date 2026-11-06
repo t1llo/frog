@@ -93,6 +93,9 @@ enum FrogStyle {
     /// The gap between the sidebar's groups, under Frog's row, above the pinned rows and under the search field:
     /// one value, so the groups read as evenly spaced.
     static let sidebarGroupGap: CGFloat = space10
+    /// A group's header in the sidebar (Write, Find & launch, Plugins): its 11-point name sits on the bottom of this
+    /// height, a little over the first row.
+    static let sidebarHeaderHeight: CGFloat = 18
     /// How far the main window's sidebar panel floats in from the window's edges.
     static let sidebarInset: CGFloat = 8
     /// The bar above a page that holds back and forward and the page's title.
@@ -683,19 +686,20 @@ private struct FrogPanelSurface: ViewModifier {
     }
 }
 
-/// Frog's one button. The main window sets the secondary kind for every button inside it.
+/// Frog's one button, in three looks: the filled primary, the grey secondary pill, and the destructive pill (red
+/// on grey). The main window sets the secondary kind for every button inside it.
 struct FrogButtonStyle: ButtonStyle {
     enum Kind {
-        /// The one main action of a page, sheet or card.
+        /// The one main action of a page, sheet or card: filled with the accent.
         case primary
-        /// Every other action.
+        /// Every other action: a grey pill. Refresh, Rename…, Show details and Clear are secondary too.
         case secondary
-        /// Actions that sit beside content, such as Reset or Skip: the label in ink with no fill until hovered.
+        /// Only the setup assistant's ways on and out (Back, Skip, Skip setup, Import settings…): the label in ink
+        /// with no fill until hovered, so they read as navigation beside the one primary step, never as actions.
         case ghost
-        /// Removes or deletes something.
+        /// Removes or deletes something: the critical colour on the grey pill.
         case destructive
-        /// A ghost that removes or deletes something, such as Delete rule beside Rename: the label in the critical
-        /// colour with no fill until hovered.
+        /// The old fill-less delete. It draws as `destructive`, so every delete looks alike; use `.destructive`.
         case destructiveGhost
     }
     var kind: Kind = .secondary
@@ -761,15 +765,15 @@ private struct FrogButtonBody: View {
             // One disabled look for every kind: the secondary pill with its fill faded and its label in `muted`, so
             // it still reads. A disabled primary keeps no accent, so it never reads as a grey button that is
             // broken, and a disabled ghost stays plain text.
-            switch enabled || kind == .ghost || kind == .destructiveGhost ? kind : .secondary {
-            case .secondary, .destructive:
+            switch enabled || kind == .ghost ? kind : .secondary {
+            case .secondary, .destructive, .destructiveGhost:
                 label.frogControlSurface(hovering: hovered, pressed: pressed, height: height, capsule: true, faded: !enabled)
             case .primary:
                 label.background {
                     // The accent, as Rex fills its one main action.
                     shape.fill(FrogStyle.accent.opacity(pressed ? 0.76 : hovered ? 0.88 : 1)).animation(fade, value: hovered || pressed)
                 }.contentShape(shape)
-            case .ghost, .destructiveGhost:
+            case .ghost:
                 label.background {
                     shape.fill(pressed ? FrogStyle.pressed : hovered ? FrogStyle.hover : .clear).animation(fade, value: hovered || pressed)
                 }.contentShape(shape)
@@ -778,7 +782,7 @@ private struct FrogButtonBody: View {
         // Only the scale springs: whatever the action changes inside the button on release stays an instant cut.
         .animation(keyboardSurface ? nil : FrogMotion.press) { $0.scaleEffect(pressed && !reduceMotion && !keyboardSurface ? 0.97 : 1) }
         .onHover { hovering = $0 }
-        .padding(.trailing, (kind == .ghost || kind == .destructiveGhost) && trailingGhost ? -FrogButtonStyle.horizontalPadding(compact: compact) : 0)
+        .padding(.trailing, kind == .ghost && trailingGhost ? -FrogButtonStyle.horizontalPadding(compact: compact) : 0)
     }
 
     private var foreground: Color {

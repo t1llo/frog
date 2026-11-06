@@ -154,9 +154,11 @@ struct PhoneMenuRow: View {
     let open: () -> Void
     var body: some View {
         let connected = phone.overall != .offline
-        MenuActionRow(title: "Phone", symbol: connected ? "iphone" : "iphone.slash",
+        // The feature's own green tile in every state, as in the sidebar and the command bar; the dot and the
+        // status word say whether a phone is connected.
+        MenuActionRow(title: "Phone", symbol: PhonePlugin.info.symbol,
                       key: L10n.text(phone.statusText), dot: connected ? FrogStyle.good : nil,
-                      tint: connected ? PluginTint.green.color : PluginTint.gray.color, closes: true, action: open)
+                      tint: PhonePlugin.info.tint.color, closes: true, action: open)
     }
 }
 

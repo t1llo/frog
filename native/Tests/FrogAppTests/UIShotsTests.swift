@@ -195,12 +195,14 @@ final class UIShotsTests: XCTestCase {
         }
         let rules = model.configuration.rules.filter { preferences.ruleFeatureEnabled($0) }
         let sections = WindowCheatSheet.sections(rules: rules, commands: commands)
-        let cheatHeight = min(WindowCheatSheetPanel.maximumHeight,
+        // Held-key panels grow as tall as the display allows: here a 13-inch laptop's, less the panel's margin.
+        let heldPanelLimit: CGFloat = 820
+        let cheatHeight = min(heldPanelLimit,
                               ceil(NSHostingView(rootView: WindowCheatSheetContent(sections: sections).frame(width: WindowCheatSheetPanel.width)).fittingSize.height))
         try await popup("window-cheat-sheet") { WindowCheatSheetView(sections: sections, height: cheatHeight) }
 
         let groups = model.shortcutReferenceGroups
-        let referenceHeight = min(ShortcutReferencePanel.maxHeight,
+        let referenceHeight = min(heldPanelLimit,
                                   ceil(NSHostingView(rootView: ShortcutReferenceContent(groups: groups).frame(width: ShortcutReferencePanel.width)
                                     .environment(\.locale, L10n.locale)).fittingSize.height))
         try await popup("shortcut-reference") { ShortcutReferenceView(groups: groups, height: referenceHeight) }
@@ -308,11 +310,11 @@ final class UIShotsTests: XCTestCase {
     // MARK: Notices
 
     private func notices(_ sample: SampleFrog) async throws {
-        try await popup("notice-working") { ProcessingPill(symbol: nil, warning: false, text: ProcessingIndicator.workingText(rule: "Proofread")) }
-        let done = ProcessingIndicator.appearance(of: .done)
-        try await popup("notice-done") { ProcessingPill(symbol: done.symbol, warning: false, text: done.text) }
+        try await popup("notice-working") { ProcessingPill(symbol: nil, text: ProcessingIndicator.workingText(rule: "Proofread")) }
+        let done = ProcessingIndicator.appearance(of: .done, rule: "Proofread", summary: "3 words changed")
+        try await popup("notice-done") { ProcessingPill(symbol: done.symbol, tone: done.tone, text: done.text, detail: done.detail) }
         let failed = ProcessingIndicator.appearance(of: .failed("Ollama is not running."), rule: "Proofread")
-        try await popup("notice-failed") { ProcessingPill(symbol: failed.symbol, warning: true, text: failed.text, action: failed.detail.map { ($0, {}) }) }
+        try await popup("notice-failed") { ProcessingPill(symbol: failed.symbol, tone: failed.tone, text: failed.text, action: failed.detail.map { ($0, {}) }) }
         try await popup("notice-secure-input") {
             SecureInputPill(message: SecureInput.summary(SecureInput.Holder(pid: 1, name: "1Password", frontmost: false)))
         }

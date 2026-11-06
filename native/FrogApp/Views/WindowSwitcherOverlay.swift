@@ -86,7 +86,10 @@ struct WindowSwitcherOverlay: View {
                     .onAppear { if let id = model.selected { proxy.scrollTo(id) } }
                 }
             }
-            PanelFooter(symbol: "keyboard", name: model.query.isEmpty ? "Type to search" : model.windows.count == 1 ? "1 window" : "\(model.windows.count) windows",
+            PanelFooter(symbol: WindowSwitcherPlugin.info.symbol, name: WindowSwitcherPlugin.info.name,
+                        // The search line appears only once typing starts, so until then the footer says it is there.
+                        detail: model.query.isEmpty ? L10n.text("Type to search") : model.windows.count == 1 ? L10n.text("1 window")
+                            : String(format: L10n.text("%d windows"), model.windows.count),
                         primaryTitle: model.windows.isEmpty ? nil : "Switch", showsActions: false, closeTitle: "Close")
         }.frame(width: WindowSwitcherLayout.width)
             .environment(\.locale, L10n.locale)

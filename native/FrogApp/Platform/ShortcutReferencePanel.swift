@@ -37,49 +37,95 @@ struct ShortcutReferenceView: View {
         ScrollView { ShortcutReferenceContent(groups: groups) }
             .scrollIndicators(.automatic)
             // A row cut by the bottom edge fades out, so it reads as more below rather than as clipped.
-            .bottomScrollFade(height: FrogStyle.sheetPadding)
+            .bottomScrollFade(height: FrogSheetScrollMetrics.fade)
             .frame(width: ShortcutReferencePanel.width, height: height).foregroundStyle(FrogStyle.ink)
             .frogPanel()
             .environment(\.locale, L10n.locale)
     }
 }
 
-/// The same layout as the window cheat sheet: a title, then each group under its caption, every row with its keys.
+/// The same layout as the window cheat sheet: a title, then one card in which each group starts with its caption,
+/// every row with its keys.
 struct ShortcutReferenceContent: View {
     let groups: ShortcutReferencePanel.Groups
     var body: some View {
-        VStack(alignment: .leading, spacing: FrogStyle.space16) {
-            Text("Frog shortcuts").font(FrogType.title).accessibilityAddTraits(.isHeader)
-            ForEach(groups, id: \.group) { section in
-                VStack(alignment: .leading, spacing: FrogStyle.space8) {
-                    Text(L10n.text(section.group.title)).font(FrogType.section).accessibilityAddTraits(.isHeader)
-                    VStack(spacing: 0) {
-                    ForEach(section.items) { item in
-                        let label = Self.label(item)
-                        HStack(spacing: 10) {
-                            // One line each: a plugin's action, its plugin's name muted under it.
-                            VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                                Text(label.title).font(FrogType.row).lineLimit(1)
-                                if let plugin = label.plugin {
-                                    Text(plugin).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                                }
-                            }.help(L10n.text(item.title))
-                            Spacer(minLength: 8)
-                            KeyCaps(hotkey: item.hotkey)
-                        }.padding(.horizontal, FrogStyle.cardPadding).padding(.vertical, FrogStyle.space6).frame(minHeight: FrogStyle.rowHeight)
-                            .accessibilityElement(children: .ignore)
-                            .accessibilityLabel(L10n.text(item.title))
-                            .accessibilityValue(HotkeyManager.display(item.hotkey))
-                    }
-                    }.frogTableSurface()
-                }
-            }
+        ShortcutPanelLayout(title: "Frog shortcuts") {
             if groups.isEmpty {
                 FrogEmptyState(symbol: "command", title: "No shortcuts yet",
                                message: "Give a Writing or Dictation rule a shortcut, or add one in Shortcuts.", tint: .blue)
                     .frogTableSurface()
+            } else {
+                ShortcutPanelCard {
+                    ForEach(Array(groups.enumerated()), id: \.element.group) { index, section in
+                        ShortcutPanelCaption(title: section.group.title, first: index == 0)
+                        ForEach(section.items) { item in
+                            ShortcutPanelRow(title: Self.label(item).title, hotkey: item.hotkey) { EmptyView() }
+                                .help(L10n.text(item.title))
+                                .accessibilityLabel(L10n.text(item.title))
+                        }
+                    }
+                }
             }
-        }.padding(FrogStyle.sheetPadding).frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// A shortcut panel (the shortcut reference, the window cheat sheet): its title, then its content, padded as a sheet.
+struct ShortcutPanelLayout<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space12) {
+            Text(L10n.text(title)).font(FrogType.title).tracking(-0.4).accessibilityAddTraits(.isHeader)
+            content
+        }
+        .padding(FrogStyle.sheetPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .foregroundStyle(FrogStyle.ink)
+    }
+}
+
+/// The one card of a shortcut panel. Its groups are captions inside it rather than cards of their own, so a group of
+/// one row (Sizes, Displays) weighs no more than its row.
+struct ShortcutPanelCard<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) { content }
+            .padding(.bottom, FrogStyle.space6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frogTableSurface()
+    }
+}
+
+/// A group's caption inside a shortcut panel's card, on the rows' text edge.
+struct ShortcutPanelCaption: View {
+    let title: String
+    var first = false
+    var body: some View {
+        SectionCaption(text: title)
+            .padding(.horizontal, FrogStyle.cardPadding)
+            .padding(.top, first ? FrogStyle.space10 : FrogStyle.space16).padding(.bottom, FrogStyle.space4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// One row of a shortcut panel: an optional glyph, the title, and the keys ending on the card's content edge. Every
+/// cap is one width (`KeyCap`), so the keys of every row end and line up on the same edge.
+struct ShortcutPanelRow<Leading: View>: View {
+    let title: String
+    let hotkey: Hotkey
+    @ViewBuilder var leading: Leading
+    var body: some View {
+        HStack(spacing: FrogStyle.space10) {
+            if Leading.self != EmptyView.self { leading.frame(width: 22) }
+            Text(title).font(FrogType.row).lineLimit(1)
+            Spacer(minLength: FrogStyle.space8)
+            KeyCaps(hotkey: hotkey)
+        }
+        .padding(.horizontal, FrogStyle.cardPadding)
+        .frame(height: FrogStyle.menuRowHeight)
+        .accessibilityElement(children: .ignore)
+        .accessibilityValue(HotkeyManager.display(hotkey))
     }
 }
 

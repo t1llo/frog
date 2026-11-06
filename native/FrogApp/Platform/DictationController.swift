@@ -757,7 +757,7 @@ struct DictationPopup: View {
                     if !controller.liveText.isEmpty {
                         Button(copiedPartial ? "Copied" : "Copy partial text") {
                             controller.copyPartialTranscript(); copiedPartial = true
-                        }.buttonStyle(.frog(.ghost, compact: true))
+                        }.buttonStyle(.frog(compact: true))
                             .fixedSize().help("Copy the text recognised before the failure")
                     }
                 }.frame(height: 20)

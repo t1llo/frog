@@ -174,19 +174,21 @@ extension FrogPageHeader where Actions == EmptyView {
 /// the heading, the rows' text and the footer all start `rowInset` inside it, so a section reads down one line.
 struct FrogSection<Content: View, Accessory: View>: View {
     var title: String? = nil
+    /// How many items the section lists, drawn as the one counter after its heading (`FrogSectionHeader(count:)`).
+    var count: Int? = nil
     var footer: String? = nil
     @ViewBuilder var accessory: Accessory
     @ViewBuilder var content: Content
 
-    init(_ title: String? = nil, footer: String? = nil, @ViewBuilder accessory: () -> Accessory,
+    init(_ title: String? = nil, count: Int? = nil, footer: String? = nil, @ViewBuilder accessory: () -> Accessory,
          @ViewBuilder content: () -> Content) {
-        self.title = title; self.footer = footer; self.accessory = accessory(); self.content = content()
+        self.title = title; self.count = count; self.footer = footer; self.accessory = accessory(); self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.space8) {
             if title != nil || Accessory.self != EmptyView.self {
-                FrogSectionHeader(title ?? "") { accessory }
+                FrogSectionHeader(title ?? "", count: count) { accessory }
             }
             VStack(alignment: .leading, spacing: FrogStyle.space2) { content }
                 .padding(.horizontal, FrogStyle.rowInset).padding(.vertical, FrogStyle.space2)
@@ -207,23 +209,35 @@ struct FrogSection<Content: View, Accessory: View>: View {
 /// same. Inside a card or popup, a sub-group starts with a `SectionCaption` instead.
 struct FrogSectionHeader<Accessory: View>: View {
     let title: String
-    /// A title the caller has already translated, such as one with a count in it, is shown as it is.
+    /// A title the caller has already translated is shown as it is.
     var verbatim = false
+    /// The one counter form: how many items the group holds, a muted number right after the heading ("Apps 12"),
+    /// never in the heading's own words, a trailing badge or "4 of 23".
+    var count: Int? = nil
     @ViewBuilder var accessory: Accessory
 
-    init(_ title: String, @ViewBuilder accessory: () -> Accessory) {
-        self.title = title; self.accessory = accessory()
+    init(_ title: String, count: Int? = nil, @ViewBuilder accessory: () -> Accessory) {
+        self.title = title; self.count = count; self.accessory = accessory()
     }
 
-    init(verbatim title: String, @ViewBuilder accessory: () -> Accessory) {
-        self.title = title; verbatim = true; self.accessory = accessory()
+    init(verbatim title: String, count: Int? = nil, @ViewBuilder accessory: () -> Accessory) {
+        self.title = title; verbatim = true; self.count = count; self.accessory = accessory()
     }
 
     var body: some View {
         HStack(spacing: FrogStyle.space8) {
             if !title.isEmpty {
-                Text(verbatim ? title : L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.ink)
-                    .accessibilityAddTraits(.isHeader)
+                let heading = verbatim ? title : L10n.text(title)
+                HStack(alignment: .firstTextBaseline, spacing: FrogStyle.space6) {
+                    Text(heading).font(FrogType.section).foregroundStyle(FrogStyle.ink)
+                    if let count {
+                        Text(count.formatted(.number.locale(L10n.locale))).font(FrogType.row.monospacedDigit())
+                            .foregroundStyle(FrogStyle.muted)
+                    }
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(count.map { "\(heading), \($0)" } ?? heading)
+                .accessibilityAddTraits(.isHeader)
             }
             Spacer(minLength: FrogStyle.space8)
             // A ghost button here ends its text on the trailing edge by itself (`frogTrailingGhost`).
@@ -234,12 +248,12 @@ struct FrogSectionHeader<Accessory: View>: View {
 }
 
 extension FrogSectionHeader where Accessory == EmptyView {
-    init(_ title: String) { self.init(title) { EmptyView() } }
+    init(_ title: String, count: Int? = nil) { self.init(title, count: count) { EmptyView() } }
 }
 
 extension FrogSection where Accessory == EmptyView {
-    init(_ title: String? = nil, footer: String? = nil, @ViewBuilder content: () -> Content) {
-        self.init(title, footer: footer, accessory: { EmptyView() }, content: content)
+    init(_ title: String? = nil, count: Int? = nil, footer: String? = nil, @ViewBuilder content: () -> Content) {
+        self.init(title, count: count, footer: footer, accessory: { EmptyView() }, content: content)
     }
 }
 

@@ -292,13 +292,9 @@ private struct OnboardingDone: View {
 private struct OnboardingPlugins: View {
     @EnvironmentObject private var model: AppModel
     @State private var pending = Set<String>()
-    /// `count` tiles in rows of at most three that share them out evenly (4 as 2 and 2, 5 as 3 and 2), so no group ends
-    /// in a lone tile beside an empty gap.
-    static func rowSizes(_ count: Int) -> [Int] {
-        guard count > 0 else { return [] }
-        let rows = (count + 2) / 3
-        return (0..<rows).map { count / rows + ($0 < count % rows ? 1 : 0) }
-    }
+    /// Three equal columns in every group, so the tiles of Write, Find & launch and Mac line up down the step
+    /// whatever their count, as the sidebar's rows line up under their group headers.
+    private static let columns = Array(repeating: GridItem(.flexible(), spacing: FrogStyle.space6), count: 3)
 
     var body: some View {
         let host = model.pluginHost
@@ -308,16 +304,10 @@ private struct OnboardingPlugins: View {
                 if !plugins.isEmpty {
                     VStack(alignment: .leading, spacing: FrogStyle.space8) {
                         FrogSectionHeader(category.title)
-                        let sizes = Self.rowSizes(plugins.count)
-                        VStack(spacing: FrogStyle.space6) {
-                            ForEach(sizes.indices, id: \.self) { row in
-                                let start = sizes[..<row].reduce(0, +)
-                                HStack(spacing: FrogStyle.space6) {
-                                    ForEach(plugins[start..<start + sizes[row]]) { plugin in
-                                        OnboardingPluginTile(plugin: plugin, on: host.enabled(plugin.id), busy: pending.contains(plugin.id)) {
-                                            toggle(plugin.id, to: !host.enabled(plugin.id))
-                                        }
-                                    }
+                        LazyVGrid(columns: Self.columns, alignment: .leading, spacing: FrogStyle.space6) {
+                            ForEach(plugins) { plugin in
+                                OnboardingPluginTile(plugin: plugin, on: host.enabled(plugin.id), busy: pending.contains(plugin.id)) {
+                                    toggle(plugin.id, to: !host.enabled(plugin.id))
                                 }
                             }
                         }
@@ -398,7 +388,7 @@ private struct OnboardingModels: View {
                             Label("Ready", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
                         } else if let progress = local.progress[item.id] {
                             ModelDownloadProgress(fraction: progress.fraction, preparing: local.preparing.contains(item.id), width: 90)
-                            Button("Cancel") { local.cancelDownload(item.id) }.buttonStyle(.frog(.ghost, compact: true))
+                            Button("Cancel") { local.cancelDownload(item.id) }.buttonStyle(.frog(compact: true))
                         } else {
                             Button("Download") { local.download(item) }.buttonStyle(.frog(.secondary, compact: true))
                                 .disabled(!LocalModels.supported)
@@ -451,7 +441,7 @@ private struct OnboardingProviders: View {
         VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 6) {
             // Coding tools all sign in the same way, so it is said once under the list rather than on every row.
             FrogSection("Found on this Mac", footer: found?.contains { $0.kind.localTool != nil } == true ? "Coding tools use their own sign-in, so no API key is needed." : nil, accessory: {
-                Button("Add with an API key…") { editing = ProviderConfiguration() }.buttonStyle(.frog(.ghost, compact: true))
+                Button("Add with an API key…") { editing = ProviderConfiguration() }.buttonStyle(.frog(compact: true))
             }) {
                 if let found {
                     if found.isEmpty { FrogRow("Nothing found", caption: "Claude Code, Codex, OpenCode, Ollama or LM Studio show here once installed.") }

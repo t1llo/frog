@@ -259,7 +259,11 @@ final class ProcessingTests: XCTestCase {
         XCTAssertEqual(ProcessingIndicator.appearance(of: .cancelled).text, "Cancelled")
         XCTAssertEqual(ProcessingIndicator.appearance(of: .failed("Ollama is not running.")).text, "Ollama is not running")
         XCTAssertEqual(ProcessingIndicator.appearance(of: .failed("Anything")).detail, "Show details")
-        XCTAssertEqual(ProcessingIndicator.workingText(rule: "Proofread"), "Proofread…")
+        XCTAssertEqual(ProcessingIndicator.workingText(rule: "Proofread"), "Proofreading…")
+        XCTAssertEqual(ProcessingIndicator.workingText(rule: "Translate to German"), "Translating to German…")
+        XCTAssertEqual(ProcessingIndicator.workingText(rule: "Spelling only"), "Spelling only…")
+        XCTAssertEqual(ProcessingIndicator.appearance(of: .done, rule: "Proofread", summary: "3 words changed").detail, "3 words changed")
+        XCTAssertEqual(ProcessingIndicator.appearance(of: .done, rule: "Proofread").text, "Proofread")
         XCTAssertEqual(ProcessingIndicator.appearance(of: .failed("")).text, "Failed")
         XCTAssertEqual(ProcessingIndicator.appearance(of: .failed("Ollama is not running."), rule: "Proofread").text,
                        "Proofread failed: Ollama is not running")
