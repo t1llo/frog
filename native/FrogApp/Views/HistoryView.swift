@@ -68,7 +68,8 @@ struct HistoryView: View {
                 }
             }
             if !preferences.historyEnabled, all.isEmpty {
-                FrogEmptyState(symbol: "clock.arrow.circlepath", title: "History is off", message: "Turn it on to keep results on this Mac.") {
+                FrogEmptyState(symbol: HistoryPlugin.info.symbol, title: "History is off", message: "Turn it on to keep results on this Mac.",
+                               tint: HistoryPlugin.info.tint) {
                     Button("Turn on") { setHistoryEnabled() }.buttonStyle(.frog(.primary))
                 }
             } else {
@@ -90,7 +91,8 @@ struct HistoryView: View {
                     case .noMatches?:
                         FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another word or filter.")
                     case .noAnswers?:
-                        FrogEmptyState(symbol: "questionmark.bubble", title: "No answers yet", message: "Answers from Explain show here.")
+                        FrogEmptyState(symbol: ExplainPlugin.info.symbol, title: "No answers yet", message: "Answers from Explain show here.",
+                                       tint: ExplainPlugin.info.tint)
                     case _?:
                         FrogEmptyState(symbol: HistoryPlugin.info.symbol, title: "No history yet",
                                        message: "Rewritten text, answers and recordings show here.", tint: HistoryPlugin.info.tint)

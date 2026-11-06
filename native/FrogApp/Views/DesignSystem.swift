@@ -850,13 +850,16 @@ struct SectionCaption: View {
     }
 }
 
+/// A neutral tile: a muted symbol on the control fill, the shape of `PluginIconTile`, for what belongs to no feature.
 struct SymbolTile: View {
     let symbol: String
     var size: CGFloat = 40
     var body: some View {
-        Image(systemName: symbol).font(.system(size: size * 0.4, weight: .medium))
+        // The proportions and corners of `PluginIconTile` at the same size.
+        let radius = size >= 40 ? FrogStyle.cardRadius : size >= 28 ? FrogStyle.controlRadius : FrogStyle.smallRadius
+        Image(systemName: symbol).font(.system(size: size * 0.52, weight: .medium))
             .foregroundStyle(FrogStyle.muted).frame(width: size, height: size)
-            .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+            .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
             .accessibilityHidden(true)
     }
 }
@@ -1025,9 +1028,10 @@ struct SettingRow<Control: View>: View {
     }
 }
 
-/// An empty list or page: a symbol, a title, one sentence and, when there is one, the action that fills it. The
-/// symbol is drawn large (30 points) in `muted`, as macOS draws an empty view; a feature's empty page passes its
-/// `tint` to show the feature's own tile instead.
+/// An empty list or page, one recipe everywhere: a 40-point tile, a `section` title, one `lead` sentence and, when
+/// there is one, the action that fills it. Whatever belongs to a feature (its page, its list, its card) passes the
+/// feature's `tint` and shows the feature's own tile, a white symbol on its colour; only what belongs to no feature
+/// ("No matches", a load that failed) keeps the neutral tile.
 struct FrogEmptyState<Actions: View>: View {
     let symbol: String
     let title: String
@@ -1043,8 +1047,7 @@ struct FrogEmptyState<Actions: View>: View {
                 if let tint {
                     PluginIconTile(symbol: symbol, tint: tint.color, size: .header)
                 } else {
-                    Image(systemName: symbol).font(.system(size: 30, weight: .regular)).symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(FrogStyle.muted).frame(height: 40)
+                    SymbolTile(symbol: symbol, size: PluginIconTile.Size.header.rawValue)
                 }
             }.padding(.bottom, FrogStyle.space2).accessibilityHidden(true)
             Text(L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.ink)
@@ -1052,7 +1055,7 @@ struct FrogEmptyState<Actions: View>: View {
                 .multilineTextAlignment(.center).lineSpacing(4).frame(maxWidth: 340)
             // A padded EmptyView would still take space, so the others keep their layout.
             if Actions.self != EmptyView.self { actions.padding(.top, 4) }
-        }.frame(maxWidth: .infinity).padding(.vertical, 44).padding(.horizontal, 24)
+        }.frame(maxWidth: .infinity).padding(.vertical, 32).padding(.horizontal, 24)
     }
 }
 

@@ -20,7 +20,8 @@ struct CleanerAppsView: View {
                 } else if !cleaner.search.trimmingCharacters(in: .whitespaces).isEmpty {
                     FrogEmptyState(symbol: "magnifyingglass", title: "No matching apps", message: "Try its bundle ID.")
                 } else {
-                    FrogEmptyState(symbol: "app.dashed", title: "No apps found", message: "Drop an app here to review it.")
+                    FrogEmptyState(symbol: "app.dashed", title: "No apps found", message: "Drop an app here to review it.",
+                                   tint: AppCleanerPlugin.info.tint)
                 }
             } else {
                 LazyVStack(spacing: 2) {

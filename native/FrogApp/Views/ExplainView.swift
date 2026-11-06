@@ -34,7 +34,8 @@ struct ExplainView: View {
                 bubble(rule)
                 notes
             } else {
-                FrogEmptyState(symbol: "questionmark.bubble", title: "No Explain rule", message: "Add it back to explain selected text.") {
+                FrogEmptyState(symbol: ExplainPlugin.info.symbol, title: "No Explain rule", message: "Add it back to explain selected text.",
+                               tint: ExplainPlugin.info.tint) {
                     Button("Add Explain") {
                         do { try plugin.addRule() } catch { model.report(error) }
                     }.buttonStyle(.frog(.primary))

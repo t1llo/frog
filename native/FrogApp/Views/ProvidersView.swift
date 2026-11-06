@@ -48,8 +48,9 @@ struct ProvidersView: View {
                     ModelInventory(search: search, revealedModelID: revealedModelID)
                     if search.isEmpty { LocalModelSettingsView() }
                 } else if providers.isEmpty {
-                    FrogEmptyState(symbol: "cloud", title: search.isEmpty ? "No providers" : "No matches",
-                                   message: search.isEmpty ? "Connect a cloud provider, Ollama or LM Studio." : "No provider matches this search.")
+                    FrogEmptyState(symbol: search.isEmpty ? "cloud" : "magnifyingglass", title: search.isEmpty ? "No providers" : "No matches",
+                                   message: search.isEmpty ? "Connect a cloud provider, Ollama or LM Studio." : "No provider matches this search.",
+                                   tint: search.isEmpty ? .indigo : nil)
                         .frogTableSurface()
                 } else {
                     VStack(spacing: 2) {

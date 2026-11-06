@@ -73,7 +73,7 @@ struct CleanerRestoreView: View {
                 CleanerPutBackSummaryView(summary: summary, roots: roots)
             } else if cleaner.records.isEmpty {
                 FrogEmptyState(symbol: "tray", title: "Nothing moved yet",
-                               message: "Items you move to the Trash with Frog appear here for 30 days.")
+                               message: "Items you move to the Trash with Frog appear here for 30 days.", tint: AppCleanerPlugin.info.tint)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {

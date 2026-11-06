@@ -35,7 +35,7 @@ struct StatisticsView: View {
                 // Rows of zeros say nothing; one calm note says when numbers arrive.
                 VStack(alignment: .leading, spacing: FrogStyle.space8) {
                     FrogSectionHeader("Activity")
-                    FrogEmptyState(symbol: "chart.bar", title: "Nothing recorded yet",
+                    FrogEmptyState(symbol: "chart.bar.fill", title: "Nothing recorded yet",
                                    message: statistics.snapshot.recordingEnabled
                                        ? "Statistics appear after your first dictation or rule run."
                                        : "Turn on Record statistics to start counting.", tint: .gray)

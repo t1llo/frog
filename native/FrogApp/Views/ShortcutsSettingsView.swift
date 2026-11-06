@@ -17,8 +17,8 @@ struct ShortcutsSettingsView: View {
             if let unreadable = plugin.unreadable { FrogRowNote(text: unreadable, tone: FrogStyle.warning) }
             FrogSection("Apps", accessory: { if !apps.isEmpty || !catalog.scanned { addApp } }) {
                 if apps.isEmpty, catalog.scanned {
-                    FrogEmptyState(symbol: "app.badge", title: "No app shortcuts",
-                                   message: "Open any app with keys of your own, from anywhere.") {
+                    FrogEmptyState(symbol: "macwindow", title: "No app shortcuts",
+                                   message: "Open any app with keys of your own, from anywhere.", tint: ShortcutsPlugin.info.tint) {
                         ShortcutAddButton(title: "Add app", list: appList)
                     }
                 } else if apps.isEmpty {
@@ -37,8 +37,8 @@ struct ShortcutsSettingsView: View {
             }
             FrogSection("Actions", accessory: { if !actions.isEmpty { addAction } }) {
                 if actions.isEmpty {
-                    FrogEmptyState(symbol: "bolt", title: "No action shortcuts",
-                                   message: "Lock the screen, open the command bar or run any Frog action with keys.") {
+                    FrogEmptyState(symbol: "bolt.fill", title: "No action shortcuts",
+                                   message: "Lock the screen, open the command bar or run any Frog action with keys.", tint: ShortcutsPlugin.info.tint) {
                         ShortcutAddButton(title: "Add action", list: actionList)
                     }
                 }
