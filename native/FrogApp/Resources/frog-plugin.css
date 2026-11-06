@@ -188,9 +188,9 @@ tbody tr:hover td { background: var(--frog-hover); }
    the left and a control on the right, and the one line Frog draws between them. */
 .frog-section { display: flex; flex-direction: column; gap: 8px; }
 .frog-section > h3, .frog-section > .frog-caption { margin: 0 0 0 4px; }
-.frog-section > .frog-rows { display: flex; flex-direction: column; background: var(--frog-card); border-radius: var(--frog-radius-card); padding: 0 14px; }
+.frog-section > .frog-rows { display: flex; flex-direction: column; gap: 2px; background: var(--frog-card); border-radius: var(--frog-radius-card); padding: 0 14px; }
 .frog-setting { display: flex; align-items: center; gap: 12px; min-height: var(--frog-row-height); padding: 8px 0; }
-.frog-setting + .frog-setting { border-top: 1px solid var(--frog-line); }
+/* Rows are set apart by their height and a little space, never by a line, as in Frog's own cards. */
 .frog-setting > :first-child { flex: 1; min-width: 0; }
 .frog-setting small, .frog-setting .frog-small { display: block; color: var(--frog-muted); }
 .frog-list > li:has(> .frog-item) { padding: 0; }
@@ -201,7 +201,7 @@ button.frog-item:hover:not(:disabled), a.frog-item:hover { background: var(--fro
 .frog-stat strong { font-size: 20px; line-height: 1.2; font-weight: 600; letter-spacing: -0.3px; font-variant-numeric: tabular-nums; }
 .frog-stat span { font-size: 11px; color: var(--frog-muted); }
 
-.frog-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: var(--frog-radius-small); font-size: 10px; font-weight: 600; line-height: 14px; color: var(--frog-muted); background: var(--frog-control); }
+.frog-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; line-height: 14px; color: var(--frog-muted); background: var(--frog-control); }
 .frog-badge.frog-accent { color: var(--frog-accent); background: color-mix(in srgb, var(--frog-accent) 15%, transparent); }
 
 .frog-segmented { display: inline-flex; gap: 2px; padding: 2px; background: var(--frog-control); border-radius: 999px; }
@@ -210,10 +210,10 @@ button.frog-item:hover:not(:disabled), a.frog-item:hover { background: var(--fro
 .frog-segmented button[aria-pressed="true"] { background: var(--frog-surface); color: var(--frog-ink); box-shadow: 0 0.5px 1.5px rgb(0 0 0 / 0.12); }
 
 /* Frog's switch: <input type="checkbox" class="frog-switch">. */
-input.frog-switch { appearance: none; position: relative; width: 36px; height: 18px; min-height: 0; padding: 0; border-radius: 999px; background: var(--frog-switch-track); transition: background-color 0.18s ease-out; flex: none; }
-input.frog-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 14px; border-radius: 999px; background: #fff; box-shadow: 0 0.5px 1px rgb(0 0 0 / 0.2); transition: transform 0.18s ease-out; }
+input.frog-switch { appearance: none; position: relative; width: 36px; height: 20px; min-height: 0; padding: 0; border-radius: 999px; background: var(--frog-switch-track); transition: background-color 0.18s ease-out; flex: none; }
+input.frog-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 999px; background: #fff; box-shadow: 0 0.5px 1px rgb(0 0 0 / 0.2); transition: transform 0.18s ease-out; }
 input.frog-switch:checked { background: var(--frog-accent); }
-input.frog-switch:checked::after { transform: translateX(12px); }
+input.frog-switch:checked::after { transform: translateX(16px); }
 input.frog-switch:focus { box-shadow: none; }
 @media (prefers-reduced-motion: reduce) { input.frog-switch, input.frog-switch::after { transition: none; } }
 
