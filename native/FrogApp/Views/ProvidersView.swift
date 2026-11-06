@@ -8,7 +8,6 @@ struct ProvidersView: View {
     @State private var revealedModelID: String?
     @State private var deleting: ProviderConfiguration?
     @State private var filter: String?
-    @State private var kind: LocalModelDescriptor.Kind = .audio
     @State private var search = ""
 
     /// `filter` opens the page on one of its sources, for pictures of each.
@@ -19,20 +18,22 @@ struct ProvidersView: View {
         model.configuration.providers.filter { search.isEmpty || ($0.name + " " + $0.models.map(\.name).joined(separator: " ")).localizedStandardContains(search) }
     }
     private var sourcePicker: some View {
-        CompactSegments(values: ["Local models", "Providers", "Installed tools"], selected: selectedFilter, title: { $0 }) { filter = $0; search = "" }
+        // "Installed tools" stays the key the page is opened with; the segment calls them coding tools, as their section does.
+        CompactSegments(values: ["Local models", "Providers", "Installed tools"], selected: selectedFilter,
+                        title: { $0 == "Installed tools" ? "Coding tools" : $0 }) { filter = $0; search = "" }
     }
 
     var body: some View {
         FrogPage {
-            FrogPageHeader(title: "Models") {
+            FrogPageHeader(title: "Models", subtitle: subtitle) {
                 if selectedFilter == "Local models" {
-                    Button("Add model…", systemImage: "plus") { addingLocal = true }.buttonStyle(.frog(.primary))
+                    Button("Add model…", systemImage: "plus") { addingLocal = true }
                 } else if selectedFilter == "Providers" {
                     Button { editing = ProviderConfiguration() } label: { Label("Connect provider", systemImage: "plus") }
-                        .buttonStyle(.frog(.primary)).keyboardShortcut("n", modifiers: .command)
+                        .keyboardShortcut("n", modifiers: .command)
                 }
             }
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
                 if selectedFilter == "Installed tools" { HStack { sourcePicker; Spacer() }.frame(height: FrogStyle.controlHeight) }
                 else {
                     ListToolbar(placeholder: selectedFilter == "Local models" ? "Search models" : "Search providers", search: $search) { sourcePicker }
@@ -43,30 +44,26 @@ struct ProvidersView: View {
                         catch { model.report(error) }
                     }
                 } else if selectedFilter == "Local models" {
-                    HStack(spacing: 12) {
-                        CompactSegments(values: [LocalModelDescriptor.Kind.audio, .text], selected: kind, title: { $0 == .audio ? "Speech" : "Text" }) { kind = $0 }
-                        Spacer()
-                        if !LocalModels.supported { Text("Requires Apple silicon").font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
-                    }
-                    ModelInventory(kind: kind, search: search, revealedModelID: revealedModelID)
-                    if search.isEmpty { LocalModelSettingsView().padding(.top, 10) }
+                    // Speech and text models in one list, under their own headings, rather than a second switch.
+                    ModelInventory(search: search, revealedModelID: revealedModelID)
+                    if search.isEmpty { LocalModelSettingsView() }
                 } else if providers.isEmpty {
                     FrogEmptyState(symbol: "cloud", title: search.isEmpty ? "No providers" : "No matches",
                                    message: search.isEmpty ? "Connect a cloud provider, Ollama or LM Studio." : "No provider matches this search.")
-                        .frame(maxWidth: .infinity).padding(.top, 40)
+                        .frogTableSurface()
                 } else {
                     VStack(spacing: 2) {
                         ForEach(providers) { provider in
                             ProviderRow(provider: provider, edit: { editing = $0 }, delete: { deleting = $0 })
                         }
-                    }.padding(6).frogTableSurface()
+                    }.padding(FrogStyle.listInset).frogTableSurface()
                 }
             }
         }
         .buttonStyle(.frog())
         .sheet(item: $editing) { provider in ProviderEditor(provider: provider).environmentObject(model) }
         .sheet(isPresented: $addingLocal) {
-            AddLocalModelView { item in kind = item.kind; revealedModelID = item.id; search = "" }.environmentObject(model)
+            AddLocalModelView { item in revealedModelID = item.id; search = "" }.environmentObject(model)
         }
         .confirmationDialog("Delete \(deleting?.name ?? "provider")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             Button("Delete provider", role: .destructive) {
@@ -77,6 +74,14 @@ struct ProvidersView: View {
         } message: { Text("The saved API key will also be removed. Affected rules will use another compatible model when available.") }
     }
 
+    /// One line on what the open part holds.
+    private var subtitle: String {
+        switch selectedFilter {
+        case "Local models": LocalModels.supported ? "Run on this Mac, offline." : "Run on this Mac. They need Apple silicon."
+        case "Providers": "Cloud services and local servers such as Ollama."
+        default: "Coding agents you already use, with their own login."
+        }
+    }
 }
 
 /// One provider in the Providers list: opens its editor, with its actions at the end.
@@ -87,21 +92,35 @@ private struct ProviderRow: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            SymbolTile(symbol: provider.kind.localTool != nil ? "terminal" : provider.kind.isLocal ? "desktopcomputer" : "cloud", size: 28)
+        HStack(spacing: 12) {
+            // Where it runs: a cloud for a service, a computer for a local server, a terminal for a coding tool.
+            let local = provider.kind.isLocal, tool = provider.kind.localTool != nil
+            PluginIconTile(symbol: tool ? "terminal" : local ? "desktopcomputer" : "cloud",
+                           tint: (tool ? PluginTint.gray : local ? .teal : .blue).color, size: .list)
             Button { edit(provider) } label: {
                 VStack(alignment: .leading, spacing: FrogStyle.space2) {
                     Text(provider.name).font(FrogType.row)
-                    Text("\(provider.models.filter { $0.category == .text }.count) text · \(provider.models.filter { $0.category == .audio }.count) speech").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    Text(Self.caption(provider)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain)
             IconAction(title: "Edit provider", symbol: "pencil") { edit(provider) }
-            IconMenu(title: "Provider actions") {
+            IconMenu(title: "Provider actions", bordered: false) {
                 Button("Duplicate") { var copy = provider; copy.id = UUID(); copy.name += " copy"; edit(copy) }
                 Button("Delete…", role: .destructive) { delete(provider) }
             }
-        }.padding(.vertical, 8).padding(.horizontal, 8).frame(minHeight: FrogStyle.rowHeight)
+        }.padding(.vertical, 8).padding(.horizontal, FrogStyle.rowPadding).frame(minHeight: FrogStyle.rowHeight)
             .frogRowHighlight(hovering: hovering).onHover { hovering = $0 }
+    }
+
+    /// The service it talks to and what it offers: "Ollama (local) · 1 text model".
+    static func caption(_ provider: ProviderConfiguration) -> String {
+        let text = provider.models.filter { $0.category == .text }.count
+        let speech = provider.models.filter { $0.category == .audio }.count
+        var parts = [provider.kind.title]
+        if text > 0 { parts.append(text == 1 ? "1 text model" : "\(text) text models") }
+        if speech > 0 { parts.append(speech == 1 ? "1 speech model" : "\(speech) speech models") }
+        if text == 0, speech == 0 { parts.append("No models yet") }
+        return parts.joined(separator: " · ")
     }
 }
 

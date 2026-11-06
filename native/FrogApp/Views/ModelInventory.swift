@@ -3,7 +3,8 @@ import FrogCore
 
 struct ModelInventory: View {
     @EnvironmentObject private var model: AppModel
-    let kind: LocalModelDescriptor.Kind
+    /// One kind, or every model with speech and text under their own headings.
+    var kind: LocalModelDescriptor.Kind? = nil
     var search = ""
     var revealedModelID: String?
     @State private var information: LocalModelDescriptor?
@@ -14,12 +15,19 @@ struct ModelInventory: View {
     private var inventory: [LocalModelDescriptor] {
         let visible = Set(model.localModels.progress.keys).union(model.localModels.errors.keys).union(model.localModels.unfinished).union([revealedModelID].compactMap { $0 })
         return model.configuration.modelInventory(installed: model.localModels.installed, including: visible)
-            .filter { $0.kind == kind && (search.isEmpty || ($0.name + " " + $0.repository).localizedStandardContains(search)) }
+            .filter { (kind == nil || $0.kind == kind) && (search.isEmpty || ($0.name + " " + $0.repository).localizedStandardContains(search)) }
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-        group("Downloaded", items: inventory.filter { model.localModels.installed.contains($0.id) }, installed: true)
-        group("Available to download", items: inventory.filter { !model.localModels.installed.contains($0.id) }, installed: false)
+        let inventory = inventory
+        let available = inventory.filter { !model.localModels.installed.contains($0.id) }
+        VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
+            group("Downloaded", items: inventory.filter { model.localModels.installed.contains($0.id) }, installed: true)
+            if kind == nil {
+                group("Speech models", items: available.filter { $0.kind == .audio }, installed: false)
+                group("Text models", items: available.filter { $0.kind == .text }, installed: false)
+            } else {
+                group("Available to download", items: available, installed: false)
+            }
         }.sheet(item: $information) { item in LocalModelInformation(item: item) }
         .confirmationDialog(deletion?.title ?? "Delete download?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             Button("Delete download", role: .destructive) {
@@ -30,26 +38,29 @@ struct ModelInventory: View {
         } message: { Text(deletion?.message ?? "") }
     }
     private func group(_ title: String, items: [LocalModelDescriptor], installed: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                SectionCaption(text: title)
+        // Headed like a `FrogSection`, so every heading on the page has one size.
+        VStack(alignment: .leading, spacing: FrogStyle.space10) {
+            HStack(spacing: 8) {
+                Text(L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 8)
                 // What the downloads listed here take on disk together.
                 if installed, let total = model.localModels.totalDiskUse(of: items.map(\.id)) {
-                    Text(LocalModelDescriptor.byteCount(total)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    Text(LocalModelDescriptor.byteCount(total)).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                 }
-            }
+            }.frame(minHeight: 20).padding(.horizontal, FrogStyle.rowInset)
             VStack(spacing: 2) {
                 ForEach(items) { item in
                     let unfinished = !installed && model.localModels.progress[item.id] == nil && model.localModels.unfinished.contains(item.id)
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 10) {
-                            Image(systemName: installed ? "checkmark.circle.fill" : "arrow.down.circle").foregroundStyle(installed ? FrogStyle.accent : FrogStyle.muted)
+                            // The heading says whether it is downloaded and the button what it does, so no glyph repeats it.
                             VStack(alignment: .leading, spacing: 3) {
                                  HStack(spacing: 6) {
                                      Text(item.name).font(FrogType.bodyMedium)
                                      if item.isRecommended { RecommendedModelBadge() }
                                  }
-                                Text([installed ? model.localModels.size(of: item) : item.downloadSize, item.runtimeName, model.localModels.loaded.contains(item.id) ? "In memory" : "", unfinished ? "Partly downloaded" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
+                                Text([installed && kind == nil ? (item.kind == .audio ? "Speech" : "Text") : "",
+                                      installed ? model.localModels.size(of: item) : item.downloadSize, item.runtimeName, model.localModels.loaded.contains(item.id) ? "In memory" : "", unfinished ? "Partly downloaded" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
                                     .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                                 Text(L10n.text(item.recommendationSummary ?? item.languages))
                                     .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
@@ -81,10 +92,16 @@ struct ModelInventory: View {
                         ModelDownloadSummary(progress: model.localModels.progress[item.id], preparing: model.localModels.preparing.contains(item.id))
                         if installed, model.localModels.progress[item.id] == nil, let check = model.localModels.fileChecks[item.id] { fileCheck(check, item: item) }
                         if let error = model.localModels.errors[item.id] { Text(error).font(FrogType.caption).foregroundStyle(FrogStyle.warning).textSelection(.enabled) }
-                    }.padding(.vertical, 8).padding(.horizontal, 8)
+                    }.padding(.vertical, 8).padding(.horizontal, FrogStyle.rowPadding)
                 }
-                if items.isEmpty { Text(L10n.text(installed ? "No downloaded models" : "No additional models")).font(FrogType.small).foregroundStyle(FrogStyle.muted).padding(8).frame(maxWidth: .infinity, alignment: .leading) }
-            }.padding(6).frogTableSurface()
+                if items.isEmpty {
+                    Text(L10n.text(installed ? (search.isEmpty ? "Nothing downloaded yet. Pick a model below." : "No downloaded model matches.")
+                                   : (search.isEmpty ? "No other models" : "No model matches.")))
+                        .font(FrogType.body).foregroundStyle(FrogStyle.muted)
+                        .padding(.horizontal, FrogStyle.rowPadding).padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }.padding(FrogStyle.listInset).frogTableSurface()
         }
     }
     /// What "Check files" found: a missing or damaged file can be fetched again.
@@ -160,6 +177,11 @@ struct ModelDownloadSummary: View {
     }
 }
 
+/// A capsule like every other pill, in the accent's soft fill.
 struct RecommendedModelBadge: View {
-    var body: some View { FrogBadge(text: "Recommended", active: true) }
+    var body: some View {
+        Text(L10n.text("Recommended")).font(FrogType.caption.weight(.semibold)).foregroundStyle(FrogStyle.accent)
+            .padding(.horizontal, FrogStyle.space8).padding(.vertical, 2)
+            .background(FrogStyle.accentSoft, in: Capsule())
+    }
 }
