@@ -18,6 +18,22 @@ import FrogCore
         XCTAssertFalse(CommandBar.handlesKey(0, firstResponder: field))
     }
 
+    func testCommandKOpensActionsByItsCharacterAndNotWhileComposing() throws {
+        func key(_ characters: String, code: UInt16, flags: NSEvent.ModifierFlags = .command) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+                                           context: nil, characters: characters, charactersIgnoringModifiers: characters,
+                                           isARepeat: false, keyCode: code))
+        }
+        let field = NSTextView(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        XCTAssertTrue(CommandBar.isActionsShortcut(try key("k", code: 40), firstResponder: field))
+        // Dvorak types K with the key QWERTY calls V.
+        XCTAssertTrue(CommandBar.isActionsShortcut(try key("k", code: 9), firstResponder: field))
+        XCTAssertFalse(CommandBar.isActionsShortcut(try key("t", code: 40), firstResponder: field))
+        XCTAssertFalse(CommandBar.isActionsShortcut(try key("k", code: 40, flags: [.command, .shift]), firstResponder: field))
+        field.setMarkedText("にほん", selectedRange: NSRange(location: 3, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertFalse(CommandBar.isActionsShortcut(try key("k", code: 40), firstResponder: field))
+    }
+
     func testTheBarOpensOnTheDisplayInUseAndKeepsAPlaceItWasDraggedTo() {
         let laptop = NSRect(x: 0, y: 0, width: 1440, height: 875), external = NSRect(x: 1440, y: 0, width: 1920, height: 1055)
         let size = NSSize(width: 600, height: 390)

@@ -261,9 +261,7 @@ import SwiftUI
                 // Backspace in an empty prompt goes back, unless an input method is composing there.
                 if event.keyCode == 51, self.argument != nil, self.query.isEmpty,
                    (self.panel?.firstResponder as? NSTextInputClient)?.hasMarkedText() != true { self.leaveArgument(); return true }
-                if event.keyCode == 40, event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
-                    self.toggleActions(); return true
-                }
+                if Self.isActionsShortcut(event, firstResponder: self.panel?.firstResponder) { self.toggleActions(); return true }
                 guard Self.handlesKey(event.keyCode, firstResponder: self.panel?.firstResponder) else { return false }
                 if self.actionsShown {
                     let count = self.selectedActions.count
@@ -306,6 +304,12 @@ import SwiftUI
         lastOpen = (built - start, clock.now - start)
         searchFiles()
         applications.rescan()
+    }
+    /// ⌘K, by the character it types, so it follows the keyboard layout; not while an input method is composing.
+    static func isActionsShortcut(_ event: NSEvent, firstResponder: NSResponder?) -> Bool {
+        event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
+            && event.charactersIgnoringModifiers?.lowercased() == "k"
+            && (firstResponder as? NSTextInputClient)?.hasMarkedText() != true
     }
     /// Escape, the arrow keys and Return act on the results before the search field sees them. An input method
     /// that is composing there needs them itself, to cancel, pick or confirm a candidate.
