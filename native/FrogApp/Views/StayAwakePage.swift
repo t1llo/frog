@@ -10,12 +10,14 @@ struct StayAwakePage: View {
 
     var body: some View {
         FrogPage {
-            FrogPageHeader(title: "Stay awake", subtitle: "Keeps your Mac from sleeping, for a while or until you stop it.") {
+            FrogPageHeader(title: "Stay awake", subtitle: "Keep your Mac from sleeping, for a while or until you stop it.") {
                 // Only a session that runs is worth a pill (with its time left); off, the switch below says it.
                 if power.isEnabled { FrogStatePill(text: power.statusText, on: true) }
             }
-            FrogSection("Session") {
-                FrogRow("Keep this Mac awake") {
+            // No headings: each card's first row names it (the session, the lid, the menu bar icon), and a heading
+            // above a one-row card only repeated that row.
+            FrogSection {
+                FrogRow("Keep this Mac awake", caption: "Starts a session now.") {
                     Toggle("Keep this Mac awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
                         .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
@@ -37,9 +39,9 @@ struct StayAwakePage: View {
                 }
             }
             LidClosedSection(power: power, lid: power.lid, on: settings.lidClosed) { on in change(reveal: true) { $0.lidClosed = on } }
-            FrogSection("Menu bar") {
-                FrogRow("Show a cup while on") {
-                    Toggle("Show a cup while on", isOn: Binding(get: { settings.menuBarItem }, set: { on in change(reveal: true) { $0.menuBarItem = on } }))
+            FrogSection {
+                FrogRow("Menu bar icon", caption: "Shows in the menu bar while this Mac is kept awake.") {
+                    Toggle("Menu bar icon", isOn: Binding(get: { settings.menuBarItem }, set: { on in change(reveal: true) { $0.menuBarItem = on } }))
                         .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
                 if settings.menuBarItem {
@@ -83,8 +85,8 @@ private struct LidClosedSection: View {
     let set: (Bool) -> Void
 
     var body: some View {
-        FrogSection("Lid closed") {
-            FrogRow("Stay awake with the lid closed", caption: on ? nil : "Needs a one-time setup in Terminal.") {
+        FrogSection {
+            FrogRow("Stay awake with the lid closed", caption: on ? "Turns off sleep for the whole Mac." : "Needs a one-time setup in Terminal.") {
                 Toggle("Stay awake with the lid closed", isOn: Binding(get: { on }, set: set))
                     .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
