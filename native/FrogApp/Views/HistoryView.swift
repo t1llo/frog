@@ -147,10 +147,18 @@ struct HistoryView: View {
         .onHover { inside in
             if inside { hoveredEntry = entry.id } else if hoveredEntry == entry.id { hoveredEntry = nil }
         }
+        // Without a pointer the hover actions never show, so VoiceOver gets them as the row's own actions.
+        .accessibilityActions {
+            if !entry.processedText.isEmpty, !hidden(entry) { Button("Copy result") { ViewActions.copy(entry.processedText) } }
+            if preferences.hideHistoryText { Button(hidden(entry) ? "Reveal text" : "Hide text") { toggleReveal(entry) } }
+        }
         .padding(.horizontal, 8).padding(.vertical, 8).frogHoverRow()
             .contextMenu {
                 Button("Open entry") { viewing = entry.id }
                 Button("Copy", systemImage: "doc.on.doc") { ViewActions.copy(entry.processedText) }.disabled(entry.processedText.isEmpty || hidden(entry))
+                if preferences.hideHistoryText {
+                    Button(hidden(entry) ? "Reveal text" : "Hide text", systemImage: hidden(entry) ? "eye" : "eye.slash") { toggleReveal(entry) }
+                }
                 Button("Delete entry", systemImage: "trash", role: .destructive) { deleting = entry }
             }
     }
@@ -261,9 +269,11 @@ struct HistoryView: View {
     }
 
     private func revealButton(_ entry: HistoryEntry) -> some View {
-        IconAction(title: hidden(entry) ? "Reveal text" : "Hide text", symbol: hidden(entry) ? "eye" : "eye.slash") {
-            if visibility.revealed.contains(entry.id) { visibility.revealed.remove(entry.id) } else { visibility.revealed.insert(entry.id) }
-        }
+        IconAction(title: hidden(entry) ? "Reveal text" : "Hide text", symbol: hidden(entry) ? "eye" : "eye.slash") { toggleReveal(entry) }
+    }
+
+    private func toggleReveal(_ entry: HistoryEntry) {
+        if visibility.revealed.contains(entry.id) { visibility.revealed.remove(entry.id) } else { visibility.revealed.insert(entry.id) }
     }
 }
 
