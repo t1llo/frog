@@ -6,7 +6,7 @@ public struct LayoutPickerModel: Equatable, Sendable {
     public struct Tile: Equatable, Sendable, Identifiable {
         public var action: WindowAction
         public var hotkey: Hotkey?
-        /// The full name, for VoiceOver and help. The filter matches it and `name`.
+        /// The full name, for VoiceOver and help. The filter matches it, `name` and the tile's groups.
         public var title: String { action.title }
         /// The name under its section's heading, one short line: "Left" under Halves, "50%" under Sizes.
         public var name: String {
@@ -112,7 +112,9 @@ public struct LayoutPickerModel: Equatable, Sendable {
             let tiles = offered.filter { group(for: $0) == title }
                 .map { Tile(action: $0, hotkey: hotkeys[$0]) }
                 .filter { tile in
-                    text.isEmpty || [tile.title, tile.name, title].contains { $0.localizedCaseInsensitiveContains(text) }
+                    // The cheat sheet's own group too, which More folds in: "undo" still finds Restore.
+                    text.isEmpty || [tile.title, tile.name, title, WindowCheatSheet.group(for: tile.action)]
+                        .contains { $0.localizedCaseInsensitiveContains(text) }
                 }
             return tiles.isEmpty ? nil : Section(title: title, tiles: tiles)
         }

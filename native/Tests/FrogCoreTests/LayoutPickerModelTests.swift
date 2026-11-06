@@ -30,6 +30,11 @@ final class LayoutPickerModelTests: XCTestCase {
         XCTAssertEqual(model.visibleActions, [.topLeft])
         model.setQuery("70%")
         XCTAssertEqual(model.visibleActions, [.centeredMedium])
+        // The cheat sheet's groups that More folds in still find their tiles.
+        model.setQuery("undo")
+        XCTAssertEqual(model.visibleActions, [.restore])
+        model.setQuery("displays")
+        XCTAssertEqual(model.visibleActions, [.nextDisplay, .previousDisplay])
         model.setQuery("nothing like it")
         XCTAssertEqual(model.sections, [])
         XCTAssertNil(model.selection)
