@@ -6,7 +6,8 @@ import FrogCore
 final class ShortcutReferencePanel {
     typealias Groups = [(group: ShortcutReferenceGroup, items: [ShortcutReferenceItem])]
     static let width: CGFloat = 420
-    static let maxHeight: CGFloat = 520
+    /// Where the screen is unknown, as in the screenshot harness.
+    static let maxHeight: CGFloat = 640
     private var panel: NSPanel?
     func hide() { panel?.orderOut(nil) }
     func show(groups: Groups) {
@@ -20,7 +21,8 @@ final class ShortcutReferencePanel {
         }
         // The panel is as tall as its rows up to a limit, and scrolls after.
         let measured = NSHostingView(rootView: ShortcutReferenceContent(groups: groups).frame(width: Self.width).environment(\.locale, L10n.locale)).fittingSize.height
-        let height = min(Self.maxHeight, ceil(measured))
+        // Shown while its key is held, so as tall as the display allows: every group is seen without scrolling.
+        let height = min(WindowCheatSheetPanel.maximumHeight(on: NSScreen.main), ceil(measured))
         panel?.title = L10n.text("Frog shortcuts")
         panel?.contentView = NSHostingView(rootView: ShortcutReferenceView(groups: groups, height: height))
         panel?.setContentSize(NSSize(width: Self.width, height: height))
@@ -73,8 +75,9 @@ struct ShortcutReferenceContent: View {
                 }
             }
             if groups.isEmpty {
-                Text("No shortcuts yet. Give a Writing or Dictation action a shortcut, or add one in Shortcuts.")
-                    .font(FrogType.row).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                FrogEmptyState(symbol: "command", title: "No shortcuts yet",
+                               message: "Give a Writing or Dictation rule a shortcut, or add one in Shortcuts.", tint: .blue)
+                    .frogTableSurface()
             }
         }.padding(FrogStyle.sheetPadding).frame(maxWidth: .infinity, alignment: .leading)
     }
