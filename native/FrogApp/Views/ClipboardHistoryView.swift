@@ -183,14 +183,14 @@ struct ClipboardHistoryView: View {
         .onChange(of: state.focusRequest) { _, _ in searching = true }
     }
 
-    /// What Return, Shift-Return and Command-C do, each beside its keys, and Close for the pointer and VoiceOver.
+    /// What Return and Shift-Return do, each beside its keys, and Close for the pointer and VoiceOver. ⌘C copies
+    /// as everywhere on the Mac, so it needs no hint of its own: four crowded the band.
     private func footer(count: Int) -> some View {
         FrogFooter {
             Text(count == 1 ? "1 item" : "\(count) items")
         } actions: {
             FrogFooterHint("Paste", keys: "↩")
             FrogFooterHint("Plain text", keys: "⇧↩")
-            FrogFooterHint("Copy", keys: "⌘C")
             FrogFooterHint("Close", keys: "esc", action: close)
         }
     }
