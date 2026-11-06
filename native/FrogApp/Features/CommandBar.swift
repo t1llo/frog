@@ -858,7 +858,7 @@ struct CommandRowKind: Equatable {
     init(_ id: String) {
         func has(_ prefix: String) -> Bool { id.hasPrefix(prefix) }
         switch true {
-        case id == "features", has("feature:"), has("plugin-page:"), has("route:"): (title, group) = ("Frog", "Frog")
+        case id == "features", has("feature:"), has("plugin-page:"), has("route:"): (title, group) = ("Page", "Frog")
         case has("app:"): (title, group) = ("Application", "Applications")
         case has("window:"): (title, group) = ("Window", "Windows")
         case has("rule:"): (title, group) = ("Rule", "Writing rules")
@@ -1032,8 +1032,8 @@ private struct CommandResultRow: View, Equatable {
                     }
                 }
                 Spacer(minLength: FrogStyle.space10)
-                // Frog's own places need no label; only other kinds say what they are.
-                if !kind.title.isEmpty, kind.title != "Frog" {
+                // Every row says what it is, Frog's own pages included, so a page and a command never look alike.
+                if !kind.title.isEmpty {
                     Text(L10n.text(kind.title)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).fixedSize()
                 }
             }.padding(.horizontal, FrogStyle.rowPadding).frame(height: CommandBarView.rowHeight)

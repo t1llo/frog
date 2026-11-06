@@ -346,8 +346,8 @@ extension WindowSwitcherSettings {
     func page() -> AnyView? { AnyView(WindowSwitcherView(plugin: self).environmentObject(model)) }
 
     var actions: [PluginAction] {
-        [PluginAction(id: "window-switcher.show", title: "Switch windows", symbol: "macwindow.on.rectangle",
-                      keywords: "window switcher list", surfaces: .all) { [weak self] _ in
+        [PluginAction(id: "window-switcher.show", title: "Show window list", symbol: "macwindow.on.rectangle",
+                      keywords: "window switcher switch windows", surfaces: .all) { [weak self] _ in
             guard let self else { throw ActionError.pluginOff(Self.info.name) }
             guard self.controller?.showList() == true else { throw ActionError.failed(self.status.text) }
             return .done("Showing the window switcher.")
