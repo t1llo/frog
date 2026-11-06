@@ -92,8 +92,8 @@ struct HistoryView: View {
                     case .noAnswers?:
                         FrogEmptyState(symbol: "questionmark.bubble", title: "No answers yet", message: "Answers from Explain show here.")
                     case _?:
-                        FrogEmptyState(symbol: "clock.arrow.circlepath", title: "No history yet",
-                                       message: "Rewritten text, answers and recordings show here.")
+                        FrogEmptyState(symbol: HistoryPlugin.info.symbol, title: "No history yet",
+                                       message: "Rewritten text, answers and recordings show here.", tint: HistoryPlugin.info.tint)
                     case nil:
                         LazyVStack(spacing: 2) { ForEach(shown) { entry in row(entry) } }.padding(6).frogTableSurface()
                     }

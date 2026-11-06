@@ -117,7 +117,7 @@ struct SystemMonitorOverview: View {
         let fraction = sample != nil ? sample?.memory : snapshot.memory?.fraction
         let level = fraction.map { FrogStyle.level($0, warning: 0.8, critical: 0.92) }
         // The dot is the meter's colour, so the three figures read as one legend.
-        return GraphLegend(color: level ?? FrogStyle.muted.opacity(0.5), title: "Memory") {
+        return GraphLegend(color: level ?? FrogStyle.placeholder, title: "Memory") {
             if let fraction, let level {
                 Text(percent(.value(fraction))).font(GraphStyle.legendValue(page: wide)).monospacedDigit()
                     .frame(height: wide ? 34 : 24, alignment: .leading)
@@ -136,7 +136,7 @@ struct SystemMonitorOverview: View {
     private func storageLine(_ storage: SystemMonitorStorage) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Label("Storage", systemImage: "internaldrive").font(FrogType.label)
+                cardTitle("Storage", symbol: "internaldrive")
                 Text(diskBytes(storage.available)).font(GraphStyle.figure).monospacedDigit()
                 Text("free").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                 Spacer(minLength: 4)
@@ -147,10 +147,19 @@ struct SystemMonitorOverview: View {
             .help("Space free on the startup disk, counting what macOS can clear, as Finder shows it.")
     }
 
+    /// The title of the storage and battery cards, in the legend's style (`GraphLegend`), so every block of the
+    /// overview is headed alike: a small muted symbol where the legend has its dot, and a small muted name.
+    private func cardTitle(_ title: String, symbol: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: symbol).font(FrogType.caption).accessibilityHidden(true)
+            Text(L10n.text(title)).font(FrogType.small).lineLimit(1)
+        }.foregroundStyle(FrogStyle.muted).fixedSize()
+    }
+
     private var storagePlaceholder: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Label("Storage", systemImage: "internaldrive").font(FrogType.label)
+                cardTitle("Storage", symbol: "internaldrive")
                 Spacer(minLength: 4)
                 FrogSkeleton(width: 56, height: 12)
             }
@@ -170,7 +179,7 @@ struct SystemMonitorOverview: View {
         return AnyView(VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Label("Battery", systemImage: power.charging ? "battery.100.bolt" : "battery.75").font(FrogType.label)
+                    cardTitle("Battery", symbol: power.charging ? "battery.100.bolt" : "battery.75")
                     if let percent = power.batteryPercent {
                         Text("\(percent)%").font(GraphStyle.figure).monospacedDigit()
                     }
@@ -299,12 +308,8 @@ private struct MeasuringValue: View {
 private struct OverviewCard: ViewModifier {
     let wide: Bool
     func body(content: Content) -> some View {
-        if wide {
-            content.padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .topLeading).frogTableSurface()
-        } else {
-            // The popup's card: the same surface, sitting panelCardInset from the panel's edge.
-            content.padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .topLeading).frogTableSurface()
-        }
+        // The same card on the page and in the popup, where it sits panelCardInset from the panel's edge.
+        content.padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .topLeading).frogTableSurface()
     }
 }
 

@@ -36,7 +36,8 @@ struct PhonePage: View {
     @ViewBuilder private var phones: some View {
         FrogSection("Phones") {
             if phone.phones.isEmpty {
-                FrogEmptyState(symbol: "iphone", title: "No phone paired", message: "Install Frog Companion on your phone, then pair it.") {
+                FrogEmptyState(symbol: PhonePlugin.info.symbol, title: "No phone paired", message: "Install Frog Companion on your phone, then pair it.",
+                               tint: PhonePlugin.info.tint) {
                     if phone.pairing == nil { Button("Pair a phone", action: pair).buttonStyle(.frog(.primary)) }
                 }
             } else {

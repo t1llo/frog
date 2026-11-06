@@ -161,9 +161,11 @@ struct CleanerReviewFooter: View {
                 // After a removal that left the app, the review stays open with the phase back at idle.
                 .frogDisabled(count == 0 ? "Tick the files to move first" : ![.reviewing, .idle].contains(cleaner.phase) ? "Frog is still working" : nil)
         }
-        // The bar spans the window; its content keeps to the page's column, so it lines up with the list above.
-        .padding(.horizontal, FrogStyle.pagePadding).frame(maxWidth: FrogStyle.pageWidth + FrogStyle.pagePadding * 2)
-        .frame(maxWidth: .infinity).padding(.vertical, 10)
+        // The bar spans the window; its content keeps to the page's column, which starts on the leading edge
+        // whatever the window's width, so it lines up with the list above.
+        .padding(.horizontal, FrogStyle.pagePadding)
+        .frame(maxWidth: FrogStyle.pageWidth + FrogStyle.pagePadding * 2, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, FrogStyle.space10)
         // The bar sits on the inset fill rather than behind a line; the canvas below keeps the scrolled page from showing through.
         .background(FrogStyle.card).background(FrogStyle.canvas)
     }

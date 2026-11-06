@@ -38,7 +38,7 @@ struct StatisticsView: View {
                     FrogEmptyState(symbol: "chart.bar", title: "Nothing recorded yet",
                                    message: statistics.snapshot.recordingEnabled
                                        ? "Statistics appear after your first dictation or rule run."
-                                       : "Turn on Record statistics to start counting.")
+                                       : "Turn on Record statistics to start counting.", tint: .gray)
                         .frogTableSurface()
                 }
             } else {

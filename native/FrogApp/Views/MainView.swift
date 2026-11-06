@@ -41,7 +41,7 @@ struct MainView: View {
         if let page = model.pluginHost.page(for: id) { page }
         else if let descriptor = model.pluginHost.descriptor(id) {
             FrogEmptyState(symbol: descriptor.info.symbol, title: "\(descriptor.info.name) is off",
-                           message: "Turn it on in Features.")
+                           message: "Turn it on in Features.", tint: descriptor.info.tint)
         }
     }
     @ViewBuilder private var selectedPage: some View {
@@ -367,7 +367,7 @@ private struct HistoryButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(enabled ? (hovering ? FrogStyle.ink : FrogStyle.muted) : FrogStyle.muted.opacity(0.45))
+                .foregroundStyle(enabled ? (hovering ? FrogStyle.ink : FrogStyle.muted) : FrogStyle.placeholder)
                 .frame(width: FrogStyle.controlHeight, height: FrogStyle.controlHeight)
                 .background(hovering && enabled ? FrogStyle.hover : .clear, in: Circle())
                 .contentShape(Circle())

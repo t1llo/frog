@@ -41,7 +41,8 @@ struct ClipboardPage: View {
         let found = ClipboardSearch.filter(all, query: search)
         FrogSection("Copied") {
             if all.isEmpty {
-                FrogEmptyState(symbol: "clipboard", title: "Nothing copied yet", message: "Text you copy shows here.") { EmptyView() }
+                FrogEmptyState(symbol: ClipboardPlugin.info.symbol, title: "Nothing copied yet", message: "Text you copy shows here.",
+                               tint: ClipboardPlugin.info.tint)
             } else {
                 VStack(spacing: 10) {
                     // The count lives in the field, not loose at the heading's far end.

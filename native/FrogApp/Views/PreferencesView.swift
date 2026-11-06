@@ -13,7 +13,7 @@ struct PreferencesView: View {
     var body: some View {
         ScrollViewReader { proxy in
         FrogPage {
-            FrogPageHeader(title: "Settings")
+            FrogPageHeader(title: "Settings", subtitle: "Startup, appearance, permissions and what Frog keeps.")
             SettingsHero(model: model)
             FrogSection("General") {
                 FrogRow("Start at login") { Toggle("Start at login", isOn: Binding(get: { model.startAtLogin }, set: model.setStartAtLogin)).labelsHidden() }

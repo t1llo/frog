@@ -18,8 +18,7 @@ struct StayAwakePage: View {
                     Toggle("Keep this Mac awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
                         .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
-                // While off, these set up the next session: still there to change, quieter than the switch.
-                Group {
+                // While off, these set up the next session; they can be changed either way, so they are not dimmed.
                 FrogRow("Duration") {
                     FrogDropdown(selected: settings.duration, options: StayAwakeController.DurationChoice.allCases, title: { $0.title }) { choice in
                         change(reveal: true) { settings in settings.duration = choice }
@@ -35,7 +34,6 @@ struct StayAwakePage: View {
                     Toggle("Keep the screen on", isOn: Binding(get: { settings.keepScreenOn }, set: { on in change { $0.keepScreenOn = on } }))
                         .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
-                }.opacity(power.isEnabled ? 1 : 0.6)
             }
             LidClosedSection(power: power, lid: power.lid, on: settings.lidClosed) { on in change(reveal: true) { $0.lidClosed = on } }
             FrogSection("Menu bar") {
@@ -115,61 +113,5 @@ private struct LidClosedSection: View {
             }
         }
         .task(id: on) { if on { await lid.refreshAccess() } }
-    }
-}
-
-/// Stay awake in the Frog popup: the switch, and the duration while off; while on, when the session ends.
-struct StayAwakePopupRow: View {
-    @ObservedObject var power: StayAwakeController
-    let choose: (StayAwakeController.DurationChoice) -> Void
-    @State private var choosingDuration = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 6) {
-                // Icon and title placed as in the menu rows below, so their titles line up.
-                HStack(spacing: FrogStyle.space8) {
-                    Image(systemName: power.isEnabled ? "cup.and.saucer.fill" : "cup.and.saucer").frame(width: 16)
-                    Text("Stay awake").font(FrogType.bodyMedium)
-                }.fixedSize().accessibilityElement(children: .combine)
-                Spacer(minLength: 0)
-                if power.isBusy { FrogSpinner(size: .mini) }
-                if power.isEnabled {
-                    Text(power.deadline.map { "Until \($0.formatted(date: .omitted, time: .shortened))" } ?? "Until turned off")
-                        .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                } else {
-                    Button { choosingDuration.toggle() } label: {
-                        CompactDropdownLabel(value: L10n.text(power.duration.title), width: 112, height: FrogStyle.compactHeight)
-                    }.buttonStyle(.plain)
-                        .accessibilityLabel("Stay-awake duration").accessibilityValue(power.duration.title)
-                }
-                Toggle("Stay awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
-                    .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
-                    .accessibilityHint("Keep this Mac awake")
-            }.frame(height: FrogStyle.compactHeight)
-            if choosingDuration && !power.isEnabled {
-                VStack(spacing: 1) {
-                    ForEach(StayAwakeController.DurationChoice.allCases) { duration in
-                        Button { choose(duration); choosingDuration = false } label: {
-                            HStack {
-                                Text(L10n.text(duration == .untilTime ? "Until \(StayAwakePage.title(of: power.untilTime))" : duration.title))
-                                Spacer()
-                                if power.duration == duration {
-                                    Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(FrogStyle.accent)
-                                }
-                            }.font(FrogType.small).padding(.horizontal, 8).frame(height: FrogStyle.compactHeight).contentShape(Rectangle())
-                        }.buttonStyle(MenuRowStyle()).accessibilityAddTraits(power.duration == duration ? .isSelected : [])
-                    }
-                }
-            }
-            if let message = power.error ?? power.notice {
-                Text(String(message.prefix(300))).font(FrogType.caption)
-                    .foregroundStyle(power.error == nil ? FrogStyle.muted : FrogStyle.warning).lineLimit(2)
-                    .help("Open Stay awake for details.")
-            }
-        }.padding(FrogStyle.rowPadding).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-            .padding(.bottom, FrogStyle.space4)
-            .task { await power.refresh() }
-            .onChange(of: power.isEnabled) { _, _ in choosingDuration = false }
     }
 }

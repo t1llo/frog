@@ -53,7 +53,7 @@ struct PluginsCatalogView: View {
             }.frame(maxWidth: .infinity, alignment: .leading)
             if enabled {
                 Button("Open") { host.open(plugin.id) }
-                    .buttonStyle(.frog(compact: true))
+                    .frogRowAccessory()
                     .accessibilityLabel("Open \(plugin.name)")
             }
             Toggle(plugin.name, isOn: Binding(get: { enabled }, set: { on in

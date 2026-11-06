@@ -356,7 +356,7 @@ private struct OnboardingPluginTile: View {
                 // A tick says what is on; the tile itself stays plain, so a grid of features that are all on stays calm.
                 Image(systemName: on ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 14, weight: on ? .regular : .light))
-                    .foregroundStyle(on ? FrogStyle.accent : FrogStyle.muted.opacity(0.6))
+                    .foregroundStyle(on ? FrogStyle.accent : FrogStyle.placeholder)
                     .contentTransition(.symbolEffect(.replace)).accessibilityHidden(true)
             }
             .padding(.vertical, FrogStyle.space8).padding(.leading, FrogStyle.space8).padding(.trailing, FrogStyle.space8)
