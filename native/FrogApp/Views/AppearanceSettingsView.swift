@@ -167,7 +167,7 @@ struct AppearanceSettingsView: View {
             TileGroup(title: "Interface style") {
                 ForEach(InterfaceStyle.allCases, id: \.self) { kind in
                     AppearanceTile(title: kind == .classic ? "Classic" : "Glass", selected: style == kind) {
-                        WindowSketch(scheme: appearance.mode ?? .system, glass: kind == .glass)
+                        WindowSketch(scheme: appearance.mode ?? .system, glass: kind == .glass, onAccent: true)
                     } choose: {
                         guard style != kind else { return }
                         var value = appearance
@@ -294,21 +294,31 @@ private struct AppearanceTile<Picture: View>: View {
                     .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius + 3, style: .continuous)
                         .strokeBorder(selected ? FrogStyle.accent : hovering ? FrogStyle.hairline : .clear, lineWidth: 2))
                 Text(L10n.text(title)).font(selected ? FrogType.rowMedium : FrogType.body)
-                    .foregroundStyle(selected ? FrogStyle.ink : FrogStyle.muted).lineLimit(1).fixedSize()
+                    .foregroundStyle(FrogStyle.ink).lineLimit(1).fixedSize()
             }.fixedSize().contentShape(Rectangle())
         }.buttonStyle(.plain).onHover { hovering = $0 }
             .accessibilityLabel(L10n.text(title)).accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
-/// A tiny Frog window on a backdrop of the accent: light, dark, or split for Auto; frosted for Glass.
+/// A tiny Frog window: light, dark, or split for Auto, each on a desktop of its own mode so Light and Dark read apart;
+/// the material tiles put it on the accent instead, so Glass has colour to frost.
 private struct WindowSketch: View {
     let scheme: AppearancePreferences.Mode
     let glass: Bool
+    var onAccent = false
     var body: some View {
         ZStack {
-            LinearGradient(colors: [FrogStyle.accent.opacity(0.95), FrogStyle.accent.opacity(0.45)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            if onAccent {
+                LinearGradient(colors: [FrogStyle.accent.opacity(0.95), FrogStyle.accent.opacity(0.45)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+            } else {
+                switch scheme {
+                case .light: desktop(dark: false)
+                case .dark: desktop(dark: true)
+                case .system: ZStack { desktop(dark: false); desktop(dark: true).mask(DiagonalHalf()) }
+                }
+            }
             switch scheme {
             case .light: window(dark: false)
             case .dark: window(dark: true)
@@ -319,6 +329,11 @@ private struct WindowSketch: View {
                 }
             }
         }
+    }
+
+    private func desktop(dark: Bool) -> some View {
+        LinearGradient(colors: dark ? [Color(white: 0.3), Color(white: 0.12)] : [Color(white: 0.9), Color(white: 0.76)],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
     private func window(dark: Bool) -> some View {
