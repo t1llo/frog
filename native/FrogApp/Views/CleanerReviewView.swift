@@ -78,7 +78,7 @@ struct CleanerReviewView: View {
         let allTicked = group.items.allSatisfy { review.selected.contains($0.id) }
         // Headed like a settings section: the group's name, then its list in one card.
         return VStack(alignment: .leading, spacing: 8) {
-            FrogSectionHeader("\(L10n.text(group.kind.title)) · \(group.items.count)") {
+            FrogSectionHeader(verbatim: "\(L10n.text(group.kind.title)) · \(group.items.count)") {
                 Button(allTicked ? "Deselect all" : "Select all") { cleaner.setGroup(group.kind, selected: !allTicked) }
                     .buttonStyle(.frog(.ghost, compact: true))
             }

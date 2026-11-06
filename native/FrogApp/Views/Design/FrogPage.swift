@@ -29,13 +29,30 @@ struct FrogPage<Content: View>: View {
 
 /// A leading-aligned column like `VStack`, except that a subview with no height takes no spacing either, so a
 /// page header that draws nothing in the page (its title, subtitle and actions are in the toolbar) leaves no gap.
+///
+/// Each subview is measured once per pass: `placeSubviews` reuses what `sizeThatFits` measured at that width, so a long page
+/// (History, Clipboard) is not laid out twice. Its lazy lists stay lazy; the scroll view still decides which rows
+/// exist.
 struct FrogPageStack: Layout {
     var spacing: CGFloat
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    struct Cache {
+        var width: CGFloat?
+        var sizes: [CGSize]?
+    }
+
+    func makeCache(subviews: Subviews) -> Cache { Cache() }
+
+    private func sizes(width: CGFloat?, subviews: Subviews, cache: inout Cache) -> [CGSize] {
+        if let sizes = cache.sizes, cache.width == width, sizes.count == subviews.count { return sizes }
+        let sizes = subviews.map { $0.sizeThatFits(ProposedViewSize(width: width, height: nil)) }
+        cache = Cache(width: width, sizes: sizes)
+        return sizes
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
         var height: CGFloat = 0, width: CGFloat = 0, placed = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        for size in sizes(width: proposal.width, subviews: subviews, cache: &cache) {
             guard size.height > 0 else { continue }
             height += size.height + (placed > 0 ? spacing : 0)
             width = max(width, size.width); placed += 1
@@ -43,10 +60,12 @@ struct FrogPageStack: Layout {
         return CGSize(width: proposal.width ?? width, height: height)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
         var y = bounds.minY, placed = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+        let sizes = sizes(width: bounds.width, subviews: subviews, cache: &cache)
+        // The next pass measures afresh: a subview may have changed size without the layout being told.
+        cache = Cache()
+        for (subview, size) in zip(subviews, sizes) {
             if size.height <= 0 {
                 subview.place(at: CGPoint(x: bounds.minX, y: y), proposal: ProposedViewSize(width: bounds.width, height: 0))
                 continue
@@ -123,27 +142,21 @@ struct FrogPageHeader<Actions: View>: View {
         }
     }
 
-    @ViewBuilder private func sheetHeader(hasSubtitle: Bool, hasActions: Bool) -> some View {
-        Group {
-            if !titleInToolbar || hasSubtitle || hasActions {
-                HStack(alignment: .center, spacing: FrogStyle.space16) {
-                    VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                        if !titleInToolbar {
-                            // As tall as a control, so the title sits at the same height with or without a
-                            // subtitle or actions.
-                            Text(L10n.text(title)).font(FrogType.title).tracking(-0.4)
-                                .foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
-                                .frame(minHeight: FrogStyle.controlHeight)
-                        }
-                        if let subtitle, hasSubtitle {
-                            Text(L10n.text(subtitle)).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }.frame(maxWidth: .infinity, minHeight: FrogStyle.controlHeight, alignment: .leading)
-                        .overlay { WindowDragRegion().accessibilityHidden(true) }
-                    if hasActions { HStack(spacing: FrogStyle.space8) { actions }.frogRowAccessory(false) }
+    /// Outside the main window (a sheet) the header draws its title, subtitle and actions itself.
+    private func sheetHeader(hasSubtitle: Bool, hasActions: Bool) -> some View {
+        HStack(alignment: .center, spacing: FrogStyle.space16) {
+            VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                // As tall as a control, so the title sits at the same height with or without a subtitle or actions.
+                Text(L10n.text(title)).font(FrogType.title).tracking(-0.4)
+                    .foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
+                    .frame(minHeight: FrogStyle.controlHeight)
+                if let subtitle, hasSubtitle {
+                    Text(L10n.text(subtitle)).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-            }
+            }.frame(maxWidth: .infinity, minHeight: FrogStyle.controlHeight, alignment: .leading)
+                .overlay { WindowDragRegion().accessibilityHidden(true) }
+            if hasActions { HStack(spacing: FrogStyle.space8) { actions }.frogRowAccessory(false) }
         }.preference(key: FrogPageTitleKey.self, value: L10n.text(title))
     }
 }
@@ -194,16 +207,22 @@ struct FrogSection<Content: View, Accessory: View>: View {
 /// same. Inside a card or popup, a sub-group starts with a `SectionCaption` instead.
 struct FrogSectionHeader<Accessory: View>: View {
     let title: String
+    /// A title the caller has already translated, such as one with a count in it, is shown as it is.
+    var verbatim = false
     @ViewBuilder var accessory: Accessory
 
     init(_ title: String, @ViewBuilder accessory: () -> Accessory) {
         self.title = title; self.accessory = accessory()
     }
 
+    init(verbatim title: String, @ViewBuilder accessory: () -> Accessory) {
+        self.title = title; verbatim = true; self.accessory = accessory()
+    }
+
     var body: some View {
         HStack(spacing: FrogStyle.space8) {
             if !title.isEmpty {
-                Text(L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.ink)
+                Text(verbatim ? title : L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.ink)
                     .accessibilityAddTraits(.isHeader)
             }
             Spacer(minLength: FrogStyle.space8)
