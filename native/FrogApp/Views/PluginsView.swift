@@ -268,6 +268,8 @@ struct PluginReviewSheet: View {
     let report: (Error) -> Void
     /// The main button waits a moment after the sheet changes, so a click meant for something else cannot approve it.
     @State private var armed = false
+    /// Permission rows opened to their full explanation; each shows one line until clicked.
+    @State private var expanded = Set<PluginPermission>()
 
     private var manifest: PluginManifest { review.package.manifest }
 
@@ -298,13 +300,13 @@ struct PluginReviewSheet: View {
                     if manifest.permissions.isEmpty {
                         FrogSection("Permissions") {
                             FrogRow("Nothing beyond its own page", caption: "It shows its page, keeps its own storage and receives its commands.", icon: {
-                                permissionIcon("checkmark.shield", sensitive: false)
+                                permissionIcon("checkmark.shield")
                             }, control: { EmptyView() })
                         }
                     } else {
                         let sensitive = manifest.permissions.filter(\.isSensitive).count
                         FrogSection(updating && additions.isEmpty ? "It asks for nothing new" : "It asks to",
-                                    footer: sensitive == 0 ? nil : "Marked with a caution: it can read or send your data, or act for you.") {
+                                    footer: sensitive == 0 ? nil : "Caution marks what can read or send your data, or act for you. Click a row for details.") {
                             ForEach(manifest.permissions, id: \.self) { permission in
                                 permissionRow(permission, new: updating && additions.permissions.contains(permission))
                             }
@@ -362,7 +364,7 @@ struct PluginReviewSheet: View {
                 }
                 .padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space4)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(maxHeight: 420).fixedSize(horizontal: false, vertical: true).bottomScrollFade(height: 12)
+            }.frame(maxHeight: 440).fixedSize(horizontal: false, vertical: true).bottomScrollFade()
             HStack(spacing: FrogStyle.space8) {
                 Text("\(review.package.files.count) files · \(ByteCountFormatter.string(fromByteCount: Int64(review.package.size), countStyle: .file))")
                     .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
@@ -404,33 +406,17 @@ struct PluginReviewSheet: View {
         }
     }
 
-    private func permissionIcon(_ symbol: String, sensitive: Bool) -> some View {
+    private func permissionIcon(_ symbol: String) -> some View {
         Image(systemName: symbol).font(.system(size: 13, weight: .medium))
             .foregroundStyle(FrogStyle.ink.opacity(0.75))
             .frame(width: 28, height: 28).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius - 2, style: .continuous))
-            .overlay(alignment: .bottomTrailing) {
-                if sensitive {
-                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11, weight: .bold))
-                        .symbolRenderingMode(.palette).foregroundStyle(FrogStyle.onAccent, FrogStyle.warning)
-                        .offset(x: 4, y: 4).accessibilityLabel("Caution")
-                }
-            }
+            .accessibilityHidden(true)
     }
 
     private func permissionRow(_ permission: PluginPermission, new: Bool) -> some View {
-        HStack(alignment: .top, spacing: FrogStyle.space12) {
-            permissionIcon(permission.symbol, sensitive: permission.isSensitive)
-            VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                HStack(spacing: FrogStyle.space6) {
-                    Text(permission.title).font(FrogType.row)
-                    if new { FrogBadge(text: "New", active: true) }
-                }
-                Text(permission.detail).font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, FrogStyle.space10)
-        .accessibilityElement(children: .combine)
+        PluginPermissionRow(permission: permission, new: new, expanded: expanded.contains(permission)) {
+            if expanded.contains(permission) { expanded.remove(permission) } else { expanded.insert(permission) }
+        } icon: { permissionIcon(permission.symbol) }
     }
 
     private func listRow(_ text: String, badge: String?) -> some View {
@@ -445,6 +431,66 @@ struct PluginReviewSheet: View {
         Label(effect.title, systemImage: effect.symbol).font(FrogType.small)
             .foregroundStyle(effect == .read ? FrogStyle.muted : FrogStyle.ink)
             .help(effect.explanation)
+    }
+}
+
+/// One permission on one line: its symbol, its title with a Caution or New badge beside it, and the start of its
+/// explanation. A click opens the whole explanation; the pointer shows it as a tooltip.
+private struct PluginPermissionRow<Icon: View>: View {
+    let permission: PluginPermission
+    let new: Bool
+    let expanded: Bool
+    let toggle: () -> Void
+    @ViewBuilder var icon: Icon
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: toggle) {
+            HStack(alignment: expanded ? .top : .center, spacing: FrogStyle.space12) {
+                icon
+                VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                    HStack(spacing: FrogStyle.space6) {
+                        Text(permission.title).font(FrogType.row).foregroundStyle(FrogStyle.ink)
+                        if permission.isSensitive { PluginCautionBadge() }
+                        if new { FrogBadge(text: "New", active: true) }
+                    }
+                    Text(permission.detail).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                        .lineLimit(expanded ? nil : 1).truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: expanded)
+                }
+                Spacer(minLength: FrogStyle.space8)
+                Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(FrogStyle.muted.opacity(hovering || expanded ? 1 : 0.6))
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+                    .frame(height: 28)
+                    .accessibilityHidden(true)
+            }
+            .padding(.vertical, FrogStyle.space6).frame(minHeight: FrogStyle.rowHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).onHover { hovering = $0 }
+        .help(expanded ? "" : permission.detail)
+        .animation(FrogMotion.reveal, value: expanded)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(expanded ? "" : permission.detail)
+    }
+}
+
+/// "Caution" beside a permission that can read or send the user's data, or act for them: the warning colour in a
+/// capsule, like every other badge.
+private struct PluginCautionBadge: View {
+    var body: some View {
+        Label { Text("Caution") } icon: { Image(systemName: "exclamationmark.triangle.fill") }
+            .labelStyle(PluginBadgeLabelStyle())
+            .font(FrogType.caption.weight(.semibold)).foregroundStyle(FrogStyle.warning)
+            .padding(.horizontal, FrogStyle.space6).padding(.vertical, 3)
+            .background(FrogStyle.warning.opacity(0.14), in: Capsule(style: .continuous))
+    }
+}
+
+private struct PluginBadgeLabelStyle: LabelStyle {
+    func makeBody(configuration: LabelStyleConfiguration) -> some View {
+        HStack(spacing: FrogStyle.space2) { configuration.icon.font(.system(size: 8, weight: .bold)); configuration.title }
     }
 }
 
