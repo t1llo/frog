@@ -29,8 +29,8 @@ struct DesignGallery: View {
     var body: some View {
         FrogPage(width: FrogStyle.wideWidth) {
             FrogPageHeader(title: "Design gallery", subtitle: "Every Frog component, with sample values.") {
-                Button("Secondary") {}
-                Button("Primary") {}.buttonStyle(.frog(.primary))
+                FrogAddMenu("Add app") { Button("Safari") {}; Button("Mail") {} }
+                FrogAddButton("Add rule") {}
             }
             HStack(alignment: .top, spacing: FrogStyle.sectionSpacing) {
                 VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
@@ -41,6 +41,14 @@ struct DesignGallery: View {
                         FrogEmptyState(symbol: "tray", title: "No notes yet", message: "Notes you save appear here.") {
                             Button("New note") {}.buttonStyle(.frog(.primary))
                         }
+                    }
+                    FrogSection("Sheet buttons", footer: "Delete alone on the left; Cancel next to the primary on the right.") {
+                        FrogSheetButtons {
+                            Button("Delete", systemImage: "trash", role: .destructive) {}.buttonStyle(.frog(.destructive))
+                        } trailing: {
+                            FrogCancelButton {}
+                            FrogPrimaryButton("Save") {}
+                        }.padding(.horizontal, -FrogStyle.sheetPadding).padding(.bottom, -FrogStyle.space8)
                     }
                 }.frame(maxWidth: .infinity)
                 VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
@@ -78,16 +86,26 @@ struct DesignGallery: View {
                 CompactSegments(values: ["System", "Light", "Dark"], selected: mode, title: { $0 }) { mode = $0 }
             }
             FrogRow("Open at login") { Toggle("Open at login", isOn: $launch).labelsHidden().toggleStyle(.frogSwitch) }
+            FrogRow("Managed by your organisation", caption: "On, and cannot be changed here.") {
+                Toggle("Managed", isOn: .constant(true)).labelsHidden().toggleStyle(.frogSwitch).disabled(true)
+            }
         }
     }
 
     private var rows: some View {
-        FrogSection("Rows", accessory: { Button("Add") {}.buttonStyle(.frog(compact: true)) }) {
+        FrogSection("Rows", accessory: { FrogAddButton("Add row") {} }) {
             FrogRow("Clipboard history", caption: "⌘⇧V opens it.", icon: { PluginIconTile(symbol: "doc.on.clipboard", tint: Self.tints[0].1) }) {
                 Toggle("Clipboard history", isOn: .constant(true)).labelsHidden().toggleStyle(.frogSwitch)
             }
             FrogRow("Dictation", icon: { PluginIconTile(symbol: "mic.fill", tint: Self.tints[1].1) }) {
                 ShortcutBadge(text: "⌥Space")
+            }
+            FrogRow("Try a rule", caption: "Row actions are 24 tall.") {
+                HStack(spacing: FrogStyle.space8) {
+                    Button("Try") {}
+                    Button("Turn on") {}.buttonStyle(.frog(.primary))
+                    IconAction(title: "Edit", symbol: "pencil") {}
+                }
             }
             FrogRow("Sounds", caption: "Plays a tick when a recording starts.") {
                 Toggle("Sounds", isOn: $sounds).labelsHidden().toggleStyle(.frogSwitch)
