@@ -27,7 +27,15 @@ public struct TextDiff: Equatable, Sendable {
     public init(original: String, result: String) {
         let old = Self.tokens(original), new = Self.tokens(result)
         var removed = Set<Int>(), inserted = Set<Int>()
-        for change in new.difference(from: old) {
+        // Compared as numbers, one per distinct token: far cheaper than comparing strings on a long rewrite.
+        var ids: [String: Int] = [:]
+        func id(_ token: String) -> Int {
+            if let known = ids[token] { return known }
+            ids[token] = ids.count
+            return ids.count - 1
+        }
+        let oldIDs = old.map(id), newIDs = new.map(id)
+        for change in newIDs.difference(from: oldIDs) {
             switch change {
             case .remove(let offset, _, _): removed.insert(offset)
             case .insert(let offset, _, _): inserted.insert(offset)

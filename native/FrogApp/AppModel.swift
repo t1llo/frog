@@ -1641,7 +1641,6 @@ final class AppModel: ObservableObject {
                     self.clipboardHistoryStore.recordCopiedText(result)
                     summary = L10n.text("Copied")
                 } else if let selection {
-                    summary = text == result ? L10n.text("No changes") : HistoryDiff(original: text, result: result)?.summary
                     do { try await selection.replace(with: result) }
                     catch is CancellationError { throw CancellationError() }
                     catch {
@@ -1649,6 +1648,8 @@ final class AppModel: ObservableObject {
                         delivered = false
                         self.report(error); ended = .failed(error.localizedDescription)
                     }
+                    // After the text is in place, and only when the pill will name it.
+                    if delivered, manualText == nil, self.showsProcessingIndicator { summary = await Self.changeSummary(from: text, to: result) }
                     self.clipboardHistoryStore.recordCopiedText(result)
                 } else if agentReply != nil {
                     produced = result
@@ -1680,6 +1681,15 @@ final class AppModel: ObservableObject {
         if error is CancellationError || (error as? URLError)?.code == .cancelled { return .cancelled }
         report(error)
         return .failed(error.localizedDescription)
+    }
+
+    /// What the done pill says a rewrite changed ("3 words changed"). The texts are compared off the main actor, as a
+    /// long rewrite takes a moment to compare; texts too long for History's diff get no summary.
+    private static func changeSummary(from text: String, to result: String) async -> String? {
+        guard text != result else { return L10n.text("No changes") }
+        guard text.count <= HistoryDiff.maxLength, result.count <= HistoryDiff.maxLength else { return nil }
+        let diff = await Task.detached(priority: .userInitiated) { TextDiff(original: text, result: result) }.value
+        return HistoryDiff.summary(changed: diff.changedWords, added: diff.addedWords, removed: diff.removedWords)
     }
 
     /// `background`: a shortcut ran the rule, so the processing indicator shows how it ended.

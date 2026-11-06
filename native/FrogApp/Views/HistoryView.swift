@@ -497,12 +497,15 @@ struct HistoryDiff {
     static let maxLength = 8_000
 
     /// "3 words changed", with what was added or removed beyond that ("2 words changed · 1 added").
-    var summary: String {
+    var summary: String { Self.summary(changed: changedWords, added: addedWords, removed: removedWords) }
+
+    /// The same summary from a diff's counts, for the done notice, which needs no marked text.
+    static func summary(changed: Int, added: Int, removed: Int) -> String {
         func words(_ count: Int) -> String { count == 1 ? L10n.text("1 word") : "\(count) \(L10n.text("words"))" }
         var parts: [String] = []
-        if changedWords > 0 { parts.append("\(words(changedWords)) \(L10n.text("changed"))") }
-        if addedWords > 0 { parts.append(parts.isEmpty ? "\(words(addedWords)) \(L10n.text("added"))" : "\(addedWords) \(L10n.text("added"))") }
-        if removedWords > 0 { parts.append(parts.isEmpty ? "\(words(removedWords)) \(L10n.text("removed"))" : "\(removedWords) \(L10n.text("removed"))") }
+        if changed > 0 { parts.append("\(words(changed)) \(L10n.text("changed"))") }
+        if added > 0 { parts.append(parts.isEmpty ? "\(words(added)) \(L10n.text("added"))" : "\(added) \(L10n.text("added"))") }
+        if removed > 0 { parts.append(parts.isEmpty ? "\(words(removed)) \(L10n.text("removed"))" : "\(removed) \(L10n.text("removed"))") }
         return parts.isEmpty ? L10n.text("Only spacing changed") : parts.joined(separator: " · ")
     }
 
