@@ -20,7 +20,7 @@ struct SystemMonitorPage: View {
 
     var body: some View {
         FrogPage {
-            FrogPageHeader(title: "System monitor")
+            FrogPageHeader(title: "System monitor", subtitle: "CPU, GPU and memory over the last minute, and free space on your Mac.")
             SystemMonitorView(monitor: monitor, presenter: .page, wide: true)
             SystemMonitorMenuBarSection(settings: plugin.settings) { plugin.update($0) }
         }
