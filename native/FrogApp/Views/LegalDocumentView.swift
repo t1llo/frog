@@ -28,6 +28,23 @@ enum LegalDocument: String, Identifiable, CaseIterable {
     }
 }
 
+extension LegalDocument {
+    /// How a paragraph of a short text reads: its short first line is the heading, and a paragraph set in capitals
+    /// (a licence's warranty disclaimer) keeps its words and case but is set small and quiet so it doesn't shout.
+    enum ParagraphStyle: Equatable {
+        case heading, prose, capitals
+        var font: Font { self == .heading ? FrogType.section : self == .capitals ? FrogType.small : FrogType.body }
+        var muted: Bool { self == .capitals }
+    }
+
+    static func style(of paragraph: String, at index: Int) -> ParagraphStyle {
+        if index == 0, paragraph.count <= 40, !paragraph.contains("\n") { return .heading }
+        let letters = paragraph.unicodeScalars.filter { CharacterSet.letters.contains($0) }
+        let capitals = letters.filter { CharacterSet.uppercaseLetters.contains($0) }
+        return letters.count >= 80 && capitals.count * 10 >= letters.count * 9 ? .capitals : .prose
+    }
+}
+
 struct LegalDocumentView: View {
     let document: LegalDocument
     private let text: String
@@ -51,9 +68,11 @@ struct LegalDocumentView: View {
                     // the body font, and the sheet as tall as the text, with no empty card under it.
                     ScrollView {
                         VStack(alignment: .leading, spacing: FrogStyle.space10) {
-                            ForEach(Array(LegalDocument.paragraphs(text).enumerated()), id: \.offset) { _, paragraph in
-                                Text(paragraph).font(FrogType.body).foregroundStyle(FrogStyle.ink).lineSpacing(2)
-                                    .fixedSize(horizontal: false, vertical: true)
+                            ForEach(Array(LegalDocument.paragraphs(text).enumerated()), id: \.offset) { index, paragraph in
+                                let style = LegalDocument.style(of: paragraph, at: index)
+                                Text(paragraph).font(style.font).foregroundStyle(style.muted ? FrogStyle.muted : FrogStyle.ink)
+                                    .lineSpacing(2).fixedSize(horizontal: false, vertical: true)
+                                    .accessibilityAddTraits(style == .heading ? .isHeader : [])
                             }
                         }
                         .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
