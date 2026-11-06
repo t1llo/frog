@@ -25,7 +25,7 @@ struct PreferencesView: View {
                     HotkeyRecorder(hotkey: Binding(get: { prefs.shortcutPanelHotkey }, set: { value in update { $0.shortcutPanelHotkey = value } }))
                 }
                 if let issue = model.hotkeyErrors[AppModel.shortcutPanelID] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
-                FrogRow("Setup", caption: "Walk through plugins, permissions, models and providers again.") { Button("Run setup again") { model.showSetup() } }
+                FrogRow("Setup", caption: "Walk through features, permissions, models and providers again.") { Button("Run setup again") { model.showSetup() } }
                 FrogRow("Statistics") { Button("View") { model.toolkit.select(.statistics) } }
             }
             AppearanceSettingsView(model: model)
@@ -157,14 +157,18 @@ private struct SettingsHero: View {
                 } else if let ready = readiness.version {
                     Text("Version \(version), \(ready) is ready").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 } else {
-                    Text("Version \(version), up to date").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    Text("Version \(version)").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }
             }
             Spacer(minLength: FrogStyle.space12)
             if readiness.version != nil {
                 Button("Install and Relaunch…") { updater.check() }.buttonStyle(.frog(.primary))
+            } else if updater.canCheck {
+                Button("Check for Updates") { updater.check() }
             } else {
-                Button("Check for Updates") { updater.check() }.disabled(!updater.canCheck)
+                // While Frog checks, or where it cannot, a dimmed button says less than plain words.
+                Label("Up to date", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    .labelStyle(.titleAndIcon)
             }
         }
         .padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
