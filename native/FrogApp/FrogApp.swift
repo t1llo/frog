@@ -87,9 +87,13 @@ final class FrogApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDe
             // login; the first time it opens centered.
             created.setFrameAutosaveName(Self.windowFrameName)
             created.setFrameUsingName(Self.windowFrameName)
-            // A window saved at the old default size never chose it: it grows to the new default once, in place.
+            // A window saved at the old default size never chose it: it grows to the new default once, in place. The
+            // flag keeps it from growing again for someone who later sizes it to exactly the old default.
             let previous = created.frameRect(forContentRect: NSRect(origin: .zero, size: MainView.previousDefaultSize)).size
-            if created.frame.size == previous {
+            let grewKey = "MainWindowGrewToNewDefault"
+            let alreadyGrew = UserDefaults.standard.bool(forKey: grewKey)
+            UserDefaults.standard.set(true, forKey: grewKey)
+            if !alreadyGrew, created.frame.size == previous {
                 var frame = created.frame
                 var grown = created.frameRect(forContentRect: NSRect(origin: .zero, size: MainView.defaultSize)).size
                 // Its top-left stays put, and it stays on its screen, rather than growing past the Dock.
