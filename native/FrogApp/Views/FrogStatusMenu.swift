@@ -43,7 +43,9 @@ struct FrogStatusMenu: View {
                         frogContent(host.menuRows)
                     }
                 }
-            }.padding(FrogStyle.panelCardInset)
+            }
+            // Cards sit their inset in from the panel's sides and top, and 8 above the footer band, as in every popup.
+            .padding([.horizontal, .top], FrogStyle.panelCardInset).padding(.bottom, FrogStyle.space8)
             footer(status: tabs.first(where: { $0.id == shown })?.status, frog: shown == Self.frogTab)
         }.frame(width: StatusItemPopup.width).fixedSize(horizontal: false, vertical: true)
             .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)

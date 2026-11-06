@@ -10,12 +10,15 @@ struct UsageMenuTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.listInset) {
-            // The status is in the popup's footer, as on every popup; the tab's own actions lead its content.
+            // When the limits were read on the leading side, where the row has room for it: in Frog's footer it
+            // left Settings only its caps.
             HStack(spacing: FrogStyle.space6) {
+                UsageMenuStatus(usage: usage).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 Spacer(minLength: FrogStyle.space6)
                 UsageProviderDropdown(usage: usage)
-                UsageRefreshAction(usage: usage)
-                IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", action: openPage)
+                // Boxed, as the same actions are in the LLM usage popup's header.
+                UsageRefreshAction(usage: usage, bordered: true)
+                IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", bordered: true, action: openPage)
             }.padding(.leading, FrogStyle.cardPadding).padding(.trailing, FrogStyle.space6).padding(.bottom, FrogStyle.space4)
             UsageMenuCards(usage: usage)
         }
@@ -237,8 +240,12 @@ struct UsageMenuStatus: View {
             } else {
                 HStack(spacing: 4) {
                     let age = usage.planUpdatedAt(provider: provider).map { UsageStatusPopover.age(of: $0, at: context.date) }
-                    Text(age.map { "Updated \($0)" } ?? "No plan reading yet")
-                        .help([usage.planSource(provider: provider), usage.status(provider: provider)].compactMap { $0 }.joined(separator: "\n"))
+                    // A clock and the age ("15m ago"), short enough for the menu tab's header row beside the provider.
+                    // "Updated" and the source are in the tooltip.
+                    if let age { Image(systemName: "clock").font(FrogType.caption).accessibilityHidden(true) }
+                    Text(age ?? "No plan reading yet")
+                        .help(([age.map { "Updated \($0)" }, usage.planSource(provider: provider), usage.status(provider: provider)]).compactMap { $0 }.joined(separator: "\n"))
+                        .accessibilityLabel(age.map { "Updated \($0)" } ?? "No plan reading yet")
                     if let warning = usage.planWarning(provider: provider) {
                         Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning)
                             .help(warning).accessibilityLabel(warning)
