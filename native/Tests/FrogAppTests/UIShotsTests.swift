@@ -54,6 +54,8 @@ final class UIShotsTests: XCTestCase {
 
     private func mainWindow(_ sample: SampleFrog) async throws {
         let model = sample.model
+        // The app list is read once before the pages, so Shortcuts pictures the same state in light and dark.
+        await ApplicationCatalogStore.shared.load()
         let routes: [(String, ToolkitRoute)] = FeatureID.allCases.map { ($0.rawValue, .feature($0)) }
             + [("history", .history), ("models", .models), ("features", .features), ("settings", .settings),
                ("statistics", .statistics)]
@@ -493,6 +495,33 @@ private final class SampleFrog {
     static let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .deletingLastPathComponent().deletingLastPathComponent()
 
+    /// Coding tools of their own, so the Coding tools tab never probes this Mac's: Codex installed and signed in,
+    /// Claude Code installed and signed out, OpenCode missing.
+    private static func sampleTools(in folder: URL) throws -> LocalToolClient {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let tools = [
+            "codex": """
+            case "$1" in
+              --version) echo 'codex-cli 0.159.0' ;;
+              exec) echo '--strict-config --ignore-user-config --ignore-rules --ephemeral --json' ;;
+              login) echo 'Logged in using ChatGPT' ;;
+            esac
+            """,
+            "claude": """
+            case "$1" in
+              --help) echo '--safe-mode --tools --strict-mcp-config --permission-prompts --setting-sources --no-session-persistence' ;;
+              auth) echo '{"loggedIn": false}' ;;
+            esac
+            """
+        ]
+        for (name, body) in tools {
+            let url = folder.appendingPathComponent(name)
+            try Data(("#!/bin/sh\n" + body + "\n").utf8).write(to: url)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        }
+        return LocalToolClient(discovery: .init(home: folder, environment: [:], searchDirectories: [folder]), temporaryRoot: folder)
+    }
+
     init(root: URL, defaults: UserDefaults) async throws {
         self.root = root
         var configuration = Configuration()
@@ -546,6 +575,7 @@ private final class SampleFrog {
         let toolkit = Toolkit(makeUsage: { usage }, showsUsageStatusItem: false)
         model = AppModel(dataDirectory: root, registerShortcuts: false, readKey: { _ in nil }, readAccessibility: { true },
                          toolkit: toolkit, clipboardHistoryStore: history,
+                         localToolClient: try Self.sampleTools(in: root.appendingPathComponent("Tools", isDirectory: true)),
                          systemStatusTick: { try await Task.sleep(for: .seconds(3_600)) })
         let fixtureRoot = cleaner.root
         model.cleanerDependencies = { .fake(root: fixtureRoot) }
