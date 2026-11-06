@@ -60,7 +60,7 @@ struct WindowCheatSheetContent: View {
                     PluginIconTile(symbol: "rectangle.split.2x1", tint: PluginTint.purple.color, size: .list)
                     VStack(alignment: .leading, spacing: FrogStyle.space2) {
                         Text("No window shortcuts yet").font(FrogType.section)
-                        Text("Give layouts a key in Frog › Windows, then hold this shortcut to see them here.")
+                        Text("Give layouts a key in Frog → Windows, then hold this shortcut to see them here.")
                             .font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
                     }
                 }.padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
