@@ -177,7 +177,7 @@ final class ClipboardPlugin: LegacyPlugin, FrogPlugin {
     var menu: [MenuContribution] {
         [MenuContribution(id: "clipboard.open", order: 21) { [weak self, state] in
             AnyView(MenuActionRow(title: "Clipboard history", symbol: "doc.on.clipboard",
-                                  key: HotkeyManager.display(state.settings.shortcut.hotkey), tint: Self.info.tint.color, closes: true) {
+                                  shortcut: HotkeyManager.display(state.settings.shortcut.hotkey), tint: Self.info.tint.color, closes: true) {
                 self?.show()
             })
         }]
