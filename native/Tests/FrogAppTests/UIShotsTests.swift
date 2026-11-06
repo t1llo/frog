@@ -535,6 +535,16 @@ private final class SampleFrog {
         define.action = RuleAction(category: .text)
         define.action?.textOutput = .panel
         configuration.rules += [explain, define]
+        // A few layouts with shortcuts, as the layout picker shows them, so Windows' grid pictures its recorded caps.
+        let layouts: [(WindowAction, Hotkey)] = [(.leftHalf, Hotkey(keyCode: 123, modifiers: 4096 | 2048)),
+                                                 (.rightHalf, Hotkey(keyCode: 124, modifiers: 4096 | 2048)),
+                                                 (.maximize, Hotkey(keyCode: 36, modifiers: 4096 | 2048)),
+                                                 (.previousDisplay, Hotkey(keyCode: 123, modifiers: 4096 | 2048 | 256))]
+        for (action, hotkey) in layouts {
+            var rule = action.rule
+            rule.hotkey = hotkey; rule.enabled = true
+            configuration.rules.append(rule)
+        }
         configuration.providers = [ProviderConfiguration(name: "Ollama", kind: .ollama)]
         try ConfigurationStore(directory: root).save(configuration)
         // Changed at different times, so the lists' times say something.
