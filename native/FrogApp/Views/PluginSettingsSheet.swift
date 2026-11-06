@@ -166,7 +166,12 @@ private struct PluginNumberSetting: View {
     }
 
     private func step(_ symbol: String, by delta: Int, disabled: Bool) -> some View {
-        Button { commit(clamped((Int(draft) ?? value ?? 0) + delta)) } label: {
+        Button {
+            // The field shows the stepped number at once, even while it has focus and ignores `value` changes.
+            let stepped = clamped((Int(draft) ?? value ?? 0) + delta)
+            draft = String(stepped)
+            commit(stepped)
+        } label: {
             Image(systemName: symbol).font(.system(size: 10, weight: .semibold)).frame(width: 24, height: FrogStyle.controlHeight)
                 .contentShape(Rectangle())
         }
