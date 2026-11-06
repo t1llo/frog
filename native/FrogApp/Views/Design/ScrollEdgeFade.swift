@@ -19,3 +19,17 @@ extension View {
         }
     }
 }
+
+extension View {
+    /// Fades the top edge of a scroll view, so a row scrolled up under a field above it (the sidebar's search) slips
+    /// away softly instead of being cut through. Its content starts `height` down, clear of the fade, so nothing is
+    /// faded until it is scrolled. Combines with `bottomScrollFade()`. No state and no geometry reads.
+    func topScrollFade(height: CGFloat = 12) -> some View {
+        contentMargins(.top, height, for: .scrollContent).mask {
+            VStack(spacing: 0) {
+                LinearGradient(colors: [.black.opacity(0), .black], startPoint: .top, endPoint: .bottom).frame(height: height)
+                Rectangle()
+            }
+        }
+    }
+}

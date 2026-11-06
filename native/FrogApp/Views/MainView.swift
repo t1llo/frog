@@ -240,8 +240,9 @@ struct MainView: View {
             .frame(height: 36).frame(maxWidth: .infinity)
             .background { WindowDragRegion().accessibilityHidden(true) }
             .padding(.bottom, FrogStyle.space12)
+            // The list's top fade keeps the rest of the gap under the field, so a row scrolled up under it fades away.
             SearchBox(placeholder: "Search", text: $sidebarQuery)
-                .padding(.horizontal, FrogStyle.sidebarRowInset).padding(.bottom, FrogStyle.space16)
+                .padding(.horizontal, FrogStyle.sidebarRowInset).padding(.bottom, FrogStyle.space4)
 
             ScrollViewReader { proxy in
                 ScrollView {
@@ -279,7 +280,7 @@ struct MainView: View {
                                 .padding(.horizontal, FrogStyle.space8).padding(.top, FrogStyle.space4)
                         }
                     }.padding(.horizontal, FrogStyle.sidebarRowInset).padding(.bottom, FrogStyle.space10).minimalScrollbars()
-                }.bottomScrollFade()
+                }.topScrollFade(height: FrogStyle.space12).bottomScrollFade()
                 // Reveals a feature opened from elsewhere, such as the command bar, by the least scrolling;
                 // a row already in view stays where it is. A window that opens on a page shows its row too.
                 .onAppear { reveal(section, in: proxy) }
@@ -292,7 +293,8 @@ struct MainView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(workspace) { navigationButton($0) }
                 }
-                .padding(.horizontal, FrogStyle.sidebarRowInset).padding(.top, FrogStyle.space4)
+                // Space under the list's fade, so a row fading out there never touches Models.
+                .padding(.horizontal, FrogStyle.sidebarRowInset).padding(.top, FrogStyle.space8)
                 .padding(.bottom, FrogStyle.sidebarRowInset)
                 .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Frog"))
             }
