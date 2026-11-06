@@ -3,6 +3,13 @@ import AppKit
 import FrogCore
 
 struct MainView: View {
+    /// The size the window opens at the first time: wide enough for the sidebar and a full page column
+    /// (`FrogStyle.pageWidth`), and tall enough that every sidebar row fits without scrolling. The screenshot
+    /// harness draws pages at this size too.
+    static let defaultSize = CGSize(width: 1_000, height: 760)
+    /// The size older versions opened at, which a window still saved at exactly that size grows from once.
+    static let previousDefaultSize = CGSize(width: 800, height: 580)
+    static let minimumSize = CGSize(width: 800, height: 520)
     @EnvironmentObject private var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var section: ToolkitRoute { model.toolkit.route }
@@ -109,7 +116,7 @@ struct MainView: View {
         .frogSurface(.window)
         .ignoresSafeArea(.container, edges: .top)
         .tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
-        .frame(minWidth: 800, minHeight: 520)
+        .frame(minWidth: Self.minimumSize.width, minHeight: Self.minimumSize.height)
         .onAppear { model.refreshSystemStatus() }
         .onChange(of: section) { previous, _ in
             history.visited(from: previous)
@@ -227,9 +234,14 @@ struct MainView: View {
 
     /// A panel floating inside the window: search, Frog's own row for Settings, then the plugins in their
     /// groups and Community pages, which scroll, and Models, Features and Settings pinned at the bottom. Groups are
-    /// set apart by space alone.
+    /// set apart by space alone, one `sidebarGroupGap` everywhere: under the search field, under Frog's row,
+    /// between groups and above the pinned rows.
+    ///
+    /// At the window's default size (`MainView.defaultSize`) every row fits, so nothing scrolls and no row is cut.
+    /// Only a smaller window scrolls the list, and then its edges fade under the search field and the pinned rows.
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let gap = FrogStyle.sidebarGroupGap
+        return VStack(alignment: .leading, spacing: 0) {
             // The window's buttons sit in this strip, centred 26 points down the window like back and forward
             // on its trailing side.
             HStack(spacing: 0) {
@@ -239,21 +251,21 @@ struct MainView: View {
             .padding(.trailing, FrogStyle.sidebarRowInset)
             .frame(height: 36).frame(maxWidth: .infinity)
             .background { WindowDragRegion().accessibilityHidden(true) }
-            .padding(.bottom, FrogStyle.space12)
-            // The list's top fade keeps the rest of the gap under the field, so a row scrolled up under it fades away.
+            .padding(.bottom, FrogStyle.space8)
+            // The list's top fade is the gap under the field, so a row scrolled up under it fades away.
             SearchBox(placeholder: "Search", text: $sidebarQuery)
-                .padding(.horizontal, FrogStyle.sidebarRowInset).padding(.bottom, FrogStyle.space4)
+                .padding(.horizontal, FrogStyle.sidebarRowInset)
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        settingsRow.padding(.bottom, FrogStyle.space8)
+                    VStack(alignment: .leading, spacing: gap) {
+                        settingsRow
                         let groups = model.pluginHost.sidebar
                         let numbered = groups.flatMap(\.plugins).prefix(9).map(\.id)
                         ForEach(groups, id: \.category) { group in
                             let plugins = group.plugins.filter { matches($0.name) }
                             if !plugins.isEmpty {
-                                VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: FrogStyle.space2) {
                                     ForEach(plugins) { plugin in
                                         let route = Self.route(for: plugin.id)
                                         let index = numbered.firstIndex(of: plugin.id)
@@ -261,26 +273,29 @@ struct MainView: View {
                                                                         key: index.map { KeyEquivalent(Character(String($0 + 1))) }))
                                             .id(route)
                                     }
-                                }.padding(.bottom, FrogStyle.space12)
-                                    .accessibilityElement(children: .contain).accessibilityLabel(L10n.text(group.category.title))
+                                }
+                                .accessibilityElement(children: .contain).accessibilityLabel(L10n.text(group.category.title))
                             }
                         }
                         let pages = model.pluginPages.filter { matches($0.name) }
                         if !pages.isEmpty {
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: FrogStyle.space2) {
                                 ForEach(pages) { item in
                                     navigationButton(NavigationItem(id: .plugin(item.id), title: item.name, symbol: PluginSymbol.name(item.symbol), tint: PluginTint.purple.color))
                                         .id(ToolkitRoute.plugin(item.id))
                                 }
-                            }.padding(.bottom, FrogStyle.space12)
-                                .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Community"))
+                            }
+                            .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Community"))
                         }
                         if !sidebarQuery.isEmpty && !anyMatch {
                             Text(L10n.text("No matches")).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                                .padding(.horizontal, FrogStyle.space8).padding(.top, FrogStyle.space4)
+                                .padding(.horizontal, FrogStyle.space6)
                         }
-                    }.padding(.horizontal, FrogStyle.sidebarRowInset).padding(.bottom, FrogStyle.space10).minimalScrollbars()
-                }.topScrollFade(height: FrogStyle.space12).bottomScrollFade()
+                    }.padding(.horizontal, FrogStyle.sidebarRowInset).minimalScrollbars()
+                }
+                // Both fades are the group gap, so at rest they cover only empty space and the list ends one gap
+                // above Models; scrolled, a row fades out there instead of being cut.
+                .topScrollFade(height: gap).bottomScrollFade(height: gap)
                 // Reveals a feature opened from elsewhere, such as the command bar, by the least scrolling;
                 // a row already in view stays where it is. A window that opens on a page shows its row too.
                 .onAppear { reveal(section, in: proxy) }
@@ -290,12 +305,10 @@ struct MainView: View {
             // Settings is always one click away, however long the plugin list grows.
             let workspace = workspaceNavigation.filter { matches($0.title) }
             if !workspace.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: FrogStyle.space2) {
                     ForEach(workspace) { navigationButton($0) }
                 }
-                // Space under the list's fade, so a row fading out there never touches Models.
-                .padding(.horizontal, FrogStyle.sidebarRowInset).padding(.top, FrogStyle.space8)
-                .padding(.bottom, FrogStyle.sidebarRowInset)
+                .padding(.horizontal, FrogStyle.sidebarRowInset).padding(.bottom, FrogStyle.sidebarRowInset)
                 .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Frog"))
             }
         }
@@ -427,7 +440,7 @@ private struct SettingsHeroRow: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, FrogStyle.space6).padding(.vertical, FrogStyle.space6)
+            .padding(.horizontal, FrogStyle.space6).padding(.vertical, FrogStyle.space4)
             .background(selected ? FrogStyle.sidebarSelection : hovering ? FrogStyle.hover : .clear,
                         in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: FrogStyle.cardRadius, style: .continuous))

@@ -59,6 +59,9 @@ enum FrogStyle {
     static let panelRadius: CGFloat = controlRadius + panelInset
     /// The gap between a popup's edge and a card inside it, such as the menu-bar menus' groups.
     static let panelCardInset: CGFloat = panelRadius - cardRadius
+    /// The gap between two cards in a popup or a menu tab: the same as their inset from the popup's edge, so every
+    /// card in every menu sits the same distance from its neighbours and the panel.
+    static let panelCardGap: CGFloat = panelCardInset
     /// The main window's corner: macOS 26 rounds a window with a toolbar to about 28 points (measured).
     static var windowRadius: CGFloat {
         if #available(macOS 26, *) { return 28 }
@@ -76,11 +79,17 @@ enum FrogStyle {
     static let compactHeight: CGFloat = 24
     /// The least height of a `FrogRow` in a `FrogSection` card: Rex's 38-point settings row.
     static let rowHeight: CGFloat = 38
-    /// Where a `FrogRow`'s text and its separator start inside a section card, and where a section's heading and
-    /// the note under a card line up: 10 from the card's edge, as in Rex.
-    static let rowInset: CGFloat = 10
-    /// A row of the main window's sidebar.
-    static let sidebarRowHeight: CGFloat = 32
+    /// The one row recipe: where a row's icon or text starts and where its control, time or caps end inside any
+    /// card, and where a section's heading and the note under a card line up. It is `cardPadding`, the same 14 a
+    /// list reaches with `listInset` around its rows and `rowPadding` inside them, so a `FrogSection` row, a list
+    /// row and a popup's content start and end on the same two lines on every page.
+    static let rowInset: CGFloat = cardPadding
+    /// A row of the main window's sidebar: macOS's own 28-point sidebar row, so the whole list fits the window's
+    /// default height.
+    static let sidebarRowHeight: CGFloat = 28
+    /// The gap between the sidebar's groups, under Frog's row, above the pinned rows and under the search field:
+    /// one value, so the groups read as evenly spaced.
+    static let sidebarGroupGap: CGFloat = space10
     /// How far the main window's sidebar panel floats in from the window's edges.
     static let sidebarInset: CGFloat = 8
     /// The bar above a page that holds back and forward and the page's title.

@@ -385,8 +385,9 @@ final class UIShotsTests: XCTestCase {
         return only.contains { name == $0 || name.hasPrefix($0) }
     }
 
-    /// A page of the window, on the window's canvas, 1000 × 760 like the window's default size or `width` for a page column.
-    private func page<Content: View>(_ name: String, width: CGFloat = 1_000, height: CGFloat = 760, settle: Duration = .milliseconds(400),
+    /// A page of the window, on the window's canvas, at the size the window opens at (`MainView.defaultSize`) or
+    /// `width` for a page column.
+    private func page<Content: View>(_ name: String, width: CGFloat = MainView.defaultSize.width, height: CGFloat = MainView.defaultSize.height, settle: Duration = .milliseconds(400),
                                      _ view: () -> Content) async throws {
         guard wanted(name) else { return }
         for (appearance, mode) in Self.appearances {
