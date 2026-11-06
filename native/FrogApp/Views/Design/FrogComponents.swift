@@ -34,18 +34,21 @@ struct FrogPopupFooter<Status: View>: View {
     }
 }
 
-/// A page's state in its header: a dot and a word or two in a capsule, green while on.
+/// A page's state in its header: a dot and a word or two. While on, a green dot in a faint green capsule; while
+/// off, a hollow dot and the word in `muted` with no fill at all, so it never reads as a button.
 struct FrogStatePill: View {
     let text: String
     let on: Bool
 
     var body: some View {
         HStack(spacing: FrogStyle.space6) {
-            Circle().fill(on ? FrogStyle.good : FrogStyle.muted.opacity(0.6)).frame(width: 7, height: 7)
+            Group {
+                if on { Circle().fill(FrogStyle.good) } else { Circle().strokeBorder(FrogStyle.muted, lineWidth: 1.5) }
+            }.frame(width: 7, height: 7)
             Text(L10n.text(text)).font(FrogType.bodyMedium).foregroundStyle(on ? FrogStyle.ink : FrogStyle.muted)
         }
         .padding(.horizontal, FrogStyle.space10).frame(height: FrogStyle.compactHeight)
-        .background(on ? FrogStyle.good.opacity(0.14) : FrogStyle.control, in: Capsule())
+        .background(on ? FrogStyle.good.opacity(0.14) : .clear, in: Capsule())
         .accessibilityElement(children: .combine)
     }
 }
