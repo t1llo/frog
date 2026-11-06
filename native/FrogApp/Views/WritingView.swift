@@ -56,11 +56,12 @@ struct WritingView: View {
         VStack(alignment: .leading, spacing: 0) {
             FrogRow(rule.name, caption: caption(rule)) {
                 HStack(spacing: 8) {
-                    if let hotkey = rule.hotkey { KeyCaps(hotkey: hotkey).padding(.trailing, FrogStyle.space4) }
+                    // The mark leads, so every row's caps end on the same edge, just before Try.
                     if rule.enabled, !model.ruleHasModel(rule) {
                         Button { editing = rule } label: { ProblemMark(help: "No model chosen: click to choose one") }
                             .buttonStyle(.plain)
                     }
+                    if let hotkey = rule.hotkey { KeyCaps(hotkey: hotkey).padding(.trailing, FrogStyle.space4) }
                     Button("Try") { trying = rule }.buttonStyle(.frog(compact: true))
                         .disabled(!rule.enabled || model.isProcessing).accessibilityLabel("Try \(rule.name)")
                     Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { value in
