@@ -243,27 +243,49 @@ extension FrogSection where Accessory == EmptyView {
     }
 }
 
+/// What a `FrogRow` shows under its title: a short caption that wraps (the default), a file path on one line cut in
+/// the middle with home as "~" and the full path on hover, or a caption with inline code
+/// (`InlineCode.attributed("Run `frog plugin publish`…")`).
+enum FrogRowCaption {
+    case text(String)
+    case path(String)
+    case attributed(AttributedString)
+}
+
 /// One setting: a title, at most one short caption, and its control on the trailing side. At least
-/// `FrogStyle.rowHeight` tall, so a section's rows line up whatever their control.
+/// `FrogStyle.rowHeight` tall, so a section's rows line up whatever their control. A row about a file
+/// (`FrogRow(path:)`) shows the path as its title, on one line and cut in the middle.
 struct FrogRow<Control: View, Icon: View>: View {
     let title: String
-    var caption: String? = nil
+    var titleIsPath = false
+    var caption: FrogRowCaption? = nil
     @ViewBuilder var icon: Icon
     @ViewBuilder var control: Control
 
     init(_ title: String, caption: String? = nil, @ViewBuilder icon: () -> Icon, @ViewBuilder control: () -> Control) {
+        self.title = title; self.caption = caption.map(FrogRowCaption.text); self.icon = icon(); self.control = control()
+    }
+
+    init(_ title: String, caption: FrogRowCaption, @ViewBuilder icon: () -> Icon, @ViewBuilder control: () -> Control) {
         self.title = title; self.caption = caption; self.icon = icon(); self.control = control()
+    }
+
+    /// A row whose title is a file path: home as "~", one line, cut in the middle, the full path on hover.
+    init(path: String, caption: String? = nil, @ViewBuilder icon: () -> Icon, @ViewBuilder control: () -> Control) {
+        self.title = path; titleIsPath = true; self.caption = caption.map(FrogRowCaption.text)
+        self.icon = icon(); self.control = control()
     }
 
     var body: some View {
         HStack(spacing: 12) {
             icon
             VStack(alignment: .leading, spacing: 2) {
-                Text(L10n.text(title)).font(FrogType.row).foregroundStyle(FrogStyle.ink)
-                if let caption {
-                    Text(L10n.text(caption)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                        .fixedSize(horizontal: false, vertical: true)
+                if titleIsPath {
+                    Self.pathText(title).font(FrogType.row).foregroundStyle(FrogStyle.ink)
+                } else {
+                    Text(L10n.text(title)).font(FrogType.row).foregroundStyle(FrogStyle.ink)
                 }
+                captionView.font(FrogType.small).foregroundStyle(FrogStyle.muted)
             }
             Spacer(minLength: 12)
             // Every on/off setting in a row is Rex's switch.
@@ -272,6 +294,20 @@ struct FrogRow<Control: View, Icon: View>: View {
         }
         .padding(.vertical, FrogStyle.space6)
         .frame(minHeight: FrogStyle.rowHeight)
+    }
+
+    @ViewBuilder private var captionView: some View {
+        switch caption {
+        case .text(let text): Text(L10n.text(text)).fixedSize(horizontal: false, vertical: true)
+        case .path(let path): Self.pathText(path)
+        case .attributed(let text): Text(text).fixedSize(horizontal: false, vertical: true)
+        case nil: EmptyView()
+        }
+    }
+
+    private static func pathText(_ path: String) -> some View {
+        Text(verbatim: (path as NSString).abbreviatingWithTildeInPath).lineLimit(1).truncationMode(.middle)
+            .help(path).textSelection(.enabled)
     }
 }
 
@@ -327,11 +363,27 @@ extension FrogRow where Icon == EmptyView {
     init(_ title: String, caption: String? = nil, @ViewBuilder control: () -> Control) {
         self.init(title, caption: caption, icon: { EmptyView() }, control: control)
     }
+
+    init(_ title: String, caption: FrogRowCaption, @ViewBuilder control: () -> Control) {
+        self.init(title, caption: caption, icon: { EmptyView() }, control: control)
+    }
+
+    init(path: String, caption: String? = nil, @ViewBuilder control: () -> Control) {
+        self.init(path: path, caption: caption, icon: { EmptyView() }, control: control)
+    }
 }
 
 extension FrogRow where Icon == EmptyView, Control == EmptyView {
     init(_ title: String, caption: String? = nil) {
         self.init(title, caption: caption, icon: { EmptyView() }, control: { EmptyView() })
+    }
+
+    init(_ title: String, caption: FrogRowCaption) {
+        self.init(title, caption: caption, icon: { EmptyView() }, control: { EmptyView() })
+    }
+
+    init(path: String, caption: String? = nil) {
+        self.init(path: path, caption: caption, icon: { EmptyView() }, control: { EmptyView() })
     }
 }
 

@@ -229,16 +229,9 @@ struct PluginsView: View {
             FrogRow("Let it use Frog", caption: "Settings → Agents installs the frog command and skill.") {
                 Button("Open Settings") { model.toolkit.select(.settings) }.buttonStyle(.frog(compact: true))
             }
-            // FrogRow's layout, with the command in its caption set as code, as in the prompt above.
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Share it").font(FrogType.row).foregroundStyle(FrogStyle.ink)
-                    Text(InlineCode.attributed(L10n.text("Run `frog plugin publish` to pack it and print its entry for the directory.")))
-                        .font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 12)
-                CopyAction(title: "Copy command", labeled: true) { ViewActions.copy("frog plugin publish") }.frogRowAccessory()
-            }.padding(.vertical, FrogStyle.space6).frame(minHeight: FrogStyle.rowHeight)
+            FrogRow("Share it", caption: .attributed(InlineCode.attributed(L10n.text("Run `frog plugin publish` to pack it and print its entry for the directory.")))) {
+                CopyAction(title: "Copy command", labeled: true) { ViewActions.copy("frog plugin publish") }
+            }
         }
         FrogSection("Install from a link") {
             FrogRow("Link to a .frogplugin file", caption: "You review what it asks for before anything is installed.") {

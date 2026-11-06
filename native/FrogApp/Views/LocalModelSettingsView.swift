@@ -23,16 +23,8 @@ struct LocalModelSettingsView: View {
                 }
             }
             FrogSection("Storage") {
-                // FrogRow's layout, with the folder on one line: home as "~", cut in the middle when long.
                 let root = model.localModels.root
-                let shown = (root.path as NSString).abbreviatingWithTildeInPath
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Model folder").font(FrogType.row).foregroundStyle(FrogStyle.ink)
-                        Text(verbatim: shown).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                            .lineLimit(1).truncationMode(.middle).help(root.path).textSelection(.enabled)
-                    }
-                    Spacer(minLength: 12)
+                FrogRow("Model folder", caption: .path(root.path)) {
                     HStack(spacing: 8) {
                         // Offered only while another folder is in use; the same pill as the buttons beside it.
                         if root != model.localModels.defaultDirectory {
@@ -40,11 +32,9 @@ struct LocalModelSettingsView: View {
                         }
                         Button("Choose…") { chooseModelFolder() }
                         Button("Show in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: root.path) }
-                    }.fixedSize().frogRowAccessory()
+                    }
                     .disabled(model.localModels.busy || !model.localModels.progress.isEmpty || model.dictating)
                 }
-                .padding(.vertical, FrogStyle.space6).frame(minHeight: FrogStyle.rowHeight)
-                .accessibilityElement(children: .contain)
                 if let use = LocalModelSettings.diskUse(model.localModels.totalDiskUse(of: model.localModels.installed)) {
                     FrogRow("Disk used") { Text(use).font(FrogType.body).foregroundStyle(FrogStyle.muted) }
                 }

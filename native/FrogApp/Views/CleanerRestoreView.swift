@@ -181,13 +181,7 @@ struct CleanerPutBackSummaryView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(Array(summary.failures.enumerated()), id: \.offset) { _, failure in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(roots.shownPath(URL(fileURLWithPath: failure.path))).font(FrogType.body)
-                                    .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
-                                Text(failure.message).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            FrogRow(path: roots.shownPath(URL(fileURLWithPath: failure.path)), caption: failure.message)
                         }
                     }
                 }
