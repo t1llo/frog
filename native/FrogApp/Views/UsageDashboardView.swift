@@ -10,10 +10,10 @@ struct UsageDashboardView: View {
     var body: some View {
         let provider = usage.preferences.provider
         FrogPage {
-            FrogPageHeader(title: "LLM usage") {
+            FrogPageHeader(title: "LLM usage", subtitle: "Plan limits and token use of your coding tools") {
                 FrogDropdown(selected: provider, options: usage.providers, width: 120, title: { $0 }) { usage.selectProvider($0) }
                     .accessibilityLabel("Provider")
-                IconAction(title: "Refresh", symbol: "arrow.clockwise") { usage.refresh() }
+                UsageRefreshAction(usage: usage)
             }
             if provider == "Claude", usage.accountsNoticeVisible { UsageAccountsNotice(usage: usage) }
             if UsageStatusPopover.shownAccounts(usage).isEmpty { UsageLimitsSection(usage: usage) }
@@ -230,8 +230,8 @@ struct UsageLimitView: View {
                 .help("The tick marks the time gone in this window.")
             HStack(spacing: 4) {
                 Text(window.leftText ?? "No reading since it renewed")
-                // A week's pace says something; a session's changes too fast to.
-                if (window.duration ?? 0) >= 604800 || !compact, let pace = window.pace(at: now) {
+                // Every bar names its pace, in the bar's colour, so the colours explain themselves.
+                if let pace = window.pace(at: now) {
                     Text("· \(pace)").foregroundStyle(paceColor(pace))
                         .help(elapsed.map { "\(Int(fraction * 100))% used with \(Int($0 * 100))% of the window gone" } ?? "")
                 }
@@ -287,7 +287,7 @@ private struct UsageActivitySection: View {
 struct UsageMetricDropdown: View {
     @ObservedObject var usage: UsageDashboardModel
     var body: some View {
-        FrogDropdown(selected: usage.preferences.metric, options: usage.metrics, width: 120, compact: true,
+        FrogDropdown(selected: usage.preferences.metric, options: usage.metrics, width: 104, compact: true,
                      title: { $0 == "Input" ? "Uncached input" : $0 }) { metric in
             var next = usage.preferences; next.metric = metric; usage.updatePreferences(next)
         }.buttonTitle { $0 }.accessibilityLabel("Activity metric")
@@ -298,7 +298,7 @@ struct UsageRangeDropdown: View {
     @ObservedObject var usage: UsageDashboardModel
     var compact = false
     var body: some View {
-        FrogDropdown(selected: usage.preferences.range, options: usage.ranges, width: compact ? 70 : 150, compact: true,
+        FrogDropdown(selected: usage.preferences.range, options: usage.ranges, width: compact ? 60 : 150, compact: true,
                      title: Self.title) { range in
             var next = usage.preferences; next.range = range; usage.updatePreferences(next)
         }.buttonTitle { compact ? $0 : Self.title($0) }.accessibilityLabel("Activity period")
@@ -391,22 +391,36 @@ private struct UsageTokenTotals: View {
             }.font(FrogType.body)
                 .help("Uncached input, cache reads, cache writes and output.")
             // The chart's own metric is the figure above it; the others sit here, two by two, and choosing one makes it the chart's.
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+            // A plain grid on the card, the names on the card's text edge; the hover fill reaches past it.
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: FrogStyle.space4), GridItem(.flexible())], spacing: FrogStyle.space2) {
                 ForEach(chart.totals.filter { $0.name != usage.preferences.metric }) { total in
                     Button {
                         var next = usage.preferences; next.metric = total.name; usage.updatePreferences(next)
                     } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(total.label == "API cost" ? "API estimate" : total.label)
-                                .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                            Text(usage.format(total.value, metric: total.name)).font(GraphStyle.figure).monospacedDigit()
-                        }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(FrogStyle.card, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
-                            .contentShape(Rectangle())
+                        UsageTokenTotal(title: total.label == "API cost" ? "API estimate" : total.label,
+                                        value: usage.format(total.value, metric: total.name))
                     }.buttonStyle(.plain).help("Show \(total.label == "API cost" ? "the API estimate" : total.label.lowercased()) in the chart")
                 }
-            }
+            }.padding(.horizontal, -FrogStyle.rowPadding)
         }
+    }
+}
+
+/// One total in the grid under the chart: its name and figure on the card itself, a hover fill only under the pointer,
+/// since choosing it makes it the chart's metric.
+private struct UsageTokenTotal: View {
+    let title: String
+    let value: String
+    @State private var hovering = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space2) {
+            Text(L10n.text(title)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+            Text(value).font(GraphStyle.figure).monospacedDigit()
+        }.padding(.horizontal, FrogStyle.rowPadding).padding(.vertical, FrogStyle.space6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .frogRowHighlight(hovering: hovering)
+            .onHover { hovering = $0 }
     }
 }
 

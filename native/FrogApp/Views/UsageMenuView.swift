@@ -1,29 +1,45 @@
 import SwiftUI
 import FrogUsage
 
-/// LLM usage's tab in Frog's menu-bar popup: the provider, its limits and the period's activity.
+/// LLM usage's tab in Frog's menu-bar popup, laid out as the LLM usage popup: the provider, refresh and the way to the
+/// page on the trailing side, then the limits card and the activity card. Frog's own footer closes the popup, so when
+/// the limits were read leads the header row, where the popup's footer would show it.
 struct UsageMenuTab: View {
     @ObservedObject var usage: UsageDashboardModel
     let openPage: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // On the trailing side, as in the LLM usage popup's header: the dropdown's value is trailing-aligned,
-            // so on the leading side it would start on an edge of its own.
+        VStack(alignment: .leading, spacing: FrogStyle.listInset) {
             HStack(spacing: FrogStyle.space6) {
+                UsageMenuStatus(usage: usage)
                 Spacer(minLength: FrogStyle.space6)
                 UsageProviderDropdown(usage: usage)
-                IconAction(title: "Refresh", symbol: "arrow.clockwise") { usage.refresh() }
+                UsageRefreshAction(usage: usage)
                 IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", action: openPage)
-            }.padding(.trailing, FrogStyle.space6).padding(.bottom, FrogStyle.space8)
-            // When and where the limits were read closes the card, so the popup keeps one footer: Frog's own.
-            VStack(alignment: .leading, spacing: FrogStyle.space12) {
-                UsageMenuContent(usage: usage)
-                UsageMenuFooter(usage: usage)
-            }.padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
-                .frogTableSurface()
+            }.padding(.leading, FrogStyle.cardPadding).padding(.trailing, FrogStyle.space6).padding(.bottom, FrogStyle.space4)
+            UsageMenuCards(usage: usage)
         }
         .background(FeatureVisibility { usage.setPresented($0, for: .menu) })
+    }
+}
+
+/// The two cards the tab and the popup share: the plan limits, then the period's activity.
+private struct UsageMenuCards: View {
+    @ObservedObject var usage: UsageDashboardModel
+    var body: some View {
+        UsageMenuLimitsBlock(usage: usage).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
+            .frogTableSurface()
+        UsageCompactActivity(usage: usage).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
+            .frogTableSurface()
+    }
+}
+
+/// Reads the limits and the activity again: one action, beside the provider, on the tab, the popup and the page.
+struct UsageRefreshAction: View {
+    @ObservedObject var usage: UsageDashboardModel
+    var bordered = false
+    var body: some View {
+        IconAction(title: "Refresh", symbol: "arrow.clockwise", bordered: bordered) { usage.refresh() }
     }
 }
 
@@ -52,13 +68,11 @@ struct UsageStatusPopover: View {
         VStack(alignment: .leading, spacing: 0) {
             FrogPopupHeader(symbol: LLMUsagePlugin.info.symbol, tint: LLMUsagePlugin.info.tint, title: "LLM usage") {
                 UsageProviderDropdown(usage: usage)
+                UsageRefreshAction(usage: usage, bordered: true)
                 IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", bordered: true, action: openDashboard)
             }
             VStack(alignment: .leading, spacing: FrogStyle.listInset) {
-                UsageMenuLimitsBlock(usage: usage).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
-                    .frogTableSurface()
-                UsageCompactActivity(usage: usage).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
-                    .frogTableSurface()
+                UsageMenuCards(usage: usage)
                 // Only what needs doing: at most one account is offered live readings or a sign-in, the first that needs one.
                 if setup != nil || signInAccount != nil || claudeSignIn || readiness.version != nil {
                     VStack(alignment: .leading, spacing: FrogStyle.space2) {
@@ -79,12 +93,7 @@ struct UsageStatusPopover: View {
                     }.padding(FrogStyle.listInset).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
                 }
             }.padding(.bottom, FrogStyle.space8)
-            FrogPopupFooter {
-                HStack(spacing: FrogStyle.space4) {
-                    UsageMenuFooter(usage: usage, showsSource: false)
-                    IconAction(title: "Refresh", symbol: "arrow.clockwise") { usage.refresh() }
-                }
-            }
+            FrogPopupFooter { UsageMenuStatus(usage: usage) }
         }
         .padding(FrogStyle.panelCardInset)
         .frame(width: Self.width).fixedSize(horizontal: false, vertical: true)
@@ -123,21 +132,6 @@ struct UsageProviderDropdown: View {
         FrogDropdown(selected: usage.preferences.provider, options: usage.providers, width: 92, compact: true, title: { $0 }) {
             usage.selectProvider($0)
         }.accessibilityLabel("Provider")
-    }
-}
-
-/// The popup's body, shared by the tab and the menu-bar item: the accounts notice, the limits and the activity.
-private struct UsageMenuContent: View {
-    @ObservedObject var usage: UsageDashboardModel
-    var body: some View {
-        let provider = usage.preferences.provider
-        let accounts = UsageStatusPopover.shownAccounts(usage)
-        VStack(alignment: .leading, spacing: 16) {
-            if provider == "Claude", usage.accountsNoticeVisible { UsageAccountsNotice(usage: usage, compact: true) }
-            if accounts.isEmpty { UsageCompactLimits(usage: usage) } else { UsageAccountsLimits(usage: usage, compact: true) }
-            UsageExtraUsageBlock(usage: usage)
-            UsageCompactActivity(usage: usage)
-        }
     }
 }
 
@@ -229,11 +223,9 @@ private struct UsageCompactActivity: View {
     }
 }
 
-/// When the limits were read and where from; one entry per account while each is shown.
-private struct UsageMenuFooter: View {
+/// When the limits were read, the source on hover; one entry per account while each is shown.
+private struct UsageMenuStatus: View {
     @ObservedObject var usage: UsageDashboardModel
-    /// Off in the popup's footer, which is narrow; the source is then on hover.
-    var showsSource = true
     var body: some View {
         let provider = usage.preferences.provider
         let accounts = UsageStatusPopover.shownAccounts(usage)
@@ -247,10 +239,6 @@ private struct UsageMenuFooter: View {
                     if let warning = usage.planWarning(provider: provider) {
                         Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning)
                             .help(warning).accessibilityLabel(warning)
-                    }
-                    if showsSource {
-                        Spacer()
-                        if let source = usage.planSource(provider: provider) { Text(source) }
                     }
                 }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
             }
@@ -318,7 +306,6 @@ private struct UsageAccountsFooter: View {
                 Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning)
                     .help(warning).accessibilityLabel(warning)
             }
-            Spacer()
         }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
     }
 }
