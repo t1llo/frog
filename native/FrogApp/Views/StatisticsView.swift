@@ -3,7 +3,6 @@ import FrogCore
 
 struct StatisticsView: View {
     @ObservedObject var statistics: ActivityStatisticsStore
-    var onBack: (() -> Void)? = nil
     @State private var period = Period.allTime
     @State private var confirmingReset = false
 
@@ -20,7 +19,7 @@ struct StatisticsView: View {
 
     var body: some View {
         FrogPage {
-            // The toolbar's Back (⌘[) returns to Settings, which opens this page.
+            // The toolbar's Back (⌘[) returns to Settings, which opens this page (MainView offers the step).
             FrogPageHeader(title: "Statistics", subtitle: "What you did with Frog, counted on this Mac.")
             FrogSection("Local statistics") {
                 FrogRow("Record statistics", caption: "Counts only, kept on this Mac.") {
@@ -69,7 +68,6 @@ struct StatisticsView: View {
                 }
             }
         }.foregroundStyle(FrogStyle.ink).buttonStyle(.frog())
-            .frogPageBack("statistics") { onBack?() }
             .onAppear { statistics.reload() }
             .confirmationDialog("Reset all statistics?", isPresented: $confirmingReset, titleVisibility: .visible) {
                 Button("Reset statistics", role: .destructive) { statistics.reset() }

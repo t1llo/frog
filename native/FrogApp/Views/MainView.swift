@@ -47,7 +47,9 @@ struct MainView: View {
         case .features: PluginsCatalogView()
         case .settings: PreferencesView(permissionsRequest: $permissionsRequest)
         // Statistics is a step inside Settings: the toolbar's breadcrumb leads back, so the page draws no link.
-        case .statistics: StatisticsView(statistics: model.statistics)
+        case .statistics:
+            StatisticsView(statistics: model.statistics)
+                .frogPageBack("statistics", parent: "Settings") { model.toolkit.select(.settings) }
         case .plugin(let id): PluginPageView(id: id)
         case .feature(let feature): pluginPage(BuiltinPlugins.pluginID(for: feature))
         }
@@ -135,10 +137,9 @@ struct MainView: View {
     }
 
     /// Where the open page was entered from, when it is a step inside another: the page's own step back (a
-    /// History entry) or Statistics inside Settings.
+    /// History entry, or Statistics inside Settings).
     private var breadcrumbParent: (title: String, action: () -> Void)? {
         if let pageBack, let parent = pageBack.parent { return (L10n.text(parent), pageBack.action) }
-        if section == .statistics { return (L10n.text("Settings"), { model.toolkit.select(.settings) }) }
         return nil
     }
 
