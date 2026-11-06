@@ -21,7 +21,9 @@ struct ModelInventory: View {
         let inventory = inventory
         let available = inventory.filter { !model.localModels.installed.contains($0.id) }
         VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
-            group("Downloaded", items: inventory.filter { model.localModels.installed.contains($0.id) }, installed: true)
+            // Nothing downloaded is said by the lists below, not by an empty card of its own.
+            let downloaded = inventory.filter { model.localModels.installed.contains($0.id) }
+            if !downloaded.isEmpty { group("Downloaded", items: downloaded, installed: true) }
             if kind == nil {
                 group("Speech models", items: available.filter { $0.kind == .audio }, installed: false)
                 group("Text models", items: available.filter { $0.kind == .text }, installed: false)

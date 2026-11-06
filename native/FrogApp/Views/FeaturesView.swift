@@ -37,25 +37,21 @@ struct PluginsCatalogView: View {
         }
     }
 
+    /// A feature: its tile, name and summary, its switch, and a chevron that opens its page while it is on (the whole
+    /// row does). A feature that will not work yet has one mark beside its name; its page says why and how to fix it.
     private func row(_ plugin: PluginInfo) -> some View {
         let host = model.pluginHost
         let enabled = host.enabled(plugin.id)
+        let problem = enabled ? problem(plugin.id) : nil
         return HStack(spacing: 12) {
             PluginIconTile(symbol: plugin.symbol, tint: plugin.tint.color, size: .list)
             VStack(alignment: .leading, spacing: 2) {
-                Text(L10n.text(plugin.name)).font(FrogType.bodyMedium)
-                if enabled, let problem = problem(plugin.id) {
-                    Label { Text(L10n.text(problem)) } icon: { Image(systemName: "exclamationmark.triangle.fill") }
-                        .font(FrogType.small).foregroundStyle(FrogStyle.warning).lineLimit(1)
-                } else {
-                    Text(L10n.text(plugin.summary)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                HStack(spacing: FrogStyle.space6) {
+                    Text(L10n.text(plugin.name)).font(FrogType.bodyMedium)
+                    if let problem { ProblemMark(help: problem) }
                 }
+                Text(L10n.text(plugin.summary)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
             }.frame(maxWidth: .infinity, alignment: .leading)
-            if enabled {
-                Button("Open") { host.open(plugin.id) }
-                    .frogRowAccessory()
-                    .accessibilityLabel("Open \(plugin.name)")
-            }
             Toggle(plugin.name, isOn: Binding(get: { enabled }, set: { on in
                 pending.insert(plugin.id)
                 Task {
@@ -63,7 +59,15 @@ struct PluginsCatalogView: View {
                     do { try await host.setEnabled(plugin.id, on) } catch { model.report(error) }
                 }
             })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).disabled(pending.contains(plugin.id))
-        }.padding(.horizontal, FrogStyle.rowPadding).padding(.vertical, FrogStyle.space6).frogHoverRow()
+            Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(FrogStyle.muted)
+                .opacity(enabled ? 1 : 0).accessibilityHidden(true)
+        }
+        .padding(.horizontal, FrogStyle.rowPadding).padding(.vertical, FrogStyle.space6)
+        .contentShape(Rectangle())
+        .onTapGesture { if enabled { host.open(plugin.id) } }
+        .frogHoverRow()
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: Text("Open \(plugin.name)")) { if enabled { host.open(plugin.id) } }
     }
 
     /// Why a feature that is on will not work yet: its rules have no model.
@@ -78,6 +82,6 @@ struct PluginsCatalogView: View {
         }
         if blocked.isEmpty { return nil }
         return blocked.count == 1 && id != BuiltinPlugins.pluginID(for: .writing)
-            ? "Won't work yet: choose a model" : "Won't work yet: \(blocked.count == 1 ? "a rule has" : "\(blocked.count) rules have") no model"
+            ? "Won't work yet: choose a model on its page." : "Won't work yet: \(blocked.count == 1 ? "a rule has" : "\(blocked.count) rules have") no model."
     }
 }

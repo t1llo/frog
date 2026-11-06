@@ -173,33 +173,37 @@ struct ScriptsPage: View {
                     .buttonStyle(.frog(.primary, compact: true)).disabled(runner.running != nil)
                     .help(runner.running != nil ? "Another script is running" : "")
             }
-        } content: { script in
-            DocumentTextEditor(text: documents.binding(script.id, \.text), font: FrogType.mono)
-            if runner.resultID == script.id { output }
-        } footer: {
-            FrogSection("All scripts") {
-                FrogRow("Time limit", caption: "Frog stops a script that runs longer.") {
-                    FrogDropdown(selected: timeout, options: ScriptsSettings.timeouts.contains(timeout) ? ScriptsSettings.timeouts : (ScriptsSettings.timeouts + [timeout]).sorted(),
-                                 width: 120, title: Self.duration) { timeout = $0; setTimeout($0) }
+            if runner.resultID == script.id {
+                HStack(spacing: FrogStyle.space6) {
+                    if runner.running == script.id { FrogSpinner() }
+                    Text(runner.status).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
                 }
             }
+            Spacer(minLength: FrogStyle.space8)
+            if runner.resultID == script.id, !runner.output.isEmpty {
+                CopyAction(title: "Copy output") { ViewActions.copy(runner.output) }
+            }
+        } content: { script in
+            DocumentTextEditor(text: documents.binding(script.id, \.text), font: FrogType.mono)
+            if runner.resultID == script.id, !runner.output.isEmpty { output }
+        } footer: { script in
+            // For every script: Frog stops one that runs longer.
+            Text("Time limit").foregroundStyle(FrogStyle.ink).lineLimit(1)
+            FrogDropdown(selected: timeout, options: ScriptsSettings.timeouts.contains(timeout) ? ScriptsSettings.timeouts : (ScriptsSettings.timeouts + [timeout]).sorted(),
+                         width: 100, compact: true, title: Self.duration) { timeout = $0; setTimeout($0) }
+                .help("Frog stops any script that runs longer")
         }
     }
 
+    /// What the last run printed, in an inset block under the script.
     private var output: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text(runner.status).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                Spacer()
-                if !runner.output.isEmpty { CopyAction(title: "Copy output", labeled: true) { ViewActions.copy(runner.output) } }
-            }
-            if !runner.output.isEmpty {
-                ScrollView {
-                    Text(runner.output).font(FrogType.mono).textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(8)
-                }.frame(height: 150).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-            }
+        ScrollView {
+            Text(runner.output).font(FrogType.mono).textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(FrogStyle.space10)
         }
+        .minimalScrollbars()
+        .frame(height: 150)
+        .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
     }
 
     static func duration(_ seconds: Int) -> String {

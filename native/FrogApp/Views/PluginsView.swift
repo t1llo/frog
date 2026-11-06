@@ -80,7 +80,7 @@ struct PluginsView: View {
         }
     }
 
-    /// One installed plugin on one line of caption: what it does, truncated, with the version beside its name and
+    /// One installed plugin with up to two lines of caption: what it does, truncated after that, with the version beside its name and
     /// the rest (the full description, its actions, where it came from) in the help and its menu.
     private func installedRow(_ item: PluginItem) -> some View {
         HStack(spacing: 12) {
@@ -94,7 +94,7 @@ struct PluginsView: View {
                 }
                 Text(L10n.text(item.problem ?? item.manifest?.description ?? ""))
                     .font(FrogType.small).foregroundStyle(item.problem == nil ? FrogStyle.muted : FrogStyle.warning)
-                    .lineLimit(1).truncationMode(.tail)
+                    .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .help(item.problem ?? caption(item))
@@ -208,20 +208,23 @@ struct PluginsView: View {
     @ViewBuilder private var build: some View {
         FrogSection("Build one with your AI agent",
                     footer: "Your agent writes the files, installs the plugin for your review and checks a picture of its page.") {
-            FrogRow("Ask your agent", caption: "Paste this prompt and finish the sentence.") {
-                CopyAction(title: "Copy prompt") { ViewActions.copy(Self.prompt) }
+            FrogRow("Ask your agent", caption: "Paste this prompt and finish the sentence.")
+            // The prompt itself, set like code where it names a command, and without the backticks; its copy
+            // action sits in the block it copies.
+            HStack(alignment: .top, spacing: FrogStyle.space8) {
+                Text(InlineCode.attributed(Self.prompt)).font(FrogType.body).foregroundStyle(FrogStyle.ink).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, FrogStyle.space4)
+                CopyAction(title: "Copy prompt", labeled: true) { ViewActions.copy(Self.prompt) }.frogRowAccessory()
             }
-            // The prompt itself, set like code where it names a command, and without the backticks.
-            Text(InlineCode.attributed(Self.prompt)).font(FrogType.body).foregroundStyle(FrogStyle.ink).textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-                .padding(FrogStyle.space10)
-                .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
-                .padding(.bottom, FrogStyle.space10)
+            .padding(.leading, FrogStyle.space10).padding(.trailing, FrogStyle.space4).padding(.vertical, FrogStyle.space4)
+            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+            .padding(.bottom, FrogStyle.space6)
             FrogRow("Let it use Frog", caption: "Settings → Agents installs the frog command and skill.") {
                 Button("Open Settings") { model.toolkit.select(.settings) }.buttonStyle(.frog(compact: true))
             }
-            FrogRow("Share it", caption: "Packs the plugin and prints its entry for the directory.") {
-                FrogCodeChip(text: "frog plugin publish")
+            FrogRow("Share it", caption: "Run frog plugin publish to pack it and print its entry for the directory.") {
+                CopyAction(title: "Copy command", labeled: true) { ViewActions.copy("frog plugin publish") }
             }
         }
         FrogSection("Install from a link") {

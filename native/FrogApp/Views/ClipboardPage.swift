@@ -66,12 +66,15 @@ struct ClipboardPage: View {
     }
 }
 
+/// One copied item: its kind tile, its text and when it was copied. Its actions (Copy, and "…" with the rest) show
+/// while the pointer is over it, in room the row keeps for them, so the time never jumps and the list stays quiet.
 private struct ClipboardPageRow: View {
     let entry: ClipboardHistoryEntry
     let store: ClipboardHistoryStore
+    @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: FrogStyle.space10) {
             // The same kind tile as the clipboard history panel.
             let kind = entry.kind
             PluginIconTile(symbol: kind.symbol, tint: kind.tint.color, size: .sidebar).help(L10n.text(kind.title))
@@ -79,14 +82,26 @@ private struct ClipboardPageRow: View {
             Text(entry.preview).font(kind == .code ? FrogType.mono : FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             RecentTimestampText(date: entry.timestamp).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-            CopyAction { store.copy(entry) }
-            IconAction(title: "Remove", symbol: "xmark") { store.delete(id: entry.id) }
+                .lineLimit(1).fixedSize()
+            HStack(spacing: FrogStyle.space2) {
+                CopyAction { store.copy(entry) }
+                IconMenu(title: "More", bordered: false) { menu }
+            }
+            .frogRowAccessory()
+            .opacity(hovering ? 1 : 0)
+            .accessibilityHidden(!hovering)
         }
-        .padding(.leading, 8).padding(.trailing, 2).frame(minHeight: 32).frogHoverRow()
-        .contextMenu {
-            Button("Copy", systemImage: "doc.on.doc") { store.copy(entry) }
-            Button("Copy as plain text") { store.copy(entry, plainText: true) }
-            Button("Remove", systemImage: "trash", role: .destructive) { store.delete(id: entry.id) }
-        }
+        .padding(.leading, FrogStyle.space8).padding(.trailing, FrogStyle.space2).frame(minHeight: 32)
+        .contentShape(Rectangle())
+        .frogRowHighlight(hovering: hovering)
+        .onHover { hovering = $0 }
+        .contextMenu { menu }
+        .accessibilityAction(named: Text("Copy")) { store.copy(entry) }
+    }
+
+    @ViewBuilder private var menu: some View {
+        Button("Copy", systemImage: "doc.on.doc") { store.copy(entry) }
+        Button("Copy as plain text", systemImage: "doc.plaintext") { store.copy(entry, plainText: true) }
+        Button("Remove", systemImage: "trash", role: .destructive) { store.delete(id: entry.id) }
     }
 }
