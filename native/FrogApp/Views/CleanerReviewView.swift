@@ -14,8 +14,7 @@ struct CleanerReviewView: View {
 
     var body: some View {
         let app = review.app
-        VStack(alignment: .leading, spacing: 14) {
-            CleanerBackButton(cleaner: cleaner)
+        VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 8) {
             HStack(alignment: .center, spacing: 12) {
                 ApplicationIcon(path: app.path, size: 40)
                 VStack(alignment: .leading, spacing: 3) {
@@ -37,10 +36,10 @@ struct CleanerReviewView: View {
             ForEach(review.groups(showPossible: showPossible)) { group in groupView(group) }
             if review.nothingElseFound(showPossible: showPossible) != nil {
                 Text(review.removedApp ? "No files found." : "No other files found.").font(FrogType.body).foregroundStyle(FrogStyle.muted)
-                    .padding(.horizontal, 4)
             }
             possibleMatchesButton
         }
+        .cleanerStepBack(cleaner)
         .task(id: app.path) { await checkRunning() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await checkRunning() }
@@ -87,7 +86,7 @@ struct CleanerReviewView: View {
             Text(text).font(FrogType.body).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             action()
-        }.padding(.horizontal, 4)
+        }.padding(.horizontal, FrogStyle.rowInset)
     }
 
     private func groupView(_ group: CleanerGroup) -> some View {
@@ -100,7 +99,7 @@ struct CleanerReviewView: View {
                 Spacer(minLength: 8)
                 Button(allTicked ? "Untick all" : "Tick all") { cleaner.setGroup(group.kind, selected: !allTicked) }
                     .buttonStyle(.frog(.ghost, compact: true))
-            }.frame(minHeight: 20)
+            }.frame(minHeight: 20).padding(.leading, FrogStyle.rowInset)
             VStack(spacing: 2) {
                 ForEach(group.items) { item in itemRow(item) }
             }.padding(6).frogTableSurface()
@@ -175,7 +174,9 @@ struct CleanerReviewFooter: View {
                 // After a removal that left the app, the review stays open with the phase back at idle.
                 .disabled(count == 0 || ![.reviewing, .idle].contains(cleaner.phase))
         }
-        .padding(.horizontal, 20).padding(.vertical, 10)
+        // The bar spans the window; its content keeps to the page's column, so it lines up with the list above.
+        .padding(.horizontal, FrogStyle.pagePadding).frame(maxWidth: FrogStyle.pageWidth + FrogStyle.pagePadding * 2)
+        .frame(maxWidth: .infinity).padding(.vertical, 10)
         // The bar sits on the inset fill rather than behind a line; the canvas below keeps the scrolled page from showing through.
         .background(FrogStyle.card).background(FrogStyle.canvas)
     }
@@ -186,25 +187,23 @@ struct CleanerScanningView: View {
     @ObservedObject var cleaner: CleanerModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            CleanerBackButton(cleaner: cleaner)
-            HStack(spacing: 10) {
-                ProgressView().controlSize(.small)
-                Text(cleaner.scanningApp.map { "Looking for \($0.name)'s files…" } ?? "Looking for the app's files…")
-                    .font(FrogType.body).foregroundStyle(FrogStyle.muted)
-            }
-        }
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small)
+            Text(cleaner.scanningApp.map { "Looking for \($0.name)'s files…" } ?? "Looking for the app's files…")
+                .font(FrogType.body).foregroundStyle(FrogStyle.muted)
+        }.frame(maxWidth: .infinity).padding(.vertical, 44).frogTableSurface()
+            .cleanerStepBack(cleaner)
     }
 }
 
-/// Returns to the app list, worded like the other pages' way back.
-struct CleanerBackButton: View {
-    @ObservedObject var cleaner: CleanerModel
-
-    var body: some View {
-        Button("Apps", systemImage: "chevron.left") { cleaner.closeReview() }
-            .buttonStyle(.frog(.ghost))
-            .help("Back to apps")
+extension View {
+    /// The toolbar's Back (⌘[) and Escape return from a review or scan to the app list.
+    func cleanerStepBack(_ cleaner: CleanerModel) -> some View {
+        frogPageBack("cleaner-review") { cleaner.closeReview() }
+            .background {
+                Button("Back to apps") { cleaner.closeReview() }.keyboardShortcut(.cancelAction)
+                    .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+            }
     }
 }
 

@@ -17,7 +17,7 @@ struct CleanerView: View {
     static let fullDiskAccessNoticeFlag = "fullDiskAccessNoticeDismissed"
 
     var body: some View {
-        FrogPage(width: FrogStyle.wideWidth) {
+        FrogPage {
             FrogPageHeader(title: "App cleaner", subtitle: cleaner.review == nil && cleaner.outcome == nil ? "Pick an app, or drop one here." : nil) {
                 IconAction(title: "Recently moved", symbol: "clock.arrow.circlepath") {
                     cleaner.dismissPutBack(); cleaner.loadRecords(); cleaner.showsRecent = true
@@ -89,7 +89,7 @@ struct CleanerView: View {
                     noticeDismissed = true
                 } catch { model.report(error) }
             }.buttonStyle(.frog(.ghost))
-        }.padding(.horizontal, 4)
+        }.padding(.horizontal, FrogStyle.rowInset)
     }
 
     private func measureAppSizes() {

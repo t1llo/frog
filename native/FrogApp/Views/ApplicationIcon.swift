@@ -1,16 +1,20 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Icons are requested only for mounted rows and reused when rows or tabs are revisited.
 struct ApplicationIcon: View {
     let path: String
     var size: CGFloat = 28
     @State private var image: CGImage?
+    private static let generic = NSWorkspace.shared.icon(for: .applicationBundle)
 
     var body: some View {
         Group {
             if let image { Image(decorative: image, scale: 2).resizable() }
-            else { Image(systemName: "app").resizable().foregroundStyle(FrogStyle.muted) }
+            // The system's generic app icon until the app's own is drawn, in both themes; an outlined
+            // square here read as an empty checkbox.
+            else { Image(nsImage: Self.generic).resizable() }
         }.frame(width: size, height: size)
             .task(id: path) {
                 guard !Task.isCancelled else { return }
