@@ -53,7 +53,7 @@ struct WindowCheatSheetContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.space16) {
-            Text("Window shortcuts").font(FrogType.toolbarTitle).accessibilityAddTraits(.isHeader)
+            Text("Window shortcuts").font(FrogType.title).accessibilityAddTraits(.isHeader)
             if sections.isEmpty {
                 // Shown only while its key is held, so it cannot offer a button: it says where the shortcuts are set.
                 HStack(spacing: FrogStyle.space12) {

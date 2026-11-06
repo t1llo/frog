@@ -118,9 +118,13 @@ enum FrogStyle {
     static var pressed: Color { ink.opacity(0.1) }
     /// Cards and section cards: a thin layer of the text colour over the page, so a card lifts off the
     /// background in every theme without a border.
-    static var card: Color { inkLayer(light: 0.035, dark: 0.05) }
+    /// Dark themes need the stronger layer: at 5 % a card sat barely above the near-black page.
+    static var card: Color { inkLayer(light: 0.035, dark: 0.075) }
     /// Buttons, fields, dropdowns and search boxes: one step above a card.
-    static var control: Color { inkLayer(light: 0.06, dark: 0.1) }
+    static var control: Color { inkLayer(light: 0.06, dark: 0.12) }
+    /// The empty part of a meter or progress bar (`FrogMeter`): a clear step above the card it sits on in every
+    /// theme, so an empty or low meter still shows its length.
+    static var track: Color { inkLayer(light: 0.08, dark: 0.13) }
     /// The faint line colour handed to plugin pages' stylesheet. Frog's own cards set their rows apart by space.
     static var separator: Color { inkLayer(light: 0.09, dark: 0.15) }
     /// The open page in the sidebar: neutral, like the hover, only stronger.
@@ -232,7 +236,7 @@ enum FrogStyle {
         return (max(x, y) + 0.05) / (min(x, y) + 0.05)
     }
     /// The track of a switch that is off: a neutral grey in every theme.
-    static var switchTrack: Color { inkLayer(light: 0.12, dark: 0.18) }
+    static var switchTrack: Color { inkLayer(light: 0.13, dark: 0.22) }
     /// The track of a switch that is on: the accent, the one colour of selection, primary actions and switches.
     /// Green stays with success. A grey theme's accent (Graphite, Pewter) is a deep grey in light and a light grey
     /// in dark, both clear of the off track.
@@ -242,12 +246,13 @@ enum FrogStyle {
     static var switchOnInactive: Color { inkLayer(light: 0.38, dark: 0.42) }
     /// How a disabled control is drawn: its normal look, faded. Switches, checkboxes and dropdowns alike; a
     /// disabled button fades its fill but keeps its label in `muted`, so it still says what it would do.
-    static let disabledOpacity: Double = 0.5
+    /// 0.6 rather than a half: at 0.5 a disabled switch or button nearly vanished on a dark card.
+    static let disabledOpacity: Double = 0.6
     /// The band under a popup's footer (`PanelFooter`, `FrogPopupFooter`): a shade darker than the panel, which
     /// sets the footer apart without a line.
     static var footerBand: Color {
         Color(nsColor: NSColor(name: nil) { appearance in
-            NSColor.black.withAlphaComponent(appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 0.16 : 0.03)
+            NSColor.black.withAlphaComponent(appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? 0.22 : 0.035)
         })
     }
     /// What is chosen: a neutral raised layer, as Rex marks its selected tab and row. The accent shows state.
@@ -401,10 +406,12 @@ enum FrogStyle {
 enum FrogType {
     /// The welcome's headline in setup, the one hero line in Frog.
     static let hero = Font.system(size: 26, weight: .bold)
-    /// Large titles inside a page, such as a dashboard's headline. A page's own title is `toolbarTitle`.
-    static let title = Font.system(size: 19, weight: .semibold)
-    /// The open page's title in the bar above it.
-    static let toolbarTitle = Font.system(size: 15, weight: .semibold)
+    /// The open page's title in the main window's toolbar, and the title of a step inside a page (a History entry,
+    /// a plugin's page, an app under review): the top of the scale, so a page's name stands well above its sections.
+    static let pageTitle = Font.system(size: 20, weight: .bold)
+    /// Sheet titles, setup step titles and standalone panels (the shortcut reference): one step under a page's
+    /// title, so a sheet never outranks the page it opens from. Also big figures inside a card.
+    static let title = Font.system(size: 17, weight: .semibold)
     /// Row titles in section cards and sidebar rows.
     static let row = Font.system(size: 13)
     /// The open sidebar row, and a hero row's title.

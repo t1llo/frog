@@ -130,7 +130,7 @@ struct FrogMeter: View {
         let height = size.height
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
-                Capsule().fill(FrogStyle.inset)
+                Capsule().fill(FrogStyle.track)
                 if value > 0 {
                     Capsule().fill(LinearGradient(colors: [tint.opacity(0.65), tint], startPoint: .leading, endPoint: .trailing))
                         .overlay {

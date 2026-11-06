@@ -47,7 +47,7 @@ struct ShortcutReferenceContent: View {
     let groups: ShortcutReferencePanel.Groups
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.space16) {
-            Text("Frog shortcuts").font(FrogType.toolbarTitle).accessibilityAddTraits(.isHeader)
+            Text("Frog shortcuts").font(FrogType.title).accessibilityAddTraits(.isHeader)
             ForEach(groups, id: \.group) { section in
                 VStack(alignment: .leading, spacing: FrogStyle.space8) {
                     Text(L10n.text(section.group.title)).font(FrogType.section).accessibilityAddTraits(.isHeader)
