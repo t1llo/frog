@@ -544,11 +544,11 @@ extension PluginRuntime {
 }
 
 /// How a plugin's popup is sized. The manifest's `width` and `height` are the room its page's content gets: Frog
-/// adds the panel's inset, the margin `frog-plugin.css` keeps around a popup page (`body { padding: 2px 14px 12px }`,
+/// adds the panel's inset, the card `frog-plugin.css` draws a popup page in (`body { padding: 14px; margin-bottom: 8px }`,
 /// which puts the content on the header's edge), and its own header and Close footer around that.
 enum PluginPopupLayout {
-    static let pageHorizontalPadding: CGFloat = 14
-    static let pageVerticalPadding: CGFloat = 2 + 12
+    static let pageHorizontalPadding: CGFloat = FrogStyle.cardPadding
+    static let pageVerticalPadding: CGFloat = 2 * FrogStyle.cardPadding + FrogStyle.space8
 
     /// The whole panel's width for a page `contentWidth` wide.
     static func panelWidth(contentWidth: CGFloat) -> CGFloat { contentWidth + 2 * pageHorizontalPadding + 2 * FrogStyle.panelCardInset }

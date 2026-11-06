@@ -10,7 +10,8 @@ final class LayoutPickerPanel: ObservableObject {
     static let width: CGFloat = 440
     static let maximumHeight: CGFloat = 620
 
-    @Published private(set) var picker = LayoutPickerModel(hotkeys: [:])
+    /// Set only by `show`, and by the screenshot harness to picture shortcuts.
+    @Published var picker = LayoutPickerModel(hotkeys: [:])
     @Published var query = "" {
         didSet {
             guard query != oldValue else { return }
@@ -267,7 +268,7 @@ struct LayoutPickerView: View {
                                 LayoutPickerTile(tile: tile, selected: panel.picker.selection == tile.action, showsBadge: badges,
                                                  hover: { panel.hovered(tile.action) }, apply: { panel.apply(tile.action) })
                             }
-                            ForEach(row.count..<LayoutPickerModel.columns, id: \.self) { _ in
+                            ForEach(row.count..<section.columns, id: \.self) { _ in
                                 Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
                             }
                         }
@@ -289,7 +290,8 @@ private struct LayoutPickerTile: View {
     var body: some View {
         VStack(spacing: 4) {
             WindowLayoutGlyph(action: tile.action, size: CGSize(width: 44, height: 28))
-            Text(tile.name).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
+            Text(tile.name).font(FrogType.small).foregroundStyle(FrogStyle.ink).lineLimit(1).minimumScaleFactor(0.85)
+                .fixedSize(horizontal: false, vertical: true)
             if showsBadge {
                 // One cap tall with or without a shortcut, so a row's tiles match; a long shortcut takes smaller
                 // caps rather than widening its tile out of the grid.
@@ -302,11 +304,17 @@ private struct LayoutPickerTile: View {
                 }.frame(minWidth: 0, maxWidth: .infinity).frame(height: KeyCap.size)
             }
         }
-        .padding(.horizontal, FrogStyle.space4).padding(.vertical, FrogStyle.space10)
+        .padding(.horizontal, FrogStyle.space6).padding(.vertical, FrogStyle.space10)
         .frame(maxWidth: .infinity)
-        .background(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous).fill(FrogStyle.card))
-        // The pointer moves the selection here, so the selection is the only highlight, as in Frog's other lists.
-        .frogRowHighlight(hovering: false, selected: selected)
+        .background(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous).fill(selected ? FrogStyle.selection : FrogStyle.card))
+        // A choice best seen is ringed in the accent, as the theme tiles are. The pointer moves the selection here,
+        // so the selection is the only highlight.
+        .overlay {
+            if selected {
+                RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous)
+                    .strokeBorder(FrogStyle.accent, lineWidth: 2)
+            }
+        }
         .onHover { if $0 { hover() } }
         .onTapGesture(perform: apply)
         .id(tile.action.rawValue)

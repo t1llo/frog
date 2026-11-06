@@ -1119,28 +1119,39 @@ private struct CommandResultIcon: View {
     }
 }
 
-/// A window layout's tile: Windows' colour with a white picture of where the layout puts the window, the same
-/// picture the Windows page and the layout picker draw.
+/// A window layout's tile: the Windows tile, filled and edged exactly as `PluginIconTile` draws it, with a white
+/// picture of where the layout puts the window at a symbol's size, the same picture the Windows page and the layout
+/// picker draw, so a layout row reads as one more tile among the command bar's rows.
 private struct CommandLayoutTile: View {
     let action: WindowAction
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
     var body: some View {
         let size = PluginIconTile.Size.sidebar.rawValue
+        let shape = RoundedRectangle(cornerRadius: FrogStyle.smallRadius, style: .continuous)
+        let fill = PluginIconTile.fill(for: PluginTint.purple.color, colorScheme: colorScheme, contrast: contrast) ?? PluginTint.purple.color
         ZStack {
-            RoundedRectangle(cornerRadius: FrogStyle.smallRadius, style: .continuous).fill(PluginTint.purple.color.gradient)
+            shape.fill(fill.gradient)
             if let symbol = WindowLayoutGlyph.symbol(for: action) {
-                Image(systemName: symbol).font(.system(size: 10, weight: .semibold)).foregroundStyle(.white)
+                Image(systemName: symbol).font(.system(size: size * 0.52, weight: .medium)).foregroundStyle(.white)
             } else {
+                // A screen as wide as a tile's symbol: 12 by 9 points, centred.
                 Canvas { context, canvas in
-                    let bounds = CGRect(x: 3, y: 5, width: canvas.width - 6, height: canvas.height - 10)
-                    context.stroke(Path(bounds), with: .color(.white.opacity(0.85)), lineWidth: 1)
+                    let screenCorner: CGFloat = 1.5, areaCorner: CGFloat = 0.5
+                    let bounds = CGRect(x: (canvas.width - 12) / 2, y: (canvas.height - 9) / 2, width: 12, height: 9)
+                    context.stroke(Path(roundedRect: bounds, cornerRadius: screenCorner), with: .color(.white), lineWidth: 1.2)
                     if let area = WindowLayoutGlyph.area(for: action) {
                         let fill = CGRect(x: bounds.minX + area.minX * bounds.width, y: bounds.minY + area.minY * bounds.height,
-                                          width: area.width * bounds.width, height: area.height * bounds.height).insetBy(dx: 1.5, dy: 1.5)
-                        context.fill(Path(fill), with: .color(.white))
+                                          width: area.width * bounds.width, height: area.height * bounds.height).insetBy(dx: 1.8, dy: 1.8)
+                        context.fill(Path(roundedRect: fill, cornerRadius: areaCorner), with: .color(.white))
                     }
                 }
             }
-        }.frame(width: size, height: size).accessibilityHidden(true)
+        }
+        .frame(width: size, height: size)
+        .overlay(shape.strokeBorder(.black.opacity(0.06), lineWidth: 0.5))
+        .accessibilityHidden(true)
     }
 }
 

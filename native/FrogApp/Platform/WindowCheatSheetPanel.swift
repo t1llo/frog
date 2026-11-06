@@ -7,7 +7,13 @@ import FrogCore
 @MainActor
 final class WindowCheatSheetPanel {
     static let width: CGFloat = 460
-    static let maximumHeight: CGFloat = 520
+    /// Where the screen is unknown, as in the screenshot harness.
+    static let maximumHeight: CGFloat = 640
+    /// As tall as the display allows, less a margin, so a long list is seen whole while the key is held: it cannot
+    /// be scrolled without the pointer.
+    static func maximumHeight(on screen: NSScreen?) -> CGFloat {
+        screen.map { max(320, $0.visibleFrame.height - 80) } ?? maximumHeight
+    }
 
     private var panel: FrogFloatingPanel?
     private var host: NSHostingView<WindowCheatSheetView>?
@@ -15,7 +21,7 @@ final class WindowCheatSheetPanel {
     func show(sections: [WindowCheatSheet.Section]) {
         // Measured without the scroll view, which has no height of its own.
         let measured = NSHostingView(rootView: WindowCheatSheetContent(sections: sections).frame(width: Self.width)).fittingSize.height
-        let size = CGSize(width: Self.width, height: min(Self.maximumHeight, ceil(measured)))
+        let size = CGSize(width: Self.width, height: min(Self.maximumHeight(on: NSScreen.main), ceil(measured)))
         let view = WindowCheatSheetView(sections: sections, height: size.height)
         let panel = self.panel ?? FrogFloatingPanel(size: size, allowsKey: false)
         if let host { host.rootView = view } else {
@@ -56,14 +62,10 @@ struct WindowCheatSheetContent: View {
             Text("Window shortcuts").font(FrogType.title).accessibilityAddTraits(.isHeader)
             if sections.isEmpty {
                 // Shown only while its key is held, so it cannot offer a button: it says where the shortcuts are set.
-                HStack(spacing: FrogStyle.space12) {
-                    PluginIconTile(symbol: "rectangle.split.2x1", tint: PluginTint.purple.color, size: .list)
-                    VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                        Text("No window shortcuts yet").font(FrogType.section)
-                        Text("Give layouts a key in Frog → Windows, then hold this shortcut to see them here.")
-                            .font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
-                    }
-                }.padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
+                FrogEmptyState(symbol: "rectangle.split.2x1", title: "No window shortcuts yet",
+                               message: "Give layouts a key in Frog → Windows, then hold this shortcut to see them here.",
+                               tint: .purple)
+                    .frogTableSurface()
             }
             ForEach(sections) { section in
                 VStack(alignment: .leading, spacing: FrogStyle.space8) {

@@ -120,15 +120,15 @@ struct SystemMonitorStatusPopover: View {
                 SystemMonitorView(monitor: monitor, presenter: .statusPopup).padding(.bottom, FrogStyle.space8)
             }.padding([.horizontal, .top], FrogStyle.panelCardInset)
             FrogPopupFooter { SystemMonitorLiveStatus(monitor: monitor) }
-        }.frame(width: 292).fixedSize(horizontal: false, vertical: true)
+        }.frame(width: StatusItemPopup.width).fixedSize(horizontal: false, vertical: true)
             .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()
             .environment(\.locale, L10n.locale)
     }
 }
 
-/// The status System monitor gives a popup's footer: Live once readings come in; until then the figures' skeleton
-/// bars say they are being measured.
+/// The status System monitor gives a popup's footer: Live once readings come in, and until then the one
+/// "Measuring…" for the whole overview, whose figures wait as skeleton bars.
 struct SystemMonitorLiveStatus: View {
     @ObservedObject var monitor: SystemMonitor
     var body: some View {
@@ -137,6 +137,8 @@ struct SystemMonitorLiveStatus: View {
                 Circle().fill(FrogStyle.good).frame(width: 6, height: 6)
                 Text(L10n.text("Live"))
             }
+        } else {
+            Text(L10n.text("Measuring…"))
         }
     }
 }

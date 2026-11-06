@@ -237,11 +237,12 @@ input.frog-switch:focus { box-shadow: none; }
 .frog-figure { font-size: 28px; line-height: 1.15; font-weight: 600; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
 
 /* The popup beneath a plugin's menu-bar item. Frog draws the panel, its corners, the plugin's tile and name
-   above and Close beneath; the page lies on it with no background of its own. Its content starts 14px in,
-   on the same edge as the name above, whether or not it uses .frog-page. Frog adds this padding to the page's
-   frame (PluginPopupLayout), so the manifest's width and height stay the content's own room. */
-:root[data-frog-surface="popup"], :root[data-frog-surface="popup"] body { background: transparent; }
-:root[data-frog-surface="popup"] body { font-size: 13px; padding: 2px 14px 12px; }
+   above and Close beneath; the page is one card on it, as the content of Frog's own popups is: the card's fill and
+   corners, its content 14px in, and 8px under it, as Frog's own popups keep above their footer. Frog adds this
+   room to the page's frame (PluginPopupLayout), so the manifest's width and height stay the content's own room. */
+/* A transparent image keeps the root from taking the body's fill, which CSS would otherwise spread over the whole view. */
+:root[data-frog-surface="popup"] { background: transparent linear-gradient(transparent, transparent); }
+:root[data-frog-surface="popup"] body { font-size: 13px; padding: 14px; margin: 0 0 8px; background: var(--frog-card); border-radius: var(--frog-radius-card); }
 :root[data-frog-surface="popup"] .frog-page { padding: 0; gap: 12px; max-width: none; }
 :root[data-frog-surface="popup"] button { min-height: var(--frog-compact-height); padding: 0 10px; font-size: 12px; }
 :root[data-frog-surface="popup"] .frog-list { background: transparent; padding: 0; margin: 0 -8px; }

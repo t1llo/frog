@@ -45,7 +45,7 @@ struct FrogStatusMenu: View {
                 }
             }.padding(FrogStyle.panelCardInset)
             footer(status: tabs.first(where: { $0.id == shown })?.status, frog: shown == Self.frogTab)
-        }.frame(width: 292).fixedSize(horizontal: false, vertical: true)
+        }.frame(width: StatusItemPopup.width).fixedSize(horizontal: false, vertical: true)
             .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()
             .background(MenuWindowSizing())

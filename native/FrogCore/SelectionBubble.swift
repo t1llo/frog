@@ -428,25 +428,13 @@ public struct BubbleItem: Equatable, Identifiable, Sendable {
 }
 
 public enum SelectionBubbleItems {
+    /// Explain's and Writing's own tile glyphs: a rule wears its feature's tile, in the bubble and the command bar
+    /// alike, so a rule looks the same as the page it belongs to and no glyph appears only here.
     public static let answerSymbol = "questionmark.bubble"
-    public static let writingSymbol = "text.alignleft"
+    public static let writingSymbol = "text.cursor"
 
-    /// A glyph that tells rules apart by what they do, read from the rule's name; any other rule keeps the
-    /// answer or writing glyph.
     public static func symbol(for rule: Rule) -> String {
-        let name = rule.name.lowercased()
-        let glyphs: [([String], String)] = [
-            (["translat"], "globe"),
-            (["defin", "meaning", "dictionary"], "book"),
-            (["summar", "tl;dr", "key points"], "list.bullet"),
-            (["spelling", "proofread", "grammar", "typo"], "checkmark.circle"),
-            (["email", "mail", "reply"], "envelope"),
-            (["shorter", "shorten", "concise"], "arrow.down.right.and.arrow.up.left"),
-            (["polish", "rewrite", "improve", "tone", "friendl"], "wand.and.stars"),
-            (["code", "regex", "sql"], "chevron.left.forwardslash.chevron.right")
-        ]
-        if let match = glyphs.first(where: { words, _ in words.contains { name.contains($0) } }) { return match.1 }
-        return rule.answersInPanel ? answerSymbol : writingSymbol
+        rule.answersInPanel ? answerSymbol : writingSymbol
     }
 
     /// Every rule the bubble can offer, in its order: the Explain rule while Explain is on, then the Writing rules.

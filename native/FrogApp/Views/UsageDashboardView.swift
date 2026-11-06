@@ -79,7 +79,7 @@ private struct UsageLimitsSection: View {
                     // One line: why there is no reading, or that there is none.
                     FrogRowNote(text: normal ? "No current reading" : status).textSelection(.enabled)
                 } else {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: windows.count == 1 ? 1 : 2),
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: FrogStyle.space16 * 2, alignment: .leading), count: windows.count == 1 ? 1 : 2),
                               alignment: .leading, spacing: 18) {
                         ForEach(windows) { UsageLimitView(window: $0, now: context.date) }
                     }.padding(.vertical, 10)
@@ -136,7 +136,7 @@ struct UsageAccountsLimits: View {
         if windows.isEmpty {
             Text("No current reading").font(FrogType.bodyMedium)
         } else {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: compact || windows.count == 1 ? 1 : 2),
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: FrogStyle.space16 * 2, alignment: .leading), count: compact || windows.count == 1 ? 1 : 2),
                       alignment: .leading, spacing: compact ? 14 : 18) {
                 ForEach(compact ? Array(windows.prefix(4)) : windows) { entry in
                     VStack(alignment: .leading, spacing: 4) {
@@ -176,7 +176,7 @@ private struct UsageAccountLimits: View {
                 Text(account.status ?? "No current reading").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: account.windows.count == 1 ? 1 : 2),
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: FrogStyle.space16 * 2, alignment: .leading), count: account.windows.count == 1 ? 1 : 2),
                           alignment: .leading, spacing: 18) {
                     ForEach(account.windows) { UsageLimitView(window: $0, now: now) }
                 }.opacity(account.stale ? 0.55 : 1).help(account.status ?? "")
@@ -253,8 +253,9 @@ private struct UsageActivitySection: View {
         let settings = usage.preferences
         let chart = usage.chart(provider: settings.provider, range: settings.range, metric: settings.metric)
         FrogSection("Activity") {
-            UsageMetricDropdown(usage: usage)
-            UsageRangeDropdown(usage: usage, compact: true)
+            // Each as wide as its value, so the two sit the header's usual gap apart.
+            UsageMetricDropdown(usage: usage).fixedSize()
+            UsageRangeDropdown(usage: usage, compact: true).fixedSize()
         } content: {
             VStack(alignment: .leading, spacing: 12) {
                 UsageActivityTotal(usage: usage, chart: chart, page: true)
@@ -384,10 +385,11 @@ private struct UsageTokenTotals: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Total tokens").foregroundStyle(FrogStyle.muted)
+                // A label the size of the totals' names under it, the figure in the text size.
+                Text("Total tokens").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 Spacer()
-                Text(usage.format(chart.totalTokens, metric: "Input")).monospacedDigit()
-            }.font(FrogType.body)
+                Text(usage.format(chart.totalTokens, metric: "Input")).font(FrogType.body).monospacedDigit()
+            }
                 .help("Uncached input, cache reads, cache writes and output.")
             // The chart's own metric is the figure above it; the others sit here, two by two, and choosing one makes it the chart's.
             // A plain grid on the card, the names on the card's text edge; the hover fill reaches past it.

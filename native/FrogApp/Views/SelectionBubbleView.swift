@@ -43,16 +43,14 @@ struct SelectionBubbleView: View {
 
     private var bar: some View {
         HStack(spacing: 2) {
-            ForEach(Array(visible.enumerated()), id: \.element.id) { index, item in
-                if index > 0, visible[index - 1].answers != item.answers { groupGap }
+            // Every item the same distance apart: the tiles' colours already tell answers from replacements.
+            ForEach(visible) { item in
                 Button { select(item) } label: { barLabel(item) }
-
                     .buttonStyle(BubbleButtonStyle(pointer: pointer, radius: Self.barItemRadius))
                     .help(Self.help(item))
                     .accessibilityLabel(Self.accessibilityTitle(item))
             }
             if !more.isEmpty {
-                groupGap
                 Button(action: expand) {
                     Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.muted)
                         .frame(width: 26, height: Self.barItemHeight).contentShape(Rectangle())
@@ -66,11 +64,6 @@ struct SelectionBubbleView: View {
         .frogPanel(pill: true)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L10n.text("Selection bubble"))
-    }
-
-    /// Rules that answer and rules that replace the selection are set apart by a little more space, not a line.
-    private var groupGap: some View {
-        Color.clear.frame(width: 6, height: 1).accessibilityHidden(true)
     }
 
     /// The rule's tile as the expanded list draws it, so a rule looks the same in the bar and the list; the tile sits
