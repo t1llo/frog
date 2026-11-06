@@ -13,6 +13,8 @@ struct HotkeyRecorder: View {
     /// Told when a recording starts and ends, such as for a row that keeps a pointed-at control in view.
     var recordingChanged: (Bool) -> Void = { _ in }
     @State private var recording = false
+    @State private var hovering = false
+    @State private var hoveringClear = false
     /// Why the last key press was refused. Not private, so that a layout test can show one without pressing a key.
     @State var hint: String?
     @State private var id = UUID()
@@ -30,22 +32,38 @@ struct HotkeyRecorder: View {
                     if let caps { RecordedKeys(hotkey: caps) } else { Text(text) }
                 }.buttonStyle(RecorderButtonStyle(caps: caps != nil))
                     .accessibilityLabel("Shortcut: \(text)")
+                    .accessibilityActions {
+                        if clearable { Button(L10n.text("Clear shortcut"), action: clear) }
+                    }
                     .help(recording ? "Press a new shortcut, or Escape to cancel." : "Click to change shortcut")
-                if showsClearButton && (hotkey != nil || recording) {
-                    Button { hotkey = nil; recording = false; hint = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(FrogStyle.muted) }
-                        .buttonStyle(.plain).accessibilityLabel("Clear shortcut")
-                }
+                    // The clear button shows in the row's free space before the caps while the pointer is over the
+                    // recorder or it records, so the caps stay on the row's trailing edge and never move. It
+                    // reaches the caps with its own hit area, so the pointer can cross to it.
+                    .overlay(alignment: .leading) {
+                        if clearable {
+                            Button(action: clear) {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(FrogStyle.muted)
+                                    .padding(.trailing, FrogStyle.space6).frame(height: FrogStyle.compactHeight).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain).help(L10n.text("Clear shortcut")).accessibilityHidden(true)
+                            .onHover { hoveringClear = $0 }
+                            .fixedSize().alignmentGuide(.leading) { $0[.trailing] }
+                            .opacity(hovering || hoveringClear || recording ? 1 : 0)
+                        }
+                    }
                 if recording {
                     KeyCapture(recording: $recording, hotkey: $hotkey, hint: $hint, purpose: purpose)
                         .frame(width: 1, height: 1).accessibilityHidden(true)
                 }
             }
+            .onHover { hovering = $0 }
             if let hint {
                 // Rows give their control its one-line width, so the hint wraps only at a width of its own.
                 Text(hint).font(FrogType.caption).foregroundStyle(FrogStyle.warning).multilineTextAlignment(.trailing)
                     .frame(width: 220, alignment: .trailing).fixedSize(horizontal: false, vertical: true)
             }
-        }.onChange(of: recording) { _, value in
+        }
+        .onChange(of: recording) { _, value in
             recordingChanged(value)
             if value { model.beginShortcutRecording(id) }
             // The refusal belongs to the recording that showed it.
@@ -54,6 +72,9 @@ struct HotkeyRecorder: View {
             // A recorder that comes back on screen must not still claim to be recording.
             .onDisappear { recording = false; hint = nil; model.endShortcutRecording(id) }
     }
+
+    private var clearable: Bool { showsClearButton && (hotkey != nil || recording) }
+    private func clear() { hotkey = nil; recording = false; hint = nil }
 }
 
 /// Plain for the recorded caps, which draw their own hover; Frog's secondary button for text.
