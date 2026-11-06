@@ -12,13 +12,17 @@ struct DictationPage: View {
     var body: some View {
         FrogPage {
             FrogPageHeader(title: "Dictation", subtitle: "Press a shortcut, speak, and Frog types it.") {
-                Button("New rule", systemImage: "plus") { add() }.buttonStyle(.frog(compact: true))
+                // With one rule its Record sits here beside New rule; with several, each section has its own.
+                if rules.count == 1, let rule = rules.first {
+                    RecordButton(rule: rule, dictation: dictation, feature: feature, compact: false)
+                }
+                Button("New rule", systemImage: "plus") { add() }
             }
             if rules.isEmpty {
                 FrogEmptyState(symbol: "waveform", title: "No dictation rules", message: "Add one to choose its shortcut and model.")
             }
             ForEach(rules) { rule in
-                DictationRuleSection(rule: rule, dictation: dictation, feature: feature)
+                DictationRuleSection(rule: rule, dictation: dictation, feature: feature, recordsHere: rules.count > 1)
             }
             FrogSection("Recording") {
                 MicrophoneRow(dictation: dictation, selection: feature.settings.microphone) { feature.selectMicrophone($0) }
@@ -45,25 +49,29 @@ struct DictationPage: View {
     }
 }
 
-/// One dictation rule as a section: its switch, Record and a menu above, its settings as rows.
+/// One dictation rule as a section: a menu beside its caption (and Record when there are several rules), its switch
+/// as the first row and its settings below it.
 private struct DictationRuleSection: View {
     @EnvironmentObject private var model: AppModel
     let rule: Rule
     let dictation: DictationController
     let feature: DictationFeature
+    var recordsHere = false
     @State private var renaming = false
 
     var body: some View {
         FrogSection(rule.name, accessory: {
-            RecordButton(rule: rule, dictation: dictation, feature: feature)
-            Toggle("Enable \(rule.name)", isOn: binding(\.enabled)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
-            IconMenu(title: "More for \(rule.name)") {
+            if recordsHere { RecordButton(rule: rule, dictation: dictation, feature: feature) }
+            IconMenu(title: "More for \(rule.name)", bordered: false) {
                 Button("Rename…") { renaming = true }
                 Button("Delete", role: .destructive) {
                     do { try model.deleteRule(id: rule.id) } catch { model.report(error) }
                 }
             }
         }) {
+            FrogRow("Turned on") {
+                Toggle("Enable \(rule.name)", isOn: binding(\.enabled)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+            }
             rows.opacity(rule.enabled ? 1 : 0.5)
         }
         .sheet(isPresented: $renaming) { RenameSheet(name: rule.name) { name in save { $0.name = name } } }
@@ -173,11 +181,12 @@ private struct RecordButton: View {
     let rule: Rule
     @ObservedObject var dictation: DictationController
     let feature: DictationFeature
+    var compact = true
 
     var body: some View {
         let mine = dictation.ruleID == rule.id && dictation.active
-        Button(mine ? "Stop" : "Record") { mine ? feature.stop() : feature.start(rule) }
-            .buttonStyle(.frog(compact: true))
+        Button(mine ? "Stop" : "Record", systemImage: mine ? "stop.fill" : "mic") { mine ? feature.stop() : feature.start(rule) }
+            .buttonStyle(.frog(compact: compact))
             .disabled(mine ? dictation.phase != .recording : !rule.enabled || dictation.active || model.isProcessing)
             .accessibilityLabel(mine ? "Stop recording" : "Record with \(rule.name)")
     }
