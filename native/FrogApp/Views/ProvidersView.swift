@@ -216,9 +216,15 @@ struct ProviderEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: FrogStyle.space16) {
-                FrogTextField(placeholder: "Connection name", text: $provider.name).textFieldStyle(.plain).font(FrogType.title).tracking(-0.4)
-                    .accessibilityLabel("Connection name").help("Click to rename. Rules and menus show this name.")
-                    .frame(minHeight: FrogStyle.controlHeight)
+                // A new provider is "New provider" until a service is chosen; from then on the title is its name, to rename.
+                if !isSaved && step == 0 {
+                    Text("New provider").font(FrogType.title).tracking(-0.4).frame(minHeight: FrogStyle.controlHeight)
+                        .accessibilityAddTraits(.isHeader)
+                } else {
+                    FrogTextField(placeholder: "Connection name", text: $provider.name).textFieldStyle(.plain).font(FrogType.title).tracking(-0.4)
+                        .accessibilityLabel("Connection name").help("Click to rename. Rules and menus show this name.")
+                        .frame(minHeight: FrogStyle.controlHeight)
+                }
                 CompactSegments(values: [0, 1, 2], selected: step, title: { ["Service", "Connection", "Models"][$0] }) { step = $0 }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(FrogStyle.sheetPadding)
             ScrollView {
@@ -515,7 +521,9 @@ extension ProviderKind {
         case .ollama: "Runs open models on this Mac"
         case .lmStudio: "Runs open models on this Mac, from its own app"
         case .compatible: "Any service with an OpenAI-style API"
-        case .claudeCode, .codex, .opencode: "Uses the tool installed on this Mac and its sign-in"
+        case .claudeCode: "Your Claude plan, through Claude Code on this Mac"
+        case .codex: "Your ChatGPT plan, through Codex on this Mac"
+        case .opencode: "Any provider you connect in OpenCode on this Mac"
         }
     }
 }
