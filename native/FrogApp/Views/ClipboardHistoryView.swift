@@ -104,20 +104,6 @@ private extension String {
     func matches(_ pattern: String) -> Bool { range(of: pattern, options: .regularExpression) != nil }
 }
 
-/// When something happened, as a list shows it: "Now", "2 min ago", the time today in the Mac's own format,
-/// "Yesterday", the weekday this week, then the date.
-enum RecentTime {
-    static func text(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
-        let seconds = now.timeIntervalSince(date)
-        if seconds < 60 { return L10n.text("Now") }
-        if seconds < 3600 { return "\(Int(seconds / 60)) min ago" }
-        if calendar.isDate(date, inSameDayAs: now) { return date.formatted(date: .omitted, time: .shortened) }
-        if calendar.isDateInYesterday(date) { return L10n.text("Yesterday") }
-        if seconds < 6 * 86_400 { return date.formatted(.dateTime.weekday(.wide)) }
-        return date.formatted(date: .abbreviated, time: .omitted)
-    }
-}
-
 /// The clipboard history panel: a search that has the cursor, the items it matches, and the keys. Nothing in
 /// it animates; it is opened by keyboard many times a day.
 struct ClipboardHistoryView: View {
@@ -207,7 +193,7 @@ struct ClipboardHistoryView: View {
             PluginIconTile(symbol: kind.symbol, tint: kind.tint.color, size: .sidebar).help(L10n.text(kind.title))
             Text(entry.preview).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(RecentTime.text(entry.timestamp, now: now)).font(FrogType.small).foregroundStyle(FrogStyle.muted).monospacedDigit()
+            Text(RecentTimestamp.text(entry.timestamp, now: now)).font(FrogType.small).foregroundStyle(FrogStyle.muted).monospacedDigit()
                 .help(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
         }
         .padding(.horizontal, 10).frame(height: ClipboardHistoryLayout.rowHeight)

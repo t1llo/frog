@@ -72,9 +72,9 @@ private struct ClipboardPageRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            let kind = ClipboardEntryKind(entry)
-            Image(systemName: kind.symbol)
-                .font(.system(size: 12)).foregroundStyle(FrogStyle.muted).frame(width: 18).help(L10n.text(kind.title))
+            // The same kind tile as the clipboard history panel.
+            let kind = ClipboardContentKind(entry.preview, formatted: !entry.formatting.isEmpty)
+            PluginIconTile(symbol: kind.symbol, tint: kind.tint.color, size: .sidebar).help(L10n.text(kind.title))
                 .accessibilityLabel(L10n.text(kind.title))
             Text(entry.preview).font(kind == .code ? FrogType.mono : FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -88,48 +88,5 @@ private struct ClipboardPageRow: View {
             Button("Copy as plain text") { store.copy(entry, plainText: true) }
             Button("Remove", systemImage: "trash", role: .destructive) { store.delete(id: entry.id) }
         }
-    }
-}
-
-/// What a copied text looks like, for its icon: a link, code or a command, formatted text, or plain text.
-enum ClipboardEntryKind: Equatable {
-    case link, code, richText, text
-
-    init(_ entry: ClipboardHistoryEntry) {
-        self = Self.kind(of: entry.text, formatted: !entry.formatting.isEmpty)
-    }
-
-    static func kind(of text: String, formatted: Bool) -> Self {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.contains(where: \.isWhitespace), let url = URL(string: trimmed),
-           let scheme = url.scheme?.lowercased(), ["http", "https", "ftp", "mailto", "file"].contains(scheme) { return .link }
-        if looksLikeCode(trimmed) { return .code }
-        return formatted ? .richText : .text
-    }
-
-    var symbol: String {
-        switch self {
-        case .link: "link"
-        case .code: "chevron.left.forwardslash.chevron.right"
-        case .richText: "doc.richtext"
-        case .text: "text.alignleft"
-        }
-    }
-
-    var title: String {
-        switch self { case .link: "Link"; case .code: "Code"; case .richText: "Formatted text"; case .text: "Text" }
-    }
-
-    private static let commands: Set<String> = ["git", "brew", "npm", "npx", "yarn", "pnpm", "swift", "xcodebuild", "cd", "ls",
-                                                "sudo", "curl", "make", "docker", "kubectl", "ssh", "python", "python3", "pip",
-                                                "cargo", "go", "frog", "open", "defaults", "chmod", "mkdir", "rm", "cp", "mv"]
-
-    /// A shell command, or text with the punctuation of code. Prose with a stray brace stays text.
-    private static func looksLikeCode(_ text: String) -> Bool {
-        guard !text.isEmpty, text.count < 4_000 else { return false }
-        let firstWord = text.prefix { !$0.isWhitespace }.lowercased()
-        if commands.contains(firstWord), !text.contains(where: \.isNewline) || text.hasPrefix("$") { return true }
-        let markers = ["{", "}", ";", "=>", "->", "()", "==", "!=", "&&", "::", "</", "/>", "func ", "def ", "let ", "const "]
-        return markers.filter { text.contains($0) }.count >= 2
     }
 }
