@@ -64,10 +64,11 @@ final class UIShotsTests: XCTestCase {
             try await page("page-\(route)", settle: .milliseconds(500)) { MainView().environmentObject(model) }
         }
         // Behind an entry or a tab, drawn in the whole window like the other pages: sidebar, toolbar and breadcrumb.
-        func step<Page: View>(_ name: String, _ route: ToolkitRoute, _ content: () -> Page) async throws {
+        func step<Page: View>(_ name: String, _ route: ToolkitRoute, settle: Duration = .milliseconds(500),
+                              _ content: () -> Page) async throws {
             model.toolkit.select(route)
             let page = AnyView(content().environmentObject(model))
-            try await self.page(name, settle: .milliseconds(500)) { MainView(pageOverride: page).environmentObject(model) }
+            try await self.page(name, settle: settle) { MainView(pageOverride: page).environmentObject(model) }
         }
         if let entry = model.history.first {
             try await step("page-history-detail", .history) { HistoryView(viewing: entry.id) }
@@ -76,7 +77,10 @@ final class UIShotsTests: XCTestCase {
             try await step("page-plugins-\(name)", .feature(.plugins)) { PluginsView(plugins: model.plugins, tab: tab) }
         }
         for (name, filter) in [("local", "Local models"), ("providers", "Providers"), ("tools", "Installed tools")] {
-            try await step("page-models-\(name)", .models) { ProvidersView(filter: filter) }
+            // The coding tools answer one by one; every row has answered before the picture.
+            try await step("page-models-\(name)", .models, settle: name == "tools" ? .seconds(4) : .milliseconds(500)) {
+                ProvidersView(filter: filter)
+            }
         }
         if let cleaner = model.cleanerPlugin?.cleaner, wanted("page-cleaner-review") {
             await cleaner.open(sample.cleanerApp)
