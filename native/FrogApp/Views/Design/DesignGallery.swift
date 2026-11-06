@@ -47,6 +47,7 @@ struct DesignGallery: View {
                     lists
                     tiles
                     fields
+                    waiting
                 }.frame(maxWidth: .infinity)
             }
         }
@@ -107,6 +108,7 @@ struct DesignGallery: View {
                     Button("Reset") {}.buttonStyle(.frog(.ghost))
                     Button("Delete") {}.buttonStyle(.frog(.destructive))
                     Button("Disabled") {}.disabled(true)
+                    Button("Use model") {}.buttonStyle(.frog(.primary)).frogDisabled("Choose a model first")
                 }
                 HStack(spacing: 8) {
                     Button("Compact") {}.buttonStyle(.frog(.primary, compact: true))
@@ -145,6 +147,8 @@ struct DesignGallery: View {
                 }
                 HStack(spacing: 10) {
                     ForEach(Self.tints.prefix(6), id: \.0) { PluginIconTile(symbol: $0.0, tint: $0.1, size: .header) }
+                    // A grey theme's accent: drawn as the neutral tile, never a glaring pale square.
+                    PluginIconTile(symbol: "command", tint: FrogStyle.accent, size: .header)
                 }
             }.padding(.vertical, 12)
         }
@@ -155,13 +159,14 @@ struct DesignGallery: View {
             VStack(alignment: .leading, spacing: 12) {
                 SearchBox(placeholder: "Search", text: $search)
                 LabeledField(title: "Name") { TextField("Name", text: .constant("Work")) }
+                LabeledField(title: "Endpoint") { FrogTextField(placeholder: "https://…", text: .constant("")) }
                 HStack(spacing: 4) {
                     ForEach(["All", "Text", "Audio"], id: \.self) { tag in FilterTag(title: tag, selected: filter == tag) { filter = tag } }
                     Spacer()
                     FrogBadge(text: "New", active: true)
                     FrogBadge(text: "Beta")
-                    KeyCap("⌘")
-                    KeyCap("K")
+                    KeyCaps("⌘K")
+                    KeyCaps("⌃⌥Space")
                 }
                 HStack(spacing: 16) {
                     ForEach(["Downloads", "Desktop", "Caches"], id: \.self) { item in
@@ -171,6 +176,18 @@ struct DesignGallery: View {
                     }
                 }
             }.padding(.vertical, 12)
+        }
+    }
+
+    private var waiting: some View {
+        FrogSection("Waiting", footer: "Skeletons stand in for values being measured; one spinner and line for a wait.") {
+            FrogRow("CPU") { FrogSkeleton(width: 32) }
+            FrogRow("Memory") { FrogSkeleton(width: 56) }
+            FrogLoadingNote(text: "Looking for apps…")
+            HStack(spacing: FrogStyle.space8) {
+                FrogNoticePill(symbol: "checkmark", text: "Done")
+                FrogNoticePill(symbol: "exclamationmark.circle", tone: FrogStyle.warning, text: "Ollama is not running", detail: "Details in the Frog menu")
+            }.padding(.vertical, FrogStyle.space10)
         }
     }
 

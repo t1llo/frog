@@ -1,6 +1,6 @@
 # Design rules
 
-Frog looks quiet and consistent: Raycast's dense, keyboard-first popups, and a settings window in the manner of macOS System Settings and the Rex terminal: a sidebar panel floating inside the window, the page's title in a toolbar beside back and forward, and borderless cards whose rows are split by thin lines. Every value comes from [DesignSystem.swift](../native/FrogApp/Views/DesignSystem.swift), [CompactControls.swift](../native/FrogApp/Views/CompactControls.swift), [Motion.swift](../native/FrogApp/Views/Motion.swift) and the v2 components in [Views/Design](../native/FrogApp/Views/Design). A view never invents its own button, dropdown, radius, height, text size, material or animation. `StyleTokenScanTests` checks the rules that code can check.
+Frog looks quiet and consistent: Raycast's dense, keyboard-first popups, and a settings window in the manner of macOS System Settings and the Rex terminal: a sidebar panel floating inside the window with back and forward beside the window's buttons, the page's title in a toolbar on the page's content edge, and borderless cards whose rows are set apart by space. Every value comes from [DesignSystem.swift](../native/FrogApp/Views/DesignSystem.swift), [CompactControls.swift](../native/FrogApp/Views/CompactControls.swift), [Motion.swift](../native/FrogApp/Views/Motion.swift) and the v2 components in [Views/Design](../native/FrogApp/Views/Design). A view never invents its own button, dropdown, radius, height, text size, material or animation. `StyleTokenScanTests` checks the rules that code can check.
 
 [DesignGallery](../native/FrogApp/Views/Design/DesignGallery.swift) shows every component. After changing one, draw it and look: `FROG_PAGE_SHOTS=<folder> swift test --filter 'FrogAppTests.PageShotsTests/testDesignGallery'` writes `design-gallery-light.png` and `design-gallery-dark.png`.
 
@@ -10,12 +10,12 @@ Frog looks quiet and consistent: Raycast's dense, keyboard-first popups, and a s
 - A row has a title (a noun: "Shortcut", "Model") and at most one short caption. Longer explanations go in `.help()`.
 - Say a thing once: not in the subtitle, the caption and a footer.
 
-## Lines only between rows
+## No lines in the chrome
 
-- `FrogSection` draws one thin `separator` line between the rows of its card, inset to the content edge. That is the only line in Frog's chrome, and only `FrogSection` draws it.
+- Cards are not split into rows by lines: `FrogSection` sets its rows apart by their height (`rowHeight`) and a little space, so every card on every page looks the same whether its rows are `FrogRow`s or a page's own.
 - No `Divider()`, no `NSMenuItem.separator()`, and no thin `Rectangle` above footers, beside sidebars or anywhere else.
-- Separate everything else with space, a heading, or a surface: a card, or an inset fill.
-- Exceptions: the user's own content (Markdown rules and quote bars), chart axes and gridlines, progress tracks, and the drop indicator while dragging.
+- Separate everything with space, a heading, or a surface: a card, or an inset fill.
+- Exceptions: the hairline above a `PanelFooter`, the user's own content (Markdown rules and quote bars), chart axes and gridlines, progress tracks, and the drop indicator while dragging.
 
 ## Radii
 
@@ -29,20 +29,23 @@ Corners nest. A shape inside another has the outer radius minus the gap between 
 | `panelRadius` | 18 = 10 + `panelInset` 8 | Popups and floating panels (`frogPanel()`); their search field, rows and blocks sit 8 in, and a card inside one sits `panelCardInset` (4) in |
 | `windowRadius` | 28 on macOS 26 | The main window's own corner, drawn by macOS (measured) |
 | `sidebarRadius` | 20 = 28 - `sidebarInset` 8 | The main window's sidebar panel; its rows sit `sidebarRowInset` (10) in |
-| `pillRadius` | 18 | 36-point status pills (`frogPanel(pill: true)`) |
+| `pillRadius` | 18 | 36-point status pills (`frogPanel(pill: true)`), drawn as true capsules: a continuous corner of half the height flattens the round ends |
 
 Buttons, search boxes, segmented controls and switches are capsules, as in Rex; so are dots, avatars, progress bars and the back and forward capsule. No other numbers. Cards, controls and the sidebar panel use the `.continuous` corner style.
 
 ## Sizes and spacing
 
 - Controls are `controlHeight` (28) tall; in popups, panel headers and dense rows `compactHeight` (24).
-- Pages: `FrogPage` (padding `pagePadding` 24, sections `sectionSpacing` 28 apart, a column at most `pageWidth` 720 wide; `FrogStyle.wideWidth` 1080 for dashboards and tables) with a `FrogPageHeader` (title, optional one-line subtitle, actions on the trailing side).
-- The main window: an empty `NSToolbar` makes the title bar 52 points tall, so the window's buttons sit inside the sidebar panel, as in Rex. The sidebar panel is 208 wide, floating `sidebarInset` (8) inside the window with `sidebarRadius`, then a toolbar `toolbarHeight` (52) tall with the outlined back and forward capsule (36 tall, a hairline between its halves; ⌘[ and ⌘]) and the open page's title in `toolbarTitle`. `FrogPageHeader` hands its title up to the toolbar (`FrogPageTitleKey`) and draws only its subtitle and actions; it takes no room when it has neither. A sheet is its own window, so its header sets `.environment(\.frogToolbarTitle, false)` and draws its title.
-- A section is `FrogSection("Caption", footer:)`: a caption, one card, an optional one-sentence footer. Inside it every setting is a `FrogRow("Title", caption:) { control }`, at least `rowHeight` (38) tall, its title in `row` (13), its text `rowInset` (10) from the card's edge, where the section's caption and footer also start; the card draws a thin line between two rows (macOS 15 and later), never above a `FrogRowNote`, caption or warning, so those stay with the row above them.
-- A step back inside a page (a History entry back to its list) is `.frogPageBack(id) { … }`: the toolbar's Back and ⌘[ take it before the previous page. A page never binds ⌘[ itself. A sentence that belongs to no row is a `FrogRowNote`; other content (previews, button rows) goes in a `VStack(spacing: 10).padding(.vertical, 10)`.
+- Pages: `FrogPage` (padding `pagePadding` 20, sections `sectionSpacing` 30 apart, a column at most `pageWidth` 720 wide; `FrogStyle.wideWidth` 1080 for dashboards and tables) with a `FrogPageHeader` (title, optional one-line subtitle, actions on the trailing side). The column starts `pagePadding` from the leading edge on every page, whatever its width: a wide page only reaches further to the trailing side. A page never adds its own horizontal inset.
+- **One content edge in the main window.** The toolbar's title, a page's subtitle, its section headings, its filters and search, its cards and the footers under them all start on the column's leading edge. Text inside a card starts `rowInset` (10) in. Nothing else is a third edge.
+- The main window: an empty `NSToolbar` makes the title bar 52 points tall, so the window's buttons sit inside the sidebar panel, as in Rex. The sidebar panel is 208 wide, floating `sidebarInset` (8) inside the window with `sidebarRadius`; back and forward are two plain chevrons on the trailing side of its top strip, level with the window's buttons (⌘[ and ⌘]). Beside it a toolbar `toolbarHeight` (52) tall holds only the open page's title in `toolbarTitle`, on the content edge. `FrogPageHeader` hands its title up to the toolbar (`FrogPageTitleKey`) and draws only its subtitle and actions; it takes no room when it has neither. A sheet is its own window, so its header sets `.environment(\.frogToolbarTitle, false)` and draws its title.
+- A section is `FrogSection("Heading", footer:)`: a heading (`FrogSectionHeader`), one card, an optional one-sentence footer, all on the content edge. Inside it every setting is a `FrogRow("Title", caption:) { control }`, at least `rowHeight` (38) tall, its title in `row` (13), its text `rowInset` (10) from the card's edge. Rows are set apart by space, not lines.
+- **Headings.** Every group on a page or in a sheet has the one heading style, `FrogSectionHeader` (`section` 13 semibold, the text colour, trailing actions in `small` muted). A page that groups its own content (a list, a grid) puts a `FrogSectionHeader` above it. Give every card group on a page a heading, or none of them. `SectionCaption` follows where it is: inside a card or a popup it is the small muted caption of a sub-group; outside one it draws as the section heading.
+- **A step inside a page** (a History entry, Statistics inside Settings, a plugin's review) is `.frogPageBack(id, parent: "History") { … }`: the toolbar shows a breadcrumb, "History › Proofread", whose first part goes back, and Back and ⌘[ take the step before the previous page. That is the only back pattern: a page draws no "‹ History" link of its own and never binds ⌘[. A sentence that belongs to no row is a `FrogRowNote`; other content (previews, button rows) goes in a `VStack(spacing: 10).padding(.vertical, 10)`.
 - `FrogRow(…, icon: { PluginIconTile(…) })` puts a feature's icon before the title.
 - v1 names, for pages not moved yet: `PageScroll` and `PageHeader` now draw `FrogPage` (wide) and `FrogPageHeader`; `SettingsSection` with `CompactRow` (card padding 14, rows 10 apart) still works. Move a page to `FrogSection` and `FrogRow` all at once, never one section of it.
 - Inside a card, a sub-group starts with a `SectionCaption`.
+- The sidebar always shows the open page's row: opening a page from anywhere scrolls the list by the least amount that brings the row into view (Statistics shows Settings).
 - List rows are 1–2 apart, highlighted with `frogRowHighlight(hovering:selected:)`, or `frogHoverRow(selected:)` when the row tracks its own hover.
 - Spacing comes from the `FrogStyle.space2`…`space16` scale (2, 4, 6, 8, 10, 12, 16), never an odd value such as 7 or 9: 2 between a title and its caption, 4 inside a label, 6–8 between controls in a row, 10 between blocks inside a card, 12 between a row's icon, text and control, 16 between groups in a popup.
 - One content edge per surface, so text lines up from the header to the footer:
@@ -80,6 +83,7 @@ Use `FrogType` for text. A literal size is only for an SF Symbol's size.
 - Secondary (default): every other action.
 - `.frog(.ghost)`: text actions beside content, such as Reset, Skip or Set up myself.
 - `.frog(.destructive)`: removes or deletes something.
+- **Disabled**: one look for every kind, the secondary pill at `disabledOpacity` (0.4); a disabled primary drops its accent, a disabled ghost stays plain text. A disabled primary action says why with `.frogDisabled("Choose a model first")` (tooltip and VoiceOver hint) instead of `.disabled(true)`; when the reason fits on the page, show it as a row caption too. Switches, checkboxes and dropdowns fade by the same `disabledOpacity`.
 - `compact: true` in popups, panel headers and dense rows.
 - `IconAction` for icon-only actions: a plain icon that highlights on hover. `bordered: true` only in a popup header, beside compact segments.
 - `IconMenu` for a menu behind an icon ("…" by default): drawn exactly like the `IconAction` beside it. Never `.menuStyle(.borderlessButton)`, which drops Frog's surface and hover.
@@ -96,12 +100,13 @@ Use `FrogType` for text. A literal size is only for an SF Symbol's size.
 - Choices of two to four, and switching between parts of a page (Providers, Installed tools): `CompactSegments`, a capsule whose chosen segment is filled with the accent. Segments are as wide as their labels.
 - Choices that are best seen, such as the colour scheme, Classic or Glass, and the theme: tiles with a picture and the name under it, the chosen one ringed in the accent (Appearance settings).
 - `IconMenu` is for actions behind an icon (Rename, Delete, Add an app), not for choosing a value.
-- On/off settings: `Toggle` with `.toggleStyle(.frogSwitch)`, Rex's 36 by 18 switch: accent when on, grey while the window is not in front. `FrogRow` applies it to its control, and the row's title names it.
+- On/off settings: `Toggle` with `.toggleStyle(.frogSwitch)`: a 36 by 20 capsule with a round white knob 2 in. On fills it with `switchOn`, the accent, or the theme's green where the accent is a grey (Minimal, Graphite, Pewter) that would not read as on; off is the neutral `switchTrack`. While the window is not in front an on switch is a darker grey than off. `FrogRow` applies it to its control, and the row's title names it.
 - Picking items from a list (files to remove, models to offer, agents to set up): `.toggleStyle(.frogCheckbox)`. Never the system checkbox.
 - Numbers from a short list: `FrogDropdown` rather than a `Stepper`.
-- Text: `LabeledField` or `frogControlSurface()`. No `.roundedBorder`.
+- Text: `LabeledField` or `frogControlSurface()`, with a `FrogTextField(placeholder:text:)` inside: it draws the placeholder in `FrogStyle.placeholder`, a step lighter than muted, where a bare `TextField` draws it nearly as dark as a value. No `.roundedBorder`.
 - Search: `SearchBox`. Filters that narrow a list (All, Text, Audio): `FilterTag`.
-- Shortcuts: `ShortcutBadge` and `KeyCap`, in the sans font.
+- Shortcuts, in the sans font, in two forms. A recorded shortcut that can be changed is one chip: `HotkeyRecorder`'s button or a `ShortcutBadge`, at least `ShortcutBadge.minWidth` wide so a column of them lines up. A hint that names keys (footers, the shortcut reference, menu rows) is caps: `KeyCaps("⌃⌥Space")`, one 18-point `KeyCap` per key. Never glue a hint's glyphs into one chip.
+- Waiting: `FrogSpinner` is the one spinner (not a bare `ProgressView()`); `FrogLoadingNote("Looking for apps…")` is a spinner and one muted line inside a card; values still being measured are `FrogSkeleton` bars of about the value's width, so nothing moves when they arrive. Say "Measuring…" once for a group at most, never per value.
 - Empty lists and pages: `FrogEmptyState`, with the action that fills it in its trailing slot, unless the page header already has that action.
 
 ## Surfaces and colour
@@ -116,7 +121,8 @@ Use `FrogType` for text. A literal size is only for an SF Symbol's size.
   - Translucent: the kind's `NSVisualEffectView` blur under the theme's colour, the same strength for every kind, so one setting looks the same on the window and every popup. A floating panel adds a light sheen at its top and a brighter top edge (`glassSheen`, `glassEdge`), like frosted glass. Liquid Glass (`glassEffect`) is not used: it changes its brightness with what lies behind, so panels with the same setting looked different.
   - `.popover` adds only the tint, because the popover brings its own material.
   - One surface per popup, on its root; rows get a plain highlight, never glass.
-- Feature and plugin icons: `PluginIconTile(symbol:tint:size:)`, a white symbol on a tile filled with the feature's colour, `.sidebar` 20, `.list` 28, `.header` 40. Neutral, decorative symbols stay `SymbolTile`.
+- Feature and plugin icons: `PluginIconTile(symbol:tint:size:)`, a white symbol on a tile filled with the feature's colour, `.sidebar` 20, `.list` 28, `.header` 40. Pass the feature's own `PluginTint` wherever the feature appears (sidebar, Features, setup, menu-bar popups, command bar), so it is the same tile everywhere. A tint without a colour of its own (a grey theme's accent) is drawn as a neutral tile, the control fill with an ink symbol, never a pale square that glares in dark; a pastel is deepened until the white symbol reads. Neutral, decorative symbols stay `SymbolTile`.
+- Status pills along the bottom of the screen (Working, Done, a failure, Secure Input) are `FrogNoticePill`: a capsule that hugs its text, a symbol in the tone colour, the message, and an optional muted detail. A failure says what failed first ("Ollama is not running"), then "Details in the Frog menu".
 - `selection` marks what is chosen; `hover` what the pointer is over; `accent` shows state and focus, not decoration.
 - `muted` for secondary text; `good`, `warning` and `critical` for status.
 

@@ -68,7 +68,7 @@ final class PageShotsTests: XCTestCase {
         try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
             let name = appearance == .aqua ? "light" : "dark"
-            let size = NSSize(width: 1_180, height: 1_130)
+            let size = NSSize(width: 1_180, height: 1_400)
             let host = NSHostingView(rootView: DesignGallery().frame(width: size.width, height: size.height)
                 .background(FrogStyle.opaqueCanvas))
             host.appearance = NSAppearance(named: appearance)
