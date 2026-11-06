@@ -55,9 +55,15 @@ struct WindowCheatSheetContent: View {
         VStack(alignment: .leading, spacing: FrogStyle.space16) {
             Text("Window shortcuts").font(FrogType.toolbarTitle).accessibilityAddTraits(.isHeader)
             if sections.isEmpty {
-                Text("No window shortcuts yet. Add them on the Windows page.")
-                    .font(FrogType.row).foregroundStyle(FrogStyle.muted)
-                    .fixedSize(horizontal: false, vertical: true)
+                // Shown only while its key is held, so it cannot offer a button: it says where the shortcuts are set.
+                HStack(spacing: FrogStyle.space12) {
+                    PluginIconTile(symbol: "rectangle.split.2x1", tint: PluginTint.purple.color, size: .list)
+                    VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                        Text("No window shortcuts yet").font(FrogType.section)
+                        Text("Give layouts a key in Frog › Windows, then hold this shortcut to see them here.")
+                            .font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                    }
+                }.padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
             }
             ForEach(sections) { section in
                 VStack(alignment: .leading, spacing: FrogStyle.space8) {

@@ -214,9 +214,11 @@ struct LayoutPickerView: View {
                     }
                     Spacer(minLength: 0)
                 }
-                TextField("Filter layouts", text: $panel.query)
-                    .textFieldStyle(.plain).font(FrogType.row).focused($focused)
-                    .padding(.horizontal, FrogStyle.space10)
+                HStack(spacing: FrogStyle.space8) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .medium)).foregroundStyle(FrogStyle.muted)
+                    TextField("Filter layouts", text: $panel.query)
+                        .textFieldStyle(.plain).font(FrogType.row).focused($focused)
+                }.padding(.horizontal, FrogStyle.space10)
                     .frogControlSurface(height: FrogStyle.controlHeight + FrogStyle.space4)
                 if let status = panel.status {
                     Text(status).font(FrogType.caption).foregroundStyle(FrogStyle.warning)
