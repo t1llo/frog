@@ -699,6 +699,7 @@ private struct FrogButtonBody: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.frogKeyboardSurface) private var keyboardSurface
     @Environment(\.frogRowAccessory) private var inRow
+    @Environment(\.frogTrailingGhost) private var trailingGhost
     @State private var hovering = false
 
     /// A press answers on the down event: a deeper fill and, unless motion is reduced, a slight shrink.
@@ -736,6 +737,7 @@ private struct FrogButtonBody: View {
         // Only the scale springs: whatever the action changes inside the button on release stays an instant cut.
         .animation(keyboardSurface ? nil : FrogMotion.press) { $0.scaleEffect(pressed && !reduceMotion && !keyboardSurface ? 0.97 : 1) }
         .onHover { hovering = $0 }
+        .padding(.trailing, kind == .ghost && trailingGhost ? -FrogButtonStyle.horizontalPadding(compact: compact) : 0)
     }
 
     private var foreground: Color {
@@ -822,6 +824,17 @@ extension View {
     func frogRowAccessory(_ on: Bool = true) -> some View { environment(\.frogRowAccessory, on) }
 }
 
+private struct FrogTrailingGhostKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    /// True in a slot whose last control ends on the content edge, such as `FrogSectionHeader`'s accessory: a ghost
+    /// button there pulls its padding past the edge, so its text ends where the rows' controls end and only its hover
+    /// fill reaches past.
+    var frogTrailingGhost: Bool {
+        get { self[FrogTrailingGhostKey.self] }
+        set { self[FrogTrailingGhostKey.self] = newValue }
+    }
+}
+
 private struct FrogDenseContainerKey: EnvironmentKey { static let defaultValue = false }
 extension EnvironmentValues {
     /// True inside a card (`frogTableSurface`, `FrogCard`, `FrogSection`) or a popup (`frogPanel`), where a
@@ -865,15 +878,45 @@ struct SymbolTile: View {
 }
 
 /// A word or two beside a title ("Recommended", "In the Trash"), in a capsule like every other small status
-/// mark; `active` tints it with the accent.
+/// mark; `active` tints it with the accent, `tone: .warning` with the warning colour (Caution beside a plugin
+/// permission), optionally led by a small symbol.
 struct FrogBadge: View {
+    enum Tone { case neutral, accent, warning }
+
     let text: String
-    var active = false
+    var tone: Tone = .neutral
+    var symbol: String? = nil
+    /// The badge's fixed height: a caption line and 3 points either side, the same for every badge.
+    static let height: CGFloat = 18
+
+    init(text: String, active: Bool = false) { self.text = text; tone = active ? .accent : .neutral }
+    init(text: String, tone: Tone, symbol: String? = nil) { self.text = text; self.tone = tone; self.symbol = symbol }
+
     var body: some View {
-        Text(L10n.text(text)).font(FrogType.caption.weight(.semibold))
-            .foregroundStyle(active ? FrogStyle.accent : FrogStyle.muted)
-            .padding(.horizontal, FrogStyle.space8).padding(.vertical, 3)
-            .background(active ? AnyShapeStyle(FrogStyle.accentSoft) : AnyShapeStyle(FrogStyle.control), in: Capsule(style: .continuous))
+        HStack(spacing: FrogStyle.space2) {
+            if let symbol { Image(systemName: symbol).font(.system(size: 8, weight: .bold)) }
+            Text(L10n.text(text))
+        }
+        .font(FrogType.caption.weight(.semibold)).lineLimit(1).fixedSize()
+        .foregroundStyle(foreground)
+        .padding(.horizontal, symbol == nil ? FrogStyle.space8 : FrogStyle.space6).frame(height: Self.height)
+        .background(fill, in: Capsule(style: .continuous))
+    }
+
+    private var foreground: Color {
+        switch tone {
+        case .neutral: FrogStyle.muted
+        case .accent: FrogStyle.accent
+        case .warning: FrogStyle.warning
+        }
+    }
+
+    private var fill: AnyShapeStyle {
+        switch tone {
+        case .neutral: AnyShapeStyle(FrogStyle.control)
+        case .accent: AnyShapeStyle(FrogStyle.accentSoft)
+        case .warning: AnyShapeStyle(FrogStyle.warning.opacity(0.14))
+        }
     }
 }
 

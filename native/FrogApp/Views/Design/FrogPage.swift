@@ -226,7 +226,9 @@ struct FrogSectionHeader<Accessory: View>: View {
                     .accessibilityAddTraits(.isHeader)
             }
             Spacer(minLength: FrogStyle.space8)
+            // A ghost button here ends its text on the trailing edge by itself (`frogTrailingGhost`).
             accessory.font(FrogType.small).foregroundStyle(FrogStyle.muted).frogRowAccessory()
+                .environment(\.frogTrailingGhost, true)
         }.frame(minHeight: FrogStyle.compactHeight).padding(.horizontal, FrogStyle.rowInset)
     }
 }

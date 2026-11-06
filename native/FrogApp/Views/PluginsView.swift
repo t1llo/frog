@@ -127,7 +127,7 @@ struct PluginsView: View {
     private func caption(_ item: PluginItem) -> String {
         let manifest = item.manifest
         let actions = manifest?.actions.count ?? 0
-        return [manifest?.version, manifest?.description, actions > 0 ? (actions == 1 ? "1 action" : "\(actions) actions") : nil]
+        return [manifest?.version, manifest?.description.taglineInCaption, actions > 0 ? (actions == 1 ? "1 action" : "\(actions) actions") : nil]
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
@@ -175,7 +175,7 @@ struct PluginsView: View {
     private func listingRow(_ entry: PluginRegistryEntry) -> some View {
         let installed = plugins.item(entry.id)
         let permissions = entry.permissions.compactMap { PluginPermission(rawValue: $0)?.title.lowercased() }
-        let caption = [entry.summary, "by \(entry.author)", permissions.isEmpty ? nil : "asks to " + permissions.joined(separator: ", ")]
+        let caption = [entry.summary.taglineInCaption, "by \(entry.author)", permissions.isEmpty ? nil : "asks to " + permissions.joined(separator: ", ")]
             .compactMap { $0 }.joined(separator: " · ")
         return FrogRow("\(entry.name) \(entry.version)", caption: caption) {
             PluginIconTile(symbol: PluginSymbol.name(entry.displaySymbol), tint: PluginTint.purple.color)
@@ -471,7 +471,7 @@ private struct PluginPermissionRow<Icon: View>: View {
             VStack(alignment: .leading, spacing: FrogStyle.space2) {
                 HStack(spacing: FrogStyle.space6) {
                     Text(permission.title).font(FrogType.row).foregroundStyle(FrogStyle.ink)
-                    if permission.isSensitive { PluginCautionBadge() }
+                    if permission.isSensitive { FrogBadge(text: "Caution", tone: .warning, symbol: "exclamationmark.triangle.fill") }
                     if new { FrogBadge(text: "New", active: true) }
                 }
                 Text(permission.detail).font(FrogType.small).foregroundStyle(FrogStyle.muted)
@@ -481,24 +481,6 @@ private struct PluginPermissionRow<Icon: View>: View {
         }
         .padding(.vertical, FrogStyle.space6).frame(minHeight: FrogStyle.rowHeight)
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// "Caution" beside a permission that can read or send the user's data, or act for them: the warning colour in a
-/// capsule, like every other badge.
-private struct PluginCautionBadge: View {
-    var body: some View {
-        Label { Text("Caution") } icon: { Image(systemName: "exclamationmark.triangle.fill") }
-            .labelStyle(PluginBadgeLabelStyle())
-            .font(FrogType.caption.weight(.semibold)).foregroundStyle(FrogStyle.warning)
-            .padding(.horizontal, FrogStyle.space6).padding(.vertical, 3)
-            .background(FrogStyle.warning.opacity(0.14), in: Capsule(style: .continuous))
-    }
-}
-
-private struct PluginBadgeLabelStyle: LabelStyle {
-    func makeBody(configuration: LabelStyleConfiguration) -> some View {
-        HStack(spacing: FrogStyle.space2) { configuration.icon.font(.system(size: 8, weight: .bold)); configuration.title }
     }
 }
 
@@ -626,5 +608,14 @@ extension PluginManifestAction.Effect {
         case .write: "Can change its storage, the clipboard, show a notification, run a script or open a link, as its permissions allow."
         case .network: "Can also reach the sites it lists or your AI model, as its permissions allow."
         }
+    }
+}
+
+extension String {
+    /// A plugin's own summary as it reads inside a `·` caption: a tagline, so a trailing full stop is dropped
+    /// ("Fetch the weather." becomes "Fetch the weather · 2 actions").
+    var taglineInCaption: String {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasSuffix(".") && !trimmed.hasSuffix("...") ? String(trimmed.dropLast()) : trimmed
     }
 }
