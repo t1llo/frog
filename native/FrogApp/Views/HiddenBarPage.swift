@@ -15,15 +15,14 @@ struct HiddenBarPage: View {
                 }
             }
             FrogSection("Hiding") {
-                // How long is part of the switch's row: it means nothing while the switch is off.
+                // The delay gets its own row under the switch, shown only while it is on.
                 FrogRow("Hide again automatically") {
-                    HStack(spacing: FrogStyle.space8) {
-                        if plugin.settings.autoHide {
-                            FrogDropdown(selection: binding(\.autoHideSeconds), options: Set([5.0, 10, 15, 30, 60, plugin.settings.autoHideSeconds]).sorted(),
-                                         width: 140, title: { "\($0.formatted(.number.precision(.fractionLength(0...1)))) seconds" })
-                                .accessibilityLabel("Hide again after")
-                        }
-                        Toggle("Hide again automatically", isOn: binding(\.autoHide, reveal: true)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+                    Toggle("Hide again automatically", isOn: binding(\.autoHide, reveal: true)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+                }
+                if plugin.settings.autoHide {
+                    FrogRow("Hide again after") {
+                        FrogDropdown(selection: binding(\.autoHideSeconds), options: Set([5.0, 10, 15, 30, 60, plugin.settings.autoHideSeconds]).sorted(),
+                                     width: 140, title: { "\($0.formatted(.number.precision(.fractionLength(0...1)))) seconds" })
                     }
                 }
                 FrogRow("Hide when Frog starts") {
