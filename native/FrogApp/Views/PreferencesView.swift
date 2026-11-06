@@ -26,7 +26,7 @@ struct PreferencesView: View {
                 }
                 if let issue = model.hotkeyErrors[AppModel.shortcutPanelID] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
                 FrogRow("Setup", caption: "Walk through features, permissions, models and providers again.") { Button("Run setup again") { model.showSetup() } }
-                FrogRow("Statistics") { Button("View") { model.toolkit.select(.statistics) } }
+                FrogRow("Statistics", caption: "What you did with Frog, counted on this Mac.") { Button("Show statistics") { model.toolkit.select(.statistics) } }
             }
             AppearanceSettingsView(model: model)
             FrogSection("Permissions") {

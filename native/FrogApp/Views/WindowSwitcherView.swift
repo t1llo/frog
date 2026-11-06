@@ -9,7 +9,7 @@ struct WindowSwitcherView: View {
     var body: some View {
         FrogPage {
             FrogPageHeader(title: "Window switcher", subtitle: "Every window, not every app. Type to search.")
-            FrogSection {
+            FrogSection("Switching") {
                 FrogRow("Shortcut", caption: "Hold to keep switching, add Shift to go back") {
                     HotkeyRecorder(hotkey: Binding(get: { plugin.settings.shortcut.hotkey }, set: { value in
                         guard let value else { return }
