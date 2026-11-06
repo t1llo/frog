@@ -352,13 +352,15 @@ private struct NoteProgress: Equatable {
 private struct HistoryDetail: View {
     let entry: HistoryEntry
     @State private var copied: String?
+    /// The comparison is worked out once per entry, not on every render.
+    @State private var diffs = HistoryDiffMemo()
 
     var body: some View {
         // One card per text, each under its own heading, as sections on the other pages.
         VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
             if let answer = entry.answer {
                 answerSections(answer)
-            } else if let diff = HistoryDiff(original: entry.originalText, result: entry.processedText) {
+            } else if let diff = diffs.diff(for: entry) {
                 // A rewrite: what changed is marked in both texts.
                 section("Result", copying: entry.processedText) {
                     Text(diff.result).font(FrogType.lead).lineSpacing(4).textSelection(.enabled)
@@ -412,6 +414,19 @@ private struct HistoryDetail: View {
         }) {
             content().padding(.vertical, FrogStyle.space12)
         }
+    }
+}
+
+/// The last entry's `HistoryDiff`, kept while the same entry is shown.
+@MainActor final class HistoryDiffMemo {
+    private var key: (id: UUID, original: String, result: String)?
+    private var value: HistoryDiff?
+
+    func diff(for entry: HistoryEntry) -> HistoryDiff? {
+        if let key, key.id == entry.id, key.original == entry.originalText, key.result == entry.processedText { return value }
+        key = (entry.id, entry.originalText, entry.processedText)
+        value = HistoryDiff(original: entry.originalText, result: entry.processedText)
+        return value
     }
 }
 
