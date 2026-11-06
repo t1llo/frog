@@ -1,7 +1,7 @@
 import SwiftUI
 import FrogCore
 
-/// Turns plugins on and off, by sidebar category. Each plugin's settings are on its own page.
+/// Turns Frog's built-in features on and off, by sidebar category. Each plugin's settings are on its own page.
 struct PluginsCatalogView: View {
     @EnvironmentObject private var model: AppModel
     @State private var search = ""
@@ -18,8 +18,8 @@ struct PluginsCatalogView: View {
 
     var body: some View {
         FrogPage {
-            FrogPageHeader(title: "Plugins")
-            SearchBox(placeholder: "Find a plugin", text: $search)
+            FrogPageHeader(title: "Features", subtitle: "Turn Frog's built-in features on or off. Each has its own page.")
+            SearchBox(placeholder: "Find a feature", text: $search)
             let groups = groups
             if groups.isEmpty {
                 FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another word.")
@@ -28,7 +28,7 @@ struct PluginsCatalogView: View {
                     // Captioned like a `FrogSection`, so this page reads like the others.
                     VStack(alignment: .leading, spacing: FrogStyle.space8) {
                         Text(L10n.text(group.category.title)).font(FrogType.section).foregroundStyle(FrogStyle.ink)
-                            .accessibilityAddTraits(.isHeader).frame(minHeight: 20).padding(.horizontal, FrogStyle.space2)
+                            .accessibilityAddTraits(.isHeader).frame(minHeight: 20).padding(.horizontal, FrogStyle.rowInset)
                         VStack(spacing: FrogStyle.space2) {
                             ForEach(group.plugins) { row($0) }
                         }.padding(FrogStyle.listInset).frogTableSurface()
@@ -49,7 +49,7 @@ struct PluginsCatalogView: View {
             }.frame(maxWidth: .infinity, alignment: .leading)
             if enabled {
                 Button("Open") { host.open(plugin.id) }
-                    .buttonStyle(.frog(.ghost, compact: true))
+                    .buttonStyle(.frog(compact: true))
                     .accessibilityLabel("Open \(plugin.name)")
             }
             Toggle(plugin.name, isOn: Binding(get: { enabled }, set: { on in
