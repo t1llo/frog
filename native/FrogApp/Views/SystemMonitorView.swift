@@ -20,7 +20,7 @@ struct SystemMonitorPage: View {
 
     var body: some View {
         FrogPage {
-            FrogPageHeader(title: "System monitor", subtitle: "CPU, GPU and memory over the last minute, and free space on your Mac")
+            FrogPageHeader(title: "System monitor", subtitle: "CPU, GPU and memory over the last 10 minutes, and free space on your Mac")
             VStack(alignment: .leading, spacing: FrogStyle.space8) {
                 FrogSectionHeader("Load and storage")
                 SystemMonitorView(monitor: monitor, presenter: .page, wide: true)
@@ -86,9 +86,9 @@ struct SystemMonitorOverview: View {
         VStack(spacing: wide ? FrogStyle.space16 : FrogStyle.space8) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 8) {
-                    legend("CPU", color: FrogStyle.series, text: sample.map { percent($0.cpu) } ?? percent(snapshot.cpu))
+                    legend("CPU", color: FrogStyle.series, recorded: sample.map(\.cpu), now: snapshot.cpu)
                         .help("Busy time across all CPU cores.")
-                    legend("GPU", color: FrogStyle.seriesSecondary, text: sample.map { percent($0.gpu) } ?? percent(snapshot.gpu))
+                    legend("GPU", color: FrogStyle.seriesSecondary, recorded: sample.map(\.gpu), now: snapshot.gpu)
                         .help("The busiest GPU, when its driver reports it.")
                     memory(sample)
                 }
@@ -100,7 +100,7 @@ struct SystemMonitorOverview: View {
                 } else {
                     SystemMonitorGraph(history: history, inspected: $inspected, sample: sample, wide: wide).equatable().frame(height: wide ? 150 : 54)
                 }
-                GraphAxis(leading: GraphStyle.ago(SystemMonitorGraph.span(history)), trailing: "Now")
+                GraphAxis(leading: GraphStyle.ago(SystemMonitorGraph.span), trailing: "Now")
             }.modifier(OverviewCard(wide: wide))
             if let storage = snapshot.storage {
                 storageLine(storage).modifier(OverviewCard(wide: wide))
@@ -118,9 +118,8 @@ struct SystemMonitorOverview: View {
     private func memory(_ sample: SystemMonitorSample?) -> some View {
         let fraction = sample != nil ? sample?.memory : snapshot.memory?.fraction
         let level = fraction.map { FrogStyle.level($0, warning: 0.8, critical: 0.92) }
-        // The dot is the meter's colour, so the three figures read as one legend.
-        // Before the first reading it is the colour memory shows while it is fine, so the legend has its colours at once.
-        return GraphLegend(color: level ?? FrogStyle.series, title: "Memory") {
+        // No dot: memory has no line in the graph, only its meter, like CPU's and GPU's.
+        return GraphLegend(color: nil, title: "Memory") {
             if let fraction, let level {
                 Text(percent(.value(fraction))).font(GraphStyle.legendValue(page: wide)).monospacedDigit()
                     .frame(height: wide ? 34 : 24, alignment: .leading)
@@ -259,13 +258,17 @@ struct SystemMonitorOverview: View {
         value < 0.1 ? "<0.1 W" : value.formatted(.number.precision(.fractionLength(1))) + " W"
     }
 
-    private func legend(_ title: String, color: Color, text: String) -> some View {
-        GraphLegend(color: color, title: title) {
+    /// CPU or GPU: the dot of its line, the figure now or at the moment under the pointer, and a meter like memory's.
+    private func legend(_ title: String, color: Color, recorded: Double??, now: SystemMonitorMetric) -> some View {
+        let fraction: Double? = recorded.map { $0 } ?? { if case .value(let value) = now { value } else { nil } }()
+        let text = recorded.map { percent($0) } ?? percent(now)
+        return GraphLegend(color: color, title: title) {
             if text == percent(.measuring) {
                 MeasuringValue(wide: wide)
             } else {
                 Text(text).font(text.hasSuffix("%") ? GraphStyle.legendValue(page: wide) : FrogType.small)
                     .monospacedDigit().frame(height: wide ? 34 : 24, alignment: .leading)
+                if let fraction { meter(fraction, color: FrogStyle.level(fraction, warning: 0.8, critical: 0.95)) }
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -297,13 +300,17 @@ struct SystemMonitorOverview: View {
     }
 }
 
-/// A figure that has no reading yet: a quiet bar the width of a number, the one sign that it is being measured.
+/// A figure that has no reading yet: a quiet bar the width of a number, the one sign that it is being measured, over
+/// its meter's empty track, so nothing moves when the reading arrives.
 private struct MeasuringValue: View {
     let wide: Bool
     var body: some View {
-        FrogSkeleton(width: wide ? 72 : 48, height: wide ? 22 : 16)
-            .frame(height: wide ? 34 : 24, alignment: .leading)
-            .accessibilityLabel("Measuring")
+        VStack(alignment: .leading, spacing: 3) {
+            FrogSkeleton(width: wide ? 72 : 48, height: wide ? 22 : 16)
+                .frame(height: wide ? 34 : 24, alignment: .leading)
+            FrogMeter(fraction: 0, tint: FrogStyle.accent)
+        }
+        .accessibilityElement().accessibilityLabel("Measuring")
     }
 }
 
@@ -323,13 +330,10 @@ private struct OverviewCard: ViewModifier {
 struct SystemMonitorGraph: View, Equatable {
     static let maxPoints = 90
 
-    /// The stretch the graph spans: what was recorded, rounded up to whole minutes, from one minute up to the
-    /// full history window, so a fresh start fills the graph instead of sitting in a sliver at its right edge.
-    static func span(_ history: [SystemMonitorSample]) -> TimeInterval {
-        guard let first = history.first?.time, let last = history.last?.time else { return 60 }
-        let minutes = (last.timeIntervalSince(first) / 60).rounded(.up)
-        return min(SystemMonitor.historyWindow, max(60, minutes * 60))
-    }
+    /// The stretch the graph spans: always the whole history window, so the page, the popup, their axis and the
+    /// page's subtitle all say the same 10 minutes. A fresh start draws from the right edge and fills in, as
+    /// Activity Monitor's graphs do.
+    static let span = SystemMonitor.historyWindow
 
     static func == (a: Self, b: Self) -> Bool {
         a.wide == b.wide && a.history.count == b.history.count && a.history.last?.time == b.history.last?.time
@@ -370,7 +374,7 @@ struct SystemMonitorGraph: View, Equatable {
     var body: some View {
         let cpu = Self.thinned(SystemMonitorRun.runs(history, pause: SystemMonitor.recordingPause, value: \.cpu))
         let gpu = Self.thinned(SystemMonitorRun.runs(history, pause: SystemMonitor.recordingPause, value: \.gpu))
-        let window = Self.span(history)
+        let window = Self.span
         Chart {
             FrogChartGrid(values: wide ? [0, 0.5, 1] : [0.5])
             ForEach(cpu) { run in

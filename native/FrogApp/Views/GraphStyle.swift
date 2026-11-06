@@ -21,7 +21,8 @@ enum GraphStyle {
 
 /// A legend entry: a dot in the line's colour, its name beside it and its value below.
 struct GraphLegend<Value: View>: View {
-    let color: Color
+    /// The colour of the line it names; nil for a figure with no line (System monitor's memory), which gets no dot.
+    let color: Color?
     let title: String
     var spacing: CGFloat = 3
     @ViewBuilder let value: Value
@@ -29,7 +30,7 @@ struct GraphLegend<Value: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: spacing) {
             HStack(spacing: 5) {
-                Circle().fill(color).frame(width: 7, height: 7)
+                if let color { Circle().fill(color).frame(width: 7, height: 7) }
                 Text(title).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
             }
             value
