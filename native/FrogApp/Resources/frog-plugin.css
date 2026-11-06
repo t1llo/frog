@@ -233,11 +233,15 @@ input.frog-switch:focus { box-shadow: none; }
 @keyframes frog-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .frog-spinner { animation-duration: 2.4s; } }
 
-/* The popup beneath a plugin's menu-bar item. Frog draws the panel, its corners and the plugin's name
-   above; the page lies on it with no background of its own and 8px from the panel's edge. */
+/* A big figure, the number a page or popup leads with ($3.92, 25:00): semibold, as Frog's own. */
+.frog-figure { font-size: 28px; line-height: 1.15; font-weight: 600; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
+
+/* The popup beneath a plugin's menu-bar item. Frog draws the panel, its corners, the plugin's tile and name
+   above and Close beneath; the page lies on it with no background of its own. Its content starts 14px in,
+   on the same edge as the name above, whether or not it uses .frog-page. */
 :root[data-frog-surface="popup"], :root[data-frog-surface="popup"] body { background: transparent; }
-:root[data-frog-surface="popup"] body { font-size: 13px; }
-:root[data-frog-surface="popup"] .frog-page { padding: 0 6px 8px; gap: 12px; max-width: none; }
+:root[data-frog-surface="popup"] body { font-size: 13px; padding: 2px 14px 12px; }
+:root[data-frog-surface="popup"] .frog-page { padding: 0; gap: 12px; max-width: none; }
 :root[data-frog-surface="popup"] button { min-height: var(--frog-compact-height); padding: 0 10px; font-size: 12px; }
-:root[data-frog-surface="popup"] .frog-list { background: transparent; padding: 0; }
+:root[data-frog-surface="popup"] .frog-list { background: transparent; padding: 0; margin: 0 -8px; }
 :root[data-frog-surface="popup"] .frog-list > li, :root[data-frog-surface="popup"] .frog-item { padding: 6px 8px; }
