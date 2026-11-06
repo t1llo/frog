@@ -67,18 +67,16 @@ struct WritingView: View {
                        })
     }
 
-    /// What it does with the result and its model ("Copies the result · Llama 3.2"), in one line, so every row has a caption;
-    /// the shortcut is drawn as caps beside the controls. A rule without a model names none: the mark beside its controls
-    /// says so once.
+    /// The rule's model, then what it does with the result when that is not the usual replacing ("Llama 3.2 · Copies
+    /// the result"), so each caption says what sets the rule apart. A rule without a model says so in its caption.
     private func caption(_ rule: Rule) -> String? {
-        var parts: [String] = []
+        var parts: [String] = [model.ruleHasModel(rule) ? model.ruleModelLabel(rule) : L10n.text("No model")]
         switch rule.textOutput {
-        case .replace: parts.append(L10n.text("Replaces the selection"))
+        case .replace: break
         case .copy: parts.append(L10n.text("Copies the result"))
         case .panel: parts.append(L10n.text("Shows the answer in a panel"))
         }
-        if model.ruleHasModel(rule) { parts.append(model.ruleModelLabel(rule)) }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts.joined(separator: " · ")
     }
 
     /// Edit rule in the answer panel opens that rule's editor here.
