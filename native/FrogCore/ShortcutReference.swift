@@ -2,12 +2,13 @@ import Foundation
 
 /// The page a global shortcut belongs to, in the order the pages appear in Frog.
 public enum ShortcutReferenceGroup: Int, CaseIterable, Sendable {
-    case writing, explain, dictation, shortcuts, plugins, frog
+    case writing, explain, dictation, windows, shortcuts, plugins, frog
     public var title: String {
         switch self {
         case .writing: "Writing"
         case .explain: "Explain"
         case .dictation: "Dictation"
+        case .windows: "Windows"
         case .shortcuts: "Shortcuts"
         case .plugins: "Plugins"
         case .frog: "Frog"
@@ -38,13 +39,15 @@ public enum ShortcutReference {
             let group: ShortcutReferenceGroup = switch rule.category {
             case .text: answersInPanel(rule) ? .explain : .writing
             case .audio: .dictation
-            case .application, .window, .system: .shortcuts
+            case .window: .windows
+            case .application, .system: .shortcuts
             }
             items.append(ShortcutReferenceItem(id: rule.id.uuidString, title: title(rule), hotkey: hotkey, group: group))
         }
         for rule in extraRules where rule.enabled {
             guard let hotkey = rule.hotkey else { continue }
-            items.append(ShortcutReferenceItem(id: rule.id.uuidString, title: title(rule), hotkey: hotkey, group: .shortcuts))
+            items.append(ShortcutReferenceItem(id: rule.id.uuidString, title: title(rule), hotkey: hotkey,
+                                               group: rule.category == .window ? .windows : .shortcuts))
         }
         let preferences = configuration.preferences
         let workflow = preferences.workflowSettings
@@ -65,11 +68,26 @@ public enum ShortcutReference {
     }
 
     /// The items under their page, pages in order, rows in the order given; pages without a row are left out.
+    /// A page whose only row names the page itself (Explain's "Explain", Dictation's "Dictate") gets no heading
+    /// of its own to repeat it: the row joins Frog's, which lists each feature's own shortcut.
     public static func grouped(_ items: [ShortcutReferenceItem]) -> [(group: ShortcutReferenceGroup, items: [ShortcutReferenceItem])] {
-        ShortcutReferenceGroup.allCases.compactMap { group in
-            let rows = items.filter { $0.group == group }
-            return rows.isEmpty ? nil : (group, rows)
+        var byGroup = Dictionary(grouping: items, by: \.group)
+        var features: [ShortcutReferenceItem] = []
+        for group in ShortcutReferenceGroup.allCases where group != .frog {
+            guard let rows = byGroup[group], rows.count == 1, names(rows[0].title, group) else { continue }
+            features.append(rows[0])
+            byGroup[group] = nil
         }
+        if !features.isEmpty { byGroup[.frog] = features + (byGroup[.frog] ?? []) }
+        return ShortcutReferenceGroup.allCases.compactMap { group in
+            byGroup[group].flatMap { $0.isEmpty ? nil : (group, $0) }
+        }
+    }
+
+    /// Whether a row's title names its page: the same word, or its verb ("Dictate" for Dictation).
+    private static func names(_ title: String, _ group: ShortcutReferenceGroup) -> Bool {
+        let title = title.lowercased(), page = group.title.lowercased()
+        return title == page || (title.count >= 5 && page.hasPrefix(String(title.prefix(5))) && !title.contains(" "))
     }
 
     private static func title(_ rule: Rule) -> String {
