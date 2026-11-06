@@ -47,7 +47,7 @@ struct PreferencesView: View {
                 FrogRow("config.toml", caption: "Changes apply when you save.") {
                     HStack(spacing: 8) {
                         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.settingsFile.fileURL]) }
-                            .buttonStyle(.frog(.ghost))
+                            .buttonStyle(.frog())
                         Button("Open") { openSettingsFile() }
                     }
                 }
@@ -63,7 +63,7 @@ struct PreferencesView: View {
                 FrogRow(model.recentErrors.isEmpty ? "None recorded" : "\(model.recentErrors.count) recorded") {
                     if !model.recentErrors.isEmpty {
                         HStack(spacing: 8) {
-                            Button("Clear") { model.clearRecentErrors() }.buttonStyle(.frog(.ghost))
+                            Button("Clear") { model.clearRecentErrors() }.buttonStyle(.frog())
                             CopyAction(title: "Copy log", labeled: true) {
                                 ViewActions.copy(model.recentErrors.map { "\($0.timestamp.ISO8601Format())  \($0.message)" }.joined(separator: "\n"))
                             }
@@ -81,7 +81,7 @@ struct PreferencesView: View {
                     Link("Source code ↗", destination: URL(string: "https://github.com/t1llo/frog")!)
                 }
                 ForEach(LegalDocument.allCases.filter { $0.url() != nil }) { document in
-                    FrogRow(document.title) { Button("View") { legalDocument = document }.buttonStyle(.frog(.ghost)) }
+                    FrogRow(document.title) { Button("View") { legalDocument = document }.buttonStyle(.frog()) }
                 }
                 FrogRow("Made by Tillo") {
                     HStack(spacing: 12) {

@@ -247,7 +247,7 @@ struct WritingRuleEditor: View {
                     .accessibilityLabel("Rule name")
                 Toggle("On", isOn: $rule.enabled).toggleStyle(.frogSwitch).controlSize(.small).font(FrogType.small)
             }.padding(FrogStyle.sheetPadding)
-            ScrollView {
+            FrogSheetScroll {
                 VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
                     FrogSection("Instructions") {
                         // An empty box says what goes in it, on the editor's own text inset.
@@ -284,7 +284,6 @@ struct WritingRuleEditor: View {
                     }
                 }.padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space4).minimalScrollbars()
             }
-            .bottomScrollFade()
             if let issue { InlineIssue(message: issue).padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space10) }
             FrogSheetButtons {
                 if existing {
@@ -298,7 +297,7 @@ struct WritingRuleEditor: View {
                     do { try model.saveRule(rule); dismiss() } catch { issue = error.localizedDescription }
                 }
             }
-        }.frame(width: 540, height: 610)
+        }.frame(width: 540)
             .foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).background(FrogWindowMaterial())
             .tint(FrogStyle.accent).buttonStyle(FrogButtonStyle()).controlSize(.small)
             .onChange(of: model.configuration, initial: true) { reconcileModels() }

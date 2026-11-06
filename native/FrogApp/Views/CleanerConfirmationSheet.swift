@@ -30,14 +30,12 @@ struct CleanerConfirmationSheet: View {
         VStack(alignment: .leading, spacing: FrogStyle.space16) {
             Text(prompt.title).font(FrogType.title).tracking(-0.4).fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
-            ScrollView {
+            // As tall as the list up to the limit, then it scrolls and fades out instead of cutting a row.
+            FrogSheetScroll(maxHeight: 260) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(removals, id: \.item.id) { removal in itemRow(removal) }
-                }.padding([.horizontal, .top], FrogStyle.listInset)
+                }.padding(FrogStyle.listInset)
             }
-            // The fade stands in for the list's bottom inset, so a long list fades out instead of cutting a row.
-            .bottomScrollFade(height: FrogStyle.space8)
-            .frame(maxHeight: 260).fixedSize(horizontal: false, vertical: true)
             .frogTableSurface()
             if let denied = prompt.finderDenied {
                 VStack(alignment: .leading, spacing: 8) {

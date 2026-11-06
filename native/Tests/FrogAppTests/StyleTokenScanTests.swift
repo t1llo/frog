@@ -103,6 +103,13 @@ final class StyleTokenScanTests: XCTestCase {
                           except: ["Views/PanelFooter.swift"])
     }
 
+    /// Three button looks: primary, secondary and destructive. The fill-less ghost is only the setup assistant's
+    /// way-finding (Back, Skip, Skip setup, Import settings…); the gallery shows it.
+    func testGhostButtonsAreOnlySetupWayFinding() throws {
+        try assertNoMatch(#"\.frog\(\.ghost\b|FrogButtonStyle\(\.ghost\b"#, "use .frog() (secondary) or .frog(.destructive)",
+                          except: ["Views/OnboardingView.swift", "Views/Design/DesignGallery.swift"])
+    }
+
     /// One cap per key: a shortcut of several keys is `KeyCaps`, never one `KeyCap` holding them all.
     func testShortcutsAreOneCapPerKey() throws {
         try assertNoMatch(#"\bKeyCap\("[⌃⌥⇧⌘][^"]+"|\bKeyCap\(shortcut|\bKeyCap\(action\.keys"#, "use KeyCaps, one cap per key")

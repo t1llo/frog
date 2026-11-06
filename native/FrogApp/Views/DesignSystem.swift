@@ -699,8 +699,6 @@ struct FrogButtonStyle: ButtonStyle {
         case ghost
         /// Removes or deletes something: the critical colour on the grey pill.
         case destructive
-        /// The old fill-less delete. It draws as `destructive`, so every delete looks alike; use `.destructive`.
-        case destructiveGhost
     }
     var kind: Kind = .secondary
     /// 24 points tall, for popups, panel headers and dense rows.
@@ -766,7 +764,7 @@ private struct FrogButtonBody: View {
             // it still reads. A disabled primary keeps no accent, so it never reads as a grey button that is
             // broken, and a disabled ghost stays plain text.
             switch enabled || kind == .ghost ? kind : .secondary {
-            case .secondary, .destructive, .destructiveGhost:
+            case .secondary, .destructive:
                 label.frogControlSurface(hovering: hovered, pressed: pressed, height: height, capsule: true, faded: !enabled)
             case .primary:
                 label.background {
@@ -792,7 +790,7 @@ private struct FrogButtonBody: View {
         case .secondary: FrogStyle.ink
         // Ink, never muted: a muted word with no fill is how a disabled button reads.
         case .ghost: FrogStyle.ink
-        case .destructive, .destructiveGhost: FrogStyle.critical
+        case .destructive: FrogStyle.critical
         }
     }
 }

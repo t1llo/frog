@@ -227,7 +227,9 @@ struct ProviderEditor: View {
                 }
                 CompactSegments(values: [0, 1, 2], selected: step, title: { ["Service", "Connection", "Models"][$0] }) { step = $0 }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(FrogStyle.sheetPadding)
-            ScrollView {
+            // As tall as the step, up to a limit: the short steps leave no empty half, the long one scrolls and
+            // fades out above the buttons rather than cutting a line in half.
+            FrogSheetScroll(maxHeight: 460) {
                 VStack(alignment: .leading, spacing: 20) {
                     if step == 0 {
                     // The Service step lists every service with its mark, rather than one menu on an empty step.
@@ -272,7 +274,7 @@ struct ProviderEditor: View {
                             Spacer(minLength: 0)
                             Button("Reset endpoint") {
                                 provider.endpoint = provider.kind.endpoint
-                            }.buttonStyle(.frog(.ghost)).fixedSize()
+                            }.buttonStyle(.frog()).fixedSize()
                         }
                     }.disabled(testing || discovering)
                     FrogSection("Credentials") {
@@ -282,7 +284,7 @@ struct ProviderEditor: View {
                         if !provider.kind.isLocal && provider.kind != .compatible {
                             Link(destination: provider.kind.setupURL) {
                                 ProviderLinkLabel(title: provider.kind == .gemini ? "Get an API key in Google AI Studio" : "Get an API key for \(provider.kind.title)")
-                            }.buttonStyle(.frog(.ghost)).padding(.leading, -FrogButtonStyle.horizontalPadding(compact: false))
+                            }.buttonStyle(.frog())
                         }
                         if hasSavedKey {
                             FrogRow("Remove saved key", caption: "Leave the field blank to keep the saved key.") {
@@ -320,9 +322,6 @@ struct ProviderEditor: View {
                     if let validation { InlineIssue(message: validation) }
                 }.padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space4).minimalScrollbars()
             }
-            // As tall as the step, up to a limit: the short steps leave no empty half, the long one scrolls and
-            // fades out above the buttons rather than cutting a line in half.
-            .frame(maxHeight: 460).fixedSize(horizontal: false, vertical: true).bottomScrollFade()
             // A multi-step sheet: Back between Cancel and the main button.
             FrogSheetButtons {
                 FrogCancelButton { testTask?.cancel(); discoveryTask?.cancel(); dismiss() }

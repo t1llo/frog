@@ -69,16 +69,16 @@ private struct DictationRuleSection: View {
                 Toggle("Enable \(rule.name)", isOn: binding(\.enabled)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
             rows
-            // Managing the rule itself comes last, as words on the row's trailing edge rather than a menu on the heading.
+            // Managing the rule itself comes last, as two pills on the row's trailing edge rather than a menu on the heading.
             HStack(spacing: FrogStyle.space8) {
                 Spacer()
-                Button("Rename…") { renaming = true }.buttonStyle(.frog(.ghost))
+                Button("Rename…") { renaming = true }.buttonStyle(.frog())
                 Button("Delete rule", role: .destructive) {
                     do { try model.deleteRule(id: rule.id) } catch { model.report(error) }
-                }.buttonStyle(.frog(.destructiveGhost))
+                }.buttonStyle(.frog(.destructive))
             }
-            // Row actions are 24 tall, and the last word ends where the switches above end.
-            .frogRowAccessory().padding(.trailing, -FrogButtonStyle.horizontalPadding(compact: true))
+            // Row actions are 24 tall, and the last pill ends where the switches above end.
+            .frogRowAccessory()
             .frame(minHeight: FrogStyle.rowHeight)
         }
         .sheet(isPresented: $renaming) {

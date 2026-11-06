@@ -81,7 +81,7 @@ struct WindowsView: View {
             }
             if let note = nativeTilingNote {
                 FrogRow(note) {
-                    Button("Open Desktop & Dock") { MacWindowManagerReader.openDesktopAndDock() }.buttonStyle(.frog(.ghost))
+                    Button("Open Desktop & Dock") { MacWindowManagerReader.openDesktopAndDock() }.buttonStyle(.frog())
                 }
             }
         }

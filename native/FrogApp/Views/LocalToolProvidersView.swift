@@ -23,7 +23,7 @@ struct LocalToolProvidersView: View {
                         Text("Looking…")
                     }.accessibilityElement(children: .combine)
                 }
-                else { Button("Refresh") { Task { await refresh() } }.buttonStyle(.frog(.ghost, compact: true)) }
+                else { Button("Refresh") { Task { await refresh() } }.buttonStyle(.frog(compact: true)) }
             }) {
                 ForEach(statuses) { status in
                     // The tool's own tile and, at the row's end, its state: Connected once it is signed in, Install

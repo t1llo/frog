@@ -83,13 +83,13 @@ struct AddLocalModelView: View {
                     Button { source = "https://huggingface.co/mlx-community/Qwen3-0.6B-4bit" } label: {
                         Label("Use example", systemImage: "arrow.turn.left.up")
                     }
-                    .buttonStyle(.frog(.ghost, compact: true)).disabled(loading).padding(.trailing, -10)
+                    .buttonStyle(.frog(compact: true)).disabled(loading)
                     .help("Put this link in the field")
                 }
             }
             if let issue { InlineIssue(message: issue).textSelection(.enabled) }
             if !candidates.isEmpty {
-                ScrollView {
+                FrogSheetScroll(maxHeight: 250) {
                     FrogSection {
                         ForEach(candidates) { item in
                             FrogRow(item.name, caption: item.runtimeName) {
@@ -99,7 +99,7 @@ struct AddLocalModelView: View {
                             }
                         }
                     }
-                }.frame(maxHeight: 250).fixedSize(horizontal: false, vertical: true).bottomScrollFade()
+                }
             }
             FrogSheetButtons(padded: false) {
                 if loading {

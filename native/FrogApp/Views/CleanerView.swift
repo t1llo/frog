@@ -104,7 +104,7 @@ struct CleanerView: View {
                     try cleaner.dependencies.store.setFlag(Self.fullDiskAccessNoticeFlag, true)
                     noticeDismissed = true
                 } catch { model.report(error) }
-            }.buttonStyle(.frog(.ghost))
+            }.buttonStyle(.frog())
         }.padding(.horizontal, FrogStyle.rowInset)
     }
 

@@ -96,16 +96,16 @@ private struct LidClosedSection: View {
                         HStack(spacing: 8) {
                             FrogSpinner()
                             Text("Finish in Terminal…").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                            Button("Cancel") { lid.cancelAccessGuide() }.buttonStyle(.frog(.ghost))
+                            Button("Cancel") { lid.cancelAccessGuide() }.buttonStyle(.frog())
                         }
                     } else if lid.accessState == .ready {
                         HStack(spacing: 8) {
                             Label("Ready", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.accentText)
-                            Button("Reset…") { lid.configureAccess(.reset) }.buttonStyle(.frog(.ghost)).disabled(lid.isBusy)
+                            Button("Reset…") { lid.configureAccess(.reset) }.buttonStyle(.frog()).disabled(lid.isBusy)
                         }
                     } else {
                         HStack(spacing: 8) {
-                            Button("Check") { Task { await lid.refreshAccess(force: true) } }.buttonStyle(.frog(.ghost))
+                            Button("Check") { Task { await lid.refreshAccess(force: true) } }.buttonStyle(.frog())
                             Button("Set up…") { lid.configureAccess() }.buttonStyle(.frog(.primary))
                         }
                     }
