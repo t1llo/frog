@@ -139,20 +139,26 @@ struct NotesPage: View {
         DocumentsPage(documents: documents, kind: .note, title: "Notes", subtitle: "Markdown notes, and text the command bar pastes.", symbol: "note.text",
                       emptyMessage: "Write one here, or have an agent add one with frog run notes.add.") { note in
             CompactSegments(values: [false, true], selected: preview, compact: true, title: { $0 ? "Preview" : "Edit" }) { preview = $0 }
-            Toggle("Paste on pick", isOn: documents.binding(note.id, \.pastes)).toggleStyle(.frogSwitch).controlSize(.small)
-                .font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                .help("Choosing it in the command bar pastes its text, with {{date}}, {{time}} and {{clipboard}} filled in")
-            CopyAction(labeled: true) {
+            CopyAction(title: "Copy note") {
                 do { try paste.copy(note) } catch { report(error) }
             }
         } content: { note in
-            if preview {
-                MarkdownPreviewView(markdown: note.text).id(note.id)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-            } else {
-                DocumentTextEditor(text: documents.binding(note.id, \.text))
+            Group {
+                if preview {
+                    MarkdownPreviewView(markdown: note.text).id(note.id)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                } else {
+                    DocumentTextEditor(text: documents.binding(note.id, \.text))
+                }
+            }.frame(maxHeight: .infinity)
+            // What picking the note in the command bar does: a setting of the note, under its text.
+            HStack(spacing: FrogStyle.space8) {
+                Text("Paste when picked in the command bar").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                Spacer(minLength: FrogStyle.space8)
+                Toggle("Paste when picked in the command bar", isOn: documents.binding(note.id, \.pastes))
+                    .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
+            .help("Choosing it in the command bar pastes its text, with {{date}}, {{time}} and {{clipboard}} filled in")
         }
     }
 }

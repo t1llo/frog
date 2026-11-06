@@ -177,8 +177,8 @@ struct ScriptsPage: View {
             DocumentTextEditor(text: documents.binding(script.id, \.text), font: FrogType.mono)
             if runner.resultID == script.id { output }
         } footer: {
-            FrogSection {
-                FrogRow("Time limit", caption: "For every script: Frog stops one that runs longer.") {
+            FrogSection("All scripts") {
+                FrogRow("Time limit", caption: "Frog stops a script that runs longer.") {
                     FrogDropdown(selected: timeout, options: ScriptsSettings.timeouts.contains(timeout) ? ScriptsSettings.timeouts : (ScriptsSettings.timeouts + [timeout]).sorted(),
                                  width: 120, title: Self.duration) { timeout = $0; setTimeout($0) }
                 }

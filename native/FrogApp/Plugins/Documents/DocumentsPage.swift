@@ -17,7 +17,7 @@ struct DocumentsPage<Controls: View, Content: View, Footer: View>: View {
 
     @State private var search = ""
     @State private var deleting: UUID?
-    private static var height: CGFloat { 540 }
+    private static var height: CGFloat { 460 }
 
     private var selected: UUID? {
         get { documents.selection[kind] }
@@ -45,18 +45,18 @@ struct DocumentsPage<Controls: View, Content: View, Footer: View>: View {
                 FrogEmptyState(symbol: symbol, title: "No \(title.lowercased()) yet", message: emptyMessage).frogTableSurface()
                 footer()
             } else if documents.loaded {
-                // The list runs down the side as a source list, without a card of its own; the editor and the
-                // plugin's settings for it share the column beside it.
+                // The list runs down the side as a source list, without a card of its own; the editor sits beside
+                // it on the page itself, its text on the same edge as its title.
                 HStack(alignment: .top, spacing: FrogStyle.space16) {
                     list.frame(width: 200).frame(minHeight: Self.height, alignment: .top)
-                    VStack(alignment: .leading, spacing: FrogStyle.space16) {
-                        Group {
-                            if let current { editor(current) }
-                            else { FrogEmptyState(symbol: symbol, title: shown.isEmpty ? "Nothing matches" : "Choose one", message: "") }
-                        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        footer()
-                    }.frame(maxWidth: .infinity).frame(height: Self.height, alignment: .top)
+                    Group {
+                        if let current { editor(current) }
+                        else { FrogEmptyState(symbol: symbol, title: shown.isEmpty ? "Nothing matches" : "Choose one", message: "") }
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .frame(height: Self.height, alignment: .top)
                 }
+                // Settings for every item, below the list rather than under one item's editor.
+                footer()
             }
         }
         .task {
@@ -86,8 +86,9 @@ struct DocumentsPage<Controls: View, Content: View, Footer: View>: View {
                                 .foregroundStyle(FrogStyle.ink).lineLimit(1)
                             Spacer(minLength: 0)
                             if item.pastes {
-                                Image(systemName: "text.badge.plus").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
+                                Image(systemName: "text.insert").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
                                     .help("Pastes when picked in the command bar")
+                                    .accessibilityLabel("Pastes when picked")
                             }
                         }
                         .padding(.horizontal, FrogStyle.rowInset)
@@ -105,11 +106,11 @@ struct DocumentsPage<Controls: View, Content: View, Footer: View>: View {
     }
 
     private func editor(_ item: UtilityDocument) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: FrogStyle.space8) {
             HStack(spacing: 8) {
                 TextField(L10n.text("Title"), text: binding(item, \.title)).textFieldStyle(.plain).font(FrogType.section)
                 controls(item)
-                IconMenu(title: "More") {
+                IconMenu(title: "More", bordered: false) {
                     Button("Export…", systemImage: "square.and.arrow.up") { export(item) }
                     if item.files.isEmpty { ShareLink(item: item.text) { Label("Share…", systemImage: "square.and.arrow.up.on.square") } }
                     Button("Delete", systemImage: "trash", role: .destructive) {
@@ -184,12 +185,13 @@ extension LocalDocuments {
     }
 }
 
-/// A text area on the inset fill, as both editors use it.
+/// A borderless text area on the page, as both editors use it. Its text starts on the title's edge: the text view
+/// keeps a line fragment padding of 5 points, which the negative inset takes back.
 struct DocumentTextEditor: View {
     @Binding var text: String
     var font: Font = FrogType.lead
     var body: some View {
-        TextEditor(text: $text).font(font).scrollContentBackground(.hidden)
-            .padding(8).frogControlSurface(height: nil)
+        TextEditor(text: $text).font(font).scrollContentBackground(.hidden).lineSpacing(3)
+            .padding(.horizontal, -5).padding(.top, FrogStyle.space2)
     }
 }
