@@ -15,36 +15,41 @@ struct ShortcutsSettingsView: View {
         FrogPage {
             FrogPageHeader(title: "Shortcuts", subtitle: "Keys that open apps and run actions from anywhere")
             if let unreadable = plugin.unreadable { FrogRowNote(text: unreadable, tone: FrogStyle.warning) }
-            FrogSection("Apps", accessory: { if !apps.isEmpty || !catalog.scanned { addApp } }) {
-                if apps.isEmpty, catalog.scanned {
-                    FrogEmptyState(symbol: "macwindow", title: "No app shortcuts",
-                                   message: "Open any app with keys of your own, from anywhere.", tint: ShortcutsPlugin.info.tint) {
-                        ShortcutAddButton(title: "Add app", list: appList)
+            if apps.isEmpty, actions.isEmpty, catalog.scanned {
+                // Nothing yet: one quiet card with both ways to start, not two empty sections.
+                FrogEmptyState(symbol: "command", title: "No shortcuts yet",
+                               message: "Open apps and run actions with keys of your own, from anywhere.") {
+                    HStack(spacing: FrogStyle.space8) {
+                        ShortcutAddButton(title: "Add app", list: appList, primary: false)
+                        ShortcutAddButton(title: "Add action", list: actionList, primary: false)
                     }
-                } else if apps.isEmpty {
-                    FrogLoadingNote(text: "Looking for apps…")
-                        .frame(maxWidth: .infinity, minHeight: FrogStyle.rowHeight, alignment: .leading)
-                }
-                ForEach(apps, id: \.self) { index in
-                    row(index) {
-                        if let app = bindings[index].app, let url = ShortcutsPlugin.applicationURL(app, path: bindings[index].with["path"]) {
-                            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 20, height: 20)
-                        } else {
-                            Image(systemName: "questionmark.app").frame(width: 20, height: 20).foregroundStyle(FrogStyle.muted)
+                }.frogTableSurface()
+            } else {
+                FrogSection("Apps", accessory: { addApp }) {
+                    if apps.isEmpty, catalog.scanned {
+                        FrogRow("No app shortcuts yet", caption: "Open any app with keys of your own.")
+                    } else if apps.isEmpty {
+                        FrogLoadingNote(text: "Looking for apps…")
+                            .frame(maxWidth: .infinity, minHeight: FrogStyle.rowHeight, alignment: .leading)
+                    }
+                    ForEach(apps, id: \.self) { index in
+                        row(index) {
+                            if let app = bindings[index].app, let url = ShortcutsPlugin.applicationURL(app, path: bindings[index].with["path"]) {
+                                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 20, height: 20)
+                            } else {
+                                Image(systemName: "questionmark.app").frame(width: 20, height: 20).foregroundStyle(FrogStyle.muted)
+                            }
                         }
                     }
                 }
-            }
-            FrogSection("Actions", accessory: { if !actions.isEmpty { addAction } }) {
-                if actions.isEmpty {
-                    FrogEmptyState(symbol: "bolt.fill", title: "No action shortcuts",
-                                   message: "Lock the screen, open the command bar or run any Frog action with keys.", tint: ShortcutsPlugin.info.tint) {
-                        ShortcutAddButton(title: "Add action", list: actionList)
+                FrogSection("Actions", accessory: { addAction }) {
+                    if actions.isEmpty {
+                        FrogRow("No action shortcuts yet", caption: "Lock the screen, open the command bar or run any Frog action.")
                     }
-                }
-                ForEach(actions, id: \.self) { index in
-                    row(index) {
-                        Image(systemName: symbol(of: bindings[index])).frame(width: 20, height: 20).foregroundStyle(FrogStyle.muted)
+                    ForEach(actions, id: \.self) { index in
+                        row(index) {
+                            Image(systemName: symbol(of: bindings[index])).frame(width: 20, height: 20).foregroundStyle(FrogStyle.muted)
+                        }
                     }
                 }
             }
@@ -136,7 +141,7 @@ private struct ShortcutChoices {
     let choose: (String?) -> Void
 }
 
-/// The add button of a section (secondary) or of its empty state (primary): `FrogAddButton`'s pill with a chevron,
+/// The add button of a section or of the empty page (both secondary; primary stays available): `FrogAddButton`'s pill with a chevron,
 /// opening a searchable list, since apps and actions are too many for a menu.
 private struct ShortcutAddButton: View {
     let title: String
