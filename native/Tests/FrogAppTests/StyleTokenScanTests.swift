@@ -33,10 +33,9 @@ final class StyleTokenScanTests: XCTestCase {
         // Markdown rules and quote bars are the user's own content.
         try assertNoMatch(#"Rectangle\(\)\.fill\(FrogStyle\.border"#, "separate with space, a heading or a surface",
                           except: ["Views/MarkdownPreview.swift"])
-        // The one line in Frog's own chrome: `FrogSection` draws it between the rows of a card, and the plugin
-        // stylesheet's `.frog-section` the same line from the colour the page source hands it.
-        try assertNoMatch(#"FrogStyle\.separator"#, "only FrogSection draws the line between rows",
-                          except: ["Views/DesignSystem.swift", "Views/Design/FrogPage.swift", "Community/PluginPageSource.swift"])
+        // Cards set their rows apart by space; the separator colour is only handed to plugin pages' stylesheet.
+        try assertNoMatch(#"FrogStyle\.separator"#, "set rows apart by space, not lines",
+                          except: ["Views/DesignSystem.swift", "Community/PluginPageSource.swift"])
     }
 
     func testControlsAreFrogsOwn() throws {

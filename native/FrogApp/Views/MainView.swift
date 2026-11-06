@@ -46,7 +46,8 @@ struct MainView: View {
         case .models: ProvidersView()
         case .features: PluginsCatalogView()
         case .settings: PreferencesView(permissionsRequest: $permissionsRequest)
-        case .statistics: StatisticsView(statistics: model.statistics, onBack: { model.toolkit.select(.settings) })
+        // Statistics is a step inside Settings: the toolbar's breadcrumb leads back, so the page draws no link.
+        case .statistics: StatisticsView(statistics: model.statistics)
         case .plugin(let id): PluginPageView(id: id)
         case .feature(let feature): pluginPage(BuiltinPlugins.pluginID(for: feature))
         }
@@ -103,39 +104,55 @@ struct MainView: View {
         }
     }
 
+    /// Scrolls the sidebar by the least amount that shows the open page's row; a row already in view stays put.
+    /// Statistics shows Settings, the row it belongs to.
     private func reveal(_ route: ToolkitRoute, in proxy: ScrollViewProxy) {
-        switch route {
-        case .feature, .plugin: proxy.scrollTo(route)
-        default: break
-        }
+        proxy.scrollTo(route == .statistics ? ToolkitRoute.settings : route)
     }
 
     // MARK: Toolbar
 
-    /// Back and forward, then the open page's title, in one bar the window can be dragged by.
+    /// The open page's title, on the page's content edge, so the title, the subtitle, the section headings and
+    /// the cards below share one left edge. A step inside a page shows where it came from first, as a
+    /// breadcrumb ("Settings › Statistics") whose first part goes back. Back and forward sit in the sidebar,
+    /// beside the window's buttons. The whole bar drags the window.
     private var toolbar: some View {
-        HStack(spacing: FrogStyle.space12) {
-            // Rex's outlined capsule, a thin line between its two halves.
-            HStack(spacing: 0) {
-                HistoryButton(title: "Back", symbol: "chevron.left", enabled: pageBack != nil || history.canGoBack) {
-                    if let pageBack { pageBack.action() } else { travel(history.back(from: section)) }
-                }
-                    .keyboardShortcut("[", modifiers: .command)
-                Rectangle().fill(FrogStyle.hairline).frame(width: 1, height: 18).accessibilityHidden(true)
-                HistoryButton(title: "Forward", symbol: "chevron.right", enabled: history.canGoForward) { travel(history.forward(from: section)) }
-                    .keyboardShortcut("]", modifiers: .command)
-            }.padding(.horizontal, 2).frame(height: 36)
-                .background(FrogStyle.card, in: Capsule(style: .continuous))
-                .overlay(Capsule(style: .continuous).strokeBorder(FrogStyle.hairline))
+        HStack(spacing: FrogStyle.space6) {
+            if let parent = breadcrumbParent {
+                FrogBreadcrumbLink(title: parent.title, action: parent.action)
+                Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(FrogStyle.muted).accessibilityHidden(true)
+            }
             Text(pageTitle ?? fallbackTitle).font(FrogType.toolbarTitle).foregroundStyle(FrogStyle.ink)
                 .lineLimit(1).accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
         }
         // Level with the window's buttons, which the 52-point title bar centres 26 points down.
-        .padding(.leading, FrogStyle.space8).padding(.trailing, FrogStyle.space16)
+        .padding(.leading, FrogStyle.pagePadding).padding(.trailing, FrogStyle.space16)
         .frame(height: FrogStyle.toolbarHeight)
         .background { WindowDragRegion().accessibilityHidden(true) }
         .background(alignment: .top) { toolbarScrim }
+    }
+
+    /// Where the open page was entered from, when it is a step inside another: the page's own step back (a
+    /// History entry) or Statistics inside Settings.
+    private var breadcrumbParent: (title: String, action: () -> Void)? {
+        if let pageBack, let parent = pageBack.parent { return (L10n.text(parent), pageBack.action) }
+        if section == .statistics { return (L10n.text("Settings"), { model.toolkit.select(.settings) }) }
+        return nil
+    }
+
+    /// Back and forward, two plain chevrons at the top of the sidebar beside the window's buttons (⌘[ and ⌘]).
+    /// Back takes a step inside the open page first.
+    private var historyButtons: some View {
+        HStack(spacing: 0) {
+            HistoryButton(title: "Back", symbol: "chevron.left", enabled: pageBack != nil || history.canGoBack) {
+                if let pageBack { pageBack.action() } else { travel(history.back(from: section)) }
+            }
+                .keyboardShortcut("[", modifiers: .command)
+            HistoryButton(title: "Forward", symbol: "chevron.right", enabled: history.canGoForward) { travel(history.forward(from: section)) }
+                .keyboardShortcut("]", modifiers: .command)
+        }
     }
 
     /// Rex's veil behind the toolbar: the window's own colour, solid behind the title and buttons and fading out
@@ -178,9 +195,16 @@ struct MainView: View {
     /// groups, Community pages, and Models and Plugins. Groups are set apart by space alone.
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // The window's buttons sit in this strip.
-            Color.clear.frame(height: 48).frame(maxWidth: .infinity)
-                .overlay { WindowDragRegion().accessibilityHidden(true) }
+            // The window's buttons sit in this strip, centred 26 points down the window like back and forward
+            // on its trailing side.
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                historyButtons
+            }
+            .padding(.trailing, FrogStyle.sidebarRowInset)
+            .frame(height: 36).frame(maxWidth: .infinity)
+            .background { WindowDragRegion().accessibilityHidden(true) }
+            .padding(.bottom, FrogStyle.space12)
             SearchBox(placeholder: "Search", text: $sidebarQuery)
                 .padding(.horizontal, FrogStyle.sidebarRowInset).padding(.bottom, FrogStyle.space16)
 
@@ -215,7 +239,7 @@ struct MainView: View {
                             }.padding(.bottom, FrogStyle.space12)
                                 .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Community"))
                         }
-                        ForEach(workspaceNavigation.filter { matches($0.title) }) { navigationButton($0) }
+                        ForEach(workspaceNavigation.filter { matches($0.title) }) { navigationButton($0).id($0.id) }
                         if !sidebarQuery.isEmpty && !anyMatch {
                             Text(L10n.text("No matches")).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                                 .padding(.horizontal, FrogStyle.space8).padding(.top, FrogStyle.space4)
@@ -299,7 +323,7 @@ struct PageHistory {
     mutating func cancelTravel() { travelling = false }
 }
 
-/// One half of the back and forward capsule.
+/// Back or forward: a plain chevron that fills a round hover, dimmed while there is nowhere to go.
 private struct HistoryButton: View {
     let title: String
     let symbol: String
@@ -309,12 +333,28 @@ private struct HistoryButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(enabled ? FrogStyle.ink : FrogStyle.muted.opacity(0.5))
-                .frame(width: 35, height: 32)
-                .background(hovering && enabled ? FrogStyle.hover : .clear, in: Capsule())
-                .contentShape(Capsule())
+                .foregroundStyle(enabled ? (hovering ? FrogStyle.ink : FrogStyle.muted) : FrogStyle.muted.opacity(0.45))
+                .frame(width: FrogStyle.controlHeight, height: FrogStyle.controlHeight)
+                .background(hovering && enabled ? FrogStyle.hover : .clear, in: Circle())
+                .contentShape(Circle())
         }.buttonStyle(.plain).disabled(!enabled).onHover { hovering = $0 }
             .accessibilityLabel(L10n.text(title)).help(L10n.text(title))
+    }
+}
+
+/// The first part of the toolbar's breadcrumb: the page a step came from, in the title's size but muted, which
+/// darkens on hover and goes back when clicked.
+private struct FrogBreadcrumbLink: View {
+    let title: String
+    let action: () -> Void
+    @State private var hovering = false
+    var body: some View {
+        Button(action: action) {
+            Text(title).font(FrogType.toolbarTitle).lineLimit(1)
+                .foregroundStyle(hovering ? FrogStyle.ink : FrogStyle.muted)
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).onHover { hovering = $0 }
+            .accessibilityLabel(L10n.text("Back to \(title)")).help(L10n.text("Back to \(title)"))
     }
 }
 

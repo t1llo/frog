@@ -3,6 +3,10 @@ import SwiftUI
 /// Every page of the Frog window: a scroll view with the standard padding, sections `sectionSpacing` apart, and
 /// a column no wider than `FrogStyle.pageWidth`. Dashboards and tables pass `FrogStyle.wideWidth`. In the main
 /// window the toolbar above holds the title, so the page starts close under it.
+///
+/// The column starts `pagePadding` from the leading edge on every page, whatever its width, so the toolbar's
+/// title, a page's subtitle, its section headings and its cards share one edge, and switching pages never moves
+/// it. A wide page only reaches further to the trailing side.
 struct FrogPage<Content: View>: View {
     var width: CGFloat = FrogStyle.pageWidth
     @ViewBuilder var content: Content
@@ -11,10 +15,10 @@ struct FrogPage<Content: View>: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) { content }
+                .frame(maxWidth: width, alignment: .leading)
                 .padding(.horizontal, FrogStyle.pagePadding).padding(.bottom, FrogStyle.pagePadding)
                 .padding(.top, titleInToolbar ? FrogStyle.toolbarFade : FrogStyle.pagePadding)
-                .frame(maxWidth: width + FrogStyle.pagePadding * 2)
-                .frame(maxWidth: .infinity, alignment: .top)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
                 .minimalScrollbars()
         }
     }
@@ -79,8 +83,11 @@ extension FrogPageHeader where Actions == EmptyView {
     }
 }
 
-/// A group of rows: an optional caption above one rounded card, and an optional one-sentence footer. The card
-/// draws a thin line between two `FrogRow`s, inset to the content edge; nothing else in Frog draws lines.
+/// A group of rows: an optional heading above one rounded card, and an optional one-sentence footer. Rows are
+/// set apart by their height and a little space, never by lines.
+///
+/// One edge: the heading, the card and the footer start on the page's content edge, the same edge as the
+/// toolbar's title and the page's subtitle; the rows' text sits `rowInset` inside the card.
 struct FrogSection<Content: View, Accessory: View>: View {
     var title: String? = nil
     var footer: String? = nil
@@ -93,28 +100,48 @@ struct FrogSection<Content: View, Accessory: View>: View {
     }
 
     var body: some View {
-        // Rex's spacing: the heading and the note under the card start where the rows' text does, 10 in.
-        VStack(alignment: .leading, spacing: FrogStyle.space10) {
+        VStack(alignment: .leading, spacing: FrogStyle.space8) {
             if title != nil || Accessory.self != EmptyView.self {
-                HStack(spacing: 8) {
-                    if let title {
-                        Text(L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.ink)
-                            .accessibilityAddTraits(.isHeader)
-                    }
-                    Spacer(minLength: 8)
-                    accessory
-                }.frame(minHeight: 20).padding(.horizontal, FrogStyle.rowInset)
+                FrogSectionHeader(title ?? "") { accessory }
             }
-            SeparatedRows { content }
-                .padding(.horizontal, FrogStyle.rowInset)
+            VStack(alignment: .leading, spacing: FrogStyle.space2) { content }
+                .padding(.horizontal, FrogStyle.rowInset).padding(.vertical, FrogStyle.space2)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frogTableSurface()
             if let footer {
                 Text(L10n.text(footer)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                    .fixedSize(horizontal: false, vertical: true).padding(.horizontal, FrogStyle.rowInset)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
+}
+
+/// The one heading of a group of content on a page or in a sheet: `FrogType.section` in the text colour, on the
+/// content edge, with optional trailing actions (a count, a button, a menu) at a control's height. `FrogSection`
+/// draws it; a page that groups its own content (a list, a grid) puts it above the group so every heading on the
+/// page looks the same. Inside a card or popup, a sub-group starts with a `SectionCaption` instead.
+struct FrogSectionHeader<Accessory: View>: View {
+    let title: String
+    @ViewBuilder var accessory: Accessory
+
+    init(_ title: String, @ViewBuilder accessory: () -> Accessory) {
+        self.title = title; self.accessory = accessory()
+    }
+
+    var body: some View {
+        HStack(spacing: FrogStyle.space8) {
+            if !title.isEmpty {
+                Text(L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.ink)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            Spacer(minLength: FrogStyle.space8)
+            accessory.font(FrogType.small).foregroundStyle(FrogStyle.muted)
+        }.frame(minHeight: FrogStyle.compactHeight)
+    }
+}
+
+extension FrogSectionHeader where Accessory == EmptyView {
+    init(_ title: String) { self.init(title) { EmptyView() } }
 }
 
 extension FrogSection where Accessory == EmptyView {
@@ -150,15 +177,8 @@ struct FrogRow<Control: View, Icon: View>: View {
             control.fixedSize(horizontal: true, vertical: false).environment(\.compactRowTitle, title)
                 .toggleStyle(.frogSwitch)
         }
-        .padding(.vertical, 7)
+        .padding(.vertical, FrogStyle.space6)
         .frame(minHeight: FrogStyle.rowHeight)
-        .markedAsSeparatedRow()
-    }
-}
-
-private extension View {
-    @ViewBuilder func markedAsSeparatedRow() -> some View {
-        if #available(macOS 15, *) { containerValue(\.frogSeparatedRow, true) } else { self }
     }
 }
 
@@ -166,8 +186,10 @@ private extension View {
 /// takes it before going to the previous page.
 struct FrogPageBack: Equatable {
     let id: String
+    /// The title of where the step goes back to ("History"), shown before the page's title as a breadcrumb.
+    var parent: String? = nil
     let action: () -> Void
-    static func == (lhs: FrogPageBack, rhs: FrogPageBack) -> Bool { lhs.id == rhs.id }
+    static func == (lhs: FrogPageBack, rhs: FrogPageBack) -> Bool { lhs.id == rhs.id && lhs.parent == rhs.parent }
 }
 
 struct FrogPageBackKey: PreferenceKey {
@@ -176,47 +198,11 @@ struct FrogPageBackKey: PreferenceKey {
 }
 
 extension View {
-    /// Offers a step back inside the page to the toolbar's Back. `id` names the state it leaves.
-    func frogPageBack(_ id: String, perform action: @escaping () -> Void) -> some View {
-        preference(key: FrogPageBackKey.self, value: FrogPageBack(id: id, action: action))
-    }
-}
-
-@available(macOS 15, *)
-private struct FrogSeparatedRowKey: ContainerValueKey { static let defaultValue = false }
-
-@available(macOS 15, *)
-extension ContainerValues {
-    /// Set by `FrogRow`, so `FrogSection` draws its line only between two rows. Written out rather than with
-    /// `@Entry`, whose macro plugin the Command Line Tools lack.
-    var frogSeparatedRow: Bool {
-        get { self[FrogSeparatedRowKey.self] }
-        set { self[FrogSeparatedRowKey.self] = newValue }
-    }
-}
-
-/// The rows of a section card, one thin line between each two. A row hidden by an `if` takes its line with it.
-/// macOS 14 cannot list a view's children, so there the rows are set apart by their height alone.
-private struct SeparatedRows<Content: View>: View {
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        if #available(macOS 15, *) {
-            Group(subviews: content) { rows in
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(rows) { row in
-                        // A line only between two settings: a note, caption or warning stays with the row above it.
-                        if row.containerValues.frogSeparatedRow, let index = rows.firstIndex(where: { $0.id == row.id }),
-                           index > rows.startIndex, rows[rows.index(before: index)].containerValues.frogSeparatedRow {
-                            Rectangle().fill(FrogStyle.separator).frame(height: 1).accessibilityHidden(true)
-                        }
-                        row
-                    }
-                }
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 0) { content }
-        }
+    /// Offers a step back inside the page to the toolbar's Back. `id` names the state it leaves; `parent` names
+    /// where it goes back to, which the toolbar shows as a breadcrumb ("History › Proofread") whose first part
+    /// goes back. This is the one way a page shows a step back: it draws no "‹ History" link of its own.
+    func frogPageBack(_ id: String, parent: String? = nil, perform action: @escaping () -> Void) -> some View {
+        preference(key: FrogPageBackKey.self, value: FrogPageBack(id: id, parent: parent, action: action))
     }
 }
 
