@@ -180,32 +180,16 @@ struct ClipboardHistoryView: View {
         .onChange(of: state.focusRequest) { _, _ in searching = true }
     }
 
-    /// What Return, Shift-Return and Command-C do, each beside its keys.
+    /// What Return, Shift-Return and Command-C do, each beside its keys, and Close for the pointer and VoiceOver.
     private func footer(count: Int) -> some View {
-        HStack(spacing: 14) {
-            Text(count == 1 ? "1 item" : "\(count) items").font(FrogType.label).foregroundStyle(FrogStyle.muted)
-            Spacer(minLength: 0)
-            hint("Paste", keys: ["↩"])
-            hint("Plain text", keys: ["⇧", "↩"])
-            hint("Copy", keys: ["⌘", "C"])
-            // The way out without the keyboard, for the pointer and VoiceOver; Escape does the same.
-            Button(action: close) {
-                HStack(spacing: 6) {
-                    Text(L10n.text("Close")).font(FrogType.label).foregroundStyle(FrogStyle.ink)
-                    KeyCap("esc")
-                }.padding(.horizontal, FrogStyle.space6).frame(height: FrogStyle.compactHeight).contentShape(Rectangle())
-            }.buttonStyle(MenuRowStyle()).fixedSize().padding(.trailing, -FrogStyle.space6)
-                .accessibilityLabel(L10n.text("Close")).accessibilityHint(L10n.text("Escape"))
+        FrogFooter {
+            Text(count == 1 ? "1 item" : "\(count) items")
+        } actions: {
+            FrogFooterHint("Paste", keys: "↩")
+            FrogFooterHint("Plain text", keys: "⇧↩")
+            FrogFooterHint("Copy", keys: "⌘C")
+            FrogFooterHint("Close", keys: "esc", action: close)
         }
-        .frogFooterBand()
-        .accessibilityElement(children: .contain)
-    }
-
-    private func hint(_ title: String, keys: [String]) -> some View {
-        HStack(spacing: 6) {
-            Text(L10n.text(title)).font(FrogType.label).foregroundStyle(FrogStyle.ink)
-            KeyCaps(keys.joined())
-        }.fixedSize().accessibilityElement(children: .combine)
     }
 
     private func row(_ entry: ClipboardHistoryEntry, selected: Bool) -> some View {

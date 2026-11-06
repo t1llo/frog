@@ -70,7 +70,7 @@ struct WindowSwitcherOverlay: View {
                                             StateBadge(title: window.minimized ? "Minimized" : "Hidden",
                                                        symbol: window.minimized ? "arrow.down.right.and.arrow.up.left" : "eye.slash")
                                         }
-                                        if let shortcut = model.shortcuts[window.pid] { KeyCap(shortcut) }
+                                        if let shortcut = model.shortcuts[window.pid] { KeyCaps(shortcut) }
                                     }.padding(.horizontal, 10).frame(height: WindowSwitcherLayout.rowHeight)
                                         // The pointer moves the selection here, so the selection is the only highlight.
                                         .frogRowHighlight(hovering: false, selected: model.selected == window.id)

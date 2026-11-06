@@ -1,7 +1,60 @@
 import SwiftUI
 import FrogCore
 
-/// The bar along the bottom of a Frog panel: which panel this is, what Return does, and where the actions are.
+/// The one footer of every popup and floating panel: on the footer band, a muted status on the leading side (which
+/// panel this is, a count, "Updated 15m ago", "Live") and the actions on the trailing side, each a word in the text
+/// colour followed by its keys as caps ("Paste ↩", "Close esc"). `PanelFooter`, `FrogPopupFooter`, the Frog menu and
+/// clipboard history all draw this; nothing else draws a footer.
+struct FrogFooter<Status: View, Actions: View>: View {
+    @ViewBuilder var status: Status
+    @ViewBuilder var actions: Actions
+
+    init(@ViewBuilder status: () -> Status, @ViewBuilder actions: () -> Actions) {
+        self.status = status(); self.actions = actions()
+    }
+
+    var body: some View {
+        HStack(spacing: FrogStyle.space8) {
+            HStack(spacing: FrogStyle.space6) { status }
+                .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).layoutPriority(1)
+            Spacer(minLength: FrogStyle.space8)
+            // Hints that are buttons reach past the edge only with their hover fill; their own 6-point padding is
+            // the gap between them.
+            HStack(spacing: FrogStyle.space4) { actions }.fixedSize().padding(.trailing, -FrogStyle.space6)
+        }
+        .frogFooterBand()
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// One action in a `FrogFooter`: its word and its keys as caps. With `action` it is a button for the pointer and
+/// VoiceOver, with a hover fill; without, a hint for the keyboard.
+struct FrogFooterHint: View {
+    let title: String
+    let keys: String
+    var action: (() -> Void)? = nil
+    init(_ title: String, keys: String, action: (() -> Void)? = nil) { self.title = title; self.keys = keys; self.action = action }
+
+    var body: some View {
+        if let action {
+            Button(action: action) { label.padding(.horizontal, FrogStyle.space6).frame(height: FrogStyle.compactHeight).contentShape(Rectangle()) }
+                .buttonStyle(MenuRowStyle()).fixedSize()
+                .accessibilityLabel(L10n.text(title)).accessibilityHint(keys)
+        } else {
+            label.padding(.horizontal, FrogStyle.space6).fixedSize().accessibilityElement(children: .combine)
+        }
+    }
+
+    private var label: some View {
+        HStack(spacing: FrogStyle.space6) {
+            Text(L10n.text(title)).font(FrogType.label).foregroundStyle(FrogStyle.ink).lineLimit(1)
+            KeyCaps(keys)
+        }
+    }
+}
+
+/// The footer of a keyboard panel (command bar, window switcher, layout picker): which panel this is, then what
+/// Return, ⌘K and Escape do.
 struct PanelFooter: View {
     let symbol: String
     let name: String
@@ -12,27 +65,14 @@ struct PanelFooter: View {
     var closeTitle: String? = nil
 
     var body: some View {
-        HStack(spacing: 8) {
+        FrogFooter {
             Image(systemName: symbol).font(FrogType.label)
-            Text(L10n.text(name)).font(FrogType.label).lineLimit(1)
-            Spacer(minLength: 12)
-            if let primaryTitle {
-                Text(L10n.text(primaryTitle)).font(FrogType.label).foregroundStyle(FrogStyle.ink).lineLimit(1)
-                KeyCap("↩")
-            }
-            if showsActions {
-                Text(L10n.text("Actions")).font(FrogType.label).foregroundStyle(FrogStyle.ink)
-                    .padding(.leading, primaryTitle != nil ? 8 : 0)
-                KeyCaps("⌘K")
-            }
-            if let closeTitle {
-                Text(L10n.text(closeTitle)).font(FrogType.label).foregroundStyle(FrogStyle.ink).lineLimit(1)
-                    .padding(.leading, primaryTitle != nil || showsActions ? 8 : 0)
-                KeyCap("esc")
-            }
+            Text(L10n.text(name))
+        } actions: {
+            if let primaryTitle { FrogFooterHint(primaryTitle, keys: "↩") }
+            if showsActions { FrogFooterHint("Actions", keys: "⌘K") }
+            if let closeTitle { FrogFooterHint(closeTitle, keys: "esc") }
         }
-        .foregroundStyle(FrogStyle.muted)
-        .frogFooterBand()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
     }
@@ -88,6 +128,7 @@ struct KeyCaps: View {
     init(_ shortcut: String, compact: Bool = false) { keys = Self.split(shortcut); self.compact = compact }
     /// A recorded shortcut, as `HotkeyManager` names its keys.
     init(hotkey: Hotkey) { keys = HotkeyManager.keys(hotkey) }
+    init(_ keys: [String], compact: Bool = false) { self.keys = keys; self.compact = compact }
     init(keys: [String]) { self.keys = keys }
 
     var body: some View {
@@ -104,5 +145,45 @@ struct KeyCaps: View {
         let key = rest.trimmingCharacters(in: .whitespaces)
         if !key.isEmpty { keys.append(key) }
         return keys
+    }
+}
+
+/// A hint that names keys ("⌥Space to stop · Esc to cancel"), with each shortcut drawn as caps, one per key, and the
+/// words between them muted: the same caps as every footer, never a shortcut written as text. Parts are split at
+/// " · "; a word is a shortcut when it starts with a modifier glyph or is Esc, Return or Tab.
+struct KeyHintLine: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: FrogStyle.space4) {
+            ForEach(Array(Self.parts(text).enumerated()), id: \.offset) { index, part in
+                if index > 0 { Text("·").padding(.horizontal, FrogStyle.space2) }
+                ForEach(Array(part.enumerated()), id: \.offset) { _, word in
+                    if Self.isShortcut(word) { KeyCaps(word == "Esc" ? "esc" : word) } else { Text(word) }
+                }
+            }
+        }
+        .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+        .accessibilityElement(children: .ignore).accessibilityLabel(text)
+    }
+
+    /// The parts of the hint, each a list of runs: a shortcut, or the words between shortcuts.
+    static func parts(_ text: String) -> [[String]] {
+        text.components(separatedBy: " · ").map { part in
+            var runs: [String] = [], words: [String] = []
+            for word in part.split(separator: " ").map(String.init) {
+                if isShortcut(word) {
+                    if !words.isEmpty { runs.append(words.joined(separator: " ")); words = [] }
+                    runs.append(word)
+                } else { words.append(word) }
+            }
+            if !words.isEmpty { runs.append(words.joined(separator: " ")) }
+            return runs
+        }
+    }
+
+    static func isShortcut(_ word: String) -> Bool {
+        guard let first = word.first else { return false }
+        return "⌃⌥⇧⌘".contains(first) || ["Esc", "esc", "Return", "↩", "Tab", "⇥"].contains(word)
     }
 }

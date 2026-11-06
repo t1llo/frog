@@ -987,7 +987,7 @@ private struct CommandActionsList: View {
                     HStack(spacing: FrogStyle.space8) {
                         Text(L10n.text(action.title)).font(FrogType.body).foregroundStyle(FrogStyle.ink)
                         Spacer(minLength: FrogStyle.space16)
-                        KeyCap(action.keys)
+                        KeyCaps(action.keys)
                     }.padding(.horizontal, FrogStyle.rowPadding).frame(height: FrogStyle.controlHeight).contentShape(Rectangle())
                         .frogRowHighlight(hovering: false, selected: index == bar.actionSelection)
                 }.buttonStyle(.plain)

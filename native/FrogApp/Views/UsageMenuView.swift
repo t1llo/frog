@@ -10,8 +10,8 @@ struct UsageMenuTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.listInset) {
+            // The status is in the popup's footer, as on every popup; the tab's own actions lead its content.
             HStack(spacing: FrogStyle.space6) {
-                UsageMenuStatus(usage: usage)
                 Spacer(minLength: FrogStyle.space6)
                 UsageProviderDropdown(usage: usage)
                 UsageRefreshAction(usage: usage)
@@ -171,7 +171,7 @@ struct UsageExtraUsageBlock: View {
                     Text("This month")
                     Spacer(minLength: 4)
                     if let limit = extra.limit { Text("of \(limit) limit").monospacedDigit() }
-                }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                }.lineLimit(1)
             }.accessibilityElement(children: .combine)
         }
     }
@@ -226,7 +226,7 @@ private struct UsageCompactActivity: View {
 }
 
 /// When the limits were read, the source on hover; one entry per account while each is shown.
-private struct UsageMenuStatus: View {
+struct UsageMenuStatus: View {
     @ObservedObject var usage: UsageDashboardModel
     var body: some View {
         let provider = usage.preferences.provider
@@ -242,7 +242,7 @@ private struct UsageMenuStatus: View {
                         Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning)
                             .help(warning).accessibilityLabel(warning)
                     }
-                }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                }.lineLimit(1)
             }
         }
     }

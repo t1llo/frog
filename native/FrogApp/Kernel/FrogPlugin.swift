@@ -45,6 +45,9 @@ struct MenuContribution: Identifiable {
     /// Lower comes first.
     var order = 100
     let content: @MainActor () -> AnyView
+    /// A tab's status for the popup's footer ("Updated 15m ago"), on the leading side of the band, where every
+    /// popup says its status.
+    var status: (@MainActor () -> AnyView)? = nil
 
     var tabTitle: String? {
         if case .tab(let title, _) = placement { return title }

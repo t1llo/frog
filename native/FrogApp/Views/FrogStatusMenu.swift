@@ -44,7 +44,7 @@ struct FrogStatusMenu: View {
                     }
                 }
             }.padding(FrogStyle.panelCardInset)
-            footer
+            footer(status: tabs.first(where: { $0.id == shown })?.status, frog: shown == Self.frogTab)
         }.frame(width: 292).fixedSize(horizontal: false, vertical: true)
             .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()
@@ -74,9 +74,8 @@ struct FrogStatusMenu: View {
         .padding(.leading, FrogStyle.cardPadding).padding(.trailing, FrogStyle.space6).frame(height: 40)
     }
 
-    /// A line of state only when something needs saying, then the plugins' rows in a card, and an error when there is one.
+    /// The plugins' rows in a card, and an error when there is one.
     @ViewBuilder private func frogContent(_ rows: [MenuContribution]) -> some View {
-        if let status { statusLine(status) }
         VStack(alignment: .leading, spacing: FrogStyle.space2) {
             ForEach(rows) { $0.content() }
             if model.isProcessing {
@@ -101,37 +100,22 @@ struct FrogStatusMenu: View {
             : model.setupPresented ? ("Setup not finished", FrogStyle.warning) : nil
     }
 
-    private func statusLine(_ status: (text: String, color: Color)) -> some View {
-        let (text, color) = status
-        return HStack(spacing: FrogStyle.space6) {
-            Circle().fill(color).frame(width: 6, height: 6)
-            Text(L10n.text(text)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-            Spacer(minLength: 0)
-        }.padding(.horizontal, FrogStyle.cardPadding).accessibilityElement(children: .combine)
-    }
-
-    /// Secondary actions on the footer band, as every popup's footer: short labels and their keys as caps. The
-    /// buttons' text starts on the content edge; only their hover reaches past it.
-    private var footer: some View {
-        HStack(spacing: FrogStyle.space4) {
-            footerButton(model.setupPresented ? "Set up Frog" : "Settings", symbol: "gearshape", keys: "\u{2318},") {
+    /// The footer every popup has: the open tab's status on the leading side (Frog's own state on Frog's tab), and
+    /// Settings and Quit with their keys on the trailing side.
+    private func footer(status tabStatus: (@MainActor () -> AnyView)?, frog: Bool) -> some View {
+        FrogFooter {
+            if let tabStatus { tabStatus() }
+            else if frog {
+                let state = status ?? ("Ready", FrogStyle.good)
+                Circle().fill(state.color).frame(width: 6, height: 6)
+                Text(L10n.text(state.text))
+            }
+        } actions: {
+            FrogFooterHint(model.setupPresented ? "Set up Frog" : "Settings", keys: "\u{2318},") {
                 dismiss(); model.showSettings()
             }.keyboardShortcut(",")
-            Spacer(minLength: FrogStyle.space8)
-            footerButton("Quit", symbol: "power", keys: "\u{2318}Q") {
-                NSApplication.shared.terminate(nil)
-            }.keyboardShortcut("q")
-        }.padding(.horizontal, -FrogStyle.space6).frogFooterBand()
-    }
-
-    private func footerButton(_ title: String, symbol: String, keys: String, perform: @escaping () -> Void) -> some View {
-        Button(action: perform) {
-            HStack(spacing: FrogStyle.space6) {
-                Image(systemName: symbol).font(FrogType.label).foregroundStyle(FrogStyle.muted)
-                Text(L10n.text(title)).font(FrogType.small).lineLimit(1).fixedSize()
-                KeyCaps(keys)
-            }.padding(.horizontal, FrogStyle.space6).frame(height: FrogStyle.controlHeight).contentShape(Rectangle())
-        }.buttonStyle(MenuRowStyle())
+            FrogFooterHint("Quit", keys: "\u{2318}Q") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
+        }
     }
 }
 

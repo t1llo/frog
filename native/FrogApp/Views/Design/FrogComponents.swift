@@ -21,20 +21,16 @@ struct FrogPopupHeader<Trailing: View>: View {
     }
 }
 
-/// The bottom of every status item popup, on the footer band: a muted status on the left, Close and Escape on the
-/// right.
+/// The bottom of every status item popup: a `FrogFooter` with the popup's status on the leading side and Close
+/// `esc` on the trailing side. `close` makes Close a button for the pointer and VoiceOver; Escape always works.
 struct FrogPopupFooter<Status: View>: View {
+    var close: (() -> Void)? = nil
     @ViewBuilder var status: Status
 
+    init(close: (() -> Void)? = nil, @ViewBuilder status: () -> Status) { self.close = close; self.status = status() }
+
     var body: some View {
-        HStack(spacing: FrogStyle.space6) {
-            status.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-            Spacer(minLength: FrogStyle.space8)
-            Text(L10n.text("Close")).font(FrogType.label).foregroundStyle(FrogStyle.ink)
-            KeyCap("esc")
-        }
-        // As `PanelFooter`: a band a shade darker than the panel, no line.
-        .frogFooterBand()
+        FrogFooter { status } actions: { FrogFooterHint("Close", keys: "esc", action: close) }
     }
 }
 

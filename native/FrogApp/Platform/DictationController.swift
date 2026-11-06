@@ -644,7 +644,7 @@ enum DictationPopupLayout {
         let hasTranscript = (recording || failed) && !text.isEmpty
         let width = min(recording || failed ? 360.0 : 300.0, max(1, visibleFrame.width - 32))
         // A failed transcription shows its reason and what to do instead of the waveform and hint.
-        var height = recording ? 108.0 : failed ? 116.0 : 50.0
+        var height = recording ? 114.0 : failed ? 116.0 : 50.0
         if hasTranscript {
             let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 2
             let bounds = (displayText(text) as NSString).boundingRect(
@@ -736,7 +736,7 @@ struct DictationPopup: View {
                     .frame(minHeight: 0, maxHeight: DictationPopupLayout.maximumTranscriptHeight)
             }
             if controller.phase == .recording {
-                Text(controller.hint).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                KeyHintLine(text: controller.hint)
             }
             if failed {
                 HStack(spacing: 8) {
