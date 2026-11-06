@@ -197,7 +197,7 @@ private struct LayoutShortcutCell: View {
                 if !active {
                     // The empty slot: a dash where the shortcut would be, at a recorded chip's width.
                     Text(verbatim: "—").font(FrogType.body).foregroundStyle(FrogStyle.placeholder)
-                        .frame(width: FrogStyle.shortcutMinWidth, height: FrogStyle.controlHeight)
+                        .frame(width: 56, height: FrogStyle.controlHeight)
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }
             }

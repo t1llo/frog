@@ -70,7 +70,7 @@ struct RuleModelPicker: View {
             if let choice { choice.apply(to: &rule) }
             else if speech { rule.action?.audioModelID = nil; rule.action?.audioProviderID = nil }
             else { rule.providerID = nil; rule.model = ""; rule.action?.localTextModelID = nil }
-        }
+        })
         .buttonTitle { $0 == nil ? (speech ? "Choose a speech model" : "Choose a model") : item($0).title }
         .accessibilityLabel(speech ? "Speech model" : "Text model")
     }
