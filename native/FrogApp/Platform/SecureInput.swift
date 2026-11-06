@@ -79,11 +79,11 @@ enum SecureInput {
     }
 
     static func summary(_ holder: Holder) -> String {
-        "Window switcher paused — \(holder.name ?? "another app") is asking for a password"
+        "Window switcher paused: \(holder.name ?? "another app") is asking for a password"
     }
 
     static func status(_ holder: Holder) -> String {
-        "Paused — \(holder.name ?? "another app") is asking for a password. macOS hides the keyboard from every other app until you enter it or close that window."
+        "Paused: \(holder.name ?? "another app") is asking for a password. macOS hides the keyboard from every other app until you enter it or close that window."
     }
 }
 
