@@ -52,9 +52,19 @@ struct WindowsView: View {
             ForEach(Self.layoutGroups, id: \.title) { group in
                 VStack(alignment: .leading, spacing: 0) {
                     SectionCaption(text: group.title).padding(.top, FrogStyle.space10)
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24)], spacing: 0) {
-                        ForEach(group.actions) { action in
-                            if let rule = rules[action] { LayoutShortcutCell(rule: rule, issue: model.hotkeyErrors[rule.id], model: model) }
+                    // Two equal columns that read top to bottom (Left, Center, Right third, then the two-thirds), each
+                    // cell the same height with its caps on the column's trailing edge; a gap stays empty.
+                    Grid(horizontalSpacing: FrogStyle.space16 * 2, verticalSpacing: 0) {
+                        ForEach(group.rows.indices, id: \.self) { index in
+                            GridRow {
+                                ForEach(0..<2, id: \.self) { column in
+                                    if let action = group.rows[index][column], let rule = rules[action] {
+                                        LayoutShortcutCell(rule: rule, issue: model.hotkeyErrors[rule.id], model: model)
+                                    } else {
+                                        Color.clear.frame(maxWidth: .infinity, minHeight: FrogStyle.rowHeight)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -125,14 +135,22 @@ struct WindowsView: View {
         return (a, first.offset) < (b, second.offset)
     }.map(\.element)
 
-    /// `layoutOrder` cut into the cheat sheet's groups; Restore joins Displays rather than standing alone.
-    static let layoutGroups: [(title: String, actions: [WindowAction])] = {
-        var groups: [(title: String, actions: [WindowAction])] = []
-        for action in layoutOrder {
+    /// The cheat sheet's groups, laid out in two columns of related layouts: each row is a pair, nil an empty cell.
+    /// Restore joins Displays rather than standing alone; a layout added later lands in its group's last row.
+    static let layoutGroups: [(title: String, rows: [[WindowAction?]])] = {
+        var groups: [(title: String, rows: [[WindowAction?]])] = [
+            ("Halves", [[.leftHalf, .rightHalf], [.topHalf, .bottomHalf]]),
+            ("Quarters", [[.topLeft, .topRight], [.bottomLeft, .bottomRight]]),
+            ("Thirds", [[.leftThird, .leftTwoThirds], [.centerThird, .rightTwoThirds], [.rightThird, nil]]),
+            ("Sizes", [[.maximize, .center], [.toggleFullScreen, .centeredSmall], [.minimize, .centeredMedium], [nil, .centeredLarge]]),
+            ("Displays", [[.nextDisplay, .previousDisplay], [.restore, nil]])
+        ]
+        let placed = Set(groups.flatMap { $0.rows.joined().compactMap { $0 } })
+        for action in layoutOrder where !placed.contains(action) {
             var title = WindowCheatSheet.group(for: action)
             if title == "Undo" { title = "Displays" }
-            if let index = groups.firstIndex(where: { $0.title == title }) { groups[index].actions.append(action) }
-            else { groups.append((title, [action])) }
+            let index = groups.firstIndex { $0.title == title } ?? { groups.append((title, [])); return groups.count - 1 }()
+            groups[index].rows.append([action, nil])
         }
         return groups
     }()
@@ -218,7 +236,8 @@ private struct LayoutShortcutCell: View {
             // the pointer or keyboard focus is.
             .opacity(active ? 1 : 0)
         }
-        .frame(minHeight: FrogStyle.rowHeight)
+        // Every cell the same height, whether or not its caps show, so the names share a line across the columns.
+        .frame(maxWidth: .infinity, minHeight: FrogStyle.rowHeight, maxHeight: FrogStyle.rowHeight)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
     }
