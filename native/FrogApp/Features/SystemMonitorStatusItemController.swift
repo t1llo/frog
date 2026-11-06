@@ -120,7 +120,8 @@ struct SystemMonitorStatusPopover: View {
                 let live = monitor.history.count >= 2
                 HStack(spacing: FrogStyle.space6) {
                     Circle().fill(live ? FrogStyle.good : FrogStyle.muted).frame(width: 6, height: 6)
-                    Text(L10n.text(live ? "Live" : "Measuring…"))
+                    // The graph already says Measuring…; the footer only says whether readings are coming in.
+                    Text(L10n.text(live ? "Live" : "Starting…"))
                 }
             }
         }.padding(FrogStyle.panelCardInset).frame(width: 292).fixedSize(horizontal: false, vertical: true)

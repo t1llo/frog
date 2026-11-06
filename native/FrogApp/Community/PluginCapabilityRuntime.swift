@@ -560,12 +560,9 @@ struct PluginPopupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 7) {
-                PluginIconTile(symbol: PluginSymbol.name(symbol), tint: PluginTint.purple.color, size: .sidebar)
-                Text(name).font(FrogType.section).lineLimit(1)
-                Spacer()
+            FrogPopupHeader(symbol: PluginSymbol.name(symbol), tint: .purple, title: name) {
                 if hasPage { IconAction(title: "Open \(name)", symbol: "arrow.up.forward.app", bordered: true, action: openPage) }
-            }.padding(.horizontal, FrogStyle.space6).frame(height: 40)
+            }
             PluginWebContainer(host: host).frame(width: width - 2 * FrogStyle.panelCardInset, height: size.height)
         }
         .padding(FrogStyle.panelCardInset).frame(width: width).fixedSize(horizontal: false, vertical: true)

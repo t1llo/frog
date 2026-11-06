@@ -67,7 +67,9 @@ struct FrogStatusMenu: View {
                                 title: { id in tabs.first { $0.id == id }?.tabTitle ?? "Frog" }) { selectedTab = $0 }
                     .accessibilityElement(children: .contain).accessibilityLabel("Menu view")
             }
-        }.padding(.horizontal, FrogStyle.space6).frame(height: 40)
+        }
+        // On the popup header's edge: the logo sits where FrogPopupHeader's tile and the rows' tiles do.
+        .padding(.leading, FrogStyle.cardPadding).padding(.trailing, FrogStyle.space6).frame(height: 40)
     }
 
     /// One muted line of state, then the plugins' rows in a card, and an error when there is one.

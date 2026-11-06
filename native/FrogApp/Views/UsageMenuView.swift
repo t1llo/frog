@@ -8,12 +8,14 @@ struct UsageMenuTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // On the trailing side, as in the LLM usage popup's header: the dropdown's value is trailing-aligned,
+            // so on the leading side it would start on an edge of its own.
             HStack(spacing: FrogStyle.space6) {
-                UsageProviderDropdown(usage: usage)
                 Spacer(minLength: FrogStyle.space6)
+                UsageProviderDropdown(usage: usage)
                 IconAction(title: "Refresh", symbol: "arrow.clockwise") { usage.refresh() }
                 IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", action: openPage)
-            }.padding(.leading, FrogStyle.space6).padding(.bottom, FrogStyle.space8)
+            }.padding(.trailing, FrogStyle.space6).padding(.bottom, FrogStyle.space8)
             // When and where the limits were read closes the card, so the popup keeps one footer: Frog's own.
             VStack(alignment: .leading, spacing: FrogStyle.space12) {
                 UsageMenuContent(usage: usage)
