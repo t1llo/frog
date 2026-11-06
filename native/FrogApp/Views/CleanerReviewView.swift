@@ -37,7 +37,7 @@ struct CleanerReviewView: View {
         if possible > 0 {
             Button(showPossible ? "Hide possible matches" : "Show \(possible) possible \(possible == 1 ? "match" : "matches")") {
                 setPossibleMatches(!showPossible)
-            }.buttonStyle(.frog(.ghost))
+            }.buttonStyle(.frog())
         }
     }
 
@@ -78,7 +78,7 @@ struct CleanerReviewView: View {
         // Headed like a settings section: the group's name, then its list in one card. Select all is the footer's,
         // once for the page, rather than repeated on every group.
         return VStack(alignment: .leading, spacing: 8) {
-            FrogSectionHeader(verbatim: "\(L10n.text(group.kind.title)) · \(group.items.count)") { EmptyView() }
+            FrogSectionHeader(group.kind.title, count: group.items.count)
             VStack(spacing: 2) {
                 ForEach(group.items) { item in itemRow(item) }
             }.padding(6).frogTableSurface()
@@ -121,7 +121,7 @@ struct CleanerReviewView: View {
                 size(of: item)
             }
             .contentShape(Rectangle()).onTapGesture { cleaner.toggle(item.id) }
-            IconAction(title: "Show in Finder", symbol: "folder") {
+            IconAction(title: "Show in Finder", symbol: "arrow.up.forward") {
                 NSWorkspace.shared.activateFileViewerSelecting([item.url])
             }
         }
@@ -161,7 +161,7 @@ struct CleanerReviewFooter: View {
         HStack(spacing: 12) {
             Text(review.selectionSummary()).font(FrogType.body.monospacedDigit()).foregroundStyle(FrogStyle.muted)
             Button(allTicked ? "Deselect all" : "Select all") { cleaner.setAll(selected: !allTicked) }
-                .buttonStyle(.frog(.ghost, compact: true))
+                .buttonStyle(.frog(compact: true))
             Spacer()
             Button("Move to Trash…") { Task { await cleaner.prepareRemoval() } }
                 .buttonStyle(.frog(.destructive))

@@ -25,7 +25,7 @@ struct CleanerAppsView: View {
                 }
             } else {
                 // Headed like the review's groups and every other page's cards.
-                FrogSectionHeader(verbatim: "\(L10n.text("Apps")) · \(apps.count)") { EmptyView() }
+                FrogSectionHeader("Apps", count: apps.count)
                 LazyVStack(spacing: 2) {
                     ForEach(apps) { row in appRow(row) }
                 }
