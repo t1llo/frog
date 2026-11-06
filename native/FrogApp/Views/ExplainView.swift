@@ -21,12 +21,9 @@ struct ExplainView: View {
                 FrogSection("Shortcut & model") {
                     FrogRow("Shortcut", caption: "Select text in any app, then press it.") { HotkeyRecorder(hotkey: ruleBinding(rule, \.hotkey)) }
                     if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
-                    let missing = !model.ruleHasModel(rule)
-                    FrogRow("Model", caption: missing ? "Explain can't answer until you choose one." : "Writes the answer.") {
-                        HStack(spacing: FrogStyle.space8) {
-                            if missing { ProblemMark(help: "No model chosen") }
-                            RuleModelPicker(rule: Binding(get: { rule }, set: save))
-                        }
+                    // The notice above says Explain cannot answer yet; the picker's own mark shows where to fix it.
+                    FrogRow("Model", caption: "Writes the answer.") {
+                        RuleModelPicker(rule: Binding(get: { rule }, set: save))
                     }
                 }
                 FrogSection("Answer") {

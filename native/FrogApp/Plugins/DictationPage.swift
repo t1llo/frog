@@ -12,17 +12,18 @@ struct DictationPage: View {
     var body: some View {
         FrogPage {
             FrogPageHeader(title: "Dictation", subtitle: "Press a shortcut, speak, and Frog types it.") {
-                // With one rule its Record sits here beside New rule; with several, each section has its own.
+                // With one rule its Record sits here beside Add rule; with several, each section has its own.
                 if rules.count == 1, let rule = rules.first {
                     RecordButton(rule: rule, dictation: dictation, feature: feature, compact: false)
                 }
-                Button("New rule", systemImage: "plus") { add() }
+                FrogAddButton("Add rule") { add() }
             }
             if rules.contains(where: { $0.enabled && !model.ruleHasModel($0) }) {
                 ModelMissingNotice(feature: "Dictation", speech: true)
             }
             if rules.isEmpty {
-                FrogEmptyState(symbol: "waveform", title: "No dictation rules", message: "Add one to choose its shortcut and model.")
+                FrogEmptyState(symbol: DictationPlugin.info.symbol, title: "No dictation rules", message: "Add one to choose its shortcut and model.",
+                               tint: DictationPlugin.info.tint)
             }
             ForEach(rules) { rule in
                 DictationRuleSection(rule: rule, dictation: dictation, feature: feature, recordsHere: rules.count > 1)
@@ -78,12 +79,12 @@ private struct DictationRuleSection: View {
                     }
                 }
             }
-            rows.opacity(rule.enabled ? 1 : 0.5)
+            rows
         }
         .sheet(isPresented: $renaming) { RenameSheet(name: rule.name) { name in save { $0.name = name } } }
     }
 
-    /// The rule's settings; a rule that is off keeps them, dimmed.
+    /// The rule's settings; a rule that is off keeps them, still changeable, so they are not dimmed.
     @ViewBuilder private var rows: some View {
         FrogRow("Shortcut") { HotkeyRecorder(hotkey: binding(\.hotkey)) }
         if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
@@ -93,12 +94,9 @@ private struct DictationRuleSection: View {
             Toggle("Hold to talk", isOn: Binding(get: { rule.action?.recordingMode == .hold },
                                                  set: { hold in save { $0.action?.recordingMode = hold ? .hold : .toggle } })).labelsHidden()
         }
-        let missing = !model.ruleHasModel(rule)
-        FrogRow("Speech model", caption: missing ? "Dictation can't type until you choose one." : nil) {
-            HStack(spacing: FrogStyle.space8) {
-                if missing { ProblemMark(help: "No speech model chosen") }
-                RuleModelPicker(rule: Binding(get: { rule }, set: { save(reconciling: $0) }), speech: true)
-            }
+        // The page's notice says Dictation cannot type yet; the picker's own mark shows where to fix it.
+        FrogRow("Speech model") {
+            RuleModelPicker(rule: Binding(get: { rule }, set: { save(reconciling: $0) }), speech: true)
         }
         FrogRow("Language") {
             FrogDropdown(selected: rule.action?.transcriptionLanguage ?? languages.first ?? "auto", options: languages,
@@ -216,11 +214,9 @@ struct RenameSheet: View {
             FrogTextField(placeholder: "Name", text: $name).textFieldStyle(.plain).font(FrogType.body)
                 .padding(.horizontal, FrogStyle.space10).frogControlSurface()
                 .accessibilityLabel("Name").onSubmit(done)
-            HStack(spacing: FrogStyle.space8) {
-                Spacer()
-                Button("Cancel") { dismiss() }.buttonStyle(.frog()).keyboardShortcut(.cancelAction)
-                Button("Rename") { done() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
-                    .frogDisabled(name.trimmingCharacters(in: .whitespaces).isEmpty ? "Enter a name first" : nil)
+            FrogSheetButtons(padded: false) {
+                FrogCancelButton { dismiss() }
+                FrogPrimaryButton("Rename", disabledReason: name.trimmingCharacters(in: .whitespaces).isEmpty ? "Enter a name first" : nil) { done() }
             }
         }.padding(FrogStyle.sheetPadding).frame(width: 340).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
     }

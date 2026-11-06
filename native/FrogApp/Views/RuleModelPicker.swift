@@ -42,21 +42,9 @@ struct RuleModelPicker: View {
     }
 
     var body: some View {
-        let local = choices(local: true), external = choices(local: false)
-        // A rule without a model cannot run: the button asks for one, with a warning mark beside it, instead of
-        // reading like an ordinary value.
-        if selected == nil {
-            HStack(spacing: FrogStyle.space2) {
-                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(FrogStyle.warning)
-                    .help(L10n.text("This rule cannot run until it has a model"))
-                    .accessibilityLabel(L10n.text("No model: this rule cannot run"))
-                // As wide as its words, so the mark sits right beside them.
-                dropdown(local: local, external: external).fixedSize()
-            }
-        } else {
-            dropdown(local: local, external: external)
-        }
+        // A rule without a model cannot run: the button asks for one, led by a warning mark inside it, instead of
+        // reading like an ordinary value. That mark is the control's one sign; the page says it once in a notice.
+        dropdown(local: choices(local: true), external: choices(local: false))
     }
 
     private func dropdown(local: [RuleModelSelection?], external: [RuleModelSelection?]) -> some View {
@@ -72,6 +60,7 @@ struct RuleModelPicker: View {
             else { rule.providerID = nil; rule.model = ""; rule.action?.localTextModelID = nil }
         })
         .buttonTitle { $0 == nil ? (speech ? "Choose a speech model" : "Choose a model") : item($0).title }
+        .warning(selected == nil ? "This rule cannot run until it has a model" : nil)
         .accessibilityLabel(speech ? "Speech model" : "Text model")
     }
 }

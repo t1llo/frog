@@ -12,8 +12,8 @@ struct WritingView: View {
     var body: some View {
         FrogPage {
             FrogPageHeader(title: "Writing", subtitle: "Select text in any app and press a rule's shortcut to rewrite it.") {
-                // The same secondary button as New rule on Dictation.
-                Button("New rule", systemImage: "plus") {
+                // The same add button as Add rule on Dictation.
+                FrogAddButton("Add rule") {
                     editing = model.configuration.newRule(category: .text, installed: model.localModels.installed)
                 }.keyboardShortcut("n", modifiers: .command)
             }
@@ -30,7 +30,8 @@ struct WritingView: View {
     @ViewBuilder private var rules: some View {
         let rules = plugin.rules
         if rules.isEmpty {
-            FrogEmptyState(symbol: "text.cursor", title: "No rules yet", message: "A rule rewrites selected text in any app.")
+            FrogEmptyState(symbol: WritingPlugin.info.symbol, title: "No rules yet", message: "A rule rewrites selected text in any app.",
+                           tint: WritingPlugin.info.tint)
         } else {
             let missing = rules.filter { $0.enabled && !model.ruleHasModel($0) }
             if !missing.isEmpty {
@@ -55,6 +56,7 @@ struct WritingView: View {
         VStack(alignment: .leading, spacing: 0) {
             FrogRow(rule.name, caption: caption(rule)) {
                 HStack(spacing: 8) {
+                    if let hotkey = rule.hotkey { KeyCaps(hotkey: hotkey).padding(.trailing, FrogStyle.space4) }
                     if rule.enabled, !model.ruleHasModel(rule) {
                         Button { editing = rule } label: { ProblemMark(help: "No model chosen: click to choose one") }
                             .buttonStyle(.plain)
@@ -72,11 +74,11 @@ struct WritingView: View {
         }.contentShape(Rectangle()).onTapGesture(count: 2) { editing = rule }
     }
 
-    /// What the rule does, its shortcut and its model, in one line.
+    /// What the rule does and its model, in one line; the shortcut is drawn as caps beside the controls. A rule
+    /// without a model names none: the mark beside its controls says so once.
     private func caption(_ rule: Rule) -> String {
         var parts = [rule.textOutput.title]
-        if let hotkey = rule.hotkey { parts.append(HotkeyManager.display(hotkey)) }
-        parts.append(model.ruleModelLabel(rule))
+        if model.ruleHasModel(rule) { parts.append(model.ruleModelLabel(rule)) }
         return parts.joined(separator: " · ")
     }
 
@@ -272,17 +274,17 @@ struct WritingRuleEditor: View {
                 }.padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space16).minimalScrollbars()
             }
             if let issue { InlineIssue(message: issue).padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space10) }
-            HStack(spacing: 8) {
+            FrogSheetButtons {
                 if existing {
                     Button("Delete", systemImage: "trash", role: .destructive) { deleting = true }.buttonStyle(.frog(.destructive))
                     Button("Save as copy", systemImage: "square.on.square") { saveCopy() }.buttonStyle(.frog(.ghost)).disabled(!named)
                 }
-                Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Save") {
+            } trailing: {
+                FrogCancelButton { dismiss() }
+                FrogPrimaryButton("Save", disabledReason: named ? nil : "Name the rule first") {
                     do { try model.saveRule(rule); dismiss() } catch { issue = error.localizedDescription }
-                }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction).frogDisabled(named ? nil : "Name the rule first")
-            }.padding(.horizontal, FrogStyle.sheetPadding).padding(.vertical, FrogStyle.space16)
+                }
+            }
         }.frame(width: 540, height: 610)
             .foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).background(FrogWindowMaterial())
             .tint(FrogStyle.accent).buttonStyle(FrogButtonStyle()).controlSize(.small)
@@ -386,7 +388,7 @@ struct WritingTryView: View {
                 .padding(.horizontal, FrogStyle.rowInset).padding(.vertical, FrogStyle.space10)
                 .frame(height: 120).frogTableSurface()
             }
-            HStack(spacing: FrogStyle.space8) {
+            FrogSheetButtons(padded: false) {
                 if run == nil, !hasModel {
                     // The one problem that stops the rule: a warning, pointing at the model menu above.
                     Label { Text("No model yet. Choose one above.") } icon: {
@@ -395,12 +397,12 @@ struct WritingTryView: View {
                 } else if let waiting {
                     Text(L10n.text(waiting)).font(FrogType.body).foregroundStyle(FrogStyle.muted)
                 }
-                Spacer()
+            } trailing: {
                 if run != nil {
                     // Escape stops the run first; once it has stopped, Escape closes the sheet.
-                    Button("Stop") { run?.cancel() }.keyboardShortcut(.cancelAction)
+                    FrogCancelButton("Stop") { run?.cancel() }
                 } else {
-                    Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+                    FrogCancelButton("Done") { dismiss() }
                 }
                 Button("Run", systemImage: "play.fill", action: start).buttonStyle(.frog(.primary))
                     .keyboardShortcut(.return, modifiers: .command)
