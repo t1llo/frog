@@ -66,8 +66,9 @@ struct ClipboardPage: View {
     }
 }
 
-/// One copied item: its kind tile, its text and when it was copied. Its actions (Copy, and "…" with the rest) show
-/// while the pointer is over it, in room the row keeps for them, so the time never jumps and the list stays quiet.
+/// One copied item: its kind tile, its text and when it was copied, the time ending on the row's trailing edge. Its
+/// actions (Copy, and "…" with the rest) take the time's place while the pointer is over it, so the list stays quiet
+/// and the times line up down the card's edge.
 private struct ClipboardPageRow: View {
     let entry: ClipboardHistoryEntry
     let store: ClipboardHistoryStore
@@ -81,15 +82,19 @@ private struct ClipboardPageRow: View {
                 .accessibilityLabel(L10n.text(kind.title))
             Text(entry.preview).font(kind == .code ? FrogType.mono : FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            RecentTimestampText(date: entry.timestamp).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                .lineLimit(1).fixedSize()
-            HStack(spacing: FrogStyle.space2) {
-                CopyAction { store.copy(entry) }
-                IconMenu(title: "More", bordered: false) { menu }
+            ZStack(alignment: .trailing) {
+                // As far in from the trailing edge as the tile is from the leading one.
+                RecentTimestampText(date: entry.timestamp).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                    .fixedSize().padding(.trailing, FrogStyle.space6)
+                    .opacity(hovering ? 0 : 1)
+                HStack(spacing: FrogStyle.space2) {
+                    CopyAction { store.copy(entry) }
+                    IconMenu(title: "More", bordered: false) { menu }
+                }
+                .frogRowAccessory()
+                .opacity(hovering ? 1 : 0)
+                .accessibilityHidden(!hovering)
             }
-            .frogRowAccessory()
-            .opacity(hovering ? 1 : 0)
-            .accessibilityHidden(!hovering)
         }
         .padding(.leading, FrogStyle.space8).padding(.trailing, FrogStyle.space2).frame(minHeight: 32)
         .contentShape(Rectangle())
