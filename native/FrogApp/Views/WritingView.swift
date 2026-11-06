@@ -58,32 +58,12 @@ struct WritingView: View {
     }
 
     private func row(_ rule: Rule) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            FrogRow(rule.name, caption: caption(rule), icon: {
-                // The tile the rule wears in the selection bubble and the command bar: Writing's, or Explain's for a
-                // rule that answers in the panel.
-                PluginIconTile(symbol: SelectionBubbleItems.symbol(for: rule),
-                               tint: (rule.answersInPanel ? ExplainPlugin.info.tint : WritingPlugin.info.tint).color, size: .list)
-            }) {
-                HStack(spacing: 8) {
-                    // The mark leads, so every row's caps end on the same edge, just before Try.
-                    // The notice above names the problem; a row is marked only to single out which rules it means.
-                    if rule.enabled, !model.ruleHasModel(rule), !everyEnabledRuleMissing {
-                        Button { editing = rule } label: { ProblemMark(help: "No model chosen: click to choose one") }
-                            .buttonStyle(.plain)
-                    }
-                    if let hotkey = rule.hotkey { KeyCaps(hotkey: hotkey).padding(.trailing, FrogStyle.space4) }
-                    Button("Try") { trying = rule }.buttonStyle(.frog(compact: true))
-                        .disabled(!rule.enabled || model.isProcessing).accessibilityLabel("Try \(rule.name)")
-                    Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { value in
-                        var updated = rule; updated.enabled = value
-                        do { try model.saveRule(updated) } catch { model.report(error) }
-                    })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
-                    IconAction(title: "Edit \(rule.name)", symbol: "pencil") { editing = rule }
-                }
-            }
-            if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
-        }.contentShape(Rectangle()).onTapGesture(count: 2) { editing = rule }
+        WritingRuleRow(rule: rule, caption: caption(rule), markMissing: rule.enabled && !model.ruleHasModel(rule) && !everyEnabledRuleMissing,
+                       canTry: rule.enabled && !model.isProcessing, issue: model.hotkeyErrors[rule.id],
+                       edit: { editing = rule }, tryIt: { trying = rule }, setEnabled: { value in
+                           var updated = rule; updated.enabled = value
+                           do { try model.saveRule(updated) } catch { model.report(error) }
+                       })
     }
 
     /// Its model, and what it does with the result when that is not the usual replacing ("Copy · Llama 3.2"), in one
@@ -445,5 +425,60 @@ struct WritingTryView: View {
             }
             run = nil
         }
+    }
+}
+
+/// One rule: its tile, name and model, its shortcut and its switch. Clicking the row opens its editor; Try and Edit
+/// appear where the pointer is, so a list of rules reads as names and shortcuts rather than a column of buttons.
+private struct WritingRuleRow: View {
+    let rule: Rule
+    let caption: String?
+    let markMissing: Bool
+    let canTry: Bool
+    let issue: String?
+    let edit: () -> Void
+    let tryIt: () -> Void
+    let setEnabled: (Bool) -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            FrogRow(rule.name, caption: caption, icon: {
+                // The tile the rule wears in the selection bubble and the command bar: Writing's, or Explain's for a
+                // rule that answers in the panel.
+                PluginIconTile(symbol: SelectionBubbleItems.symbol(for: rule),
+                               tint: (rule.answersInPanel ? ExplainPlugin.info.tint : WritingPlugin.info.tint).color, size: .list)
+            }) {
+                HStack(spacing: 8) {
+                    // Hover actions lead, so the caps and the switch keep their place whether or not they show.
+                    HStack(spacing: 4) {
+                        Button("Try") { tryIt() }.buttonStyle(.frog(compact: true))
+                            .disabled(!canTry).accessibilityLabel("Try \(rule.name)")
+                        IconAction(title: "Edit \(rule.name)", symbol: "pencil") { edit() }
+                    }.opacity(hovering ? 1 : 0).animation(hovering ? nil : FrogMotion.hoverOut, value: hovering)
+                    // The notice above names the problem; a row is marked only to single out which rules it means.
+                    if markMissing {
+                        Button { edit() } label: { ProblemMark(help: "No model chosen: click to choose one") }
+                            .buttonStyle(.plain)
+                    }
+                    if let hotkey = rule.hotkey { KeyCaps(hotkey: hotkey) }
+                    Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: setEnabled))
+                        .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+                }
+            }
+            if let issue { FrogRowNote(text: issue, tone: FrogStyle.warning) }
+        }
+        .padding(.horizontal, FrogStyle.space8)
+        .contentShape(Rectangle())
+        .frogRowHighlight(hovering: hovering)
+        .padding(.horizontal, -FrogStyle.space8)
+        .onHover { hovering = $0 }
+        .onTapGesture { edit() }
+        .contextMenu {
+            Button("Edit…", systemImage: "pencil") { edit() }
+            Button("Try…", systemImage: "play") { tryIt() }.disabled(!canTry)
+        }
+        .accessibilityAction(named: Text("Edit")) { edit() }
+        .accessibilityAction(named: Text("Try")) { if canTry { tryIt() } }
     }
 }

@@ -74,13 +74,17 @@ struct PluginsView: View {
                 }
             }.frogTableSurface()
         } else {
-            FrogSection {
+            // Headed like every other page's cards.
+            FrogSection("Installed plugins") {
+                Text(verbatim: "\(plugins.items.count)").font(FrogType.small.monospacedDigit())
+                    .accessibilityLabel(L10n.text(plugins.items.count == 1 ? "1 plugin" : "\(plugins.items.count) plugins"))
+            } content: {
                 ForEach(plugins.items) { installedRow($0) }
             }
         }
     }
 
-    /// One installed plugin with up to two lines of caption: what it does, truncated after that, with the version beside its name and
+    /// One installed plugin with one line of caption: what it does, truncated after that, with the version beside its name and
     /// the rest (the full description, its actions, where it came from) in the help and its menu.
     private func installedRow(_ item: PluginItem) -> some View {
         HStack(spacing: 12) {
@@ -94,10 +98,10 @@ struct PluginsView: View {
                 }
                 Text(L10n.text(item.problem ?? item.manifest?.description ?? ""))
                     .font(FrogType.small).foregroundStyle(item.problem == nil ? FrogStyle.muted : FrogStyle.warning)
-                    .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1).truncationMode(.tail)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .help(item.problem ?? caption(item))
+            .help(item.problem ?? [item.manifest?.description, caption(item)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n"))
             HStack(spacing: 8) {
                 if item.needsReview {
                     Button("Review") {
@@ -145,9 +149,11 @@ struct PluginsView: View {
     @ViewBuilder private var directory: some View {
         Group {
             if plugins.registryKeys.isEmpty {
-                FrogEmptyState(symbol: CommunityPlugin.info.symbol, title: "The directory opens soon",
-                               message: "No plugins yet. Frog only installs plugins signed by the directory.",
-                               tint: CommunityPlugin.info.tint).frogTableSurface()
+                FrogEmptyState(symbol: CommunityPlugin.info.symbol, title: "No plugins listed yet",
+                               message: "Shared plugins appear here once the directory lists them. Build your own meanwhile.",
+                               tint: CommunityPlugin.info.tint) {
+                    Button("Build your own") { tab = .build }.buttonStyle(.frog(.primary))
+                }.frogTableSurface()
             } else if plugins.loadingRegistry, plugins.registry.isEmpty {
                 FrogLoadingNote(text: "Loading the directory…").frame(maxWidth: .infinity).padding(.vertical, 36).frogTableSurface()
             } else if let error = plugins.registryError, plugins.registry.isEmpty {
@@ -223,9 +229,16 @@ struct PluginsView: View {
             FrogRow("Let it use Frog", caption: "Settings → Agents installs the frog command and skill.") {
                 Button("Open Settings") { model.toolkit.select(.settings) }.buttonStyle(.frog(compact: true))
             }
-            FrogRow("Share it", caption: "Run frog plugin publish to pack it and print its entry for the directory.") {
-                CopyAction(title: "Copy command", labeled: true) { ViewActions.copy("frog plugin publish") }
-            }
+            // FrogRow's layout, with the command in its caption set as code, as in the prompt above.
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Share it").font(FrogType.row).foregroundStyle(FrogStyle.ink)
+                    Text(InlineCode.attributed(L10n.text("Run `frog plugin publish` to pack it and print its entry for the directory.")))
+                        .font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                CopyAction(title: "Copy command", labeled: true) { ViewActions.copy("frog plugin publish") }.frogRowAccessory()
+            }.padding(.vertical, FrogStyle.space6).frame(minHeight: FrogStyle.rowHeight)
         }
         FrogSection("Install from a link") {
             FrogRow("Link to a .frogplugin file", caption: "You review what it asks for before anything is installed.") {
@@ -458,29 +471,41 @@ struct PluginReviewSheet: View {
     }
 }
 
-/// One permission: its symbol, its title with a Caution or New badge beside it, and its whole explanation, which
-/// wraps: a consent dialog never cuts off what the user agrees to.
+/// One permission: its symbol and its one-line title with a Caution or New badge beside it. Its explanation opens
+/// under it from the chevron; a sensitive permission opens with it shown, so what can read or send data, or act for
+/// the user, is never agreed to unread.
 private struct PluginPermissionRow<Icon: View>: View {
     let permission: PluginPermission
     let new: Bool
     @ViewBuilder var icon: Icon
+    @State private var expanded: Bool?
+
+    private var open: Bool { expanded ?? permission.isSensitive }
 
     var body: some View {
         HStack(alignment: .top, spacing: FrogStyle.space12) {
             icon
             VStack(alignment: .leading, spacing: FrogStyle.space2) {
                 HStack(spacing: FrogStyle.space6) {
-                    Text(permission.title).font(FrogType.row).foregroundStyle(FrogStyle.ink)
+                    Text(permission.title).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
                     if permission.isSensitive { FrogBadge(text: "Caution", tone: .warning, symbol: "exclamationmark.triangle.fill") }
                     if new { FrogBadge(text: "New", active: true) }
                 }
-                Text(permission.detail).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+                if open {
+                    Text(permission.detail).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }.frame(minHeight: FrogStyle.controlHeight, alignment: open ? .top : .center)
             Spacer(minLength: 0)
+            IconAction(title: open ? "Hide details" : "Show details", symbol: open ? "chevron.up" : "chevron.down") {
+                expanded = !open
+            }
         }
         .padding(.vertical, FrogStyle.space6).frame(minHeight: FrogStyle.rowHeight)
+        .contentShape(Rectangle()).onTapGesture { expanded = !open }
+        .help(permission.detail)
         .accessibilityElement(children: .combine)
+        .accessibilityHint(permission.detail)
     }
 }
 

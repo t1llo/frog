@@ -15,8 +15,13 @@ struct LocalToolProvidersView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
             FrogSection("On this Mac", accessory: {
-                // While it looks, the spinner takes the button's place rather than sitting beside a greyed one.
-                if refreshing { FrogSpinner(label: "Looking for coding tools") }
+                // While it looks, a spinner and the word for it take the button's place, so it never spins unexplained.
+                if refreshing {
+                    HStack(spacing: FrogStyle.space6) {
+                        FrogSpinner(size: .mini, label: "Looking for coding tools")
+                        Text("Looking…")
+                    }.accessibilityElement(children: .combine)
+                }
                 else { Button("Refresh") { Task { await refresh() } }.buttonStyle(.frog(.ghost, compact: true)) }
             }) {
                 ForEach(statuses) { status in

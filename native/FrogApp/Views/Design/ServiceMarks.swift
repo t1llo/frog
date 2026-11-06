@@ -11,7 +11,7 @@ struct ServiceMark: Equatable {
 
     static func provider(_ kind: ProviderKind) -> ServiceMark {
         switch kind {
-        case .openAI: ServiceMark(symbol: "sparkle", tint: .green)
+        case .openAI: ServiceMark(symbol: "circle.hexagonpath.fill", tint: .green)
         case .anthropic: ServiceMark(symbol: "asterisk", tint: .orange)
         case .gemini: ServiceMark(symbol: "sparkles", tint: .blue)
         case .ollama: ServiceMark(symbol: "pawprint.fill", tint: .teal)
@@ -31,13 +31,19 @@ struct ServiceMark: Equatable {
         }
     }
 
-    /// Local models by runtime: Whisper and Parakeet are both speech, so each has its own mark; text models run
-    /// on MLX.
+    /// Local models by runtime: Whisper and Parakeet are both speech, so each has its own mark. Text models all run
+    /// on MLX, so they are told apart by family: Qwen, Llama and Gemma each have their own, any other a text mark.
     static func model(_ descriptor: LocalModelDescriptor) -> ServiceMark {
         switch descriptor.backend {
-        case .whisperKit: ServiceMark(symbol: "waveform", tint: .red)
-        case .parakeet: ServiceMark(symbol: "waveform.badge.mic", tint: .orange)
-        case .mlx: ServiceMark(symbol: "text.alignleft", tint: .green)
+        case .whisperKit: return ServiceMark(symbol: "waveform", tint: .red)
+        case .parakeet: return ServiceMark(symbol: "waveform.badge.mic", tint: .orange)
+        case .mlx:
+            let repository = (descriptor.originalRepository ?? descriptor.repository).lowercased()
+            let name = descriptor.name.lowercased() + " " + repository
+            if name.contains("qwen") { return ServiceMark(symbol: "brain", tint: .purple) }
+            if name.contains("llama") { return ServiceMark(symbol: "mountain.2.fill", tint: .indigo) }
+            if name.contains("gemma") { return ServiceMark(symbol: "diamond.fill", tint: .blue) }
+            return ServiceMark(symbol: "text.alignleft", tint: .green)
         }
     }
 

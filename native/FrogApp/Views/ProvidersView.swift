@@ -4,6 +4,8 @@ import FrogCore
 struct ProvidersView: View {
     @EnvironmentObject private var model: AppModel
     @State private var editing: ProviderConfiguration?
+    /// The editor's first step: a provider added from the list of services opens on its connection.
+    @State private var editingStep = 0
     @State private var addingLocal = false
     @State private var revealedModelID: String?
     @State private var deleting: ProviderConfiguration?
@@ -29,13 +31,14 @@ struct ProvidersView: View {
                 if selectedFilter == "Local models" {
                     FrogAddButton("Add model") { addingLocal = true }
                 } else if selectedFilter == "Providers" {
-                    FrogAddButton("Add provider") { editing = ProviderConfiguration() }
+                    FrogAddButton("Add provider") { editingStep = 0; editing = ProviderConfiguration() }
                         .keyboardShortcut("n", modifiers: .command)
                 }
             }
             VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
+                // Searching a handful of providers finds nothing a glance would not.
                 ListToolbar(placeholder: selectedFilter == "Local models" ? "Search models" : "Search providers", search: $search,
-                            showsSearch: selectedFilter != "Installed tools") { sourcePicker }
+                            showsSearch: selectedFilter == "Local models" || (selectedFilter == "Providers" && model.configuration.providers.count >= 6)) { sourcePicker }
                 if selectedFilter == "Installed tools" {
                     LocalToolProvidersView(client: model.localTools) { kind, selectedModel in
                         do { try model.useLocalTool(kind, model: selectedModel); filter = "Providers"; search = "" }
@@ -51,26 +54,27 @@ struct ProvidersView: View {
                     // Speech and text models in one list, under their own headings, rather than a second switch.
                     ModelInventory(search: search, revealedModelID: revealedModelID)
                     if search.isEmpty { LocalModelSettingsView() }
-                } else if providers.isEmpty {
-                    FrogEmptyState(symbol: search.isEmpty ? "cloud" : "magnifyingglass", title: search.isEmpty ? "No providers" : "No matches",
-                                   message: search.isEmpty ? "Connect a cloud provider, Ollama or LM Studio." : "No provider matches this search.",
-                                   tint: search.isEmpty ? .indigo : nil)
-                        .frogTableSurface()
                 } else {
-                    // Headed like the lists of the other tabs.
-                    VStack(alignment: .leading, spacing: FrogStyle.space8) {
-                        FrogSectionHeader("Connected")
-                        VStack(spacing: 2) {
-                            ForEach(providers) { provider in
-                                ProviderRow(provider: provider, edit: { editing = $0 }, delete: { deleting = $0 })
-                            }
-                        }.padding(FrogStyle.listInset).frogTableSurface()
+                    if !providers.isEmpty {
+                        // Headed like the lists of the other tabs.
+                        VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                            FrogSectionHeader("Connected")
+                            VStack(spacing: 2) {
+                                ForEach(providers) { provider in
+                                    ProviderRow(provider: provider, edit: { editingStep = 0; editing = $0 }, delete: { deleting = $0 })
+                                }
+                            }.padding(FrogStyle.listInset).frogTableSurface()
+                        }
+                    } else if !search.isEmpty {
+                        FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "No provider matches this search.")
+                            .frogTableSurface()
                     }
+                    if search.isEmpty { addableProviders }
                 }
             }
         }
         .buttonStyle(.frog())
-        .sheet(item: $editing) { provider in ProviderEditor(provider: provider).environmentObject(model) }
+        .sheet(item: $editing) { provider in ProviderEditor(provider: provider, step: editingStep).environmentObject(model) }
         .sheet(isPresented: $addingLocal) {
             AddLocalModelView { item in revealedModelID = item.id; search = "" }.environmentObject(model)
         }
@@ -81,6 +85,23 @@ struct ProvidersView: View {
                 deleting = nil
             }
         } message: { Text("The saved API key will also be removed. Affected rules will use another compatible model when available.") }
+    }
+
+    /// The services Frog can connect to, each added with one click that opens its connection step. Coding tools
+    /// are added from their own tab, which checks they are installed.
+    private var addableProviders: some View {
+        let connected = Set(model.configuration.providers.map(\.kind))
+        let kinds = ProviderKind.addable.filter { $0 == .compatible || !connected.contains($0) }
+        return FrogSection(connected.isEmpty ? "Connect a provider" : "Add another") {
+            ForEach(kinds, id: \.self) { kind in
+                FrogRow(kind.shortTitle, caption: kind.pitch, icon: { PluginIconTile(mark: .provider(kind)) }) {
+                    Button("Add") {
+                        editingStep = 1
+                        editing = ProviderConfiguration(name: kind.shortTitle, kind: kind)
+                    }.buttonStyle(.frog(compact: true)).accessibilityLabel("Add \(kind.shortTitle)")
+                }
+            }
+        }
     }
 
     /// A tabbed page keeps one subtitle for the whole page; what one tab needs to say goes in that tab.
@@ -203,26 +224,30 @@ struct ProviderEditor: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if step == 0 {
+                    // The Service step lists every service with its mark, rather than one menu on an empty step.
                     FrogSection(footer: serviceNote) {
-                        // The tab is the Service step; the row names what it chooses, so the two do not repeat each other.
-                        FrogRow("Provider", caption: provider.kind.isLocal ? "Runs on this Mac." : provider.kind.localTool != nil ? "Uses the tool installed on this Mac." : "Runs in the cloud.") {
-                            FrogDropdown(selection: $provider.kind, options: ProviderKind.allCases, title: { $0.title },
-                                         symbol: { ServiceMark.provider($0).symbol })
-                        }.onChange(of: provider.kind) { old, new in
-                            if provider.name == old.title || provider.name == "OpenAI" { provider.name = new.title }
-                            provider.endpoint = new.endpoint; provider.model = new.defaultModel
-                            provider.models = new.suggestedModels
-                            apiKey = ""; clearKey = hasSavedKey
-                            discovered = []; discoveryMessage = nil; customModelID = ""; customModelName = ""
-                            testResult = nil; issue = nil
+                        ForEach(Self.serviceGroups, id: \.title) { group in
+                            SectionCaption(text: group.title).padding(.top, FrogStyle.space6)
+                            ForEach(group.kinds, id: \.self) { kind in serviceChoice(kind) }
                         }
-                        if provider.kind.isLocal {
-                            FrogRow("Setup guide", caption: "Install \(provider.kind.title.replacingOccurrences(of: " (local)", with: "")) and download a model.") {
+                    }
+                    .onChange(of: provider.kind) { old, new in
+                        if provider.name == old.title || provider.name == old.shortTitle || provider.name == "OpenAI" { provider.name = new.shortTitle }
+                        provider.endpoint = new.endpoint; provider.model = new.defaultModel
+                        provider.models = new.suggestedModels
+                        apiKey = ""; clearKey = hasSavedKey
+                        discovered = []; discoveryMessage = nil; customModelID = ""; customModelName = ""
+                        testResult = nil; issue = nil
+                    }
+                    .disabled(testing || discovering)
+                    if provider.kind.isLocal {
+                        FrogSection {
+                            FrogRow("Setup guide", caption: "Install \(provider.kind.shortTitle) and download a model.") {
                                 Link(destination: provider.kind.setupURL) { ProviderLinkLabel(title: "Open") }
                                     .buttonStyle(.frog(compact: true))
                             }
                         }
-                    }.disabled(testing || discovering)
+                    }
                     }
                     if step == 1 {
                     if let tool = provider.kind.localTool {
@@ -310,6 +335,37 @@ struct ProviderEditor: View {
         .onChange(of: provider) { _, _ in testResult = nil }
         .onChange(of: apiKey) { _, _ in testResult = nil }
         .onChange(of: clearKey) { _, _ in testResult = nil }
+    }
+
+    static let serviceGroups: [(title: String, kinds: [ProviderKind])] = [
+        ("Cloud", [.openAI, .anthropic, .gemini, .compatible]),
+        ("On this Mac", [.ollama, .lmStudio]),
+        ("Coding tools", [.claudeCode, .codex, .opencode]),
+    ]
+
+    /// One service to choose, marked as chosen like a list's selected row.
+    private func serviceChoice(_ kind: ProviderKind) -> some View {
+        let chosen = provider.kind == kind
+        return Button { provider.kind = kind } label: {
+            HStack(spacing: FrogStyle.space12) {
+                PluginIconTile(mark: .provider(kind))
+                VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                    Text(kind.shortTitle).font(FrogType.row)
+                    Text(kind.pitch).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                }
+                Spacer(minLength: FrogStyle.space8)
+                if chosen {
+                    Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(FrogStyle.accent)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, FrogStyle.space8).padding(.vertical, FrogStyle.space2).frame(minHeight: FrogStyle.rowHeight)
+            .contentShape(Rectangle())
+            .frogRowHighlight(hovering: false, selected: chosen)
+        }
+        .buttonStyle(.plain).padding(.horizontal, -FrogStyle.space8)
+        .accessibilityLabel(kind.shortTitle).accessibilityHint(kind.pitch)
+        .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 
     private var serviceNote: String {
@@ -438,6 +494,27 @@ struct ProviderEditor: View {
             issue = error.localizedDescription
             // A save that fails after changing the key puts the previous key back, or may not manage to.
             hasSavedKey = model.hasAPIKey(provider.id)
+        }
+    }
+}
+
+extension ProviderKind {
+    /// What the Providers tab offers to add: cloud services first, then local servers.
+    static let addable: [ProviderKind] = [.openAI, .anthropic, .gemini, .ollama, .lmStudio, .compatible]
+
+    /// The name without "(local)", where a heading already says where it runs.
+    var shortTitle: String { title.replacingOccurrences(of: " (local)", with: "") }
+
+    /// One line on what the service is, for the list of services to add and the editor's first step.
+    var pitch: String {
+        switch self {
+        case .openAI: "GPT models in the cloud, with your API key"
+        case .anthropic: "Claude models in the cloud, with your API key"
+        case .gemini: "Gemini models in the cloud, with your API key"
+        case .ollama: "Runs open models on this Mac"
+        case .lmStudio: "Runs open models on this Mac, from its own app"
+        case .compatible: "Any service with an OpenAI-style API"
+        case .claudeCode, .codex, .opencode: "Uses the tool installed on this Mac and its sign-in"
         }
     }
 }

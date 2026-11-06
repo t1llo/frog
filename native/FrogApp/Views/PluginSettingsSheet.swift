@@ -150,9 +150,25 @@ private struct PluginNumberSetting: View {
     @FocusState private var focused: Bool
 
     var body: some View {
+        // Minus and plus beside the field show that it steps, and step it without the keyboard; each stops at its bound.
+        HStack(spacing: FrogStyle.space4) {
+            IconAction(title: "Decrease \(L10n.text(title))", symbol: "minus") { step(by: -1) }
+                .disabled(atBound(minimum))
+            field
+            IconAction(title: "Increase \(L10n.text(title))", symbol: "plus") { step(by: 1) }
+                .disabled(atBound(maximum))
+        }
+    }
+
+    private func atBound(_ bound: Int?) -> Bool {
+        guard let bound, let current = Int(draft) ?? value else { return false }
+        return current == bound
+    }
+
+    private var field: some View {
         TextField("", text: $draft).textFieldStyle(.plain).font(FrogType.body.monospacedDigit())
             .multilineTextAlignment(.trailing).focused($focused)
-            .padding(.horizontal, FrogStyle.space8).frogControlSurface().frame(width: 72)
+            .padding(.horizontal, FrogStyle.space8).frogControlSurface().frame(width: 64)
             .accessibilityLabel(L10n.text(title)).help(range ?? "")
             .onSubmit(save)
             .onKeyPress(.upArrow) { step(by: 1); return .handled }

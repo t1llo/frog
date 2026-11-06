@@ -55,7 +55,7 @@ struct CleanerConfirmationSheet: View {
                     SectionCaption(text: "Left out")
                     ForEach(plan.refused, id: \.item.id) { refusal in
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(roots.displayPath(refusal.item.url)).font(FrogType.small)
+                            Text(roots.shownPath(refusal.item.url)).font(FrogType.small)
                                 .lineLimit(1).truncationMode(.middle)
                             Text(refusal.reason).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                         }
@@ -94,10 +94,14 @@ struct CleanerConfirmationSheet: View {
 
     private func itemRow(_ removal: PlannedRemoval) -> some View {
         let item = removal.item
+        let parts = roots.shownParts(item.url)
         return HStack(spacing: FrogStyle.space8) {
-            icon(for: item).frame(width: 18, height: 18).accessibilityHidden(true)
-            Text(roots.displayPath(item.url)).font(FrogType.body).lineLimit(1).truncationMode(.middle)
-                .help(item.url.path)
+            icon(for: item).frame(width: 20, height: 20).accessibilityHidden(true)
+            // The name leads and the folder follows in muted type, so a long path is cut in the folder, not the name.
+            HStack(spacing: FrogStyle.space6) {
+                Text(parts.name).font(FrogType.body).lineLimit(1).layoutPriority(1)
+                Text(parts.folder).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
+            }.help(roots.shownPath(item.url))
             if item.owner == .administrator { FrogBadge(text: "Needs password") }
             else if removal.route == .finder { FrogBadge(text: "Moved by Finder").help("Finder moves this item to the Trash, so it can ask for permission") }
             Spacer(minLength: 8)
@@ -105,20 +109,13 @@ struct CleanerConfirmationSheet: View {
         }.padding(.horizontal, FrogStyle.rowPadding).frame(minHeight: 30)
     }
 
-    /// The app's own icon. An app without one (or a bundle that is gone) gets an app symbol like the other rows'
-    /// symbols, since macOS's blank app icon reads as a white block in dark mode.
+    /// The app's own icon, or the system's generic app icon for a bundle without one; never a placeholder glyph.
     @ViewBuilder private func icon(for item: CleanerItem) -> some View {
-        if item.kind == .application, Self.hasIcon(item.url) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path)).resizable().interpolation(.high)
+        if item.kind == .application {
+            ApplicationIcon(path: item.url.path, size: 20)
         } else {
-            Image(systemName: item.kind == .application ? "app.dashed" : item.kind.symbol).font(.system(size: 12))
-                .foregroundStyle(FrogStyle.muted)
+            Image(systemName: item.kind.symbol).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
         }
-    }
-
-    private static func hasIcon(_ url: URL) -> Bool {
-        guard let info = Bundle(url: url)?.infoDictionary else { return false }
-        return info["CFBundleIconFile"] != nil || info["CFBundleIconName"] != nil || info["CFBundleIcons"] != nil
     }
 
     private func size(of item: CleanerItem) -> String {

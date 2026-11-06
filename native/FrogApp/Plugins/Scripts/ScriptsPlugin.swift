@@ -188,10 +188,14 @@ struct ScriptsPage: View {
             if runner.resultID == script.id, !runner.output.isEmpty { output }
         } footer: { script in
             // For every script: Frog stops one that runs longer.
-            Text("Time limit").foregroundStyle(FrogStyle.ink).lineLimit(1)
-            FrogDropdown(selected: timeout, options: ScriptsSettings.timeouts.contains(timeout) ? ScriptsSettings.timeouts : (ScriptsSettings.timeouts + [timeout]).sorted(),
-                         width: 100, compact: true, title: Self.duration) { timeout = $0; setTimeout($0) }
-                .help("Frog stops any script that runs longer")
+            // The label sits right against its value: the dropdown takes only the width its title needs.
+            HStack(spacing: 0) {
+                Text("Time limit").foregroundStyle(FrogStyle.muted).lineLimit(1)
+                FrogDropdown(selected: timeout, options: ScriptsSettings.timeouts.contains(timeout) ? ScriptsSettings.timeouts : (ScriptsSettings.timeouts + [timeout]).sorted(),
+                             width: 120, compact: true, title: Self.duration) { timeout = $0; setTimeout($0) }
+                    .fixedSize()
+                    .help("Frog stops any script that runs longer")
+            }
         }
     }
 

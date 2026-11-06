@@ -35,7 +35,10 @@ private actor ApplicationIconCache {
         if let image = images.object(forKey: key) { return image }
         // NSWorkspace icons defer IconServices work until drawing. Rasterize off the UI thread
         // so scrolling never has to resolve or decode a newly visible application's icon.
-        let icon = NSWorkspace.shared.icon(forFile: path)
+        // A bundle without a runnable executable (half-removed, or a stub) gets Finder's "prohibited"
+        // badge; the generic app icon reads as an app instead of an error.
+        let icon = Self.isLaunchable(path) ? NSWorkspace.shared.icon(forFile: path)
+            : NSWorkspace.shared.icon(for: .applicationBundle)
         guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 56, pixelsHigh: 56,
                                             bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
                                             isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
@@ -47,5 +50,11 @@ private actor ApplicationIconCache {
         guard let image = bitmap.cgImage else { return nil }
         images.setObject(image, forKey: key)
         return image
+    }
+
+    private static func isLaunchable(_ path: String) -> Bool {
+        guard path.hasSuffix(".app") else { return true }
+        guard let executable = Bundle(path: path)?.executableURL else { return false }
+        return FileManager.default.isExecutableFile(atPath: executable.path)
     }
 }

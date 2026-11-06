@@ -137,7 +137,7 @@ struct CleanerRestoreView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(record.entries, id: \.original) { entry in
                         HStack(spacing: 8) {
-                            Text(roots.displayPath(URL(fileURLWithPath: entry.original))).font(FrogType.small)
+                            Text(roots.shownPath(URL(fileURLWithPath: entry.original))).font(FrogType.small)
                                 .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                             Spacer(minLength: 8)
                             Text(RecentlyMovedRow.state(of: entry, missing: row.missing.contains(entry.original))).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
@@ -182,7 +182,7 @@ struct CleanerPutBackSummaryView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(Array(summary.failures.enumerated()), id: \.offset) { _, failure in
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(roots.displayPath(URL(fileURLWithPath: failure.path))).font(FrogType.body)
+                                Text(roots.shownPath(URL(fileURLWithPath: failure.path))).font(FrogType.body)
                                     .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                                 Text(failure.message).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                                     .fixedSize(horizontal: false, vertical: true)

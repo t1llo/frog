@@ -11,6 +11,8 @@ struct HistoryView: View {
     @State private var confirmClear = false
     @State private var deleting: HistoryEntry?
     @State private var note: NoteProgress?
+    /// The entry whose text was just copied from the header, so its button says Copied.
+    @State private var copiedEntry: UUID?
 
     /// `viewing` opens one entry's detail rather than the list, for pictures of it.
     init(viewing: UUID? = nil) { _viewing = State(initialValue: viewing) }
@@ -156,7 +158,23 @@ struct HistoryView: View {
             FrogPageHeader(title: entry.ruleName, subtitle: Self.detailSubtitle(entry)) {
                 if preferences.hideHistoryText { revealButton(entry) }
                 if entry.answer != nil, model.answerNotesEnabled, !hidden(entry) { noteButton(entry) }
+                // One Copy for the page: the result, or the answer. The other texts copy from the menu.
+                let copied = copiedEntry == entry.id
+                Button(L10n.text(copied ? "Copied" : entry.answer != nil ? "Copy answer" : "Copy result"),
+                       systemImage: copied ? "checkmark" : "doc.on.doc") {
+                    ViewActions.copy(entry.processedText); copiedEntry = entry.id
+                }.disabled(entry.processedText.isEmpty || hidden(entry))
                 IconMenu(title: "Entry actions", bordered: false) {
+                    if !entry.originalText.isEmpty {
+                        Button(entry.answer != nil ? "Copy selection" : "Copy original", systemImage: "doc.on.doc") {
+                            ViewActions.copy(entry.originalText)
+                        }.disabled(hidden(entry))
+                    }
+                    if let followUps = entry.answer?.followUps, !followUps.isEmpty {
+                        Button("Copy follow-ups", systemImage: "doc.on.doc") {
+                            ViewActions.copy(followUps.map { "\($0.question)\n\n\($0.answer)" }.joined(separator: "\n\n"))
+                        }.disabled(hidden(entry))
+                    }
                     Button("Delete entry…", systemImage: "trash", role: .destructive) { deleting = entry }
                 }
             }
@@ -361,39 +379,59 @@ private struct NoteProgress: Equatable {
 
 private struct HistoryDetail: View {
     let entry: HistoryEntry
-    @State private var copied: String?
     /// The comparison is worked out once per entry, not on every render.
     @State private var diffs = HistoryDiffMemo()
 
     var body: some View {
-        // One card per text, each under its own heading, as sections on the other pages.
         VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
             if let answer = entry.answer {
                 answerSections(answer)
-            } else if let diff = diffs.diff(for: entry) {
-                // A rewrite: what changed is marked in both texts.
-                section("Result", copying: entry.processedText) {
-                    Text(diff.result).font(FrogType.lead).lineSpacing(4).textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-                }
-                section("Original", copying: entry.originalText) {
-                    Text(diff.original).font(FrogType.lead).lineSpacing(4).textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-                }
+            } else if entry.originalText.isEmpty {
+                section("Result") { HistoryLongText(text: entry.processedText, lineSpacing: 4) }
             } else {
-                textSection("Result", text: entry.processedText)
-                if !entry.originalText.isEmpty { textSection("Original", text: entry.originalText) }
+                changes
             }
         }
         .foregroundStyle(FrogStyle.ink).buttonStyle(FrogButtonStyle())
     }
 
+    /// A rewrite: the original and the result side by side in one card, with what changed marked in both, so the
+    /// two read against each other rather than one under the other.
+    @ViewBuilder private var changes: some View {
+        let diff = diffs.diff(for: entry)
+        FrogSection("Changes") {
+            if let diff { Text(diff.summary).font(FrogType.small.monospacedDigit()) }
+            else if entry.originalText == entry.processedText { Text("No changes") }
+        } content: {
+            HStack(alignment: .top, spacing: FrogStyle.space16 + FrogStyle.space8) {
+                column("Original") {
+                    if let diff { text(diff.original) } else { HistoryLongText(text: entry.originalText, lineSpacing: 4) }
+                }
+                column("Result") {
+                    if let diff { text(diff.result) } else { HistoryLongText(text: entry.processedText, lineSpacing: 4) }
+                }
+            }.padding(.vertical, FrogStyle.space8)
+        }
+    }
+
+    private func column<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space6) {
+            SectionCaption(text: title)
+            content()
+        }.frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private func text(_ value: AttributedString) -> some View {
+        Text(value).font(FrogType.lead).lineSpacing(4).textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     /// An answer: the first answer, its follow-ups, then what was asked about.
     @ViewBuilder
     private func answerSections(_ answer: AnswerRecord) -> some View {
-        textSection("Answer", text: entry.processedText)
+        section("Answer") { HistoryLongText(text: entry.processedText, lineSpacing: 4) }
         if !answer.followUps.isEmpty {
-            section("Follow-ups", copying: answer.followUps.map { "\($0.question)\n\n\($0.answer)" }.joined(separator: "\n\n")) {
+            section("Follow-ups") {
                 VStack(alignment: .leading, spacing: FrogStyle.space16) {
                     ForEach(Array(answer.followUps.enumerated()), id: \.offset) { _, turn in
                         VStack(alignment: .leading, spacing: 6) {
@@ -405,25 +443,15 @@ private struct HistoryDetail: View {
                 }
             }
         }
-        textSection("Selection", text: entry.originalText)
+        section("Selection") { HistoryLongText(text: entry.originalText, lineSpacing: 4) }
         if let context = answer.context, !context.isEmpty {
-            textSection("Context", text: context)
+            section("Context") { HistoryLongText(text: context, lineSpacing: 4) }
         }
     }
 
-    private func textSection(_ title: String, text: String) -> some View {
-        section(title, copying: text) { HistoryLongText(text: text, lineSpacing: 4) }
-    }
-
-    /// A heading with Copy beside it, and the text in a card under it.
-    private func section<Content: View>(_ title: String, copying text: String, @ViewBuilder content: () -> Content) -> some View {
-        FrogSection(title, accessory: {
-            Button(L10n.text(copied == title ? "Copied" : "Copy"), systemImage: copied == title ? "checkmark" : "doc.on.doc") {
-                ViewActions.copy(text); copied = title
-            }.buttonStyle(.frog(compact: true)).accessibilityLabel("Copy \(title.lowercased())").disabled(text.isEmpty)
-        }) {
-            content().padding(.vertical, FrogStyle.space12)
-        }
+    /// A heading and the text in a card under it; copying is the page header's.
+    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        FrogSection(title) { content().padding(.vertical, FrogStyle.space12) }
     }
 }
 
@@ -445,8 +473,21 @@ private struct HistoryDetail: View {
 struct HistoryDiff {
     let original: AttributedString
     let result: AttributedString
+    /// Words taken out and put in, for the heading's count.
+    let removedWords: Int
+    let addedWords: Int
 
     static let maxLength = 8_000
+
+    /// "2 words out · 3 in", or one side when the other is none.
+    var summary: String {
+        func words(_ count: Int) -> String { count == 1 ? L10n.text("1 word") : "\(count) \(L10n.text("words"))" }
+        switch (removedWords, addedWords) {
+        case (0, let added): return "\(words(added)) \(L10n.text("added"))"
+        case (let removed, 0): return "\(words(removed)) \(L10n.text("removed"))"
+        default: return "\(words(removedWords)) \(L10n.text("out")) · \(addedWords) \(L10n.text("in"))"
+        }
+    }
 
     init?(original: String, result: String) {
         guard !original.isEmpty, !result.isEmpty, original != result,
@@ -460,6 +501,8 @@ struct HistoryDiff {
             case .insert(let offset, _, _): inserted.insert(offset)
             }
         }
+        removedWords = removed.filter { !old[$0].allSatisfy(\.isWhitespace) }.count
+        addedWords = inserted.filter { !new[$0].allSatisfy(\.isWhitespace) }.count
         self.original = Self.attributed(old, marked: removed, color: FrogStyle.critical, strike: true)
         self.result = Self.attributed(new, marked: inserted, color: FrogStyle.good, strike: false)
     }
