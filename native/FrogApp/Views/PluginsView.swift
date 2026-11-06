@@ -265,136 +265,199 @@ struct PluginReviewSheet: View {
 
     var body: some View {
         let additions = review.additions
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                SymbolTile(symbol: PluginSymbol.name(manifest.displaySymbol), size: 40)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(review.approved == nil ? "Install \(manifest.name)?" : "Update \(manifest.name)?").font(FrogType.section)
-                    Text("Version \(manifest.version)\(manifest.author.map { " · by \($0)" } ?? "")").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                    origin
+        let updating = review.approved != nil
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: FrogStyle.space12) {
+                HStack(alignment: .center, spacing: FrogStyle.space12) {
+                    SymbolTile(symbol: PluginSymbol.name(manifest.displaySymbol), size: 44)
+                    VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                        Text(updating ? "Update \(manifest.name)?" : "Install \(manifest.name)?").font(FrogType.title).tracking(-0.4)
+                            .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
+                        Text("Version \(manifest.version)\(manifest.author.map { " · by \($0)" } ?? "")").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    }
                 }
-            }
-            Text(manifest.description).font(FrogType.body).fixedSize(horizontal: false, vertical: true)
-            if let replacing = review.replacing {
-                InlineIssue(message: "You have \(manifest.name) from \(replacing.label). This one comes from \(review.source.label): it replaces that plugin and gets what it stored. Install it only if both come from the same author.")
-            }
-            if !review.compatible {
-                InlineIssue(message: "It needs Frog \(manifest.frog ?? "") or later. Update Frog first.")
-            }
+                origin
+                Text(manifest.description).font(FrogType.body).fixedSize(horizontal: false, vertical: true)
+                if let replacing = review.replacing {
+                    InlineIssue(message: "You have \(manifest.name) from \(replacing.label). This one comes from \(review.source.label): it replaces that plugin and gets what it stored. Install it only if both come from the same author.")
+                }
+                if !review.compatible {
+                    InlineIssue(message: "It needs Frog \(manifest.frog ?? "") or later. Update Frog first.")
+                }
+            }.padding([.horizontal, .top], FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space16)
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: FrogStyle.space16) {
                     if manifest.permissions.isEmpty {
-                        Text("It asks for no permissions: it shows its page, keeps its own storage and receives its commands.")
-                            .font(FrogType.body).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
+                        FrogSection("Permissions") {
+                            FrogRow("Nothing beyond its own page", caption: "It shows its page, keeps its own storage and receives its commands.", icon: {
+                                permissionIcon("checkmark.shield", sensitive: false)
+                            }, control: { EmptyView() })
+                        }
                     } else {
-                        SectionCaption(text: review.approved != nil && additions.isEmpty
-                                       ? "It asks for nothing new" : "It asks to")
-                        ForEach(manifest.permissions, id: \.self) { permission in
-                            permissionRow(permission, new: review.approved != nil && additions.permissions.contains(permission))
+                        let sensitive = manifest.permissions.filter(\.isSensitive).count
+                        FrogSection(updating && additions.isEmpty ? "It asks for nothing new" : "It asks to",
+                                    footer: sensitive == 0 ? nil : "Marked with a caution: it can read or send your data, or act for you.") {
+                            ForEach(manifest.permissions, id: \.self) { permission in
+                                permissionRow(permission, new: updating && additions.permissions.contains(permission))
+                            }
                         }
                     }
                     if !manifest.actions.isEmpty {
-                        SectionCaption(text: "Actions you and your agents can run")
-                        ForEach(manifest.actions, id: \.id) { action in
-                            HStack(spacing: 6) {
-                                Text(action.title).font(FrogType.body)
-                                if let shortcut = action.shortcut, let parsed = try? Shortcut(shortcut) {
-                                    FrogBadge(text: HotkeyManager.display(parsed.hotkey))
-                                }
-                                Spacer(minLength: 8)
-                                Text(action.effect.title).font(FrogType.small)
-                                    .foregroundStyle(action.effect == .read ? FrogStyle.muted : FrogStyle.ink)
+                        FrogSection("Actions you and your agents can run") {
+                            ForEach(manifest.actions, id: \.id) { action in
+                                FrogRow(action.title, icon: { EmptyView() }, control: {
+                                    HStack(spacing: FrogStyle.space8) {
+                                        if let shortcut = action.shortcut, let parsed = try? Shortcut(shortcut) {
+                                            ShortcutBadge(text: HotkeyManager.display(parsed.hotkey))
+                                        }
+                                        effectLabel(action.effect)
+                                    }
+                                })
                             }
                         }
                     }
                     if !manifest.uses.isEmpty {
-                        SectionCaption(text: "Frog actions it can run")
-                        ForEach(manifest.uses, id: \.self) { pattern in
-                            HStack(spacing: 6) {
-                                Text(pattern).font(FrogType.mono)
-                                if review.approved != nil, additions.uses.contains(pattern) { FrogBadge(text: "New", active: true) }
+                        FrogSection("Frog actions it can run") {
+                            ForEach(manifest.uses, id: \.self) { pattern in
+                                listRow(pattern, badge: updating && additions.uses.contains(pattern) ? "New" : nil)
                             }
                         }
                     }
                     if !manifest.hosts.isEmpty {
-                        SectionCaption(text: "Sites it can reach")
-                        ForEach(manifest.hosts, id: \.self) { host in
-                            HStack(spacing: 6) {
-                                Text(host).font(FrogType.mono)
-                                if review.approved != nil, additions.hosts.contains(host) { FrogBadge(text: "New", active: true) }
+                        FrogSection("Sites it can reach") {
+                            ForEach(manifest.hosts, id: \.self) { host in
+                                listRow(host, badge: updating && additions.hosts.contains(host) ? "New" : nil)
                             }
                         }
                     }
                     if !manifest.scripts.isEmpty {
-                        SectionCaption(text: "Scripts it can run")
-                        ForEach(manifest.scripts.keys.sorted(), id: \.self) { name in
-                            DisclosureGroup {
-                                ScrollView {
-                                    Text((try? review.package.scriptText(name)) ?? "The script could not be read.")
-                                        .font(FrogType.mono).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                                }.frame(maxHeight: 160).padding(8).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Text(name).font(FrogType.mono)
-                                    if review.approved != nil, additions.scripts.contains(name) { FrogBadge(text: "Changed", active: true) }
+                        FrogSection("Scripts it can run") {
+                            ForEach(manifest.scripts.keys.sorted(), id: \.self) { name in
+                                DisclosureGroup {
+                                    ScrollView {
+                                        Text((try? review.package.scriptText(name)) ?? "The script could not be read.")
+                                            .font(FrogType.mono).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                                    }.frame(maxHeight: 160).padding(8).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius))
+                                        .padding(.bottom, FrogStyle.space8)
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Text(name).font(FrogType.mono)
+                                        if updating, additions.scripts.contains(name) { FrogBadge(text: "Changed", active: true) }
+                                    }.frame(minHeight: FrogStyle.rowHeight)
                                 }
                             }
-                        }
-                        if review.approved != nil, additions.scripts.contains(PluginGrant.filesKey) {
-                            HStack(spacing: 6) {
-                                Text("Its files changed, and its scripts can run any of them.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                                FrogBadge(text: "Changed", active: true)
+                            if updating, additions.scripts.contains(PluginGrant.filesKey) {
+                                FrogRowNote(text: "Its files changed, and its scripts can run any of them.", tone: FrogStyle.warning)
                             }
                         }
                     }
-                }.frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(maxHeight: 320).fixedSize(horizontal: false, vertical: true)
-            HStack {
+                }
+                .padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }.frame(maxHeight: 420).fixedSize(horizontal: false, vertical: true).bottomScrollFade(height: 12)
+            HStack(spacing: FrogStyle.space8) {
                 Text("\(review.package.files.count) files · \(ByteCountFormatter.string(fromByteCount: Int64(review.package.size), countStyle: .file))")
                     .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                 Spacer()
                 Button(review.installed ? "Not now" : "Cancel") { plugins.dismissReview() }.keyboardShortcut(.cancelAction)
-                Button(review.installed ? "Allow" : review.approved == nil ? "Install" : "Update") {
+                // It looks ready at once; a click in its first second after the sheet changes is ignored, so a click
+                // meant for something else cannot approve it.
+                Button(review.installed ? "Allow" : updating ? "Update" : "Install") {
+                    guard armed else { return }
                     do { try plugins.approve(review) } catch { report(error); plugins.dismissReview() }
-                }.buttonStyle(.frog(.primary)).disabled(!review.compatible || !armed)
-            }
+                }.buttonStyle(.frog(.primary)).disabled(!review.compatible)
+                    .help(review.compatible ? "" : "Update Frog first")
+            }.padding(FrogStyle.sheetPadding)
         }
         .task(id: review.id) {
             armed = false
             try? await Task.sleep(for: .seconds(1))
             armed = true
         }
-        .padding(FrogStyle.sheetPadding).frame(width: 480)
+        .frame(width: 500)
         .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
     }
 
     @ViewBuilder private var origin: some View {
         switch review.source {
         case .folder(let path):
-            Text("Built on this Mac in \((path as NSString).abbreviatingWithTildeInPath)").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+            let shown = (path as NSString).abbreviatingWithTildeInPath
+            Label { Text("Built on this Mac").foregroundStyle(FrogStyle.ink) + Text(" · \(shown)") } icon: { Image(systemName: "hammer") }
+                .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle).help(shown)
         case .link, .file:
-            HStack(spacing: 6) {
-                Text("From \(review.source.label)").font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
+            VStack(alignment: .leading, spacing: FrogStyle.space4) {
                 if plugins.isListed(review.sha256) {
-                    Label("Signed by the Frog directory", systemImage: "checkmark.seal").font(FrogType.small).foregroundStyle(FrogStyle.good)
+                    Label("Signed by the Frog directory", systemImage: "checkmark.seal.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
                 } else {
-                    Label("Not in the Frog directory", systemImage: "exclamationmark.triangle").font(FrogType.small).foregroundStyle(FrogStyle.warning)
+                    Label("Not in the Frog directory", systemImage: "exclamationmark.triangle.fill").font(FrogType.small).foregroundStyle(FrogStyle.warning)
                 }
+                Text("From \(review.source.label)").font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
+                    .help(review.source.label)
             }
         }
     }
 
+    private func permissionIcon(_ symbol: String, sensitive: Bool) -> some View {
+        Image(systemName: symbol).font(.system(size: 13, weight: .medium))
+            .foregroundStyle(FrogStyle.ink.opacity(0.75))
+            .frame(width: 28, height: 28).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius - 2, style: .continuous))
+            .overlay(alignment: .bottomTrailing) {
+                if sensitive {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11, weight: .bold))
+                        .symbolRenderingMode(.palette).foregroundStyle(FrogStyle.onAccent, FrogStyle.warning)
+                        .offset(x: 4, y: 4).accessibilityLabel("Caution")
+                }
+            }
+    }
+
     private func permissionRow(_ permission: PluginPermission, new: Bool) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: permission.isSensitive ? "exclamationmark.triangle.fill" : "checkmark.circle")
-                .foregroundStyle(permission.isSensitive ? FrogStyle.warning : FrogStyle.muted).frame(width: 16)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(permission.title).font(FrogType.bodyMedium)
+        HStack(alignment: .top, spacing: FrogStyle.space12) {
+            permissionIcon(permission.symbol, sensitive: permission.isSensitive)
+            VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                HStack(spacing: FrogStyle.space6) {
+                    Text(permission.title).font(FrogType.row)
                     if new { FrogBadge(text: "New", active: true) }
                 }
                 Text(permission.detail).font(FrogType.small).foregroundStyle(FrogStyle.muted).fixedSize(horizontal: false, vertical: true)
             }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, FrogStyle.space10)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func listRow(_ text: String, badge: String?) -> some View {
+        HStack(spacing: FrogStyle.space6) {
+            Text(text).font(FrogType.mono).textSelection(.enabled)
+            if let badge { FrogBadge(text: badge, active: true) }
+            Spacer(minLength: 0)
+        }.frame(minHeight: 32)
+    }
+
+    private func effectLabel(_ effect: PluginManifestAction.Effect) -> some View {
+        Label(effect.title, systemImage: effect.symbol).font(FrogType.small)
+            .foregroundStyle(effect == .read ? FrogStyle.muted : FrogStyle.ink)
+            .help(effect.explanation)
+    }
+}
+
+extension PluginPermission {
+    /// A neutral symbol for what the permission reaches; the review adds a caution mark to the sensitive ones.
+    var symbol: String {
+        switch self {
+        case .clipboardRead: "doc.on.clipboard"
+        case .clipboardWrite: "clipboard"
+        case .selection: "character.cursor.ibeam"
+        case .notifications: "bell"
+        case .links: "link"
+        case .menubar: "menubar.rectangle"
+        case .hotkeys: "command"
+        case .background: "clock.arrow.circlepath"
+        case .files: "folder"
+        case .network: "network"
+        case .ai: "sparkles"
+        case .frogActions: "bolt"
+        case .scripts: "terminal"
         }
     }
 }
@@ -480,9 +543,26 @@ extension PluginManifestAction.Effect {
     /// How the review names what an action may do.
     var title: String {
         switch self {
-        case .read: "Only reads"
-        case .write: "Changes things"
-        case .network: "Uses the network"
+        case .read: "Reads only"
+        case .write: "Can change data"
+        case .network: "Uses the internet"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .read: "eye"
+        case .write: "pencil"
+        case .network: "network"
+        }
+    }
+
+    /// What the effect lets an action do, under the pointer.
+    var explanation: String {
+        switch self {
+        case .read: "Reads its storage or, with permission, the clipboard. Changes nothing."
+        case .write: "Can change its storage, the clipboard, show a notification, run a script or open a link, as its permissions allow."
+        case .network: "Can also reach the sites it lists or your AI model, as its permissions allow."
         }
     }
 }
