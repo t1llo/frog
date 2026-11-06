@@ -2,13 +2,14 @@ import Foundation
 
 /// The page a global shortcut belongs to, in the order the pages appear in Frog.
 public enum ShortcutReferenceGroup: Int, CaseIterable, Sendable {
-    case writing, explain, dictation, shortcuts, frog
+    case writing, explain, dictation, shortcuts, plugins, frog
     public var title: String {
         switch self {
         case .writing: "Writing"
         case .explain: "Explain"
         case .dictation: "Dictation"
         case .shortcuts: "Shortcuts"
+        case .plugins: "Plugins"
         case .frog: "Frog"
         }
     }

@@ -1483,7 +1483,7 @@ final class AppModel: ObservableObject {
                                             answersInPanel: \.isExplainRule)
         let listed = Set(items.map(\.hotkey))
         for (id, shortcut) in pluginShortcuts.sorted(by: { $0.value.name < $1.value.name }) where !listed.contains(shortcut.hotkey) {
-            items.append(ShortcutReferenceItem(id: id.uuidString, title: shortcut.name, hotkey: shortcut.hotkey, group: .shortcuts))
+            items.append(ShortcutReferenceItem(id: id.uuidString, title: shortcut.name, hotkey: shortcut.hotkey, group: .plugins))
         }
         return ShortcutReference.grouped(items)
     }

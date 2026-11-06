@@ -5,7 +5,7 @@ import FrogCore
 @MainActor
 final class ShortcutReferencePanel {
     typealias Groups = [(group: ShortcutReferenceGroup, items: [ShortcutReferenceItem])]
-    static let width: CGFloat = 380
+    static let width: CGFloat = 420
     static let maxHeight: CGFloat = 520
     private var panel: NSPanel?
     func hide() { panel?.orderOut(nil) }
@@ -34,6 +34,8 @@ struct ShortcutReferenceView: View {
     var body: some View {
         ScrollView { ShortcutReferenceContent(groups: groups) }
             .scrollIndicators(.automatic)
+            // A row cut by the bottom edge fades out, so it reads as more below rather than as clipped.
+            .bottomScrollFade(height: FrogStyle.sheetPadding)
             .frame(width: ShortcutReferencePanel.width, height: height).foregroundStyle(FrogStyle.ink)
             .frogPanel()
             .environment(\.locale, L10n.locale)
@@ -52,10 +54,10 @@ struct ShortcutReferenceContent: View {
                     VStack(spacing: 0) {
                     ForEach(section.items) { item in
                         HStack(spacing: 10) {
-                            Text(L10n.text(item.title)).font(FrogType.row).lineLimit(1)
+                            Text(L10n.text(item.title)).font(FrogType.row).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: 8)
                             ShortcutKeyCaps(hotkey: item.hotkey)
-                        }.padding(.horizontal, FrogStyle.cardPadding).frame(minHeight: FrogStyle.rowHeight)
+                        }.padding(.horizontal, FrogStyle.cardPadding).padding(.vertical, FrogStyle.space6).frame(minHeight: FrogStyle.rowHeight)
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel(L10n.text(item.title))
                             .accessibilityValue(HotkeyManager.display(item.hotkey))
