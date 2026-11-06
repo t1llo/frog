@@ -31,7 +31,7 @@ struct StayAwakePage: View {
                                      title: Self.title(of:)) { time in change { $0.until = time } }
                     }
                 }
-                FrogRow("Keep the screen on") {
+                FrogRow("Keep the screen on", caption: settings.keepScreenOn ? "The display stays lit as well." : "The display can sleep while apps keep running.") {
                     Toggle("Keep the screen on", isOn: Binding(get: { settings.keepScreenOn }, set: { on in change { $0.keepScreenOn = on } }))
                         .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
