@@ -37,7 +37,7 @@ struct LocalToolProvidersView: View {
             }
             // Which tool and model Frog's rules use; the tool is named here so the model below is clearly its.
             FrogSection("Use with Frog's rules",
-                        footer: "Uses the tool's own login and your plan's limits. Sign in or change accounts in the tool itself.") {
+                        footer: "Coding tools use their own sign-in and your plan's limits; change accounts in the tool itself.") {
                 FrogRow("Tool") {
                     FrogDropdown(selection: $selected, options: LocalToolKind.allCases, title: { $0.title })
                 }

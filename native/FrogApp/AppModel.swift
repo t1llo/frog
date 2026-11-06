@@ -815,7 +815,7 @@ final class AppModel: ObservableObject {
 
     func saveProvider(_ provider: ProviderConfiguration, apiKey: String?, clearKey: Bool) throws {
         try ConfigurationFile.validate(provider: provider)
-        guard provider.kind.localTool == nil || (apiKey ?? "").isEmpty else { throw FrogError.message("Coding tools use their own login, without a Frog API key.") }
+        guard provider.kind.localTool == nil || (apiKey ?? "").isEmpty else { throw FrogError.message("Coding tools use their own sign-in, without a Frog API key.") }
         var candidate = configuration
         let previousModels = candidate.providers.first(where: { $0.id == provider.id })?.models ?? []
         if let index = candidate.providers.firstIndex(where: { $0.id == provider.id }) { candidate.providers[index] = provider }
