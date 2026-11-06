@@ -10,7 +10,7 @@ struct UsageDashboardView: View {
     var body: some View {
         let provider = usage.preferences.provider
         FrogPage {
-            FrogPageHeader(title: "LLM usage", subtitle: "Plan limits and token use of your coding tools") {
+            FrogPageHeader(title: "LLM usage", subtitle: "Plan limits and token use of your coding tools.") {
                 FrogDropdown(selected: provider, options: usage.providers, width: 120, title: { $0 }) { usage.selectProvider($0) }
                     .accessibilityLabel("Provider")
                 UsageRefreshAction(usage: usage)
@@ -196,21 +196,20 @@ struct UsageLimitView: View {
     let now: Date
     var compact = false
     private var fraction: Double { window.percentage.isFinite ? min(1, max(0, window.percentage / 100)) : 0 }
-    /// One meaning for every bar: neutral on pace, green under it, orange ahead of it, red nearly used whatever the pace.
-    /// A window without a pace is neutral until it runs low.
+    /// The meters' one family (`FrogStyle.level`): the accent while all is well, on pace or under it, orange ahead
+    /// of pace, red nearly used whatever the pace. A window without a pace stays the accent until it runs low.
     private var meterColor: Color {
         if fraction >= 0.95 { return FrogStyle.critical }
         switch window.pace(at: now) {
         case "Ahead of pace": return FrogStyle.warning
-        case "Under pace": return FrogStyle.good
-        case nil: return fraction >= 0.8 ? FrogStyle.warning : FrogStyle.seriesSecondary
-        default: return FrogStyle.seriesSecondary
+        case nil: return FrogStyle.level(fraction, warning: 0.8, critical: 0.95)
+        default: return FrogStyle.accent
         }
     }
+    /// Only a pace that needs attention is coloured, in its bar's colour; on or under pace is plain muted text.
     private func paceColor(_ pace: String) -> Color {
         switch pace {
         case "Ahead of pace": FrogStyle.warning
-        case "Under pace": FrogStyle.good
         case "Limit reached": FrogStyle.critical
         default: FrogStyle.muted
         }
@@ -481,7 +480,7 @@ private struct UsageClaudeSection: View {
         let accounts = usage.claudeAccountsEnabled ? usage.accounts() : []
         FrogSection("Claude") {
             if usage.claudeAccountsEnabled {
-                Button("Add folder…") { addFolder() }.buttonStyle(.frog(compact: true))
+                FrogAddButton("Add folder") { addFolder() }
                     .help("A Claude app data folder or a Claude Code folder Frog did not find")
             }
         } content: {

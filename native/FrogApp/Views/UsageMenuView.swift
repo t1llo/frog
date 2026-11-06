@@ -155,7 +155,7 @@ struct UsageExtraUsageBlock: View {
     @ObservedObject var usage: UsageDashboardModel
     var body: some View {
         if let extra = usage.extraUsage(provider: usage.preferences.provider) {
-            let tint = extra.fraction.map { $0 >= 0.8 ? FrogStyle.level($0, warning: 0.8, critical: 0.95) : FrogStyle.seriesSecondary } ?? FrogStyle.seriesSecondary
+            let tint = extra.fraction.map { FrogStyle.level($0, warning: 0.8, critical: 0.95) } ?? FrogStyle.accent
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("Extra usage").font(FrogType.bodyMedium)
@@ -287,7 +287,7 @@ private struct UsageMiniMeter: View {
                         .help(reset.formatted(date: .abbreviated, time: .shortened))
                 }
             }.font(FrogType.caption).lineLimit(1)
-            FrogMeter(fraction: fraction, tint: fraction >= 0.8 ? FrogStyle.level(fraction, warning: 0.8, critical: 0.95) : FrogStyle.seriesSecondary, size: .compact)
+            FrogMeter(fraction: fraction, tint: FrogStyle.level(fraction, warning: 0.8, critical: 0.95), size: .compact)
         }.frame(maxWidth: .infinity)
     }
 }
