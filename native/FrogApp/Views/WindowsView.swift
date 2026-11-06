@@ -42,12 +42,21 @@ struct WindowsView: View {
     private var layouts: some View {
         let rules = Dictionary(uniqueKeysWithValues: WindowAction.shortcutRows(configured: model.configuration.rules)
             .compactMap { rule in rule.action?.windowAction.map { ($0, rule) } })
-        let unset = rules.values.filter { $0.hotkey == nil }.count
-        return FrogSection("Layouts", footer: unset == 0 ? nil : "Click a layout's empty slot to record its shortcut, or use Suggested shortcuts for all of them.") {
+        let assigned = rules.values.filter { $0.hotkey != nil }.count
+        // Grouped as the cheat sheet groups them; a layout without a shortcut shows nothing until pointed at.
+        return FrogSection("Layouts") {
+            Text(verbatim: "\(assigned) of \(rules.count)").font(FrogType.small.monospacedDigit())
+                .accessibilityLabel(L10n.text("\(assigned) of \(rules.count) layouts have a shortcut"))
+        } content: {
             if let suggestion { FrogRowNote(text: suggestion) }
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24)], spacing: 0) {
-                ForEach(Self.layoutOrder) { action in
-                    if let rule = rules[action] { LayoutShortcutCell(rule: rule, issue: model.hotkeyErrors[rule.id], model: model) }
+            ForEach(Self.layoutGroups, id: \.title) { group in
+                VStack(alignment: .leading, spacing: 0) {
+                    SectionCaption(text: group.title).padding(.top, FrogStyle.space10)
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 24), GridItem(.flexible(), spacing: 24)], spacing: 0) {
+                        ForEach(group.actions) { action in
+                            if let rule = rules[action] { LayoutShortcutCell(rule: rule, issue: model.hotkeyErrors[rule.id], model: model) }
+                        }
+                    }
                 }
             }
         }
@@ -116,6 +125,18 @@ struct WindowsView: View {
         return (a, first.offset) < (b, second.offset)
     }.map(\.element)
 
+    /// `layoutOrder` cut into the cheat sheet's groups; Restore joins Displays rather than standing alone.
+    static let layoutGroups: [(title: String, actions: [WindowAction])] = {
+        var groups: [(title: String, actions: [WindowAction])] = []
+        for action in layoutOrder {
+            var title = WindowCheatSheet.group(for: action)
+            if title == "Undo" { title = "Displays" }
+            if let index = groups.firstIndex(where: { $0.title == title }) { groups[index].actions.append(action) }
+            else { groups.append((title, [action])) }
+        }
+        return groups
+    }()
+
     static func zonesTitle(_ zones: WindowsSettings.Zones) -> String {
         ZoneGrid(rawValue: zones.rawValue)?.title ?? zones.rawValue
     }
@@ -171,7 +192,7 @@ private struct LayoutShortcutCell: View {
     let rule: Rule
     let issue: String?
     @ObservedObject var model: AppModel
-    /// A layout without a shortcut shows a dim empty slot, so the grid says what is assigned and stays quiet; pointed
+    /// A layout without a shortcut shows nothing in its slot, so the grid says what is assigned and stays quiet; pointed
     /// at, recording or focused from the keyboard, the slot becomes the Record button.
     @State private var hovering = false
     @State private var recording = false
@@ -192,15 +213,9 @@ private struct LayoutShortcutCell: View {
                 do { try model.saveRule(updated) } catch { model.report(error) }
             }), emptyTitle: "Record", recordingChanged: { recording = $0 })
             .focused($focused)
+            // An empty slot stays empty: the grid shows only what is assigned, and the Record button appears where
+            // the pointer or keyboard focus is.
             .opacity(active ? 1 : 0)
-            .overlay(alignment: .trailing) {
-                if !active {
-                    // The empty slot: a dash where a shortcut's last key cap would be.
-                    Text(verbatim: "—").font(FrogType.body).foregroundStyle(FrogStyle.placeholder)
-                        .frame(width: KeyCap.size, height: FrogStyle.controlHeight)
-                        .allowsHitTesting(false).accessibilityHidden(true)
-                }
-            }
         }
         .frame(minHeight: FrogStyle.rowHeight)
         .contentShape(Rectangle())
