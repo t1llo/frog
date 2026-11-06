@@ -11,7 +11,8 @@ struct StayAwakePage: View {
     var body: some View {
         FrogPage {
             FrogPageHeader(title: "Stay awake", subtitle: "Keeps your Mac from sleeping, for a while or until you stop it.") {
-                FrogStatePill(text: power.statusText, on: power.isEnabled)
+                // Only a session that runs is worth a pill (with its time left); off, the switch below says it.
+                if power.isEnabled { FrogStatePill(text: power.statusText, on: true) }
             }
             FrogSection("Session") {
                 FrogRow("Keep this Mac awake") {

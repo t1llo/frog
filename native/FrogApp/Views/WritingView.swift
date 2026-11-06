@@ -81,12 +81,14 @@ struct WritingView: View {
         }.contentShape(Rectangle()).onTapGesture(count: 2) { editing = rule }
     }
 
-    /// What the rule does and its model, in one line; the shortcut is drawn as caps beside the controls. A rule
-    /// without a model names none: the mark beside its controls says so once.
-    private func caption(_ rule: Rule) -> String {
-        var parts = [rule.textOutput.title]
+    /// Its model, and what it does with the result when that is not the usual replacing ("Copy · Llama 3.2"), in one
+    /// line; the shortcut is drawn as caps beside the controls. A rule without a model names none: the mark beside its
+    /// controls says so once.
+    private func caption(_ rule: Rule) -> String? {
+        var parts: [String] = []
+        if rule.textOutput != .replace { parts.append(rule.textOutput.title) }
         if model.ruleHasModel(rule) { parts.append(model.ruleModelLabel(rule)) }
-        return parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     /// Edit rule in the answer panel opens that rule's editor here.

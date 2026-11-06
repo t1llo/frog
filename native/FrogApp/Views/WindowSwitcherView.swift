@@ -10,7 +10,7 @@ struct WindowSwitcherView: View {
         FrogPage {
             FrogPageHeader(title: "Window switcher", subtitle: "Every window, not every app. Type to search.")
             FrogSection("Switching") {
-                FrogRow("Shortcut", caption: "Hold to keep switching, add Shift to go back") {
+                FrogRow("Shortcut", caption: "Hold to keep switching; add Shift to go back.") {
                     HotkeyRecorder(hotkey: Binding(get: { plugin.settings.shortcut.hotkey }, set: { value in
                         guard let value else { return }
                         do { try plugin.setShortcut(value) } catch { model.report(error) }
