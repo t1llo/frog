@@ -41,9 +41,9 @@ struct AnswerPanelView: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 statusLine
-                // A stop without any answer has nothing to ask about, copy or save. A failure keeps the field, disabled
-                // until Retry, so the panel keeps its shape.
-                if hasAnswer || failed || model.session?.phase.isRunning == true { footer }
+                // A stop without any answer has nothing to ask about, copy or save. A failure without one offers only
+                // its fix (Retry) on the status line: a field that could not be used until then only got in the way.
+                if hasAnswer || model.session?.phase.isRunning == true { footer }
             }
             .measured(ChromeHeightKey.self)
         }
@@ -61,15 +61,16 @@ struct AnswerPanelView: View {
 
     // MARK: Parts
 
-    /// The rule and the model's name; the provider shows on hover.
+    /// The rule, and the model with its provider ("gpt-5-mini · OpenAI"), the same way in every state.
     private var header: some View {
         HStack(spacing: 4) {
             // The rule as a popup's title, the model a muted line beside it on the same baseline.
             HStack(alignment: .firstTextBaseline, spacing: FrogStyle.space6) {
                 Text(model.session?.ruleName ?? "").font(FrogType.section).foregroundStyle(FrogStyle.ink).layoutPriority(1)
                 if let session = model.session, !session.modelName.isEmpty {
-                    // A failed answer names the provider too, so the error reads against the service that gave it.
-                    Text(failed ? session.modelLabel : session.modelName).font(FrogType.small).help(session.modelLabel)
+                    // The provider too, so an answer, or an error, reads against the service that gave it.
+                    Text(session.modelLabel.isEmpty ? session.modelName : session.modelLabel).font(FrogType.small)
+                        .truncationMode(.middle).help(session.modelLabel)
                 }
             }
             Spacer(minLength: 8)
@@ -154,7 +155,7 @@ struct AnswerPanelView: View {
                     .accessibilityLabel(L10n.text("Ask a follow-up"))
                     .padding(.trailing, 4)
                 if model.session?.phase.isRunning == true {
-                    PanelIcon(symbol: "stop.fill", title: "Stop", help: "Stop (⌘.)") { model.stop() }
+                    StopButton { model.stop() }
                 }
                 // A failure without any answer has nothing to copy, so it offers no Copy at all.
                 if hasAnswer || !failed {
@@ -236,6 +237,26 @@ private struct PanelIcon: View {
         .buttonStyle(.plain).opacity(enabled || active ? 1 : 0.4)
         .onHover { hovering = $0 }
         .help(L10n.text(help ?? title)).accessibilityLabel(L10n.text(title))
+    }
+}
+
+/// Stops the answer while it runs: a round button with the stop glyph, the size of the icons beside it, filled so
+/// it reads as the one thing to press, never a bare square that looks like a record mark.
+private struct StopButton: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "stop.fill").font(.system(size: 8, weight: .bold))
+                .foregroundStyle(FrogStyle.ink)
+                .frame(width: FrogStyle.compactHeight, height: FrogStyle.compactHeight)
+                .background(Circle().fill(hovering ? FrogStyle.pressed : FrogStyle.control))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(L10n.text("Stop (⌘.)")).accessibilityLabel(L10n.text("Stop"))
     }
 }
 
