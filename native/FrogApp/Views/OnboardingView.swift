@@ -398,7 +398,7 @@ private struct OnboardingProviders: View {
                         })
                     }
                 } else {
-                    FrogRow("Looking…") { ProgressView().controlSize(.small) }
+                    FrogLoadingNote(text: "Looking for models…")
                 }
             }
             OnboardingAgents()

@@ -16,7 +16,7 @@ struct LocalToolProvidersView: View {
         VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
             FrogSection("On this Mac", accessory: {
                 HStack(spacing: 8) {
-                    if refreshing { ProgressView().controlSize(.small) }
+                    if refreshing { FrogSpinner() }
                     Button("Refresh") { Task { await refresh() } }.buttonStyle(.frog(.ghost, compact: true)).disabled(refreshing)
                 }
             }) {

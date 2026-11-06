@@ -18,10 +18,8 @@ struct ShortcutsSettingsView: View {
             FrogSection("Apps", accessory: { addApp }) {
                 if apps.isEmpty, catalog.scanned { FrogRowNote(text: "Add an app, then record its keys.") }
                 else if apps.isEmpty {
-                    HStack(spacing: FrogStyle.space8) {
-                        ProgressView().controlSize(.small)
-                        Text("Looking for apps…").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                    }.frame(maxWidth: .infinity, minHeight: FrogStyle.rowHeight, alignment: .leading)
+                    FrogLoadingNote(text: "Looking for apps…")
+                        .frame(maxWidth: .infinity, minHeight: FrogStyle.rowHeight, alignment: .leading)
                 }
                 ForEach(apps, id: \.self) { index in
                     row(index) {

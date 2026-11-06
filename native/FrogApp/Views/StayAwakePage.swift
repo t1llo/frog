@@ -109,7 +109,7 @@ private struct LidClosedSection: View {
                 FrogRow("Access") {
                     if lid.isConfiguringAccess {
                         HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
+                            FrogSpinner()
                             Text("Finish in Terminal…").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                             Button("Cancel") { lid.cancelAccessGuide() }.buttonStyle(.frog(.ghost))
                         }
@@ -149,7 +149,7 @@ struct StayAwakePopupRow: View {
                     Text("Stay awake").font(FrogType.bodyMedium)
                 }.fixedSize().accessibilityElement(children: .combine)
                 Spacer(minLength: 0)
-                if power.isBusy { ProgressView().controlSize(.mini) }
+                if power.isBusy { FrogSpinner(size: .mini) }
                 if power.isEnabled {
                     Text(power.deadline.map { "Until \($0.formatted(date: .omitted, time: .shortened))" } ?? "Until turned off")
                         .font(FrogType.caption).foregroundStyle(FrogStyle.muted)

@@ -120,7 +120,7 @@ struct CleanerRestoreView: View {
                         .font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted).lineLimit(1)
                 }
                 Spacer(minLength: 8)
-                if cleaner.puttingBack == record.id { ProgressView().controlSize(.small) }
+                if cleaner.puttingBack == record.id { FrogSpinner() }
                 Group {
                     if row.needsFinder { Button("Put Back in Finder") { openTrash() } }
                     Button("Put Back") { Task { await cleaner.putBack(record.id) } }

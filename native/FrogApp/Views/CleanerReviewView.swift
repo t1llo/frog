@@ -145,7 +145,7 @@ struct CleanerReviewView: View {
                 .font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)
         } else if review.sizes.isEmpty, review.measures(item) {
             // Sizes arrive together once the measuring finishes.
-            ProgressView().controlSize(.mini).accessibilityLabel("Measuring")
+            FrogSkeleton(width: 40, height: 14).accessibilityLabel("Measuring")
         } else {
             Text("—").font(FrogType.small).foregroundStyle(FrogStyle.muted).accessibilityLabel("Size unknown")
                 .help(review.measures(item) ? "Frog could not measure this item." : "Frog needs Full Disk Access to measure this item.")
@@ -187,11 +187,8 @@ struct CleanerScanningView: View {
     @ObservedObject var cleaner: CleanerModel
 
     var body: some View {
-        HStack(spacing: 10) {
-            ProgressView().controlSize(.small)
-            Text(cleaner.scanningApp.map { "Looking for \($0.name)'s files…" } ?? "Looking for the app's files…")
-                .font(FrogType.body).foregroundStyle(FrogStyle.muted)
-        }.frame(maxWidth: .infinity).padding(.vertical, 44).frogTableSurface()
+        FrogLoadingNote(text: cleaner.scanningApp.map { "Looking for \($0.name)'s files…" } ?? "Looking for the app's files…")
+            .frame(maxWidth: .infinity).padding(.vertical, 36).frogTableSurface()
             .cleanerStepBack(cleaner)
     }
 }

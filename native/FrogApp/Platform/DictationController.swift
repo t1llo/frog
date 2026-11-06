@@ -669,7 +669,7 @@ struct DictationPopup: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 if failed { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(FrogStyle.warning) }
-                else if controller.phase != .recording { ProgressView().controlSize(.mini) }
+                else if controller.phase != .recording { FrogSpinner(size: .mini) }
                 else {
                     Menu {
                         Button { controller.selectMicrophone(nil) } label: {

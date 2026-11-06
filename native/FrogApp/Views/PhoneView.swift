@@ -77,10 +77,7 @@ private struct PhonePairingSection: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Scan with Frog Companion").font(FrogType.section).foregroundStyle(FrogStyle.ink)
                         Text("The code works for 10 minutes.").font(FrogType.body).foregroundStyle(FrogStyle.muted)
-                        HStack(spacing: 6) {
-                            ProgressView().controlSize(.small)
-                            Text("Waiting for your phone").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                        }.padding(.top, 6)
+                        FrogLoadingNote(text: "Waiting for your phone…")
                         Button("Cancel", action: close).buttonStyle(.frog(.ghost, compact: true)).padding(.top, 6)
                     }
                     Spacer(minLength: 0)

@@ -108,7 +108,7 @@ struct ModelInventory: View {
     @ViewBuilder private func fileCheck(_ state: LocalModels.FileCheckState, item: LocalModelDescriptor) -> some View {
         switch state {
         case .checking:
-            HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Checking files…").font(FrogType.small).foregroundStyle(FrogStyle.muted) }
+            FrogLoadingNote(text: "Checking files…")
         case .finished(let check) where check.passed:
             Label(check.summary, systemImage: "checkmark.seal").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
         case .finished(let check):
@@ -157,7 +157,7 @@ struct ModelDownloadProgress: View {
     let width: CGFloat
     var body: some View {
         if preparing {
-            HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Preparing…").font(FrogType.small).foregroundStyle(FrogStyle.muted) }
+            FrogLoadingNote(text: "Preparing…")
         } else {
             ProgressView(value: fraction).frame(width: width)
         }

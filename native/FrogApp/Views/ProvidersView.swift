@@ -260,7 +260,7 @@ struct ProviderEditor: View {
                     FrogSection("Take it for a spin") {
                         SettingRow(title: "Connection test", description: "Send a short sample request using this draft configuration.") {
                             HStack {
-                                if testing { ProgressView().controlSize(.small) }
+                                if testing { FrogSpinner() }
                                 Button(testing ? "Testing…" : "Test connection") { test() }
                                     .disabled(validation != nil || testing || discovering || model.isTestingProvider)
                                 if testing { Button("Cancel") { testTask?.cancel() } }
@@ -323,7 +323,7 @@ struct ProviderEditor: View {
             if provider.kind.isLocal || provider.kind.localTool != nil {
                 HStack {
                     Button(discovering ? "Finding models…" : "Find installed models", systemImage: "arrow.clockwise") { discover() }.disabled(discovering)
-                    if discovering { ProgressView().controlSize(.small) }
+                    if discovering { FrogSpinner() }
                 }
                 if let discoveryMessage { Text(discoveryMessage).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
             }

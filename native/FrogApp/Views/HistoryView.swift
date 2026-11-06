@@ -194,7 +194,7 @@ struct HistoryView: View {
             HStack(spacing: 8) {
                 FrogBadge(text: label)
                 if model.dictation?.recoveringHistoryIDs.contains(entry.id) == true {
-                    ProgressView().controlSize(.mini)
+                    FrogSpinner(size: .mini)
                     Text("Transcribing…")
                 } else if entry.transcriptState == .failed {
                     Text("Transcription failed")

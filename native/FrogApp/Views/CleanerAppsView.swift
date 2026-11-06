@@ -16,10 +16,7 @@ struct CleanerAppsView: View {
             .onSubmit { if let row = apps.first(where: { $0.id == highlighted }) ?? apps.first { open(row) } }
             if apps.isEmpty {
                 if cleaner.loadingApps {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Finding apps…").font(FrogType.body).foregroundStyle(FrogStyle.muted)
-                    }.padding(.vertical, 12)
+                    FrogLoadingNote(text: "Finding apps…")
                 } else if !cleaner.search.trimmingCharacters(in: .whitespaces).isEmpty {
                     FrogEmptyState(symbol: "magnifyingglass", title: "No matching apps", message: "Try its bundle ID.")
                 } else {

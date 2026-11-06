@@ -337,10 +337,7 @@ struct UsageActivityChart: View {
     var body: some View {
         let settings = usage.preferences
         if !usage.loaded {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Reading token activity…").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-            }.frame(maxWidth: .infinity, minHeight: compact ? 64 : 150)
+            FrogLoadingNote(text: "Reading token activity…").frame(maxWidth: .infinity, minHeight: compact ? 64 : 150)
         } else if !chart.hasActivity {
             FrogChartPlaceholder(height: compact ? 64 : 150) {
                 VStack(spacing: 6) {
@@ -368,7 +365,7 @@ struct UsageActivityNotes: View {
         }
         if usage.loaded, usage.readingOlderActivity {
             HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
+                FrogSpinner()
                 Text("Reading older logs…")
             }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).padding(.vertical, compact ? 0 : 6)
                 .help("The newest calls are counted first; the rest of the month follows.")

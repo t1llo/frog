@@ -346,10 +346,8 @@ struct WritingTryView: View {
                     if let issue {
                         InlineIssue(message: issue).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     } else if run != nil {
-                        HStack(spacing: FrogStyle.space8) {
-                            ProgressView().controlSize(.small)
-                            Text("Running…").font(FrogType.body).foregroundStyle(FrogStyle.muted)
-                        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        FrogLoadingNote(text: "Running…")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     } else if result.isEmpty {
                         Text("The result shows here. Nothing is pasted or copied.").font(FrogType.body)
                             .foregroundStyle(FrogStyle.muted.opacity(0.7))

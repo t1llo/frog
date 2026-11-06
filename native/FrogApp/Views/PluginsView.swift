@@ -35,7 +35,7 @@ struct PluginsView: View {
         FrogPage {
             FrogPageHeader(title: "Community plugins", subtitle: "Each runs in its own sandbox, with only the access you approve.") {
                 if let host = plugins.downloading {
-                    ProgressView().controlSize(.small).help("Downloading from \(host)")
+                    FrogSpinner().help("Downloading from \(host)")
                 }
                 IconAction(title: "Install a plugin file", symbol: "square.and.arrow.down") { chooseFile() }
             }
@@ -133,7 +133,7 @@ struct PluginsView: View {
                 FrogEmptyState(symbol: "checkmark.seal", title: "The directory opens soon",
                                message: "No plugins yet. Frog only installs plugins signed by the directory.").frogTableSurface()
             } else if plugins.loadingRegistry, plugins.registry.isEmpty {
-                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 44)
+                FrogLoadingNote(text: "Loading the directory…").frame(maxWidth: .infinity).padding(.vertical, 36).frogTableSurface()
             } else if let error = plugins.registryError, plugins.registry.isEmpty {
                 FrogEmptyState(symbol: "wifi.exclamationmark", title: "The directory did not load", message: error) {
                     Button("Try again") { Task { await plugins.loadRegistry() } }
@@ -166,7 +166,7 @@ struct PluginsView: View {
             if let installed, installed.record.sha256 == entry.sha256.lowercased() || !Self.isNewer(entry, than: installed) {
                 FrogBadge(text: "Installed")
             } else if plugins.installing == entry.id {
-                ProgressView().controlSize(.small).frame(width: 60)
+                FrogSpinner().frame(width: 60)
             } else if !entry.runs(on: AppVersion.current) {
                 FrogBadge(text: "Needs Frog \(entry.frog ?? "")")
             } else {

@@ -99,8 +99,7 @@ struct AddLocalModelView: View {
             }
             HStack(spacing: FrogStyle.space8) {
                 if loading {
-                    ProgressView().controlSize(.small)
-                    Text("Reading the model's details…").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    FrogLoadingNote(text: "Reading the model's details…")
                 } else {
                     Text("Checking reads only its details.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }

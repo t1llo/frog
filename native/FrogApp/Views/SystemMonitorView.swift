@@ -111,12 +111,13 @@ struct SystemMonitorOverview: View {
     /// Memory now, or as recorded at the moment under the pointer.
     private func memory(_ sample: SystemMonitorSample?) -> some View {
         let fraction = sample != nil ? sample?.memory : snapshot.memory?.fraction
-        return VStack(alignment: .leading, spacing: 3) {
-            Text("Memory").font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
-            if let fraction {
+        let level = fraction.map { FrogStyle.level($0, warning: 0.8, critical: 0.92) }
+        // The dot is the meter's colour, so the three figures read as one legend.
+        return GraphLegend(color: level ?? FrogStyle.muted.opacity(0.5), title: "Memory") {
+            if let fraction, let level {
                 Text(percent(.value(fraction))).font(GraphStyle.legendValue(page: wide)).monospacedDigit()
                     .frame(height: wide ? 34 : 24, alignment: .leading)
-                meter(fraction, color: FrogStyle.level(fraction, warning: 0.8, critical: 0.92))
+                meter(fraction, color: level)
             } else if sample != nil {
                 Text("—").font(FrogType.small).frame(height: wide ? 34 : 24, alignment: .leading)
             } else {
@@ -147,7 +148,7 @@ struct SystemMonitorOverview: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Label("Storage", systemImage: "internaldrive").font(FrogType.label)
                 Spacer(minLength: 4)
-                MeasuringBar(width: 56, height: 8)
+                FrogSkeleton(width: 56, height: 12)
             }
             meter(0, color: FrogStyle.accent)
         }.accessibilityElement(children: .combine)
@@ -284,18 +285,9 @@ struct SystemMonitorOverview: View {
 private struct MeasuringValue: View {
     let wide: Bool
     var body: some View {
-        MeasuringBar(width: wide ? 72 : 48, height: wide ? 16 : 12)
+        FrogSkeleton(width: wide ? 72 : 48, height: wide ? 22 : 16)
             .frame(height: wide ? 34 : 24, alignment: .leading)
             .accessibilityLabel("Measuring")
-    }
-}
-
-private struct MeasuringBar: View {
-    let width: CGFloat
-    let height: CGFloat
-    var body: some View {
-        RoundedRectangle(cornerRadius: FrogStyle.smallRadius, style: .continuous).fill(FrogStyle.control)
-            .frame(width: width, height: height)
     }
 }
 
