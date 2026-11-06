@@ -698,6 +698,8 @@ struct DictationPopup: View {
                     Button { controller.retryTranscription() } label: { Label("Retry", systemImage: "arrow.clockwise") }
                         .buttonStyle(.frog(compact: true)).help("Transcribe the recording again").accessibilityLabel("Retry transcription")
                 }
+                // While recording, Stop and the Esc hint cover it; elsewhere the × is the only way out.
+                if controller.phase != .recording {
                 // An `IconAction` at the compact height, which keeps its own help text.
                 Button { controller.interrupt() } label: {
                     Image(systemName: "xmark").font(.system(size: 11, weight: .medium))
@@ -706,6 +708,7 @@ struct DictationPopup: View {
                         .frogRowHighlight(hovering: closeHovering)
                 }.buttonStyle(.plain).onHover { closeHovering = $0 }.help(failed ? "Discard recording" : "Cancel dictation · Esc")
                     .accessibilityLabel(failed ? "Discard recording" : "Cancel dictation")
+                }
             }.frame(height: 26)
             if failed {
                 Text(controller.failure).font(FrogType.small).foregroundStyle(FrogStyle.muted)
@@ -747,6 +750,7 @@ struct DictationPopup: View {
             .environment(\.locale, L10n.locale)
             .foregroundStyle(FrogStyle.ink)
             .frogPanel()
+            .accessibilityAction(named: Text("Cancel dictation")) { controller.interrupt() }
     }
 }
 
