@@ -15,6 +15,17 @@ enum LegalDocument: String, Identifiable, CaseIterable {
     /// Nil outside a packaged app, such as under `swift run`, Xcode and tests.
     func url(in bundle: Bundle = .main) -> URL? { bundle.url(forResource: rawValue, withExtension: "txt") }
     func text(in bundle: Bundle = .main) -> String? { url(in: bundle).flatMap { try? String(contentsOf: $0, encoding: .utf8) } }
+
+    /// The text's paragraphs, set apart by blank lines, each hard-wrapped one joined into one line. A paragraph with
+    /// indented or listed lines keeps its line breaks.
+    static func paragraphs(_ text: String) -> [String] {
+        text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n\n").compactMap { block in
+            let lines = block.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+            guard !lines.isEmpty else { return nil }
+            let kept = lines.dropFirst().contains { $0.hasPrefix(" ") || $0.hasPrefix("\t") || $0.hasPrefix("-") || $0.hasPrefix("*") }
+            return kept ? lines.joined(separator: "\n") : lines.map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: " ")
+        }
+    }
 }
 
 struct LegalDocumentView: View {
@@ -36,12 +47,18 @@ struct LegalDocumentView: View {
             FrogPageHeader(title: document.title, subtitle: document.summary).environment(\.frogToolbarTitle, false)
             Group {
                 if short {
-                    // A short text such as the licence: the sheet is as tall as the text, with no empty card under it.
+                    // A short text such as the licence reads as prose: its hard-wrapped lines joined into paragraphs in
+                    // the body font, and the sheet as tall as the text, with no empty card under it.
                     ScrollView {
-                        Text(text).font(FrogType.mono).foregroundStyle(FrogStyle.ink).textSelection(.enabled)
-                            .lineSpacing(2).frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, FrogStyle.cardPadding).padding(.vertical, FrogStyle.space12)
-                    }.frame(maxHeight: 400).fixedSize(horizontal: false, vertical: true)
+                        VStack(alignment: .leading, spacing: FrogStyle.space10) {
+                            ForEach(Array(LegalDocument.paragraphs(text).enumerated()), id: \.offset) { _, paragraph in
+                                Text(paragraph).font(FrogType.body).foregroundStyle(FrogStyle.ink).lineSpacing(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, FrogStyle.cardPadding).padding(.vertical, FrogStyle.space16)
+                    }.frame(maxHeight: 420).fixedSize(horizontal: false, vertical: true)
                 } else {
                     ReadOnlyText(text: text).frame(height: 360)
                 }

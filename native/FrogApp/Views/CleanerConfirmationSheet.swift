@@ -9,10 +9,15 @@ struct CleanerConfirmationSheet: View {
     @ObservedObject var cleaner: CleanerModel
     let roots: CleanerRoots
 
-    /// The app first, then the rest by path.
+    /// In the review's order: the app, then sure, likely and possible matches, shared and suggested items, each group
+    /// in the order the review lists it.
     private var removals: [PlannedRemoval] {
-        let removals = pending.plan.removals
-        return removals.filter { $0.item.kind == .application } + removals.filter { $0.item.kind != .application }
+        let order = CleanerGroupKind.allCases
+        func rank(_ removal: PlannedRemoval) -> Int {
+            CleanerGroupKind.of(removal.item, showPossible: true).flatMap { order.firstIndex(of: $0) } ?? order.count
+        }
+        return pending.plan.removals.enumerated()
+            .sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
     }
 
     private var removing: (done: Int, total: Int)? {
@@ -97,7 +102,7 @@ struct CleanerConfirmationSheet: View {
             else if removal.route == .finder { FrogBadge(text: "Moved by Finder").help("Finder moves this item to the Trash, so it can ask for permission") }
             Spacer(minLength: 8)
             Text(size(of: item)).font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)
-        }.padding(.horizontal, FrogStyle.rowPadding - 2).frame(minHeight: 30)
+        }.padding(.horizontal, FrogStyle.rowPadding).frame(minHeight: 30)
     }
 
     /// The app's own icon. An app without one (or a bundle that is gone) gets an app symbol like the other rows'

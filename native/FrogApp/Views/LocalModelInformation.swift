@@ -8,12 +8,12 @@ struct LocalModelInformation: View {
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.space16) {
             // A sheet is its own window, so its header keeps the title.
-            FrogPageHeader(title: item.name, subtitle: "\(item.kind == .audio ? "Speech" : "Text") model · runs on this Mac after download")
+            FrogPageHeader(title: item.name, subtitle: item.kind == .audio ? "A speech model that runs on this Mac once downloaded." : "A text model that runs on this Mac once downloaded.")
                 .environment(\.frogToolbarTitle, false)
             FrogSection {
                 fact("Languages", item.languages)
                 fact("Runtime", item.runtimeName)
-                fact("Download", item.downloadSize, note: "Memory use while running can be higher.")
+                fact("Download", item.downloadSize, caption: "Memory use while running can be higher.")
                 fact("Source", item.repository)
                 if let variant = item.variant { fact("Variant", variant) }
                 if let original = item.originalRepository { fact("Based on", original) }
@@ -35,14 +35,12 @@ struct LocalModelInformation: View {
             .buttonStyle(.frog()).environment(\.locale, L10n.locale)
     }
 
-    /// One fact: a dim label on the left, the value on the right.
-    private func fact(_ label: String, _ value: String, note: String? = nil) -> some View {
-        FrogRow(label) {
-            VStack(alignment: .trailing, spacing: FrogStyle.space2) {
-                Text(value).font(FrogType.body).foregroundStyle(FrogStyle.ink).textSelection(.enabled)
-                    .lineLimit(1).truncationMode(.middle).help(value)
-                if let note { Text(L10n.text(note)).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
-            }.frame(maxWidth: 300, alignment: .trailing)
+    /// One fact: the label on the left, with a caption under it when the value needs one, the value on the right.
+    private func fact(_ label: String, _ value: String, caption: String? = nil) -> some View {
+        FrogRow(label, caption: caption) {
+            Text(value).font(FrogType.body).foregroundStyle(FrogStyle.ink).textSelection(.enabled)
+                .lineLimit(1).truncationMode(.middle).help(value)
+                .frame(maxWidth: 300, alignment: .trailing)
         }
     }
 }

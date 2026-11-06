@@ -26,7 +26,7 @@ struct CommandBarSetupView: View {
                 Button(assigned ? "Try again" : "Use ⌘Space") {
                     do { try model.useCommandBarShortcut(shortcut); issue = nil }
                     catch { issue = error.localizedDescription }
-                }.buttonStyle(.frog(assigned ? .secondary : .primary))
+                }.buttonStyle(.frog())
             }
             if let error = issue ?? plugin?.shortcutIssue { FrogRowNote(text: error, tone: FrogStyle.warning) }
         }
