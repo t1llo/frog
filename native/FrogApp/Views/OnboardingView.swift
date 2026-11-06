@@ -405,7 +405,7 @@ private struct OnboardingModels: View {
         let points: [(symbol: String, tint: PluginTint, title: String, caption: String)] = [
             ("lock.fill", .green, "Private", "Your text and voice stay on this Mac"),
             ("wifi.slash", .blue, "Offline", "Works without an internet connection"),
-            ("gift.fill", .orange, "Free", "No API key, account or usage limits"),
+            (symbol: "gift.fill", tint: .orange, title: "Free", caption: "No API key, account or usage limits"),
         ]
         return VStack(alignment: .leading, spacing: FrogStyle.space8) {
             FrogSectionHeader("Why on your Mac")
