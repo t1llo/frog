@@ -26,6 +26,14 @@ struct MainView: View {
     @State private var history = PageHistory()
     /// A step back inside the open page, which Back takes first.
     @State private var pageBack: FrogPageBack?
+    /// Where the sidebar list's rows sit, so its scroll rests on row edges.
+    @State private var sidebarGrid = SidebarRowGrid()
+    /// The sidebar's list is too long for the window, so Models, Features and Settings scroll with it.
+    @State private var sidebarOverflows = false
+    /// Space under the sidebar list's last row that lets it scroll to its end on a row edge.
+    @State private var sidebarEndSpace: CGFloat = 0
+    /// Heights the sidebar's layout depends on: the list's rows, the pinned rows, and the space below the search.
+    @State private var sidebarHeights = SidebarHeights()
     /// Draws this in place of the open route's page, for pictures of a step or tab inside a page (a History entry,
     /// a Models tab) in the whole window. The sidebar still shows the route.
     var pageOverride: AnyView? = nil
@@ -128,16 +136,38 @@ struct MainView: View {
         }
     }
 
-    /// Scrolls the sidebar by the least amount that shows the open page's row; a row already in view stays put.
-    /// Statistics shows Settings, the row it belongs to.
+    /// Scrolls the sidebar by the least amount that shows the open page's row whole, and then on to the next row
+    /// edge, so the top row is whole too; a row already in view stays put. Statistics shows Settings, the row it
+    /// belongs to.
     ///
     /// It waits for the next turn of the run loop: asked while the list is still being laid out (the window opening
     /// on a page), `scrollTo` did nothing, and the open row stayed below the fold with only the top of its
     /// highlight peeking out above the pinned rows, a selection pill with no row.
     private func reveal(_ route: ToolkitRoute, in proxy: ScrollViewProxy) {
-        let target = route == .statistics ? ToolkitRoute.settings : route
-        DispatchQueue.main.async { proxy.scrollTo(target) }
+        let target = AnyHashable(route == .statistics ? ToolkitRoute.settings : route)
+        DispatchQueue.main.async {
+            if let top = sidebarGrid.revealTarget(target) { proxy.scrollTo(top, anchor: .top) }
+        }
     }
+
+    /// Lays the sidebar out for the window's height: Models, Features and Settings pinned under the list while
+    /// everything fits, scrolling at the list's end once it does not, so neither edge of the list ever cuts a row
+    /// next to the search field or the pinned rows. Then the space after the last row that ends the scroll on a row
+    /// edge.
+    private func layOutSidebar() {
+        let heights = sidebarHeights
+        guard heights.region > 0 else { return }
+        let gap = FrogStyle.sidebarGroupGap
+        let overflows = gap + heights.list + gap + heights.pinned > heights.region + 0.5
+        if overflows != sidebarOverflows { sidebarOverflows = overflows }
+        let scrollable = overflows ? heights.content + sidebarBottomFade - heights.viewport : 0
+        let end = sidebarGrid.endSpace(scrollable: scrollable)
+        if abs(end - sidebarEndSpace) > 0.5 { sidebarEndSpace = end }
+    }
+
+    /// The fade at the list's bottom edge: the group gap above pinned rows, so at rest it covers only empty space,
+    /// and taller over the panel's edge once the list scrolls there, so the cut row reads as more to come.
+    private var sidebarBottomFade: CGFloat { sidebarOverflows ? 24 : FrogStyle.sidebarGroupGap }
 
     // MARK: Toolbar
 
@@ -237,8 +267,9 @@ struct MainView: View {
     /// set apart by space alone, one `sidebarGroupGap` everywhere: under the search field, under Frog's row,
     /// between groups and above the pinned rows.
     ///
-    /// At the window's default size (`MainView.defaultSize`) every row fits, so nothing scrolls and no row is cut.
-    /// Only a smaller window scrolls the list, and then its edges fade under the search field and the pinned rows.
+    /// At the window's default size (`MainView.defaultSize`) the built-in rows fit, so nothing scrolls. When they do
+    /// not, the pinned rows join the list's end, the list rests only on row edges and fades over the panel's bottom
+    /// edge, so no row is ever cut under the search field or above the pinned rows (`layOutSidebar`).
     private var sidebar: some View {
         let gap = FrogStyle.sidebarGroupGap
         return VStack(alignment: .leading, spacing: 0) {
@@ -252,70 +283,112 @@ struct MainView: View {
             .frame(height: 36).frame(maxWidth: .infinity)
             .background { WindowDragRegion().accessibilityHidden(true) }
             .padding(.bottom, FrogStyle.space8)
-            // The list's top fade is the gap under the field, so a row scrolled up under it fades away.
             SearchBox(placeholder: "Search", text: $sidebarQuery)
                 .padding(.horizontal, FrogStyle.sidebarRowInset)
 
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: gap) {
-                        settingsRow
-                        let groups = model.pluginHost.sidebar
-                        let numbered = groups.flatMap(\.plugins).prefix(9).map(\.id)
-                        ForEach(groups, id: \.category) { group in
-                            let plugins = group.plugins.filter { matches($0.name) }
-                            if !plugins.isEmpty {
-                                VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                                    ForEach(plugins) { plugin in
-                                        let route = Self.route(for: plugin.id)
-                                        let index = numbered.firstIndex(of: plugin.id)
-                                        navigationButton(NavigationItem(id: route, title: plugin.name, symbol: plugin.symbol, tint: plugin.tint.color,
-                                                                        key: index.map { KeyEquivalent(Character(String($0 + 1))) }))
-                                            .id(route)
-                                    }
-                                }
-                                .accessibilityElement(children: .contain).accessibilityLabel(L10n.text(group.category.title))
-                            }
-                        }
-                        let pages = model.pluginPages.filter { matches($0.name) }
-                        if !pages.isEmpty {
-                            VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                                ForEach(pages) { item in
-                                    navigationButton(NavigationItem(id: .plugin(item.id), title: item.name, symbol: PluginSymbol.name(item.symbol), tint: PluginTint.purple.color))
-                                        .id(ToolkitRoute.plugin(item.id))
-                                }
-                            }
-                            .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Community"))
-                        }
-                        if !sidebarQuery.isEmpty && !anyMatch {
-                            Text(L10n.text("No matches")).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                                .padding(.horizontal, FrogStyle.space6)
-                        }
-                    }.padding(.horizontal, FrogStyle.sidebarRowInset).minimalScrollbars()
-                }
-                // Both fades are the group gap, so at rest they cover only empty space and the list ends one gap
-                // above Models; scrolled, a row fades out there instead of being cut.
-                .topScrollFade(height: gap).bottomScrollFade(height: gap)
-                // Reveals a feature opened from elsewhere, such as the command bar, by the least scrolling;
-                // a row already in view stays where it is. A window that opens on a page shows its row too.
-                .onAppear { reveal(section, in: proxy) }
-                .onChange(of: section) { _, route in reveal(route, in: proxy) }
-            }
-            // Models, Features and Settings stay pinned under the list, so the open one is always in view and
-            // Settings is always one click away, however long the plugin list grows.
+            // The list starts one group gap under the field. Its scroll rests only on a row's top edge, so a row
+            // never shows cut in half under the field; while it moves, rows pass under a crisp edge, as in a Mac
+            // sidebar.
             let workspace = workspaceNavigation.filter { matches($0.title) || ($0.id == .features && offFeatureMatches) }
-            if !workspace.isEmpty {
-                VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                    ForEach(workspace) { navigationButton($0) }
+            VStack(spacing: 0) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: gap) {
+                            sidebarList
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sidebarHeights.list = $0; layOutSidebar() }
+                            if sidebarOverflows && !workspace.isEmpty { workspaceGroup(workspace, scrolls: true) }
+                        }
+                        .padding(.horizontal, FrogStyle.sidebarRowInset)
+                        .coordinateSpace(name: SidebarRowGrid.content)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SidebarRowGrid.viewport)) } action: { frame in
+                            sidebarGrid.offset = -frame.minY
+                            if abs(frame.height - sidebarHeights.content) > 0.5 { sidebarHeights.content = frame.height; layOutSidebar() }
+                        }
+                        .padding(.bottom, sidebarEndSpace)
+                        .minimalScrollbars()
+                    }
+                    .coordinateSpace(name: SidebarRowGrid.viewport)
+                    .scrollTargetBehavior(SidebarRowSnap(grid: sidebarGrid))
+                    .bottomScrollFade(height: sidebarBottomFade)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                        sidebarGrid.viewportHeight = height
+                        sidebarHeights.viewport = height
+                        layOutSidebar()
+                    }
+                    // Reveals a feature opened from elsewhere, such as the command bar, by the least scrolling;
+                    // a row already in view stays where it is. A window that opens on a page shows its row too.
+                    .onAppear { reveal(section, in: proxy) }
+                    .onChange(of: section) { _, route in reveal(route, in: proxy) }
                 }
-                .padding(.horizontal, FrogStyle.sidebarRowInset).padding(.bottom, FrogStyle.sidebarRowInset)
-                .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Frog"))
+                .padding(.top, gap)
+                // Models, Features and Settings stay pinned under the list while it fits, so the open one is always
+                // in view and Settings one click away. In a window too short for every row they scroll at the list's
+                // end instead, as Finder's and Mail's sidebars scroll as one list.
+                if !sidebarOverflows && !workspace.isEmpty {
+                    workspaceGroup(workspace, scrolls: false).padding(.horizontal, FrogStyle.sidebarRowInset)
+                }
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sidebarHeights.region = $0; layOutSidebar() }
+            .onChange(of: sidebarOverflows) { sidebarGrid.bottomFade = sidebarBottomFade }
+            .onAppear { sidebarGrid.bottomFade = sidebarBottomFade }
         }
         .background(FrogStyle.sidebar, in: RoundedRectangle(cornerRadius: FrogStyle.sidebarRadius, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: FrogStyle.sidebarRadius, style: .continuous))
         // Rex outlines its panes with a faint light edge.
         .overlay { RoundedRectangle(cornerRadius: FrogStyle.sidebarRadius, style: .continuous).strokeBorder(FrogStyle.hairline) }
+    }
+
+    /// Frog's row, the plugin groups and the Community pages: the part of the sidebar that always scrolls.
+    private var sidebarList: some View {
+        VStack(alignment: .leading, spacing: FrogStyle.sidebarGroupGap) {
+            settingsRow.sidebarGridRow(AnyHashable("frog"), in: sidebarGrid)
+            let groups = model.pluginHost.sidebar
+            let numbered = groups.flatMap(\.plugins).prefix(9).map(\.id)
+            ForEach(groups, id: \.category) { group in
+                let plugins = group.plugins.filter { matches($0.name) }
+                if !plugins.isEmpty {
+                    VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                        ForEach(plugins) { plugin in
+                            let route = Self.route(for: plugin.id)
+                            let index = numbered.firstIndex(of: plugin.id)
+                            navigationButton(NavigationItem(id: route, title: plugin.name, symbol: plugin.symbol, tint: plugin.tint.color,
+                                                            key: index.map { KeyEquivalent(Character(String($0 + 1))) }))
+                                .id(route).sidebarGridRow(AnyHashable(route), in: sidebarGrid)
+                        }
+                    }
+                    .accessibilityElement(children: .contain).accessibilityLabel(L10n.text(group.category.title))
+                }
+            }
+            let pages = model.pluginPages.filter { matches($0.name) }
+            if !pages.isEmpty {
+                VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                    ForEach(pages) { item in
+                        let route = ToolkitRoute.plugin(item.id)
+                        navigationButton(NavigationItem(id: route, title: item.name, symbol: PluginSymbol.name(item.symbol), tint: PluginTint.purple.color))
+                            .id(route).sidebarGridRow(AnyHashable(route), in: sidebarGrid)
+                    }
+                }
+                .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Community"))
+            }
+            if !sidebarQuery.isEmpty && !anyMatch {
+                Text(L10n.text("No matches")).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    .padding(.horizontal, FrogStyle.space6)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Models, Features and Settings, under the list: pinned while everything fits, at the list's end when not.
+    private func workspaceGroup(_ items: [NavigationItem], scrolls: Bool) -> some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space2) {
+            ForEach(items) { item in
+                if scrolls { navigationButton(item).id(item.id).sidebarGridRow(AnyHashable(item.id), in: sidebarGrid) }
+                else { navigationButton(item) }
+            }
+        }
+        .padding(.bottom, FrogStyle.sidebarRowInset)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sidebarHeights.pinned = $0; layOutSidebar() }
+        .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Frog"))
     }
 
     private func matches(_ title: String) -> Bool {
@@ -353,6 +426,19 @@ struct MainView: View {
         SidebarRow(item: item, selected: section == item.id || (item.id == .settings && section == .statistics)) { model.toolkit.select(item.id) }
             .optionalNavigationShortcut(item.key)
     }
+}
+
+/// The heights the sidebar's layout is worked out from (`MainView.layOutSidebar`).
+struct SidebarHeights: Equatable {
+    /// Frog's row, the groups and Community pages.
+    var list: CGFloat = 0
+    /// Models, Features and Settings with the space under them.
+    var pinned: CGFloat = 0
+    /// Everything under the search field.
+    var region: CGFloat = 0
+    /// The scroll view and its content.
+    var viewport: CGFloat = 0
+    var content: CGFloat = 0
 }
 
 /// Pages visited before and after the open one. Choosing a page clears forward, as in a browser.

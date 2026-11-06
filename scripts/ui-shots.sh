@@ -2,6 +2,7 @@
 # Pictures of every surface of Frog in light and dark, for a design review: `<surface>-<light|dark>.png` in the folder.
 # Drawn without windows from isolated sample data (UIShotsTests); never touches this Mac's Frog data or settings.
 #   scripts/ui-shots.sh <output-folder> [surface,prefix-,…]
+# FROG_UI_SHOTS_SIZE=800x520 draws the window's pages at that size instead of the default window size.
 set -euo pipefail
 if [[ $# -lt 1 ]]; then
     echo "usage: $0 <output-folder> [surface,prefix-,…]" >&2

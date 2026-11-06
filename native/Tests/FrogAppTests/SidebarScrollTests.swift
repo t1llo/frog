@@ -5,10 +5,11 @@ import FrogCore
 import FrogUsage
 @testable import FrogApp
 
-/// The sidebar's feature list in a short window, where it has to scroll.
+/// The sidebar's feature list in a short window, where it has to scroll: it rests only on a row's top edge, so no
+/// row shows cut in half under the search field, and Models, Features and Settings scroll at its end.
 @MainActor
 final class SidebarScrollTests: XCTestCase {
-    func testChoosingAFeatureInViewLeavesTheListWhereItIsAndOneOutOfViewScrollsJustEnough() async throws {
+    func testChoosingAFeatureInViewLeavesTheListWhereItIsAndOneOutOfViewScrollsToTheNextWholeRow() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let model = try makeModel(root)
@@ -40,17 +41,21 @@ final class SidebarScrollTests: XCTestCase {
             window.sendEvent(try XCTUnwrap(NSEvent(cgEvent: event)))
             try await Task.sleep(for: .milliseconds(150))
         }
-        XCTAssertEqual(y(), 90, "The scroll wheel scrolls the list")
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertGreaterThan(y(), 0, "The scroll wheel scrolls the list")
+        try await assertNoRowCutAtTheTop(of: scroll, in: window.contentView!)
+        let scrolled = y()
         // App cleaner is below the visible rows, with or without the Finish setup button under the list:
         // the list scrolls until the row shows clear of the bottom fade, not until it is centred.
         let host = try XCTUnwrap(window.contentView)
         var clearance = try await self.clearance("App cleaner", in: scroll, of: host)
         XCTAssertLessThan(clearance, 0, "App cleaner starts below the visible rows")
         try await choose(.cleaner)
-        XCTAssertGreaterThan(y(), 90)
+        XCTAssertGreaterThan(y(), scrolled)
         clearance = try await self.clearance("App cleaner", in: scroll, of: host)
         XCTAssertGreaterThanOrEqual(clearance, fade - 1, "The chosen row shows clear of the bottom fade")
-        XCTAssertLessThan(clearance, fade + 12, "The list scrolls just enough, not until the row is centred")
+        XCTAssertLessThan(clearance, fade + 40, "The list scrolls to the next row edge, not until the row is centred")
+        try await assertNoRowCutAtTheTop(of: scroll, in: host)
         let revealed = y()
         try await choose(.cleaner)
         XCTAssertEqual(y(), revealed, "Choosing the row again does not move the list")
@@ -73,10 +78,63 @@ final class SidebarScrollTests: XCTestCase {
         XCTAssertGreaterThan(scroll.contentView.bounds.origin.y, 0, "The list scrolled to the row")
         let clearance = try await self.clearance("App cleaner", in: scroll, of: host)
         XCTAssertGreaterThanOrEqual(clearance, fade - 1, "The row shows clear of the bottom fade")
+        try await assertNoRowCutAtTheTop(of: scroll, in: host)
     }
 
-    /// The height of the fade at the bottom of the list (`bottomScrollFade`).
-    private let fade: CGFloat = 20
+    /// In the short window Settings scrolls at the end of the list, and scrolled to the end the top row is whole too.
+    func testTheEndOfAShortListShowsSettingsAndWholeRows() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = try makeModel(root)
+        defer { model.shutdown() }
+        model.toolkit.select(.settings)
+        let window = NSWindow(contentRect: NSRect(x: 80, y: 80, width: 900, height: 520), styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        defer { window.orderOut(nil); window.contentView = nil }
+        let host = NSHostingView(rootView: MainView().environmentObject(model))
+        window.contentView = host
+        window.orderFrontRegardless()
+        try await Task.sleep(for: .milliseconds(800))
+        let scroll = try XCTUnwrap(descendants(host).compactMap { $0 as? NSScrollView }.first { $0.frame.width < 260 })
+        let settings = try AccessibleControls.frame(of: try await AccessibleControls.require("Settings", role: .button, in: host), in: scroll)
+        XCTAssertTrue(scroll.bounds.contains(settings), "Settings is in the scrolling list, in view")
+        try await assertNoRowCutAtTheTop(of: scroll, in: host)
+    }
+
+    /// In a tall window everything fits: nothing scrolls, and Settings is pinned under the list.
+    func testATallWindowPinsSettingsUnderAListThatFits() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = try makeModel(root)
+        defer { model.shutdown() }
+        let height = min(1_200, (NSScreen.screens.first?.visibleFrame.height ?? 900) - 40)
+        let window = NSWindow(contentRect: NSRect(x: 80, y: 20, width: 900, height: height), styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        defer { window.orderOut(nil); window.contentView = nil }
+        let host = NSHostingView(rootView: MainView().environmentObject(model))
+        window.contentView = host
+        window.orderFrontRegardless()
+        try await Task.sleep(for: .milliseconds(800))
+        let scroll = try XCTUnwrap(descendants(host).compactMap { $0 as? NSScrollView }.first { $0.frame.width < 260 })
+        let rows = try XCTUnwrap(scroll.documentView).frame.height
+        try XCTSkipIf(rows > height - 200, "The screen is too short for every row to fit")
+        XCTAssertLessThanOrEqual(rows, scroll.contentView.bounds.height + 0.5, "The list fits")
+        let settings = try AccessibleControls.frame(of: try await AccessibleControls.require("Settings", role: .button, in: host), in: scroll)
+        XCTAssertFalse(scroll.bounds.intersects(settings), "Settings is pinned under the list")
+    }
+
+    /// The height of the fade at the bottom of the list (`bottomScrollFade`) once it scrolls over the panel's edge.
+    private let fade: CGFloat = 24
+
+    /// No button in the list is cut by its top edge: the list rests on a row edge.
+    private func assertNoRowCutAtTheTop(of scroll: NSScrollView, in host: NSView, file: StaticString = #filePath, line: UInt = #line) async throws {
+        _ = try await AccessibleControls.element("Settings", role: .button, in: host)
+        let top = scroll.isFlipped ? scroll.bounds.minY : scroll.bounds.maxY
+        for element in AccessibleControls.elements(in: host) where element.role == NSAccessibility.Role.button.rawValue {
+            let frame = try AccessibleControls.frame(of: element, in: scroll)
+            guard frame.width > 0, frame.minX < scroll.bounds.maxX, frame.maxX > scroll.bounds.minX else { continue }
+            let cut = scroll.isFlipped ? frame.minY < top - 0.5 && frame.maxY > top + 0.5 : frame.maxY > top + 0.5 && frame.minY < top - 0.5
+            XCTAssertFalse(cut, "\(element.label ?? element.title ?? "A row") is cut by the list's top edge", file: file, line: line)
+        }
+    }
 
     /// How far a row sits above the bottom edge of the list; negative while it is below it.
     private func clearance(_ row: String, in scroll: NSScrollView, of host: NSView) async throws -> CGFloat {

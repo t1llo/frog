@@ -385,9 +385,16 @@ final class UIShotsTests: XCTestCase {
         return only.contains { name == $0 || name.hasPrefix($0) }
     }
 
-    /// A page of the window, on the window's canvas, at the size the window opens at (`MainView.defaultSize`) or
-    /// `width` for a page column.
-    private func page<Content: View>(_ name: String, width: CGFloat = MainView.defaultSize.width, height: CGFloat = MainView.defaultSize.height, settle: Duration = .milliseconds(400),
+    /// The window size the pages are drawn at: the size the window opens at (`MainView.defaultSize`), or
+    /// `FROG_UI_SHOTS_SIZE` ("800x520") to picture a smaller window.
+    private nonisolated static let windowSize: CGSize = {
+        let parts = ProcessInfo.processInfo.environment["FROG_UI_SHOTS_SIZE"]?.split(separator: "x").compactMap { Double($0) }
+        guard let parts, parts.count == 2 else { return MainView.defaultSize }
+        return CGSize(width: parts[0], height: parts[1])
+    }()
+
+    /// A page of the window, on the window's canvas, at `windowSize` or `width` for a page column.
+    private func page<Content: View>(_ name: String, width: CGFloat = windowSize.width, height: CGFloat = windowSize.height, settle: Duration = .milliseconds(400),
                                      _ view: () -> Content) async throws {
         guard wanted(name) else { return }
         for (appearance, mode) in Self.appearances {
