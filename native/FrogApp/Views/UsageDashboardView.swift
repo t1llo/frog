@@ -10,7 +10,7 @@ struct UsageDashboardView: View {
     var body: some View {
         let provider = usage.preferences.provider
         FrogPage {
-            FrogPageHeader(title: "LLM usage", subtitle: "Plan limits and token use of your coding tools.") {
+            FrogPageHeader(title: "LLM usage", subtitle: "Plan limits and token use of your coding tools") {
                 FrogDropdown(selected: provider, options: usage.providers, width: 120, title: { $0 }) { usage.selectProvider($0) }
                     .accessibilityLabel("Provider")
                 UsageRefreshAction(usage: usage)

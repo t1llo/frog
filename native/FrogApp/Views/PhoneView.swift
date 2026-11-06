@@ -14,7 +14,7 @@ struct PhonePage: View {
 
     var body: some View {
         FrogPage {
-            FrogPageHeader(title: "Phone", subtitle: "Clipboard and files, shared with Frog Companion on Android.") {
+            FrogPageHeader(title: "Phone", subtitle: "Clipboard and files, shared with Frog Companion on Android") {
                 if phone.pairing == nil, !phone.phones.isEmpty {
                     Button("Pair a phone", action: pair).buttonStyle(.frog())
                 }

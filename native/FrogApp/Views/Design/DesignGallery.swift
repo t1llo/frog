@@ -28,7 +28,7 @@ struct DesignGallery: View {
 
     var body: some View {
         FrogPage(width: FrogStyle.wideWidth) {
-            FrogPageHeader(title: "Design gallery", subtitle: "Every Frog component, with sample values.") {
+            FrogPageHeader(title: "Design gallery", subtitle: "Every Frog component, with sample values") {
                 FrogAddButton("Add rule") {}
             }
             HStack(alignment: .top, spacing: FrogStyle.sectionSpacing) {
@@ -41,7 +41,7 @@ struct DesignGallery: View {
                             Button("New note") {}.buttonStyle(.frog(.primary))
                         }
                     }
-                    FrogSection("Sheet buttons", footer: "Delete alone on the left; Cancel next to the primary on the right.") {
+                    FrogSection("Sheet buttons", footer: "Delete alone on the left; Cancel next to the primary on the right") {
                         FrogSheetButtons {
                             Button("Delete", systemImage: "trash", role: .destructive) {}.buttonStyle(.frog(.destructive))
                         } trailing: {
@@ -65,11 +65,11 @@ struct DesignGallery: View {
     }
 
     private var choices: some View {
-        FrogSection("Choices", footer: "One dropdown for every choice; segments for two to four.") {
+        FrogSection("Choices", footer: "One dropdown for every choice; segments for two to four") {
             FrogRow("Theme") {
                 FrogDropdown(selection: $theme, options: Self.themes, title: { $0 })
             }
-            FrogRow("Speech model", caption: "Searchable, in sections.") {
+            FrogRow("Speech model", caption: "Searchable, in sections") {
                 FrogDropdown(selection: $model, sections: Self.modelSections, searchPrompt: "Find a model",
                              placeholder: "Choose a model", item: Self.modelItem)
             }
@@ -154,7 +154,7 @@ struct DesignGallery: View {
     }
 
     private var tiles: some View {
-        FrogSection("Plugin icons", footer: "20 in the sidebar, 28 in lists, 40 in headers.") {
+        FrogSection("Plugin icons", footer: "20 in the sidebar, 28 in lists, 40 in headers") {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     ForEach(Self.tints, id: \.0) { PluginIconTile(symbol: $0.0, tint: $0.1, size: .sidebar) }

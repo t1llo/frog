@@ -7,7 +7,7 @@ struct CommandBarSettingsView: View {
 
     var body: some View {
         FrogPage {
-            FrogPageHeader(title: "Command bar", subtitle: "Apps, files, settings and actions as you type.") {
+            FrogPageHeader(title: "Command bar", subtitle: "Apps, files, settings and actions as you type") {
                 Button("Open") { plugin.show() }.buttonStyle(.frog())
             }
             FrogSection("Shortcut") {

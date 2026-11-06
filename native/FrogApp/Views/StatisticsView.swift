@@ -20,9 +20,9 @@ struct StatisticsView: View {
     var body: some View {
         FrogPage {
             // The toolbar's Back (⌘[) returns to Settings, which opens this page (MainView offers the step).
-            FrogPageHeader(title: "Statistics", subtitle: "What you did with Frog, counted on this Mac.")
+            FrogPageHeader(title: "Statistics", subtitle: "What you did with Frog, counted on this Mac")
             FrogSection("Local statistics") {
-                FrogRow("Record statistics", caption: "Counts only, kept on this Mac.") {
+                FrogRow("Record statistics", caption: "Counts only, kept on this Mac") {
                     Toggle("Record statistics", isOn: Binding(get: { statistics.snapshot.recordingEnabled }, set: statistics.setRecordingEnabled))
                         .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).disabled(!statistics.loaded)
                 }

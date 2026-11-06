@@ -211,7 +211,7 @@ struct AppearanceSettingsView: View {
             value.lightPalette = nil; value.darkPalette = nil
             draft.set(value)
         }.padding(.vertical, FrogStyle.space10)
-        FrogRow("Custom palette", caption: "palette.light.* and palette.dark.* in the configuration file.") {
+        FrogRow("Custom palette", caption: "palette.light.* and palette.dark.* in the configuration file") {
             Button("Open config") { model.openConfiguration() }
         }
     }
@@ -226,7 +226,7 @@ struct AppearanceSettingsView: View {
 
     /// One setting: how much of the desktop shows through. It applies to the window and every popup alike.
     @ViewBuilder private var glass: some View {
-        amountRow("Transparency", detail: "The window, menus and panels.", value: appearance.transparency) { value, amount in
+        amountRow("Transparency", detail: "The window, menus and panels", value: appearance.transparency) { value, amount in
             Self.setGlass(max(0.05, amount), in: &value)
         }
         if reduceTransparency || contrast == .increased {

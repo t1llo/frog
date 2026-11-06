@@ -47,7 +47,7 @@ struct LocalToolProvidersView: View {
                                  searchPrompt: models.count > 8 ? "Find a model" : nil, placeholder: "Other model",
                                  title: { id in id.isEmpty ? "\(selected.title)'s default" : models.first { $0.id == id }?.name ?? id })
                 }
-                FrogRow("Model ID", caption: "For a model that is not in the list.") {
+                FrogRow("Model ID", caption: "For a model that is not in the list") {
                     FrogTextField(placeholder: "Model ID", text: $model)
                         .textFieldStyle(.plain).font(FrogType.body).padding(.horizontal, FrogStyle.space10).frame(width: 220).frogControlSurface()
                         .accessibilityLabel("\(selected.title) model ID")

@@ -8,7 +8,7 @@ struct LocalModelInformation: View {
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.space16) {
             // A sheet is its own window, so its header keeps the title.
-            FrogPageHeader(title: item.name, subtitle: item.kind == .audio ? "A speech model that runs on this Mac once downloaded." : "A text model that runs on this Mac once downloaded.")
+            FrogPageHeader(title: item.name, subtitle: item.kind == .audio ? "A speech model that runs on this Mac once downloaded" : "A text model that runs on this Mac once downloaded")
                 .environment(\.frogToolbarTitle, false)
             FrogSection {
                 fact("Languages", item.languages)
@@ -65,7 +65,7 @@ struct AddLocalModelView: View {
     var body: some View {
         let empty = source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         VStack(alignment: .leading, spacing: FrogStyle.space16) {
-            FrogPageHeader(title: "Add Hugging Face model", subtitle: "MLX text, WhisperKit speech, or supported Parakeet sources.")
+            FrogPageHeader(title: "Add Hugging Face model", subtitle: "MLX text, WhisperKit speech, or supported Parakeet sources")
                 .environment(\.frogToolbarTitle, false)
             VStack(alignment: .leading, spacing: FrogStyle.space6) {
                 FrogTextField(placeholder: "https://huggingface.co/owner/model", text: $source)

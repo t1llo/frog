@@ -35,7 +35,7 @@ struct WindowsSettings: ConfigSection {
         "zone-overlay": "Hold shift while dragging to show zones",
         "zones": "halves, thirds, quarters or main-side",
         "layout-picker": "A panel of every layout, from its shortcut or the command bar",
-        "cheat-sheet-shortcut": "Hold to see every window shortcut",
+        "cheat-sheet-shortcut": "Hold to see every window shortcut.",
     ]
 }
 

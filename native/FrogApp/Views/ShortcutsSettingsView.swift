@@ -13,7 +13,7 @@ struct ShortcutsSettingsView: View {
         let apps = bindings.indices.filter { bindings[$0].app != nil }
         let actions = bindings.indices.filter { bindings[$0].app == nil }
         FrogPage {
-            FrogPageHeader(title: "Shortcuts", subtitle: "Keys that open apps and run actions from anywhere.")
+            FrogPageHeader(title: "Shortcuts", subtitle: "Keys that open apps and run actions from anywhere")
             if let unreadable = plugin.unreadable { FrogRowNote(text: unreadable, tone: FrogStyle.warning) }
             FrogSection("Apps", accessory: { if !apps.isEmpty || !catalog.scanned { addApp } }) {
                 if apps.isEmpty, catalog.scanned {

@@ -85,7 +85,7 @@ struct WindowsView: View {
                     Toggle("Layout picker", isOn: binding(\.layoutPicker)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
             }
-            FrogRow("Cheat sheet", caption: "Hold to see every window shortcut") { commandRecorder(.cheatSheet) }
+            FrogRow("Cheat sheet", caption: "Hold to see every window shortcut.") { commandRecorder(.cheatSheet) }
         }
     }
 

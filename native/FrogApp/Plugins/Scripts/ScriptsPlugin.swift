@@ -164,7 +164,7 @@ struct ScriptsPage: View {
     }
 
     var body: some View {
-        DocumentsPage(documents: documents, kind: .script, title: "Scripts", subtitle: "Shell scripts that run with zsh in your home folder.", symbol: "terminal",
+        DocumentsPage(documents: documents, kind: .script, title: "Scripts", subtitle: "Shell scripts that run with zsh in your home folder", symbol: "terminal",
                       emptyMessage: "Each runs with zsh in your home folder, from here, the command bar or a shortcut.") { script in
             if runner.running == script.id {
                 Button("Stop", systemImage: "stop.fill", action: runner.stop)

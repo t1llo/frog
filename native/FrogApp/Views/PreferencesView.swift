@@ -13,7 +13,7 @@ struct PreferencesView: View {
     var body: some View {
         ScrollViewReader { proxy in
         FrogPage {
-            FrogPageHeader(title: "Settings", subtitle: "Startup, appearance, permissions and what Frog keeps.")
+            FrogPageHeader(title: "Settings", subtitle: "Startup, appearance, permissions and what Frog keeps")
             SettingsHero(model: model)
             FrogSection("General") {
                 FrogRow("Start at login") { Toggle("Start at login", isOn: Binding(get: { model.startAtLogin }, set: model.setStartAtLogin)).labelsHidden() }
@@ -26,7 +26,7 @@ struct PreferencesView: View {
                 }
                 if let issue = model.hotkeyErrors[AppModel.shortcutPanelID] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
                 FrogRow("Setup", caption: "Walk through features, permissions, models and providers again.") { Button("Run setup again") { model.showSetup() } }
-                FrogRow("Statistics", caption: "What you did with Frog, counted on this Mac.") { Button("Show statistics") { model.toolkit.select(.statistics) } }
+                FrogRow("Statistics", caption: "What you did with Frog, counted on this Mac") { Button("Show statistics") { model.toolkit.select(.statistics) } }
             }
             AppearanceSettingsView(model: model)
             FrogSection("Permissions") {
@@ -38,7 +38,7 @@ struct PreferencesView: View {
             AgentSettingsView(server: model.agentServer)
             FrogSection("History") {
                 FrogRow("Save history on this Mac") { Toggle("Save history on this Mac", isOn: preference(\.historyEnabled)).labelsHidden() }
-                FrogRow("Hide history text", caption: "Masked until you reveal it.") {
+                FrogRow("Hide history text", caption: "Masked until you reveal it") {
                     Toggle("Hide history text", isOn: preference(\.hideHistoryText)).labelsHidden()
                 }
                 HistoryLimitsView(model: model)

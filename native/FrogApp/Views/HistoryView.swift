@@ -60,7 +60,7 @@ struct HistoryView: View {
         let filters = HistoryFilter.visible(explainEnabled: preferences.featureEnabled(.explain),
                                             hasAnswers: all.contains { $0.kind == .answers })
         return FrogPage {
-            FrogPageHeader(title: "History", subtitle: "Rewritten text, answers and recordings, kept on this Mac.") {
+            FrogPageHeader(title: "History", subtitle: "Rewritten text, answers and recordings, kept on this Mac") {
                 if !all.isEmpty {
                     IconMenu(title: "History actions", bordered: false) {
                         Button("Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }
