@@ -50,7 +50,7 @@ struct FrogSkeleton: View {
     /// The line height of the text it replaces; `FrogType.body` is about 16, `FrogType.title` about 24.
     var height: CGFloat = 12
     var body: some View {
-        Capsule(style: .continuous).fill(FrogStyle.control)
+        Capsule(style: .continuous).fill(FrogStyle.skeleton)
             .frame(width: width, height: height * 0.75)
             .frame(height: height)
             .accessibilityHidden(true)

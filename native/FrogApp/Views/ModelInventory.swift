@@ -183,7 +183,7 @@ struct ModelDownloadSummary: View {
 /// A capsule like every other pill, in the accent's soft fill.
 struct RecommendedModelBadge: View {
     var body: some View {
-        Text(L10n.text("Recommended")).font(FrogType.caption.weight(.semibold)).foregroundStyle(FrogStyle.accent)
+        Text(L10n.text("Recommended")).font(FrogType.caption.weight(.semibold)).foregroundStyle(FrogStyle.accentText)
             .padding(.horizontal, FrogStyle.space8).padding(.vertical, 2)
             .background(FrogStyle.accentSoft, in: Capsule())
     }

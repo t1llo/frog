@@ -222,6 +222,29 @@ enum FrogStyle {
         }
     }
     static var accentSoft: Color { accent.opacity(0.15) }
+    /// The accent as text or a small glyph on a card or `accentSoft`: the accent itself where it reads, otherwise
+    /// eased toward white in dark (toward black in light) until it reaches 4.5:1 on the surface, so "Recommended"
+    /// and other accent words stay legible with a dark theme's deep accents.
+    static var accentText: Color {
+        let accent = accent, surface = panelSurface
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            var fill = NSColor(accent), back = NSColor(surface)
+            appearance.performAsCurrentDrawingAppearance {
+                fill = fill.usingColorSpace(.sRGB) ?? fill
+                back = back.usingColorSpace(.sRGB) ?? back
+            }
+            let toward: NSColor = back.frogLuminance > 0.4 ? .black : .white
+            var color = fill, step = 0.0
+            while contrast(color, back) < 4.5 && step < 0.8 {
+                step += 0.1
+                color = fill.blended(withFraction: step, of: toward) ?? color
+            }
+            return color
+        })
+    }
+    /// A skeleton bar standing for a value still being measured: a step stronger than a control, so it shows on a
+    /// light card, where the control fill all but vanished.
+    static var skeleton: Color { inkLayer(light: 0.11, dark: 0.14) }
     /// Text and symbols on an accent fill: the primary button, a chosen segment, a ticked checkbox. White, unless
     /// the accent is so light (the pastel accents of dark themes) that the theme's dark surface reads better on it.
     static var onAccent: Color {
@@ -919,7 +942,7 @@ struct FrogBadge: View {
     private var foreground: Color {
         switch tone {
         case .neutral: FrogStyle.muted
-        case .accent: FrogStyle.accent
+        case .accent: FrogStyle.accentText
         case .warning: FrogStyle.warning
         }
     }
