@@ -59,15 +59,21 @@ struct PluginsCatalogView: View {
                     do { try await host.setEnabled(plugin.id, on) } catch { model.report(error) }
                 }
             })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).disabled(pending.contains(plugin.id))
-            Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(FrogStyle.muted)
-                .opacity(enabled ? 1 : 0).accessibilityHidden(true)
+            // A button, so the keyboard reaches the page too (Tab with keyboard navigation on), not only the pointer.
+            Button { host.open(plugin.id) } label: {
+                Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(FrogStyle.muted)
+                    .frame(width: FrogStyle.compactHeight, height: FrogStyle.compactHeight).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).help("\(L10n.text("Open")) \(L10n.text(plugin.name))").accessibilityLabel("\(L10n.text("Open")) \(L10n.text(plugin.name))")
+            .opacity(enabled ? 1 : 0).disabled(!enabled).accessibilityHidden(!enabled)
         }
         .padding(.horizontal, FrogStyle.rowPadding).padding(.vertical, FrogStyle.space6)
         .contentShape(Rectangle())
-        .onTapGesture { if enabled { host.open(plugin.id) } }
+        // A click on the switch while it is still turning the feature on or off lands here, the switch being
+        // disabled meanwhile: it must not open the page.
+        .onTapGesture { if enabled, !pending.contains(plugin.id) { host.open(plugin.id) } }
         .frogHoverRow()
         .accessibilityElement(children: .contain)
-        .accessibilityAction(named: Text("Open \(plugin.name)")) { if enabled { host.open(plugin.id) } }
     }
 
     /// Why a feature that is on will not work yet: its rules have no model.
