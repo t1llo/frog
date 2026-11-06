@@ -78,7 +78,7 @@ private struct ClipboardPageRow: View {
                 .accessibilityLabel(L10n.text(kind.title))
             Text(entry.preview).font(kind == .code ? FrogType.mono : FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(RecentTimestamp.text(entry.timestamp)).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+            RecentTimestampText(date: entry.timestamp).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
             CopyAction { store.copy(entry) }
             IconAction(title: "Remove", symbol: "xmark") { store.delete(id: entry.id) }
         }

@@ -111,7 +111,7 @@ struct HistoryView: View {
                         HStack(spacing: 10) {
                             Text(entry.ruleName).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
                             Spacer(minLength: 8)
-                            Text(RecentTimestamp.text(entry.timestamp))
+                            RecentTimestampText(date: entry.timestamp)
                                 .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                                 .help(entry.timestamp.formatted(date: .complete, time: .shortened))
                         }

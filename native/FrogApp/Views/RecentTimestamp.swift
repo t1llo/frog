@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 
 /// When something happened, as lists show it: in the Mac's own date and time format, relative while it is recent.
 /// "Just now", "12 min ago", "Today 13:14", "Yesterday 09:02", "Monday 18:40", then "Nov 2, 13:14" (and the year
@@ -22,5 +22,17 @@ enum RecentTimestamp {
         var day = Date.FormatStyle(locale: locale, calendar: calendar).month(.abbreviated).day()
         if !calendar.isDate(date, equalTo: now, toGranularity: .year) { day = day.year() }
         return date.formatted(day) + ", " + time
+    }
+}
+
+/// A `RecentTimestamp` in a list row that stays true while the list is open: it is worked out again every minute,
+/// and whenever `shownAt` changes, such as a reused panel opening again.
+struct RecentTimestampText: View {
+    let date: Date
+    var shownAt: Date = .distantPast
+
+    var body: some View {
+        // The clock, not the schedule's minute-aligned date, which can fall before an item copied this minute.
+        TimelineView(.everyMinute) { _ in Text(RecentTimestamp.text(date, now: max(Date(), shownAt))) }
     }
 }

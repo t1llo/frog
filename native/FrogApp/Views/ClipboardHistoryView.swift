@@ -114,8 +114,6 @@ struct ClipboardHistoryView: View {
     let resize: () -> Void
     /// The pointer moving over a row; the controller decides whether that selects it.
     var hover: (UUID) -> Void = { _ in }
-    /// The moment the relative times are counted from; the panel is opened fresh each time.
-    var now = Date()
     @FocusState private var searching: Bool
 
     var body: some View {
@@ -193,7 +191,7 @@ struct ClipboardHistoryView: View {
             PluginIconTile(symbol: kind.symbol, tint: kind.tint.color, size: .sidebar).help(L10n.text(kind.title))
             Text(entry.preview).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(RecentTimestamp.text(entry.timestamp, now: now)).font(FrogType.small).foregroundStyle(FrogStyle.muted).monospacedDigit()
+            RecentTimestampText(date: entry.timestamp, shownAt: state.openedAt).font(FrogType.small).foregroundStyle(FrogStyle.muted).monospacedDigit()
                 .help(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
         }
         .padding(.horizontal, 10).frame(height: ClipboardHistoryLayout.rowHeight)
