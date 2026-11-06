@@ -439,7 +439,7 @@ public enum SelectionBubbleItems {
         (["define", "definition", "dictionary", "meaning"], "book.closed"),
         (["translat", "übersetz"], "globe"),
         (["email", "e-mail", "mail", "reply"], "envelope"),
-        (["spelling", "typo"], "character.magnify"),
+        (["spelling", "typo"], "text.magnifyingglass"),
         (["proofread", "grammar", "correct", "korrigier"], "checkmark.circle"),
         (["summar", "tl;dr", "key points"], "list.bullet"),
         (["shorten", "shorter", "concise", "trim"], "scissors"),
