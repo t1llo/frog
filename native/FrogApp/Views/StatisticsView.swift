@@ -29,6 +29,12 @@ struct StatisticsView: View {
                 if !statistics.snapshot.recordingEnabled {
                     FrogRowNote(text: "Paused. Existing totals remain until you reset them.")
                 }
+                // Resetting sits with the switch that records; with nothing counted there is nothing to clear.
+                if statistics.loaded, !Self.isEmpty(statistics.snapshot.allTime) {
+                    FrogRow("Clear all counts") {
+                        Button("Reset…", role: .destructive) { confirmingReset = true }.buttonStyle(.frog(.destructive))
+                    }
+                }
                 if let issue = statistics.issue { InlineIssue(message: issue) }
             }
             if statistics.loaded, Self.isEmpty(statistics.snapshot.allTime) {
@@ -63,11 +69,6 @@ struct StatisticsView: View {
                     ForEach(ActivityToolKind.allCases, id: \.self) { kind in
                         countRow(toolTitle(kind), count: totals.toolUses(kind))
                     }
-                }
-            }
-            FrogSection("Storage") {
-                FrogRow("Reset all statistics") {
-                    Button("Reset statistics", role: .destructive) { confirmingReset = true }.buttonStyle(.frog(.destructive))
                 }
             }
         }.foregroundStyle(FrogStyle.ink).buttonStyle(.frog())
