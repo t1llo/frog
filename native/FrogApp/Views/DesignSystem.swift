@@ -421,6 +421,9 @@ enum FrogType {
     /// Sheet titles, setup step titles and standalone panels (the shortcut reference): one step under a page's
     /// title, so a sheet never outranks the page it opens from. Also big figures inside a card.
     static let title = Font.system(size: 17, weight: .semibold)
+    /// What is typed into a keyboard panel's borderless search line (command bar, clipboard history), a step
+    /// larger than the rows under it, as Raycast sets its query.
+    static let query = Font.system(size: 15)
     /// Row titles in section cards and sidebar rows.
     static let row = Font.system(size: 13)
     /// The open sidebar row, and a hero row's title.
