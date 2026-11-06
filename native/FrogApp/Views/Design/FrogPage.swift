@@ -201,8 +201,32 @@ extension View {
     /// Offers a step back inside the page to the toolbar's Back. `id` names the state it leaves; `parent` names
     /// where it goes back to, which the toolbar shows as a breadcrumb ("History › Proofread") whose first part
     /// goes back. This is the one way a page shows a step back: it draws no "‹ History" link of its own.
-    func frogPageBack(_ id: String, parent: String? = nil, perform action: @escaping () -> Void) -> some View {
+    /// `escapes` makes Escape take the step too.
+    func frogPageBack(_ id: String, parent: String? = nil, escapes: Bool = false,
+                      perform action: @escaping () -> Void) -> some View {
         preference(key: FrogPageBackKey.self, value: FrogPageBack(id: id, parent: parent, action: action))
+            .modifier(FrogEscapeBack(enabled: escapes, action: action))
+    }
+
+    /// Escape runs `action`, a step back where no Cancel button is drawn, such as onboarding's footer.
+    func frogEscapeBack(perform action: @escaping () -> Void) -> some View {
+        modifier(FrogEscapeBack(enabled: true, action: action))
+    }
+}
+
+/// A hidden cancel button, the one way Escape takes a step back: it draws nothing and VoiceOver skips it,
+/// since the visible Back says the same.
+private struct FrogEscapeBack: ViewModifier {
+    let enabled: Bool
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        content.background {
+            if enabled {
+                Button("Back", action: action).keyboardShortcut(.cancelAction)
+                    .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+            }
+        }
     }
 }
 

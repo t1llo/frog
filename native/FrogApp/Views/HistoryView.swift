@@ -144,10 +144,6 @@ struct HistoryView: View {
                 if entry.answer != nil, model.answerNotesEnabled, !hidden(entry) { noteButton(entry) }
                 IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = entry }
             }
-            .background {
-                Button("Back to History") { viewing = nil }.keyboardShortcut(.cancelAction)
-                    .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
-            }
             interruptionStatus(entry)
             Group {
                 if hidden(entry) {
@@ -161,7 +157,7 @@ struct HistoryView: View {
             }.frame(maxWidth: .infinity, alignment: .leading)
                 .onCopyCommand { hidden(entry) ? [] : [NSItemProvider(object: entry.processedText as NSString)] }
             if note?.id == entry.id, case .failed(let message) = note?.state { InlineIssue(message: message) }
-        }.frogPageBack("history-entry-\(entry.id)", parent: "History") { viewing = nil }
+        }.frogPageBack("history-entry-\(entry.id)", parent: "History", escapes: true) { viewing = nil }
     }
 
     /// When, and with what: "Today 13:14 · Ollama · llama3.2".

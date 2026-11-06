@@ -146,10 +146,8 @@ struct OnboardingView: View {
             Button(step == .done ? "Done" : "Continue") { advance() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
         }
         .overlay { OnboardingProgress(step: step.rawValue - 1, count: Step.allCases.count - 1) }
-        .background {
-            // Escape steps back too; on the welcome step it does nothing, since leaving is an explicit choice.
-            Button("Back") { back() }.keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
-        }
+        // Escape steps back too; on the welcome step it does nothing, since leaving is an explicit choice.
+        .frogEscapeBack { back() }
         .padding([.horizontal, .bottom], FrogStyle.pagePadding + 4).padding(.top, FrogStyle.space12)
     }
 
