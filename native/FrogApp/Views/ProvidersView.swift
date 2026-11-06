@@ -34,16 +34,20 @@ struct ProvidersView: View {
                 }
             }
             VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
-                if selectedFilter == "Installed tools" { HStack { sourcePicker; Spacer() }.frame(height: FrogStyle.controlHeight) }
-                else {
-                    ListToolbar(placeholder: selectedFilter == "Local models" ? "Search models" : "Search providers", search: $search) { sourcePicker }
-                }
+                ListToolbar(placeholder: selectedFilter == "Local models" ? "Search models" : "Search providers", search: $search,
+                            showsSearch: selectedFilter != "Installed tools") { sourcePicker }
                 if selectedFilter == "Installed tools" {
                     LocalToolProvidersView(client: model.localTools) { kind, selectedModel in
                         do { try model.useLocalTool(kind, model: selectedModel); filter = "Providers"; search = "" }
                         catch { model.report(error) }
                     }
                 } else if selectedFilter == "Local models" {
+                    if !LocalModels.supported {
+                        ProblemNotice(title: "Local models need Apple silicon",
+                                      message: "This Mac cannot run them. Add a provider instead.") {
+                            Button("Add provider") { filter = "Providers"; editing = ProviderConfiguration() }.buttonStyle(.frog(compact: true))
+                        }
+                    }
                     // Speech and text models in one list, under their own headings, rather than a second switch.
                     ModelInventory(search: search, revealedModelID: revealedModelID)
                     if search.isEmpty { LocalModelSettingsView() }
@@ -75,14 +79,8 @@ struct ProvidersView: View {
         } message: { Text("The saved API key will also be removed. Affected rules will use another compatible model when available.") }
     }
 
-    /// One line on what the open part holds.
-    private var subtitle: String {
-        switch selectedFilter {
-        case "Local models": LocalModels.supported ? "Run on this Mac, offline." : "Run on this Mac. They need Apple silicon."
-        case "Providers": "Cloud services and local servers such as Ollama."
-        default: "Coding tools you already use, with their own sign-in."
-        }
-    }
+    /// A tabbed page keeps one subtitle for the whole page; what one tab needs to say goes in that tab.
+    private var subtitle: String { "Models on this Mac, cloud providers and the coding tools you use." }
 }
 
 /// One provider in the Providers list: opens its editor, with its actions at the end.
