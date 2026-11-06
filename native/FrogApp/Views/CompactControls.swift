@@ -145,12 +145,17 @@ struct CompactDropdownLabel: View {
     var height: CGFloat = FrogStyle.controlHeight
     /// Held down, or its list is open.
     var pressed = false
+    /// The value keeps something from working (a rule without a model): a warning mark leads the value, inside the
+    /// button, so the control and its problem read as one.
+    var warning = false
     @State private var hovering = false
     private var compact: Bool { height < FrogStyle.controlHeight }
     var body: some View {
         let knob: CGFloat = compact ? 16 : 20
         HStack(spacing: compact ? 5 : 7) {
-            if let symbol { Image(systemName: symbol).foregroundStyle(FrogStyle.muted) }
+            if warning {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(FrogStyle.warning).accessibilityHidden(true)
+            } else if let symbol { Image(systemName: symbol).foregroundStyle(FrogStyle.muted) }
             Text(value).lineLimit(1).truncationMode(.middle)
             Image(systemName: "chevron.up.chevron.down").font(.system(size: compact ? 7 : 9, weight: .bold))
                 .foregroundStyle(FrogStyle.ink.opacity(0.85))

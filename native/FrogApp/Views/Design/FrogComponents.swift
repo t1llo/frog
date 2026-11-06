@@ -132,7 +132,7 @@ struct FrogAddMenu<Items: View>: View {
 }
 
 /// The label of `FrogAddButton` and `FrogAddMenu`: a plus, the title and, for a menu, a chevron.
-private struct FrogAddLabel: View {
+struct FrogAddLabel: View {
     let title: String
     let menu: Bool
     var body: some View {
@@ -158,12 +158,16 @@ private struct FrogAddLabel: View {
 ///         FrogCancelButton { dismiss() }
 ///         FrogPrimaryButton("Save", disabledReason: named ? nil : "Name the rule first") { save() }
 ///     }
+///
+/// A sheet whose whole content is already padded by `sheetPadding` passes `padded: false`, so the buttons keep the
+/// same edge instead of doubling it.
 struct FrogSheetButtons<Leading: View, Trailing: View>: View {
+    var padded = true
     @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
 
-    init(@ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
-        self.leading = leading(); self.trailing = trailing()
+    init(padded: Bool = true, @ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
+        self.padded = padded; self.leading = leading(); self.trailing = trailing()
     }
 
     var body: some View {
@@ -173,12 +177,15 @@ struct FrogSheetButtons<Leading: View, Trailing: View>: View {
             trailing
         }
         .frogRowAccessory(false)
-        .padding(.horizontal, FrogStyle.sheetPadding).padding(.top, FrogStyle.space12).padding(.bottom, FrogStyle.sheetPadding)
+        .padding(.horizontal, padded ? FrogStyle.sheetPadding : 0).padding(.top, padded ? FrogStyle.space12 : 0)
+        .padding(.bottom, padded ? FrogStyle.sheetPadding : 0)
     }
 }
 
 extension FrogSheetButtons where Leading == EmptyView {
-    init(@ViewBuilder trailing: () -> Trailing) { self.init(leading: { EmptyView() }, trailing: trailing) }
+    init(padded: Bool = true, @ViewBuilder trailing: () -> Trailing) {
+        self.init(padded: padded, leading: { EmptyView() }, trailing: trailing)
+    }
 }
 
 /// A sheet's Cancel: a secondary button that Escape presses.

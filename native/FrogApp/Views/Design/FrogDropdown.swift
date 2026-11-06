@@ -50,6 +50,8 @@ struct FrogDropdown<Value: Hashable>: View {
     var footnote: String? = nil
     /// What the button says for a value, when it should be shorter than the list's row.
     var buttonTitle: ((Value) -> String)? = nil
+    /// Why the chosen value keeps something from working; the button then leads with a warning mark.
+    var warning: String? = nil
 
     @State private var showing = false
     @Environment(\.compactRowTitle) private var rowTitle
@@ -63,8 +65,10 @@ struct FrogDropdown<Value: Hashable>: View {
             EmptyView()
         }
         .buttonStyle(DropdownTriggerStyle(value: value, symbol: current?.symbol, width: width,
-                                          height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight, open: showing))
-        .help(value)
+                                          height: compact ? FrogStyle.compactHeight : FrogStyle.controlHeight, open: showing,
+                                          warning: warning != nil))
+        .help(warning.map { L10n.text($0) } ?? value)
+        .accessibilityHint(warning.map { L10n.text($0) } ?? "")
         .modifier(RowControlName(title: rowTitle, value: value))
         .popover(isPresented: $showing, arrowEdge: .bottom) {
             FrogDropdownList(sections: sections, selected: selected, item: item, searchPrompt: searchPrompt,
@@ -123,6 +127,12 @@ extension FrogDropdown {
     func buttonTitle(_ title: @escaping (Value) -> String) -> Self {
         var copy = self; copy.buttonTitle = title; return copy
     }
+
+    /// Marks the choice as a problem, such as a rule without a model: a warning mark inside the button, the reason
+    /// in its tooltip. A page shows one notice for the problem; this is the one mark at the control.
+    func warning(_ reason: String?) -> Self {
+        var copy = self; copy.warning = reason; return copy
+    }
 }
 
 /// The dropdown's button: the shared control surface, darker while pressed or open.
@@ -132,8 +142,10 @@ private struct DropdownTriggerStyle: ButtonStyle {
     let width: CGFloat
     let height: CGFloat
     let open: Bool
+    var warning = false
     func makeBody(configuration: Configuration) -> some View {
-        DropdownTrigger(value: value, symbol: symbol, width: width, height: height, pressed: configuration.isPressed || open)
+        DropdownTrigger(value: value, symbol: symbol, width: width, height: height, pressed: configuration.isPressed || open,
+                        warning: warning)
     }
 }
 
@@ -143,10 +155,12 @@ private struct DropdownTrigger: View {
     let width: CGFloat
     let height: CGFloat
     let pressed: Bool
+    var warning = false
     @Environment(\.isEnabled) private var enabled
     var body: some View {
-        CompactDropdownLabel(value: value, symbol: symbol, width: width, height: height, pressed: pressed && enabled)
-            .opacity(enabled ? 1 : 0.45)
+        CompactDropdownLabel(value: value, symbol: symbol, width: width, height: height, pressed: pressed && enabled,
+                             warning: warning)
+            .opacity(enabled ? 1 : FrogStyle.disabledOpacity)
     }
 }
 
