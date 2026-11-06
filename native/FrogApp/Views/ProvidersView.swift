@@ -179,7 +179,7 @@ struct ProviderEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: FrogStyle.space16) {
-                TextField("Connection name", text: $provider.name).textFieldStyle(.plain).font(FrogType.title).tracking(-0.4)
+                FrogTextField(placeholder: "Connection name", text: $provider.name).textFieldStyle(.plain).font(FrogType.title).tracking(-0.4)
                     .accessibilityLabel("Connection name").help("Click to rename. Rules and menus show this name.")
                     .frame(minHeight: FrogStyle.controlHeight)
                 CompactSegments(values: [0, 1, 2], selected: step, title: { ["Service", "Connection", "Models"][$0] }) { step = $0 }
@@ -221,7 +221,7 @@ struct ProviderEditor: View {
                         }
                     } else {
                     FrogSection("Connection") {
-                        LabeledField(title: "Base endpoint") { TextField("Base endpoint", text: $provider.endpoint).labelsHidden() }
+                        LabeledField(title: "Base endpoint") { FrogTextField(placeholder: "Base endpoint", text: $provider.endpoint).labelsHidden() }
                         HStack(alignment: .top, spacing: 16) {
                             Text(endpointHint)
                                 .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineSpacing(3)
@@ -283,7 +283,7 @@ struct ProviderEditor: View {
                 Spacer()
                 if step > 0 { Button("Back") { step -= 1 } }
                 Button(step < 2 && !isSaved ? "Continue" : "Save") { if step < 2 && !isSaved { step += 1 } else { save() } }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
-                    .disabled(((step == 2 || isSaved) && validation != nil) || testing || discovering)
+                    .frogDisabled(testing ? "Testing the connection…" : discovering ? "Finding models…" : (step == 2 || isSaved) ? validation : nil)
             }.padding(FrogStyle.sheetPadding)
         }
         .frame(width: 540).background(FrogStyle.canvas).background(FrogWindowMaterial())
@@ -350,9 +350,9 @@ struct ProviderEditor: View {
                 CompactSegments(values: provider.kind.supportsTranscription ? ProviderModel.Category.allCases : [.text], selected: customCategory, title: { $0 == .text ? "Text" : "Speech-to-text" }) { customCategory = $0 }
             }
             HStack(alignment: .bottom, spacing: 10) {
-                LabeledField(title: "Model ID") { TextField("Exact API model ID", text: $customModelID).accessibilityLabel("Custom model ID") }
-                LabeledField(title: "Display name") { TextField("Optional friendly name", text: $customModelName).accessibilityLabel("Custom model display name") }
-                Button("Add") { addCustomModel() }.disabled(customModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                LabeledField(title: "Model ID") { FrogTextField(placeholder: "Exact API model ID", text: $customModelID).accessibilityLabel("Custom model ID") }
+                LabeledField(title: "Display name") { FrogTextField(placeholder: "Optional friendly name", text: $customModelName).accessibilityLabel("Custom model display name") }
+                Button("Add") { addCustomModel() }.frogDisabled(customModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Enter the model ID first" : nil)
             }
         }
     }

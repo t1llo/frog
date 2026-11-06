@@ -210,11 +210,11 @@ struct PluginsView: View {
         FrogSection("Install from a link") {
             FrogRow("Link to a .frogplugin file", caption: "You review what it asks for before anything is installed.") {
                 HStack(spacing: 6) {
-                    TextField("https://…", text: $link).textFieldStyle(.plain).font(FrogType.body)
+                    FrogTextField(placeholder: "https://…", text: $link).textFieldStyle(.plain).font(FrogType.body)
                         .padding(.horizontal, 8).frame(width: 240).frogControlSurface()
                         .onSubmit(openTypedLink)
                     Button("Review", action: openTypedLink).buttonStyle(.frog(compact: true))
-                        .disabled(typedLink == nil || plugins.downloading != nil)
+                        .frogDisabled(plugins.downloading != nil ? "Downloading…" : typedLink == nil ? "Paste a link to a .frogplugin file" : nil)
                 }
             }
         }
@@ -410,8 +410,7 @@ struct PluginReviewSheet: View {
                 Button(review.installed ? "Allow" : updating ? "Update" : "Install") {
                     guard armed else { return }
                     do { try plugins.approve(review) } catch { report(error); plugins.dismissReview() }
-                }.buttonStyle(.frog(.primary)).disabled(!review.compatible)
-                    .help(review.compatible ? "" : "Update Frog first")
+                }.buttonStyle(.frog(.primary)).frogDisabled(review.compatible ? nil : "Update Frog first")
             }.padding(FrogStyle.sheetPadding)
         }
         .task(id: review.id) {

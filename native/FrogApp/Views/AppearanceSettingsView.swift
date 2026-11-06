@@ -191,7 +191,7 @@ struct AppearanceSettingsView: View {
                 HStack(spacing: 8) {
                     HStack(spacing: 2) {
                         Text("#").foregroundStyle(FrogStyle.muted)
-                        TextField("RGB", text: $accentInput).textFieldStyle(.plain).frame(width: 64)
+                        FrogTextField(placeholder: "RGB", text: $accentInput).textFieldStyle(.plain).frame(width: 64)
                             .onSubmit { saveAccent() }.accessibilityLabel("Accent hex color")
                     }.font(FrogType.body).padding(.horizontal, 10).frogControlSurface(capsule: true)
                         .onAppear { accentInput = appearance.accentHex }

@@ -43,7 +43,7 @@ struct LocalToolProvidersView: View {
                 }
                 FrogRow("Model", caption: "Leave empty for \(selected.title)'s default.") {
                     HStack(spacing: FrogStyle.space8) {
-                        TextField("Model ID", text: $model)
+                        FrogTextField(placeholder: "Model ID", text: $model)
                             .textFieldStyle(.plain).font(FrogType.body).padding(.horizontal, 8).frame(width: 180).frogControlSurface()
                             .accessibilityLabel("\(selected.title) model")
                         FrogDropdown(selection: $model, options: models.map(\.id), width: 124, searchPrompt: "Find a model",
@@ -56,7 +56,7 @@ struct LocalToolProvidersView: View {
                 }
                 FrogRow("Add as a provider", caption: selectReason) {
                     Button("Use \(selected.title)") { onSelect(selected, model.trimmingCharacters(in: .whitespacesAndNewlines)) }
-                        .buttonStyle(.frog(.primary)).disabled(!canSelect)
+                        .buttonStyle(.frog(.primary)).frogDisabled(canSelect ? nil : selectReason)
                 }
             }
         }

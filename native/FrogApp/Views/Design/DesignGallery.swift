@@ -158,7 +158,7 @@ struct DesignGallery: View {
         FrogSection("Fields and labels") {
             VStack(alignment: .leading, spacing: 12) {
                 SearchBox(placeholder: "Search", text: $search)
-                LabeledField(title: "Name") { TextField("Name", text: .constant("Work")) }
+                LabeledField(title: "Name") { FrogTextField(placeholder: "Name", text: .constant("Work")) }
                 LabeledField(title: "Endpoint") { FrogTextField(placeholder: "https://…", text: .constant("")) }
                 HStack(spacing: 4) {
                     ForEach(["All", "Text", "Audio"], id: \.self) { tag in FilterTag(title: tag, selected: filter == tag) { filter = tag } }

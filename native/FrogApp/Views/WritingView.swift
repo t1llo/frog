@@ -227,7 +227,7 @@ struct WritingRuleEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 16) {
-                TextField("Name your rule", text: $rule.name).textFieldStyle(.plain).font(FrogType.title)
+                FrogTextField(placeholder: "Name your rule", text: $rule.name).textFieldStyle(.plain).font(FrogType.title)
                     .accessibilityLabel("Rule name")
                 Toggle("On", isOn: $rule.enabled).toggleStyle(.frogSwitch).controlSize(.small).font(FrogType.small)
             }.padding(FrogStyle.sheetPadding)
@@ -264,7 +264,7 @@ struct WritingRuleEditor: View {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Save") {
                     do { try model.saveRule(rule); dismiss() } catch { issue = error.localizedDescription }
-                }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction).disabled(!named)
+                }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction).frogDisabled(named ? nil : "Name the rule first")
             }.padding(.horizontal, FrogStyle.sheetPadding).padding(.vertical, FrogStyle.space16)
         }.frame(width: 540, height: 610)
             .foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas).background(FrogWindowMaterial())
@@ -307,6 +307,14 @@ struct WritingTryView: View {
 
     private var hasModel: Bool { (try? model.resolved(rule)) != nil }
     private var hasText: Bool { !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// Why Run is not available, or nil when it is.
+    private var runBlocked: String? {
+        if run != nil { return "Running…" }
+        if model.isProcessing { return "Frog is finishing another rule" }
+        if !hasModel { return "Choose a model for this rule first" }
+        if !hasText { return "Type or paste some text first" }
+        return nil
+    }
     /// Why Run waits, said beside it rather than left to a greyed button.
     private var waiting: String? {
         if run != nil { return nil }
@@ -370,8 +378,11 @@ struct WritingTryView: View {
                     Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
                 Button("Run", systemImage: "play.fill", action: start).buttonStyle(.frog(.primary))
-                    .keyboardShortcut(.return, modifiers: .command).help("Run (⌘↩)")
-                    .disabled(!hasText || !hasModel || run != nil || model.isProcessing)
+                    .keyboardShortcut(.return, modifiers: .command)
+                    // frogDisabled's tooltip, with the shortcut while it can run.
+                    .disabled(runBlocked != nil)
+                    .help(runBlocked.map { L10n.text($0) } ?? "Run (⌘↩)")
+                    .accessibilityHint(runBlocked.map { L10n.text($0) } ?? "")
             }
         }.padding(FrogStyle.sheetPadding).frame(width: 540).foregroundStyle(FrogStyle.ink).background(FrogStyle.canvas)
             .background(FrogWindowMaterial()).buttonStyle(FrogButtonStyle()).tint(FrogStyle.accent)

@@ -70,7 +70,7 @@ struct AddLocalModelView: View {
             FrogPageHeader(title: "Add Hugging Face model", subtitle: "MLX text, WhisperKit speech, or supported Parakeet sources.")
                 .environment(\.frogToolbarTitle, false)
             VStack(alignment: .leading, spacing: FrogStyle.space6) {
-                TextField("", text: $source, prompt: Text("https://huggingface.co/owner/model").foregroundStyle(FrogStyle.muted.opacity(0.6)))
+                FrogTextField(placeholder: "https://huggingface.co/owner/model", text: $source)
                     .textFieldStyle(.plain).font(FrogType.body)
                     .padding(.horizontal, FrogStyle.space10).frogControlSurface(radius: FrogStyle.controlRadius)
                     .accessibilityLabel("Hugging Face link")
@@ -106,7 +106,7 @@ struct AddLocalModelView: View {
                 Spacer()
                 Button("Cancel") { inspection?.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Check source") { inspect() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
-                    .disabled(loading || empty)
+                    .frogDisabled(loading ? "Reading the model's details…" : empty ? "Paste a link or a model ID first" : nil)
             }
         }.padding(FrogStyle.sheetPadding).frame(width: 540).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
             .buttonStyle(.frog()).environment(\.locale, L10n.locale)

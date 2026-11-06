@@ -79,7 +79,7 @@ struct ExplainView: View {
                     }
                     if settings.notes.mode == .append {
                         FrogRow("File", caption: notesFileIssue ?? "YYYY, MM and DD become the date.") {
-                            TextField("Daily/YYYY-MM-DD.md", text: $notesFile)
+                            FrogTextField(placeholder: "Daily/YYYY-MM-DD.md", text: $notesFile)
                                 .textFieldStyle(.plain).font(FrogType.body)
                                 .padding(.horizontal, 8).frame(width: 200).frogControlSurface()
                                 .focused($editingFile)

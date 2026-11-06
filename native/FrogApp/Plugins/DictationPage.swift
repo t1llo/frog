@@ -201,14 +201,14 @@ struct RenameSheet: View {
         VStack(alignment: .leading, spacing: FrogStyle.space16) {
             // A sheet is its own window, so its header keeps the title.
             FrogPageHeader(title: "Rename").environment(\.frogToolbarTitle, false)
-            TextField("Name", text: $name).textFieldStyle(.plain).font(FrogType.body)
+            FrogTextField(placeholder: "Name", text: $name).textFieldStyle(.plain).font(FrogType.body)
                 .padding(.horizontal, FrogStyle.space10).frogControlSurface()
                 .accessibilityLabel("Name").onSubmit(done)
             HStack(spacing: FrogStyle.space8) {
                 Spacer()
                 Button("Cancel") { dismiss() }.buttonStyle(.frog()).keyboardShortcut(.cancelAction)
                 Button("Rename") { done() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .frogDisabled(name.trimmingCharacters(in: .whitespaces).isEmpty ? "Enter a name first" : nil)
             }
         }.padding(FrogStyle.sheetPadding).frame(width: 340).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
     }

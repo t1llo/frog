@@ -611,7 +611,7 @@ private struct UsageAccountLabelField: View {
     @State private var text = ""
     @FocusState private var focused: Bool
     var body: some View {
-        TextField("Label", text: $text)
+        FrogTextField(placeholder: "Label", text: $text)
             .textFieldStyle(.plain).font(FrogType.label)
             .padding(.horizontal, 8).frame(width: 120)
             .frogControlSurface(height: FrogStyle.compactHeight)

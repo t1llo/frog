@@ -172,7 +172,7 @@ struct CleanerReviewFooter: View {
             Button("Move to Trash…") { Task { await cleaner.prepareRemoval() } }
                 .buttonStyle(.frog(.destructive))
                 // After a removal that left the app, the review stays open with the phase back at idle.
-                .disabled(count == 0 || ![.reviewing, .idle].contains(cleaner.phase))
+                .frogDisabled(count == 0 ? "Tick the files to move first" : ![.reviewing, .idle].contains(cleaner.phase) ? "Frog is still working" : nil)
         }
         // The bar spans the window; its content keeps to the page's column, so it lines up with the list above.
         .padding(.horizontal, FrogStyle.pagePadding).frame(maxWidth: FrogStyle.pageWidth + FrogStyle.pagePadding * 2)
