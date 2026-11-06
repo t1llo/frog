@@ -112,10 +112,13 @@ struct SystemMonitorStatusPopover: View {
     let openPage: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            FrogPopupHeader(symbol: SystemMonitorPlugin.info.symbol, tint: SystemMonitorPlugin.info.tint, title: SystemMonitorPlugin.info.name) {
-                IconAction(title: "Open System monitor", symbol: "arrow.up.forward.app", bordered: true, action: openPage)
-            }
-            SystemMonitorView(monitor: monitor, presenter: .statusPopup).padding(.bottom, FrogStyle.space8)
+            // The header and content keep the panel's inset; the footer band below runs to the panel's edges.
+            VStack(alignment: .leading, spacing: 0) {
+                FrogPopupHeader(symbol: SystemMonitorPlugin.info.symbol, tint: SystemMonitorPlugin.info.tint, title: SystemMonitorPlugin.info.name) {
+                    IconAction(title: "Open System monitor", symbol: "arrow.up.forward.app", bordered: true, action: openPage)
+                }
+                SystemMonitorView(monitor: monitor, presenter: .statusPopup).padding(.bottom, FrogStyle.space8)
+            }.padding([.horizontal, .top], FrogStyle.panelCardInset)
             FrogPopupFooter {
                 // Live once readings come in; until then the figures' skeleton bars say they are being measured.
                 if monitor.history.count >= 2 {
@@ -125,7 +128,7 @@ struct SystemMonitorStatusPopover: View {
                     }
                 }
             }
-        }.padding(FrogStyle.panelCardInset).frame(width: 292).fixedSize(horizontal: false, vertical: true)
+        }.frame(width: 292).fixedSize(horizontal: false, vertical: true)
             .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()
             .environment(\.locale, L10n.locale)

@@ -66,36 +66,38 @@ struct UsageStatusPopover: View {
         let signInAccount = setup == nil ? accounts.first(where: \.needsSignIn) : nil
         let claudeSignIn = setup == nil && signInAccount == nil && provider == "Claude" && accounts.isEmpty && usage.needsClaudeSignIn
         VStack(alignment: .leading, spacing: 0) {
-            FrogPopupHeader(symbol: LLMUsagePlugin.info.symbol, tint: LLMUsagePlugin.info.tint, title: "LLM usage") {
-                UsageProviderDropdown(usage: usage)
-                UsageRefreshAction(usage: usage, bordered: true)
-                IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", bordered: true, action: openDashboard)
-            }
-            VStack(alignment: .leading, spacing: FrogStyle.listInset) {
-                UsageMenuCards(usage: usage)
-                // Only what needs doing: at most one account is offered live readings or a sign-in, the first that needs one.
-                if setup != nil || signInAccount != nil || claudeSignIn || readiness.version != nil {
-                    VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                        if let account = setup {
-                            MenuActionRow(title: "Set up live readings for \(account.label)…", symbol: "person.crop.circle.badge.plus", tint: FrogStyle.warning) {
-                                liveSetup(account)
-                            }.help(account.status ?? "")
-                        } else if let account = signInAccount {
-                            MenuActionRow(title: ClaudeSignIn.accountSignInTitle(account), symbol: "person.crop.circle.badge.checkmark", tint: FrogStyle.warning) {
-                                accountSignIn(account)
-                            }.disabled(account.checkingSignIn).help(account.warning ?? account.status ?? "")
-                        } else if claudeSignIn {
-                            MenuActionRow(title: usage.checkingClaudeSignIn ? "Checking Claude Code’s login…" : "Sign in to Claude Code…",
-                                          symbol: "person.crop.circle.badge.checkmark", tint: FrogStyle.warning, action: signIn)
-                                .disabled(usage.checkingClaudeSignIn).help(usage.status(provider: provider))
-                        }
-                        UpdateReadyRow(install: installUpdate)
-                    }.padding(FrogStyle.listInset).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
+            // The header and content keep the panel's inset; the footer band below runs to the panel's edges.
+            VStack(alignment: .leading, spacing: 0) {
+                FrogPopupHeader(symbol: LLMUsagePlugin.info.symbol, tint: LLMUsagePlugin.info.tint, title: "LLM usage") {
+                    UsageProviderDropdown(usage: usage)
+                    UsageRefreshAction(usage: usage, bordered: true)
+                    IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", bordered: true, action: openDashboard)
                 }
-            }.padding(.bottom, FrogStyle.space8)
+                VStack(alignment: .leading, spacing: FrogStyle.listInset) {
+                    UsageMenuCards(usage: usage)
+                    // Only what needs doing: at most one account is offered live readings or a sign-in, the first that needs one.
+                    if setup != nil || signInAccount != nil || claudeSignIn || readiness.version != nil {
+                        VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                            if let account = setup {
+                                MenuActionRow(title: "Set up live readings for \(account.label)…", symbol: "person.crop.circle.badge.plus", tint: FrogStyle.warning) {
+                                    liveSetup(account)
+                                }.help(account.status ?? "")
+                            } else if let account = signInAccount {
+                                MenuActionRow(title: ClaudeSignIn.accountSignInTitle(account), symbol: "person.crop.circle.badge.checkmark", tint: FrogStyle.warning) {
+                                    accountSignIn(account)
+                                }.disabled(account.checkingSignIn).help(account.warning ?? account.status ?? "")
+                            } else if claudeSignIn {
+                                MenuActionRow(title: usage.checkingClaudeSignIn ? "Checking Claude Code’s login…" : "Sign in to Claude Code…",
+                                              symbol: "person.crop.circle.badge.checkmark", tint: FrogStyle.warning, action: signIn)
+                                    .disabled(usage.checkingClaudeSignIn).help(usage.status(provider: provider))
+                            }
+                            UpdateReadyRow(install: installUpdate)
+                        }.padding(FrogStyle.listInset).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
+                    }
+                }.padding(.bottom, FrogStyle.space8)
+            }.padding([.horizontal, .top], FrogStyle.panelCardInset)
             FrogPopupFooter { UsageMenuStatus(usage: usage) }
         }
-        .padding(FrogStyle.panelCardInset)
         .frame(width: Self.width).fixedSize(horizontal: false, vertical: true)
         .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
         .frogPanel()
