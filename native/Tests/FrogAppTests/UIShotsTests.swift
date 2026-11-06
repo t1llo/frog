@@ -392,13 +392,22 @@ final class UIShotsTests: XCTestCase {
     private func render<Content: View>(_ view: Content, size: CGSize?, appearance: NSAppearance.Name, backdrop: Bool,
                                        settle: Duration = .milliseconds(400)) async throws -> Data {
         let margin: CGFloat = backdrop ? 24 : 0
-        let host = NSHostingView(rootView: view.padding(margin)
+        // Drawn as the front window draws: Frog's app is not active while the tests run.
+        let host = NSHostingView(rootView: view.environment(\.controlActiveState, .key).padding(margin)
             .background(backdrop ? (appearance == .aqua ? Color(white: 0.86) : Color(white: 0.16)) : Color.clear))
         host.appearance = NSAppearance(named: appearance)
+        // In a window that is never shown, as the app's views are: scroll views only scroll to a row (the sidebar
+        // showing the open page) inside one. It reports itself key, so controls draw as in the front window.
+        let window = ShotWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.appearance = host.appearance
+        window.contentView = host
+        defer { window.contentView = nil }
         func fit() {
             let fitting = host.fittingSize
             host.frame = NSRect(origin: .zero, size: size.map { CGSize(width: $0.width + margin * 2, height: $0.height + margin * 2) }
                 ?? CGSize(width: ceil(fitting.width), height: ceil(fitting.height)))
+            window.setContentSize(host.frame.size)
             host.layoutSubtreeIfNeeded()
         }
         fit()
@@ -414,6 +423,12 @@ final class UIShotsTests: XCTestCase {
         try png.write(to: URL(fileURLWithPath: "\(folder)/\(file).png"))
         written.append(file)
     }
+}
+
+/// A window that is never ordered in but says it is key and main, so a picture's controls are drawn active.
+private final class ShotWindow: NSWindow {
+    override var isKeyWindow: Bool { true }
+    override var isMainWindow: Bool { true }
 }
 
 /// An isolated Frog with every feature on and something in each place: notes and scripts, clipboard copies on a private
