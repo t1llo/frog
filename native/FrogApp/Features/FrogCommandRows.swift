@@ -1,7 +1,7 @@
 import AppKit
 import FrogCore
 
-/// Frog's own places: each plugin's page, the Plugins page, Settings, Models and History.
+/// Frog's own places: each plugin's page, the Features page, Settings, Models and History.
 @MainActor final class FrogPageRows: CommandBarRowProviding {
     func rows(in context: CommandBarContext) -> [CommandBarRow] {
         let model = context.model
@@ -11,7 +11,7 @@ import FrogCore
             return CommandBarRow(record: SearchRecord(id: id, title: plugin.name, subtitle: plugin.summary, keywords: "frog plugin", symbol: plugin.symbol),
                                  primary: CommandRowAction(title: "Open") { [weak model] in model?.pluginHost.open(plugin.id) }, tint: plugin.tint)
         }
-        rows.append(CommandBarRow(record: SearchRecord(id: "features", title: "Plugins", subtitle: "Turn features on and off", keywords: "frog features manage turn on off", symbol: "puzzlepiece.extension"),
+        rows.append(CommandBarRow(record: SearchRecord(id: "features", title: "Features", subtitle: "Turn features on and off", keywords: "frog features plugins manage turn on off", symbol: "square.grid.2x2"),
                                   primary: CommandRowAction(title: "Open") { [weak model] in model?.toolkit.select(.features); model?.showSettings() }, tint: .green))
         var routes: [(ToolkitRoute, String, String, String, PluginTint)] = [(.settings, "Settings", "gearshape.fill", "Appearance, startup and updates", .gray),
                                                                            (.models, "Models", "cpu", "Local models and providers", .indigo)]

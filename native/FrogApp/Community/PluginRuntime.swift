@@ -207,13 +207,13 @@ struct PluginReview: Identifiable {
         if let host = hosts[id] { return host }
         guard let item = item(id) else { throw FrogError.message("No plugin “\(id)” is installed.") }
         if let problem = item.problem { throw FrogError.message(problem) }
-        guard !item.needsReview else { throw FrogError.message("Review \(item.name) in Plugins before it runs.") }
-        guard item.record.enabled else { throw FrogError.message("\(item.name) is turned off in Plugins.") }
+        guard !item.needsReview else { throw FrogError.message("Review \(item.name) in Community plugins before it runs.") }
+        guard item.record.enabled else { throw FrogError.message("\(item.name) is turned off in Community plugins.") }
         let rules = try await contentRuleList()
         if let host = hosts[id] { return host }
         let package = try store.package(id)
         guard let approved = item.record.approved, approved.covers(package.grant) else {
-            throw FrogError.message("Review \(item.name) in Plugins before it runs.")
+            throw FrogError.message("Review \(item.name) in Community plugins before it runs.")
         }
         var inspectable = false
         if case .folder = item.record.source { inspectable = true }

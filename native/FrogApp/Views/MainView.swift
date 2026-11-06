@@ -25,7 +25,7 @@ struct MainView: View {
     }
     private var workspaceNavigation: [NavigationItem] {
         [NavigationItem(id: .models, title: "Models", symbol: "cpu", tint: PluginTint.indigo.color),
-         NavigationItem(id: .features, title: "Plugins", symbol: "puzzlepiece.extension", tint: PluginTint.green.color),
+         NavigationItem(id: .features, title: "Features", symbol: "square.grid.2x2", tint: PluginTint.green.color),
          NavigationItem(id: .settings, title: "Settings", symbol: "gearshape.fill", tint: PluginTint.gray.color, key: ",")]
     }
     /// The page of a built-in plugin; History keeps its own route until navigation moves to plugin IDs.
@@ -37,7 +37,7 @@ struct MainView: View {
         if let page = model.pluginHost.page(for: id) { page }
         else if let descriptor = model.pluginHost.descriptor(id) {
             FrogEmptyState(symbol: descriptor.info.symbol, title: "\(descriptor.info.name) is off",
-                           message: "Turn it on in Plugins.")
+                           message: "Turn it on in Features.")
         }
     }
     @ViewBuilder private var selectedPage: some View {
@@ -179,7 +179,7 @@ struct MainView: View {
     private var fallbackTitle: String {
         switch section {
         case .models: return L10n.text("Models")
-        case .features: return L10n.text("Plugins")
+        case .features: return L10n.text("Features")
         case .settings: return L10n.text("Settings")
         case .statistics: return L10n.text("Statistics")
         case .plugin(let id): return model.pluginPages.first { $0.id == id }?.name ?? "Frog"

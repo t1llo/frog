@@ -12,7 +12,7 @@ struct OnboardingView: View {
         var title: String {
             switch self {
             case .welcome: "Welcome to Frog"
-            case .plugins: "Choose your tools"
+            case .plugins: "Choose your features"
             case .permissions: "Allow access"
             case .models: "Local models"
             case .providers: "Connect AI"
@@ -22,10 +22,10 @@ struct OnboardingView: View {
         var subtitle: String {
             switch self {
             case .welcome: "Window layouts, writing help, dictation and the small tools your Mac is missing, in one calm menu bar app."
-            case .plugins: "Turn on what you want. You can change this any time in Plugins."
-            case .permissions: "Frog asks only for what the tools you chose need."
+            case .plugins: "Turn on what you want. You can change this any time in Features."
+            case .permissions: "Frog asks only for what the features you chose need."
             case .models: "Private and offline, on your Mac. Optional."
-            case .providers: "AI tools and servers found on this Mac."
+            case .providers: "Coding tools and model servers found on this Mac."
             case .done: "Here is what is ready. Everything can be changed in Settings."
             }
         }
@@ -235,11 +235,11 @@ private struct OnboardingDone: View {
         let access = model.configuration.preferences.toolkitSettings.agentAccess == true
         let remaining = [on > 0, missing.isEmpty, ready > 0, providers > 0, access].filter { !$0 }.count
         FrogSection {
-            row("Tools", on > 0 ? "\(on) turned on" : "None turned on", done: on > 0, step: .plugins)
+            row("Features", on > 0 ? "\(on) turned on" : "None turned on", done: on > 0, step: .plugins)
             row("Permissions", needed.isEmpty ? "None needed" : missing.isEmpty ? "All allowed" : "\(missing.map(\.title).joined(separator: ", ")) still to allow",
                 done: missing.isEmpty, step: .permissions)
             row("Local models", ready == 0 ? "None downloaded" : "\(ready) of \(pair.count) ready", done: ready > 0, step: .models)
-            row("Providers", providers == 0 ? "None added" : "\(providers) added", done: providers > 0, step: .providers)
+            row("Coding tools", providers == 0 ? "None added" : "\(providers) added", done: providers > 0, step: .providers)
             row("AI agents", access ? "Can use the frog command" : "Off", done: access, step: .providers)
         }
         .onChange(of: remaining, initial: true) { _, count in open = count }
@@ -316,7 +316,7 @@ private struct OnboardingPluginTile: View {
                 Text(L10n.text(plugin.name)).font(FrogType.bodyMedium).foregroundStyle(on ? FrogStyle.ink : FrogStyle.muted)
                     .lineLimit(1).minimumScaleFactor(0.85)
                 Spacer(minLength: 0)
-                // A tick says what is on; the tile itself stays plain, so a grid of tools that are all on stays calm.
+                // A tick says what is on; the tile itself stays plain, so a grid of features that are all on stays calm.
                 Image(systemName: on ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 14, weight: on ? .regular : .light))
                     .foregroundStyle(on ? FrogStyle.accent : FrogStyle.muted.opacity(0.6))
@@ -464,7 +464,7 @@ enum ProviderDetection {
         var id: String { kind.rawValue }
         var name: String { kind.title.replacingOccurrences(of: " (local)", with: "") }
         var caption: String {
-            if kind.localTool != nil { return "Installed tool · uses its own sign-in" }
+            if kind.localTool != nil { return "Coding tool · uses its own sign-in" }
             return models.isEmpty ? "Local server · running" : "Local server · \(models.count) \(models.count == 1 ? "model" : "models")"
         }
     }
