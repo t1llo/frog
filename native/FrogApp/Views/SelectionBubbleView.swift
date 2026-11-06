@@ -114,7 +114,8 @@ struct SelectionBubbleView: View {
 
     private func section(_ title: String, _ items: [BubbleItem]) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.muted).accessibilityAddTraits(.isHeader)
+            // The command bar's group caption, so both lists of rules head their groups alike.
+            SectionCaption(text: title).accessibilityAddTraits(.isHeader)
                 .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 4)
             ForEach(items) { item in
                 Button { select(item) } label: { listRow(item) }
