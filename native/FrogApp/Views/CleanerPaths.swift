@@ -20,7 +20,7 @@ extension CleanerRoots {
     }
 
     private static func below(_ path: String, _ root: String) -> String? {
-                let prefix = root.hasSuffix("/") ? root : root + "/"
+        let prefix = root.hasSuffix("/") ? root : root + "/"
         guard path.hasPrefix(prefix), path.count > prefix.count else { return nil }
         return String(path.dropFirst(prefix.count))
     }

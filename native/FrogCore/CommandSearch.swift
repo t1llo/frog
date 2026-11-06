@@ -120,9 +120,10 @@ public enum CommandSearch {
         let written = Int32(pattern.count) * Weights.keyword
         // Scattered letters in a long title are noise: each character must earn most of a plain match.
         if let found = best, found >= Int32(pattern.count) * (FuzzyMatch.scoreMatch - 4) {
-            let texts = [record.fuzzyTitle] + record.fuzzyAliases
+            // No array is built here: this runs for every row on every keystroke.
             if record.searchTitle.contains(word) || record.aliases.contains(where: { $0.contains(word) })
-                || texts.contains(where: { FuzzyMatch.matchesAtWordStarts(pattern, in: $0) }) { return found }
+                || FuzzyMatch.matchesAtWordStarts(pattern, in: record.fuzzyTitle)
+                || record.fuzzyAliases.contains(where: { FuzzyMatch.matchesAtWordStarts(pattern, in: $0) }) { return found }
             return record.searchText.contains(word) ? written : written - Int32(pattern.count)
         }
         return record.searchText.contains(word) ? written : nil
