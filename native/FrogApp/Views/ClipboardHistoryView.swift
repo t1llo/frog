@@ -188,16 +188,24 @@ struct ClipboardHistoryView: View {
             hint("Paste", keys: ["↩"])
             hint("Plain text", keys: ["⇧", "↩"])
             hint("Copy", keys: ["⌘", "C"])
+            // The way out without the keyboard, for the pointer and VoiceOver; Escape does the same.
+            Button(action: close) {
+                HStack(spacing: 6) {
+                    Text(L10n.text("Close")).font(FrogType.label).foregroundStyle(FrogStyle.ink)
+                    KeyCap("esc")
+                }.padding(.horizontal, FrogStyle.space6).frame(height: FrogStyle.compactHeight).contentShape(Rectangle())
+            }.buttonStyle(MenuRowStyle()).fixedSize().padding(.trailing, -FrogStyle.space6)
+                .accessibilityLabel(L10n.text("Close")).accessibilityHint(L10n.text("Escape"))
         }
         .frogFooterBand()
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     private func hint(_ title: String, keys: [String]) -> some View {
         HStack(spacing: 6) {
             Text(L10n.text(title)).font(FrogType.label).foregroundStyle(FrogStyle.ink)
             KeyCaps(keys.joined())
-        }.fixedSize()
+        }.fixedSize().accessibilityElement(children: .combine)
     }
 
     private func row(_ entry: ClipboardHistoryEntry, selected: Bool) -> some View {
