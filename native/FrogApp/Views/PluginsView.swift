@@ -68,17 +68,12 @@ struct PluginsView: View {
         if plugins.items.isEmpty {
             FrogEmptyState(symbol: CommunityPlugin.info.symbol, title: "No plugins yet",
                            message: "Install one from the directory, or have your AI agent build one.", tint: CommunityPlugin.info.tint) {
-                HStack(spacing: 8) {
-                    Button("Open the directory") { tab = .browse }.buttonStyle(.frog(.primary))
-                    Button("Build your own") { tab = .build }
-                }
+                // Building one is the tab beside this one, so the state offers only the directory.
+                Button("Open the directory") { tab = .browse }.buttonStyle(.frog(.primary))
             }.frogTableSurface()
         } else {
-            // Headed like every other page's cards.
-            FrogSection("Installed plugins") {
-                Text(verbatim: "\(plugins.items.count)").font(FrogType.small.monospacedDigit())
-                    .accessibilityLabel(L10n.text(plugins.items.count == 1 ? "1 plugin" : "\(plugins.items.count) plugins"))
-            } content: {
+            // One list under its tab, like the Directory beside it: a heading would only repeat the tab's name.
+            FrogSection {
                 ForEach(plugins.items) { installedRow($0) }
             }
         }
@@ -98,7 +93,7 @@ struct PluginsView: View {
                 }
                 Text(L10n.text(item.problem ?? item.manifest?.description ?? ""))
                     .font(FrogType.small).foregroundStyle(item.problem == nil ? FrogStyle.muted : FrogStyle.warning)
-                    .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(1).truncationMode(.tail)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .help(item.problem ?? [item.manifest?.description, caption(item)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n"))
@@ -150,10 +145,8 @@ struct PluginsView: View {
         Group {
             if plugins.registryKeys.isEmpty {
                 FrogEmptyState(symbol: CommunityPlugin.info.symbol, title: "No plugins listed yet",
-                               message: "Shared plugins appear here once the directory lists them. Build your own meanwhile.",
-                               tint: CommunityPlugin.info.tint) {
-                    Button("Build your own") { tab = .build }.buttonStyle(.frog(.primary))
-                }.frogTableSurface()
+                               message: "Shared plugins appear here once the directory lists them.",
+                               tint: CommunityPlugin.info.tint).frogTableSurface()
             } else if plugins.loadingRegistry, plugins.registry.isEmpty {
                 FrogLoadingNote(text: "Loading the directory…").frame(maxWidth: .infinity).padding(.vertical, 36).frogTableSurface()
             } else if let error = plugins.registryError, plugins.registry.isEmpty {
@@ -239,9 +232,10 @@ struct PluginsView: View {
                     FrogTextField(placeholder: "https://…", text: $link).textFieldStyle(.plain).font(FrogType.body)
                         .padding(.horizontal, 8).frame(width: 240).frogControlSurface()
                         .onSubmit(openTypedLink)
-                    Button("Review", action: openTypedLink).buttonStyle(.frog(compact: true))
+                    // As tall as the field it goes with, so the two read as one control.
+                    Button("Review", action: openTypedLink).buttonStyle(.frog())
                         .frogDisabled(plugins.downloading != nil ? "Downloading…" : typedLink == nil ? "Paste a link to a .frogplugin file" : nil)
-                }
+                }.frogRowAccessory(false)
             }
         }
     }
@@ -319,7 +313,7 @@ struct PluginReviewSheet: View {
                     InlineIssue(message: "It needs Frog \(manifest.frog ?? "") or later. Update Frog first.")
                 }
             }.padding([.horizontal, .top], FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space16)
-            ScrollView {
+            FrogSheetScroll {
                 VStack(alignment: .leading, spacing: FrogStyle.space16) {
                     if manifest.permissions.isEmpty {
                         FrogSection("Permissions") {
@@ -394,9 +388,7 @@ struct PluginReviewSheet: View {
                     }
                 }
                 .padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            // Tall enough for the usual review without scrolling, now that every permission is spelled out in full.
-            }.frame(maxHeight: 540).fixedSize(horizontal: false, vertical: true).bottomScrollFade()
+            }
             FrogSheetButtons {
                 Text("\(review.package.files.count) files · \(ByteCountFormatter.string(fromByteCount: Int64(review.package.size), countStyle: .file))")
                     .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
