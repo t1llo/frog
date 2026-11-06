@@ -73,7 +73,7 @@ struct CleanerView: View {
     /// no row under the breadcrumb holds only that button.
     private var subtitle: String? {
         if cleaner.outcome != nil { return nil }
-        guard let review = cleaner.review else { return "Pick an app, or drop one here." }
+        guard let review = cleaner.review else { return "Pick an app below, or drag one from Finder onto this page." }
         let app = review.app
         return ([app.version, app.bundleID, review.removedApp ? L10n.text("In the Trash") : nil] as [String?])
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
