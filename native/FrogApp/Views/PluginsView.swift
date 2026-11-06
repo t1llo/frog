@@ -69,8 +69,8 @@ struct PluginsView: View {
 
     @ViewBuilder private var installed: some View {
         if plugins.items.isEmpty {
-            FrogEmptyState(symbol: "puzzlepiece.extension", title: "No plugins yet",
-                           message: "Install one from the directory, or have your AI agent build one.") {
+            FrogEmptyState(symbol: CommunityPlugin.info.symbol, title: "No plugins yet",
+                           message: "Install one from the directory, or have your AI agent build one.", tint: CommunityPlugin.info.tint) {
                 HStack(spacing: 8) {
                     Button("Open the directory") { tab = .browse }.buttonStyle(.frog(.primary))
                     Button("Build your own") { tab = .build }
@@ -148,8 +148,9 @@ struct PluginsView: View {
     @ViewBuilder private var directory: some View {
         Group {
             if plugins.registryKeys.isEmpty {
-                FrogEmptyState(symbol: "checkmark.seal", title: "The directory opens soon",
-                               message: "No plugins yet. Frog only installs plugins signed by the directory.").frogTableSurface()
+                FrogEmptyState(symbol: CommunityPlugin.info.symbol, title: "The directory opens soon",
+                               message: "No plugins yet. Frog only installs plugins signed by the directory.",
+                               tint: CommunityPlugin.info.tint).frogTableSurface()
             } else if plugins.loadingRegistry, plugins.registry.isEmpty {
                 FrogLoadingNote(text: "Loading the directory…").frame(maxWidth: .infinity).padding(.vertical, 36).frogTableSurface()
             } else if let error = plugins.registryError, plugins.registry.isEmpty {
@@ -157,8 +158,9 @@ struct PluginsView: View {
                     Button("Try again") { Task { await plugins.loadRegistry() } }
                 }.frogTableSurface()
             } else if plugins.registry.isEmpty {
-                FrogEmptyState(symbol: "square.grid.2x2", title: "Nothing listed yet",
-                               message: "Plugins people share appear here once frog.beffa.xyz/plugins lists them.").frogTableSurface()
+                FrogEmptyState(symbol: CommunityPlugin.info.symbol, title: "Nothing listed yet",
+                               message: "Plugins people share appear here once frog.beffa.xyz/plugins lists them.",
+                               tint: CommunityPlugin.info.tint).frogTableSurface()
             } else if shown.isEmpty {
                 FrogEmptyState(symbol: "magnifyingglass", title: "Nothing matches", message: "Try another word.").frogTableSurface()
             } else {
@@ -383,18 +385,18 @@ struct PluginReviewSheet: View {
                 .padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space4)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }.frame(maxHeight: 440).fixedSize(horizontal: false, vertical: true).bottomScrollFade()
-            HStack(spacing: FrogStyle.space8) {
+            FrogSheetButtons {
                 Text("\(review.package.files.count) files · \(ByteCountFormatter.string(fromByteCount: Int64(review.package.size), countStyle: .file))")
                     .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                Spacer()
-                Button(review.installed ? "Not now" : "Cancel") { plugins.dismissReview() }.keyboardShortcut(.cancelAction)
+            } trailing: {
+                FrogCancelButton(review.installed ? "Not now" : "Cancel") { plugins.dismissReview() }
                 // It looks ready at once; a click in its first second after the sheet changes is ignored, so a click
                 // meant for something else cannot approve it.
                 Button(review.installed ? "Allow" : updating ? "Update" : "Install") {
                     guard armed else { return }
                     do { try plugins.approve(review) } catch { report(error); plugins.dismissReview() }
                 }.buttonStyle(.frog(.primary)).frogDisabled(review.compatible ? nil : "Update Frog first")
-            }.padding(FrogStyle.sheetPadding)
+            }
         }
         .task(id: review.id) {
             armed = false
@@ -478,7 +480,7 @@ private struct PluginPermissionRow<Icon: View>: View {
                 }
                 Spacer(minLength: FrogStyle.space8)
                 Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(FrogStyle.muted.opacity(hovering || expanded ? 1 : 0.6))
+                    .foregroundStyle((hovering || expanded ? FrogStyle.muted : FrogStyle.placeholder))
                     .rotationEffect(.degrees(expanded ? 90 : 0))
                     .frame(height: 28)
                     .accessibilityHidden(true)

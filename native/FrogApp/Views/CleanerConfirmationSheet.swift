@@ -64,9 +64,9 @@ struct CleanerConfirmationSheet: View {
                         .font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)
                 }
             } else {
-                HStack(spacing: 8) {
-                    Spacer()
-                    Button(prompt.cancel) { cleaner.cancelRemoval() }.keyboardShortcut(.cancelAction)
+                // The confirming action removes, so it is destructive rather than the primary.
+                FrogSheetButtons(padded: false) {
+                    FrogCancelButton(prompt.cancel) { cleaner.cancelRemoval() }
                     Button(prompt.confirm, role: .destructive) { Task { await cleaner.confirmRemoval() } }
                         .buttonStyle(.frog(.destructive))
                 }

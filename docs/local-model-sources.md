@@ -16,7 +16,7 @@ Frog recommends one speech model and one text model, each with a one-click downl
 
 Parakeet runs through FluidAudio / Core ML, Whisper through WhisperKit / Core ML and the text models through MLX. Parakeet Ultra is a full-precision post-training of NVIDIA Parakeet TDT v3 with the same architecture, vocabulary and languages; FluidAudio measures it at 2.13 % WER on LibriSpeech test-clean against 2.27 % for v3, and 11.67 % against 14.81 % averaged over 24 FLEURS languages, at the same speed. Its int8 encoder runs on macOS 14+. Qwen3.5 2B is a hybrid Gated-DeltaNet model, so long prompts prefill cheaply; the repository also holds vision weights, which the text loader skips. Sizes are the bytes that Frog's download fetches: the variant folder plus the upstream tokenizer for Whisper, the four Core ML components and the vocabulary for Parakeet, and the configuration, tokenizer and SafeTensors files for MLX text models. Compiled caches are not included.
 
-Previously installed or selected models stay available with their original IDs and weights: Parakeet TDT v3, Whisper Tiny, Base, Small and Small · Compact, Medium, full Large v3, the earlier Turbo conversion (listed as **Whisper Large v3 Turbo · earlier build**), English-only Parakeet v2, Qwen3 0.6B, 1.7B and 4B, Llama 3.2 1B and 3B Instruct, and Gemma 3 1B. You can also reveal these models through **Add model…** using their Hugging Face source. Saved selections are preserved.
+Previously installed or selected models stay available with their original IDs and weights: Parakeet TDT v3, Whisper Tiny, Base, Small and Small · Compact, Medium, full Large v3, the earlier Turbo conversion (listed as **Whisper Large v3 Turbo · earlier build**), English-only Parakeet v2, Qwen3 0.6B, 1.7B and 4B, Llama 3.2 1B and 3B Instruct, and Gemma 3 1B. You can also reveal these models through **Add model** using their Hugging Face source. Saved selections are preserved.
 
 The catalog data says which models are recommended (`LocalModelDescriptor.recommendedSpeechModelID`, `recommendedTextModelID`, `isRecommended`, `recommendedPair`) and which are shown (`shownModelIDs`), so the interface reads them instead of naming models.
 
@@ -26,7 +26,7 @@ Click **ⓘ** on any model to see its exact download repository, variant, runtim
 
 ## Add a Hugging Face link
 
-1. Open **Models → Local models → Add model…**.
+1. Open **Models → Local models → Add model**.
 2. Paste `owner/model` or `https://huggingface.co/owner/model`.
 3. Click **Check source**. Frog reads repository metadata, including the size of each file, and text-model configuration only. The model's download size is the sum of the files it will fetch; a source whose metadata lacks sizes shows none.
 4. Select the detected model or WhisperKit variant to add it to the catalog. A source added with an earlier version of Frog has no download size; checking it again and choosing **Show model** saves the size with it.

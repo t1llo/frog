@@ -13,7 +13,7 @@ struct ShortcutsSettingsView: View {
         let apps = bindings.indices.filter { bindings[$0].app != nil }
         let actions = bindings.indices.filter { bindings[$0].app == nil }
         FrogPage {
-            FrogPageHeader(title: "Shortcuts", subtitle: "Keys that open apps and run actions from anywhere")
+            FrogPageHeader(title: "Shortcuts", subtitle: "Keys that open apps and run actions from anywhere.")
             if let unreadable = plugin.unreadable { FrogRowNote(text: unreadable, tone: FrogStyle.warning) }
             FrogSection("Apps", accessory: { if !apps.isEmpty || !catalog.scanned { addApp } }) {
                 if apps.isEmpty, catalog.scanned {
@@ -84,18 +84,9 @@ struct ShortcutsSettingsView: View {
 
     // MARK: Adding
 
-    private var addApp: some View {
-        let list = appList
-        return FrogDropdown(selected: String?.none, sections: list.sections, width: 120, compact: true,
-                            searchPrompt: list.searchPrompt, placeholder: "Add app", emptyMessage: list.emptyMessage,
-                            item: list.item, choose: list.choose)
-    }
+    private var addApp: some View { ShortcutAddButton(title: "Add app", list: appList, primary: false) }
 
-    private var addAction: some View {
-        let list = actionList
-        return FrogDropdown(selected: String?.none, sections: list.sections, width: 120, compact: true,
-                            searchPrompt: list.searchPrompt, placeholder: "Add action", item: list.item, choose: list.choose)
-    }
+    private var addAction: some View { ShortcutAddButton(title: "Add action", list: actionList, primary: false) }
 
     /// Installed apps, by name.
     private var appList: ShortcutChoices {
@@ -145,14 +136,16 @@ private struct ShortcutChoices {
     let choose: (String?) -> Void
 }
 
-/// The primary button of an empty list: it opens the same searchable list as the header's dropdown.
+/// The add button of a section (secondary) or of its empty state (primary): `FrogAddMenu`'s pill, opening a
+/// searchable list, since apps and actions are too many for a menu.
 private struct ShortcutAddButton: View {
     let title: String
     let list: ShortcutChoices
+    var primary = true
     @State private var showing = false
     var body: some View {
-        Button(L10n.text(title), systemImage: "plus") { showing.toggle() }
-            .buttonStyle(.frog(.primary))
+        Button { showing.toggle() } label: { FrogAddLabel(title: title, menu: true) }
+            .buttonStyle(.frog(primary ? .primary : .secondary)).accessibilityLabel(L10n.text(title))
             .popover(isPresented: $showing, arrowEdge: .bottom) {
                 FrogDropdownList(sections: list.sections, selected: nil, item: list.item, searchPrompt: list.searchPrompt,
                                  emptyMessage: list.emptyMessage, width: 320) { value in

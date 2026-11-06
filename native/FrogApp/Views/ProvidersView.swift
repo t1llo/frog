@@ -27,9 +27,9 @@ struct ProvidersView: View {
         FrogPage {
             FrogPageHeader(title: "Models", subtitle: subtitle) {
                 if selectedFilter == "Local models" {
-                    Button("Add model…", systemImage: "plus") { addingLocal = true }
+                    FrogAddButton("Add model") { addingLocal = true }
                 } else if selectedFilter == "Providers" {
-                    Button { editing = ProviderConfiguration() } label: { Label("Connect provider", systemImage: "plus") }
+                    FrogAddButton("Add provider") { editing = ProviderConfiguration() }
                         .keyboardShortcut("n", modifiers: .command)
                 }
             }
@@ -79,7 +79,7 @@ struct ProvidersView: View {
         switch selectedFilter {
         case "Local models": LocalModels.supported ? "Run on this Mac, offline." : "Run on this Mac. They need Apple silicon."
         case "Providers": "Cloud services and local servers such as Ollama."
-        default: "Coding agents you already use, with their own login."
+        default: "Coding tools you already use, with their own sign-in."
         }
     }
 }
@@ -280,15 +280,18 @@ struct ProviderEditor: View {
             // As tall as the step, up to a limit: the short steps leave no empty half, the long one scrolls.
             .frame(maxHeight: 460).fixedSize(horizontal: false, vertical: true)
             // As in setup: Back steps on the leading side, Cancel waits beside the main button.
-            HStack(spacing: FrogStyle.space8) {
+            FrogSheetButtons {
                 if step > 0 {
                     Button("Back") { step -= 1 }.buttonStyle(.frog(.ghost)).padding(.leading, -10)
                 }
-                Spacer()
-                Button("Cancel") { testTask?.cancel(); discoveryTask?.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
-                Button(step < 2 && !isSaved ? "Continue" : "Save") { if step < 2 && !isSaved { step += 1 } else { save() } }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
-                    .frogDisabled(testing ? "Testing the connection…" : discovering ? "Finding models…" : (step == 2 || isSaved) ? validation : nil)
-            }.padding(FrogStyle.sheetPadding)
+            } trailing: {
+                FrogCancelButton { testTask?.cancel(); discoveryTask?.cancel(); dismiss() }
+                FrogPrimaryButton(step < 2 && !isSaved ? "Continue" : "Save",
+                                  disabledReason: testing ? "Testing the connection…" : discovering ? "Finding models…"
+                                  : (step == 2 || isSaved) ? validation : nil) {
+                    if step < 2 && !isSaved { step += 1 } else { save() }
+                }
+            }
         }
         .frame(width: 540).background(FrogStyle.canvas).background(FrogWindowMaterial())
         .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(.frog())

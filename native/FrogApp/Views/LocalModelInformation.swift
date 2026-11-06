@@ -22,14 +22,14 @@ struct LocalModelInformation: View {
                     FrogRowNote(text: "WhisperKit also installs the matching tokenizer from the upstream Hugging Face model.")
                 }
             }
-            HStack(spacing: FrogStyle.space8) {
+            FrogSheetButtons(padded: false) {
                 Link(destination: item.sourceURL) { Label("Model card", systemImage: "arrow.up.right") }
                 Link(destination: item.filesURL) { Label("Files", systemImage: "arrow.up.right") }
                 if let original = item.originalRepository, let url = URL(string: "https://huggingface.co/\(original)") {
                     Link(destination: url) { Label("Original model", systemImage: "arrow.up.right") }
                 }
-                Spacer()
-                Button("Done") { dismiss() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
+            } trailing: {
+                FrogPrimaryButton("Done") { dismiss() }
             }.labelStyle(TrailingIconLabelStyle())
         }.padding(FrogStyle.sheetPadding).frame(width: 480).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
             .buttonStyle(.frog()).environment(\.locale, L10n.locale)
@@ -99,16 +99,16 @@ struct AddLocalModelView: View {
                     }
                 }.frame(maxHeight: 250).fixedSize(horizontal: false, vertical: true)
             }
-            HStack(spacing: FrogStyle.space8) {
+            FrogSheetButtons(padded: false) {
                 if loading {
                     FrogLoadingNote(text: "Reading the model's details…")
                 } else {
                     Text("Checking reads only its details.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }
-                Spacer()
-                Button("Cancel") { inspection?.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Check source") { inspect() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
-                    .frogDisabled(loading ? "Reading the model's details…" : empty ? "Paste a link or a model ID first" : nil)
+            } trailing: {
+                FrogCancelButton { inspection?.cancel(); dismiss() }
+                FrogPrimaryButton("Check source", disabledReason: loading ? "Reading the model's details…"
+                                  : empty ? "Paste a link or a model ID first" : nil) { inspect() }
             }
         }.padding(FrogStyle.sheetPadding).frame(width: 540).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
             .buttonStyle(.frog()).environment(\.locale, L10n.locale)

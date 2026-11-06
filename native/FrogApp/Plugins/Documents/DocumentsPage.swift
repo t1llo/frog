@@ -34,7 +34,7 @@ struct DocumentsPage<Controls: View, Content: View, Footer: View>: View {
         FrogPage {
             FrogPageHeader(title: title, subtitle: subtitle) {
                 if !all.isEmpty { SearchBox(placeholder: "Search", text: $search).frame(width: 180) }
-                Button("New", systemImage: "plus") {
+                FrogAddButton(kind == .note ? "Add note" : "Add script") {
                     search = ""
                     selected = documents.add(UtilityDocument(kind: kind, title: kind.newItemTitle))
                 }.disabled(!documents.loaded)
@@ -42,7 +42,8 @@ struct DocumentsPage<Controls: View, Content: View, Footer: View>: View {
             if let issue = documents.issue { notice(issue) }
             if let unreadable = documents.unreadable { notice(unreadable.message) }
             if documents.loaded, all.isEmpty {
-                FrogEmptyState(symbol: symbol, title: "No \(title.lowercased()) yet", message: emptyMessage).frogTableSurface()
+                FrogEmptyState(symbol: symbol, title: "No \(title.lowercased()) yet", message: emptyMessage,
+                               tint: kind == .note ? NotesPlugin.info.tint : ScriptsPlugin.info.tint).frogTableSurface()
                 footer()
             } else if documents.loaded {
                 // The list runs down the side as a source list, without a card of its own; the editor sits beside
@@ -120,7 +121,7 @@ struct DocumentsPage<Controls: View, Content: View, Footer: View>: View {
             }.frame(height: FrogStyle.controlHeight)
             ForEach(item.files, id: \.self) { url in fileRow(url) }
             content(item)
-        }.buttonStyle(.frog(compact: true))
+        }.frogRowAccessory()
     }
 
     private func fileRow(_ url: URL) -> some View {

@@ -62,10 +62,7 @@ struct PluginSettingsSheet: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }.frame(maxHeight: 440).fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Spacer()
-                Button("Done", action: done).buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
-            }
+            FrogSheetButtons(padded: false) { FrogPrimaryButton("Done", action: done) }
         }
         .padding(FrogStyle.sheetPadding).frame(width: 520)
         .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
@@ -175,7 +172,7 @@ private struct PluginNumberSetting: View {
             Image(systemName: symbol).font(.system(size: 10, weight: .semibold)).frame(width: 24, height: FrogStyle.controlHeight)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain).foregroundStyle(disabled ? FrogStyle.muted.opacity(0.5) : FrogStyle.ink).disabled(disabled)
+        .buttonStyle(.plain).foregroundStyle(disabled ? FrogStyle.placeholder : FrogStyle.ink).disabled(disabled)
         .accessibilityLabel(L10n.text(delta < 0 ? "Decrease \(title)" : "Increase \(title)"))
     }
 

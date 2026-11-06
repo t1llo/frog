@@ -47,7 +47,7 @@ struct LegalDocumentView: View {
                 }
             }
             .frogTableSurface().accessibilityLabel(L10n.text(document.title))
-            HStack { Spacer(); Button("Done") { dismiss() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction) }
+            FrogSheetButtons(padded: false) { FrogPrimaryButton("Done") { dismiss() } }
         }.padding(FrogStyle.sheetPadding).frame(width: 640).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
             .buttonStyle(.frog()).environment(\.locale, L10n.locale)
     }
