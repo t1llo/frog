@@ -24,7 +24,10 @@ struct LocalModelSettingsView: View {
             }
             FrogSection("Storage") {
                 let root = model.localModels.root
-                FrogRow("Model folder", caption: .path(root.path)) {
+                // The default folder is named by where Frog keeps it for everyone, never by the data folder a test or
+                // another copy of Frog was started with.
+                let shown = root == model.localModels.defaultDirectory ? LocalModels.standardDirectory : root
+                FrogRow("Model folder", caption: .path(shown.path)) {
                     HStack(spacing: 8) {
                         // Offered only while another folder is in use; the same pill as the buttons beside it.
                         if root != model.localModels.defaultDirectory {

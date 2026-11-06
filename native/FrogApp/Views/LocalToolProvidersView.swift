@@ -26,18 +26,17 @@ struct LocalToolProvidersView: View {
                 else { Button("Refresh") { Task { await refresh() } }.buttonStyle(.frog(.ghost, compact: true)) }
             }) {
                 ForEach(statuses) { status in
-                    // The tool's own tile; one control per state at the row's end: a check for the chosen tool,
-                    // Choose for another installed one, Install (its website) for one that is missing.
+                    // The tool's own tile and, at the row's end, its state: Connected once it is signed in, Install
+                    // (its website) while it is missing. Which tool the rules use is chosen in the card below.
                     FrogRow(status.kind.title, caption: .attributed(Self.caption(status)), icon: {
                         PluginIconTile(mark: .tool(status.kind)).opacity(status.installed ? 1 : FrogStyle.disabledOpacity)
                     }) {
-                        if status.installed, selected == status.kind {
-                            Image(systemName: "checkmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(FrogStyle.accentText)
-                                .frame(minWidth: FrogStyle.controlHeight, minHeight: FrogStyle.compactHeight)
-                                .help("Chosen below").accessibilityLabel("Chosen")
-                        } else if status.installed {
-                            Button("Choose") { selected = status.kind }.buttonStyle(.frog(compact: true))
-                        } else {
+                        if status.installed, status.authentication == .signedIn {
+                            HStack(spacing: FrogStyle.space6) {
+                                Circle().fill(FrogStyle.good).frame(width: 7, height: 7)
+                                Text("Connected").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                            }.accessibilityElement(children: .combine)
+                        } else if !status.installed {
                             Button("Install") { NSWorkspace.shared.open(status.kind.website) }.buttonStyle(.frog(compact: true))
                                 .help("Opens \(status.kind.title)'s website")
                         }
@@ -69,7 +68,7 @@ struct LocalToolProvidersView: View {
                 }
                 FrogRow("Add \(selected.title) as a provider", caption: selectReason) {
                     Button("Add") { onSelect(selected, model.trimmingCharacters(in: .whitespacesAndNewlines)) }
-                        .buttonStyle(.frog(.primary)).frogDisabled(canSelect ? nil : selectReason)
+                        .buttonStyle(.frog(compact: true)).frogDisabled(canSelect ? nil : selectReason)
                         .accessibilityLabel("Add \(selected.title) as a provider")
                 }
             }

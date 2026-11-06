@@ -58,10 +58,11 @@ struct ModelInventory: View {
                             // The heading says whether it is downloaded and the button what it does, so no glyph repeats it.
                             // One line of facts; the runtime and the guidance are in the help and the information sheet.
                             VStack(alignment: .leading, spacing: 2) {
+                                // One line height with or without the badge, so every row is as tall as the next.
                                 HStack(spacing: 6) {
                                     Text(item.name).font(FrogType.row)
                                     if item.isRecommended { RecommendedModelBadge() }
-                                }
+                                }.frame(height: 16)
                                 Text([installed && kind == nil ? (item.kind == .audio ? "Speech" : "Text") : "",
                                       installed ? model.localModels.size(of: item) : item.downloadSize,
                                       model.localModels.loaded.contains(item.id) ? "In memory" : "", unfinished ? "Partly downloaded" : "",
