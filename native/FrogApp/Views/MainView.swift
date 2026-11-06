@@ -117,8 +117,13 @@ struct MainView: View {
 
     /// Scrolls the sidebar by the least amount that shows the open page's row; a row already in view stays put.
     /// Statistics shows Settings, the row it belongs to.
+    ///
+    /// It waits for the next turn of the run loop: asked while the list is still being laid out (the window opening
+    /// on a page), `scrollTo` did nothing, and the open row stayed below the fold with only the top of its
+    /// highlight peeking out above the pinned rows, a selection pill with no row.
     private func reveal(_ route: ToolkitRoute, in proxy: ScrollViewProxy) {
-        proxy.scrollTo(route == .statistics ? ToolkitRoute.settings : route)
+        let target = route == .statistics ? ToolkitRoute.settings : route
+        DispatchQueue.main.async { proxy.scrollTo(target) }
     }
 
     // MARK: Toolbar
@@ -134,10 +139,10 @@ struct MainView: View {
                 HStack(spacing: FrogStyle.space6) {
                     if let parent = breadcrumbParent {
                         FrogBreadcrumbLink(title: parent.title, action: parent.action)
-                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(FrogStyle.muted).accessibilityHidden(true)
                     }
-                    Text(pageTitle ?? fallbackTitle).font(FrogType.toolbarTitle).foregroundStyle(FrogStyle.ink)
+                    Text(pageTitle ?? fallbackTitle).font(FrogType.pageTitle).tracking(-0.3).foregroundStyle(FrogStyle.ink)
                         .lineLimit(1).accessibilityAddTraits(.isHeader)
                 }
                 if let pageSubtitle {
@@ -384,7 +389,7 @@ private struct FrogBreadcrumbLink: View {
     @State private var hovering = false
     var body: some View {
         Button(action: action) {
-            Text(title).font(FrogType.toolbarTitle).lineLimit(1)
+            Text(title).font(FrogType.pageTitle).tracking(-0.3).lineLimit(1)
                 .foregroundStyle(hovering ? FrogStyle.ink : FrogStyle.muted)
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).onHover { hovering = $0 }
