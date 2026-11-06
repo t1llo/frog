@@ -723,8 +723,9 @@ struct UsageTrendChart: View {
                         .interpolationMethod(.monotone).foregroundStyle(FrogChart.areaFill(FrogStyle.series))
                         .accessibilityHidden(true)
                 }
-                // Daily amounts on the page; a popup's small chart keeps to the line, where one lone bar read as a stray mark.
-                ForEach(compact ? [] : steps) { step in
+                // Daily amounts on the page; a popup's small chart keeps to the line. One lone bar (all the activity
+                // in the last bucket) reads as a stray mark under the end point, so bars need two buckets with activity.
+                ForEach(showsBars ? steps : []) { step in
                     BarMark(x: .value("Date", step.date), y: .value("Amount", step.bar), width: .fixed(compact ? 2 : 4))
                         .cornerRadius(FrogStyle.smallRadius)
                         .foregroundStyle(FrogStyle.series.opacity(selected == nil ? 0.32 : selected?.id == step.id ? 0.9 : 0.18))
@@ -758,12 +759,14 @@ struct UsageTrendChart: View {
                     }
                 }
             }
-            .help("The line is the running total for the period. The bars are each \(hourly ? "hour" : "day")’s amount.")
+            .help(showsBars ? "The line is the running total for the period. The bars are each \(hourly ? "hour" : "day")’s amount." : "The line is the running total for the period.")
             if let first = steps.first, let last = steps.last {
                 GraphAxis(leading: label(first.date, long: false), trailing: label(last.date, long: false))
             }
         }
     }
+
+    private var showsBars: Bool { !compact && steps.lazy.filter { $0.amount > 0 }.prefix(2).count > 1 }
 
     /// Where the selected bucket lies across the chart, 0 at its left edge and 1 at its right.
     private func pointer(_ selected: UsageTrend.Step?) -> Double {
