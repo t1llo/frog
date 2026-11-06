@@ -66,7 +66,8 @@ struct AnswerPanelView: View {
             Text(model.session?.ruleName ?? "").foregroundStyle(FrogStyle.ink).layoutPriority(1)
             if let session = model.session, !session.modelName.isEmpty {
                 Text("·").accessibilityHidden(true)
-                Text(session.modelName).help(session.modelLabel)
+                // A failed answer names the provider too, so the error reads against the service that gave it.
+                Text(failed ? session.modelLabel : session.modelName).help(session.modelLabel)
             }
             Spacer(minLength: 8)
             let pinTitle = model.pinned ? "Stop keeping open" : "Keep open"
@@ -84,7 +85,11 @@ struct AnswerPanelView: View {
                     AnswerMarkdown(text: turn.answer)
                 }
                 if let pending = session.pendingQuestion, !session.turns.isEmpty { question(pending).id(Self.followUpID) }
-                if !session.partial.isEmpty { AnswerMarkdown(text: session.partial) }
+                if !session.partial.isEmpty {
+                    // A trailing ellipsis marks the stream as still coming; it leaves once the answer is done.
+                    let streaming = session.phase == .streaming
+                    AnswerMarkdown(text: streaming ? Self.trimmedForCaret(session.partial) + " …" : session.partial)
+                }
             }
             .font(FrogType.body).lineSpacing(3)
             .textSelection(.enabled)
@@ -92,6 +97,11 @@ struct AnswerPanelView: View {
     }
 
     private static let followUpID = "follow-up"
+
+    /// The stream without its trailing spaces, so the ellipsis sits right after the last word.
+    static func trimmedForCaret(_ text: String) -> String {
+        String(text.reversed().drop(while: { $0 == " " || $0 == "\n" }).reversed())
+    }
 
     /// Space sets each follow-up apart from the answer before it.
     private func question(_ text: String) -> some View {
