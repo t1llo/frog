@@ -12,6 +12,8 @@ struct HotkeyRecorder: View {
     var purpose: HotkeyManager.ShortcutPurpose = .rule
     /// What the button says while there is no shortcut; a grid of many says less.
     var emptyTitle = "Record shortcut"
+    /// Told when a recording starts and ends, such as for a row that keeps a pointed-at control in view.
+    var recordingChanged: (Bool) -> Void = { _ in }
     @State private var recording = false
     /// Why the last key press was refused. Not private, so that a layout test can show one without pressing a key.
     @State var hint: String?
@@ -45,6 +47,7 @@ struct HotkeyRecorder: View {
                     .frame(width: 220, alignment: .trailing).fixedSize(horizontal: false, vertical: true)
             }
         }.onChange(of: recording) { _, value in
+            recordingChanged(value)
             if value { model.beginShortcutRecording(id) }
             // The refusal belongs to the recording that showed it.
             else { hint = nil; model.endShortcutRecording(id) }

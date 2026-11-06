@@ -171,8 +171,11 @@ private struct LayoutShortcutCell: View {
     let rule: Rule
     let issue: String?
     @ObservedObject var model: AppModel
-    /// A layout without a shortcut shows its Add button only while pointed at, so the grid stays quiet.
+    /// A layout without a shortcut shows its Add button dimmed until pointed at, so the grid stays quiet; it is in
+    /// full while recording or focused from the keyboard.
     @State private var hovering = false
+    @State private var recording = false
+    @FocusState private var focused: Bool
 
     var body: some View {
         HStack(spacing: 10) {
@@ -186,8 +189,9 @@ private struct LayoutShortcutCell: View {
             HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: { value in
                 var updated = rule; updated.hotkey = value; updated.enabled = value != nil
                 do { try model.saveRule(updated) } catch { model.report(error) }
-            }), emptyTitle: "Add")
-            .opacity(rule.hotkey != nil || hovering ? 1 : 0)
+            }), emptyTitle: "Add", recordingChanged: { recording = $0 })
+            .focused($focused)
+            .opacity(rule.hotkey != nil || hovering || recording || focused ? 1 : 0.4)
         }
         .frame(minHeight: FrogStyle.rowHeight)
         .contentShape(Rectangle())
