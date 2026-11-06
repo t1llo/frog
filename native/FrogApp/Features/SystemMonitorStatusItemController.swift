@@ -112,11 +112,11 @@ struct SystemMonitorStatusPopover: View {
     let openPage: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            StatusPopupHeader(symbol: SystemMonitorPlugin.info.symbol, tint: SystemMonitorPlugin.info.tint, title: "System") {
+            FrogPopupHeader(symbol: SystemMonitorPlugin.info.symbol, tint: SystemMonitorPlugin.info.tint, title: "System") {
                 IconAction(title: "Open System monitor", symbol: "arrow.up.forward.app", bordered: true, action: openPage)
             }
             SystemMonitorView(monitor: monitor, presenter: .statusPopup).padding(.bottom, FrogStyle.space8)
-            StatusPopupFooter {
+            FrogPopupFooter {
                 let live = monitor.history.count >= 2
                 HStack(spacing: FrogStyle.space6) {
                     Circle().fill(live ? FrogStyle.good : FrogStyle.muted).frame(width: 6, height: 6)

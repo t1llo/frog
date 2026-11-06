@@ -204,7 +204,7 @@ struct PluginsView: View {
                 Button("Open Settings") { model.toolkit.select(.settings) }.buttonStyle(.frog(compact: true))
             }
             FrogRow("Share it", caption: "Packs the plugin and prints its entry for the directory.") {
-                CodeChip(text: "frog plugin publish")
+                FrogCodeChip(text: "frog plugin publish")
             }
         }
         FrogSection("Install from a link") {
@@ -251,43 +251,6 @@ struct PluginsView: View {
                 try await plugins.openArchive(data, source: .file(url.path))
             } catch { model.report(error) }
         }
-    }
-}
-
-/// Text with `backticked` commands, the commands set in the mono font on a faint fill and the backticks dropped.
-enum InlineCode {
-    static func attributed(_ text: String) -> AttributedString {
-        var result = AttributedString()
-        for (index, part) in text.components(separatedBy: "`").enumerated() {
-            var piece = AttributedString(part)
-            if index % 2 == 1 {
-                piece.font = FrogType.mono
-                piece.backgroundColor = FrogStyle.hover
-            }
-            result += piece
-        }
-        return result
-    }
-}
-
-/// A command to type, as a chip in the mono font; a click copies it.
-struct CodeChip: View {
-    let text: String
-    @State private var copied = false
-
-    var body: some View {
-        Button {
-            ViewActions.copy(text); copied = true
-            Task { try? await Task.sleep(for: FrogMotion.confirmation); copied = false }
-        } label: {
-            HStack(spacing: FrogStyle.space6) {
-                Text(text).font(FrogType.mono).foregroundStyle(FrogStyle.ink)
-                Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 10)).foregroundStyle(FrogStyle.muted)
-            }
-            .padding(.horizontal, FrogStyle.space8).frame(height: FrogStyle.compactHeight)
-            .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius, style: .continuous))
-            .contentShape(Rectangle())
-        }.buttonStyle(.plain).help("Copy \(text)").accessibilityLabel("Copy \(text)")
     }
 }
 

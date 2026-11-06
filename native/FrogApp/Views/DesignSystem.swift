@@ -376,6 +376,8 @@ enum FrogStyle {
 
 /// Frog's type scale. Every text in the app uses one of these; docs/design.md says which goes where.
 enum FrogType {
+    /// The welcome's headline in setup, the one hero line in Frog.
+    static let hero = Font.system(size: 26, weight: .bold)
     /// Large titles inside a page, such as a dashboard's headline. A page's own title is `toolbarTitle`.
     static let title = Font.system(size: 19, weight: .semibold)
     /// The open page's title in the bar above it.
@@ -799,14 +801,16 @@ struct SymbolTile: View {
     }
 }
 
+/// A word or two beside a title ("Recommended", "In the Trash"), in a capsule like every other small status
+/// mark; `active` tints it with the accent.
 struct FrogBadge: View {
     let text: String
     var active = false
     var body: some View {
         Text(L10n.text(text)).font(FrogType.caption.weight(.semibold))
             .foregroundStyle(active ? FrogStyle.accent : FrogStyle.muted)
-            .padding(.horizontal, 6).padding(.vertical, 3)
-            .background(active ? AnyShapeStyle(FrogStyle.accentSoft) : AnyShapeStyle(FrogStyle.control), in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius, style: .continuous))
+            .padding(.horizontal, FrogStyle.space8).padding(.vertical, 3)
+            .background(active ? AnyShapeStyle(FrogStyle.accentSoft) : AnyShapeStyle(FrogStyle.control), in: Capsule(style: .continuous))
     }
 }
 

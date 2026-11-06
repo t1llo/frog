@@ -48,7 +48,7 @@ struct UsageStatusPopover: View {
         let signInAccount = setup == nil ? accounts.first(where: \.needsSignIn) : nil
         let claudeSignIn = setup == nil && signInAccount == nil && provider == "Claude" && accounts.isEmpty && usage.needsClaudeSignIn
         VStack(alignment: .leading, spacing: 0) {
-            StatusPopupHeader(symbol: LLMUsagePlugin.info.symbol, tint: LLMUsagePlugin.info.tint, title: "LLM usage") {
+            FrogPopupHeader(symbol: LLMUsagePlugin.info.symbol, tint: LLMUsagePlugin.info.tint, title: "LLM usage") {
                 UsageProviderDropdown(usage: usage)
                 IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", bordered: true, action: openDashboard)
             }
@@ -77,7 +77,7 @@ struct UsageStatusPopover: View {
                     }.padding(FrogStyle.listInset).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()
                 }
             }.padding(.bottom, FrogStyle.space8)
-            StatusPopupFooter {
+            FrogPopupFooter {
                 HStack(spacing: FrogStyle.space4) {
                     UsageMenuFooter(usage: usage, showsSource: false)
                     IconAction(title: "Refresh", symbol: "arrow.clockwise") { usage.refresh() }

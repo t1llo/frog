@@ -11,7 +11,7 @@ struct StayAwakePage: View {
     var body: some View {
         FrogPage {
             FrogPageHeader(title: "Stay awake", subtitle: "Keeps your Mac from sleeping, for a while or until you stop it.") {
-                PageStatusPill(text: power.statusText, on: power.isEnabled)
+                FrogStatePill(text: power.statusText, on: power.isEnabled)
             }
             FrogSection("Session") {
                 FrogRow("Keep this Mac awake") {
@@ -72,22 +72,6 @@ struct StayAwakePage: View {
         guard case .until(let hour, let minute) = StayAwakeLength("until \(time)"),
               let date = Calendar.current.date(from: DateComponents(hour: hour, minute: minute)) else { return time }
         return date.formatted(date: .omitted, time: .shortened)
-    }
-}
-
-/// A page's state in its header: a dot and a word or two in a capsule, green while on.
-struct PageStatusPill: View {
-    let text: String
-    let on: Bool
-
-    var body: some View {
-        HStack(spacing: FrogStyle.space6) {
-            Circle().fill(on ? FrogStyle.good : FrogStyle.muted.opacity(0.6)).frame(width: 7, height: 7)
-            Text(L10n.text(text)).font(FrogType.bodyMedium).foregroundStyle(on ? FrogStyle.ink : FrogStyle.muted)
-        }
-        .padding(.horizontal, FrogStyle.space10).frame(height: FrogStyle.compactHeight)
-        .background(on ? FrogStyle.good.opacity(0.14) : FrogStyle.control, in: Capsule())
-        .accessibilityElement(children: .combine)
     }
 }
 

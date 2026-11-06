@@ -487,7 +487,3 @@ enum ProviderDetection {
     }
 }
 
-extension FrogType {
-    /// The welcome's headline, the one hero line in Frog.
-    static let hero = Font.system(size: 26, weight: .bold)
-}
