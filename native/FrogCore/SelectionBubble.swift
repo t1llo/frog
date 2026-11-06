@@ -428,13 +428,31 @@ public struct BubbleItem: Equatable, Identifiable, Sendable {
 }
 
 public enum SelectionBubbleItems {
-    /// Explain's and Writing's own tile glyphs: a rule wears its feature's tile, in the bubble and the command bar
-    /// alike, so a rule looks the same as the page it belongs to and no glyph appears only here.
+    /// Explain's and Writing's own tile glyphs: the Explain rule wears Explain's, and a rule whose name says nothing
+    /// `symbol(for:)` knows wears its feature's.
     public static let answerSymbol = "questionmark.bubble"
     public static let writingSymbol = "text.cursor"
 
+    /// What a rule's name says it does, first match wins, so two rules side by side in the bubble, Writing or the
+    /// command bar (Explain and Define, Proofread and Translate) never share a glyph.
+    static let namedSymbols: [(words: [String], symbol: String)] = [
+        (["define", "definition", "dictionary", "meaning"], "book.closed"),
+        (["translat", "übersetz"], "globe"),
+        (["email", "e-mail", "mail", "reply"], "envelope"),
+        (["spelling", "typo"], "textformat.abc"),
+        (["proofread", "grammar", "correct", "korrigier"], "checkmark.circle"),
+        (["summar", "tl;dr", "key points"], "list.bullet"),
+        (["shorten", "shorter", "concise", "trim"], "scissors"),
+        (["simplif", "plain language", "eli5"], "lightbulb"),
+        (["code", "regex", "sql", "shell"], "chevron.left.forwardslash.chevron.right"),
+        (["polish", "improve", "rewrite", "rephrase", "tone", "formal", "friendl"], "wand.and.stars")
+    ]
+
     public static func symbol(for rule: Rule) -> String {
-        rule.answersInPanel ? answerSymbol : writingSymbol
+        if rule.isExplainRule { return answerSymbol }
+        let name = rule.name.lowercased()
+        if let named = namedSymbols.first(where: { entry in entry.words.contains { name.contains($0) } }) { return named.symbol }
+        return rule.answersInPanel ? answerSymbol : writingSymbol
     }
 
     /// Every rule the bubble can offer, in its order: the Explain rule while Explain is on, then the Writing rules.

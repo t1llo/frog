@@ -53,10 +53,18 @@ final class SelectionBubbleItemsTests: XCTestCase {
         XCTAssertEqual(titles(result.visible), ["Explain", "Proofread"])
     }
 
-    func testRulesWearTheirFeaturesGlyph() {
-        XCTAssertEqual(SelectionBubbleItems.symbol(for: answer("Define")), SelectionBubbleItems.answerSymbol)
+    func testRulesWearTheGlyphTheirNameSays() {
         XCTAssertEqual(SelectionBubbleItems.symbol(for: Rule.explainPreset), SelectionBubbleItems.answerSymbol)
-        XCTAssertEqual(SelectionBubbleItems.symbol(for: writing("Translate to German")), SelectionBubbleItems.writingSymbol)
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: answer("Define")), "book.closed")
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: writing("Translate to German")), "globe")
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: writing("Polish email")), "envelope")
+        let presets = Rule.presets.map(SelectionBubbleItems.symbol(for:))
+        XCTAssertEqual(Set(presets.dropLast()).count, presets.count - 1, "the presets, but the two translations, each have their own")
+    }
+
+    func testRulesWithoutAKnownNameWearTheirFeaturesGlyph() {
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: answer("Ask Anna")), SelectionBubbleItems.answerSymbol)
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: writing("House style")), SelectionBubbleItems.writingSymbol)
     }
 
     func testWritingRulesOnlyInEditableFieldsWithWritingOn() {
@@ -64,7 +72,7 @@ final class SelectionBubbleItemsTests: XCTestCase {
         dictation.enabled = true
         let rules = [writing("Proofread"), Rule.explainPreset, dictation]
         XCTAssertEqual(titles(items(rules).visible), ["Explain", "Proofread"], "only text rules")
-        XCTAssertEqual(items(rules).visible.last?.symbol, SelectionBubbleItems.writingSymbol)
+        XCTAssertEqual(items(rules).visible.last?.symbol, "checkmark.circle")
         XCTAssertEqual(items(rules).visible.last?.answers, false)
         XCTAssertEqual(titles(items(rules, editable: false).visible), ["Explain"])
         XCTAssertEqual(titles(items(rules, writing: false).visible), ["Explain"])
