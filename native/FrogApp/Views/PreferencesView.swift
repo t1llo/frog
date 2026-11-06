@@ -20,8 +20,8 @@ struct PreferencesView: View {
                 if model.loginNeedsAttention {
                     FrogRow(model.loginStatus) { Button("Open Login Items") { LoginService.openLoginItems() } }
                 }
-                FrogRow("Writing indicator") { Toggle("Writing indicator", isOn: preference(\.showProcessingIndicator)).labelsHidden() }
-                FrogRow("Show rule shortcuts", caption: "Hold to see your rules.") {
+                FrogRow("Writing indicator", caption: "A small pill at the bottom of the screen while a rule runs") { Toggle("Writing indicator", isOn: preference(\.showProcessingIndicator)).labelsHidden() }
+                FrogRow("Shortcut reference", caption: "Hold this shortcut to see every rule and its keys.") {
                     HotkeyRecorder(hotkey: Binding(get: { prefs.shortcutPanelHotkey }, set: { value in update { $0.shortcutPanelHotkey = value } }))
                 }
                 if let issue = model.hotkeyErrors[AppModel.shortcutPanelID] { FrogRowNote(text: issue, tone: FrogStyle.warning) }

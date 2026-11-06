@@ -167,7 +167,7 @@ struct AppearanceSettingsView: View {
             TileGroup(title: "Interface style") {
                 ForEach(InterfaceStyle.allCases, id: \.self) { kind in
                     AppearanceTile(title: kind == .classic ? "Classic" : "Glass", selected: style == kind) {
-                        WindowSketch(scheme: appearance.mode ?? .system, glass: kind == .glass, onAccent: true)
+                        WindowSketch(scheme: appearance.mode ?? .system, glass: kind == .glass, shapesBehind: true)
                     } choose: {
                         guard style != kind else { return }
                         var value = appearance
@@ -302,23 +302,19 @@ private struct AppearanceTile<Picture: View>: View {
 }
 
 /// A tiny Frog window: light, dark, or split for Auto, each on a desktop of its own mode so Light and Dark read apart;
-/// the material tiles put it on the accent instead, so Glass has colour to frost.
+/// the style tiles add a few shapes behind the window on the same neutral desktop, so Glass has something to frost.
 private struct WindowSketch: View {
     let scheme: AppearancePreferences.Mode
     let glass: Bool
-    var onAccent = false
+    var shapesBehind = false
     var body: some View {
         ZStack {
-            if onAccent {
-                LinearGradient(colors: [FrogStyle.accent.opacity(0.95), FrogStyle.accent.opacity(0.45)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
-            } else {
-                switch scheme {
-                case .light: desktop(dark: false)
-                case .dark: desktop(dark: true)
-                case .system: ZStack { desktop(dark: false); desktop(dark: true).mask(DiagonalHalf()) }
-                }
+            switch scheme {
+            case .light: desktop(dark: false)
+            case .dark: desktop(dark: true)
+            case .system: ZStack { desktop(dark: false); desktop(dark: true).mask(DiagonalHalf()) }
             }
+            if shapesBehind { shapes }
             switch scheme {
             case .light: window(dark: false)
             case .dark: window(dark: true)
@@ -334,6 +330,14 @@ private struct WindowSketch: View {
     private func desktop(dark: Bool) -> some View {
         LinearGradient(colors: dark ? [Color(white: 0.3), Color(white: 0.12)] : [Color(white: 0.9), Color(white: 0.76)],
                        startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    /// Two neutral shapes where the window sits, which a Glass window lets show through.
+    private var shapes: some View {
+        ZStack {
+            Circle().fill(Color(white: 0.45)).frame(width: 30, height: 30).offset(x: -18, y: -12)
+            RoundedRectangle(cornerRadius: FrogStyle.smallRadius / 2, style: .continuous).fill(Color(white: 0.62)).frame(width: 34, height: 22).offset(x: 20, y: 12)
+        }
     }
 
     private func window(dark: Bool) -> some View {
