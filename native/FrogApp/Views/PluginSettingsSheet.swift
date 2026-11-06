@@ -14,7 +14,7 @@ struct PluginSettingsSheet: View {
         let manifest = item?.manifest
         VStack(alignment: .leading, spacing: FrogStyle.space16) {
             HStack(spacing: FrogStyle.space12) {
-                PluginIconTile(symbol: PluginSymbol.name(item?.symbol ?? PluginManifest.defaultSymbol), tint: FrogStyle.accent)
+                PluginIconTile(symbol: PluginSymbol.name(item?.symbol ?? PluginManifest.defaultSymbol), tint: PluginTint.purple.color)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(item?.name ?? id).font(FrogType.title).tracking(-0.4).accessibilityAddTraits(.isHeader)
                     Text("Settings").font(FrogType.small).foregroundStyle(FrogStyle.muted)

@@ -128,7 +128,7 @@ struct SelectionBubbleView: View {
 
     private func listRow(_ item: BubbleItem) -> some View {
         HStack(spacing: FrogStyle.space8) {
-            PluginIconTile(symbol: item.symbol, tint: item.answers ? FrogStyle.accent : FrogStyle.muted, size: .sidebar)
+            PluginIconTile(symbol: item.symbol, tint: (item.answers ? PluginTint.teal : PluginTint.green).color, size: .sidebar)
             Text(item.title).font(FrogType.row).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 12)
             if let hotkey = item.hotkey {

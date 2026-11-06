@@ -561,7 +561,7 @@ struct PluginPopupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
-                PluginIconTile(symbol: PluginSymbol.name(symbol), tint: FrogStyle.accent, size: .sidebar)
+                PluginIconTile(symbol: PluginSymbol.name(symbol), tint: PluginTint.purple.color, size: .sidebar)
                 Text(name).font(FrogType.section).lineLimit(1)
                 Spacer()
                 if hasPage { IconAction(title: "Open \(name)", symbol: "arrow.up.forward.app", bordered: true, action: openPage) }
