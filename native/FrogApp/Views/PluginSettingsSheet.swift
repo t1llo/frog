@@ -157,6 +157,8 @@ private struct PluginNumberSetting: View {
             field
             IconAction(title: "Increase \(L10n.text(title))", symbol: "plus") { step(by: 1) }
                 .disabled(atBound(maximum))
+                // The plus ends on the content edge, level with switches and buttons; only its hover fill reaches past.
+                .padding(.trailing, -IconAction.glyphInset)
         }
     }
 

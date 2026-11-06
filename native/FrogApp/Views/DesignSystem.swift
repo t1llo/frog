@@ -975,6 +975,8 @@ struct IconAction: View {
     var bordered = false
     let action: () -> Void
     @State private var hovering = false
+    /// How far a plain icon's glyph sits inside its 24-point row frame, so one that ends a row can end on the edge.
+    static let glyphInset = (FrogStyle.compactHeight - IconLabel.glyphSize) / 2
     var body: some View {
         Button(role: destructive ? .destructive : nil, action: action) {
             IconLabel(symbol: symbol, destructive: destructive, bordered: bordered, hovering: hovering)
@@ -1000,6 +1002,7 @@ struct IconMenu<Items: View>: View {
 /// The icon of `IconAction` and `IconMenu`: on a 24-point control surface when `bordered`, else a muted symbol
 /// that darkens on a hover fill, 28 points (24 in a row, beside its other actions).
 private struct IconLabel: View {
+    static let glyphSize: CGFloat = 13
     let symbol: String
     let destructive: Bool
     let bordered: Bool
@@ -1011,7 +1014,7 @@ private struct IconLabel: View {
                 .foregroundStyle(destructive ? FrogStyle.critical : FrogStyle.ink)
                 .frame(width: FrogStyle.compactHeight).modifier(CompactActionSurface())
         } else {
-            Image(systemName: symbol).font(.system(size: 13, weight: .medium)).contentTransition(.symbolEffect(.replace))
+            Image(systemName: symbol).font(.system(size: Self.glyphSize, weight: .medium)).contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(destructive ? FrogStyle.critical : hovering ? FrogStyle.ink : FrogStyle.muted)
                 .frame(width: FrogButtonStyle.height(compact: inRow), height: FrogButtonStyle.height(compact: inRow))
                 .frogRowHighlight(hovering: hovering)
