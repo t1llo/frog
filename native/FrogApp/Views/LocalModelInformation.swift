@@ -76,12 +76,14 @@ struct AddLocalModelView: View {
                     .accessibilityLabel("Hugging Face link")
                     .disabled(loading).onSubmit { inspect() }
                     .onChange(of: source) { _, _ in candidates = []; issue = nil }
-                // Under the field's text, not indented past it: a quiet line the user can click to fill it in.
-                HStack(spacing: FrogStyle.space4) {
-                    Text("For example").foregroundStyle(FrogStyle.muted)
-                    Button("huggingface.co/mlx-community/Qwen3-0.6B-4bit") { source = "https://huggingface.co/mlx-community/Qwen3-0.6B-4bit" }
-                        .buttonStyle(.plain).foregroundStyle(FrogStyle.ink).underline().disabled(loading)
-                }.font(FrogType.small).padding(.leading, FrogStyle.space10)
+                // A quiet line on the field's edge, and a plain button that fills the field with it.
+                HStack(spacing: FrogStyle.space8) {
+                    Text("For example: huggingface.co/mlx-community/Qwen3-0.6B-4bit").font(FrogType.small)
+                        .foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                    Spacer(minLength: 0)
+                    Button("Use example") { source = "https://huggingface.co/mlx-community/Qwen3-0.6B-4bit" }
+                        .buttonStyle(.frog(.ghost, compact: true)).disabled(loading).padding(.trailing, -10)
+                }
             }
             if let issue { InlineIssue(message: issue).textSelection(.enabled) }
             if !candidates.isEmpty {
