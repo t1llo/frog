@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import FrogCore
 
@@ -25,16 +26,20 @@ struct LocalToolProvidersView: View {
                 else { Button("Refresh") { Task { await refresh() } }.buttonStyle(.frog(.ghost, compact: true)) }
             }) {
                 ForEach(statuses) { status in
-                    // The tool's own tile; whether it is installed or chosen is said at the row's end.
-                    FrogRow(status.kind.title, caption: status.detail, icon: {
+                    // The tool's own tile; one control per state at the row's end: a check for the chosen tool,
+                    // Choose for another installed one, Install (its website) for one that is missing.
+                    FrogRow(status.kind.title, caption: .attributed(Self.caption(status)), icon: {
                         PluginIconTile(mark: .tool(status.kind)).opacity(status.installed ? 1 : FrogStyle.disabledOpacity)
                     }) {
                         if status.installed, selected == status.kind {
-                            FrogBadge(text: "Chosen", active: true)
+                            Image(systemName: "checkmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(FrogStyle.accent)
+                                .frame(minWidth: FrogStyle.controlHeight, minHeight: FrogStyle.compactHeight)
+                                .help("Chosen below").accessibilityLabel("Chosen")
                         } else if status.installed {
                             Button("Choose") { selected = status.kind }.buttonStyle(.frog(compact: true))
                         } else {
-                            Text("Not installed").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                            Button("Install") { NSWorkspace.shared.open(status.kind.website) }.buttonStyle(.frog(compact: true))
+                                .help("Opens \(status.kind.title)'s website")
                         }
                     }
                 }
@@ -52,8 +57,9 @@ struct LocalToolProvidersView: View {
                                  searchPrompt: models.count > 8 ? "Find a model" : nil, placeholder: "Other model",
                                  title: { id in id.isEmpty ? "\(selected.title)'s default" : models.first { $0.id == id }?.name ?? id })
                 }
-                FrogRow("Model ID", caption: "For a model that is not in the list") {
-                    FrogTextField(placeholder: "Model ID", text: $model)
+                // What the field is for sits in its placeholder, so the row is the height of the two above it.
+                FrogRow("Model ID") {
+                    FrogTextField(placeholder: "Any model not in the list", text: $model)
                         .textFieldStyle(.plain).font(FrogType.body).padding(.horizontal, FrogStyle.space10).frame(width: 220).frogControlSurface()
                         .accessibilityLabel("\(selected.title) model ID")
                 }
@@ -80,6 +86,15 @@ struct LocalToolProvidersView: View {
             if statuses.first(where: { $0.kind == selected })?.installed != true,
                let installed = statuses.first(where: { $0.installed && $0.supportsTextTransforms }) { selected = installed.kind }
         }
+    }
+
+    /// The status line with the commands it names in the code font ("Run `claude auth login` in your terminal").
+    static func caption(_ status: LocalToolStatus) -> AttributedString {
+        var text = status.detail
+        for command in status.kind.commands where !text.contains("`\(command)`") {
+            text = text.replacingOccurrences(of: command, with: "`\(command)`")
+        }
+        return InlineCode.attributed(text)
     }
 
     /// Why Use is not available yet, or what it does.

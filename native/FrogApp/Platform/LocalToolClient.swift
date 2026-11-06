@@ -73,8 +73,8 @@ actor LocalToolClient {
                 switch authentication {
                 case .signedIn: detail = "Signed in. Model access is checked when you run a rule."
                 case .signedOut: detail = kind.signInInstructions
-                case .unknown: detail = "Installed; login status could not be verified. Check your login in \(kind.title)."
-                case .notChecked: detail = "Installed; login not checked."
+                case .unknown: detail = "Installed. Frog could not check the sign-in; check it in \(kind.title)."
+                case .notChecked: detail = "Installed. Sign-in not checked yet."
                 }
             }
             return .init(kind: kind, installed: true, authentication: authentication,

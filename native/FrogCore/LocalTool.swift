@@ -36,6 +36,22 @@ public enum LocalToolKind: String, Codable, CaseIterable, Identifiable, Sendable
         case .opencode: "Connect your provider in OpenCode with /connect."
         }
     }
+    /// The commands its instructions name, which a page shows in the code font.
+    public var commands: [String] {
+        switch self {
+        case .claudeCode: ["claude auth login"]
+        case .codex: ["codex login"]
+        case .opencode: ["/connect"]
+        }
+    }
+    /// Where to get it, for the Install button of a tool that is not on this Mac.
+    public var website: URL {
+        switch self {
+        case .claudeCode: URL(string: "https://claude.com/product/claude-code")!
+        case .codex: URL(string: "https://developers.openai.com/codex/cli")!
+        case .opencode: URL(string: "https://opencode.ai")!
+        }
+    }
     /// Suggestions, not claims about the account's entitlements. Empty means CLI default.
     public var suggestedModels: [LocalToolModel] {
         let defaults = [LocalToolModel(id: "", name: "Tool default")]

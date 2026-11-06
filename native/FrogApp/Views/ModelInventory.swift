@@ -59,7 +59,7 @@ struct ModelInventory: View {
                             // One line of facts; the runtime and the guidance are in the help and the information sheet.
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
-                                    Text(item.name).font(FrogType.bodyMedium)
+                                    Text(item.name).font(FrogType.row)
                                     if item.isRecommended { RecommendedModelBadge() }
                                 }
                                 Text([installed && kind == nil ? (item.kind == .audio ? "Speech" : "Text") : "",
@@ -180,11 +180,7 @@ struct ModelDownloadSummary: View {
     }
 }
 
-/// A capsule like every other pill, in the accent's soft fill.
+/// The shared accent badge, so it has every badge's height and contrast in both themes.
 struct RecommendedModelBadge: View {
-    var body: some View {
-        Text(L10n.text("Recommended")).font(FrogType.caption.weight(.semibold)).foregroundStyle(FrogStyle.accent)
-            .padding(.horizontal, FrogStyle.space8).padding(.vertical, 2)
-            .background(FrogStyle.accentSoft, in: Capsule())
-    }
+    var body: some View { FrogBadge(text: "Recommended", active: true) }
 }
