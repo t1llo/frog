@@ -100,6 +100,8 @@ struct ProvidersView: View {
                         editing = ProviderConfiguration(name: kind.shortTitle, kind: kind)
                     }.buttonStyle(.frog(compact: true)).accessibilityLabel("Add \(kind.shortTitle)")
                 }
+                // Level with the Connected list above, whose rows sit `listInset` further in for their hover fill.
+                .padding(.horizontal, FrogStyle.listInset)
             }
         }
     }
