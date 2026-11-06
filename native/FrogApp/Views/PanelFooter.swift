@@ -6,21 +6,31 @@ import FrogCore
 /// colour followed by its keys as caps ("Paste ↩", "Close esc"). `PanelFooter`, `FrogPopupFooter`, the Frog menu and
 /// clipboard history all draw this; nothing else draws a footer.
 struct FrogFooter<Status: View, Actions: View>: View {
+    /// Where the footer sits: `.panel` along the bottom of a popup or floating panel, whose hint buttons reach past
+    /// the band's inset with their hover fill; `.card` along the bottom of a card (the Notes and Scripts editor),
+    /// whose actions are controls that end on the card's content edge.
+    enum Placement { case panel, card }
+
+    var placement: Placement = .panel
     @ViewBuilder var status: Status
     @ViewBuilder var actions: Actions
 
-    init(@ViewBuilder status: () -> Status, @ViewBuilder actions: () -> Actions) {
-        self.status = status(); self.actions = actions()
+    init(_ placement: Placement = .panel, @ViewBuilder status: () -> Status, @ViewBuilder actions: () -> Actions) {
+        self.placement = placement; self.status = status(); self.actions = actions()
     }
 
     var body: some View {
         HStack(spacing: FrogStyle.space8) {
+            // The status keeps its room first: it is laid out before the actions, which give way by dropping their
+            // words and keeping their caps (`FrogFooterHint`); the actions in turn come before the spacer, so they
+            // keep their words whenever the row has room for them.
             HStack(spacing: FrogStyle.space6) { status }
-                .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).layoutPriority(1)
+                .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).layoutPriority(2)
             Spacer(minLength: FrogStyle.space8)
             // Hints that are buttons reach past the edge only with their hover fill; their own 6-point padding is
             // the gap between them.
-            HStack(spacing: FrogStyle.space4) { actions }.fixedSize().padding(.trailing, -FrogStyle.space6)
+            HStack(spacing: FrogStyle.space4) { actions }
+                .padding(.trailing, placement == .panel ? -FrogStyle.space6 : 0).layoutPriority(1)
         }
         .frogFooterBand()
         .accessibilityElement(children: .contain)
@@ -37,18 +47,23 @@ struct FrogFooterHint: View {
 
     var body: some View {
         if let action {
-            Button(action: action) { label.padding(.horizontal, FrogStyle.space6).frame(height: FrogStyle.compactHeight).contentShape(Rectangle()) }
-                .buttonStyle(MenuRowStyle()).fixedSize()
+            Button(action: action) { label.frame(height: FrogStyle.compactHeight).contentShape(Rectangle()) }
+                .buttonStyle(MenuRowStyle())
                 .accessibilityLabel(L10n.text(title)).accessibilityHint(keys)
         } else {
-            label.padding(.horizontal, FrogStyle.space6).fixedSize().accessibilityElement(children: .combine)
+            label.accessibilityElement(children: .ignore).accessibilityLabel("\(L10n.text(title)), \(keys)")
         }
     }
 
+    /// The word and its caps, or only the caps where the footer is too narrow for both: the status keeps its room
+    /// first, and the word stays in the tooltip.
     private var label: some View {
-        HStack(spacing: FrogStyle.space6) {
-            Text(L10n.text(title)).font(FrogType.label).foregroundStyle(FrogStyle.ink).lineLimit(1)
-            KeyCaps(keys)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: FrogStyle.space6) {
+                Text(L10n.text(title)).font(FrogType.label).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                KeyCaps(keys)
+            }.padding(.horizontal, FrogStyle.space6).fixedSize()
+            KeyCaps(keys).padding(.horizontal, FrogStyle.space6).fixedSize().help(L10n.text(title))
         }
     }
 }

@@ -169,10 +169,9 @@ struct DocumentsPage<Toolbar: View, Content: View, Footer: View>: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(.horizontal, FrogStyle.cardPadding).padding(.bottom, FrogStyle.space10)
-            // When it was last edited, then the item's own options; the options keep the band's inset, since
-            // FrogFooter lets hint buttons reach past it with their hover fill.
-            FrogFooter { DocumentEditedText(date: item.modified) } actions: {
-                HStack(spacing: FrogStyle.space8) { footer(item) }.font(FrogType.small).padding(.trailing, FrogStyle.space6)
+            // When it was last edited, then the item's own options, ending on the card's content edge.
+            FrogFooter(.card) { DocumentEditedText(date: item.modified) } actions: {
+                HStack(spacing: FrogStyle.space8) { footer(item) }.font(FrogType.small)
             }
         }
         .frogRowAccessory()

@@ -236,12 +236,8 @@ struct UsageMenuStatus: View {
                 UsageAccountsFooter(accounts: accounts.filter(\.included), now: context.date)
             } else {
                 HStack(spacing: 4) {
-                    // The menu's footer also holds Settings and Quit: there the age stands alone rather than cut off.
                     let age = usage.planUpdatedAt(provider: provider).map { UsageStatusPopover.age(of: $0, at: context.date) }
-                    ViewThatFits(in: .horizontal) {
-                        Text(age.map { "Updated \($0)" } ?? "No plan reading yet")
-                        Text(age.map { $0.prefix(1).uppercased() + $0.dropFirst() } ?? "No reading")
-                    }
+                    Text(age.map { "Updated \($0)" } ?? "No plan reading yet")
                         .help([usage.planSource(provider: provider), usage.status(provider: provider)].compactMap { $0 }.joined(separator: "\n"))
                     if let warning = usage.planWarning(provider: provider) {
                         Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning)
