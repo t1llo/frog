@@ -15,21 +15,30 @@ final class ProcessingIndicator {
         present(symbol: nil, warning: false, text: "Working…")
     }
 
-    func show(_ outcome: RuleOutcome) {
+    func show(_ outcome: RuleOutcome, rule: String? = nil) {
         processing = false
-        let look = Self.appearance(of: outcome)
+        let look = Self.appearance(of: outcome, rule: rule)
         present(symbol: look.symbol, warning: outcome.failure != nil, text: look.text, detail: look.detail,
                 // A failure says what went wrong, so it stays long enough to be read.
                 seconds: outcome.failure != nil ? 3.5 : 1)
     }
 
-    /// What the pill says for an outcome. A failure says what failed first, then where the details are.
-    static func appearance(of outcome: RuleOutcome) -> (symbol: String, text: String, detail: String?) {
+    /// What the pill says for an outcome. A failure says what failed first ("Proofread failed: Ollama is not
+    /// running"), then where the details are.
+    static func appearance(of outcome: RuleOutcome, rule: String? = nil) -> (symbol: String, text: String, detail: String?) {
         switch outcome {
         case .done: ("checkmark", "Done", nil)
         case .cancelled: ("checkmark", "Cancelled", nil)
-        case .failed(let message): ("exclamationmark.circle", failureSummary(message), "Details in the Frog menu")
+        case .failed(let message):
+            ("exclamationmark.circle", failureText(failureSummary(message), rule: rule), "Details in the Frog menu")
         }
+    }
+
+    /// "Proofread failed: Ollama is not running", or the reason alone when the rule is not known.
+    static func failureText(_ summary: String, rule: String?) -> String {
+        guard let rule = rule?.trimmingCharacters(in: .whitespaces), !rule.isEmpty else { return summary }
+        let failed = String(format: L10n.text("%@ failed"), rule)
+        return summary == "Failed" ? failed : failed + ": " + summary
     }
 
     /// The first line of a failure, without a closing full stop, so it reads as a short headline in the pill.

@@ -260,6 +260,9 @@ final class ProcessingTests: XCTestCase {
         XCTAssertEqual(ProcessingIndicator.appearance(of: .failed("Ollama is not running.")).text, "Ollama is not running")
         XCTAssertEqual(ProcessingIndicator.appearance(of: .failed("Anything")).detail, "Details in the Frog menu")
         XCTAssertEqual(ProcessingIndicator.appearance(of: .failed("")).text, "Failed")
+        XCTAssertEqual(ProcessingIndicator.appearance(of: .failed("Ollama is not running."), rule: "Proofread").text,
+                       "Proofread failed: Ollama is not running")
+        XCTAssertEqual(ProcessingIndicator.appearance(of: .failed(""), rule: "Proofread").text, "Proofread failed")
     }
 
     func testCancellationAndOverlappingRequestsDoNotPublishLateResult() async throws {

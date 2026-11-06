@@ -1594,7 +1594,7 @@ final class AppModel: ObservableObject {
         do { provider = try resolved(rule) }
         catch {
             let ended = outcome(of: error)
-            finish(ended, background: manualText == nil); agentReply?(ended, nil); return nil
+            finish(ended, rule: rule.name, background: manualText == nil); agentReply?(ended, nil); return nil
         }
         isProcessing = true
         processingForAgent = agentReply != nil
@@ -1606,7 +1606,7 @@ final class AppModel: ObservableObject {
             var ended = RuleOutcome.done
             var produced: String?
             defer {
-                self.finish(ended, background: manualText == nil)
+                self.finish(ended, rule: rule.name, background: manualText == nil)
                 agentReply?(ended, produced)
                 self.isProcessing = false; self.processingForAgent = false; self.processingTask = nil
             }
@@ -1679,9 +1679,10 @@ final class AppModel: ObservableObject {
     }
 
     /// `background`: a shortcut ran the rule, so the processing indicator shows how it ended.
-    private func finish(_ outcome: RuleOutcome, background: Bool) {
+    /// `rule` names what failed in the status pill ("Proofread failed: …").
+    private func finish(_ outcome: RuleOutcome, rule: String? = nil, background: Bool) {
         ruleOutcome = outcome
-        if background, showsProcessingIndicator { processingIndicator.show(outcome) }
+        if background, showsProcessingIndicator { processingIndicator.show(outcome, rule: rule) }
     }
 
     private func showIndicatorWorking() {
