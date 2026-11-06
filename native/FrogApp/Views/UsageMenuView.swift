@@ -47,7 +47,7 @@ struct UsageRefreshAction: View {
 /// and a quiet footer, as tall as its content.
 struct UsageStatusPopover: View {
     static let popupName = "LLM usage"
-    static let width: CGFloat = 292
+    static let width: CGFloat = StatusItemPopup.width
     @ObservedObject var usage: UsageDashboardModel
     let openDashboard: () -> Void
     var signIn: () -> Void = {}
@@ -215,9 +215,9 @@ private struct UsageCompactActivity: View {
             UsageActivityChart(usage: usage, chart: chart, compact: true)
             if usage.loaded, chart.hasActivity {
                 HStack {
-                    Text("Total tokens").foregroundStyle(FrogStyle.muted)
+                    Text("Total tokens").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                     Spacer()
-                    Text(usage.format(chart.totalTokens, metric: "Input")).monospacedDigit()
+                    Text(usage.format(chart.totalTokens, metric: "Input")).font(FrogType.body).monospacedDigit()
                 }.font(FrogType.small)
             }
             UsageActivityNotes(usage: usage, chart: chart, compact: true)
@@ -236,7 +236,12 @@ struct UsageMenuStatus: View {
                 UsageAccountsFooter(accounts: accounts.filter(\.included), now: context.date)
             } else {
                 HStack(spacing: 4) {
-                    Text(usage.planUpdatedAt(provider: provider).map { "Updated \(UsageStatusPopover.age(of: $0, at: context.date))" } ?? "No plan reading yet")
+                    // The menu's footer also holds Settings and Quit: there the age stands alone rather than cut off.
+                    let age = usage.planUpdatedAt(provider: provider).map { UsageStatusPopover.age(of: $0, at: context.date) }
+                    ViewThatFits(in: .horizontal) {
+                        Text(age.map { "Updated \($0)" } ?? "No plan reading yet")
+                        Text(age.map { $0.prefix(1).uppercased() + $0.dropFirst() } ?? "No reading")
+                    }
                         .help([usage.planSource(provider: provider), usage.status(provider: provider)].compactMap { $0 }.joined(separator: "\n"))
                     if let warning = usage.planWarning(provider: provider) {
                         Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning)
