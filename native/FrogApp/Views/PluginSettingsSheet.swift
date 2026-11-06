@@ -15,7 +15,7 @@ struct PluginSettingsSheet: View {
         VStack(alignment: .leading, spacing: FrogStyle.space16) {
             HStack(spacing: FrogStyle.space12) {
                 PluginIconTile(symbol: PluginSymbol.name(item?.symbol ?? PluginManifest.defaultSymbol), tint: PluginTint.purple.color, size: .header)
-                VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: FrogStyle.space2) {
                     Text(item?.name ?? id).font(FrogType.title).tracking(-0.4).accessibilityAddTraits(.isHeader)
                     Text("Settings").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }
@@ -138,7 +138,8 @@ private struct PluginTextSetting: View {
     }
 }
 
-/// A whole number: typed, right-aligned, or stepped by one with − and +, kept within the plugin's bounds.
+/// A whole number in the same field as the text settings, its digits on the trailing side; the arrow keys step it by
+/// one, and it stays within the plugin's bounds, which its tooltip names.
 private struct PluginNumberSetting: View {
     let value: Int?
     let minimum: Int?
@@ -149,31 +150,40 @@ private struct PluginNumberSetting: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        HStack(spacing: 0) {
-            step("minus", by: -1, disabled: (value ?? 0) <= (minimum ?? .min))
-            TextField("", text: $draft).textFieldStyle(.plain).font(FrogType.body.monospacedDigit())
-                .multilineTextAlignment(.center).focused($focused).frame(width: 40)
-                .accessibilityLabel(L10n.text(title)).onSubmit(save)
-            step("plus", by: 1, disabled: (value ?? 0) >= (maximum ?? .max))
-        }
-        .padding(.horizontal, FrogStyle.space2).frogControlSurface(capsule: true)
-        .onAppear { draft = value.map(String.init) ?? "" }
-        .onChange(of: value) { _, new in if !focused { draft = new.map(String.init) ?? "" } }
-        .onChange(of: focused) { _, now in if !now { save() } }
+        TextField("", text: $draft).textFieldStyle(.plain).font(FrogType.body.monospacedDigit())
+            .multilineTextAlignment(.trailing).focused($focused)
+            .padding(.horizontal, FrogStyle.space8).frogControlSurface().frame(width: 72)
+            .accessibilityLabel(L10n.text(title)).help(range ?? "")
+            .onSubmit(save)
+            .onKeyPress(.upArrow) { step(by: 1); return .handled }
+            .onKeyPress(.downArrow) { step(by: -1); return .handled }
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: step(by: 1)
+                case .decrement: step(by: -1)
+                @unknown default: break
+                }
+            }
+            .onAppear { draft = value.map(String.init) ?? "" }
+            .onChange(of: value) { _, new in if !focused { draft = new.map(String.init) ?? "" } }
+            .onChange(of: focused) { _, now in if !now { save() } }
     }
 
-    private func step(_ symbol: String, by delta: Int, disabled: Bool) -> some View {
-        Button {
-            // The field shows the stepped number at once, even while it has focus and ignores `value` changes.
-            let stepped = clamped((Int(draft) ?? value ?? 0) + delta)
-            draft = String(stepped)
-            commit(stepped)
-        } label: {
-            Image(systemName: symbol).font(.system(size: 10, weight: .semibold)).frame(width: 24, height: FrogStyle.controlHeight)
-                .contentShape(Rectangle())
+    /// "1–120", or the one bound the plugin sets.
+    private var range: String? {
+        switch (minimum, maximum) {
+        case let (low?, high?): "\(low)–\(high)"
+        case let (low?, nil): "At least \(low)"
+        case let (nil, high?): "At most \(high)"
+        default: nil
         }
-        .buttonStyle(.plain).foregroundStyle(disabled ? FrogStyle.placeholder : FrogStyle.ink).disabled(disabled)
-        .accessibilityLabel(L10n.text(delta < 0 ? "Decrease \(title)" : "Increase \(title)"))
+    }
+
+    private func step(by delta: Int) {
+        // The field shows the stepped number at once, even while it has focus and ignores `value` changes.
+        let stepped = clamped((Int(draft) ?? value ?? 0) + delta)
+        draft = String(stepped)
+        if stepped != value { commit(stepped) }
     }
 
     private func clamped(_ number: Int) -> Int { min(max(number, minimum ?? .min), maximum ?? .max) }
