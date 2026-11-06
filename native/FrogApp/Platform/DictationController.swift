@@ -639,12 +639,14 @@ enum DictationPopupLayout {
     /// Presentation only. Keep native glyph layout bounded even for hours of Unicode text.
     /// The controller and delivery pipeline always retain the complete transcript.
     static func displayText(_ text: String) -> String { String(text.suffix(2048)) }
+    /// The recording popup without a transcript: the waveform and the hint line of key caps.
+    static let recordingHeight = 114.0
     static func frame(phase: DictationController.Phase, text: String, visibleFrame: NSRect) -> NSRect {
         let recording = phase == .recording, failed = phase == .failed
         let hasTranscript = (recording || failed) && !text.isEmpty
         let width = min(recording || failed ? 360.0 : 300.0, max(1, visibleFrame.width - 32))
         // A failed transcription shows its reason and what to do instead of the waveform and hint.
-        var height = recording ? 114.0 : failed ? 116.0 : 50.0
+        var height = recording ? recordingHeight : failed ? 116.0 : 50.0
         if hasTranscript {
             let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 2
             let bounds = (displayText(text) as NSString).boundingRect(
