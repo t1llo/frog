@@ -240,7 +240,7 @@ struct UsageLimitView: View {
                         .help(reset.formatted(date: .abbreviated, time: .shortened))
                 }
             }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-        }.padding(.trailing, compact ? 0 : 8).accessibilityElement(children: .combine)
+        }.accessibilityElement(children: .combine)
     }
 }
 
