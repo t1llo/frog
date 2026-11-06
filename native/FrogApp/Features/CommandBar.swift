@@ -440,7 +440,8 @@ import SwiftUI
         }
         if !typed {
             let files = fileRecords.prefix(4)
-            let commands = records.lazy.filter { $0.id.hasPrefix("feature:") || $0.id.hasPrefix("rule:") }.prefix(4)
+            // The bar's own settings page is no suggestion inside the bar.
+            let commands = records.lazy.filter { ($0.id.hasPrefix("feature:") || $0.id.hasPrefix("rule:")) && $0.id != "feature:\(FeatureID.commandBar.rawValue)" }.prefix(4)
             preferred += files + commands
             preferred += applications.suggested
         }
@@ -948,8 +949,16 @@ struct CommandBarView: View {
                     .foregroundStyle(FrogStyle.ink).padding(.horizontal, FrogStyle.space8).frame(height: FrogStyle.compactHeight)
                     .background(FrogStyle.hover, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
             }
-            TextField(bar.argument?.placeholder ?? "Search apps, commands and files", text: $bar.query)
+            // The field draws no placeholder of its own, which macOS sets nearly as dark as typed text; this one is lighter.
+            TextField("", text: $bar.query)
                 .textFieldStyle(.plain).font(FrogType.lead).focused($focused)
+                .accessibilityLabel(L10n.text(bar.argument?.placeholder ?? "Search apps, commands and files"))
+                .background(alignment: .leading) {
+                    if bar.query.isEmpty {
+                        Text(L10n.text(bar.argument?.placeholder ?? "Search apps, commands and files")).font(FrogType.lead)
+                            .foregroundStyle(FrogStyle.placeholder).lineLimit(1).allowsHitTesting(false).accessibilityHidden(true)
+                    }
+                }
             if bar.showsPositionReset {
                 IconAction(title: "Center command bar", symbol: "scope") { bar.center() }
             }
@@ -1023,7 +1032,8 @@ private struct CommandResultRow: View, Equatable {
                     }
                 }
                 Spacer(minLength: FrogStyle.space10)
-                if !kind.title.isEmpty {
+                // Frog's own places need no label; only other kinds say what they are.
+                if !kind.title.isEmpty, kind.title != "Frog" {
                     Text(L10n.text(kind.title)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).fixedSize()
                 }
             }.padding(.horizontal, FrogStyle.rowPadding).frame(height: CommandBarView.rowHeight)
@@ -1045,8 +1055,9 @@ private struct CommandResultRow: View, Equatable {
     }
 }
 
-/// The letters of a title that the typed words matched, for drawing them in bold: a word's start where one
-/// matches, else anywhere, else its letters in order.
+/// The letters of a title that the typed words matched, for drawing them in bold: only where a typed word starts a
+/// word of the title. A word found only inside another word or letter by letter is not marked, so the bold never
+/// scatters across a title.
 enum CommandMatch {
     static func ranges(in title: String, query: String) -> [Range<String.Index>] {
         let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
@@ -1060,16 +1071,9 @@ enum CommandMatch {
                 candidates.append(range); start = title.index(after: range.lowerBound)
             }
             let free = candidates.filter { candidate in !found.contains { $0.overlaps(candidate) } }
-            if let atWord = free.first(where: { $0.lowerBound == title.startIndex || !title[title.index(before: $0.lowerBound)].isLetter }) ?? free.first {
-                found.append(atWord); continue
+            if let atWord = free.first(where: { $0.lowerBound == title.startIndex || !title[title.index(before: $0.lowerBound)].isLetter }) {
+                found.append(atWord)
             }
-            // Letters in order, as the fuzzy search allows.
-            var index = title.startIndex, letters: [Range<String.Index>] = []
-            for character in word {
-                guard let range = title.range(of: String(character), options: options, range: index..<title.endIndex) else { letters = []; break }
-                letters.append(range); index = range.upperBound
-            }
-            found += letters
         }
         return found
     }
