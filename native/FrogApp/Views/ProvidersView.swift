@@ -159,18 +159,19 @@ struct ProviderEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("External provider").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                TextField("Connection name", text: $provider.name).textFieldStyle(.plain).font(FrogType.title)
-                CompactSegments(values: [0, 1, 2], selected: step, title: { ["Service", "Connection", "Models"][$0] }) { step = $0 }.padding(.top, 12)
+            VStack(alignment: .leading, spacing: FrogStyle.space16) {
+                TextField("Connection name", text: $provider.name).textFieldStyle(.plain).font(FrogType.title).tracking(-0.4)
+                    .accessibilityLabel("Connection name").help("Click to rename. Rules and menus show this name.")
+                    .frame(minHeight: FrogStyle.controlHeight)
+                CompactSegments(values: [0, 1, 2], selected: step, title: { ["Service", "Connection", "Models"][$0] }) { step = $0 }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(FrogStyle.sheetPadding)
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if step == 0 {
-                    FrogSection("Service") {
-                        FrogRow("Service") {
+                    FrogSection(footer: serviceNote) {
+                        FrogRow("Service", caption: provider.kind.isLocal ? "Runs on this Mac" : provider.kind.localTool != nil ? "Installed tool" : "Cloud API") {
                             FrogDropdown(selection: $provider.kind, options: ProviderKind.allCases, title: { $0.title },
-                                         symbol: { $0.isLocal ? "desktopcomputer" : "cloud" })
+                                         symbol: { $0.isLocal ? "desktopcomputer" : $0.localTool != nil ? "terminal" : "cloud" })
                         }.onChange(of: provider.kind) { old, new in
                             if provider.name == old.title || provider.name == "OpenAI" { provider.name = new.title }
                             provider.endpoint = new.endpoint; provider.model = new.defaultModel
@@ -180,11 +181,12 @@ struct ProviderEditor: View {
                             testResult = nil; issue = nil
                         }
                         if provider.kind.isLocal {
-                            Link(destination: provider.kind.setupURL) {
-                                Label(provider.kind.isLocal ? "\(provider.kind.title) setup guide" : "Get an API key for \(provider.kind.title)", systemImage: "arrow.up.right.square")
-                            }.buttonStyle(.frog(.ghost))
+                            FrogRow("Setup guide", caption: "How to install \(provider.kind.title.replacingOccurrences(of: " (local)", with: "")) and download a model") {
+                                Link(destination: provider.kind.setupURL) {
+                                    Label("Open", systemImage: "arrow.up.right")
+                                }.buttonStyle(.frog(compact: true))
+                            }
                         }
-                        Text(provider.kind.localTool != nil ? "Requests run invisibly through your installed tool and its existing login." : "Cloud APIs and services such as Ollama and LM Studio run outside Frog.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                     }.disabled(testing || discovering)
                     }
                     if step == 1 {
@@ -255,6 +257,8 @@ struct ProviderEditor: View {
                     if let validation { InlineIssue(message: validation) }
                 }.padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space12).minimalScrollbars()
             }
+            // As tall as the step, up to a limit: the short steps leave no empty half, the long one scrolls.
+            .frame(maxHeight: 460).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Button("Cancel") { testTask?.cancel(); discoveryTask?.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
@@ -263,7 +267,7 @@ struct ProviderEditor: View {
                     .disabled(((step == 2 || isSaved) && validation != nil) || testing || discovering)
             }.padding(FrogStyle.sheetPadding)
         }
-        .frame(width: 540, height: 560).background(FrogStyle.canvas).background(FrogWindowMaterial())
+        .frame(width: 540).background(FrogStyle.canvas).background(FrogWindowMaterial())
         .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(.frog())
         // Read before the first frame, so the Connection step does not change its labels once shown.
         .onAppear { hasSavedKey = model.hasAPIKey(provider.id); isSaved = model.configuration.providers.contains { $0.id == provider.id } }
@@ -271,6 +275,12 @@ struct ProviderEditor: View {
         .onChange(of: provider) { _, _ in testResult = nil }
         .onChange(of: apiKey) { _, _ in testResult = nil }
         .onChange(of: clearKey) { _, _ in testResult = nil }
+    }
+
+    private var serviceNote: String {
+        if provider.kind.localTool != nil { return "Requests run invisibly through your installed tool and its existing login." }
+        if provider.kind.isLocal { return "Local servers such as Ollama and LM Studio run outside Frog; start yours before you use it." }
+        return "Frog sends the text you run a rule on to \(provider.kind.title), with your API key."
     }
 
     private var endpointHint: String {

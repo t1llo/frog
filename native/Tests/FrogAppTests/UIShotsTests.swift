@@ -419,7 +419,7 @@ private final class SampleFrog {
         for feature in FeatureID.allCases { configuration.preferences.setFeature(feature, enabled: true) }
         configuration.preferences.historyEnabled = true
         configuration.rules.append(.dictationPreset)
-        configuration.providers = [ProviderConfiguration(kind: .ollama)]
+        configuration.providers = [ProviderConfiguration(name: "Ollama", kind: .ollama)]
         try ConfigurationStore(directory: root).save(configuration)
         try await UtilityDocumentStore(directory: root.appendingPathComponent("Toolkit")).save([
             UtilityDocument(kind: .note, title: "Email signature", text: "Best,\nAnna\n{{date}}", pastes: true),
