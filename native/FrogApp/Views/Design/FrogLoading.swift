@@ -1,13 +1,43 @@
 import SwiftUI
 
-/// Frog's one spinner: the system's small indeterminate circle, sized for a row, a button or a pill. Use it in
-/// place of a bare `ProgressView()`, so every wait in Frog looks the same.
+/// Frog's one spinner, sized for a row, a button or a pill: eight spokes in the text colour, the newest strongest,
+/// stepping round as the system's spinner does. Drawn by Frog rather than `NSProgressIndicator`, whose dark spokes
+/// all but vanished on dark panels, so it reads the same in every theme. Use it in place of a bare `ProgressView()`,
+/// so every wait in Frog looks the same.
 struct FrogSpinner: View {
     var size: ControlSize = .small
     var label = "Loading"
+
+    /// Steps a second, and the spokes in the ring, as macOS turns its own.
+    private static let rate = 10.0
+    private static let spokes = 8
+
+    private var diameter: CGFloat {
+        switch size {
+        case .mini: 10
+        case .small: 16
+        case .large, .extraLarge: 32
+        default: 20
+        }
+    }
+
     var body: some View {
-        ProgressView().progressViewStyle(.circular).controlSize(size)
-            .accessibilityLabel(L10n.text(label))
+        TimelineView(.periodic(from: .now, by: 1 / Self.rate)) { context in
+            let step = Int(context.date.timeIntervalSinceReferenceDate * Self.rate) % Self.spokes
+            ZStack {
+                ForEach(0..<Self.spokes, id: \.self) { index in
+                    // The spoke `step` points at is the newest; the ones behind it fade out.
+                    let age = (step - index + Self.spokes) % Self.spokes
+                    Capsule(style: .continuous).fill(FrogStyle.ink)
+                        .frame(width: max(1.5, diameter * 0.13), height: diameter * 0.3)
+                        .offset(y: -diameter * 0.35)
+                        .rotationEffect(.degrees(Double(index) * 360 / Double(Self.spokes)))
+                        .opacity(0.75 - Double(age) * 0.08)
+                }
+            }
+        }
+        .frame(width: diameter, height: diameter)
+        .accessibilityElement().accessibilityLabel(L10n.text(label)).accessibilityAddTraits(.updatesFrequently)
     }
 }
 
