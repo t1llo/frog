@@ -20,7 +20,7 @@ struct ClipboardPage: View {
                         .disabled(store.entries.isEmpty)
                 }
             }
-            FrogSection("Settings") {
+            FrogSection("Shortcut & size") {
                 FrogRow("Shortcut") {
                     HotkeyRecorder(hotkey: Binding(get: { state.settings.shortcut.hotkey },
                                                    set: { if let value = $0 { plugin.setShortcut(value) } }),
@@ -39,14 +39,13 @@ struct ClipboardPage: View {
     @ViewBuilder private var copied: some View {
         let all = store.entries
         let found = ClipboardSearch.filter(all, query: search)
-        FrogSection("Copied", accessory: {
-            if !all.isEmpty { Text(all.count == 1 ? "1 item" : "\(all.count) items").font(FrogType.caption).foregroundStyle(FrogStyle.muted) }
-        }) {
+        FrogSection("Copied") {
             if all.isEmpty {
                 FrogEmptyState(symbol: "clipboard", title: "Nothing copied yet", message: "Text you copy shows here.") { EmptyView() }
             } else {
                 VStack(spacing: 10) {
-                    SearchBox(placeholder: "Search copied text", text: $search)
+                    // The count lives in the field, not loose at the heading's far end.
+                    SearchBox(placeholder: all.count == 1 ? "Search 1 copied item" : "Search \(all.count) copied items", text: $search)
                     if found.isEmpty {
                         Text("No matches").font(FrogType.body).foregroundStyle(FrogStyle.muted)
                             .frame(maxWidth: .infinity).padding(.vertical, 16)

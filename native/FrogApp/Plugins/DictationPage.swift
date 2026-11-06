@@ -18,6 +18,9 @@ struct DictationPage: View {
                 }
                 Button("New rule", systemImage: "plus") { add() }
             }
+            if rules.contains(where: { $0.enabled && !model.ruleHasModel($0) }) {
+                ModelMissingNotice(feature: "Dictation", speech: true)
+            }
             if rules.isEmpty {
                 FrogEmptyState(symbol: "waveform", title: "No dictation rules", message: "Add one to choose its shortcut and model.")
             }
@@ -62,15 +65,18 @@ private struct DictationRuleSection: View {
     var body: some View {
         FrogSection(rule.name, accessory: {
             if recordsHere { RecordButton(rule: rule, dictation: dictation, feature: feature) }
-            IconMenu(title: "More for \(rule.name)", bordered: false) {
-                Button("Rename…") { renaming = true }
-                Button("Delete", role: .destructive) {
-                    do { try model.deleteRule(id: rule.id) } catch { model.report(error) }
-                }
-            }
         }) {
+            // The rule's switch and its menu share the first row, as a Writing rule's switch and edit button do.
             FrogRow("Turned on") {
-                Toggle("Enable \(rule.name)", isOn: binding(\.enabled)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+                HStack(spacing: FrogStyle.space8) {
+                    Toggle("Enable \(rule.name)", isOn: binding(\.enabled)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+                    IconMenu(title: "More for \(rule.name)", bordered: false) {
+                        Button("Rename…") { renaming = true }
+                        Button("Delete", role: .destructive) {
+                            do { try model.deleteRule(id: rule.id) } catch { model.report(error) }
+                        }
+                    }
+                }
             }
             rows.opacity(rule.enabled ? 1 : 0.5)
         }
@@ -79,15 +85,21 @@ private struct DictationRuleSection: View {
 
     /// The rule's settings; a rule that is off keeps them, dimmed.
     @ViewBuilder private var rows: some View {
-        FrogRow("Shortcut") {
-            HStack(spacing: 8) {
-                CompactSegments(values: RecordingMode.allCases, selected: rule.action?.recordingMode ?? .toggle,
-                                title: { $0 == .hold ? "Hold" : "Toggle" }) { mode in save { $0.action?.recordingMode = mode } }
-                HotkeyRecorder(hotkey: binding(\.hotkey))
+        FrogRow("Shortcut") { HotkeyRecorder(hotkey: binding(\.hotkey)) }
+        if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
+        // Its own row, so the shortcut's chip is not read as a third segment.
+        FrogRow("Hold to talk", caption: (rule.action?.recordingMode ?? .toggle) == .hold
+                ? "Records while you hold the shortcut." : "Press the shortcut to start and again to stop.") {
+            Toggle("Hold to talk", isOn: Binding(get: { rule.action?.recordingMode == .hold },
+                                                 set: { hold in save { $0.action?.recordingMode = hold ? .hold : .toggle } })).labelsHidden()
+        }
+        let missing = !model.ruleHasModel(rule)
+        FrogRow("Speech model", caption: missing ? "Dictation can't type until you choose one." : nil) {
+            HStack(spacing: FrogStyle.space8) {
+                if missing { ProblemMark(help: "No speech model chosen") }
+                RuleModelPicker(rule: Binding(get: { rule }, set: { save(reconciling: $0) }), speech: true)
             }
         }
-        if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
-        FrogRow("Speech model") { RuleModelPicker(rule: Binding(get: { rule }, set: { save(reconciling: $0) }), speech: true) }
         FrogRow("Language") {
             FrogDropdown(selected: rule.action?.transcriptionLanguage ?? languages.first ?? "auto", options: languages,
                          searchPrompt: languages.count > 8 ? "Find a language" : nil,
@@ -156,7 +168,7 @@ private struct DictationRuleSection: View {
 
     private func cleanupItem(_ choice: CleanupChoice) -> FrogDropdownItem {
         switch choice {
-        case .off: FrogDropdownItem("Off", symbol: "circle.slash")
+        case .off: FrogDropdownItem("Off")
         case .own: FrogDropdownItem("Own instructions", symbol: "text.alignleft")
         case .rule(let id): FrogDropdownItem(textRules.first { $0.id == id }?.name ?? "Deleted rule", symbol: "text.alignleft")
         }

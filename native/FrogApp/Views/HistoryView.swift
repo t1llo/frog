@@ -60,23 +60,24 @@ struct HistoryView: View {
         let filters = HistoryFilter.visible(explainEnabled: preferences.featureEnabled(.explain),
                                             hasAnswers: all.contains { $0.kind == .answers })
         return FrogPage {
-            FrogPageHeader(title: "History")
+            FrogPageHeader(title: "History", subtitle: "Rewritten text, answers and recordings, kept on this Mac.") {
+                if !all.isEmpty {
+                    IconMenu(title: "History actions", bordered: false) {
+                        Button("Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }
+                    }
+                }
+            }
             if !preferences.historyEnabled, all.isEmpty {
                 FrogEmptyState(symbol: "clock.arrow.circlepath", title: "History is off", message: "Turn it on to keep results on this Mac.") {
                     Button("Turn on") { setHistoryEnabled() }.buttonStyle(.frog(.primary))
                 }
             } else {
-                VStack(alignment: .leading, spacing: 8) {
+                // The filters head the list as a section's heading would, a little apart from it.
+                VStack(alignment: .leading, spacing: FrogStyle.space12) {
                     if !all.isEmpty {
-                        // The page's menu sits beside the search, so no row above the list holds it alone.
-                        HStack(spacing: FrogStyle.space8) {
-                            ListToolbar(placeholder: "Search history", search: $search) {
-                                CompactSegments(values: [nil] + filters.map(Optional.some), selected: filter,
-                                                title: { $0?.title ?? "All" }) { filter = $0 }
-                            }
-                            IconMenu(title: "History actions", bordered: false) {
-                                Button("Clear all", systemImage: "trash", role: .destructive) { confirmClear = true }
-                            }
+                        ListToolbar(placeholder: "Search history", search: $search) {
+                            CompactSegments(values: [nil] + filters.map(Optional.some), selected: filter,
+                                            title: { $0?.title ?? "All" }) { filter = $0 }
                         }
                     }
                     if !preferences.historyEnabled {
@@ -114,6 +115,8 @@ struct HistoryView: View {
                             RecentTimestampText(date: entry.timestamp)
                                 .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                                 .help(entry.timestamp.formatted(date: .complete, time: .shortened))
+                            // Room for the row's actions, which sit on this line beside the time.
+                            Color.clear.frame(width: actionsWidth)
                         }
                         Text(hidden(entry) ? "\(Self.mask) · Click to reveal"
                              : entry.processedText.isEmpty ? L10n.text("No transcript available") : HistoryPreview.text(entry.processedText))
@@ -124,15 +127,24 @@ struct HistoryView: View {
                     }
                 }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain).help("Open entry")
-            if preferences.hideHistoryText { revealButton(entry) }
-            CopyAction(title: "Copy result") { ViewActions.copy(entry.processedText) }.disabled(entry.processedText.isEmpty || hidden(entry))
-        }.padding(.horizontal, 8).padding(.vertical, 8).frogHoverRow()
+        }
+        // The actions share the title's line with the time, rather than floating in a column of their own.
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 0) {
+                if preferences.hideHistoryText { revealButton(entry) }
+                CopyAction(title: "Copy result") { ViewActions.copy(entry.processedText) }.disabled(entry.processedText.isEmpty || hidden(entry))
+            }.frame(height: 16)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 8).frogHoverRow()
             .contextMenu {
                 Button("Open entry") { viewing = entry.id }
                 Button("Copy", systemImage: "doc.on.doc") { ViewActions.copy(entry.processedText) }.disabled(entry.processedText.isEmpty || hidden(entry))
                 Button("Delete entry", systemImage: "trash", role: .destructive) { deleting = entry }
             }
     }
+
+    /// The width the row's icon actions take beside the time.
+    private var actionsWidth: CGFloat { preferences.hideHistoryText ? 2 * FrogStyle.controlHeight : FrogStyle.controlHeight }
 
     // MARK: Detail
 
@@ -142,7 +154,9 @@ struct HistoryView: View {
             FrogPageHeader(title: entry.ruleName, subtitle: Self.detailSubtitle(entry)) {
                 if preferences.hideHistoryText { revealButton(entry) }
                 if entry.answer != nil, model.answerNotesEnabled, !hidden(entry) { noteButton(entry) }
-                IconAction(title: "Delete entry", symbol: "trash", destructive: true) { deleting = entry }
+                IconMenu(title: "Entry actions", bordered: false) {
+                    Button("Delete entry…", systemImage: "trash", role: .destructive) { deleting = entry }
+                }
             }
             interruptionStatus(entry)
             Group {
@@ -404,7 +418,7 @@ private struct HistoryDetail: View {
         FrogSection(title, accessory: {
             Button(L10n.text(copied == title ? "Copied" : "Copy"), systemImage: copied == title ? "checkmark" : "doc.on.doc") {
                 ViewActions.copy(text); copied = title
-            }.buttonStyle(.frog(.ghost, compact: true)).accessibilityLabel("Copy \(title.lowercased())").disabled(text.isEmpty)
+            }.buttonStyle(.frog(compact: true)).accessibilityLabel("Copy \(title.lowercased())").disabled(text.isEmpty)
         }) {
             content().padding(.vertical, FrogStyle.space12)
         }
@@ -467,8 +481,10 @@ struct HistoryDiff {
         for (index, token) in tokens.enumerated() {
             var part = AttributedString(token)
             if marked.contains(index), !token.allSatisfy(\.isWhitespace) {
-                part.backgroundColor = color.opacity(0.16)
-                if strike { part.strikethroughStyle = .single; part.foregroundColor = FrogStyle.muted }
+                part.backgroundColor = color.opacity(0.2)
+                // A line under or through the word too, so a mark on one narrow letter ("I") still shows.
+                if strike { part.swiftUI.strikethroughStyle = Text.LineStyle(pattern: .solid, color: color); part.foregroundColor = FrogStyle.muted }
+                else { part.swiftUI.underlineStyle = Text.LineStyle(pattern: .solid, color: color) }
             }
             text += part
         }

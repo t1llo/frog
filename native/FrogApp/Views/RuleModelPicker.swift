@@ -66,7 +66,7 @@ struct RuleModelPicker: View {
             .init("External", values: external)
         ], searchPrompt: "Find a model", listWidth: 380,
            footnote: local.isEmpty && external.isEmpty ? "Download a model or add a provider in Models to use it here." : nil,
-           item: item) { choice in
+           item: item, choose: { choice in
             if let choice { choice.apply(to: &rule) }
             else if speech { rule.action?.audioModelID = nil; rule.action?.audioProviderID = nil }
             else { rule.providerID = nil; rule.model = ""; rule.action?.localTextModelID = nil }
@@ -76,9 +76,70 @@ struct RuleModelPicker: View {
     }
 }
 
+/// The mark beside a control whose value keeps a feature from working, such as a rule without a model.
+struct ProblemMark: View {
+    let help: String
+    var body: some View {
+        Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 12)).foregroundStyle(FrogStyle.warning)
+            .help(L10n.text(help)).accessibilityLabel(L10n.text(help))
+    }
+}
+
+/// A notice above a page's sections that a feature will not work yet, with the one action that fixes it.
+struct ProblemNotice<Action: View>: View {
+    let title: String
+    let message: String
+    @ViewBuilder var action: Action
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 16)).foregroundStyle(FrogStyle.warning)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.ink)
+                Text(L10n.text(message)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            action
+        }
+        .padding(.horizontal, FrogStyle.rowInset).padding(.vertical, FrogStyle.space12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: FrogStyle.cardRadius, style: .continuous).fill(FrogStyle.warning.opacity(0.12)))
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// "Explain won't work yet": shown above a feature's sections while its rule has no model. With nothing to choose
+/// from, it leads to Models; otherwise the flagged Model row below is where to choose.
+struct ModelMissingNotice: View {
+    @EnvironmentObject private var model: AppModel
+    let feature: String
+    let speech: Bool
+    var body: some View {
+        let choices = model.hasModelChoices(speech: speech)
+        ProblemNotice(title: "\(feature) won't work yet",
+                      message: choices ? "Choose a \(speech ? "speech" : "text") model below."
+                                       : "Download a \(speech ? "speech" : "text") model or connect a provider first.") {
+            if !choices { Button("Open Models") { model.toolkit.select(.models) }.buttonStyle(.frog(.primary)) }
+        }
+    }
+}
+
 /// What a rule's model is called on its row and in agent answers.
 @MainActor
 extension AppModel {
+    /// Whether the rule has a model it can run with.
+    func ruleHasModel(_ rule: Rule) -> Bool {
+        if rule.category == .application { return true }
+        if rule.category == .audio { return rule.action?.audioModelID != nil }
+        return (try? resolved(rule)) != nil
+    }
+    /// Whether any model of the kind is downloaded or offered by a provider, so a rule can choose one.
+    func hasModelChoices(speech: Bool) -> Bool {
+        let kind: ProviderModel.Category = speech ? .audio : .text
+        return configuration.modelCatalog.contains { $0.kind == (speech ? .audio : .text) && localModels.installed.contains($0.id) }
+            || configuration.providers.contains { $0.models.contains { $0.category == kind } }
+    }
     func localModelLabel(_ id: String) -> String {
         (configuration.localModel(id)?.name ?? id) + (localModels.installed.contains(id) ? "" : " · Not downloaded")
     }

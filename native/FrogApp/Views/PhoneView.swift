@@ -137,9 +137,11 @@ private struct PhoneSendSection: View {
 
     var body: some View {
         FrogSection("Send") {
-            FrogRow("Send copies automatically", caption: "Text and images. Never passwords or keys.") {
-                Toggle("Send copies automatically", isOn: Binding(get: { phone.autoSend }, set: { plugin.setAutoSend($0) }))
-                    .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+            // With no phone paired there is nothing to send to: the switch waits, off, until one is.
+            let paired = !phone.phones.isEmpty
+            FrogRow("Send copies automatically", caption: paired ? "Text and images. Never passwords or keys." : "Pair a phone first.") {
+                Toggle("Send copies automatically", isOn: Binding(get: { paired && phone.autoSend }, set: { plugin.setAutoSend($0) }))
+                    .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).disabled(!paired)
             }
             // Sending by hand needs a phone to send to.
             if !phone.phones.isEmpty {

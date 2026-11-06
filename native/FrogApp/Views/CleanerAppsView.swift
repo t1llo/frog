@@ -44,7 +44,7 @@ struct CleanerAppsView: View {
         return Button { open(row) } label: {
             HStack(spacing: 10) {
                 ApplicationIcon(path: identity.path, size: 28)
-                Text(identity.name).font(FrogType.bodyMedium).lineLimit(1)
+                Text(identity.name).font(FrogType.body).lineLimit(1)
                 if let version = identity.version {
                     Text(version).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
                 }
@@ -54,8 +54,8 @@ struct CleanerAppsView: View {
                 if let size = row.size {
                     Text(CleanerFormat.bytes(size.bytes)).font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)
                 } else {
-                    // Sizes arrive together once the page has measured them; a quiet bar holds their place.
-                    Capsule().fill(FrogStyle.control).frame(width: 40, height: 8).accessibilityLabel("Measuring size")
+                    // Sizes arrive together once the page has measured them; a small spinner says they are coming.
+                    FrogSpinner(size: .mini, label: "Measuring size")
                 }
                 Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(FrogStyle.muted).accessibilityHidden(true)

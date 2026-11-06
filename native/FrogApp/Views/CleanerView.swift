@@ -18,8 +18,8 @@ struct CleanerView: View {
 
     var body: some View {
         FrogPage {
-            FrogPageHeader(title: stepTitle ?? "App cleaner", subtitle: cleaner.review == nil && cleaner.outcome == nil ? "Pick an app, or drop one here." : nil) {
-                IconAction(title: "Recently moved", symbol: "clock.arrow.circlepath") {
+            FrogPageHeader(title: stepTitle ?? "App cleaner", subtitle: subtitle) {
+                Button("Recently moved", systemImage: "clock.arrow.circlepath") {
                     cleaner.dismissPutBack(); cleaner.loadRecords(); cleaner.showsRecent = true
                 }
                 .sheet(isPresented: $cleaner.showsRecent, onDismiss: { cleaner.dismissPutBack() }) {
@@ -67,6 +67,16 @@ struct CleanerView: View {
     private var stepTitle: String? {
         guard cleaner.outcome == nil else { return nil }
         return cleaner.review?.app.name ?? (cleaner.phase == .scanning ? cleaner.scanningApp?.name : nil)
+    }
+
+    /// What the list asks for, or which app is under review: its version and bundle ID, beside Recently moved, so
+    /// no row under the breadcrumb holds only that button.
+    private var subtitle: String? {
+        if cleaner.outcome != nil { return nil }
+        guard let review = cleaner.review else { return "Pick an app, or drop one here." }
+        let app = review.app
+        return ([app.version, app.bundleID, review.removedApp ? L10n.text("In the Trash") : nil] as [String?])
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     /// The outcome, the review, or the app list.

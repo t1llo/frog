@@ -14,24 +14,9 @@ struct CleanerReviewView: View {
 
     var body: some View {
         let app = review.app
+        // The app's name is the toolbar's title and its version and bundle ID the page's subtitle; its path is the
+        // App row's, so it shows once.
         VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 8) {
-            HStack(alignment: .center, spacing: 12) {
-                ApplicationIcon(path: app.path, size: 40)
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(app.name).font(FrogType.section).lineLimit(1)
-                        if let version = app.version {
-                            Text(version).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                        }
-                        if review.removedApp { FrogBadge(text: "In the Trash") }
-                    }
-                    Group {
-                        Text(app.bundleID)
-                        Text(roots.displayPath(app.url)).lineLimit(1).truncationMode(.middle)
-                    }.font(FrogType.small).foregroundStyle(FrogStyle.muted).textSelection(.enabled)
-                }
-                Spacer(minLength: 12)
-            }
             notices
             ForEach(review.groups(showPossible: showPossible)) { group in groupView(group) }
             if review.nothingElseFound(showPossible: showPossible) != nil {
@@ -93,13 +78,10 @@ struct CleanerReviewView: View {
         let allTicked = group.items.allSatisfy { review.selected.contains($0.id) }
         // Headed like a settings section: the group's name, then its list in one card.
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text(L10n.text("\(group.kind.title) · \(group.items.count)")).font(FrogType.section)
-                    .foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 8)
-                Button(allTicked ? "Untick all" : "Tick all") { cleaner.setGroup(group.kind, selected: !allTicked) }
+            FrogSectionHeader("\(L10n.text(group.kind.title)) · \(group.items.count)") {
+                Button(allTicked ? "Deselect all" : "Select all") { cleaner.setGroup(group.kind, selected: !allTicked) }
                     .buttonStyle(.frog(.ghost, compact: true))
-            }.frame(minHeight: 20).padding(.leading, FrogStyle.rowInset)
+            }
             VStack(spacing: 2) {
                 ForEach(group.items) { item in itemRow(item) }
             }.padding(6).frogTableSurface()
@@ -114,8 +96,13 @@ struct CleanerReviewView: View {
                 .toggleStyle(.frogCheckbox).accessibilityLabel(path)
             // The name and reason tick the item too, not only the checkbox; the controls keep their own click.
             HStack(spacing: 10) {
-                Image(systemName: item.kind.symbol).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
-                    .frame(width: 18).accessibilityHidden(true)
+                // The app itself shows its own icon; an outlined app symbol beside the checkbox read as a second box.
+                if item.kind == .application {
+                    ApplicationIcon(path: item.url.path, size: 18)
+                } else {
+                    Image(systemName: item.kind.symbol).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
+                        .frame(width: 18).accessibilityHidden(true)
+                }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(path).font(FrogType.body).lineLimit(1).truncationMode(.middle).help(path)
                     HStack(spacing: 6) {

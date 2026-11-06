@@ -37,7 +37,8 @@ struct PluginsView: View {
                 if let host = plugins.downloading {
                     FrogSpinner().help("Downloading from \(host)")
                 }
-                IconAction(title: "Install a plugin file", symbol: "square.and.arrow.down") { chooseFile() }
+                Button("Install from file…", systemImage: "square.and.arrow.down") { chooseFile() }
+                    .help("Install a plugin file")
             }
             HStack(spacing: 8) {
                 CompactSegments(values: PluginsTab.allCases, selected: tab, title: \.title) { tab = $0 }
@@ -82,11 +83,25 @@ struct PluginsView: View {
         }
     }
 
+    /// One installed plugin on one line of caption: what it does, truncated, with the version beside its name and
+    /// the rest (the full description, its actions, where it came from) in the help and its menu.
     private func installedRow(_ item: PluginItem) -> some View {
-        FrogRow(item.name, caption: item.problem ?? caption(item)) {
+        HStack(spacing: 12) {
             PluginIconTile(symbol: PluginSymbol.name(item.symbol), tint: PluginTint.purple.color)
-        } control: {
-            HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(L10n.text(item.name)).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                    if let version = item.manifest?.version, !version.isEmpty {
+                        Text(version).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                    }
+                }
+                Text(L10n.text(item.problem ?? item.manifest?.description ?? ""))
+                    .font(FrogType.small).foregroundStyle(item.problem == nil ? FrogStyle.muted : FrogStyle.warning)
+                    .lineLimit(1).truncationMode(.tail)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help(item.problem ?? caption(item))
+            HStack(spacing: 8) {
                 if item.needsReview {
                     Button("Review") {
                         do { try plugins.reviewInstalled(item.id) } catch { model.report(error) }
@@ -98,15 +113,18 @@ struct PluginsView: View {
                         .toggleStyle(.frogSwitch).controlSize(.small).labelsHidden()
                         .accessibilityLabel("\(item.name) on")
                 }
-                IconMenu(title: "More about \(item.name)") {
+                IconMenu(title: "More about \(item.name)", bordered: false) {
                     Text(source(item))
+                    if let actions = item.manifest?.actions.count, actions > 0 { Text(actions == 1 ? "1 action" : "\(actions) actions") }
                     if item.runs, item.hasSettings {
                         Button("Settings…", systemImage: "slider.horizontal.3") { settings = PluginSettingsTarget(id: item.id) }
                     }
                     Button("Remove…", systemImage: "trash", role: .destructive) { removing = item }
                 }
-            }
+            }.fixedSize()
         }
+        .padding(.vertical, FrogStyle.space6)
+        .frame(minHeight: FrogStyle.rowHeight)
     }
 
     private func caption(_ item: PluginItem) -> String {

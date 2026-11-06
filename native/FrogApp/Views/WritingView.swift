@@ -32,6 +32,19 @@ struct WritingView: View {
         if rules.isEmpty {
             FrogEmptyState(symbol: "text.cursor", title: "No rules yet", message: "A rule rewrites selected text in any app.")
         } else {
+            let missing = rules.filter { $0.enabled && !model.ruleHasModel($0) }
+            if !missing.isEmpty {
+                let choices = model.hasModelChoices(speech: false)
+                ProblemNotice(title: missing.count == 1 ? "\(missing[0].name) won't run yet" : "\(missing.count) rules won't run yet",
+                              message: choices ? "Choose a text model for \(missing.count == 1 ? "it" : "each")."
+                                               : "Download a text model or connect a provider first.") {
+                    if choices {
+                        Button("Choose model") { editing = missing[0] }.buttonStyle(.frog(.primary))
+                    } else {
+                        Button("Open Models") { model.toolkit.select(.models) }.buttonStyle(.frog(.primary))
+                    }
+                }
+            }
             FrogSection("Rules") {
                 ForEach(rules) { rule in row(rule) }
             }
@@ -42,6 +55,10 @@ struct WritingView: View {
         VStack(alignment: .leading, spacing: 0) {
             FrogRow(rule.name, caption: caption(rule)) {
                 HStack(spacing: 8) {
+                    if rule.enabled, !model.ruleHasModel(rule) {
+                        Button { editing = rule } label: { ProblemMark(help: "No model chosen: click to choose one") }
+                            .buttonStyle(.plain)
+                    }
                     Button("Try") { trying = rule }.buttonStyle(.frog(compact: true))
                         .disabled(!rule.enabled || model.isProcessing).accessibilityLabel("Try \(rule.name)")
                     Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: { value in

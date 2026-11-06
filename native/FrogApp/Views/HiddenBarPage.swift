@@ -14,14 +14,16 @@ struct HiddenBarPage: View {
                     organizer.configure(enabled: true, settings: plugin.settings.organizer)
                 }
             }
-            FrogSection {
+            FrogSection("Hiding") {
+                // How long is part of the switch's row: it means nothing while the switch is off.
                 FrogRow("Hide again automatically") {
-                    Toggle("Hide again automatically", isOn: binding(\.autoHide, reveal: true)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
-                }
-                if plugin.settings.autoHide {
-                    FrogRow("After") {
-                        FrogDropdown(selection: binding(\.autoHideSeconds), options: Set([5.0, 10, 15, 30, 60, plugin.settings.autoHideSeconds]).sorted(),
-                                     width: 180, title: { "\($0.formatted(.number.precision(.fractionLength(0...1)))) seconds" })
+                    HStack(spacing: FrogStyle.space8) {
+                        if plugin.settings.autoHide {
+                            FrogDropdown(selection: binding(\.autoHideSeconds), options: Set([5.0, 10, 15, 30, 60, plugin.settings.autoHideSeconds]).sorted(),
+                                         width: 140, title: { "\($0.formatted(.number.precision(.fractionLength(0...1)))) seconds" })
+                                .accessibilityLabel("Hide again after")
+                        }
+                        Toggle("Hide again automatically", isOn: binding(\.autoHide, reveal: true)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                     }
                 }
                 FrogRow("Hide when Frog starts") {
@@ -33,7 +35,9 @@ struct HiddenBarPage: View {
                 FrogRow("Always-hidden section", caption: "Icons left of a second divider stay hidden.") {
                     Toggle("Always-hidden section", isOn: binding(\.alwaysHiddenSection)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
-                FrogRow("Shortcut") {
+            }
+            FrogSection("Shortcut") {
+                FrogRow("Show or hide icons") {
                     HotkeyRecorder(hotkey: Binding(get: { plugin.settings.shortcut?.hotkey },
                                                    set: { hotkey in plugin.update { $0.shortcut = hotkey.flatMap { try? Shortcut($0) } } }))
                 }
@@ -56,7 +60,7 @@ private struct HiddenBarArrangement: View {
     let retry: () -> Void
 
     var body: some View {
-        FrogSection {
+        FrogSection("Menu bar") {
             VStack(alignment: .leading, spacing: 10) {
                 preview
                 HStack(spacing: 8) {

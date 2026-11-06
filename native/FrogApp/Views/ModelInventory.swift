@@ -40,31 +40,33 @@ struct ModelInventory: View {
     private func group(_ title: String, items: [LocalModelDescriptor], installed: Bool) -> some View {
         // Headed like a `FrogSection`, so every heading on the page has one size.
         VStack(alignment: .leading, spacing: FrogStyle.space10) {
-            HStack(spacing: 8) {
-                Text(L10n.text(title)).font(FrogType.section).foregroundStyle(FrogStyle.ink).accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 8)
+            FrogSectionHeader(title) {
                 // What the downloads listed here take on disk together.
                 if installed, let total = model.localModels.totalDiskUse(of: items.map(\.id)) {
-                    Text(LocalModelDescriptor.byteCount(total)).font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                    Text(LocalModelDescriptor.byteCount(total))
                 }
-            }.frame(minHeight: 20).padding(.horizontal, FrogStyle.rowInset)
+            }
             VStack(spacing: 2) {
                 ForEach(items) { item in
                     let unfinished = !installed && model.localModels.progress[item.id] == nil && model.localModels.unfinished.contains(item.id)
                     VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 10) {
+                        HStack(spacing: 12) {
+                            // The same tile as in setup: red for speech, green for text.
+                            PluginIconTile(symbol: item.kind == .audio ? "waveform" : "text.alignleft",
+                                           tint: (item.kind == .audio ? PluginTint.red : .green).color, size: .list)
                             // The heading says whether it is downloaded and the button what it does, so no glyph repeats it.
-                            VStack(alignment: .leading, spacing: 3) {
-                                 HStack(spacing: 6) {
-                                     Text(item.name).font(FrogType.bodyMedium)
-                                     if item.isRecommended { RecommendedModelBadge() }
-                                 }
+                            // One line of facts; the runtime and the guidance are in the help and the information sheet.
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text(item.name).font(FrogType.bodyMedium)
+                                    if item.isRecommended { RecommendedModelBadge() }
+                                }
                                 Text([installed && kind == nil ? (item.kind == .audio ? "Speech" : "Text") : "",
-                                      installed ? model.localModels.size(of: item) : item.downloadSize, item.runtimeName, model.localModels.loaded.contains(item.id) ? "In memory" : "", unfinished ? "Partly downloaded" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
-                                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                                Text(L10n.text(item.recommendationSummary ?? item.languages))
-                                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
-                                    .help(item.kind == .audio ? "Live preview uses repeated short audio chunks, not a continuous streaming decoder. Speed and accuracy are relative catalog guidance." : "Relative catalog guidance; performance depends on your Mac and input.")
+                                      installed ? model.localModels.size(of: item) : item.downloadSize,
+                                      model.localModels.loaded.contains(item.id) ? "In memory" : "", unfinished ? "Partly downloaded" : "",
+                                      L10n.text(item.recommendationSummary ?? item.languages)].filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.tail)
+                                    .help([item.runtimeName, item.languages, item.kind == .audio ? "Live preview uses repeated short audio chunks, not a continuous streaming decoder. Speed and accuracy are relative catalog guidance." : "Relative catalog guidance; performance depends on your Mac and input."].filter { !$0.isEmpty }.joined(separator: " · "))
                             }
                             Spacer()
                             IconAction(title: "Model information", symbol: "info.circle") { information = item }
