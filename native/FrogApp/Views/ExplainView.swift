@@ -17,10 +17,17 @@ struct ExplainView: View {
         FrogPage {
             FrogPageHeader(title: "Explain", subtitle: "Select text, press the shortcut, read the answer.")
             if let rule = plugin.rule {
+                if !model.ruleHasModel(rule) { ModelMissingNotice(feature: "Explain", speech: false) }
                 FrogSection("Shortcut & model") {
                     FrogRow("Shortcut", caption: "Select text in any app, then press it.") { HotkeyRecorder(hotkey: ruleBinding(rule, \.hotkey)) }
                     if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
-                    FrogRow("Model", caption: "Writes the answer.") { RuleModelPicker(rule: Binding(get: { rule }, set: save)) }
+                    let missing = !model.ruleHasModel(rule)
+                    FrogRow("Model", caption: missing ? "Explain can't answer until you choose one." : "Writes the answer.") {
+                        HStack(spacing: FrogStyle.space8) {
+                            if missing { ProblemMark(help: "No model chosen") }
+                            RuleModelPicker(rule: Binding(get: { rule }, set: save))
+                        }
+                    }
                 }
                 FrogSection("Answer") {
                     FrogRow("Surrounding text", caption: "Also sends the sentence around the selection.") {
@@ -48,9 +55,7 @@ struct ExplainView: View {
                 }
             } else {
                 // A notice, not a setting: the bubble is switched on the Writing page.
-                FrogRow("The selection bubble is off", caption: "The shortcut works either way.", icon: {
-                    Image(systemName: "info.circle").font(.system(size: 14)).foregroundStyle(FrogStyle.muted)
-                }) {
+                FrogRow("The selection bubble is off", caption: "The shortcut works either way.") {
                     Button("Turn on in Writing") { model.toolkit.select(.feature(.writing)) }
                 }
             }
