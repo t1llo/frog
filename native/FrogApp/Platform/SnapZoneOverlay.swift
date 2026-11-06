@@ -67,12 +67,12 @@ final class SnapZoneOverlayModel: ObservableObject {
     @Published var layout: SnapZoneLayout?
 }
 
-/// Tiles with a window's corner radius and the layout's name. The one under the pointer is filled with the Mac's own
-/// accent colour and ringed in it, as macOS marks where a dragged window will go; the others are quiet outlines.
-/// The theme's accent is not used: in the neutral themes it is grey, and the zones lie over any app.
+/// Tiles with a window's corner radius and the layout's name. The one under the pointer is tinted with the theme's
+/// accent and ringed in it, as macOS marks where a dragged window will go; the others are quiet outlines. A neutral
+/// theme's grey accent would not show over other apps, so the zone takes the colour an on switch takes there.
 struct SnapZoneOverlayView: View {
     @ObservedObject var model: SnapZoneOverlayModel
-    private static let accent = Color(nsColor: .controlAccentColor)
+    private var accent: Color { FrogStyle.switchOn }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -83,14 +83,14 @@ struct SnapZoneOverlayView: View {
                     let highlighted = zone.action == layout.highlight
                     let shape = RoundedRectangle(cornerRadius: FrogStyle.panelRadius, style: .continuous)
                     shape
-                        .fill(highlighted ? Self.accent.opacity(0.28) : Color.black.opacity(0.06))
-                        .overlay(shape.strokeBorder(highlighted ? Self.accent : Color.primary.opacity(0.3), lineWidth: highlighted ? 2 : 1))
+                        .fill(highlighted ? accent.opacity(0.22) : Color.black.opacity(0.06))
+                        .overlay(shape.strokeBorder(highlighted ? accent : Color.primary.opacity(0.3), lineWidth: highlighted ? 2 : 1))
                         .overlay {
                             Text(zone.action.title)
                                 .font(FrogType.bodyMedium)
-                                .foregroundStyle(highlighted ? Color.white : FrogStyle.ink)
+                                .foregroundStyle(highlighted ? FrogStyle.onAccent : FrogStyle.ink)
                                 .padding(.horizontal, 10).frame(height: FrogStyle.compactHeight)
-                                .background(highlighted ? AnyShapeStyle(Self.accent) : AnyShapeStyle(.regularMaterial), in: Capsule())
+                                .background(highlighted ? AnyShapeStyle(accent) : AnyShapeStyle(.regularMaterial), in: Capsule())
                         }
                         .frame(width: max(0, local.width), height: max(0, local.height))
                         .offset(x: local.minX, y: local.minY)

@@ -41,8 +41,9 @@ struct AnswerPanelView: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 statusLine
-                // A failure or stop without any answer has nothing to ask about, copy or save.
-                if hasAnswer || model.session?.phase.isRunning == true { footer }
+                // A stop without any answer has nothing to ask about, copy or save. A failure keeps the field, disabled
+                // until Retry, so the panel keeps its shape.
+                if hasAnswer || failed || model.session?.phase.isRunning == true { footer }
             }
             .measured(ChromeHeightKey.self)
         }
@@ -119,8 +120,9 @@ struct AnswerPanelView: View {
                     Image(systemName: "exclamationmark.triangle.fill").font(FrogType.small).foregroundStyle(FrogStyle.warning)
                         .accessibilityHidden(true)
                 }
-                Text(line).font(FrogType.caption)
-                    .foregroundStyle(failed || noteFailure != nil ? FrogStyle.warning : FrogStyle.muted)
+                // The triangle carries the warning colour; the message stays readable in the text colour.
+                Text(line).font(failed || noteFailure != nil ? FrogType.small : FrogType.caption)
+                    .foregroundStyle(failed || noteFailure != nil ? FrogStyle.ink : FrogStyle.muted)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 switch noteFailure == nil ? model.recovery : nil {
@@ -144,7 +146,7 @@ struct AnswerPanelView: View {
                     .padding(.horizontal, FrogStyle.rowInset)
                     .frogControlSurface(height: FrogStyle.controlHeight, radius: FrogStyle.controlRadius)
                     // It stays enabled while the answer runs, so it keeps focus and the next question can be typed.
-                    .disabled(followUpBlocked)
+                    .disabled(followUpBlocked || (failed && !hasAnswer))
                     .onSubmit { model.ask(model.question) }
                     .accessibilityLabel(L10n.text("Ask a follow-up"))
                     .padding(.trailing, 4)
@@ -169,7 +171,6 @@ struct AnswerPanelView: View {
         // Field and icons sit a panel inset from the edge, so their 10-point corners nest in the panel's 18.
         .padding(FrogStyle.panelInset)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .top) { Rectangle().fill(FrogStyle.hairline).frame(height: 1) }
     }
 
     // MARK: State
@@ -245,14 +246,26 @@ private struct PulseDot: View {
     }
 }
 
-/// An answer in the Notes renderer's blocks.
+/// An answer in the Notes renderer's blocks: a list's items close together, and a list set apart from the paragraph
+/// after it by more space than paragraphs keep, so the list reads as one group.
 private struct AnswerMarkdown: View {
     let text: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(MarkdownPreview.blocks(text)) { MarkdownBlockView(block: $0) }
+        let blocks = MarkdownPreview.blocks(text)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(blocks.enumerated()), id: \.element.id) { index, block in
+                MarkdownBlockView(block: block).padding(.top, index == 0 ? 0 : Self.space(after: blocks[index - 1], before: block))
+            }
         }
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    static func space(after previous: MarkdownBlock, before block: MarkdownBlock) -> CGFloat {
+        switch (previous.listDepth > 0, block.listDepth > 0) {
+        case (true, true): FrogStyle.space4
+        case (true, false): FrogStyle.space12
+        default: FrogStyle.space6
+        }
     }
 }
 

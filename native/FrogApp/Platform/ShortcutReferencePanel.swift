@@ -53,8 +53,15 @@ struct ShortcutReferenceContent: View {
                     Text(L10n.text(section.group.title)).font(FrogType.section).accessibilityAddTraits(.isHeader)
                     VStack(spacing: 0) {
                     ForEach(section.items) { item in
+                        let label = Self.label(item)
                         HStack(spacing: 10) {
-                            Text(L10n.text(item.title)).font(FrogType.row).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                            // One line each: a plugin's action, its plugin's name muted under it.
+                            VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                                Text(label.title).font(FrogType.row).lineLimit(1)
+                                if let plugin = label.plugin {
+                                    Text(plugin).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                                }
+                            }.help(L10n.text(item.title))
                             Spacer(minLength: 8)
                             ShortcutKeyCaps(hotkey: item.hotkey)
                         }.padding(.horizontal, FrogStyle.cardPadding).padding(.vertical, FrogStyle.space6).frame(minHeight: FrogStyle.rowHeight)
@@ -73,12 +80,20 @@ struct ShortcutReferenceContent: View {
     }
 }
 
+extension ShortcutReferenceContent {
+    /// "Focus timer: Start or pause the focus timer" as the action, "Start or pause the focus timer", and its plugin.
+    static func label(_ item: ShortcutReferenceItem) -> (title: String, plugin: String?) {
+        let title = L10n.text(item.title)
+        guard item.group == .plugins, let colon = title.range(of: ": ") else { return (title, nil) }
+        let action = String(title[colon.upperBound...])
+        return (action.prefix(1).uppercased() + action.dropFirst(), String(title[..<colon.lowerBound]))
+    }
+}
+
 /// A shortcut in a reference panel: each key as a cap.
 struct ShortcutKeyCaps: View {
     let hotkey: Hotkey
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(Array(HotkeyManager.keys(hotkey).enumerated()), id: \.offset) { KeyCap($0.element) }
-        }
+        KeyCaps(HotkeyManager.display(hotkey))
     }
 }

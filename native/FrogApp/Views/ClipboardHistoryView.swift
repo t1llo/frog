@@ -129,10 +129,20 @@ struct ClipboardHistoryView: View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(FrogStyle.muted).frame(width: 18)
-                TextField("Search clipboard", text: $state.query).textFieldStyle(.plain).font(FrogType.row)
-                    .focused($searching)
-                IconAction(title: "Close", symbol: "xmark", action: close)
-            }
+                // The field's own placeholder is nearly as dark as typed text; this one is lighter.
+                TextField("", text: $state.query).textFieldStyle(.plain).font(FrogType.row)
+                    .focused($searching).accessibilityLabel(L10n.text("Search clipboard"))
+                    .background(alignment: .leading) {
+                        if state.query.isEmpty {
+                            Text(L10n.text("Search clipboard")).font(FrogType.row).foregroundStyle(FrogStyle.placeholder)
+                                .lineLimit(1).allowsHitTesting(false).accessibilityHidden(true)
+                        }
+                    }
+                // Clears the search once there is one; Escape closes the panel.
+                if !state.query.isEmpty {
+                    IconAction(title: "Clear search", symbol: "xmark.circle.fill") { state.query = ""; searching = true }
+                }
+            }.frame(height: 28)
             .padding(.leading, 12).padding(.trailing, 4)
             .frogControlSurface(height: 36, radius: FrogStyle.controlRadius)
             .padding(.horizontal, ClipboardHistoryLayout.inset).frame(height: ClipboardHistoryLayout.headerHeight)
@@ -179,16 +189,15 @@ struct ClipboardHistoryView: View {
             hint("Plain text", keys: ["⇧", "↩"])
             hint("Copy", keys: ["⌘", "C"])
         }
-        .padding(.horizontal, 14).frame(height: ClipboardHistoryLayout.footerHeight)
-        // Rex's sheet footer: the panel's own colour under a thin line.
-        .frame(maxWidth: .infinity).overlay(alignment: .top) { Rectangle().fill(FrogStyle.hairline).frame(height: 1) }
+        .padding(.horizontal, FrogStyle.cardPadding).frame(height: ClipboardHistoryLayout.footerHeight)
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
     }
 
     private func hint(_ title: String, keys: [String]) -> some View {
         HStack(spacing: 6) {
             Text(L10n.text(title)).font(FrogType.label).foregroundStyle(FrogStyle.ink)
-            HStack(spacing: 3) { ForEach(keys, id: \.self) { KeyCap($0) } }
+            KeyCaps(keys.joined())
         }.fixedSize()
     }
 
@@ -196,7 +205,8 @@ struct ClipboardHistoryView: View {
         HStack(spacing: 10) {
             let kind = entry.kind
             PluginIconTile(symbol: kind.symbol, tint: kind.tint.color, size: .sidebar).help(L10n.text(kind.title))
-            Text(entry.preview).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
+            // Code in the mono face, as on the Clipboard page.
+            Text(entry.preview).font(kind == .code ? FrogType.mono : FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             RecentTimestampText(date: entry.timestamp, shownAt: state.openedAt).font(FrogType.small).foregroundStyle(FrogStyle.muted).monospacedDigit()
                 .help(entry.timestamp.formatted(date: .abbreviated, time: .shortened))

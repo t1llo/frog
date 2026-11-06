@@ -73,17 +73,21 @@ struct SelectionBubbleView: View {
         Color.clear.frame(width: 6, height: 1).accessibilityHidden(true)
     }
 
+    /// The rule's tile as the expanded list draws it, so a rule looks the same in the bar and the list; the tile sits
+    /// as far in from the item's edge as from its top, so its corner nests in the item's.
     private func barLabel(_ item: BubbleItem) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: item.symbol).font(.system(size: 11, weight: .medium)).frame(width: 14)
-                .foregroundStyle(FrogStyle.muted)
+        HStack(spacing: FrogStyle.space6) {
+            PluginIconTile(symbol: item.symbol, tint: Self.tint(item).color, size: .sidebar)
             Text(item.title).font(FrogType.label).lineLimit(1).truncationMode(.tail).frame(maxWidth: 140, alignment: .leading)
         }
-        .padding(.horizontal, 9)
+        .padding(.leading, (Self.barItemHeight - PluginIconTile.Size.sidebar.rawValue) / 2).padding(.trailing, 9)
         .frame(height: Self.barItemHeight)
         .fixedSize(horizontal: true, vertical: false)
         .contentShape(Rectangle())
     }
+
+    /// Rules that answer take Explain's colour, rules that replace the selection Writing's.
+    static func tint(_ item: BubbleItem) -> PluginTint { item.answers ? .teal : .green }
 
     // MARK: List
 
@@ -129,7 +133,7 @@ struct SelectionBubbleView: View {
 
     private func listRow(_ item: BubbleItem) -> some View {
         HStack(spacing: FrogStyle.space8) {
-            PluginIconTile(symbol: item.symbol, tint: (item.answers ? PluginTint.teal : PluginTint.green).color, size: .sidebar)
+            PluginIconTile(symbol: item.symbol, tint: Self.tint(item).color, size: .sidebar)
             Text(item.title).font(FrogType.row).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 12)
             if let hotkey = item.hotkey {

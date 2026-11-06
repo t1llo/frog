@@ -106,9 +106,19 @@ final class UIShotsTests: XCTestCase {
             // Frog answers a popup's calls only from the popup it opened.
             sample.model.plugins.popups[sample.focusTimerID] = host
             host.load()
-            let png = try await host.snapshot()
+            let page = try await host.snapshot()
             host.stop()
             sample.model.plugins.popups[sample.focusTimerID] = nil
+            // The page in the popup Frog draws around it: the header with the plugin's tile, and Close beneath.
+            let menubar = try XCTUnwrap(package.manifest.menubar)
+            let width = CGFloat(menubar.popupWidth)
+            let image = try XCTUnwrap(NSImage(data: page))
+            let shell = PluginPopupShell(name: package.manifest.name, symbol: menubar.symbol ?? package.manifest.displaySymbol,
+                                         width: width, hasPage: true, openPage: {}) {
+                Image(nsImage: image).resizable()
+                    .frame(width: width - 2 * FrogStyle.panelCardInset, height: CGFloat(menubar.popupHeight))
+            }
+            let png = try await render(shell, size: nil, appearance: appearance, backdrop: true)
             try write(png, "popup-focus-timer-\(name)")
         }
     }

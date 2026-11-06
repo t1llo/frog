@@ -559,11 +559,29 @@ struct PluginPopupView: View {
     let openPage: () -> Void
 
     var body: some View {
+        PluginPopupShell(name: name, symbol: symbol, width: width, hasPage: hasPage, openPage: openPage) {
+            PluginWebContainer(host: host).frame(width: width - 2 * FrogStyle.panelCardInset, height: size.height)
+        }
+    }
+}
+
+/// The status item popup template around a plugin's page: the plugin's tile and name with a way to its page,
+/// the page, and Close `esc` beneath, as every Frog popup has. The page keeps its content on the header's edge.
+struct PluginPopupShell<Content: View>: View {
+    let name: String
+    let symbol: String
+    let width: CGFloat
+    let hasPage: Bool
+    let openPage: () -> Void
+    @ViewBuilder var content: Content
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             FrogPopupHeader(symbol: PluginSymbol.name(symbol), tint: .purple, title: name) {
                 if hasPage { IconAction(title: "Open \(name)", symbol: "arrow.up.forward.app", bordered: true, action: openPage) }
             }
-            PluginWebContainer(host: host).frame(width: width - 2 * FrogStyle.panelCardInset, height: size.height)
+            content
+            FrogPopupFooter { EmptyView() }
         }
         .padding(FrogStyle.panelCardInset).frame(width: width).fixedSize(horizontal: false, vertical: true)
         .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)

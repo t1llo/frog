@@ -112,16 +112,17 @@ struct SystemMonitorStatusPopover: View {
     let openPage: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            FrogPopupHeader(symbol: SystemMonitorPlugin.info.symbol, tint: SystemMonitorPlugin.info.tint, title: "System") {
+            FrogPopupHeader(symbol: SystemMonitorPlugin.info.symbol, tint: SystemMonitorPlugin.info.tint, title: SystemMonitorPlugin.info.name) {
                 IconAction(title: "Open System monitor", symbol: "arrow.up.forward.app", bordered: true, action: openPage)
             }
             SystemMonitorView(monitor: monitor, presenter: .statusPopup).padding(.bottom, FrogStyle.space8)
             FrogPopupFooter {
-                let live = monitor.history.count >= 2
-                HStack(spacing: FrogStyle.space6) {
-                    Circle().fill(live ? FrogStyle.good : FrogStyle.muted).frame(width: 6, height: 6)
-                    // The graph already says Measuring…; the footer only says whether readings are coming in.
-                    Text(L10n.text(live ? "Live" : "Starting…"))
+                // Live once readings come in; until then the figures' skeleton bars say they are being measured.
+                if monitor.history.count >= 2 {
+                    HStack(spacing: FrogStyle.space6) {
+                        Circle().fill(FrogStyle.good).frame(width: 6, height: 6)
+                        Text(L10n.text("Live"))
+                    }
                 }
             }
         }.padding(FrogStyle.panelCardInset).frame(width: 292).fixedSize(horizontal: false, vertical: true)

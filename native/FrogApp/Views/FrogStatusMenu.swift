@@ -72,9 +72,9 @@ struct FrogStatusMenu: View {
         .padding(.leading, FrogStyle.cardPadding).padding(.trailing, FrogStyle.space6).frame(height: 40)
     }
 
-    /// One muted line of state, then the plugins' rows in a card, and an error when there is one.
+    /// A line of state only when something needs saying, then the plugins' rows in a card, and an error when there is one.
     @ViewBuilder private func frogContent(_ rows: [MenuContribution]) -> some View {
-        statusLine
+        if let status { statusLine(status) }
         VStack(alignment: .leading, spacing: FrogStyle.space2) {
             ForEach(rows) { $0.content() }
             if model.isProcessing {
@@ -92,18 +92,23 @@ struct FrogStatusMenu: View {
         UpdateReadyRow { dismiss(); UpdateService.shared.installReadyUpdate() }
     }
 
-    private var statusLine: some View {
-        let (text, color): (String, Color) = model.isProcessing ? ("Processing", FrogStyle.accent)
+    /// Processing, Needs attention or Setup not finished; nothing while Frog is simply ready.
+    private var status: (text: String, color: Color)? {
+        model.isProcessing ? ("Processing", FrogStyle.accent)
             : model.errorMessage != nil ? ("Needs attention", FrogStyle.warning)
-            : model.setupPresented ? ("Setup not finished", FrogStyle.warning) : ("Ready", FrogStyle.good)
+            : model.setupPresented ? ("Setup not finished", FrogStyle.warning) : nil
+    }
+
+    private func statusLine(_ status: (text: String, color: Color)) -> some View {
+        let (text, color) = status
         return HStack(spacing: FrogStyle.space6) {
             Circle().fill(color).frame(width: 6, height: 6)
             Text(L10n.text(text)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
             Spacer(minLength: 0)
-        }.padding(.horizontal, FrogStyle.space6).accessibilityElement(children: .combine)
+        }.padding(.horizontal, FrogStyle.cardPadding).accessibilityElement(children: .combine)
     }
 
-    /// Secondary actions under a hairline: short labels, each shortcut in one cap, so neither label is ever cut.
+    /// Secondary actions, set apart from the body by space: short labels and their keys as caps.
     private var footer: some View {
         HStack(spacing: FrogStyle.space4) {
             footerButton(model.setupPresented ? "Set up Frog" : "Settings", symbol: "gearshape", keys: "\u{2318},") {
@@ -114,7 +119,6 @@ struct FrogStatusMenu: View {
                 NSApplication.shared.terminate(nil)
             }.keyboardShortcut("q")
         }.padding(.horizontal, FrogStyle.space2).padding(.top, FrogStyle.space4)
-            .overlay(alignment: .top) { Rectangle().fill(FrogStyle.hairline).frame(height: 1) }
     }
 
     private func footerButton(_ title: String, symbol: String, keys: String, perform: @escaping () -> Void) -> some View {
@@ -122,7 +126,7 @@ struct FrogStatusMenu: View {
             HStack(spacing: FrogStyle.space6) {
                 Image(systemName: symbol).font(FrogType.label).foregroundStyle(FrogStyle.muted)
                 Text(L10n.text(title)).font(FrogType.small).lineLimit(1).fixedSize()
-                KeyCap(keys)
+                KeyCaps(keys)
             }.padding(.horizontal, FrogStyle.space6).frame(height: FrogStyle.controlHeight).contentShape(Rectangle())
         }.buttonStyle(MenuRowStyle())
     }
@@ -167,11 +171,50 @@ struct PhoneMenuRow: View {
     }
 }
 
+/// Stay awake in Frog's popup, set like the command rows beside it: the feature's tile and name, then how long while
+/// it is off or until when while it is on, and its switch.
+struct StayAwakeMenuRow: View {
+    @ObservedObject var power: StayAwakeController
+    let choose: (StayAwakeController.DurationChoice) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space2) {
+            HStack(spacing: FrogStyle.space10) {
+                PluginIconTile(symbol: power.isEnabled ? "cup.and.saucer.fill" : "cup.and.saucer", tint: StayAwakePlugin.info.tint.color, size: .sidebar)
+                Text(L10n.text("Stay awake")).font(FrogType.row).lineLimit(1).fixedSize()
+                Spacer(minLength: FrogStyle.space6)
+                if power.isBusy { FrogSpinner(size: .mini) }
+                if power.isEnabled {
+                    Text(power.deadline.map { "Until \($0.formatted(date: .omitted, time: .shortened))" } ?? "Until turned off")
+                        .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                } else {
+                    FrogDropdown(selected: power.duration, options: StayAwakeController.DurationChoice.allCases, width: 96, compact: true,
+                                 title: { L10n.text($0 == .untilTime ? "Until \(StayAwakePage.title(of: power.untilTime))" : $0.title) },
+                                 choose: choose)
+                        .accessibilityLabel("Stay-awake duration")
+                }
+                Toggle("Stay awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
+                    .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+                    .accessibilityHint("Keep this Mac awake")
+            }.padding(.leading, FrogStyle.rowPadding).padding(.trailing, FrogStyle.space6).frame(height: FrogStyle.rowHeight - 8)
+            if let message = power.error ?? power.notice {
+                Text(String(message.prefix(300))).font(FrogType.caption)
+                    .foregroundStyle(power.error == nil ? FrogStyle.muted : FrogStyle.warning).lineLimit(2)
+                    .padding(.horizontal, FrogStyle.rowPadding).padding(.bottom, FrogStyle.space6)
+                    .help("Open Stay awake for details.")
+            }
+        }
+        .task { await power.refresh() }
+    }
+}
+
 /// A full-width command row shared by the menu-bar popups.
 struct MenuActionRow: View {
     let title: String
     let symbol: String
     var key: String? = nil
+    /// The keys that run it, drawn as caps, one per key.
+    var shortcut: String? = nil
     /// A status dot before `key`, such as green for a connected phone.
     var dot: Color? = nil
     /// The colour of the icon tile: the feature's own colour, or a fixed grey that reads the same in light and dark.
@@ -188,6 +231,7 @@ struct MenuActionRow: View {
                 Spacer()
                 if let dot { Circle().fill(dot).frame(width: 6, height: 6) }
                 if let key { Text(key).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
+                if let shortcut, !shortcut.isEmpty { KeyCaps(shortcut) }
             }.padding(.horizontal, FrogStyle.rowPadding).frame(height: FrogStyle.rowHeight - 8).contentShape(Rectangle())
         }.buttonStyle(MenuRowStyle())
     }

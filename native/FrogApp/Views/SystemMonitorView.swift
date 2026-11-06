@@ -89,8 +89,9 @@ struct SystemMonitorOverview: View {
                     memory(sample)
                 }
                 if history.count < 2 {
-                    // Hold the graph's place, so the card does not grow when the first readings arrive.
-                    FrogChartPlaceholder(height: wide ? 150 : 54) { Text("Measuring…").font(FrogType.small) }
+                    // Hold the graph's place, so the card does not grow when the first readings arrive. The figures'
+                    // skeleton bars already say they are being measured, so the graph adds no second note.
+                    FrogChartPlaceholder(height: wide ? 150 : 54) { EmptyView() }.accessibilityLabel("Measuring")
                 } else {
                     SystemMonitorGraph(history: history, inspected: $inspected, sample: sample, wide: wide).equatable().frame(height: wide ? 150 : 54)
                 }
@@ -281,7 +282,7 @@ struct SystemMonitorOverview: View {
     }
 }
 
-/// A figure that has no reading yet: a quiet bar the width of a number, so only the graph says "Measuring…".
+/// A figure that has no reading yet: a quiet bar the width of a number, the one sign that it is being measured.
 private struct MeasuringValue: View {
     let wide: Bool
     var body: some View {
