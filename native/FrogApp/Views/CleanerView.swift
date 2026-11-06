@@ -18,7 +18,7 @@ struct CleanerView: View {
 
     var body: some View {
         FrogPage {
-            FrogPageHeader(title: "App cleaner", subtitle: cleaner.review == nil && cleaner.outcome == nil ? "Pick an app, or drop one here." : nil) {
+            FrogPageHeader(title: stepTitle ?? "App cleaner", subtitle: cleaner.review == nil && cleaner.outcome == nil ? "Pick an app, or drop one here." : nil) {
                 IconAction(title: "Recently moved", symbol: "clock.arrow.circlepath") {
                     cleaner.dismissPutBack(); cleaner.loadRecords(); cleaner.showsRecent = true
                 }
@@ -61,6 +61,12 @@ struct CleanerView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await cleaner.refreshFullDiskAccess() }
         }
+    }
+
+    /// The app under review or being scanned names the toolbar's title, after the "App cleaner ›" breadcrumb.
+    private var stepTitle: String? {
+        guard cleaner.outcome == nil else { return nil }
+        return cleaner.review?.app.name ?? (cleaner.phase == .scanning ? cleaner.scanningApp?.name : nil)
     }
 
     /// The outcome, the review, or the app list.

@@ -199,7 +199,7 @@ struct CleanerScanningView: View {
 extension View {
     /// The toolbar's Back (⌘[) and Escape return from a review or scan to the app list.
     func cleanerStepBack(_ cleaner: CleanerModel) -> some View {
-        frogPageBack("cleaner-review") { cleaner.closeReview() }
+        frogPageBack("cleaner-review", parent: "App cleaner") { cleaner.closeReview() }
             .background {
                 Button("Back to apps") { cleaner.closeReview() }.keyboardShortcut(.cancelAction)
                     .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)

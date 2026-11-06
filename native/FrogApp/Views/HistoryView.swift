@@ -161,7 +161,7 @@ struct HistoryView: View {
             }.frame(maxWidth: .infinity, alignment: .leading)
                 .onCopyCommand { hidden(entry) ? [] : [NSItemProvider(object: entry.processedText as NSString)] }
             if note?.id == entry.id, case .failed(let message) = note?.state { InlineIssue(message: message) }
-        }.frogPageBack("history-entry-\(entry.id)") { viewing = nil }
+        }.frogPageBack("history-entry-\(entry.id)", parent: "History") { viewing = nil }
     }
 
     /// When, and with what: "Today 13:14 · Ollama · llama3.2".

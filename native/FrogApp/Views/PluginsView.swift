@@ -84,7 +84,7 @@ struct PluginsView: View {
 
     private func installedRow(_ item: PluginItem) -> some View {
         FrogRow(item.name, caption: item.problem ?? caption(item)) {
-            PluginIconTile(symbol: PluginSymbol.name(item.symbol), tint: FrogStyle.accent)
+            PluginIconTile(symbol: PluginSymbol.name(item.symbol), tint: PluginTint.purple.color)
         } control: {
             HStack(spacing: 6) {
                 if item.needsReview {
@@ -161,7 +161,7 @@ struct PluginsView: View {
         let caption = [entry.summary, "by \(entry.author)", permissions.isEmpty ? nil : "asks to " + permissions.joined(separator: ", ")]
             .compactMap { $0 }.joined(separator: " · ")
         return FrogRow("\(entry.name) \(entry.version)", caption: caption) {
-            PluginIconTile(symbol: PluginSymbol.name(entry.displaySymbol), tint: FrogStyle.accent)
+            PluginIconTile(symbol: PluginSymbol.name(entry.displaySymbol), tint: PluginTint.purple.color)
         } control: {
             if let installed, installed.record.sha256 == entry.sha256.lowercased() || !Self.isNewer(entry, than: installed) {
                 FrogBadge(text: "Installed")
@@ -518,20 +518,20 @@ struct PluginPageView: View {
     var body: some View {
         let item = model.plugins.item(id)
         VStack(spacing: 0) {
-            // The plugin's page has its own title, so this row only leads back and, while building, reloads.
-            HStack(spacing: 8) {
-                Button("Community plugins", systemImage: "chevron.left") { model.toolkit.select(.feature(.plugins)) }
-                    .buttonStyle(.frog(.ghost))
-                Spacer()
-                if case .folder = item?.record.source {
-                    IconAction(title: "Reload", symbol: "arrow.clockwise") { model.plugins.reload(id) }
+            // The toolbar leads back ("Community plugins › Name"); this row only holds the page's own actions.
+            let reloads: Bool = { if case .folder = item?.record.source { return true }; return false }()
+            if reloads || item?.hasSettings == true {
+                HStack(spacing: FrogStyle.space8) {
+                    Spacer()
+                    if reloads {
+                        IconAction(title: "Reload", symbol: "arrow.clockwise") { model.plugins.reload(id) }
+                    }
+                    if item?.hasSettings == true {
+                        IconAction(title: "Settings", symbol: "slider.horizontal.3") { settings = PluginSettingsTarget(id: id) }
+                    }
                 }
-                if item?.hasSettings == true {
-                    IconAction(title: "Settings", symbol: "slider.horizontal.3") { settings = PluginSettingsTarget(id: id) }
-                }
+                .frame(height: FrogStyle.controlHeight).padding(.horizontal, FrogStyle.pagePadding)
             }
-            .frame(height: FrogStyle.controlHeight).padding(.horizontal, 20)
-            .background { WindowDragRegion().accessibilityHidden(true) }
             if let host {
                 PluginWebContainer(host: host)
                     .background(FeatureVisibility { shown in host.isShowing = shown; if shown { host.refreshTheme() } })
@@ -542,9 +542,10 @@ struct PluginPageView: View {
                 }
                 Spacer()
             } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                FrogSpinner(label: "Opening the plugin").frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .frogPageBack("plugin-page-\(id)", parent: "Community plugins") { model.toolkit.select(.feature(.plugins)) }
         .task(id: id) {
             do { host = try await model.plugins.host(for: id); failure = nil }
             catch { failure = error.localizedDescription }
