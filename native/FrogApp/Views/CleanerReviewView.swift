@@ -89,7 +89,8 @@ struct CleanerReviewView: View {
     }
 
     private func itemRow(_ item: CleanerItem) -> some View {
-        let path = roots.displayPath(item.url)
+        let path = roots.shownPath(item.url)
+        let parts = roots.shownParts(item.url)
         return HStack(spacing: 10) {
             // The checkbox style draws its label, so the path is the accessibility label only.
             Toggle(isOn: Binding(get: { review.selected.contains(item.id) }, set: { _ in cleaner.toggle(item.id) })) { EmptyView() }
@@ -98,22 +99,27 @@ struct CleanerReviewView: View {
             HStack(spacing: 10) {
                 // The app itself shows its own icon; an outlined app symbol beside the checkbox read as a second box.
                 if item.kind == .application {
-                    ApplicationIcon(path: item.url.path, size: 18)
+                    ApplicationIcon(path: item.url.path, size: 24)
                 } else {
-                    Image(systemName: item.kind.symbol).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
-                        .frame(width: 18).accessibilityHidden(true)
+                    Image(systemName: item.kind.symbol).font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
+                        .frame(width: 24).accessibilityHidden(true)
                 }
+                // The item's name leads; its folder and why it matched follow, so a long path is cut in the folder
+                // rather than through the name.
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(path).font(FrogType.body).lineLimit(1).truncationMode(.middle).help(path)
                     HStack(spacing: 6) {
-                        Text(item.reason).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                        Text(parts.name).font(FrogType.body).lineLimit(1).truncationMode(.middle).layoutPriority(1)
                         if item.owner == .administrator { FrogBadge(text: "Needs password") }
                         if review.needsFullDiskAccessToMove(item) { FrogBadge(text: "Needs Full Disk Access") }
                         if !item.sharedWith.isEmpty {
                             FrogBadge(text: "Also used by \(item.sharedWith.formatted(.list(type: .and)))")
                         }
                     }
-                }
+                    HStack(spacing: 0) {
+                        Text(parts.folder).lineLimit(1).truncationMode(.middle)
+                        Text(" · " + item.reason).lineLimit(1).layoutPriority(1)
+                    }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                }.help(path)
                 Spacer(minLength: 8)
                 size(of: item)
             }
@@ -161,13 +167,14 @@ struct CleanerReviewFooter: View {
                 // After a removal that left the app, the review stays open with the phase back at idle.
                 .frogDisabled(count == 0 ? "Tick the files to move first" : ![.reviewing, .idle].contains(cleaner.phase) ? "Frog is still working" : nil)
         }
-        // The bar spans the window; its content keeps to the page's column, which starts on the leading edge
-        // whatever the window's width, so it lines up with the list above.
-        .padding(.horizontal, FrogStyle.pagePadding)
-        .frame(maxWidth: FrogStyle.pageWidth + FrogStyle.pagePadding * 2, alignment: .leading)
-        .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, FrogStyle.space10)
-        // The bar sits on the inset fill rather than behind a line; the canvas below keeps the scrolled page from showing through.
-        .background(FrogStyle.card).background(FrogStyle.canvas)
+        // A card in the page's column, lined up with the lists above it, rather than a band across the window.
+        .padding(.horizontal, FrogStyle.rowInset + FrogStyle.space4).padding(.vertical, FrogStyle.space10)
+        .frogTableSurface()
+        .frame(maxWidth: FrogStyle.pageWidth, alignment: .leading)
+        .padding(.horizontal, FrogStyle.pagePadding).padding(.vertical, FrogStyle.space10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // The canvas behind the card keeps the scrolled page from showing through around it.
+        .background(FrogStyle.canvas)
     }
 }
 
@@ -225,7 +232,7 @@ struct CleanerOutcomeView: View {
                     ForEach(Array(outcome.failures.enumerated()), id: \.offset) { _, failure in
                         HStack(alignment: .top, spacing: 10) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(roots.displayPath(URL(fileURLWithPath: failure.path))).font(FrogType.body)
+                                Text(roots.shownPath(URL(fileURLWithPath: failure.path))).font(FrogType.body)
                                     .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                                 Text(failure.message).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                                     .fixedSize(horizontal: false, vertical: true)
