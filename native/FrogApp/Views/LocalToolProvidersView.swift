@@ -15,19 +15,19 @@ struct LocalToolProvidersView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
             FrogSection("On this Mac", accessory: {
-                HStack(spacing: 8) {
-                    if refreshing { FrogSpinner() }
-                    Button("Refresh") { Task { await refresh() } }.buttonStyle(.frog(.ghost, compact: true)).disabled(refreshing)
-                }
+                // While it looks, the spinner takes the button's place rather than sitting beside a greyed one.
+                if refreshing { FrogSpinner(label: "Looking for coding tools") }
+                else { Button("Refresh") { Task { await refresh() } }.buttonStyle(.frog(.ghost, compact: true)) }
             }) {
                 ForEach(statuses) { status in
                     FrogRow(status.kind.title, caption: status.detail, icon: {
                         Image(systemName: status.installed ? "checkmark.circle.fill" : "circle.dashed")
                             .foregroundStyle(status.installed ? FrogStyle.good : FrogStyle.muted).frame(width: 20)
                     }) {
-                        if status.installed {
-                            Button(selected == status.kind ? "Chosen" : "Choose") { selected = status.kind }
-                                .buttonStyle(.frog(.ghost, compact: true)).disabled(selected == status.kind)
+                        if status.installed, selected == status.kind {
+                            FrogBadge(text: "Chosen", active: true)
+                        } else if status.installed {
+                            Button("Choose") { selected = status.kind }.buttonStyle(.frog(compact: true))
                         } else {
                             Text("Not installed").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                         }
@@ -41,14 +41,16 @@ struct LocalToolProvidersView: View {
                 FrogRow("Tool") {
                     FrogDropdown(selection: $selected, options: LocalToolKind.allCases, title: { $0.title })
                 }
-                FrogRow("Model", caption: "Leave empty for \(selected.title)'s default.") {
-                    HStack(spacing: FrogStyle.space8) {
-                        FrogTextField(placeholder: "Model ID", text: $model)
-                            .textFieldStyle(.plain).font(FrogType.body).padding(.horizontal, 8).frame(width: 180).frogControlSurface()
-                            .accessibilityLabel("\(selected.title) model")
-                        FrogDropdown(selection: $model, options: models.map(\.id), width: 124, searchPrompt: "Find a model",
-                                     title: { id in models.first { $0.id == id }?.name ?? id }).buttonTitle { _ in "Suggested" }
-                    }
+                // The suggestions and a typed ID are one choice in two rows, so neither control is squeezed.
+                FrogRow("Model") {
+                    FrogDropdown(selection: $model, options: [""] + models.map(\.id),
+                                 searchPrompt: models.count > 8 ? "Find a model" : nil, placeholder: "Other model",
+                                 title: { id in id.isEmpty ? "\(selected.title)'s default" : models.first { $0.id == id }?.name ?? id })
+                }
+                FrogRow("Model ID", caption: "For a model that is not in the list.") {
+                    FrogTextField(placeholder: "Model ID", text: $model)
+                        .textFieldStyle(.plain).font(FrogType.body).padding(.horizontal, FrogStyle.space10).frame(width: 220).frogControlSurface()
+                        .accessibilityLabel("\(selected.title) model ID")
                 }
                 if let modelError { FrogRowNote(text: modelError) }
                 if selected == .opencode {
