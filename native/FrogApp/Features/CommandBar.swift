@@ -889,6 +889,8 @@ struct CommandBarView: View {
     static let headerHeight: CGFloat = 28
     @ObservedObject var bar: CommandBar
     @FocusState private var focused: Bool
+    /// A group caption's scroll target, apart from its first row's.
+    private struct CaptionID: Hashable { let row: String }
     var body: some View {
         VStack(spacing: 0) {
             searchField.padding(.horizontal, FrogStyle.panelInset).padding(.top, FrogStyle.panelInset).padding(.bottom, FrogStyle.space4)
@@ -900,6 +902,7 @@ struct CommandBarView: View {
                             if let header = bar.headers[result.id] {
                                 SectionCaption(text: header).padding(.horizontal, FrogStyle.rowPadding)
                                     .frame(height: Self.headerHeight, alignment: .bottomLeading).padding(.bottom, FrogStyle.space2)
+                                    .id(CaptionID(row: result.id))
                             }
                             CommandResultRow(bar: bar, result: result, iconKey: bar.iconPath(for: result), tint: bar.tint(for: result),
                                              query: bar.argument == nil ? bar.query : "", selected: index == bar.selection)
@@ -915,10 +918,14 @@ struct CommandBarView: View {
                 .scrollIndicators(.never)
                 // A row cut by the bottom edge fades out, so it reads as more below rather than as clipped.
                 .bottomScrollFade(height: FrogStyle.space16)
-                .onChange(of: bar.selection) { _, value in
+                .onChange(of: bar.selection) { previous, value in
                     guard bar.results.indices.contains(value) else { return }
-                    // The first row brings its group's caption with it.
-                    if value == 0 { proxy.scrollTo(bar.results[0].id, anchor: .bottom) } else { proxy.scrollTo(bar.results[value].id) }
+                    let id = bar.results[value].id
+                    // The first row brings its group's caption with it, and so does a row that starts a group on the
+                    // way up; the row sits right under its caption, so both come into view.
+                    if value == 0 { proxy.scrollTo(id, anchor: .bottom) }
+                    else if value < previous, bar.headers[id] != nil { proxy.scrollTo(CaptionID(row: id)) }
+                    else { proxy.scrollTo(id) }
                 }
             }
             .overlay(alignment: .bottomTrailing) {
