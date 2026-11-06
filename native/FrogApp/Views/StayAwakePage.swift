@@ -100,7 +100,7 @@ private struct LidClosedSection: View {
                         }
                     } else if lid.accessState == .ready {
                         HStack(spacing: 8) {
-                            Label("Ready", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.accent)
+                            Label("Ready", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.accentText)
                             Button("Reset…") { lid.configureAccess(.reset) }.buttonStyle(.frog(.ghost)).disabled(lid.isBusy)
                         }
                     } else {

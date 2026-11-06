@@ -235,7 +235,7 @@ private struct PanelIcon: View {
                 Image(systemName: symbol).font(.system(size: 12, weight: .regular))
                 if let label { Text(L10n.text(label)).font(FrogType.small).lineLimit(1).fixedSize() }
             }
-            .foregroundStyle(active ? FrogStyle.accent : hovering && enabled ? FrogStyle.ink : FrogStyle.muted)
+            .foregroundStyle(active ? FrogStyle.accentText : hovering && enabled ? FrogStyle.ink : FrogStyle.muted)
             .padding(.horizontal, label == nil ? 0 : FrogStyle.space8)
             .frame(minWidth: FrogStyle.compactHeight, minHeight: FrogStyle.compactHeight, maxHeight: FrogStyle.compactHeight)
             .frogRowHighlight(hovering: hovering && enabled)

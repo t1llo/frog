@@ -115,7 +115,7 @@ struct PreferencesView: View {
         FrogRow(title) {
             HStack(spacing: 10) {
                 Label(allowed ? "Allowed" : "Permission needed", systemImage: allowed ? "checkmark.circle.fill" : "exclamationmark.circle")
-                    .font(FrogType.small).foregroundStyle(allowed ? FrogStyle.accent : FrogStyle.warning)
+                    .font(FrogType.small).foregroundStyle(allowed ? FrogStyle.accentText : FrogStyle.warning)
                 Button(allowed ? "Manage…" : "Allow…", action: action)
             }
         }

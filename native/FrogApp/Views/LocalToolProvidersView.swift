@@ -32,7 +32,7 @@ struct LocalToolProvidersView: View {
                         PluginIconTile(mark: .tool(status.kind)).opacity(status.installed ? 1 : FrogStyle.disabledOpacity)
                     }) {
                         if status.installed, selected == status.kind {
-                            Image(systemName: "checkmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(FrogStyle.accent)
+                            Image(systemName: "checkmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(FrogStyle.accentText)
                                 .frame(minWidth: FrogStyle.controlHeight, minHeight: FrogStyle.compactHeight)
                                 .help("Chosen below").accessibilityLabel("Chosen")
                         } else if status.installed {

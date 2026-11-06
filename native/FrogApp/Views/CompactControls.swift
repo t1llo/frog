@@ -193,7 +193,7 @@ private struct CompactOptionStyle: PrimitiveButtonStyle {
                     configuration.label
                     Spacer(minLength: 0)
                     if chosen {
-                        Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.accent)
+                        Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.accentText)
                             .accessibilityHidden(true)
                     }
                 }

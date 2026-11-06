@@ -315,7 +315,7 @@ struct FrogDropdownRow: View {
                     }
                 }
                 Spacer(minLength: 8)
-                Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.accent)
+                Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.accentText)
                     .opacity(chosen ? 1 : 0).accessibilityHidden(true)
             }
             .padding(.horizontal, 8).padding(.vertical, item.detail == nil ? 0 : 5)

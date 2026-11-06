@@ -357,7 +357,7 @@ struct ProviderEditor: View {
                 }
                 Spacer(minLength: FrogStyle.space8)
                 if chosen {
-                    Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(FrogStyle.accent)
+                    Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(FrogStyle.accentText)
                         .accessibilityHidden(true)
                 }
             }

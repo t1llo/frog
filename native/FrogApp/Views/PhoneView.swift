@@ -204,7 +204,7 @@ private struct PhoneRecentRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: item.direction == .sent ? "arrow.up.right" : "arrow.down.left")
-                .font(FrogType.label).foregroundStyle(item.direction == .sent ? FrogStyle.muted : FrogStyle.accent)
+                .font(FrogType.label).foregroundStyle(item.direction == .sent ? FrogStyle.muted : FrogStyle.accentText)
                 .frame(width: 16).accessibilityLabel(item.direction == .sent ? "Sent" : "Received")
             Image(systemName: symbol).font(FrogType.label).foregroundStyle(FrogStyle.muted).frame(width: 16).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
