@@ -51,9 +51,8 @@ struct ModelInventory: View {
                     let unfinished = !installed && model.localModels.progress[item.id] == nil && model.localModels.unfinished.contains(item.id)
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 12) {
-                            // The same tile as in setup: red for speech, green for text.
-                            PluginIconTile(symbol: item.kind == .audio ? "waveform" : "text.alignleft",
-                                           tint: (item.kind == .audio ? PluginTint.red : .green).color, size: .list)
+                            // The same tile as in setup, one per runtime.
+                            PluginIconTile(mark: .model(item))
                             // The heading says whether it is downloaded and the button what it does, so no glyph repeats it.
                             // One line of facts; the runtime and the guidance are in the help and the information sheet.
                             VStack(alignment: .leading, spacing: 2) {

@@ -20,9 +20,9 @@ struct LocalToolProvidersView: View {
                 else { Button("Refresh") { Task { await refresh() } }.buttonStyle(.frog(.ghost, compact: true)) }
             }) {
                 ForEach(statuses) { status in
+                    // The tool's own tile; whether it is installed or chosen is said at the row's end.
                     FrogRow(status.kind.title, caption: status.detail, icon: {
-                        Image(systemName: status.installed ? "checkmark.circle.fill" : "circle.dashed")
-                            .foregroundStyle(status.installed ? FrogStyle.good : FrogStyle.muted).frame(width: 20)
+                        PluginIconTile(mark: .tool(status.kind)).opacity(status.installed ? 1 : FrogStyle.disabledOpacity)
                     }) {
                         if status.installed, selected == status.kind {
                             FrogBadge(text: "Chosen", active: true)

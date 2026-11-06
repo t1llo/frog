@@ -24,7 +24,7 @@ struct WindowLayoutGlyph: View {
         case .toggleFullScreen: name = "arrow.up.left.and.arrow.down.right"
         case .nextDisplay: name = "arrow.right"
         case .previousDisplay: name = "arrow.left"
-        case .center: name = "plus"
+        case .center: name = "rectangle.center.inset.filled"
         default: return nil
         }
         return NSImage(systemSymbolName: name, accessibilityDescription: nil) == nil ? "macwindow" : name

@@ -151,7 +151,7 @@ struct AnswerPanelView: View {
                     .accessibilityLabel(L10n.text("Ask a follow-up"))
                     .padding(.trailing, 4)
                 if model.session?.phase.isRunning == true {
-                    PanelIcon(symbol: "stop.circle", title: "Stop", help: "Stop (⌘.)") { model.stop() }
+                    PanelIcon(symbol: "stop.fill", title: "Stop", help: "Stop (⌘.)") { model.stop() }
                 }
                 PanelIcon(symbol: model.copied ? "checkmark" : "doc.on.doc", title: model.copied ? "Copied" : "Copy",
                           help: "Copy (⌘↩)", active: model.copied) { model.copy() }

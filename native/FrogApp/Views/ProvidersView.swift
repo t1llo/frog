@@ -92,10 +92,7 @@ private struct ProviderRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Where it runs: a cloud for a service, a computer for a local server, a terminal for a coding tool.
-            let local = provider.kind.isLocal, tool = provider.kind.localTool != nil
-            PluginIconTile(symbol: tool ? "terminal" : local ? "desktopcomputer" : "cloud",
-                           tint: (tool ? PluginTint.gray : local ? .teal : .blue).color, size: .list)
+            PluginIconTile(mark: .provider(provider.kind))
             Button { edit(provider) } label: {
                 VStack(alignment: .leading, spacing: FrogStyle.space2) {
                     Text(provider.name).font(FrogType.row)
@@ -190,7 +187,7 @@ struct ProviderEditor: View {
                         // The tab is the Service step; the row names what it chooses, so the two do not repeat each other.
                         FrogRow("Provider", caption: provider.kind.isLocal ? "Runs on this Mac" : provider.kind.localTool != nil ? "Installed tool" : "Cloud API") {
                             FrogDropdown(selection: $provider.kind, options: ProviderKind.allCases, title: { $0.title },
-                                         symbol: { $0.isLocal ? "desktopcomputer" : $0.localTool != nil ? "terminal" : "cloud" })
+                                         symbol: { ServiceMark.provider($0).symbol })
                         }.onChange(of: provider.kind) { old, new in
                             if provider.name == old.title || provider.name == "OpenAI" { provider.name = new.title }
                             provider.endpoint = new.endpoint; provider.model = new.defaultModel

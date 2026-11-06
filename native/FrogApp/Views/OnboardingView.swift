@@ -389,7 +389,7 @@ private struct OnboardingModels: View {
         }) {
             ForEach(pair) { item in
                 FrogRow(item.name, caption: "\(item.kind == .audio ? "For dictation" : "For writing rules") · \(item.downloadSize)", icon: {
-                    PluginIconTile(symbol: item.kind == .audio ? "waveform" : "text.alignleft", tint: (item.kind == .audio ? PluginTint.red : .green).color, size: .list)
+                    PluginIconTile(mark: .model(item))
                 }, control: {
                     HStack(spacing: 8) {
                         if local.installed.contains(item.id) {
@@ -426,7 +426,7 @@ private struct OnboardingProviders: View {
                     if found.isEmpty { FrogRow("Nothing found", caption: "Claude Code, Codex, OpenCode, Ollama or LM Studio show here once installed.") }
                     ForEach(found) { item in
                         FrogRow(item.name, caption: item.caption, icon: {
-                            PluginIconTile(symbol: item.kind.localTool != nil ? "terminal.fill" : "server.rack", tint: PluginTint.gray.color, size: .list)
+                            PluginIconTile(mark: .provider(item.kind))
                         }, control: {
                             if configured(item.kind) {
                                 Label("Added", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
@@ -473,7 +473,7 @@ private struct OnboardingAgents: View {
     var body: some View {
         FrogSection("AI agents", footer: "Agents such as Claude Code get the frog command and a skill, so they can drive Frog for you.") {
             FrogRow("Let agents use Frog", caption: agents, icon: {
-                PluginIconTile(symbol: "sparkles", tint: PluginTint.purple.color, size: .list)
+                PluginIconTile(symbol: "wand.and.stars", tint: PluginTint.purple.color, size: .list)
             }, control: {
                 if access && installable.isEmpty && !toolMissing {
                     Label("On", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
