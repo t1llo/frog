@@ -21,7 +21,10 @@ final class WindowCheatSheetPanel {
     func show(sections: [WindowCheatSheet.Section]) {
         // Measured without the scroll view, which has no height of its own.
         let measured = NSHostingView(rootView: WindowCheatSheetContent(sections: sections).frame(width: Self.width)).fittingSize.height
-        let size = CGSize(width: Self.width, height: min(Self.maximumHeight(on: NSScreen.main), ceil(measured)))
+        // As tall as the display it opens on, the one under the pointer, allows.
+        let mouse = NSEvent.mouseLocation
+        let display = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
+        let size = CGSize(width: Self.width, height: min(Self.maximumHeight(on: display), ceil(measured)))
         let view = WindowCheatSheetView(sections: sections, height: size.height)
         let panel = self.panel ?? FrogFloatingPanel(size: size, allowsKey: false)
         if let host { host.rootView = view } else {
@@ -30,9 +33,7 @@ final class WindowCheatSheetPanel {
             self.host = host
         }
         self.panel = panel
-        let mouse = NSEvent.mouseLocation
-        let screen = (NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main)?.visibleFrame
-            ?? CGRect(origin: .zero, size: size)
+        let screen = display?.visibleFrame ?? CGRect(origin: .zero, size: size)
         panel.show(at: CGRect(x: (screen.midX - size.width / 2).rounded(), y: (screen.midY - size.height / 2).rounded(),
                               width: size.width, height: size.height))
     }
