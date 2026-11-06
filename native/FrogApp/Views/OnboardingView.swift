@@ -292,7 +292,13 @@ private struct OnboardingDone: View {
 private struct OnboardingPlugins: View {
     @EnvironmentObject private var model: AppModel
     @State private var pending = Set<String>()
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: FrogStyle.space6), count: 3)
+    /// `count` tiles in rows of at most three that share them out evenly (4 as 2 and 2, 5 as 3 and 2), so no group ends
+    /// in a lone tile beside an empty gap.
+    static func rowSizes(_ count: Int) -> [Int] {
+        guard count > 0 else { return [] }
+        let rows = (count + 2) / 3
+        return (0..<rows).map { count / rows + ($0 < count % rows ? 1 : 0) }
+    }
 
     var body: some View {
         let host = model.pluginHost
@@ -302,10 +308,16 @@ private struct OnboardingPlugins: View {
                 if !plugins.isEmpty {
                     VStack(alignment: .leading, spacing: FrogStyle.space8) {
                         FrogSectionHeader(category.title)
-                        LazyVGrid(columns: columns, spacing: FrogStyle.space6) {
-                            ForEach(plugins) { plugin in
-                                OnboardingPluginTile(plugin: plugin, on: host.enabled(plugin.id), busy: pending.contains(plugin.id)) {
-                                    toggle(plugin.id, to: !host.enabled(plugin.id))
+                        let sizes = Self.rowSizes(plugins.count)
+                        VStack(spacing: FrogStyle.space6) {
+                            ForEach(sizes.indices, id: \.self) { row in
+                                let start = sizes[..<row].reduce(0, +)
+                                HStack(spacing: FrogStyle.space6) {
+                                    ForEach(plugins[start..<start + sizes[row]]) { plugin in
+                                        OnboardingPluginTile(plugin: plugin, on: host.enabled(plugin.id), busy: pending.contains(plugin.id)) {
+                                            toggle(plugin.id, to: !host.enabled(plugin.id))
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -521,7 +533,13 @@ enum ProviderDetection {
         var id: String { kind.rawValue }
         var name: String { kind.title.replacingOccurrences(of: " (local)", with: "") }
         var caption: String {
-            if kind.localTool != nil { return "Coding tool" }
+            // Each tool says whose sign-in it brings, rather than three rows that all read "Coding tool".
+            switch kind.localTool {
+            case .claudeCode?: return "Uses your Claude sign-in"
+            case .codex?: return "Uses your ChatGPT sign-in"
+            case .opencode?: return "Uses the providers you connected in OpenCode"
+            case nil: break
+            }
             return models.isEmpty ? "Local server · running" : "Local server · \(models.count) \(models.count == 1 ? "model" : "models")"
         }
     }
