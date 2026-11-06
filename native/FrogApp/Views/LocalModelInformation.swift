@@ -79,8 +79,12 @@ struct AddLocalModelView: View {
                     Text("For example: huggingface.co/mlx-community/Qwen3-0.6B-4bit").font(FrogType.small)
                         .foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                     Spacer(minLength: 0)
-                    Button("Use example") { source = "https://huggingface.co/mlx-community/Qwen3-0.6B-4bit" }
-                        .buttonStyle(.frog(.ghost, compact: true)).disabled(loading).padding(.trailing, -10)
+                    // An arrow into the field, so it reads as filling the field and not as the disabled Check source.
+                    Button { source = "https://huggingface.co/mlx-community/Qwen3-0.6B-4bit" } label: {
+                        Label("Use example", systemImage: "arrow.turn.left.up")
+                    }
+                    .buttonStyle(.frog(.ghost, compact: true)).disabled(loading).padding(.trailing, -10)
+                    .help("Put this link in the field")
                 }
             }
             if let issue { InlineIssue(message: issue).textSelection(.enabled) }
@@ -101,7 +105,7 @@ struct AddLocalModelView: View {
                 if loading {
                     FrogLoadingNote(text: "Reading the model's details…")
                 } else {
-                    Text("Checking reads only its details.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    Text("Checking reads the model's details only; nothing downloads.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }
             } trailing: {
                 FrogCancelButton { inspection?.cancel(); dismiss() }
