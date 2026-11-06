@@ -27,14 +27,28 @@ struct LegalDocumentView: View {
         text = document.text(in: bundle) ?? ""
     }
 
+    /// Short enough for SwiftUI to measure at once; longer texts go to AppKit, which lays out only what shows.
+    private var short: Bool { text.count < 6000 }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: FrogStyle.space16) {
             // A sheet is its own window, so its header keeps the title.
             FrogPageHeader(title: document.title, subtitle: document.summary).environment(\.frogToolbarTitle, false)
-            ReadOnlyText(text: text).frogTableSurface()
-                .accessibilityLabel(L10n.text(document.title))
+            Group {
+                if short {
+                    // A short text such as the licence: the sheet is as tall as the text, with no empty card under it.
+                    ScrollView {
+                        Text(text).font(FrogType.mono).foregroundStyle(FrogStyle.ink).textSelection(.enabled)
+                            .lineSpacing(2).frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, FrogStyle.cardPadding).padding(.vertical, FrogStyle.space12)
+                    }.frame(maxHeight: 400).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ReadOnlyText(text: text).frame(height: 360)
+                }
+            }
+            .frogTableSurface().accessibilityLabel(L10n.text(document.title))
             HStack { Spacer(); Button("Done") { dismiss() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction) }
-        }.padding(FrogStyle.sheetPadding).frame(width: 640, height: 480).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
+        }.padding(FrogStyle.sheetPadding).frame(width: 640).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
             .buttonStyle(.frog()).environment(\.locale, L10n.locale)
     }
 }

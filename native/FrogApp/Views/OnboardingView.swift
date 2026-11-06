@@ -50,21 +50,17 @@ struct OnboardingView: View {
                 welcome.transition(stepTransition)
             } else {
                 VStack(spacing: 0) {
-                    GeometryReader { viewport in
-                        ScrollView {
-                            // The header and the step sit together in the middle, so a short step is balanced and a
-                            // long one starts at the top and scrolls under a fade.
-                            VStack(spacing: FrogStyle.sectionSpacing - 6) {
-                                header
-                                VStack(alignment: .leading, spacing: FrogStyle.space16) {
-                                    page
-                                    if let issue { InlineIssue(message: issue) }
-                                }.frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .id(step).transition(stepTransition)
-                            .padding(.horizontal, FrogStyle.pagePadding + 4).padding(.vertical, FrogStyle.pagePadding)
-                            .frame(maxWidth: .infinity, minHeight: viewport.size.height, alignment: .center)
-                        }.scrollIndicators(.never).bottomScrollFade()
+                    // The header stays put on every step, so only the step below it changes.
+                    header.padding(.top, FrogStyle.pagePadding + 4).padding(.horizontal, FrogStyle.pagePadding + 4)
+                        .padding(.bottom, FrogStyle.space16)
+                    OnboardingScroll(step: step) {
+                        VStack(alignment: .leading, spacing: FrogStyle.space16) {
+                            page
+                            if let issue { InlineIssue(message: issue) }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .id(step).transition(stepTransition)
+                        .padding(.horizontal, FrogStyle.pagePadding + 4).padding(.vertical, FrogStyle.space4)
                     }
                     footer
                 }
@@ -113,28 +109,28 @@ struct OnboardingView: View {
 
     // MARK: Header and footer
 
+    /// The mark, the step's title and one line under it, at the same place on every step.
     private var header: some View {
         VStack(spacing: FrogStyle.space12) {
-            FrogMark(size: 52)
-            VStack(spacing: FrogStyle.space6) {
+            FrogMark(size: 44)
+            VStack(spacing: FrogStyle.space4) {
                 Text(L10n.text(title)).font(FrogType.title).tracking(-0.4).accessibilityAddTraits(.isHeader)
                 Text(L10n.text(subtitle)).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
-                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true).frame(maxWidth: 420)
+                    .multilineTextAlignment(.center).lineLimit(2).frame(maxWidth: 480)
             }
+            .id(step).transition(.opacity.animation(FrogMotion.exit))
         }.frame(maxWidth: .infinity)
     }
 
-    /// The summary's headline says whether anything is left, rather than claiming everything is set.
-    private var title: String {
-        guard step == .done, let open = openSteps, open > 0 else { return step.title }
-        return "Almost there"
-    }
+    private var title: String { step.title }
 
+    /// Frog works once setup ends, so the summary always closes as done; what was skipped is optional and is said
+    /// here, not in the headline.
     private var subtitle: String {
         guard step == .done, let open = openSteps else { return step.subtitle }
         return open == 0 ? "Everything is ready. You can change it any time in Settings."
-            : open == 1 ? "1 optional step left. Set it up now, or later in Settings."
-            : "\(open) optional steps left. Set them up now, or later in Settings."
+            : open == 1 ? "Frog is ready. Set up the optional step now or later in Settings."
+            : "Frog is ready. Set up the \(open) optional steps now or later in Settings."
     }
 
     private var footer: some View {
@@ -197,7 +193,51 @@ struct OnboardingView: View {
     }
 }
 
-/// A dot per step after the welcome; the current one is a short bar.
+/// A step's content under the fixed header. A step taller than the window scrolls, and while more of it lies below,
+/// a "More below" button sits over the fade at the bottom and scrolls there, so a cut-off row never looks like the end.
+private struct OnboardingScroll<Content: View>: View {
+    let step: OnboardingView.Step
+    @ViewBuilder var content: Content
+    @State private var bottom: CGFloat = 0
+    @State private var viewport: CGFloat = 0
+
+    private var more: Bool { bottom - viewport > 24 }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: 0).id("start")
+                    content
+                    Color.clear.frame(height: 1).id("end")
+                }
+                .background(GeometryReader { geometry in
+                    // Read here rather than through a preference, which a scroll view does not pass up reliably.
+                    let maxY = geometry.frame(in: .named("onboardingScroll")).maxY
+                    Color.clear.onAppear { bottom = maxY }.onChange(of: maxY) { _, value in bottom = value }
+                })
+            }
+            .coordinateSpace(name: "onboardingScroll")
+            .scrollIndicators(.never).bottomScrollFade()
+            .background(GeometryReader { geometry in
+                Color.clear.onAppear { viewport = geometry.size.height }
+                    .onChange(of: geometry.size.height) { _, height in viewport = height }
+            })
+            .overlay(alignment: .bottom) {
+                if more {
+                    Button { withAnimation(FrogMotion.reveal) { proxy.scrollTo("end", anchor: .bottom) } } label: {
+                        Label("More below", systemImage: "chevron.down")
+                    }
+                    .buttonStyle(.frog(.secondary, compact: true)).padding(.bottom, FrogStyle.space4)
+                }
+            }
+            .onChange(of: step) { _, _ in proxy.scrollTo("start", anchor: .top) }
+        }
+    }
+}
+
+/// A dot per step of setup. The welcome is the cover, not a step, and has no footer, so five dots count the five
+/// steps after it.
 private struct OnboardingProgress: View {
     let step: Int
     let count: Int
@@ -275,8 +315,7 @@ private struct OnboardingPlugins: View {
                 let plugins = host.descriptors.map(\.info).filter { $0.category == category && $0.id != "community" }
                 if !plugins.isEmpty {
                     VStack(alignment: .leading, spacing: FrogStyle.space8) {
-                        Text(L10n.text(category.title)).font(FrogType.section).foregroundStyle(FrogStyle.ink)
-                            .accessibilityAddTraits(.isHeader).padding(.horizontal, FrogStyle.rowInset)
+                        FrogSectionHeader(category.title)
                         LazyVGrid(columns: columns, spacing: FrogStyle.space6) {
                             ForEach(plugins) { plugin in
                                 OnboardingPluginTile(plugin: plugin, on: host.enabled(plugin.id), busy: pending.contains(plugin.id)) {
@@ -379,7 +418,8 @@ private struct OnboardingProviders: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 6) {
-            FrogSection("Found on this Mac", accessory: {
+            // Coding tools all sign in the same way, so it is said once under the list rather than on every row.
+            FrogSection("Found on this Mac", footer: found?.contains { $0.kind.localTool != nil } == true ? "Coding tools use their own sign-in, so no API key is needed." : nil, accessory: {
                 Button("Add with an API key…") { editing = ProviderConfiguration() }.buttonStyle(.frog(.ghost, compact: true))
             }) {
                 if let found {
@@ -396,7 +436,7 @@ private struct OnboardingProviders: View {
                         })
                     }
                 } else {
-                    FrogLoadingNote(text: "Looking for models…")
+                    FrogLoadingNote(text: "Looking for coding tools and model servers…")
                 }
             }
             OnboardingAgents()
@@ -462,7 +502,7 @@ enum ProviderDetection {
         var id: String { kind.rawValue }
         var name: String { kind.title.replacingOccurrences(of: " (local)", with: "") }
         var caption: String {
-            if kind.localTool != nil { return "Coding tool · uses its own sign-in" }
+            if kind.localTool != nil { return "Coding tool" }
             return models.isEmpty ? "Local server · running" : "Local server · \(models.count) \(models.count == 1 ? "model" : "models")"
         }
     }

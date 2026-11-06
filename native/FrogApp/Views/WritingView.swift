@@ -317,8 +317,7 @@ struct WritingTryView: View {
     }
     /// Why Run waits, said beside it rather than left to a greyed button.
     private var waiting: String? {
-        if run != nil { return nil }
-        if !hasModel { return "Choose a model first" }
+        if run != nil || !hasModel { return nil }
         if !hasText { return "Type some text first" }
         if model.isProcessing { return "Frog is busy with another rule" }
         return nil
@@ -330,26 +329,27 @@ struct WritingTryView: View {
             FrogPageHeader(title: "Try \(rule.name)") {
                 RuleModelPicker(rule: Binding(get: { rule }, set: { choose($0) }))
             }.environment(\.frogToolbarTitle, false)
-            VStack(alignment: .leading, spacing: FrogStyle.space6) {
-                SectionCaption(text: "Text").padding(.leading, FrogStyle.rowInset)
+            // Both boxes are the same card surface with their text on the same inset, under the shared heading.
+            VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                FrogSectionHeader("Text")
                 ZStack(alignment: .topLeading) {
                     TextEditor(text: $input).font(FrogType.body).scrollContentBackground(.hidden)
                         .accessibilityLabel("Text to try").disabled(run != nil)
                     if input.isEmpty {
-                        Text("Type or paste text to try the rule on").font(FrogType.body).foregroundStyle(FrogStyle.muted.opacity(0.7))
+                        // The editor sets its text 5 in from its edge; the placeholder starts there too.
+                        Text("Type or paste text to try the rule on").font(FrogType.body).foregroundStyle(FrogStyle.placeholder)
                             .padding(.leading, 5).allowsHitTesting(false).accessibilityHidden(true)
                     }
                 }
-                .padding(FrogStyle.space8).frame(height: 120).frogControlSurface(height: nil, radius: FrogStyle.controlRadius)
+                .padding(.leading, FrogStyle.rowInset - 5).padding(.trailing, FrogStyle.space4).padding(.vertical, FrogStyle.space10)
+                .frame(height: 120).frogTableSurface()
             }
-            VStack(alignment: .leading, spacing: FrogStyle.space6) {
-                HStack {
-                    SectionCaption(text: "Result")
-                    Spacer()
+            VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                FrogSectionHeader("Result") {
                     if !result.isEmpty {
                         CopyAction { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(result, forType: .string) }
                     }
-                }.padding(.leading, FrogStyle.rowInset).frame(height: 20)
+                }
                 Group {
                     if let issue {
                         InlineIssue(message: issue).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -358,7 +358,7 @@ struct WritingTryView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     } else if result.isEmpty {
                         Text("The result shows here. Nothing is pasted or copied.").font(FrogType.body)
-                            .foregroundStyle(FrogStyle.muted.opacity(0.7))
+                            .foregroundStyle(FrogStyle.placeholder)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     } else {
                         ScrollView {
@@ -366,11 +366,18 @@ struct WritingTryView: View {
                         }
                     }
                 }
-                .padding(.horizontal, FrogStyle.space12).padding(.vertical, FrogStyle.space10)
+                .padding(.horizontal, FrogStyle.rowInset).padding(.vertical, FrogStyle.space10)
                 .frame(height: 120).frogTableSurface()
             }
             HStack(spacing: FrogStyle.space8) {
-                if let waiting { Text(L10n.text(waiting)).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
+                if run == nil, !hasModel {
+                    // The one problem that stops the rule: a warning, pointing at the model menu above.
+                    Label { Text("No model yet. Choose one above.") } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(FrogStyle.warning)
+                    }.font(FrogType.body).foregroundStyle(FrogStyle.ink)
+                } else if let waiting {
+                    Text(L10n.text(waiting)).font(FrogType.body).foregroundStyle(FrogStyle.muted)
+                }
                 Spacer()
                 if run != nil {
                     // Escape stops the run first; once it has stopped, Escape closes the sheet.

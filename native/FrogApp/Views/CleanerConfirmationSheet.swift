@@ -43,7 +43,7 @@ struct CleanerConfirmationSheet: View {
             // One paragraph rather than a stack of loose lines; the rows above mark what Finder moves.
             if !prompt.notes.isEmpty {
                 Text(prompt.notes.joined(separator: " ")).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                    .lineSpacing(2).fixedSize(horizontal: false, vertical: true).padding(.horizontal, FrogStyle.rowInset)
+                    .lineSpacing(2).fixedSize(horizontal: false, vertical: true)
             }
             if !plan.refused.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -94,19 +94,26 @@ struct CleanerConfirmationSheet: View {
             Text(roots.displayPath(item.url)).font(FrogType.body).lineLimit(1).truncationMode(.middle)
                 .help(item.url.path)
             if item.owner == .administrator { FrogBadge(text: "Needs password") }
-            else if removal.route == .finder { FrogBadge(text: "Finder").help("Finder moves this item to the Trash") }
+            else if removal.route == .finder { FrogBadge(text: "Moved by Finder").help("Finder moves this item to the Trash, so it can ask for permission") }
             Spacer(minLength: 8)
             Text(size(of: item)).font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)
         }.padding(.horizontal, FrogStyle.rowPadding - 2).frame(minHeight: 30)
     }
 
-    /// The app's own icon; a folder or file symbol for the rest.
+    /// The app's own icon. An app without one (or a bundle that is gone) gets an app symbol like the other rows'
+    /// symbols, since macOS's blank app icon reads as a white block in dark mode.
     @ViewBuilder private func icon(for item: CleanerItem) -> some View {
-        if item.kind == .application {
+        if item.kind == .application, Self.hasIcon(item.url) {
             Image(nsImage: NSWorkspace.shared.icon(forFile: item.url.path)).resizable().interpolation(.high)
         } else {
-            Image(systemName: item.kind.symbol).font(.system(size: 12)).foregroundStyle(FrogStyle.muted)
+            Image(systemName: item.kind == .application ? "app.dashed" : item.kind.symbol).font(.system(size: 12))
+                .foregroundStyle(FrogStyle.muted)
         }
+    }
+
+    private static func hasIcon(_ url: URL) -> Bool {
+        guard let info = Bundle(url: url)?.infoDictionary else { return false }
+        return info["CFBundleIconFile"] != nil || info["CFBundleIconName"] != nil || info["CFBundleIcons"] != nil
     }
 
     private func size(of item: CleanerItem) -> String {

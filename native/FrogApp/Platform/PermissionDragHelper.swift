@@ -190,7 +190,7 @@ struct PermissionDragHelperView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(L10n.text("Drag Frog into the list")).font(FrogType.rowMedium).lineLimit(1)
-                    Image(systemName: "arrow.up").font(.system(size: 11, weight: .semibold)).foregroundStyle(FrogStyle.accent)
+                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 15)).foregroundStyle(FrogStyle.accent)
                         .accessibilityHidden(true)
                 }
                 Text(L10n.text("Then switch it on.")).font(FrogType.small).foregroundStyle(FrogStyle.muted)

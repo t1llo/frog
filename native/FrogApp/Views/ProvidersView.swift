@@ -188,7 +188,8 @@ struct ProviderEditor: View {
                 VStack(alignment: .leading, spacing: 20) {
                     if step == 0 {
                     FrogSection(footer: serviceNote) {
-                        FrogRow("Service", caption: provider.kind.isLocal ? "Runs on this Mac" : provider.kind.localTool != nil ? "Installed tool" : "Cloud API") {
+                        // The tab is the Service step; the row names what it chooses, so the two do not repeat each other.
+                        FrogRow("Provider", caption: provider.kind.isLocal ? "Runs on this Mac" : provider.kind.localTool != nil ? "Installed tool" : "Cloud API") {
                             FrogDropdown(selection: $provider.kind, options: ProviderKind.allCases, title: { $0.title },
                                          symbol: { $0.isLocal ? "desktopcomputer" : $0.localTool != nil ? "terminal" : "cloud" })
                         }.onChange(of: provider.kind) { old, new in
@@ -278,10 +279,13 @@ struct ProviderEditor: View {
             }
             // As tall as the step, up to a limit: the short steps leave no empty half, the long one scrolls.
             .frame(maxHeight: 460).fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Button("Cancel") { testTask?.cancel(); discoveryTask?.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
+            // As in setup: Back steps on the leading side, Cancel waits beside the main button.
+            HStack(spacing: FrogStyle.space8) {
+                if step > 0 {
+                    Button("Back") { step -= 1 }.buttonStyle(.frog(.ghost)).padding(.leading, -10)
+                }
                 Spacer()
-                if step > 0 { Button("Back") { step -= 1 } }
+                Button("Cancel") { testTask?.cancel(); discoveryTask?.cancel(); dismiss() }.keyboardShortcut(.cancelAction)
                 Button(step < 2 && !isSaved ? "Continue" : "Save") { if step < 2 && !isSaved { step += 1 } else { save() } }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
                     .frogDisabled(testing ? "Testing the connection…" : discovering ? "Finding models…" : (step == 2 || isSaved) ? validation : nil)
             }.padding(FrogStyle.sheetPadding)
