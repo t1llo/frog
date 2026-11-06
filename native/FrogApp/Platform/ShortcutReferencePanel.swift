@@ -59,7 +59,9 @@ struct ShortcutReferenceContent: View {
                     ForEach(Array(groups.enumerated()), id: \.element.group) { index, section in
                         ShortcutPanelCaption(title: section.group.title, first: index == 0)
                         ForEach(section.items) { item in
-                            ShortcutPanelRow(title: Self.label(item).title, hotkey: item.hotkey) { EmptyView() }
+                            // A plugin's action names its plugin, muted, so two plugins' "Refresh" read apart.
+                            let label = Self.label(item)
+                            ShortcutPanelRow(title: label.title, detail: label.plugin, hotkey: item.hotkey) { EmptyView() }
                                 .help(L10n.text(item.title))
                                 .accessibilityLabel(L10n.text(item.title))
                         }
@@ -113,12 +115,15 @@ struct ShortcutPanelCaption: View {
 /// cap is one width (`KeyCap`), so the keys of every row end and line up on the same edge.
 struct ShortcutPanelRow<Leading: View>: View {
     let title: String
+    /// Muted after the title, such as the plugin an action belongs to.
+    var detail: String? = nil
     let hotkey: Hotkey
     @ViewBuilder var leading: Leading
     var body: some View {
         HStack(spacing: FrogStyle.space10) {
             if Leading.self != EmptyView.self { leading.frame(width: 22) }
-            Text(title).font(FrogType.row).lineLimit(1)
+            Text(title).font(FrogType.row).lineLimit(1).layoutPriority(1)
+            if let detail { Text(detail).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1) }
             Spacer(minLength: FrogStyle.space8)
             KeyCaps(hotkey: hotkey)
         }
