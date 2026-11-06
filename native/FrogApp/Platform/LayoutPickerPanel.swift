@@ -291,8 +291,15 @@ private struct LayoutPickerTile: View {
             WindowLayoutGlyph(action: tile.action, size: CGSize(width: 44, height: 28))
             Text(tile.name).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
             if showsBadge {
-                if let key = tile.hotkey { ShortcutBadge(text: HotkeyManager.display(key)) }
-                else { Color.clear.frame(height: 24) }
+                // One cap tall with or without a shortcut, so a row's tiles match; a long shortcut takes smaller
+                // caps rather than widening its tile out of the grid.
+                Group {
+                    if let key = tile.hotkey {
+                        let text = HotkeyManager.display(key)
+                        ViewThatFits(in: .horizontal) { KeyCaps(text); KeyCaps(text, compact: true) }
+                            .accessibilityLabel("Shortcut: \(text)")
+                    } else { Color.clear }
+                }.frame(minWidth: 0, maxWidth: .infinity).frame(height: KeyCap.size)
             }
         }
         .padding(.horizontal, FrogStyle.space4).padding(.vertical, FrogStyle.space10)

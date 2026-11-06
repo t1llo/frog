@@ -63,14 +63,18 @@ extension View {
 /// draws a pill.
 struct KeyCap: View {
     static let size: CGFloat = 18
+    /// The smaller cap a long shortcut falls back to where its full caps do not fit, as in a layout tile.
+    static let compactSize: CGFloat = 15
     let key: String
-    init(_ key: String) { self.key = key }
+    var compact = false
+    init(_ key: String, compact: Bool = false) { self.key = key; self.compact = compact }
 
     var body: some View {
+        let size = compact ? Self.compactSize : Self.size
         // The glyph in the text colour, softened: `muted` on the cap's fill fell under 4.5:1 in dark themes.
-        Text(key).font(FrogType.label).foregroundStyle(FrogStyle.ink.opacity(0.8)).lineLimit(1).fixedSize()
-            .padding(.horizontal, FrogStyle.space4)
-            .frame(minWidth: Self.size, minHeight: Self.size, maxHeight: Self.size)
+        Text(key).font(compact ? FrogType.caption : FrogType.label).foregroundStyle(FrogStyle.ink.opacity(0.8)).lineLimit(1).fixedSize()
+            .padding(.horizontal, compact ? FrogStyle.space2 : FrogStyle.space4)
+            .frame(minWidth: size, minHeight: size, maxHeight: size)
             .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.smallRadius, style: .continuous))
     }
 }
@@ -79,13 +83,15 @@ struct KeyCap: View {
 /// follows them is the key.
 struct KeyCaps: View {
     let keys: [String]
-    init(_ shortcut: String) { keys = Self.split(shortcut) }
+    /// Smaller caps, closer together; `fitting` falls back to them.
+    var compact = false
+    init(_ shortcut: String, compact: Bool = false) { keys = Self.split(shortcut); self.compact = compact }
     /// A recorded shortcut, as `HotkeyManager` names its keys.
     init(hotkey: Hotkey) { keys = HotkeyManager.keys(hotkey) }
     init(keys: [String]) { self.keys = keys }
 
     var body: some View {
-        HStack(spacing: 3) { ForEach(Array(keys.enumerated()), id: \.offset) { KeyCap($0.element) } }
+        HStack(spacing: compact ? FrogStyle.space2 : 3) { ForEach(Array(keys.enumerated()), id: \.offset) { KeyCap($0.element, compact: compact) } }
             .accessibilityElement(children: .ignore).accessibilityLabel(keys.joined())
     }
 
