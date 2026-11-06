@@ -34,7 +34,7 @@ struct RuleModelPicker: View {
         return [descriptor.downloadSize, descriptor.runtimeName, summary].compactMap { $0 }.joined(separator: " · ")
     }
     private func item(_ choice: RuleModelSelection?) -> FrogDropdownItem {
-        guard let choice else { return FrogDropdownItem("No model", symbol: "circle.slash") }
+        guard let choice else { return FrogDropdownItem("No model") }
         let local = choice.providerID == nil
         let recommended = local && model.configuration.localModel(choice.modelID)?.isRecommended == true
         return FrogDropdownItem(name(choice), detail: source(choice), symbol: local ? "cpu" : "cloud",
@@ -43,6 +43,23 @@ struct RuleModelPicker: View {
 
     var body: some View {
         let local = choices(local: true), external = choices(local: false)
+        // A rule without a model cannot run: the button asks for one, with a warning mark beside it, instead of
+        // reading like an ordinary value.
+        if selected == nil {
+            HStack(spacing: FrogStyle.space2) {
+                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(FrogStyle.warning)
+                    .help(L10n.text("This rule cannot run until it has a model"))
+                    .accessibilityLabel(L10n.text("No model: this rule cannot run"))
+                // As wide as its words, so the mark sits right beside them.
+                dropdown(local: local, external: external).fixedSize()
+            }
+        } else {
+            dropdown(local: local, external: external)
+        }
+    }
+
+    private func dropdown(local: [RuleModelSelection?], external: [RuleModelSelection?]) -> some View {
         FrogDropdown(selected: selected, sections: [
             .init(values: [nil]),
             .init("Downloaded", values: local),
@@ -54,6 +71,7 @@ struct RuleModelPicker: View {
             else if speech { rule.action?.audioModelID = nil; rule.action?.audioProviderID = nil }
             else { rule.providerID = nil; rule.model = ""; rule.action?.localTextModelID = nil }
         }
+        .buttonTitle { $0 == nil ? (speech ? "Choose a speech model" : "Choose a model") : item($0).title }
         .accessibilityLabel(speech ? "Speech model" : "Text model")
     }
 }
