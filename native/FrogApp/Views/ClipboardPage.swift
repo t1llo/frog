@@ -46,7 +46,7 @@ struct ClipboardPage: View {
             } else {
                 VStack(spacing: 10) {
                     // The count lives in the field, not loose at the heading's far end.
-                    SearchBox(placeholder: all.count == 1 ? "Search 1 copied item" : "Search \(all.count) copied items", text: $search)
+                    ListToolbar(placeholder: all.count == 1 ? "Search 1 copied item" : "Search \(all.count) copied items", search: $search)
                     if found.isEmpty {
                         Text("No matches").font(FrogType.body).foregroundStyle(FrogStyle.muted)
                             .frame(maxWidth: .infinity).padding(.vertical, 16)

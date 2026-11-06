@@ -40,12 +40,9 @@ struct PluginsView: View {
                 Button("Install from file…", systemImage: "square.and.arrow.down") { chooseFile() }
                     .help("Install a plugin file")
             }
-            HStack(spacing: 8) {
+            ListToolbar(placeholder: "Search the directory", search: $search,
+                        showsSearch: tab == .browse && !plugins.registry.isEmpty) {
                 CompactSegments(values: PluginsTab.allCases, selected: tab, title: \.title) { tab = $0 }
-                Spacer()
-                if tab == .browse, !plugins.registry.isEmpty {
-                    SearchBox(placeholder: "Search the directory", text: $search).frame(width: 220)
-                }
             }
             switch tab {
             case .installed: installed

@@ -245,15 +245,30 @@ struct CompactSegments<Value: Hashable>: View {
     }
 }
 
+/// The one place a search goes: the row directly above the list it filters, never the page header or the window
+/// toolbar. Filters or tabs lead and the search trails at `searchWidth`; with no filters the search fills the row.
+/// `showsSearch` hides the field (an empty list) while the filters keep their place.
 struct ListToolbar<Filters: View>: View {
+    static var searchWidth: CGFloat { 220 }
     let placeholder: String
     @Binding var search: String
+    var showsSearch = true
     @ViewBuilder var filters: Filters
     var body: some View {
         HStack(spacing: 4) {
-            filters
-            Spacer(minLength: 12)
-            SearchBox(placeholder: placeholder, text: $search).frame(width: 190)
+            if Filters.self == EmptyView.self {
+                if showsSearch { SearchBox(placeholder: placeholder, text: $search) }
+            } else {
+                filters
+                Spacer(minLength: 12)
+                if showsSearch { SearchBox(placeholder: placeholder, text: $search).frame(width: Self.searchWidth) }
+            }
         }.frame(height: FrogStyle.controlHeight)
+    }
+}
+
+extension ListToolbar where Filters == EmptyView {
+    init(placeholder: String, search: Binding<String>, showsSearch: Bool = true) {
+        self.init(placeholder: placeholder, search: search, showsSearch: showsSearch) { EmptyView() }
     }
 }

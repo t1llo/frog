@@ -33,7 +33,6 @@ struct DocumentsPage<Controls: View, Content: View, Footer: View>: View {
     var body: some View {
         FrogPage {
             FrogPageHeader(title: title, subtitle: subtitle) {
-                if !all.isEmpty { SearchBox(placeholder: "Search", text: $search).frame(width: 180) }
                 FrogAddButton(kind == .note ? "Add note" : "Add script") {
                     search = ""
                     selected = documents.add(UtilityDocument(kind: kind, title: kind.newItemTitle))
@@ -49,7 +48,11 @@ struct DocumentsPage<Controls: View, Content: View, Footer: View>: View {
                 // The list runs down the side as a source list, without a card of its own; the editor sits beside
                 // it on the page itself, its text on the same edge as its title.
                 HStack(alignment: .top, spacing: FrogStyle.space16) {
-                    list.frame(width: 200).frame(minHeight: Self.height, alignment: .top)
+                    // The search heads the list it filters, as on every page with a search.
+                    VStack(spacing: FrogStyle.space8) {
+                        ListToolbar(placeholder: kind == .note ? "Search notes" : "Search scripts", search: $search)
+                        list
+                    }.frame(width: 200).frame(minHeight: Self.height, alignment: .top)
                     Group {
                         if let current { editor(current) }
                         else { FrogEmptyState(symbol: symbol, title: shown.isEmpty ? "Nothing matches" : "Choose one", message: "") }

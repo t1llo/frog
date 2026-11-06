@@ -19,7 +19,7 @@ struct PluginsCatalogView: View {
     var body: some View {
         FrogPage {
             FrogPageHeader(title: "Features", subtitle: "Turn Frog's built-in features on or off. Each has its own page.")
-            SearchBox(placeholder: "Find a feature", text: $search)
+            ListToolbar(placeholder: "Find a feature", search: $search)
             let groups = groups
             if groups.isEmpty {
                 FrogEmptyState(symbol: "magnifyingglass", title: "No matches", message: "Try another word.")
