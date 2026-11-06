@@ -33,14 +33,27 @@ struct CleanerFixture {
     /// A bundle with an Info.plist, an empty executable and `payload` bytes of resources, in the system
     /// Applications folder unless `folder` is given.
     @discardableResult
-    func app(_ name: String, bundleID: String, in folder: URL? = nil, bundleName: String? = nil, payload: Int = 0) throws -> URL {
+    /// `icon` copies a real app's icon file (an `.icns`), so pictures of the cleaner show app icons, not blank ones.
+    func app(_ name: String, bundleID: String, in folder: URL? = nil, bundleName: String? = nil, payload: Int = 0,
+             icon: URL? = nil) throws -> URL {
         let bundle = (folder ?? applications).appendingPathComponent(name + ".app", isDirectory: true)
         let contents = bundle.appendingPathComponent("Contents", isDirectory: true)
-        let plist: [String: Any] = ["CFBundleIdentifier": bundleID, "CFBundleName": bundleName ?? name,
+        var plist: [String: Any] = ["CFBundleIdentifier": bundleID, "CFBundleName": bundleName ?? name,
                                     "CFBundleShortVersionString": "1.0", "CFBundleExecutable": name]
+        if let icon, let data = try? Data(contentsOf: icon) {
+            try write(data, to: contents.appendingPathComponent("Resources/AppIcon.icns"))
+            plist["CFBundleIconFile"] = "AppIcon"
+        }
         try write(PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0),
                   to: contents.appendingPathComponent("Info.plist"))
         try write(Data(), to: contents.appendingPathComponent("MacOS/" + name))
+        // Frog draws the generic icon for a bundle it could not launch, and macOS badges an empty executable, so an app
+        // with an icon gets a real (harmless) binary.
+        if icon != nil, let binary = try? Data(contentsOf: URL(fileURLWithPath: "/usr/bin/true")) {
+            let executable = contents.appendingPathComponent("MacOS/" + name)
+            try write(binary, to: executable)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+        }
         if payload > 0 { try write(Data(count: payload), to: contents.appendingPathComponent("Resources/payload")) }
         return bundle
     }

@@ -75,13 +75,10 @@ struct CleanerReviewView: View {
     }
 
     private func groupView(_ group: CleanerGroup) -> some View {
-        let allTicked = group.items.allSatisfy { review.selected.contains($0.id) }
-        // Headed like a settings section: the group's name, then its list in one card.
+        // Headed like a settings section: the group's name, then its list in one card. Select all is the footer's,
+        // once for the page, rather than repeated on every group.
         return VStack(alignment: .leading, spacing: 8) {
-            FrogSectionHeader(verbatim: "\(L10n.text(group.kind.title)) · \(group.items.count)") {
-                Button(allTicked ? "Deselect all" : "Select all") { cleaner.setGroup(group.kind, selected: !allTicked) }
-                    .buttonStyle(.frog(.ghost, compact: true))
-            }
+            FrogSectionHeader(verbatim: "\(L10n.text(group.kind.title)) · \(group.items.count)") { EmptyView() }
             VStack(spacing: 2) {
                 ForEach(group.items) { item in itemRow(item) }
             }.padding(6).frogTableSurface()
@@ -124,7 +121,7 @@ struct CleanerReviewView: View {
                 size(of: item)
             }
             .contentShape(Rectangle()).onTapGesture { cleaner.toggle(item.id) }
-            IconAction(title: "Reveal in Finder", symbol: "magnifyingglass") {
+            IconAction(title: "Show in Finder", symbol: "folder") {
                 NSWorkspace.shared.activateFileViewerSelecting([item.url])
             }
         }
@@ -159,8 +156,12 @@ struct CleanerReviewFooter: View {
 
     var body: some View {
         let count = review.selectedCount
+        let shown = review.groups(showPossible: cleaner.showPossibleMatches).flatMap(\.items)
+        let allTicked = !shown.isEmpty && shown.allSatisfy { review.selected.contains($0.id) }
         HStack(spacing: 12) {
             Text(review.selectionSummary()).font(FrogType.body.monospacedDigit()).foregroundStyle(FrogStyle.muted)
+            Button(allTicked ? "Deselect all" : "Select all") { cleaner.setAll(selected: !allTicked) }
+                .buttonStyle(.frog(.ghost, compact: true))
             Spacer()
             Button("Move to Trash…") { Task { await cleaner.prepareRemoval() } }
                 .buttonStyle(.frog(.destructive))

@@ -422,6 +422,14 @@ final class CleanerModel: ObservableObject {
         self.review = review
     }
 
+    /// Ticks or clears every item the review shows, from the footer's one Select all.
+    func setAll(selected: Bool) {
+        guard var review else { return }
+        let ids = review.groups(showPossible: showPossibleMatches).flatMap { $0.items.map(\.id) }
+        if selected { review.selected.formUnion(ids) } else { review.selected.subtract(ids) }
+        self.review = review
+    }
+
     func refreshFullDiskAccess() async {
         let generation = self.generation
         let granted = await dependencies.system.hasFullDiskAccess()

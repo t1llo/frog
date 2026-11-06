@@ -85,10 +85,10 @@ final class LeftoverScannerTests: XCTestCase {
         XCTAssertFalse(listed.all.isEmpty)
         XCTAssertFalse(listed.all.contains { $0.hasSuffix("/Containers") || $0.hasSuffix("/Group Containers") })
         XCTAssertEqual(item(items, fixture, container)?.kind, .container)
-        XCTAssertEqual(item(items, fixture, container)?.reason, "Named after the bundle ID com.example.app.")
+        XCTAssertEqual(item(items, fixture, container)?.reason, "Named after its bundle ID.")
         XCTAssertEqual(item(items, fixture, container)?.needsFullDiskAccess, false)
         XCTAssertEqual(item(items, fixture, group)?.kind, .groupContainer)
-        XCTAssertEqual(item(items, fixture, group)?.reason, "Named after the app group ABCDE12345.com.example.")
+        XCTAssertEqual(item(items, fixture, group)?.reason, "Named after one of its app groups.")
         XCTAssertFalse(items.contains { $0.url.lastPathComponent == "com.example.app.other" })
     }
 

@@ -74,19 +74,21 @@ final class RemovalPromptTests: XCTestCase {
 
     func testFinderNoteCountsItemsFinderMoves() {
         XCTAssertTrue(prompt(plan(removals: [removal("a", route: .finder)])).notes
-            .contains("Finder moves 1 item. macOS asks once whether Frog may control Finder."))
+            .contains("Finder moves the item. macOS asks once whether Frog may control Finder."))
         XCTAssertTrue(prompt(plan(removals: [bundle, removal("a", route: .finder), removal("b", route: .finder)], removesApp: true)).notes
-            .contains("Finder moves 3 items. macOS asks once whether Frog may control Finder."))
+            .contains("Finder moves all 3 items. macOS asks once whether Frog may control Finder."))
         XCTAssertFalse(prompt(plan()).notes.contains { $0.hasPrefix("Finder moves") })
+        XCTAssertTrue(prompt(plan(removals: [removal("a", route: .finder)] + items(3))).notes
+            .contains("Finder moves 1 of the 4 items; Frog moves the rest. macOS asks once whether Frog may control Finder."))
     }
 
     func testFinderNoteLeavesOutTheQuestionOnceFrogMayControlFinder() {
         let finderItems = [bundle, removal("a", route: .finder)]
         let allowed = prompt(plan(removals: finderItems, removesApp: true), automation: .allowed)
-        XCTAssertTrue(allowed.notes.contains("Finder moves 2 items."))
+        XCTAssertTrue(allowed.notes.contains("Finder moves both items."))
         XCTAssertNil(allowed.finderDenied)
         XCTAssertTrue(prompt(plan(removals: finderItems, removesApp: true), automation: .notDetermined).notes
-            .contains("Finder moves 2 items. macOS asks once whether Frog may control Finder."))
+            .contains("Finder moves both items. macOS asks once whether Frog may control Finder."))
     }
 
     func testDeniedAutomationSaysWhatStaysBeforeAnythingMoves() {
@@ -162,7 +164,7 @@ final class RemovalPromptTests: XCTestCase {
         XCTAssertEqual(notes, [
             "Frog quits Slack and 1 of its helpers first.",
             "Frog stops 2 background services first.",
-            "Finder moves 2 items. macOS asks once whether Frog may control Finder.",
+            "Finder moves 2 of the 3 items; Frog moves the rest. macOS asks once whether Frog may control Finder.",
             "1 item belongs to the system. Finder asks for your administrator password; Frog never sees it.",
             "1 background service stops after you restart your Mac.",
             "Slack's system extension is removed with the app. macOS may ask you to confirm.",

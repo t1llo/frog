@@ -367,7 +367,7 @@ final class UIShotsTests: XCTestCase {
             try await sheet("sheet-writing-rule") { WritingRuleEditor(rule: rule, bubble: true) { _ in }.environmentObject(model) }
             try await sheet("sheet-writing-try") { WritingTryView(rule: rule).environmentObject(model) }
         }
-        try await sheet("sheet-rename") { RenameSheet(name: "Dictate") { _ in } }
+        try await sheet("sheet-rename") { RenameSheet(name: "Dictation", kind: "dictation rule") { _ in } }
         if let item = LocalModelDescriptor.catalog.first {
             try await sheet("sheet-local-model-info") { LocalModelInformation(item: item) }
         }
@@ -578,9 +578,11 @@ private final class SampleFrog {
         usage.updatePreferences(preferences)
 
         cleaner = try CleanerFixture()
-        cleanerApp = try cleaner.app("Chatter", bundleID: "com.example.chatter", payload: 4_000_000)
-        _ = try cleaner.app("Sketchbook", bundleID: "com.example.sketchbook", payload: 9_000_000)
-        _ = try cleaner.app("Notebook", bundleID: "com.example.notebook", payload: 600_000)
+        // Real system apps lend their icons, so the cleaner pictures app icons rather than blank bundles.
+        func icon(_ app: String) -> URL { URL(fileURLWithPath: "/System/Applications/\(app).app/Contents/Resources/AppIcon.icns") }
+        cleanerApp = try cleaner.app("Chatter", bundleID: "com.example.chatter", payload: 4_000_000, icon: icon("Stickies"))
+        _ = try cleaner.app("Sketchbook", bundleID: "com.example.sketchbook", payload: 9_000_000, icon: icon("Preview"))
+        _ = try cleaner.app("Notebook", bundleID: "com.example.notebook", payload: 600_000, icon: icon("Chess"))
         _ = try cleaner.item(.caches, "com.example.chatter", bytes: 2_000_000)
         _ = try cleaner.item(.applicationSupport, "Chatter", bytes: 800_000)
         _ = try cleaner.item(.preferences, "com.example.chatter.plist", bytes: 4_000)
@@ -607,7 +609,7 @@ private final class SampleFrog {
         answer.answer = AnswerRecord(context: nil, application: "Safari", source: nil, followUps: [])
         var dictated = HistoryEntry(timestamp: Date().addingTimeInterval(-86_400), originalText: "",
                                     processedText: "Remind me to send the invoice on Friday and book the train to Zurich.",
-                                    ruleName: "Dictate", providerName: "Parakeet", model: "parakeet-ultra")
+                                    ruleName: "Dictation", providerName: "Parakeet", model: "parakeet-ultra")
         dictated.category = .audio
         let entries = [
             HistoryEntry(timestamp: Date().addingTimeInterval(-120), originalText: "i think we should of shipped it yesterday",
