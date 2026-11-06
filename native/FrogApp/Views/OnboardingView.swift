@@ -201,18 +201,11 @@ struct OnboardingView: View {
     }
 }
 
-/// A step's content under the fixed header. A step taller than the window scrolls, and while more of it lies below,
-/// a "More below" button sits over the fade at the bottom and scrolls there, so a cut-off row never looks like the end.
+/// A step's content under the fixed header. A step taller than the window scrolls, and its bottom edge fades while
+/// more of it lies below, so a cut-off row reads as more to come without a button laid over the content.
 private struct OnboardingScroll<Content: View>: View {
     let step: OnboardingView.Step
     @ViewBuilder var content: Content
-    @State private var bottom: CGFloat = 0
-    @State private var viewport: CGFloat = 0
-
-    private var more: Bool { bottom - viewport > 24 }
-    /// How far the content fades, and the clear band under it that holds "More below".
-    private static var fade: CGFloat { 24 }
-    private static var band: CGFloat { FrogStyle.controlHeight }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -220,31 +213,10 @@ private struct OnboardingScroll<Content: View>: View {
                 VStack(spacing: 0) {
                     Color.clear.frame(height: 0).id("start")
                     content
-                    Color.clear.frame(height: 1).id("end")
                 }
-                .background(GeometryReader { geometry in
-                    // Read here rather than through a preference, which a scroll view does not pass up reliably.
-                    let maxY = geometry.frame(in: .named("onboardingScroll")).maxY
-                    Color.clear.onAppear { bottom = maxY }.onChange(of: maxY) { _, value in bottom = value }
-                })
             }
-            .coordinateSpace(name: "onboardingScroll")
             .scrollIndicators(.never)
-            // The content fades out above a clear band at the bottom, and "More below" sits in that band, so it never
-            // covers a heading or a row.
-            .bottomScrollFade(height: Self.fade, band: Self.band, showsBand: more)
-            .background(GeometryReader { geometry in
-                Color.clear.onAppear { viewport = geometry.size.height }
-                    .onChange(of: geometry.size.height) { _, height in viewport = height }
-            })
-            .overlay(alignment: .bottom) {
-                if more {
-                    Button { withAnimation(FrogMotion.reveal) { proxy.scrollTo("end", anchor: .bottom) } } label: {
-                        Label("More below", systemImage: "chevron.down")
-                    }
-                    .buttonStyle(.frog(.secondary, compact: true)).frame(height: Self.band)
-                }
-            }
+            .bottomScrollFade(height: 32)
             .onChange(of: step) { _, _ in proxy.scrollTo("start", anchor: .top) }
         }
     }
@@ -398,9 +370,11 @@ private struct OnboardingModels: View {
         let local = model.localModels
         let pair = LocalModelDescriptor.recommendedPair
         let missing = pair.filter { !local.installed.contains($0.id) && local.progress[$0.id] == nil }
+        VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 6) {
         FrogSection("Recommended models", footer: LocalModels.supported ? "More models, and any from Hugging Face, are in Models." : "Local models need Apple silicon. Add a provider in the next step instead.", accessory: {
             if LocalModels.supported, missing.count > 1 {
-                Button("Download both") { for item in missing { local.download(item) } }.buttonStyle(.frog(.ghost, compact: true))
+                Button("Download both", systemImage: "arrow.down.circle") { for item in missing { local.download(item) } }
+                    .buttonStyle(.frog(.secondary, compact: true))
             }
         }) {
             ForEach(pair) { item in
@@ -421,6 +395,35 @@ private struct OnboardingModels: View {
                 })
                 if let error = local.errors[item.id] { FrogRowNote(text: error, tone: FrogStyle.warning) }
             }
+        }
+        if LocalModels.supported { benefits }
+        }
+    }
+
+    /// What running a model on the Mac gives, three short points side by side.
+    private var benefits: some View {
+        let points: [(symbol: String, tint: PluginTint, title: String, caption: String)] = [
+            ("lock.fill", .green, "Private", "Your text and voice stay on this Mac"),
+            ("wifi.slash", .blue, "Offline", "Works without an internet connection"),
+            ("gift.fill", .orange, "Free", "No API key, account or usage limits"),
+        ]
+        return VStack(alignment: .leading, spacing: FrogStyle.space8) {
+            FrogSectionHeader("Why on your Mac")
+            HStack(alignment: .top, spacing: FrogStyle.space8) {
+                ForEach(points, id: \.title) { point in
+                    VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                        PluginIconTile(symbol: point.symbol, tint: point.tint.color)
+                        VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                            Text(L10n.text(point.title)).font(FrogType.row)
+                            Text(L10n.text(point.caption)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .frogTableSurface()
+                    .accessibilityElement(children: .combine)
+                }
+            }.fixedSize(horizontal: false, vertical: true)
         }
     }
 }
