@@ -61,7 +61,7 @@ struct MainView: View {
         switch section {
         case .history: pluginPage("history")
         case .models: ProvidersView()
-        case .features: PluginsCatalogView()
+        case .features: PluginsCatalogView(search: sidebarQuery)
         case .settings: PreferencesView(permissionsRequest: $permissionsRequest)
         // Statistics is a step inside Settings: the toolbar's breadcrumb leads back, so the page draws no link.
         case .statistics:
@@ -303,7 +303,7 @@ struct MainView: View {
             }
             // Models, Features and Settings stay pinned under the list, so the open one is always in view and
             // Settings is always one click away, however long the plugin list grows.
-            let workspace = workspaceNavigation.filter { matches($0.title) }
+            let workspace = workspaceNavigation.filter { matches($0.title) || ($0.id == .features && offFeatureMatches) }
             if !workspace.isEmpty {
                 VStack(alignment: .leading, spacing: FrogStyle.space2) {
                     ForEach(workspace) { navigationButton($0) }
@@ -326,6 +326,15 @@ struct MainView: View {
     private var anyMatch: Bool {
         model.pluginHost.sidebar.flatMap(\.plugins).contains { matches($0.name) }
             || model.pluginPages.contains { matches($0.name) } || workspaceNavigation.contains { matches($0.title) }
+            || offFeatureMatches
+    }
+
+    /// A feature that is off has no row of its own, so a search that names one shows Features, which lists it.
+    private var offFeatureMatches: Bool {
+        let query = sidebarQuery.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return false }
+        let host = model.pluginHost
+        return host.descriptors.map(\.info).contains { !host.enabled($0.id) && PluginsCatalogView.matches($0, query) }
     }
 
     /// Frog's own row at the top, like Rex's server row: its status. It opens Settings, at Permissions while one is

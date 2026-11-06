@@ -4,10 +4,16 @@ import FrogCore
 /// Turns Frog's built-in features on and off, by sidebar category. Each plugin's settings are on its own page.
 struct PluginsCatalogView: View {
     @EnvironmentObject private var model: AppModel
+    /// The sidebar's search: while it names features, only those are listed, so a feature that is off, and so has
+    /// no sidebar row, is still found from there. A query that names none (such as "Features") lists them all.
+    var search = ""
     @State private var pending = Set<String>()
 
     private var groups: [(category: PluginCategory, plugins: [PluginInfo])] {
-        let infos = model.pluginHost.descriptors.map(\.info)
+        let all = model.pluginHost.descriptors.map(\.info)
+        let query = search.trimmingCharacters(in: .whitespaces)
+        let found = query.isEmpty ? all : all.filter { Self.matches($0, query) }
+        let infos = found.isEmpty ? all : found
         return PluginCategory.allCases.compactMap { category in
             let plugins = infos.filter { $0.category == category }
             return plugins.isEmpty ? nil : (category, plugins)
@@ -17,8 +23,8 @@ struct PluginsCatalogView: View {
     var body: some View {
         FrogPage {
             FrogPageHeader(title: "Features", subtitle: "Turn Frog's built-in features on or off. Each has its own page.")
-            // No search of its own: the sidebar's search above already finds features, and two fields stacked
-            // one under the other read as two different searches.
+            // No search of its own: the sidebar's search above finds features, those that are off too, and two
+            // fields stacked one under the other read as two different searches.
             ForEach(groups, id: \.category) { group in
                 // Captioned like a `FrogSection`, so this page reads like the others.
                 VStack(alignment: .leading, spacing: FrogStyle.space8) {
@@ -29,6 +35,11 @@ struct PluginsCatalogView: View {
                 }
             }
         }
+    }
+
+    /// Whether a feature's name or summary contains `query`, in Frog's language or in English.
+    static func matches(_ plugin: PluginInfo, _ query: String) -> Bool {
+        [plugin.name, plugin.summary].contains { L10n.text($0).localizedCaseInsensitiveContains(query) || $0.localizedCaseInsensitiveContains(query) }
     }
 
     /// A feature: its tile, name and summary, its switch, and a chevron that opens its page while it is on (the whole
