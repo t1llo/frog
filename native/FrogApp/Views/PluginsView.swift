@@ -285,8 +285,6 @@ struct PluginReviewSheet: View {
     let report: (Error) -> Void
     /// The main button waits a moment after the sheet changes, so a click meant for something else cannot approve it.
     @State private var armed = false
-    /// Permission rows opened to their full explanation; each shows one line until clicked.
-    @State private var expanded = Set<PluginPermission>()
 
     private var manifest: PluginManifest { review.package.manifest }
 
@@ -323,23 +321,30 @@ struct PluginReviewSheet: View {
                     } else {
                         let sensitive = manifest.permissions.filter(\.isSensitive).count
                         FrogSection(updating && additions.isEmpty ? "It asks for nothing new" : "It asks to",
-                                    footer: sensitive == 0 ? nil : "Caution marks what can read or send your data, or act for you. Click a row for details.") {
+                                    footer: sensitive == 0 ? nil : "Caution marks what can read or send your data, or act for you.") {
                             ForEach(manifest.permissions, id: \.self) { permission in
                                 permissionRow(permission, new: updating && additions.permissions.contains(permission))
                             }
                         }
                     }
                     if !manifest.actions.isEmpty {
+                        // What an action may change is said once per group: in the heading when every action shares
+                        // it, otherwise as a caption above each group inside the card.
+                        let effects = Set(manifest.actions.map(\.effect)).sorted()
                         FrogSection("Actions you and your agents can run") {
-                            ForEach(manifest.actions, id: \.id) { action in
-                                FrogRow(action.title, icon: { EmptyView() }, control: {
-                                    HStack(spacing: FrogStyle.space8) {
+                            if effects.count == 1, let effect = effects.first { effectLabel(effect) }
+                        } content: {
+                            ForEach(effects, id: \.self) { effect in
+                                if effects.count > 1 {
+                                    effectLabel(effect).padding(.top, FrogStyle.space8)
+                                }
+                                ForEach(manifest.actions.filter { $0.effect == effect }, id: \.id) { action in
+                                    FrogRow(action.title, icon: { EmptyView() }, control: {
                                         if let shortcut = action.shortcut, let parsed = try? Shortcut(shortcut) {
                                             ShortcutBadge(text: HotkeyManager.display(parsed.hotkey))
                                         }
-                                        effectLabel(action.effect)
-                                    }
-                                })
+                                    })
+                                }
                             }
                         }
                     }
@@ -381,7 +386,8 @@ struct PluginReviewSheet: View {
                 }
                 .padding(.horizontal, FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space4)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(maxHeight: 440).fixedSize(horizontal: false, vertical: true).bottomScrollFade()
+            // Tall enough for the usual review without scrolling, now that every permission is spelled out in full.
+            }.frame(maxHeight: 540).fixedSize(horizontal: false, vertical: true).bottomScrollFade()
             FrogSheetButtons {
                 Text("\(review.package.files.count) files · \(ByteCountFormatter.string(fromByteCount: Int64(review.package.size), countStyle: .file))")
                     .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
@@ -407,8 +413,9 @@ struct PluginReviewSheet: View {
     @ViewBuilder private var origin: some View {
         switch review.source {
         case .folder(let path):
+            // The folder's name says which build it is; the whole path, often a long temporary one, is its tooltip.
             let shown = (path as NSString).abbreviatingWithTildeInPath
-            Label { Text("Built on this Mac").foregroundStyle(FrogStyle.ink) + Text(" · \(shown)") } icon: { Image(systemName: "hammer") }
+            Label { Text("Built on this Mac").foregroundStyle(FrogStyle.ink) + Text(" · \((path as NSString).lastPathComponent)") } icon: { Image(systemName: "hammer") }
                 .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle).help(shown)
         case .link, .file:
             VStack(alignment: .leading, spacing: FrogStyle.space4) {
@@ -431,9 +438,7 @@ struct PluginReviewSheet: View {
     }
 
     private func permissionRow(_ permission: PluginPermission, new: Bool) -> some View {
-        PluginPermissionRow(permission: permission, new: new, expanded: expanded.contains(permission)) {
-            if expanded.contains(permission) { expanded.remove(permission) } else { expanded.insert(permission) }
-        } icon: { permissionIcon(permission.symbol) }
+        PluginPermissionRow(permission: permission, new: new) { permissionIcon(permission.symbol) }
     }
 
     private func listRow(_ text: String, badge: String?) -> some View {
@@ -445,51 +450,34 @@ struct PluginReviewSheet: View {
     }
 
     private func effectLabel(_ effect: PluginManifestAction.Effect) -> some View {
-        Label(effect.title, systemImage: effect.symbol).font(FrogType.small)
-            .foregroundStyle(effect == .read ? FrogStyle.muted : FrogStyle.ink)
+        Label(effect.title, systemImage: effect.symbol).font(FrogType.small).foregroundStyle(FrogStyle.muted)
             .help(effect.explanation)
     }
 }
 
-/// One permission on one line: its symbol, its title with a Caution or New badge beside it, and the start of its
-/// explanation. A click opens the whole explanation; the pointer shows it as a tooltip.
+/// One permission: its symbol, its title with a Caution or New badge beside it, and its whole explanation, which
+/// wraps: a consent dialog never cuts off what the user agrees to.
 private struct PluginPermissionRow<Icon: View>: View {
     let permission: PluginPermission
     let new: Bool
-    let expanded: Bool
-    let toggle: () -> Void
     @ViewBuilder var icon: Icon
-    @State private var hovering = false
 
     var body: some View {
-        Button(action: toggle) {
-            HStack(alignment: expanded ? .top : .center, spacing: FrogStyle.space12) {
-                icon
-                VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                    HStack(spacing: FrogStyle.space6) {
-                        Text(permission.title).font(FrogType.row).foregroundStyle(FrogStyle.ink)
-                        if permission.isSensitive { PluginCautionBadge() }
-                        if new { FrogBadge(text: "New", active: true) }
-                    }
-                    Text(permission.detail).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                        .lineLimit(expanded ? nil : 1).truncationMode(.tail)
-                        .fixedSize(horizontal: false, vertical: expanded)
+        HStack(alignment: .top, spacing: FrogStyle.space12) {
+            icon
+            VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                HStack(spacing: FrogStyle.space6) {
+                    Text(permission.title).font(FrogType.row).foregroundStyle(FrogStyle.ink)
+                    if permission.isSensitive { PluginCautionBadge() }
+                    if new { FrogBadge(text: "New", active: true) }
                 }
-                Spacer(minLength: FrogStyle.space8)
-                Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle((hovering || expanded ? FrogStyle.muted : FrogStyle.placeholder))
-                    .rotationEffect(.degrees(expanded ? 90 : 0))
-                    .frame(height: 28)
-                    .accessibilityHidden(true)
+                Text(permission.detail).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.vertical, FrogStyle.space6).frame(minHeight: FrogStyle.rowHeight)
-            .contentShape(Rectangle())
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain).onHover { hovering = $0 }
-        .help(expanded ? "" : permission.detail)
-        .animation(FrogMotion.reveal, value: expanded)
+        .padding(.vertical, FrogStyle.space6).frame(minHeight: FrogStyle.rowHeight)
         .accessibilityElement(children: .combine)
-        .accessibilityHint(expanded ? "" : permission.detail)
     }
 }
 
