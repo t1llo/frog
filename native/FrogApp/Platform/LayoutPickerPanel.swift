@@ -206,18 +206,23 @@ struct LayoutPickerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // As the other keyboard panels: the search on top, the panel named once, in the footer. The window
+            // being arranged is named at the search's end.
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("Arrange window").font(FrogType.toolbarTitle)
-                    if let name = panel.appName {
-                        Text(name).font(FrogType.row).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                }
                 HStack(spacing: FrogStyle.space8) {
                     Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .medium)).foregroundStyle(FrogStyle.muted)
-                    TextField("Filter layouts", text: $panel.query)
+                    TextField("", text: $panel.query)
                         .textFieldStyle(.plain).font(FrogType.row).focused($focused)
+                        .accessibilityLabel(L10n.text("Filter layouts"))
+                        .background(alignment: .leading) {
+                            if panel.query.isEmpty {
+                                Text(L10n.text("Filter layouts")).font(FrogType.row).foregroundStyle(FrogStyle.placeholder)
+                                    .lineLimit(1).allowsHitTesting(false).accessibilityHidden(true)
+                            }
+                        }
+                    if let name = panel.appName {
+                        Text(name).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).fixedSize()
+                    }
                 }.padding(.horizontal, FrogStyle.space10)
                     .frogControlSurface(height: FrogStyle.controlHeight + FrogStyle.space4)
                 if let status = panel.status {
@@ -225,7 +230,7 @@ struct LayoutPickerView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding([.horizontal, .top], FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space12)
+            .padding([.horizontal, .top], FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space16)
             if measuring { grid } else {
                 ScrollViewReader { proxy in
                     ScrollView { grid }

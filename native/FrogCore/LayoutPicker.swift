@@ -1,7 +1,7 @@
 import Foundation
 
 /// What the layout picker lists and which tile is selected: the layouts that place the window,
-/// grouped as the cheat sheet groups them, five tiles to a row, filtered by the typed text.
+/// grouped as the cheat sheet groups them, four tiles to a row, filtered by the typed text.
 public struct LayoutPickerModel: Equatable, Sendable {
     public struct Tile: Equatable, Sendable, Identifiable {
         public var action: WindowAction
@@ -27,7 +27,7 @@ public struct LayoutPickerModel: Equatable, Sendable {
             case .centeredMedium: "70%"
             case .centeredLarge: "90%"
             case .nextDisplay: "Next display"
-            case .previousDisplay: "Prior display"
+            case .previousDisplay: "Previous display"
             case .restore: "Restore"
             case .minimize: "Minimize"
             case .toggleFullScreen: "Full screen"
@@ -41,22 +41,30 @@ public struct LayoutPickerModel: Equatable, Sendable {
         public var title: String
         public var tiles: [Tile]
         public var id: String { title }
-        /// The tiles in rows of `LayoutPickerModel.columns`.
+        /// The tiles in rows of `LayoutPickerModel.columns`; two-thirds start a row of their own under the thirds,
+        /// so every row lines up in the same four columns.
         public var rows: [[Tile]] {
-            stride(from: 0, to: tiles.count, by: LayoutPickerModel.columns).map { Array(tiles[$0..<min($0 + LayoutPickerModel.columns, tiles.count)]) }
+            var rows: [[Tile]] = []
+            for tile in tiles {
+                if rows.isEmpty || rows[rows.count - 1].count == LayoutPickerModel.columns
+                    || (tile.action == .leftTwoThirds && !rows[rows.count - 1].isEmpty) { rows.append([]) }
+                rows[rows.count - 1].append(tile)
+            }
+            return rows
         }
         public init(title: String, tiles: [Tile]) { self.title = title; self.tiles = tiles }
     }
 
     public enum Direction: Sendable { case left, right, up, down }
 
-    public static let columns = 5
+    public static let columns = 4
     /// The section titles in order: the cheat sheet's, without its commands, and with its two short groups,
-    /// Displays and Undo, in one row of their own.
+    /// Displays and Undo, in one row of their own. Center, which keeps the window's size, joins them, so Sizes and
+    /// More are four tiles each.
     public static let sectionTitles = ["Halves", "Quarters", "Thirds", "Sizes", "More"]
     static func group(for action: WindowAction) -> String {
         let group = WindowCheatSheet.group(for: action)
-        return group == "Displays" || group == "Undo" ? "More" : group
+        return group == "Displays" || group == "Undo" || action == .center ? "More" : group
     }
     /// Minimize and full screen leave nothing to place, so the picker does not offer them.
     public static let offered = WindowAction.allCases.filter { $0 != .minimize && $0 != .toggleFullScreen }

@@ -2,13 +2,13 @@ import XCTest
 @testable import FrogCore
 
 final class LayoutPickerModelTests: XCTestCase {
-    func testSectionsComeInTheCheatSheetOrderWithFiveTilesToARow() {
+    func testSectionsComeInTheCheatSheetOrderWithFourTilesToARow() {
         let model = LayoutPickerModel(hotkeys: [:])
         XCTAssertEqual(model.sections.map(\.title), ["Halves", "Quarters", "Thirds", "Sizes", "More"])
         XCTAssertEqual(model.sections[0].tiles.map(\.action), [.leftHalf, .rightHalf, .topHalf, .bottomHalf])
-        XCTAssertEqual(model.sections[2].rows.map { $0.map(\.action) }, [[.leftThird, .centerThird, .rightThird, .leftTwoThirds, .rightTwoThirds]])
-        XCTAssertEqual(model.sections[3].tiles.map(\.action), [.maximize, .center, .centeredSmall, .centeredMedium, .centeredLarge])
-        XCTAssertEqual(model.sections[4].tiles.map(\.action), [.restore, .nextDisplay, .previousDisplay])
+        XCTAssertEqual(model.sections[2].rows.map { $0.map(\.action) }, [[.leftThird, .centerThird, .rightThird], [.leftTwoThirds, .rightTwoThirds]])
+        XCTAssertEqual(model.sections[3].tiles.map(\.action), [.maximize, .centeredSmall, .centeredMedium, .centeredLarge])
+        XCTAssertEqual(model.sections[4].tiles.map(\.action), [.center, .restore, .nextDisplay, .previousDisplay])
         XCTAssertEqual(model.selection, .leftHalf)
     }
 
@@ -54,14 +54,17 @@ final class LayoutPickerModelTests: XCTestCase {
         XCTAssertEqual(model.selection, .topLeft, "Right at the end of a row goes on to the next row")
         model.move(.down)
         XCTAssertEqual(model.selection, .leftThird)
-        for _ in 0..<4 { model.move(.right) }
-        XCTAssertEqual(model.selection, .rightTwoThirds)
+        for _ in 0..<2 { model.move(.right) }
+        XCTAssertEqual(model.selection, .rightThird)
         model.move(.down)
-        XCTAssertEqual(model.selection, .centeredLarge)
+        XCTAssertEqual(model.selection, .rightTwoThirds, "A shorter row keeps its last tile")
         model.move(.down)
-        XCTAssertEqual(model.selection, .previousDisplay, "A shorter row keeps its last tile")
-        model.move(.up)
         XCTAssertEqual(model.selection, .centeredSmall)
+        for _ in 0..<2 { model.move(.right) }
+        model.move(.down)
+        XCTAssertEqual(model.selection, .previousDisplay)
+        model.move(.up)
+        XCTAssertEqual(model.selection, .centeredLarge)
         for _ in 0..<10 { model.move(.down) }
         XCTAssertEqual(model.selection, .previousDisplay)
         model.move(.right)
@@ -84,8 +87,9 @@ final class LayoutPickerModelTests: XCTestCase {
     func testTilesAreNamedShortlyUnderTheirSectionAndKeepTheirFullTitles() {
         let model = LayoutPickerModel(hotkeys: [:])
         XCTAssertEqual(model.sections[0].tiles.map(\.name), ["Left", "Right", "Top", "Bottom"])
-        XCTAssertEqual(model.sections[3].tiles.map(\.name), ["Maximize", "Center", "50%", "70%", "90%"])
-        XCTAssertEqual(model.sections[3].tiles[2].title, WindowAction.centeredSmall.title)
+        XCTAssertEqual(model.sections[3].tiles.map(\.name), ["Maximize", "50%", "70%", "90%"])
+        XCTAssertEqual(model.sections[4].tiles.map(\.name), ["Center", "Restore", "Next display", "Previous display"])
+        XCTAssertEqual(model.sections[3].tiles[1].title, WindowAction.centeredSmall.title)
         for section in model.sections {
             XCTAssertEqual(Set(section.tiles.map(\.name)).count, section.tiles.count, "Names repeat in \(section.title)")
         }
