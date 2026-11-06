@@ -12,16 +12,19 @@ struct PluginSettingsSheet: View {
     var body: some View {
         let item = plugins.item(id)
         let manifest = item?.manifest
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: FrogStyle.space16) {
+            HStack(spacing: FrogStyle.space12) {
                 PluginIconTile(symbol: PluginSymbol.name(item?.symbol ?? PluginManifest.defaultSymbol), tint: FrogStyle.accent)
-                Text("\(item?.name ?? id) settings").font(FrogType.section)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(item?.name ?? id).font(FrogType.title).tracking(-0.4).accessibilityAddTraits(.isHeader)
+                    Text("Settings").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                }
             }
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 6) {
                     if let manifest, let item {
                         if !manifest.settings.isEmpty {
-                            FrogSection {
+                            FrogSection("General") {
                                 ForEach(manifest.settings, id: \.key) { setting in
                                     FrogRow(setting.title, caption: setting.help) { control(setting) }
                                 }
@@ -58,7 +61,7 @@ struct PluginSettingsSheet: View {
                         }
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(maxHeight: 420).fixedSize(horizontal: false, vertical: true)
+            }.frame(maxHeight: 440).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Spacer()
                 Button("Done", action: done).buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
@@ -79,8 +82,10 @@ struct PluginSettingsSheet: View {
             let current: String = if case .text(let text)? = value { text } else { setting.choices?.first ?? "" }
             FrogDropdown(selected: current, options: setting.choices ?? [], width: 180, title: { $0 }) { save(setting, .text($0)) }
         case .integer:
-            let current: String = if case .integer(let number)? = value { String(number) } else { "" }
-            PluginTextSetting(value: current, secret: false, width: 80) { save(setting, .text($0)) }
+            let current: Int? = if case .integer(let number)? = value { number } else { nil }
+            PluginNumberSetting(value: current, minimum: setting.minimum, maximum: setting.maximum, title: setting.title) {
+                save(setting, .text(String($0)))
+            }
         case .text:
             let current: String = if case .text(let text)? = value { text } else { "" }
             PluginTextSetting(value: current, secret: false, width: 220) { save(setting, .text($0)) }
@@ -133,5 +138,48 @@ private struct PluginTextSetting: View {
     private func save() {
         if secret { guard !draft.isEmpty else { return }; commit(draft); draft = ""; return }
         if draft != value { commit(draft) }
+    }
+}
+
+/// A whole number: typed, right-aligned, or stepped by one with − and +, kept within the plugin's bounds.
+private struct PluginNumberSetting: View {
+    let value: Int?
+    let minimum: Int?
+    let maximum: Int?
+    let title: String
+    let commit: (Int) -> Void
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
+            step("minus", by: -1, disabled: (value ?? 0) <= (minimum ?? .min))
+            TextField("", text: $draft).textFieldStyle(.plain).font(FrogType.body.monospacedDigit())
+                .multilineTextAlignment(.center).focused($focused).frame(width: 40)
+                .accessibilityLabel(L10n.text(title)).onSubmit(save)
+            step("plus", by: 1, disabled: (value ?? 0) >= (maximum ?? .max))
+        }
+        .padding(.horizontal, FrogStyle.space2).frogControlSurface(capsule: true)
+        .onAppear { draft = value.map(String.init) ?? "" }
+        .onChange(of: value) { _, new in if !focused { draft = new.map(String.init) ?? "" } }
+        .onChange(of: focused) { _, now in if !now { save() } }
+    }
+
+    private func step(_ symbol: String, by delta: Int, disabled: Bool) -> some View {
+        Button { commit(clamped((Int(draft) ?? value ?? 0) + delta)) } label: {
+            Image(systemName: symbol).font(.system(size: 10, weight: .semibold)).frame(width: 24, height: FrogStyle.controlHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).foregroundStyle(disabled ? FrogStyle.muted.opacity(0.5) : FrogStyle.ink).disabled(disabled)
+        .accessibilityLabel(L10n.text(delta < 0 ? "Decrease \(title)" : "Increase \(title)"))
+    }
+
+    private func clamped(_ number: Int) -> Int { min(max(number, minimum ?? .min), maximum ?? .max) }
+
+    private func save() {
+        guard let number = Int(draft.trimmingCharacters(in: .whitespaces)) else { draft = value.map(String.init) ?? ""; return }
+        let kept = clamped(number)
+        draft = String(kept)
+        if kept != value { commit(kept) }
     }
 }

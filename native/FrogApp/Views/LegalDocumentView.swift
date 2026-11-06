@@ -8,9 +8,9 @@ enum LegalDocument: String, Identifiable, CaseIterable {
 
     var id: String { rawValue }
     var title: String { self == .license ? "License" : "Third-party notices" }
-    var summary: String {
-        self == .license ? "MIT License."
-            : "Licenses of the open-source software Frog is built with."
+    /// Nil when the text's first line already says it, as the licence's "MIT License" does.
+    var summary: String? {
+        self == .license ? nil : "Licenses of the open-source software Frog is built with."
     }
     /// Nil outside a packaged app, such as under `swift run`, Xcode and tests.
     func url(in bundle: Bundle = .main) -> URL? { bundle.url(forResource: rawValue, withExtension: "txt") }
@@ -31,10 +31,10 @@ struct LegalDocumentView: View {
         VStack(alignment: .leading, spacing: 14) {
             // A sheet is its own window, so its header keeps the title.
             FrogPageHeader(title: document.title, subtitle: document.summary).environment(\.frogToolbarTitle, false)
-            ReadOnlyText(text: text).background(FrogStyle.control, in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius))
+            ReadOnlyText(text: text).frogTableSurface()
                 .accessibilityLabel(L10n.text(document.title))
             HStack { Spacer(); Button("Done") { dismiss() }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction) }
-        }.padding(FrogStyle.sheetPadding).frame(width: 640, height: 520).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
+        }.padding(FrogStyle.sheetPadding).frame(width: 640, height: 480).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
             .buttonStyle(.frog()).environment(\.locale, L10n.locale)
     }
 }
@@ -52,7 +52,7 @@ private struct ReadOnlyText: NSViewRepresentable {
         view.isEditable = false; view.isSelectable = true
         view.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         view.textColor = .labelColor
-        view.textContainerInset = NSSize(width: 8, height: 10)
+        view.textContainerInset = NSSize(width: 10, height: 12)
         view.string = text
         return scroll
     }
