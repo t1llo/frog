@@ -55,7 +55,7 @@ struct DictationPage: View {
     }
 }
 
-/// One dictation rule as a section: a menu beside its caption (and Record when there are several rules), its switch
+/// One dictation rule as a section: its menu (and Record when there are several rules) beside its heading, its switch
 /// as the first row and its settings below it.
 private struct DictationRuleSection: View {
     @EnvironmentObject private var model: AppModel
@@ -67,19 +67,19 @@ private struct DictationRuleSection: View {
 
     var body: some View {
         FrogSection(rule.name, accessory: {
-            if recordsHere { RecordButton(rule: rule, dictation: dictation, feature: feature) }
-        }) {
-            // The rule's switch and its menu share the first row, as a Writing rule's switch and edit button do.
-            FrogRow("Turned on") {
-                HStack(spacing: FrogStyle.space8) {
-                    Toggle("Enable \(rule.name)", isOn: binding(\.enabled)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
-                    IconMenu(title: "More for \(rule.name)", bordered: false) {
-                        Button("Rename…") { renaming = true }
-                        Button("Delete", role: .destructive) {
-                            do { try model.deleteRule(id: rule.id) } catch { model.report(error) }
-                        }
+            HStack(spacing: FrogStyle.space8) {
+                if recordsHere { RecordButton(rule: rule, dictation: dictation, feature: feature) }
+                // The rule's menu sits beside its heading, so the switch below lines up with every other switch.
+                IconMenu(title: "More for \(rule.name)", bordered: false) {
+                    Button("Rename…", systemImage: "pencil") { renaming = true }
+                    Button("Delete", systemImage: "trash", role: .destructive) {
+                        do { try model.deleteRule(id: rule.id) } catch { model.report(error) }
                     }
                 }
+            }
+        }) {
+            FrogRow("Turned on") {
+                Toggle("Enable \(rule.name)", isOn: binding(\.enabled)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
             rows
         }
@@ -91,8 +91,7 @@ private struct DictationRuleSection: View {
         FrogRow("Shortcut") { HotkeyRecorder(hotkey: binding(\.hotkey)) }
         if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
         // Its own row, so the shortcut's chip is not read as a third segment.
-        FrogRow("Hold to talk", caption: (rule.action?.recordingMode ?? .toggle) == .hold
-                ? "Records while you hold the shortcut." : "Press the shortcut to start and again to stop.") {
+        FrogRow("Hold to talk", caption: "Records only while you hold the shortcut down.") {
             Toggle("Hold to talk", isOn: Binding(get: { rule.action?.recordingMode == .hold },
                                                  set: { hold in save { $0.action?.recordingMode = hold ? .hold : .toggle } })).labelsHidden()
         }
