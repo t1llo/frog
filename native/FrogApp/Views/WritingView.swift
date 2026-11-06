@@ -59,7 +59,12 @@ struct WritingView: View {
 
     private func row(_ rule: Rule) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            FrogRow(rule.name, caption: caption(rule)) {
+            FrogRow(rule.name, caption: caption(rule), icon: {
+                // The tile the rule wears in the selection bubble and the command bar: Writing's, or Explain's for a
+                // rule that answers in the panel.
+                PluginIconTile(symbol: SelectionBubbleItems.symbol(for: rule),
+                               tint: (rule.answersInPanel ? ExplainPlugin.info.tint : WritingPlugin.info.tint).color, size: .list)
+            }) {
                 HStack(spacing: 8) {
                     // The mark leads, so every row's caps end on the same edge, just before Try.
                     // The notice above names the problem; a row is marked only to single out which rules it means.
