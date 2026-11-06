@@ -64,18 +64,20 @@ struct AnswerPanelView: View {
     /// The rule and the model's name; the provider shows on hover.
     private var header: some View {
         HStack(spacing: 4) {
-            Text(model.session?.ruleName ?? "").foregroundStyle(FrogStyle.ink).layoutPriority(1)
-            if let session = model.session, !session.modelName.isEmpty {
-                Text("·").accessibilityHidden(true)
-                // A failed answer names the provider too, so the error reads against the service that gave it.
-                Text(failed ? session.modelLabel : session.modelName).help(session.modelLabel)
+            // The rule as a popup's title, the model a muted line beside it on the same baseline.
+            HStack(alignment: .firstTextBaseline, spacing: FrogStyle.space6) {
+                Text(model.session?.ruleName ?? "").font(FrogType.section).foregroundStyle(FrogStyle.ink).layoutPriority(1)
+                if let session = model.session, !session.modelName.isEmpty {
+                    // A failed answer names the provider too, so the error reads against the service that gave it.
+                    Text(failed ? session.modelLabel : session.modelName).font(FrogType.small).help(session.modelLabel)
+                }
             }
             Spacer(minLength: 8)
             let pinTitle = model.pinned ? "Stop keeping open" : "Keep open"
             PanelIcon(symbol: model.pinned ? "pin.fill" : "pin", title: pinTitle, active: model.pinned) { model.togglePin() }
             PanelIcon(symbol: "xmark", title: "Close", help: "Close (Esc)") { model.close() }
         }
-        .font(FrogType.label).foregroundStyle(FrogStyle.muted).lineLimit(1)
+        .foregroundStyle(FrogStyle.muted).lineLimit(1)
     }
 
     @ViewBuilder private var answer: some View {
@@ -141,8 +143,9 @@ struct AnswerPanelView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 2) {
-                TextField(L10n.text(followUpPlaceholder), text: $model.question)
-                    .textFieldStyle(.plain).font(FrogType.row)
+                // The shared field, so its placeholder is the lighter placeholder grey in light as in dark.
+                FrogTextField(placeholder: followUpPlaceholder, text: $model.question)
+                    .font(FrogType.row)
                     .padding(.horizontal, FrogStyle.rowInset)
                     .frogControlSurface(height: FrogStyle.controlHeight, radius: FrogStyle.controlRadius)
                     // It stays enabled while the answer runs, so it keeps focus and the next question can be typed.
@@ -153,9 +156,12 @@ struct AnswerPanelView: View {
                 if model.session?.phase.isRunning == true {
                     PanelIcon(symbol: "stop.fill", title: "Stop", help: "Stop (⌘.)") { model.stop() }
                 }
-                PanelIcon(symbol: model.copied ? "checkmark" : "doc.on.doc", title: model.copied ? "Copied" : "Copy",
-                          help: "Copy (⌘↩)", active: model.copied) { model.copy() }
-                    .disabled(!hasAnswer)
+                // A failure without any answer has nothing to copy, so it offers no Copy at all.
+                if hasAnswer || !failed {
+                    PanelIcon(symbol: model.copied ? "checkmark" : "doc.on.doc", title: model.copied ? "Copied" : "Copy",
+                              help: "Copy (⌘↩)", active: model.copied) { model.copy() }
+                        .disabled(!hasAnswer)
+                }
                 if model.offersNotes {
                     let saved = model.noteState == .saved
                     PanelIcon(symbol: saved ? "checkmark" : "square.and.arrow.down", title: saved ? "Saved to note" : "Save to note",
