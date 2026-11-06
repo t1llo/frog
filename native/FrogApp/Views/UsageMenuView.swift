@@ -2,18 +2,16 @@ import SwiftUI
 import FrogUsage
 
 /// LLM usage's tab in Frog's menu-bar popup, laid out as the LLM usage popup: the provider, refresh and the way to the
-/// page on the trailing side, then the limits card and the activity card. Frog's own footer closes the popup, so when
-/// the limits were read leads the header row, where the popup's footer would show it.
+/// page, then the limits card and the activity card. When the limits were read is the tab's status on the leading
+/// side of Frog's footer (`UsageMenuFooterStatus`), where the Frog and System tabs say theirs.
 struct UsageMenuTab: View {
     @ObservedObject var usage: UsageDashboardModel
     let openPage: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.panelCardGap) {
-            // When the limits were read on the leading side, where the row has room for it: in Frog's footer it
-            // left Settings only its caps.
+            // The provider and the actions on the trailing side, as in the LLM usage popup's header.
             HStack(spacing: FrogStyle.space6) {
-                UsageMenuStatus(usage: usage).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 Spacer(minLength: FrogStyle.space6)
                 UsageProviderDropdown(usage: usage)
                 // Boxed, as the same actions are in the LLM usage popup's header.
@@ -226,6 +224,37 @@ private struct UsageCompactActivity: View {
             UsageActivityNotes(usage: usage, chart: chart, compact: true)
         }
     }
+}
+
+/// The Usage tab's status in Frog's footer: the age of the oldest reading shown ("16m ago"), no longer than Frog's
+/// "Ready", so Settings and Quit keep their words; every account's age and source on hover, and a warning glyph
+/// when one has no current reading.
+struct UsageMenuFooterStatus: View {
+    @ObservedObject var usage: UsageDashboardModel
+    var body: some View {
+        let provider = usage.preferences.provider
+        let accounts = UsageStatusPopover.shownAccounts(usage).filter(\.included)
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            let oldest = accounts.isEmpty ? usage.planUpdatedAt(provider: provider) : accounts.compactMap(\.age).min()
+            let age = oldest.map { UsageStatusPopover.age(of: $0, at: context.date) }
+            let details = accounts.isEmpty
+                ? [age.map { "Updated \($0)" }, usage.planSource(provider: provider), usage.status(provider: provider)].compactMap { $0 }
+                : accounts.map { "\($0.label): \($0.age.map { UsageStatusPopover.age(of: $0, at: context.date) } ?? "no reading")" }
+            let warning = accounts.isEmpty ? usage.planWarning(provider: provider)
+                : accounts.filter(\.stale).map { "\($0.label): \($0.status ?? "no current reading")" }.joined(separator: "\n").nilIfBlank
+            HStack(spacing: FrogStyle.space4) {
+                Text(age ?? L10n.text("No reading yet")).monospacedDigit().accessibilityLabel(age.map { "Updated \($0)" } ?? L10n.text("No reading yet"))
+                if let warning {
+                    Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning).help(warning).accessibilityLabel(warning)
+                }
+            }
+            .lineLimit(1).help(details.joined(separator: "\n"))
+        }
+    }
+}
+
+private extension String {
+    var nilIfBlank: String? { isEmpty ? nil : self }
 }
 
 /// When the limits were read, the source on hover; one entry per account while each is shown.
