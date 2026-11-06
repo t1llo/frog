@@ -338,16 +338,19 @@ struct MainView: View {
         .overlay { RoundedRectangle(cornerRadius: FrogStyle.sidebarRadius, style: .continuous).strokeBorder(FrogStyle.hairline) }
     }
 
-    /// Frog's row, the plugin groups and the Community pages: the part of the sidebar that always scrolls.
+    /// Frog's row, then each plugin group under its header, the part of the sidebar that always scrolls. Community
+    /// plugins and the pages of installed plugins share one group, Plugins, so a plugin never sits alone.
     private var sidebarList: some View {
         VStack(alignment: .leading, spacing: FrogStyle.sidebarGroupGap) {
             settingsRow.sidebarGridRow(AnyHashable("frog"), in: sidebarGrid)
             let groups = model.pluginHost.sidebar
             let numbered = groups.flatMap(\.plugins).prefix(9).map(\.id)
+            let pages = model.pluginPages.filter { matches($0.name) }
             ForEach(groups, id: \.category) { group in
                 let plugins = group.plugins.filter { matches($0.name) }
-                if !plugins.isEmpty {
-                    VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                let joinsPages = group.category == .community
+                if !plugins.isEmpty || (joinsPages && !pages.isEmpty) {
+                    sidebarGroup(Self.sidebarTitle(group.category), id: group.category.rawValue) {
                         ForEach(plugins) { plugin in
                             let route = Self.route(for: plugin.id)
                             let index = numbered.firstIndex(of: plugin.id)
@@ -355,20 +358,13 @@ struct MainView: View {
                                                             key: index.map { KeyEquivalent(Character(String($0 + 1))) }))
                                 .id(route).sidebarGridRow(AnyHashable(route), in: sidebarGrid)
                         }
+                        if joinsPages { pluginPageRows(pages) }
                     }
-                    .accessibilityElement(children: .contain).accessibilityLabel(L10n.text(group.category.title))
                 }
             }
-            let pages = model.pluginPages.filter { matches($0.name) }
-            if !pages.isEmpty {
-                VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                    ForEach(pages) { item in
-                        let route = ToolkitRoute.plugin(item.id)
-                        navigationButton(NavigationItem(id: route, title: item.name, symbol: PluginSymbol.name(item.symbol), tint: PluginTint.purple.color))
-                            .id(route).sidebarGridRow(AnyHashable(route), in: sidebarGrid)
-                    }
-                }
-                .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Community"))
+            // Installed plugins' pages without the Community plugins row (its feature off) still get their group.
+            if !pages.isEmpty && !groups.contains(where: { $0.category == .community }) {
+                sidebarGroup(Self.sidebarTitle(.community), id: PluginCategory.community.rawValue) { pluginPageRows(pages) }
             }
             if !sidebarQuery.isEmpty && !anyMatch {
                 Text(L10n.text("No matches")).font(FrogType.small).foregroundStyle(FrogStyle.muted)
@@ -376,6 +372,30 @@ struct MainView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The sidebar's name for a group: Community holds every plugin, built or installed, so it reads as Plugins.
+    static func sidebarTitle(_ category: PluginCategory) -> String {
+        category == .community ? "Plugins" : category.title
+    }
+
+    /// One group: its header, as Finder and Mail head their sidebar groups, then its rows. The header is a stop of
+    /// the row grid too, so the list never rests with a header cut under the search field.
+    private func sidebarGroup<Rows: View>(_ title: String, id: String, @ViewBuilder rows: () -> Rows) -> some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space2) {
+            SidebarGroupHeader(title: title)
+                .id("group-\(id)").sidebarGridRow(AnyHashable("group-\(id)"), in: sidebarGrid)
+            rows()
+        }
+        .accessibilityElement(children: .contain).accessibilityLabel(L10n.text(title))
+    }
+
+    @ViewBuilder private func pluginPageRows(_ pages: [PluginItem]) -> some View {
+        ForEach(pages) { item in
+            let route = ToolkitRoute.plugin(item.id)
+            navigationButton(NavigationItem(id: route, title: item.name, symbol: PluginSymbol.name(item.symbol), tint: PluginCommandRows.tint.color))
+                .id(route).sidebarGridRow(AnyHashable(route), in: sidebarGrid)
+        }
     }
 
     /// Models, Features and Settings, under the list: pinned while everything fits, at the list's end when not.
@@ -546,6 +566,19 @@ private struct SettingsHeroRow: View {
 }
 
 /// A sidebar page: its coloured icon tile and name, highlighted on hover and filled when open.
+/// A group's name over its rows in the sidebar: small, muted and semibold, on the rows' icon edge, as Finder heads
+/// Favorites and Locations. It takes no clicks.
+private struct SidebarGroupHeader: View {
+    let title: String
+    var body: some View {
+        Text(L10n.text(title)).font(FrogType.label.weight(.semibold)).foregroundStyle(FrogStyle.muted).lineLimit(1)
+            .padding(.horizontal, FrogStyle.space6)
+            .frame(maxWidth: .infinity, minHeight: FrogStyle.sidebarHeaderHeight, alignment: .bottomLeading)
+            .padding(.bottom, FrogStyle.space2)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
 private struct SidebarRow: View {
     let item: MainView.NavigationItem
     let selected: Bool
