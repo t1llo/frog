@@ -377,7 +377,10 @@ final class StayAwakeTests: XCTestCase {
         let size = host.fittingSize
         XCTAssertEqual(size.width, 292, accuracy: 1)
         XCTAssertLessThan(size.height, 275, "The default popup must hug its rows rather than expand into empty gaps")
-        XCTAssertGreaterThan(size.height, 150)
+        // The header, Stay awake's row in its card, the inset above and below them, and the footer band.
+        let header: CGFloat = 40, footer: CGFloat = 32
+        let card = FrogStyle.rowHeight - 8 + 2 * FrogStyle.listInset
+        XCTAssertGreaterThanOrEqual(size.height, header + 2 * FrogStyle.panelCardInset + card + footer - 1)
     }
 
     func testNativePopupToggleStartsAndStopsAnExplicitSession() async throws {
@@ -423,7 +426,9 @@ final class StayAwakeTests: XCTestCase {
         model.report(FrogError.message(error))
         let expanded = NSHostingView(rootView: FrogStatusMenu(model: model)).fittingSize
         XCTAssertEqual(expanded.width, initial.width, accuracy: 1)
-        XCTAssertLessThan(expanded.height, initial.height + 90, "A long diagnostic must not push Open/Quit off the menu")
+        // The error also brings the "Needs attention" line above the rows, which a ready popup does not show.
+        let statusLine = NSHostingView(rootView: Text("Needs attention").font(FrogType.small)).fittingSize.height + FrogStyle.space8
+        XCTAssertLessThan(expanded.height, initial.height + 90 + statusLine, "A long diagnostic must not push Open/Quit off the menu")
         XCTAssertEqual(model.recentErrors.first?.message, error, "The full diagnostic must remain available in Logs")
         model.dismissError()
         let recovered = NSHostingView(rootView: FrogStatusMenu(model: model)).fittingSize
