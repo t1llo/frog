@@ -6,6 +6,8 @@ struct RuleModelPicker: View {
     @EnvironmentObject private var model: AppModel
     @Binding var rule: Rule
     var speech = false
+    /// False where the page's `ModelMissingNotice` already says the rule has no model, so the problem is said once.
+    var marksMissing = true
 
     private var selected: RuleModelSelection? {
         if speech, let id = rule.action?.audioModelID { return .init(providerID: rule.action?.audioProviderID, modelID: id, category: .audio) }
@@ -43,7 +45,7 @@ struct RuleModelPicker: View {
 
     var body: some View {
         // A rule without a model cannot run: the button asks for one, led by a warning mark inside it, instead of
-        // reading like an ordinary value. That mark is the control's one sign; the page says it once in a notice.
+        // reading like an ordinary value. Where the page's notice already says it, the button's title alone asks.
         dropdown(local: choices(local: true), external: choices(local: false))
             .environment(\.frogDropdownOpenTick, openRequest.ruleID == rule.id ? openRequest.tick : 0)
     }
@@ -62,7 +64,7 @@ struct RuleModelPicker: View {
             else { rule.providerID = nil; rule.model = ""; rule.action?.localTextModelID = nil }
         })
         .buttonTitle { $0 == nil ? (speech ? "Choose a speech model" : "Choose a model") : item($0).title }
-        .warning(selected == nil ? "This rule cannot run until it has a model" : nil)
+        .warning(selected == nil && marksMissing ? "This rule cannot run until it has a model" : nil)
         .accessibilityLabel(speech ? "Speech model" : "Text model")
     }
 }

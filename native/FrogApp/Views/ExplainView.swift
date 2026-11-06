@@ -21,20 +21,20 @@ struct ExplainView: View {
                 if !model.ruleHasModel(rule) {
                     ModelMissingNotice(feature: "Explain", speech: false) { pickerRequest.open(rule.id) }
                 }
-                FrogSection("Shortcut & model") {
+                // Two cards without headings: how Explain is asked, then where answers are kept. A heading per row
+                // only repeated the row's own title.
+                FrogSection {
                     FrogRow("Shortcut", caption: "Select text in any app, then press it.") { HotkeyRecorder(hotkey: ruleBinding(rule, \.hotkey)) }
                     if let issue = model.hotkeyErrors[rule.id] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
-                    // The notice above says Explain cannot answer yet; the picker's own mark shows where to fix it.
+                    // The notice above already says Explain has no model, so the picker asks without a second mark.
                     FrogRow("Model", caption: "Writes the answer.") {
-                        RuleModelPicker(rule: Binding(get: { rule }, set: save))
+                        RuleModelPicker(rule: Binding(get: { rule }, set: save), marksMissing: false)
                     }
-                }
-                FrogSection("Answer") {
                     FrogRow("Surrounding text", caption: "Also sends the sentence around the selection.") {
                         Toggle("Surrounding text", isOn: setting(\.context)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                     }
+                    bubble(rule)
                 }
-                bubble(rule)
                 notes
             } else {
                 FrogEmptyState(symbol: ExplainPlugin.info.symbol, title: "No Explain rule", message: "Add it back to explain selected text.",
@@ -50,24 +50,22 @@ struct ExplainView: View {
 
     /// Whether Explain is one of the buttons in the selection bubble. The bubble itself is set up on the Writing page.
     @ViewBuilder private func bubble(_ rule: Rule) -> some View {
-        FrogSection("Selection bubble") {
             if bubbleOn {
-                FrogRow("Show Explain in the bubble", caption: "The bubble appears after you select text by dragging, double-clicking or with Shift and arrow keys. Turn it on, off or limit it on the Writing page.") {
-                    Toggle("Show Explain in the bubble", isOn: ruleBinding(rule, \.showsInBubble)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
+                FrogRow("Show in the selection bubble", caption: "The bubble appears after you select text. Set it up on the Writing page.") {
+                    Toggle("Show in the selection bubble", isOn: ruleBinding(rule, \.showsInBubble)).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
             } else {
                 // A notice, not a setting: the bubble is switched on the Writing page.
-                FrogRow("The selection bubble is off", caption: "The shortcut works either way.") {
+                FrogRow("Selection bubble", caption: "Off. The shortcut works either way.") {
                     Button("Turn on in Writing") { model.toolkit.select(.feature(.writing)) }
                 }
             }
-        }
     }
 
     private var notes: some View {
-        FrogSection("Notes") {
-            FrogRow("Save to note", caption: "Adds a Save to note button to the answer panel.") {
-                Toggle("Save to note", isOn: Binding(get: { settings.notes.on }, set: { value in
+        FrogSection {
+            FrogRow("Save answers to notes", caption: "Adds a Save to note button to the answer panel.") {
+                Toggle("Save answers to notes", isOn: Binding(get: { settings.notes.on }, set: { value in
                     withAnimation(reduceMotion ? nil : FrogMotion.reveal) { update { $0.notes.on = value } }
                 })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
