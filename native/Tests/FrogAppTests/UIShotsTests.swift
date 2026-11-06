@@ -30,7 +30,12 @@ final class UIShotsTests: XCTestCase {
         try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("frog-ui-shots-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
+        // System monitor reads made-up figures, never this Mac's, and opens on ten minutes of graph.
+        let makeSampler = SystemMonitorPlugin.makeSampler
+        SystemMonitorPlugin.makeSampler = { SampleSystemSampler() }
+        defer { SystemMonitorPlugin.makeSampler = makeSampler }
         let sample = try await SampleFrog(root: root, defaults: temporaryDefaults())
+        (sample.model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)?.monitor?.restore(SampleSystemSampler.history())
         defer { sample.stop() }
 
         try await mainWindow(sample)
@@ -56,15 +61,20 @@ final class UIShotsTests: XCTestCase {
             model.toolkit.select(value)
             try await page("page-\(route)", settle: .milliseconds(500)) { MainView().environmentObject(model) }
         }
-        // Behind an entry or a tab, drawn as the page column the window shows them in.
+        // Behind an entry or a tab, drawn in the whole window like the other pages: sidebar, toolbar and breadcrumb.
+        func step<Page: View>(_ name: String, _ route: ToolkitRoute, _ content: () -> Page) async throws {
+            model.toolkit.select(route)
+            let page = AnyView(content().environmentObject(model))
+            try await self.page(name, settle: .milliseconds(500)) { MainView(pageOverride: page).environmentObject(model) }
+        }
         if let entry = model.history.first {
-            try await page("page-history-detail", width: 760) { HistoryView(viewing: entry.id).environmentObject(model) }
+            try await step("page-history-detail", .history) { HistoryView(viewing: entry.id) }
         }
         for (name, tab) in [("directory", PluginsTab.browse), ("build", .build)] {
-            try await page("page-plugins-\(name)", width: 760) { PluginsView(plugins: model.plugins, tab: tab).environmentObject(model) }
+            try await step("page-plugins-\(name)", .feature(.plugins)) { PluginsView(plugins: model.plugins, tab: tab) }
         }
         for (name, filter) in [("local", "Local models"), ("providers", "Providers"), ("tools", "Installed tools")] {
-            try await page("page-models-\(name)", width: 760) { ProvidersView(filter: filter).environmentObject(model) }
+            try await step("page-models-\(name)", .models) { ProvidersView(filter: filter) }
         }
         if let cleaner = model.cleanerPlugin?.cleaner, wanted("page-cleaner-review") {
             await cleaner.open(sample.cleanerApp)
@@ -89,6 +99,10 @@ final class UIShotsTests: XCTestCase {
         if let monitor = (model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)?.monitor {
             try await popup("popup-system-monitor") { SystemMonitorStatusPopover(monitor: monitor) {} }
         }
+        // What it shows in the moment before the first readings arrive.
+        let waiting = SystemMonitor(sampler: StalledSystemSampler())
+        defer { waiting.stop() }
+        try await popup("popup-system-monitor-loading") { SystemMonitorStatusPopover(monitor: waiting) {} }
         // Stay awake's menu-bar item opens an NSMenu, which only AppKit draws, on screen.
         try await focusTimerPopup(sample)
     }
@@ -425,10 +439,13 @@ final class UIShotsTests: XCTestCase {
     }
 }
 
-/// A window that is never ordered in but says it is key and main, so a picture's controls are drawn active.
+/// A window that is never ordered in but says it is key, main and on screen, so a picture's controls are drawn
+/// active and views that work only while seen (System monitor's readings) do.
 private final class ShotWindow: NSWindow {
     override var isKeyWindow: Bool { true }
     override var isMainWindow: Bool { true }
+    override var isVisible: Bool { true }
+    override var occlusionState: NSWindow.OcclusionState { .visible }
 }
 
 /// An isolated Frog with every feature on and something in each place: notes and scripts, clipboard copies on a private
@@ -603,4 +620,35 @@ private final class SampleFrog {
 @MainActor private final class NoFileSearch: CommandFileSearching {
     func start(text: String, scopes: [Any], receive: @escaping @MainActor ([SearchRecord]) -> Void) { receive([]) }
     func stop() {}
+}
+
+/// Made-up readings for System monitor's pictures: a Mac on battery under light load.
+private struct SampleSystemSampler: SystemMonitorSampling {
+    func sample(reset: Bool, full: Bool) async -> SystemMonitorSnapshot {
+        var power = SystemMonitorPower()
+        power.source = "Battery"; power.batteryPercent = 78; power.thermal = "Nominal"; power.lowPower = false
+        power.batteryFlow = .drawing(watts: 9.4); power.systemWatts = 11.2; power.batteryCelsius = 31
+        return SystemMonitorSnapshot(cpu: .value(0.24), gpu: .value(0.11),
+                                     memory: SystemMonitorMemory(used: 11_400_000_000, total: 17_179_869_184),
+                                     storage: SystemMonitorStorage(available: 182_000_000_000, total: 494_000_000_000), power: power)
+    }
+
+    /// Ten minutes of graph, a reading every ten seconds, with a short burst of work in the middle.
+    static func history(now: Date = Date()) -> [SystemMonitorSample] {
+        (0..<60).map { index in
+            let t = Double(index)
+            let burst = max(0, 1 - abs(t - 34) / 6) * 0.45
+            let cpu = 0.14 + 0.06 * sin(t / 3) + 0.03 * sin(t * 1.7) + burst
+            let gpu = 0.07 + 0.03 * sin(t / 5 + 1) + burst * 0.5
+            return SystemMonitorSample(time: now.addingTimeInterval(-600 + t * 10), cpu: cpu, gpu: gpu, memory: 0.64 + 0.02 * sin(t / 9))
+        }
+    }
+}
+
+/// A sampler whose first reading never comes, for the loading picture.
+private struct StalledSystemSampler: SystemMonitorSampling {
+    func sample(reset: Bool, full: Bool) async -> SystemMonitorSnapshot {
+        try? await Task.sleep(for: .seconds(3_600))
+        return SystemMonitorSnapshot()
+    }
 }

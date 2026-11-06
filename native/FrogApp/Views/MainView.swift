@@ -19,6 +19,9 @@ struct MainView: View {
     @State private var history = PageHistory()
     /// A step back inside the open page, which Back takes first.
     @State private var pageBack: FrogPageBack?
+    /// Draws this in place of the open route's page, for pictures of a step or tab inside a page (a History entry,
+    /// a Models tab) in the whole window. The sidebar still shows the route.
+    var pageOverride: AnyView? = nil
 
     fileprivate struct NavigationItem: Identifiable {
         let id: ToolkitRoute
@@ -45,6 +48,9 @@ struct MainView: View {
         }
     }
     @ViewBuilder private var selectedPage: some View {
+        if let pageOverride { pageOverride } else { routePage }
+    }
+    @ViewBuilder private var routePage: some View {
         switch section {
         case .history: pluginPage("history")
         case .models: ProvidersView()
