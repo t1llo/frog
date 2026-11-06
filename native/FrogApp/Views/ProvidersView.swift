@@ -48,7 +48,7 @@ struct ProvidersView: View {
                     if !LocalModels.supported {
                         ProblemNotice(title: "Local models need Apple silicon",
                                       message: "This Mac cannot run them. Add a provider instead.") {
-                            Button("Add provider") { filter = "Providers"; editing = ProviderConfiguration() }.buttonStyle(.frog(compact: true))
+                            Button("Add provider") { filter = "Providers"; search = ""; editingStep = 0; editing = ProviderConfiguration() }.buttonStyle(.frog(compact: true))
                         }
                     }
                     // Speech and text models in one list, under their own headings, rather than a second switch.
