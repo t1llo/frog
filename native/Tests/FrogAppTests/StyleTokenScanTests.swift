@@ -48,6 +48,17 @@ final class StyleTokenScanTests: XCTestCase {
                           except: ["Platform/DictationController.swift"])
     }
 
+    func testWaitsUseFrogsSpinner() throws {
+        try assertNoMatch(#"\bProgressView\(\)"#, "use FrogSpinner, FrogLoadingNote or FrogSkeleton",
+                          except: ["Views/Design/FrogLoading.swift"])
+    }
+
+    /// A feature's tile is its own colour everywhere; the gallery shows how a grey accent is drawn.
+    func testFeatureTilesUseTheFeaturesTint() throws {
+        try assertNoMatch(#"PluginIconTile\(.*tint: FrogStyle\.(accent|muted)"#, "pass the feature's PluginTint",
+                          except: ["Views/Design/DesignGallery.swift"])
+    }
+
     func testTextUsesFrogsTypeScale() throws {
         try assertNoMatch(#"\.font\(\.(caption2?|headline|title[23]?|body|callout|subheadline|footnote|largeTitle)\b"#, "use FrogType")
     }
