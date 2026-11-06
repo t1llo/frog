@@ -231,15 +231,8 @@ private struct OnboardingScroll<Content: View>: View {
             .coordinateSpace(name: "onboardingScroll")
             .scrollIndicators(.never)
             // The content fades out above a clear band at the bottom, and "More below" sits in that band, so it never
-            // covers a heading or a row; the content keeps the band's height clear once scrolled to the end.
-            .contentMargins(.bottom, Self.fade + Self.band, for: .scrollContent)
-            .mask {
-                VStack(spacing: 0) {
-                    Rectangle()
-                    LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: Self.fade)
-                    Color.clear.frame(height: more ? Self.band : 0)
-                }
-            }
+            // covers a heading or a row.
+            .bottomScrollFade(height: Self.fade, band: Self.band, showsBand: more)
             .background(GeometryReader { geometry in
                 Color.clear.onAppear { viewport = geometry.size.height }
                     .onChange(of: geometry.size.height) { _, height in viewport = height }
@@ -408,7 +401,6 @@ private struct OnboardingModels: View {
         FrogSection("Recommended models", footer: LocalModels.supported ? "More models, and any from Hugging Face, are in Models." : "Local models need Apple silicon. Add a provider in the next step instead.", accessory: {
             if LocalModels.supported, missing.count > 1 {
                 Button("Download both") { for item in missing { local.download(item) } }.buttonStyle(.frog(.ghost, compact: true))
-                    .padding(.trailing, -FrogButtonStyle.horizontalPadding(compact: true))
             }
         }) {
             ForEach(pair) { item in
@@ -444,9 +436,7 @@ private struct OnboardingProviders: View {
         VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 6) {
             // Coding tools all sign in the same way, so it is said once under the list rather than on every row.
             FrogSection("Found on this Mac", footer: found?.contains { $0.kind.localTool != nil } == true ? "Coding tools use their own sign-in, so no API key is needed." : nil, accessory: {
-                // The ghost link's text ends where the buttons below end; only its hover fill reaches past.
                 Button("Add with an API key…") { editing = ProviderConfiguration() }.buttonStyle(.frog(.ghost, compact: true))
-                    .padding(.trailing, -FrogButtonStyle.horizontalPadding(compact: true))
             }) {
                 if let found {
                     if found.isEmpty { FrogRow("Nothing found", caption: "Claude Code, Codex, OpenCode, Ollama or LM Studio show here once installed.") }
