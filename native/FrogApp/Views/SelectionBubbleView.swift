@@ -137,8 +137,7 @@ struct SelectionBubbleView: View {
             Text(item.title).font(FrogType.row).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 12)
             if let hotkey = item.hotkey {
-                Text(HotkeyManager.display(hotkey)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                    .fixedSize()
+                KeyCaps(hotkey: hotkey)
             }
         }
         .padding(.horizontal, 8)

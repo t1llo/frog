@@ -79,7 +79,7 @@ struct WindowCheatSheetContent: View {
                             }.frame(width: 28)
                             Text(item.title).font(FrogType.row)
                             Spacer(minLength: 8)
-                            ShortcutKeyCaps(hotkey: item.hotkey)
+                            KeyCaps(hotkey: item.hotkey)
                         }
                         .padding(.horizontal, FrogStyle.cardPadding)
                         .frame(height: FrogStyle.rowHeight)

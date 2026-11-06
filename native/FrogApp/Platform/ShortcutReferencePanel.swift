@@ -63,7 +63,7 @@ struct ShortcutReferenceContent: View {
                                 }
                             }.help(L10n.text(item.title))
                             Spacer(minLength: 8)
-                            ShortcutKeyCaps(hotkey: item.hotkey)
+                            KeyCaps(hotkey: item.hotkey)
                         }.padding(.horizontal, FrogStyle.cardPadding).padding(.vertical, FrogStyle.space6).frame(minHeight: FrogStyle.rowHeight)
                             .accessibilityElement(children: .ignore)
                             .accessibilityLabel(L10n.text(item.title))
@@ -90,10 +90,3 @@ extension ShortcutReferenceContent {
     }
 }
 
-/// A shortcut in a reference panel: each key as a cap.
-struct ShortcutKeyCaps: View {
-    let hotkey: Hotkey
-    var body: some View {
-        KeyCaps(HotkeyManager.display(hotkey))
-    }
-}

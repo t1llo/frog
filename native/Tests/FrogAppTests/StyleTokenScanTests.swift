@@ -41,15 +41,12 @@ final class StyleTokenScanTests: XCTestCase {
     /// A popup's footer sits on `frogFooterBand()`, never under a hairline. The files listed still draw one and are
     /// to move to the band; remove each from the list once it has.
     func testFootersSitOnTheBandRatherThanUnderALine() throws {
-        try assertNoMatch(#"Rectangle\(\)\.fill\(FrogStyle\.hairline\)"#, "put the footer on frogFooterBand()",
-                          except: ["Views/FrogStatusMenu.swift", "Views/ClipboardHistoryView.swift", "Views/AnswerPanelView.swift"])
+        try assertNoMatch(#"Rectangle\(\)\.fill\(FrogStyle\.hairline\)"#, "put the footer on frogFooterBand()")
     }
 
-    /// One accent: the theme's. The system accent would bring a second colour of selection into Frog. The file listed
-    /// still uses it and is to move to `FrogStyle.accent`.
+    /// One accent: the theme's. The system accent would bring a second colour of selection into Frog.
     func testSelectionUsesTheThemeAccent() throws {
-        try assertNoMatch(#"controlAccentColor|Color\.accentColor"#, "use FrogStyle.accent",
-                          except: ["Platform/SnapZoneOverlay.swift"])
+        try assertNoMatch(#"controlAccentColor|Color\.accentColor"#, "use FrogStyle.accent")
     }
 
     func testControlsAreFrogsOwn() throws {

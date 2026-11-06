@@ -68,11 +68,10 @@ final class SnapZoneOverlayModel: ObservableObject {
 }
 
 /// Tiles with a window's corner radius and the layout's name. The one under the pointer is tinted with the theme's
-/// accent and ringed in it, as macOS marks where a dragged window will go; the others are quiet outlines. A neutral
-/// theme's grey accent would not show over other apps, so the zone takes the colour an on switch takes there.
+/// accent and ringed in it, as macOS marks where a dragged window will go; the others are quiet outlines.
 struct SnapZoneOverlayView: View {
     @ObservedObject var model: SnapZoneOverlayModel
-    private var accent: Color { FrogStyle.switchOn }
+    private var accent: Color { FrogStyle.accent }
 
     var body: some View {
         ZStack(alignment: .topLeading) {

@@ -33,17 +33,19 @@ struct FrogStatusMenu: View {
         let tabs = host.menuTabs
         let shown = tabs.contains { $0.id == selectedTab } ? selectedTab : Self.frogTab
         VStack(alignment: .leading, spacing: 0) {
-            header(tabs: tabs, shown: shown)
-            VStack(alignment: .leading, spacing: FrogStyle.space8) {
-                if let tab = tabs.first(where: { $0.id == shown }) {
-                    // A tab's own views observe their own models, so an unrelated AppModel change need not rebuild them.
-                    MenuTabBody(id: tab.id, build: tab.content).equatable()
-                } else {
-                    frogContent(host.menuRows)
+            VStack(alignment: .leading, spacing: 0) {
+                header(tabs: tabs, shown: shown)
+                VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                    if let tab = tabs.first(where: { $0.id == shown }) {
+                        // A tab's own views observe their own models, so an unrelated AppModel change need not rebuild them.
+                        MenuTabBody(id: tab.id, build: tab.content).equatable()
+                    } else {
+                        frogContent(host.menuRows)
+                    }
                 }
-            }.padding(.bottom, FrogStyle.listInset)
+            }.padding(FrogStyle.panelCardInset)
             footer
-        }.padding(FrogStyle.panelCardInset).frame(width: 292).fixedSize(horizontal: false, vertical: true)
+        }.frame(width: 292).fixedSize(horizontal: false, vertical: true)
             .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
             .frogPanel()
             .background(MenuWindowSizing())
@@ -108,7 +110,8 @@ struct FrogStatusMenu: View {
         }.padding(.horizontal, FrogStyle.cardPadding).accessibilityElement(children: .combine)
     }
 
-    /// Secondary actions, set apart from the body by space: short labels and their keys as caps.
+    /// Secondary actions on the footer band, as every popup's footer: short labels and their keys as caps. The
+    /// buttons' text starts on the content edge; only their hover reaches past it.
     private var footer: some View {
         HStack(spacing: FrogStyle.space4) {
             footerButton(model.setupPresented ? "Set up Frog" : "Settings", symbol: "gearshape", keys: "\u{2318},") {
@@ -118,7 +121,7 @@ struct FrogStatusMenu: View {
             footerButton("Quit", symbol: "power", keys: "\u{2318}Q") {
                 NSApplication.shared.terminate(nil)
             }.keyboardShortcut("q")
-        }.padding(.horizontal, FrogStyle.space2).padding(.top, FrogStyle.space4)
+        }.padding(.horizontal, -FrogStyle.space6).frogFooterBand()
     }
 
     private func footerButton(_ title: String, symbol: String, keys: String, perform: @escaping () -> Void) -> some View {

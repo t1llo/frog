@@ -195,9 +195,9 @@ private struct LayoutShortcutCell: View {
             .opacity(active ? 1 : 0)
             .overlay(alignment: .trailing) {
                 if !active {
-                    // The empty slot: a dash where the shortcut would be, at a recorded chip's width.
+                    // The empty slot: a dash where a shortcut's last key cap would be.
                     Text(verbatim: "—").font(FrogType.body).foregroundStyle(FrogStyle.placeholder)
-                        .frame(width: 56, height: FrogStyle.controlHeight)
+                        .frame(width: KeyCap.size, height: FrogStyle.controlHeight)
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }
             }

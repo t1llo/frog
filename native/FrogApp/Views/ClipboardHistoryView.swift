@@ -3,7 +3,7 @@ import SwiftUI
 enum ClipboardHistoryLayout {
     static let width: CGFloat = 520
     static let headerHeight: CGFloat = 56
-    static let footerHeight: CGFloat = 36
+    static let footerHeight: CGFloat = 32
     static let rowHeight: CGFloat = 40
     static let emptyHeight: CGFloat = 64
     static let inset: CGFloat = FrogStyle.panelInset
@@ -189,8 +189,7 @@ struct ClipboardHistoryView: View {
             hint("Plain text", keys: ["⇧", "↩"])
             hint("Copy", keys: ["⌘", "C"])
         }
-        .padding(.horizontal, FrogStyle.cardPadding).frame(height: ClipboardHistoryLayout.footerHeight)
-        .frame(maxWidth: .infinity)
+        .frogFooterBand()
         .accessibilityElement(children: .combine)
     }
 
