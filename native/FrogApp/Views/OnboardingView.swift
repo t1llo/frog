@@ -38,6 +38,8 @@ struct OnboardingView: View {
     @State private var forward = true
     @State private var issue: String?
     @State private var pendingImport: Configuration?
+    /// How many parts the summary still shows as open, once it has looked.
+    @State private var openSteps: Int?
 
     /// `step` opens at a later step, for pictures of it.
     init(step: Int = 0) { _step = State(initialValue: Step(rawValue: step) ?? .welcome) }
@@ -47,15 +49,23 @@ struct OnboardingView: View {
             if step == .welcome {
                 welcome.transition(stepTransition)
             } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    header
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            ZStack(alignment: .topLeading) { page.id(step).transition(stepTransition) }
-                            if let issue { InlineIssue(message: issue) }
-                        }.padding(.horizontal, FrogStyle.pagePadding).padding(.bottom, FrogStyle.sheetPadding).frame(maxWidth: .infinity, alignment: .leading)
-                    }.scrollIndicators(.never).bottomScrollFade()
-                    Rectangle().fill(FrogStyle.hairline).frame(height: 1).accessibilityHidden(true)
+                VStack(spacing: 0) {
+                    GeometryReader { viewport in
+                        ScrollView {
+                            // The header and the step sit together in the middle, so a short step is balanced and a
+                            // long one starts at the top and scrolls under a fade.
+                            VStack(spacing: FrogStyle.sectionSpacing - 6) {
+                                header
+                                VStack(alignment: .leading, spacing: FrogStyle.space16) {
+                                    page
+                                    if let issue { InlineIssue(message: issue) }
+                                }.frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .id(step).transition(stepTransition)
+                            .padding(.horizontal, FrogStyle.pagePadding + 4).padding(.vertical, FrogStyle.pagePadding)
+                            .frame(maxWidth: .infinity, minHeight: viewport.size.height, alignment: .center)
+                        }.scrollIndicators(.never).bottomScrollFade()
+                    }
                     footer
                 }
             }
@@ -79,36 +89,52 @@ struct OnboardingView: View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
             VStack(spacing: FrogStyle.space16) {
-                FrogMark(size: 96)
+                FrogMark(size: 112)
                 VStack(spacing: FrogStyle.space10) {
-                    Text(L10n.text(Step.welcome.title)).font(FrogType.title).tracking(-0.4).accessibilityAddTraits(.isHeader)
+                    Text(L10n.text(Step.welcome.title)).font(FrogType.hero).tracking(-0.6).accessibilityAddTraits(.isHeader)
                     Text(L10n.text(Step.welcome.subtitle)).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
                         .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true).frame(maxWidth: 380)
                 }
             }
             Spacer(minLength: 0)
             VStack(spacing: FrogStyle.space10) {
-                Button("Get started") { go(to: .plugins) }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
+                // The one hero action: taller and wider than a page's buttons.
+                Button { go(to: .plugins) } label: {
+                    Text("Get started").font(FrogType.section).frame(minWidth: 180, minHeight: 36)
+                }.buttonStyle(.frog(.primary)).keyboardShortcut(.defaultAction)
                 HStack(spacing: FrogStyle.space4) {
                     Button("Import settings…", action: chooseImport).buttonStyle(.frog(.ghost))
                     Button("Skip setup") { model.finishSetup() }.buttonStyle(.frog(.ghost))
                 }
                 if let issue { InlineIssue(message: issue) }
-            }.padding(.bottom, FrogStyle.sheetPadding)
-        }.padding(.horizontal, FrogStyle.pagePadding).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }.padding(.bottom, FrogStyle.pagePadding + 4)
+        }.padding(.horizontal, FrogStyle.pagePadding + 4).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: Header and footer
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 14) {
-            FrogMark(size: 40)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(L10n.text(step.title)).font(FrogType.title).tracking(-0.4).accessibilityAddTraits(.isHeader)
-                Text(L10n.text(step.subtitle)).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
+        VStack(spacing: FrogStyle.space12) {
+            FrogMark(size: 52)
+            VStack(spacing: FrogStyle.space6) {
+                Text(L10n.text(title)).font(FrogType.title).tracking(-0.4).accessibilityAddTraits(.isHeader)
+                Text(L10n.text(subtitle)).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
+                    .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true).frame(maxWidth: 420)
             }
-            Spacer()
-        }.padding([.horizontal, .top], FrogStyle.pagePadding).padding(.bottom, FrogStyle.sectionSpacing - 8)
+        }.frame(maxWidth: .infinity)
+    }
+
+    /// The summary's headline says whether anything is left, rather than claiming everything is set.
+    private var title: String {
+        guard step == .done, let open = openSteps, open > 0 else { return step.title }
+        return "Almost there"
+    }
+
+    private var subtitle: String {
+        guard step == .done, let open = openSteps else { return step.subtitle }
+        return open == 0 ? "Everything is ready. You can change it any time in Settings."
+            : open == 1 ? "1 optional step left. Set it up now, or later in Settings."
+            : "\(open) optional steps left. Set them up now, or later in Settings."
     }
 
     private var footer: some View {
@@ -124,7 +150,7 @@ struct OnboardingView: View {
             // Escape steps back too; on the welcome step it does nothing, since leaving is an explicit choice.
             Button("Back") { back() }.keyboardShortcut(.cancelAction).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
         }
-        .padding([.horizontal, .bottom], FrogStyle.pagePadding).padding(.top, FrogStyle.space16)
+        .padding([.horizontal, .bottom], FrogStyle.pagePadding + 4).padding(.top, FrogStyle.space12)
     }
 
     @ViewBuilder private var page: some View {
@@ -134,7 +160,7 @@ struct OnboardingView: View {
         case .permissions: OnboardingPermissions()
         case .models: OnboardingModels()
         case .providers: OnboardingProviders()
-        case .done: OnboardingDone { go(to: $0) }
+        case .done: OnboardingDone(open: $openSteps) { go(to: $0) }
         }
     }
 
@@ -195,6 +221,7 @@ private struct OnboardingProgress: View {
 private struct OnboardingDone: View {
     @EnvironmentObject private var model: AppModel
     @State private var granted: Set<MacPermission> = []
+    @Binding var open: Int?
     let jump: (OnboardingView.Step) -> Void
 
     var body: some View {
@@ -206,6 +233,7 @@ private struct OnboardingDone: View {
         let ready = pair.filter { model.localModels.installed.contains($0.id) }.count
         let providers = model.configuration.providers.count
         let access = model.configuration.preferences.toolkitSettings.agentAccess == true
+        let remaining = [on > 0, missing.isEmpty, ready > 0, providers > 0, access].filter { !$0 }.count
         FrogSection {
             row("Tools", on > 0 ? "\(on) turned on" : "None turned on", done: on > 0, step: .plugins)
             row("Permissions", needed.isEmpty ? "None needed" : missing.isEmpty ? "All allowed" : "\(missing.map(\.title).joined(separator: ", ")) still to allow",
@@ -214,6 +242,7 @@ private struct OnboardingDone: View {
             row("Providers", providers == 0 ? "None added" : "\(providers) added", done: providers > 0, step: .providers)
             row("AI agents", access ? "Can use the frog command" : "Off", done: access, step: .providers)
         }
+        .onChange(of: remaining, initial: true) { _, count in open = count }
         .task {
             while !Task.isCancelled {
                 granted = await OnboardingPermissionSupport.granted()
@@ -228,7 +257,7 @@ private struct OnboardingDone: View {
                 .foregroundStyle(done ? FrogStyle.good : FrogStyle.muted).frame(width: 28, height: 28)
                 .accessibilityHidden(true)
         }, control: {
-            if !done { Button("Set up") { jump(step) }.buttonStyle(.frog(.ghost, compact: true)) }
+            if !done { Button("Set up") { jump(step) }.buttonStyle(.frog(.secondary, compact: true)) }
         })
     }
 }
@@ -239,17 +268,18 @@ private struct OnboardingDone: View {
 private struct OnboardingPlugins: View {
     @EnvironmentObject private var model: AppModel
     @State private var pending = Set<String>()
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: FrogStyle.space6), count: 3)
 
     var body: some View {
         let host = model.pluginHost
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: FrogStyle.space16) {
             ForEach(PluginCategory.allCases, id: \.self) { category in
                 let plugins = host.descriptors.map(\.info).filter { $0.category == category && $0.id != "community" }
                 if !plugins.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        SectionCaption(text: category.title)
-                        LazyVGrid(columns: columns, spacing: 8) {
+                    VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                        Text(L10n.text(category.title)).font(FrogType.section).foregroundStyle(FrogStyle.ink)
+                            .accessibilityAddTraits(.isHeader).padding(.horizontal, FrogStyle.rowInset)
+                        LazyVGrid(columns: columns, spacing: FrogStyle.space6) {
                             ForEach(plugins) { plugin in
                                 OnboardingPluginTile(plugin: plugin, on: host.enabled(plugin.id), busy: pending.contains(plugin.id)) {
                                     toggle(plugin.id, to: !host.enabled(plugin.id))
@@ -280,22 +310,23 @@ private struct OnboardingPluginTile: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: FrogStyle.space8) {
                 PluginIconTile(symbol: plugin.symbol, tint: plugin.tint.color, size: .list)
-                    .saturation(on ? 1 : 0).opacity(on ? 1 : 0.5)
+                    .saturation(on ? 1 : 0).opacity(on ? 1 : 0.55)
                 Text(L10n.text(plugin.name)).font(FrogType.bodyMedium).foregroundStyle(on ? FrogStyle.ink : FrogStyle.muted)
-                    .lineLimit(1).minimumScaleFactor(0.9)
+                    .lineLimit(1).minimumScaleFactor(0.85)
                 Spacer(minLength: 0)
+                // A tick says what is on; the tile itself stays plain, so a grid of tools that are all on stays calm.
+                Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 14, weight: on ? .regular : .light))
+                    .foregroundStyle(on ? FrogStyle.accent : FrogStyle.muted.opacity(0.6))
+                    .contentTransition(.symbolEffect(.replace)).accessibilityHidden(true)
             }
-            .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, FrogStyle.space8).padding(.leading, FrogStyle.space8).padding(.trailing, FrogStyle.space8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(FrogStyle.card, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
             .frogRowHighlight(hovering: hovering, selected: false)
-            .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
-            // Rex's accent ring marks the tools that are on: a 2.5 line drawn inside a frame 5.5 out leaves a clear
-            // 3 between ring and tile, and the ring's radius grows by the same 5.5, so the curves run parallel.
-            .padding(5.5)
-            .overlay(RoundedRectangle(cornerRadius: FrogStyle.controlRadius + 5.5, style: .continuous)
-                .strokeBorder(on ? FrogStyle.accent : hovering ? FrogStyle.hairline : .clear, lineWidth: 2.5))
-            .contentShape(Rectangle())
+            .contentShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
         }
         .buttonStyle(.plain).disabled(busy).onHover { hovering = $0 }.help(L10n.text(plugin.summary))
         .animation(FrogMotion.check, value: on)
@@ -314,16 +345,18 @@ private struct OnboardingModels: View {
         let local = model.localModels
         let pair = LocalModelDescriptor.recommendedPair
         let missing = pair.filter { !local.installed.contains($0.id) && local.progress[$0.id] == nil }
-        FrogSection(footer: LocalModels.supported ? "More models, and any from Hugging Face, are in Models." : "Local models need Apple silicon. Add a provider in the next step instead.", accessory: {
+        FrogSection("Recommended models", footer: LocalModels.supported ? "More models, and any from Hugging Face, are in Models." : "Local models need Apple silicon. Add a provider in the next step instead.", accessory: {
             if LocalModels.supported, missing.count > 1 {
                 Button("Download both") { for item in missing { local.download(item) } }.buttonStyle(.frog(.ghost, compact: true))
             }
         }) {
             ForEach(pair) { item in
-                FrogRow(item.name, caption: "\(item.kind == .audio ? "Speech" : "Text") · \(item.downloadSize)") {
+                FrogRow(item.name, caption: "\(item.kind == .audio ? "For dictation" : "For writing rules") · \(item.downloadSize)", icon: {
+                    PluginIconTile(symbol: item.kind == .audio ? "waveform" : "text.alignleft", tint: (item.kind == .audio ? PluginTint.red : .green).color, size: .list)
+                }, control: {
                     HStack(spacing: 8) {
                         if local.installed.contains(item.id) {
-                            Label("Ready", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.accent)
+                            Label("Ready", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
                         } else if let progress = local.progress[item.id] {
                             ModelDownloadProgress(fraction: progress.fraction, preparing: local.preparing.contains(item.id), width: 90)
                             Button("Cancel") { local.cancelDownload(item.id) }.buttonStyle(.frog(.ghost, compact: true))
@@ -332,7 +365,7 @@ private struct OnboardingModels: View {
                                 .disabled(!LocalModels.supported)
                         }
                     }
-                }
+                })
                 if let error = local.errors[item.id] { FrogRowNote(text: error, tone: FrogStyle.warning) }
             }
         }
@@ -347,20 +380,22 @@ private struct OnboardingProviders: View {
     @State private var editing: ProviderConfiguration?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            FrogSection("Providers", accessory: {
+        VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing - 6) {
+            FrogSection("Found on this Mac", accessory: {
                 Button("Add with an API key…") { editing = ProviderConfiguration() }.buttonStyle(.frog(.ghost, compact: true))
             }) {
                 if let found {
                     if found.isEmpty { FrogRow("Nothing found", caption: "Claude Code, Codex, OpenCode, Ollama or LM Studio show here once installed.") }
                     ForEach(found) { item in
-                        FrogRow(item.name, caption: item.caption) {
+                        FrogRow(item.name, caption: item.caption, icon: {
+                            PluginIconTile(symbol: item.kind.localTool != nil ? "terminal.fill" : "server.rack", tint: PluginTint.gray.color, size: .list)
+                        }, control: {
                             if configured(item.kind) {
-                                Label("Added", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.accent)
+                                Label("Added", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
                             } else {
                                 Button("Use") { add(item) }.buttonStyle(.frog(.secondary, compact: true))
                             }
-                        }
+                        })
                     }
                 } else {
                     FrogRow("Looking…") { ProgressView().controlSize(.small) }
@@ -398,14 +433,16 @@ private struct OnboardingAgents: View {
     }
 
     var body: some View {
-        FrogSection("AI agents") {
-            FrogRow("Let agents use Frog", caption: agents) {
+        FrogSection("AI agents", footer: "Agents such as Claude Code get the frog command and a skill, so they can drive Frog for you.") {
+            FrogRow("Let agents use Frog", caption: agents, icon: {
+                PluginIconTile(symbol: "sparkles", tint: PluginTint.purple.color, size: .list)
+            }, control: {
                 if access && installable.isEmpty && !toolMissing {
-                    Label("On", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.accent)
+                    Label("On", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
                 } else {
                     Button(access ? "Install" : "Turn on", action: turnOn).buttonStyle(.frog(.secondary, compact: true))
                 }
-            }
+            })
             if let issue = installation.issue { FrogRowNote(text: issue, tone: FrogStyle.warning) }
         }
     }
@@ -427,8 +464,8 @@ enum ProviderDetection {
         var id: String { kind.rawValue }
         var name: String { kind.title.replacingOccurrences(of: " (local)", with: "") }
         var caption: String {
-            if kind.localTool != nil { return "Uses its own sign-in" }
-            return models.isEmpty ? "Running" : "Running · \(models.count) \(models.count == 1 ? "model" : "models")"
+            if kind.localTool != nil { return "Installed tool · uses its own sign-in" }
+            return models.isEmpty ? "Local server · running" : "Local server · \(models.count) \(models.count == 1 ? "model" : "models")"
         }
     }
 
@@ -448,4 +485,9 @@ enum ProviderDetection {
             return Found(kind: kind, models: models)
         } catch { return nil }
     }
+}
+
+extension FrogType {
+    /// The welcome's headline, the one hero line in Frog.
+    static let hero = Font.system(size: 26, weight: .bold)
 }
