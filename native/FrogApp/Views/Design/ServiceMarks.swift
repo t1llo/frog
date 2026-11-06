@@ -25,7 +25,7 @@ struct ServiceMark: Equatable {
 
     static func tool(_ kind: LocalToolKind) -> ServiceMark {
         switch kind {
-        case .claudeCode: ServiceMark(symbol: "terminal.fill", tint: .orange)
+        case .claudeCode: ServiceMark(symbol: "burst.fill", tint: .orange)
         case .codex: ServiceMark(symbol: "curlybraces", tint: .gray)
         case .opencode: ServiceMark(symbol: "chevron.left.forwardslash.chevron.right", tint: .pink)
         }
