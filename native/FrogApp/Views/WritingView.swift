@@ -373,7 +373,8 @@ struct WritingTryView: View {
                 if let waiting { Text(L10n.text(waiting)).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
                 Spacer()
                 if run != nil {
-                    Button("Stop") { run?.cancel() }
+                    // Escape stops the run first; once it has stopped, Escape closes the sheet.
+                    Button("Stop") { run?.cancel() }.keyboardShortcut(.cancelAction)
                 } else {
                     Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
