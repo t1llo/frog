@@ -95,7 +95,8 @@ struct FrogCodeChip: View {
 
 /// The one way a page or section offers to add something: a secondary pill with a plus, "Add rule", "Add app".
 /// In a page header (28 tall) or a section header (24, like the rows' actions). When adding means choosing what
-/// to add first, use `FrogAddMenu`, which adds the menu chevron.
+/// to add first, the pill takes a chevron (`FrogAddLabel(menu: true)`) and opens a searchable `FrogDropdownList`,
+/// as Shortcuts' add buttons do.
 struct FrogAddButton: View {
     let title: String
     let action: () -> Void
@@ -107,31 +108,8 @@ struct FrogAddButton: View {
     }
 }
 
-/// `FrogAddButton` that opens a menu of what to add ("Add app" › the running apps): the same pill with a small
-/// chevron after the title, which only a menu has.
-struct FrogAddMenu<Items: View>: View {
-    let title: String
-    @ViewBuilder var items: Items
-    init(_ title: String, @ViewBuilder items: () -> Items) { self.title = title; self.items = items() }
-    @State private var hovering = false
-    @Environment(\.frogRowAccessory) private var inRow
-    @Environment(\.isEnabled) private var enabled
-
-    var body: some View {
-        let height = FrogButtonStyle.height(compact: inRow)
-        Menu { items } label: {
-            FrogAddLabel(title: title, menu: true)
-                .font(inRow ? FrogType.label : FrogType.bodyMedium)
-                .foregroundStyle(enabled ? FrogStyle.ink : FrogStyle.muted)
-                .padding(.horizontal, FrogButtonStyle.horizontalPadding(compact: inRow))
-                .frogControlSurface(hovering: hovering && enabled, height: height, capsule: true, faded: !enabled)
-        }
-        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-        .onHover { hovering = $0 }.accessibilityLabel(L10n.text(title))
-    }
-}
-
-/// The label of `FrogAddButton` and `FrogAddMenu`: a plus, the title and, for a menu, a chevron.
+/// The label of `FrogAddButton` and of an add button that opens a list of what to add: a plus, the title and,
+/// for a list, a chevron.
 struct FrogAddLabel: View {
     let title: String
     let menu: Bool

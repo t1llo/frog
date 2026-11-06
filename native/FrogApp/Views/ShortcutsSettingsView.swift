@@ -136,8 +136,8 @@ private struct ShortcutChoices {
     let choose: (String?) -> Void
 }
 
-/// The add button of a section (secondary) or of its empty state (primary): `FrogAddMenu`'s pill, opening a
-/// searchable list, since apps and actions are too many for a menu.
+/// The add button of a section (secondary) or of its empty state (primary): `FrogAddButton`'s pill with a chevron,
+/// opening a searchable list, since apps and actions are too many for a menu.
 private struct ShortcutAddButton: View {
     let title: String
     let list: ShortcutChoices

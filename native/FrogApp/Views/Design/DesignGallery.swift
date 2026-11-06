@@ -29,7 +29,6 @@ struct DesignGallery: View {
     var body: some View {
         FrogPage(width: FrogStyle.wideWidth) {
             FrogPageHeader(title: "Design gallery", subtitle: "Every Frog component, with sample values.") {
-                FrogAddMenu("Add app") { Button("Safari") {}; Button("Mail") {} }
                 FrogAddButton("Add rule") {}
             }
             HStack(alignment: .top, spacing: FrogStyle.sectionSpacing) {
