@@ -682,7 +682,8 @@ struct DictationPopup: View {
     var body: some View {
         let failed = controller.phase == .failed
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+            // The microphone chip stands a clear step apart from the status it precedes.
+            HStack(spacing: FrogStyle.space12) {
                 if failed { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(FrogStyle.warning) }
                 else if controller.phase != .recording { FrogSpinner(size: .mini) }
                 else {
@@ -880,13 +881,19 @@ private struct MicrophoneWaveform: View {
     var body: some View {
         let levels = meter.levels
         Canvas { context, size in
-            let step = size.width / CGFloat(max(levels.count, 1))
-            // Silence is a row of short bars, not a dashed line: every slot is a bar at least a bar's width tall.
-            let width = max(2, step - 3)
+            let count = max(levels.count, 1)
+            let step = size.width / CGFloat(count)
+            // Thin bars with clear gaps, so each reads as one reading rather than the slats of a block; silence is a
+            // row of dots, not a dashed line.
+            let width = min(3, max(2, step * 0.45))
             for (index, level) in levels.enumerated() {
                 let height = max(width, CGFloat(level) * size.height)
-                let rect = CGRect(x: CGFloat(index) * step, y: (size.height - height) / 2, width: width, height: height)
-                context.fill(Capsule().path(in: rect), with: .color(FrogStyle.accent.opacity(level > 0.02 ? 0.85 : 0.3)))
+                let rect = CGRect(x: CGFloat(index) * step + (step - width) / 2, y: (size.height - height) / 2, width: width, height: height)
+                // Older readings fade towards the leading edge, so the level reads as moving in from the right, where
+                // the newest one stands at full strength.
+                let age = Double(index + 1) / Double(count)
+                let strength = level > 0.02 ? 0.45 + 0.5 * age : 0.3
+                context.fill(Capsule().path(in: rect), with: .color(FrogStyle.accent.opacity(strength)))
             }
         }.accessibilityLabel("Microphone input level")
             .accessibilityValue("\(Int((levels.last ?? 0) * 100)) percent")
