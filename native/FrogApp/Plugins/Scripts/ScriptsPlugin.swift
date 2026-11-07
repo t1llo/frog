@@ -209,8 +209,7 @@ struct ScriptsPage: View {
             ScrollView {
                 Group {
                     if !ran {
-                        Text("What it prints shows here when it runs, from here, the command bar or its shortcut.")
-                            .font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                        Text("Run it to see what it prints").foregroundStyle(FrogStyle.muted)
                     } else if runner.output.isEmpty {
                         Text(runner.running != nil ? "Waiting for output…" : "No output").foregroundStyle(FrogStyle.muted)
                     } else {
