@@ -19,6 +19,9 @@ private struct ScrollAppearance: NSViewRepresentable {
             else { configure() }
         }
         override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); configure() }
+        // Behind a mask (the page's bottom fade) SwiftUI can place the probe before its scroll view encloses it;
+        // the first layout inside the scroll view catches that. `configure` returns at once when it is done.
+        override func layout() { super.layout(); configure() }
 
         func configure() {
             guard let scroll = enclosingScrollView, scroll !== configured else { return }
