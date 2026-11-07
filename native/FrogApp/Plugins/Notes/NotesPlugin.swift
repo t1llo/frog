@@ -146,10 +146,10 @@ struct NotesPage: View {
             }
         } content: { note in
             if preview {
-                MarkdownPreviewView(markdown: note.text).id(note.id)
+                MarkdownPreviewView(markdown: SnippetExpansion.preview(note.text, fills: note.pastes)).id(note.id)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
-                DocumentTextEditor(text: documents.binding(note.id, \.text))
+                NoteTextEditor(text: documents.binding(note.id, \.text), fillsTokens: note.pastes).id(note.id)
             }
         } footer: { note in
             // What picking the note in the command bar does: a setting of this note.

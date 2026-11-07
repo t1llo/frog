@@ -23,14 +23,17 @@ struct StatisticsView: View {
             FrogPageHeader(title: "Statistics", subtitle: "What you did with Frog, counted on this Mac")
             if statistics.loaded, Self.isEmpty(statistics.snapshot.allTime) {
                 // Nothing counted yet: one card, no heading. Rows of zeros say nothing; one calm note says when
-                // numbers arrive, and the switch that counts them sits under it.
+                // numbers arrive, with the switch that counts them under it as the note's one control.
                 FrogSection {
                     FrogEmptyState(symbol: "chart.bar.fill", title: "Nothing recorded yet",
                                    message: statistics.snapshot.recordingEnabled
-                                       ? "Statistics appear after your first dictation or rule run."
-                                       : "Turn on Record statistics to start counting.", tint: .gray)
-                        .padding(.bottom, -FrogStyle.space16)
-                    recordingRows
+                                       ? "Statistics appear after your first dictation or rule run. Only counts are kept, on this Mac."
+                                       : "Turn on Record statistics to start counting. Only counts are kept, on this Mac.", tint: .gray) {
+                        HStack(spacing: FrogStyle.space10) {
+                            Text("Record statistics").font(FrogType.row)
+                            recordingToggle
+                        }
+                    }
                 }
             } else {
                 VStack(alignment: .leading, spacing: FrogStyle.space12) {
@@ -65,11 +68,15 @@ struct StatisticsView: View {
             } message: { Text("Every total and daily count will be permanently cleared. Your recording choice is kept.") }
     }
 
+    private var recordingToggle: some View {
+        Toggle("Record statistics", isOn: Binding(get: { statistics.snapshot.recordingEnabled }, set: statistics.setRecordingEnabled))
+            .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).disabled(!statistics.loaded)
+    }
+
     /// Whether statistics are recorded, and clearing them once there is something counted.
     @ViewBuilder private var recordingRows: some View {
         FrogRow("Record statistics", caption: "Counts only, kept on this Mac") {
-            Toggle("Record statistics", isOn: Binding(get: { statistics.snapshot.recordingEnabled }, set: statistics.setRecordingEnabled))
-                .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).disabled(!statistics.loaded)
+            recordingToggle
         }
         if !statistics.snapshot.recordingEnabled {
             FrogRowNote(text: "Paused. Existing totals remain until you reset them.")

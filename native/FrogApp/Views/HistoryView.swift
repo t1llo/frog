@@ -101,7 +101,17 @@ struct HistoryView: View {
                         FrogEmptyState(symbol: HistoryPlugin.info.symbol, title: "No history yet",
                                        message: "Rewritten text, answers and recordings show here.", tint: HistoryPlugin.info.tint)
                     case nil:
-                        LazyVStack(spacing: 2) { ForEach(shown) { entry in row(entry) } }.padding(6).frogTableSurface()
+                        // A card per day under the day's name, as Mail and Photos group by date, so each row shows
+                        // only its time of day and the times read down one column in one form.
+                        LazyVStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
+                            ForEach(HistoryDay.group(shown)) { day in
+                                VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                                    FrogSectionHeader(day.title)
+                                    LazyVStack(spacing: 2) { ForEach(day.entries) { entry in row(entry) } }
+                                        .padding(FrogStyle.listInset).frogTableSurface()
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -119,8 +129,8 @@ struct HistoryView: View {
                             Text(entry.ruleName).font(FrogType.row).foregroundStyle(FrogStyle.ink).lineLimit(1)
                             Spacer(minLength: 8)
                             // The row's actions take the time's place while the pointer is over it.
-                            RecentTimestampText(date: entry.timestamp)
-                                .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                            Text(HistoryDay.time(entry.timestamp))
+                                .font(FrogType.caption.monospacedDigit()).foregroundStyle(FrogStyle.muted).lineLimit(1)
                                 .help(entry.timestamp.formatted(date: .complete, time: .shortened))
                                 .opacity(hoveredEntry == entry.id ? 0 : 1)
                         }
@@ -152,7 +162,7 @@ struct HistoryView: View {
             if !entry.processedText.isEmpty, !hidden(entry) { Button("Copy result") { ViewActions.copy(entry.processedText) } }
             if preferences.hideHistoryText { Button(hidden(entry) ? "Reveal text" : "Hide text") { toggleReveal(entry) } }
         }
-        .padding(.horizontal, 8).padding(.vertical, 8).frogHoverRow()
+        .padding(.horizontal, FrogStyle.rowPadding).padding(.vertical, FrogStyle.space8).frogHoverRow()
             .contextMenu {
                 Button("Open entry") { viewing = entry.id }
                 Button("Copy", systemImage: "doc.on.doc") { ViewActions.copy(entry.processedText) }.disabled(entry.processedText.isEmpty || hidden(entry))
@@ -173,8 +183,8 @@ struct HistoryView: View {
                 if entry.answer != nil, model.answerNotesEnabled, !hidden(entry) { noteButton(entry) }
                 // One Copy for the page: the result, or the answer. The other texts copy from the menu.
                 let copied = copiedEntry == entry.id
-                Button(L10n.text(copied ? "Copied" : entry.answer != nil ? "Copy answer" : "Copy result"),
-                       systemImage: copied ? "checkmark" : "doc.on.doc") {
+                // Words only, as every other button in a page header: the icon beside it is "…", a menu, not a twin.
+                Button(L10n.text(copied ? "Copied" : entry.answer != nil ? "Copy answer" : "Copy result")) {
                     ViewActions.copy(entry.processedText); copiedEntry = entry.id
                 }.disabled(entry.processedText.isEmpty || hidden(entry))
                 IconMenu(title: "Entry actions", bordered: false) {
@@ -322,6 +332,51 @@ struct WindowClosing: NSViewRepresentable {
     }
 }
 
+/// The entries of one day, as the list heads them: "Today", "Yesterday", the weekday within a week, then the date.
+struct HistoryDay: Identifiable {
+    let title: String
+    let entries: [HistoryEntry]
+    var id: String { title }
+
+    /// The entries, newest first as the feed is, cut where the day changes.
+    static func group(_ entries: [HistoryEntry], now: Date = Date(), calendar: Calendar = .autoupdatingCurrent) -> [HistoryDay] {
+        var days: [HistoryDay] = []
+        var current: (start: Date, entries: [HistoryEntry])?
+        for entry in entries {
+            let start = calendar.startOfDay(for: entry.timestamp)
+            if current?.start == start { current?.entries.append(entry); continue }
+            if let current { days.append(HistoryDay(title: title(current.start, now: now, calendar: calendar), entries: current.entries)) }
+            current = (start, [entry])
+        }
+        if let current { days.append(HistoryDay(title: title(current.start, now: now, calendar: calendar), entries: current.entries)) }
+        return days
+    }
+
+    static func title(_ day: Date, now: Date = Date(), calendar: Calendar = .autoupdatingCurrent) -> String {
+        if calendar.isDate(day, inSameDayAs: now) { return L10n.text("Today") }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(day, inSameDayAs: yesterday) {
+            return L10n.text("Yesterday")
+        }
+        let style = Date.FormatStyle(locale: L10n.locale, calendar: calendar)
+        if let week = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now)), day >= week, day <= now {
+            return day.formatted(style.weekday(.wide))
+        }
+        let date = style.month(.wide).day()
+        return day.formatted(calendar.isDate(day, equalTo: now, toGranularity: .year) ? date : date.year())
+    }
+
+    /// The time of day in the Mac's own clock: "09:41" on a 24-hour clock, "9:41 AM" on a 12-hour one.
+    static func time(_ date: Date) -> String { timeFormatter.string(from: date) }
+
+    /// Made once: a list of entries asks it for every row.
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("jmm")
+        return formatter
+    }()
+}
+
 /// What the page says in place of an empty list.
 enum HistoryEmptyState: Equatable {
     case noHistory, noMatches, noAnswers
@@ -430,7 +485,10 @@ private struct HistoryDetail: View {
                 FrogRow("Length") { Text(length).font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted) }
             }
             FrogRow("Saved") {
-                Text(entry.timestamp.formatted(date: .complete, time: .shortened)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                // The day in full, at the time of day the list shows for it.
+                Text(String(format: L10n.text("%@ at %@"), entry.timestamp.formatted(.dateTime.weekday(.wide).day().month(.wide).year()),
+                            HistoryDay.time(entry.timestamp)))
+                    .font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)
             }
         }
     }

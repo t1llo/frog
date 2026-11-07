@@ -18,11 +18,14 @@ struct ShortcutsSettingsView: View {
             if apps.isEmpty, actions.isEmpty, catalog.scanned {
                 // Nothing yet: one quiet card with both ways to start, not two empty sections.
                 FrogEmptyState(symbol: ShortcutsPlugin.info.symbol, title: "No shortcuts yet",
-                               message: "Open apps and run actions with keys of your own, from anywhere.",
+                               message: "Give any app or action keys of its own, such as these.",
                                tint: ShortcutsPlugin.info.tint) {
-                    HStack(spacing: FrogStyle.space8) {
-                        ShortcutAddButton(title: "Add app", list: appList, primary: false)
-                        ShortcutAddButton(title: "Add action", list: actionList, primary: false)
+                    VStack(spacing: FrogStyle.space16) {
+                        ShortcutExamples()
+                        HStack(spacing: FrogStyle.space8) {
+                            ShortcutAddButton(title: "Add app", list: appList, primary: false)
+                            ShortcutAddButton(title: "Add action", list: actionList, primary: false)
+                        }
                     }
                 }.frogTableSurface()
             } else {
@@ -130,6 +133,27 @@ struct ShortcutsSettingsView: View {
                 : ShortcutBinding(key: nil, action: value)
             save(plugin.bindings + [binding])
         }
+    }
+}
+
+/// What a shortcut can be, under the empty page's message: a few made-up ones, each its name and its caps on an
+/// inset block, so the page shows the result before anything is added.
+private struct ShortcutExamples: View {
+    private static let examples: [(title: String, keys: String)] = [
+        ("Open Safari", "⌥S"), ("Open Terminal", "⌥T"), ("Lock screen", "⌃⌥L"),
+    ]
+    var body: some View {
+        HStack(spacing: FrogStyle.space8) {
+            ForEach(Self.examples, id: \.title) { example in
+                HStack(spacing: FrogStyle.space8) {
+                    Text(L10n.text(example.title)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    KeyCaps(example.keys)
+                }
+                .padding(.horizontal, FrogStyle.space10).frame(height: FrogStyle.controlHeight)
+                .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

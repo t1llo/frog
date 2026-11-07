@@ -58,18 +58,35 @@ struct LegalDocumentView: View {
     /// Short enough for SwiftUI to measure at once; longer texts go to AppKit, which lays out only what shows.
     private var short: Bool { text.count < 6000 }
 
+    /// A short text's paragraphs, its heading line and copyright line aside: those become the sheet's title and
+    /// subtitle, so "License" over "MIT License" never says the same thing twice.
+    private var parts: (title: String, subtitle: String?, body: [String]) {
+        var paragraphs = LegalDocument.paragraphs(text)
+        guard short, let first = paragraphs.first, LegalDocument.style(of: first, at: 0) == .heading else {
+            return (document.title, document.summary, paragraphs)
+        }
+        paragraphs.removeFirst()
+        var subtitle = document.summary
+        if let copyright = paragraphs.first, copyright.hasPrefix("Copyright"), !copyright.contains("\n") {
+            subtitle = copyright
+            paragraphs.removeFirst()
+        }
+        return (first, subtitle, paragraphs)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.space16) {
             // A sheet is its own window, so its header keeps the title.
-            FrogPageHeader(title: document.title, subtitle: document.summary).environment(\.frogToolbarTitle, false)
+            let parts = parts
+            FrogPageHeader(title: parts.title, subtitle: parts.subtitle).environment(\.frogToolbarTitle, false)
             Group {
                 if short {
                     // A short text such as the licence reads as prose: its hard-wrapped lines joined into paragraphs in
                     // the body font, and the sheet as tall as the text, with no empty card under it.
                     FrogSheetScroll(maxHeight: 420) {
                         VStack(alignment: .leading, spacing: FrogStyle.space10) {
-                            ForEach(Array(LegalDocument.paragraphs(text).enumerated()), id: \.offset) { index, paragraph in
-                                let style = LegalDocument.style(of: paragraph, at: index)
+                            ForEach(Array(parts.body.enumerated()), id: \.offset) { index, paragraph in
+                                let style = LegalDocument.style(of: paragraph, at: parts.body.count == LegalDocument.paragraphs(text).count ? index : index + 2)
                                 Text(paragraph).font(style.font).foregroundStyle(style.muted ? FrogStyle.muted : FrogStyle.ink)
                                     .lineSpacing(2).fixedSize(horizontal: false, vertical: true)
                                     .accessibilityAddTraits(style == .heading ? .isHeader : [])

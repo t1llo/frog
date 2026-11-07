@@ -191,7 +191,7 @@ struct AppearanceSettingsView: View {
 
     /// Whether the accent follows the theme, and the colour when it does not.
     @ViewBuilder private var accent: some View {
-        FrogRow("Tint with theme", caption: "Use the theme's own accent color.") {
+        FrogRow("Tint with theme", caption: "The theme's own accent color") {
             Toggle("Tint with theme", isOn: Binding(get: { appearance.useThemeAccent ?? (appearance.accentHex == "A3D8AF") }, set: { on in
                 var value = appearance; value.useThemeAccent = on
                 if on { value.lightPalette?["accent"] = nil; value.darkPalette?["accent"] = nil }
