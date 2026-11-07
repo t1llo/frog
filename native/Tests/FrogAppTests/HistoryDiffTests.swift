@@ -5,10 +5,12 @@ import XCTest
 
 @MainActor
 final class HistoryDiffTests: XCTestCase {
-    func testAnAddedPeriodMarksOnlyThePeriodAndCountsOneWord() throws {
+    func testAnAddedPeriodMarksThePeriodStronglyAndItsWordLightly() throws {
         let diff = try XCTUnwrap(HistoryDiff(original: "i saw it yesterday", result: "I saw it yesterday."))
-        let marked = diff.result.runs.filter { $0.backgroundColor != nil }.map { String(diff.result[$0.range].characters) }
-        XCTAssertEqual(marked, ["I", "."])
+        let letters = diff.result.runs.filter { $0.underlineStyle != nil }.map { String(diff.result[$0.range].characters) }
+        XCTAssertEqual(letters, ["I", "."])
+        let tinted = diff.result.runs.filter { $0.backgroundColor != nil }.map { String(diff.result[$0.range].characters) }
+        XCTAssertEqual(tinted.joined(separator: "|"), "I|yesterday|.")
         XCTAssertEqual(diff.summary, "2 words changed")
     }
 

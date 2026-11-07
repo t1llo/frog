@@ -130,7 +130,7 @@ struct HistoryView: View {
                             Spacer(minLength: 8)
                             // The row's actions take the time's place while the pointer is over it.
                             Text(HistoryDay.time(entry.timestamp))
-                                .font(FrogType.caption.monospacedDigit()).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                                .font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted).lineLimit(1)
                                 .help(entry.timestamp.formatted(date: .complete, time: .shortened))
                                 .opacity(hoveredEntry == entry.id ? 0 : 1)
                         }
@@ -138,7 +138,7 @@ struct HistoryView: View {
                              : entry.processedText.isEmpty ? L10n.text("No transcript available") : HistoryPreview.text(entry.processedText))
                             .font(FrogType.body).foregroundStyle(FrogStyle.ink)
                             .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-                        Text(Self.metadata(entry.kind, entry)).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                        Text(Self.metadata(entry.kind, entry)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
                         interruptionStatus(entry)
                     }
                 }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
@@ -253,7 +253,7 @@ struct HistoryView: View {
                 } else if entry.transcriptState == .partial {
                     Text("Partial transcript")
                 }
-            }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+            }.font(FrogType.small).foregroundStyle(FrogStyle.muted)
         }
     }
 
@@ -477,13 +477,13 @@ private struct HistoryDetail: View {
                 }
             }
             if let length = lengthText {
-                FrogRow("Length") { Text(length).font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted) }
+                FrogRow("Length") { Text(length).font(FrogType.body.monospacedDigit()).foregroundStyle(FrogStyle.muted) }
             }
             FrogRow("Saved") {
                 // The day in full, at the time of day the list shows for it.
                 Text(String(format: L10n.text("%@ at %@"), entry.timestamp.formatted(Date.FormatStyle(locale: L10n.locale, timeZone: .autoupdatingCurrent).weekday(.wide).day().month(.wide).year()),
                             HistoryDay.time(entry.timestamp)))
-                    .font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)
+                    .font(FrogType.body.monospacedDigit()).foregroundStyle(FrogStyle.muted)
             }
         }
     }
@@ -610,18 +610,41 @@ struct HistoryDiff {
         self.result = Self.attributed(diff.result, color: FrogStyle.good, strike: false)
     }
 
+    /// The letters that changed are marked strongly, and the rest of each word they are in lightly, as a code review
+    /// marks a line and the characters in it: a lone changed letter ("i" to "I", an added ".") still reads as part of
+    /// its word instead of a speck of colour.
     private static func attributed(_ segments: [TextDiff.Segment], color: Color, strike: Bool) -> AttributedString {
+        let characters: [(character: Character, changed: Bool)] = segments.flatMap { segment in segment.text.map { ($0, segment.changed) } }
+        var inChangedWord = [Bool](repeating: false, count: characters.count)
+        var start = 0
+        while start < characters.count {
+            guard !characters[start].character.isWhitespace else { start += 1; continue }
+            var end = start, changed = false
+            while end < characters.count, !characters[end].character.isWhitespace { changed = changed || characters[end].changed; end += 1 }
+            if changed { for index in start..<end { inChangedWord[index] = true } }
+            start = end
+        }
         var text = AttributedString()
-        for segment in segments {
-            var part = AttributedString(segment.text)
-            if segment.changed {
-                part.backgroundColor = color.opacity(strike ? 0.22 : 0.2)
-                // A line under or through the letters too, so a mark on one narrow letter ("I", ".") still shows.
-                // Taken-out letters are set in the critical red as well, so even one struck "i" reads as removed.
+        var index = 0
+        while index < characters.count {
+            let changed = characters[index].changed, word = inChangedWord[index]
+            var end = index
+            var run = ""
+            while end < characters.count, characters[end].changed == changed, inChangedWord[end] == word {
+                run.append(characters[end].character); end += 1
+            }
+            var part = AttributedString(run)
+            if changed {
+                part.backgroundColor = color.opacity(0.26)
+                // A line under or through the letters too, and taken-out letters in the critical red, so even one
+                // struck "i" reads as removed.
                 if strike { part.swiftUI.strikethroughStyle = Text.LineStyle(pattern: .solid, color: color); part.foregroundColor = color }
                 else { part.swiftUI.underlineStyle = Text.LineStyle(pattern: .solid, color: color) }
+            } else if word {
+                part.backgroundColor = color.opacity(0.1)
             }
             text += part
+            index = end
         }
         return text
     }
