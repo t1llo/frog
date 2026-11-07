@@ -24,20 +24,24 @@ struct CleanerAppsView: View {
                                    tint: AppCleanerPlugin.info.tint)
                 }
             } else {
-                // Headed like the review's groups and every other page's cards.
-                FrogSectionHeader("Apps", count: apps.count)
-                LazyVStack(spacing: 2) {
-                    ForEach(apps) { row in appRow(row) }
+                // Headed like the review's groups and every other page's cards, one section's space under the
+                // toolbar as Models' sections sit under its tabs.
+                VStack(alignment: .leading, spacing: FrogStyle.space8) {
+                    FrogSectionHeader("Apps", count: apps.count)
+                    LazyVStack(spacing: 2) {
+                        ForEach(apps) { row in appRow(row) }
+                    }
+                    .padding(6).frogTableSurface()
+                    .focusable().focused($listFocused).focusEffectDisabled()
+                    .onKeyPress(.downArrow) { move(1, in: apps) }
+                    .onKeyPress(.upArrow) { move(-1, in: apps) }
+                    .onKeyPress(.return) {
+                        guard let row = apps.first(where: { $0.id == highlighted }) else { return .ignored }
+                        open(row)
+                        return .handled
+                    }
                 }
-                .padding(6).frogTableSurface()
-                .focusable().focused($listFocused).focusEffectDisabled()
-                .onKeyPress(.downArrow) { move(1, in: apps) }
-                .onKeyPress(.upArrow) { move(-1, in: apps) }
-                .onKeyPress(.return) {
-                    guard let row = apps.first(where: { $0.id == highlighted }) else { return .ignored }
-                    open(row)
-                    return .handled
-                }
+                .padding(.top, FrogStyle.sectionSpacing - 10)
             }
         }
     }

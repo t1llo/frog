@@ -229,7 +229,7 @@ struct ProviderEditor: View {
             }.frame(maxWidth: .infinity, alignment: .leading).padding(FrogStyle.sheetPadding)
             // As tall as the step, up to a limit: the short steps leave no empty half, the long one scrolls and
             // fades out above the buttons rather than cutting a line in half.
-            FrogSheetScroll(maxHeight: 460) {
+            FrogSheetScroll {
                 VStack(alignment: .leading, spacing: 20) {
                     if step == 0 {
                     // The Service step lists every service with its mark, rather than one menu on an empty step.

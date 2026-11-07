@@ -40,14 +40,18 @@ struct PluginsView: View {
                 Button("Install from file…", systemImage: "square.and.arrow.down") { chooseFile() }
                     .help("Install a plugin file")
             }
-            ListToolbar(placeholder: "Search the directory", search: $search,
-                        showsSearch: tab == .browse && !plugins.registry.isEmpty) {
-                CompactSegments(values: PluginsTab.allCases, selected: tab, title: \.title) { tab = $0 }
-            }
-            switch tab {
-            case .installed: installed
-            case .browse: directory
-            case .build: build
+            // The tabs head a list without a heading of its own a little apart, as History's filters do; the build
+            // tab's headed sections keep a section's space under them.
+            VStack(alignment: .leading, spacing: tab == .build ? FrogStyle.sectionSpacing : FrogStyle.space12) {
+                ListToolbar(placeholder: "Search the directory", search: $search,
+                            showsSearch: tab == .browse && !plugins.registry.isEmpty) {
+                    CompactSegments(values: PluginsTab.allCases, selected: tab, title: \.title) { tab = $0 }
+                }
+                switch tab {
+                case .installed: installed
+                case .browse: directory
+                case .build: build
+                }
             }
         }
         .onAppear { plugins.refresh() }
