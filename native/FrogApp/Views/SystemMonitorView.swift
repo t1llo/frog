@@ -158,7 +158,7 @@ struct SystemMonitorOverview: View {
     }
 
     /// Free space on the startup disk, as Finder counts it: what is free ("182 GB"), its share of the disk ("free ·
-    /// 37% of 494 GB"), a meter filled with what is used so its empty track is the free share, and how free space
+    /// 37% of 494 GB"), a meter filled with that free share, and how free space
     /// changed since about this time yesterday.
     private var storage: some View {
         let storage = snapshot.storage
@@ -173,7 +173,9 @@ struct SystemMonitorOverview: View {
                     SkeletonText(font: GraphStyle.figure, width: 64, height: 12)
                 }
             }
-            meter(storage?.usedFraction ?? 0, color: storage.map { FrogStyle.level($0.usedFraction, warning: 0.85, critical: 0.95) } ?? FrogStyle.accent)
+            // The meter fills with the free share, the quantity the headline names, so "182 GB free · 37%" is a 37%
+            // bar; it turns `warning` under 15% free and `critical` under 5%.
+            meter(storage?.freeFraction ?? 0, color: storage.map { FrogStyle.level($0.usedFraction, warning: 0.85, critical: 0.95) } ?? FrogStyle.accent)
             if let storage {
                 Text(Self.storageChange(storage.changeSinceDayAgo, format: diskBytes))
                     .font(FrogType.small).foregroundStyle(FrogStyle.muted).monospacedDigit().lineLimit(1)
