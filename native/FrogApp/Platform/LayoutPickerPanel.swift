@@ -258,20 +258,18 @@ struct LayoutPickerView: View {
                 Text("No matching layout").font(FrogType.row).foregroundStyle(FrogStyle.muted)
                     .frame(maxWidth: .infinity).padding(.vertical, 18)
             }
-            // Every tile keeps a slot for its caps while any layout has a shortcut, so all tiles are one height and
-            // their labels share a line across rows and sections.
-            let badges = panel.picker.sections.contains { $0.rows.contains { $0.contains { $0.hotkey != nil } } }
             ForEach(panel.picker.sections) { section in
                 VStack(alignment: .leading, spacing: FrogStyle.space8) {
                     Text(L10n.text(section.title)).font(FrogType.section).accessibilityAddTraits(.isHeader)
+                    // Each row fills the panel's width, so the three thirds and the two two-thirds are whole rows
+                    // with no empty cell. A row keeps a slot for caps on every tile once any of its tiles has a
+                    // shortcut, so its tiles are one height; a row with none stays compact.
                     ForEach(Array(section.rows.enumerated()), id: \.offset) { _, row in
+                        let badges = row.contains { $0.hotkey != nil }
                         HStack(spacing: FrogStyle.space6) {
                             ForEach(row) { tile in
                                 LayoutPickerTile(tile: tile, selected: panel.picker.selection == tile.action, showsBadge: badges,
                                                  hover: { panel.hovered(tile.action) }, apply: { panel.apply(tile.action) })
-                            }
-                            ForEach(row.count..<section.columns, id: \.self) { _ in
-                                Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
                             }
                         }
                     }
