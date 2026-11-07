@@ -15,20 +15,18 @@ struct LocalModelInformation: View {
                 fact("Languages", item.languages)
                 fact("Runtime", item.runtimeName)
                 fact("Download", item.downloadSize)
-                fact("Source", item.repository)
+                fact("Source", item.repository, link: item.sourceURL)
                 if let variant = item.variant { fact("Variant", variant) }
-                if let original = item.originalRepository { fact("Based on", original) }
+                if let original = item.originalRepository { fact("Based on", original, link: URL(string: "https://huggingface.co/\(original)")) }
                 fact("License", item.license ?? "See the model card")
                 if item.backend == .whisperKit {
                     FrogRowNote(text: "WhisperKit also installs the matching tokenizer from the upstream Hugging Face model.")
                 }
             }
             FrogSheetButtons(padded: false) {
-                Link(destination: item.sourceURL) { Label("Model card", systemImage: "arrow.up.right") }
+                // The model card and the original model open from their rows above; only the file list keeps a button.
                 Link(destination: item.filesURL) { Label("Files", systemImage: "arrow.up.right") }
-                if let original = item.originalRepository, let url = URL(string: "https://huggingface.co/\(original)") {
-                    Link(destination: url) { Label("Original model", systemImage: "arrow.up.right") }
-                }
+                    .help("Open the model's files on Hugging Face")
             } trailing: {
                 FrogPrimaryButton("Done") { dismiss() }
             }.labelStyle(TrailingIconLabelStyle())
@@ -36,12 +34,24 @@ struct LocalModelInformation: View {
             .buttonStyle(.frog()).environment(\.locale, L10n.locale)
     }
 
-    /// One fact: the label on the left, the value on the right.
-    private func fact(_ label: String, _ value: String) -> some View {
+    /// One fact: the label on the left, the value on the right. A repository opens its Hugging Face page, so its value
+    /// is a link in the accent with an arrow after it.
+    @ViewBuilder private func fact(_ label: String, _ value: String, link: URL? = nil) -> some View {
         FrogRow(label) {
-            Text(value).font(FrogType.body).foregroundStyle(FrogStyle.ink).textSelection(.enabled)
-                .lineLimit(1).truncationMode(.middle).help(value)
+            if let link {
+                Link(destination: link) {
+                    HStack(spacing: FrogStyle.space4) {
+                        Text(value).lineLimit(1).truncationMode(.middle)
+                        Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .semibold))
+                    }.font(FrogType.body).foregroundStyle(FrogStyle.accent)
+                }
+                .buttonStyle(.plain).help(L10n.text("Open \(value) on Hugging Face"))
                 .frame(maxWidth: 300, alignment: .trailing)
+            } else {
+                Text(value).font(FrogType.body).foregroundStyle(FrogStyle.ink).textSelection(.enabled)
+                    .lineLimit(1).truncationMode(.middle).help(value)
+                    .frame(maxWidth: 300, alignment: .trailing)
+            }
         }
     }
 }
@@ -77,7 +87,7 @@ struct AddLocalModelView: View {
                     .onChange(of: source) { _, _ in candidates = []; issue = nil }
                 // What the field takes, which is also why Check source waits, and a button that fills it with an example.
                 HStack(spacing: FrogStyle.space8) {
-                    Text("Paste a link or an ID such as mlx-community/Qwen3-0.6B-4bit").font(FrogType.small)
+                    Text("A link or an ID, such as mlx-community/Qwen3-0.6B-4bit").font(FrogType.small)
                         .foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                     Spacer(minLength: 0)
                     Button("Use example") { source = "https://huggingface.co/mlx-community/Qwen3-0.6B-4bit" }
