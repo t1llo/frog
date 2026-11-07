@@ -39,14 +39,14 @@ struct ClipboardPage: View {
     @ViewBuilder private var copied: some View {
         let all = store.entries
         let found = ClipboardSearch.filter(all, query: search)
-        FrogSection("Copied") {
+        FrogSection("Copied", count: all.isEmpty ? nil : all.count) {
             if all.isEmpty {
                 FrogEmptyState(symbol: ClipboardPlugin.info.symbol, title: "Nothing copied yet", message: "Text you copy shows here.",
                                tint: ClipboardPlugin.info.tint)
             } else {
                 VStack(spacing: 10) {
-                    // The count lives in the field, not loose at the heading's far end.
-                    ListToolbar(placeholder: all.count == 1 ? "Search 1 copied item" : "Search \(all.count) copied items", search: $search)
+                    // The count belongs to the heading, as every counted group's does.
+                    ListToolbar(placeholder: "Search copied items", search: $search)
                     if found.isEmpty {
                         Text("No matches").font(FrogType.body).foregroundStyle(FrogStyle.muted)
                             .frame(maxWidth: .infinity).padding(.vertical, 16)
