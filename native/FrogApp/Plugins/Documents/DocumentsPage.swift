@@ -156,7 +156,8 @@ struct DocumentsPage<Toolbar: View, Content: View, Footer: View>: View {
         }
         let time = RecentTimestamp.text(item.modified)
         guard let first else { return time + " · " + L10n.text(item.files.isEmpty ? "Empty" : "Files") }
-        return time + " · " + (item.kind == .note ? MarkdownPreview.plain(first) : first)
+        // The row shows one short line, so only its start is cleaned: the patterns stay cheap on a long first line.
+        return time + " · " + (item.kind == .note ? MarkdownPreview.plain(String(first.prefix(200))) : first)
     }
 
     /// The chosen item: its actions along the top, its text filling the card, its footer band at the bottom.
