@@ -366,6 +366,8 @@ struct UsageActivityChart: View {
             UsageTrendChart(steps: UsageTrend(chart.points.map { ($0.date, $0.value) }).steps, compact: compact,
                             hourly: chart.range == "24h", timeZone: chart.account ? TimeZone(secondsFromGMT: 0)! : .current) {
                 usage.format($0, metric: settings.metric)
+            } axisFormat: {
+                usage.axisLabel($0, metric: settings.metric)
             }.id("\(settings.provider) \(settings.range)")
         }
     }
@@ -750,10 +752,14 @@ struct UsageTrendChart: View {
     /// Account buckets are UTC days; local ones follow this Mac's time zone.
     let timeZone: TimeZone
     let format: (Double) -> String
+    /// The scale's labels, which drop a whole figure's cents ("$100"); `format` when nil.
+    var axisFormat: ((Double) -> String)? = nil
     @State private var selectedDate: Date?
 
     var body: some View {
-        if compact { line } else { UsageBucketChart(steps: steps, hourly: hourly, timeZone: timeZone, format: format) }
+        if compact { line } else {
+            UsageBucketChart(steps: steps, hourly: hourly, timeZone: timeZone, format: format, axisFormat: axisFormat ?? format)
+        }
     }
 
     private var line: some View {
@@ -823,6 +829,7 @@ struct UsageBucketChart: View {
     let hourly: Bool
     let timeZone: TimeZone
     let format: (Double) -> String
+    let axisFormat: (Double) -> String
     @State private var selectedKey: String?
 
     static let plotHeight: CGFloat = 150
@@ -830,7 +837,8 @@ struct UsageBucketChart: View {
     static let minimumShare = 0.025
 
     var body: some View {
-        let top = Self.niceCeiling(steps.map(\.amount).max() ?? 0)
+        let top = Self.niceCeiling(steps.map(\.amount).max() ?? 0, floor: Self.smallestTop(axisFormat))
+        let zeroLabel = axisFormat(0), topLabel = axisFormat(top)
         let selected = selectedKey.flatMap(Int.init).flatMap { steps.indices.contains($0) ? steps[$0] : nil }
         let stride = max(1, Int((Double(steps.count) / 7).rounded(.up)))
         Chart {
@@ -855,8 +863,10 @@ struct UsageBucketChart: View {
             AxisMarks(position: .leading, values: [0, top / 2, top]) { value in
                 AxisGridLine(stroke: FrogChart.gridLine).foregroundStyle(FrogStyle.hairline)
                 AxisValueLabel {
-                    if let amount = value.as(Double.self) {
-                        Text(amount == 0 ? "0" : format(amount)).font(FrogType.small).monospacedDigit().foregroundStyle(FrogStyle.muted)
+                    // A middle that rounds to the same words as 0 or the top is left out rather than said twice.
+                    if let amount = value.as(Double.self),
+                       amount == 0 || amount == top || ![zeroLabel, topLabel].contains(axisFormat(amount)) {
+                        Text(amount == 0 ? "0" : axisFormat(amount)).font(FrogType.small).monospacedDigit().foregroundStyle(FrogStyle.muted)
                     }
                 }
             }
@@ -889,10 +899,17 @@ struct UsageBucketChart: View {
 
     /// The smallest round figure (1, 2, 2.5 or 5 times a power of ten) at or above the busiest bucket, so the scale's
     /// top and middle read as plain numbers.
-    static func niceCeiling(_ value: Double) -> Double {
-        guard value.isFinite, value > 0 else { return 1 }
+    static func niceCeiling(_ value: Double, floor minimum: Double = 0) -> Double {
+        guard value.isFinite, value > 0 else { return max(1, minimum) }
+        guard value > minimum else { return minimum }
         let power = pow(10, floor(log10(value)))
         return ([1, 2, 2.5, 5, 10].map { $0 * power }.first { $0 >= value * 0.9999 }) ?? 10 * power
+    }
+
+    /// The smallest top whose half the labels can still write: two cents for an amount in cents ($0.02 over $0.01),
+    /// none for a count.
+    static func smallestTop(_ format: (Double) -> String) -> Double {
+        format(0.01) == format(0) ? 0 : 0.02
     }
 
     static func label(_ date: Date, hourly: Bool, long: Bool, timeZone: TimeZone) -> String {
