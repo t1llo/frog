@@ -8,6 +8,7 @@ import FrogUsage
 
 @MainActor final class UsageInteractionTests: XCTestCase {
     func testOutsideClickClosesUsagePopoverAndInsideClickKeepsItOpen() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let defaults = temporaryDefaults()
         defer { try? FileManager.default.removeItem(at: root) }

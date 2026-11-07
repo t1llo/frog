@@ -1,10 +1,12 @@
 import AppKit
 import SwiftUI
 import XCTest
+import FrogTestSupport
 @testable import FrogApp
 
 @MainActor final class SystemMonitorViewTests: XCTestCase {
     func testSystemTabAndBatteryHeightTransitionsResizeNativeMenuWithoutBottomStrip() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let state = MonitorMenuFixtureState()
         let host = NSHostingView(rootView: MonitorMenuFixtureView(state: state))
@@ -59,6 +61,7 @@ import XCTest
     }
 
     func testNativeWindowOrderOutStopsSamplingEvenIfSwiftUIViewStaysMounted() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let sampler = VisibleMonitorFixture()
         let monitor = SystemMonitor(sampler: sampler, interval: .milliseconds(5))

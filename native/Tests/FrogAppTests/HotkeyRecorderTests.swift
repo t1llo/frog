@@ -2,19 +2,23 @@ import AppKit
 import SwiftUI
 import FrogCore
 import XCTest
+import FrogTestSupport
 @testable import FrogApp
 
 @MainActor
 final class HotkeyRecorderTests: XCTestCase {
     func testClipboardRecorderAcceptsShiftCommandV() async throws {
+        try requireOnScreen()
         try await record(chords: [(9, [.command, .shift])], expected: Hotkey(keyCode: 9, modifiers: 768))
     }
 
     func testValidShortcutCanBeRecordedAfterRejectedChord() async throws {
+        try requireOnScreen()
         try await record(chords: [(8, .command), (79, [.control, .option])], expected: Hotkey(keyCode: 79, modifiers: 6144))
     }
 
     func testRecorderKeepsRecordingWhenFocusReturnsBeforeDeferredBlur() async throws {
+        try requireOnScreen()
         try await record(chords: [(79, [.control, .option])], expected: Hotkey(keyCode: 79, modifiers: 6144), refocusAfterBlur: true)
     }
 

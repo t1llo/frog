@@ -1,4 +1,5 @@
 import XCTest
+import FrogTestSupport
 import AppKit
 import FrogCore
 @testable import FrogApp
@@ -22,10 +23,12 @@ final class RecordingReadinessTests: XCTestCase {
     }
 
     func testNativePopupTransitionsFromLoadingThroughSpeechAndCleanup() async throws {
+        try requireOnScreen()
         try await checkNativePopup(includePreview: true)
     }
 
     func testNativePopupWithoutPreviewReturnsToCompactTranscribingFeedback() async throws {
+        try requireOnScreen()
         try await checkNativePopup(includePreview: false)
     }
 

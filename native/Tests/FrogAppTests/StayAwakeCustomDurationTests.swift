@@ -1,12 +1,14 @@
 import AppKit
 import SwiftUI
 import XCTest
+import FrogTestSupport
 @testable import FrogApp
 
 @MainActor
 final class StayAwakeCustomDurationTests: XCTestCase {
     /// The field under the duration list keeps Return for itself: the list must not choose its highlighted row instead.
     func testReturnInTheCustomFieldChoosesTheTypedLength() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         var chosen: [Int] = []
         var rows: [StayAwakeController.DurationChoice] = []

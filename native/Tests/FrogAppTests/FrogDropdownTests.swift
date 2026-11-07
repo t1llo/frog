@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import FrogTestSupport
 @testable import FrogApp
 
 final class FrogDropdownTests: XCTestCase {
@@ -26,6 +27,7 @@ final class FrogDropdownTests: XCTestCase {
     /// and Escape closes without choosing.
     @MainActor
     func testTheKeyboardDrivesAPlainList() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         final class Box { var value = "Nord" }
         let box = Box()

@@ -2,6 +2,7 @@ import AppKit
 import FrogAgent
 import FrogCore
 import XCTest
+import FrogTestSupport
 @testable import FrogApp
 
 /// `frog plugin …` against an isolated model: the way an AI agent builds, installs, checks and packs a plugin.
@@ -49,6 +50,7 @@ import XCTest
     }
 
     func testAnAgentBuildsInstallsAndPacksAPluginButCannotApproveIt() async throws {
+        try requireOnScreen()
         let folder = directory.appendingPathComponent("tally", isDirectory: true)
         let off = await run("plugin", "install", folder.path)
         XCTAssertEqual(off.error, "Plugins is off. Turn it on with `frog features enable plugins`.")
@@ -126,6 +128,7 @@ import XCTest
     }
 
     func testAnAgentStartsAWholeFeatureThatValidatesAndShowsItsPopup() async throws {
+        try requireOnScreen()
         try await enablePlugins()
         let unknown = await run("plugin", "new", "bad", "--with", "menubar,teleport")
         XCTAssertEqual(unknown.exitCode, AgentExit.usage)
@@ -158,6 +161,7 @@ import XCTest
     }
 
     func testTheFocusTimerExampleIsAWholeFeature() async throws {
+        try requireOnScreen()
         try await enablePlugins()
         let example = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("plugins/focus-timer")

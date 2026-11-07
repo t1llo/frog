@@ -1,11 +1,13 @@
 import XCTest
+import FrogTestSupport
 import AppKit
 import SwiftUI
 @testable import FrogApp
 
 @MainActor
 final class WindowSwitcherLatencyTests: XCTestCase {
-    func testSyntheticNativeRowsPresentationTiming() async {
+    func testSyntheticNativeRowsPresentationTiming() async throws {
+        try requireOnScreen()
         let model = WindowSwitcherDisplay()
         let rows = (0..<200).map { index in
             SwitcherWindow(id: UUID(), pid: pid_t(1000 + index), appName: "Fixture \(index)",
@@ -47,7 +49,8 @@ final class WindowSwitcherLatencyTests: XCTestCase {
     }
 
     /// The owner's measure: about 30 windows of a dozen apps, icons in, from the chord to the first frame.
-    func testThirtyWindowsShowWithoutAStall() async {
+    func testThirtyWindowsShowWithoutAStall() async throws {
+        try requireOnScreen()
         let model = WindowSwitcherDisplay()
         let rows = (0..<30).map { index in
             SwitcherWindow(id: UUID(), pid: pid_t(1000 + index % 12), appName: "Fixture \(index % 12)",

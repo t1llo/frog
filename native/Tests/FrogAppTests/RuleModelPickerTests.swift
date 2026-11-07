@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import FrogTestSupport
 import FrogCore
 @testable import FrogApp
 
@@ -8,6 +9,7 @@ import FrogCore
 final class RuleModelPickerTests: XCTestCase {
     /// The list opens on "No model"; one arrow down is the first downloaded model, and Return chooses it.
     func testEmptySelectionReachesDownloadedSpeechModelsByKeyboard() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -35,6 +37,7 @@ final class RuleModelPickerTests: XCTestCase {
 
     /// Search runs over downloaded and external models at once; Return chooses the first match without loading it.
     func testSearchFindsADownloadedModelWhileAnExternalOneIsChosen() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

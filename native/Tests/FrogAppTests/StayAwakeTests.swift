@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import SwiftUI
 import XCTest
+import FrogTestSupport
 import FrogCore
 @testable import FrogApp
 
@@ -426,6 +427,7 @@ final class StayAwakeTests: XCTestCase {
     }
 
     func testNativePopupToggleStartsAndStopsAnExplicitSession() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let system = PowerFixture()
         let power = StayAwakeController(system: system, directory: directory())

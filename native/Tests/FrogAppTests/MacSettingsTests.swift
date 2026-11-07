@@ -1,5 +1,6 @@
 import AppKit
 import XCTest
+import FrogTestSupport
 import FrogCore
 @testable import FrogApp
 
@@ -24,6 +25,7 @@ import FrogCore
     }
 
     func testSettingsAreImmediateWithoutOtherFeaturesOrCompletedDiscovery() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var config = Configuration()
@@ -50,6 +52,7 @@ import FrogCore
     }
 
     func testEachSettingsPaneAppearsOnceWithNoMacActionLabelAndAPaneWithoutAnIconLooksLikeSystemSettings() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var config = Configuration()

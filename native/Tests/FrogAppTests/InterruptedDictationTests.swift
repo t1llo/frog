@@ -1,11 +1,13 @@
 import AppKit
 import XCTest
+import FrogTestSupport
 import FrogCore
 @testable import FrogApp
 
 @MainActor
 final class InterruptedDictationTests: XCTestCase {
     func testNativeEscapeRecordsAnInterruptionWithoutDelivery() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let fixture = try Fixture(monitorKeys: true)
         defer { fixture.cleanUp() }

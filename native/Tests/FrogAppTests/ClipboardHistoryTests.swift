@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import FrogCore
 import XCTest
+import FrogTestSupport
 @testable import FrogApp
 
 @MainActor
@@ -224,6 +225,7 @@ final class ClipboardHistoryTests: XCTestCase {
     }
 
     func testNativePanelKeyboardSelectionPlainPasteEscapeAndStop() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -260,6 +262,7 @@ final class ClipboardHistoryTests: XCTestCase {
     }
 
     func testNativeSelectionFollowsItemWhenHistoryChanges() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         for insert in [true, false] {
             let pasteboard = NSPasteboard.withUniqueName()
@@ -289,6 +292,7 @@ final class ClipboardHistoryTests: XCTestCase {
     }
 
     func testCommandCCopiesSelectedHistoryItemWithoutPasting() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -308,6 +312,7 @@ final class ClipboardHistoryTests: XCTestCase {
     }
 
     func testCopyShortcutWorksWithoutAnAutomaticPasteTarget() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -329,6 +334,7 @@ final class ClipboardHistoryTests: XCTestCase {
     }
 
     func testHundredEntriesStayCompactAndKeyboardScrollAndSearchReachOlderItems() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -365,6 +371,7 @@ final class ClipboardHistoryTests: XCTestCase {
     private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
 
     func testNativePanelShowsFiveEntries() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -390,6 +397,7 @@ final class ClipboardHistoryTests: XCTestCase {
     }
 
     func testDoubleClickPastesTheRowAndSingleClickOnlySelectsIt() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -426,6 +434,7 @@ final class ClipboardHistoryTests: XCTestCase {
     }
 
     func testPanelResizesWithEntriesAndKeepsTheSelectedItem() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -453,6 +462,7 @@ final class ClipboardHistoryTests: XCTestCase {
     }
 
     func testCompactPanelRendersMixedAndFormattedEntriesInLightAndDarkThemes() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let previous = FrogAppearance.shared.settings
         defer { FrogAppearance.shared.apply(previous) }
@@ -491,6 +501,7 @@ final class ClipboardHistoryTests: XCTestCase {
     }
 
     func testReturnPastesFormattedAndShiftReturnPlain() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -521,6 +532,7 @@ final class ClipboardHistoryTests: XCTestCase {
     }
 
     func testAppActivationInvalidatesPasteWhileModifiersAreHeld() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -548,6 +560,7 @@ final class ClipboardHistoryTests: XCTestCase {
     }
 
     func testReopeningDuringPendingPasteDoesNotAccumulateActivationObservers() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -576,6 +589,7 @@ final class ClipboardHistoryTests: XCTestCase {
     }
 
     func testClickingARowKeepsThePanelOpen() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -603,6 +617,7 @@ final class ClipboardHistoryTests: XCTestCase {
     }
 
     func testRemovalDuringPendingPasteInvalidatesDeliveryAndStaleCopies() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         for removal in ["clear", "evict", "replace"] {
             let pasteboard = NSPasteboard.withUniqueName()

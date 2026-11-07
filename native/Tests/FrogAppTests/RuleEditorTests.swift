@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import FrogTestSupport
 import FrogCore
 @testable import FrogApp
 
@@ -9,6 +10,7 @@ import FrogCore
 @MainActor
 final class RuleEditorTests: XCTestCase {
     func testDictationModelPickerAfterDeletingTheSelectedDownload() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -49,6 +51,7 @@ final class RuleEditorTests: XCTestCase {
     }
 
     func testSavingAnOpenWritingEditorDoesNotRestoreADeletedModel() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

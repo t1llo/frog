@@ -24,6 +24,9 @@ jobs:
       - name: Build and test native app
         # Frame-budget tests must measure the optimized app we ship.
         run: swift test -c release
+        env:
+          # No one works on the runner's screen, so the tests that show windows run here too.
+          FROG_ON_SCREEN_TESTS: "1"
       - name: Package application
         run: bash scripts/build-app.sh
         env:

@@ -1,10 +1,12 @@
 import AppKit
 import XCTest
+import FrogTestSupport
 import FrogCore
 @testable import FrogApp
 
 @MainActor final class CommandBarTests: XCTestCase {
     func testOpenedFileIsImmediatelySuggestedButCancelledOpeningIsNot() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var config = Configuration(); config.preferences.setFeature(.commandBar, enabled: true)
@@ -80,6 +82,7 @@ import FrogCore
     }
 
     func testCatalogueRefreshRemovesUninstalledAppsAndReplacesRenamedApps() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var config = Configuration(); config.preferences.setFeature(.commandBar, enabled: true)
@@ -110,6 +113,7 @@ import FrogCore
     }
 
     func testFilesArriveIndependentlyOfAppRefreshAndKeepKeyboardChoice() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var config = Configuration(); config.preferences.setFeature(.commandBar, enabled: true)
@@ -151,6 +155,7 @@ import FrogCore
     }
 
     func testLateFilesFollowAnEquallyGoodFrogFeature() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var config = Configuration(); config.preferences.setFeature(.commandBar, enabled: true)
@@ -173,6 +178,7 @@ import FrogCore
     }
 
     func testEditingQuerySelectsBestMatchInsteadOfRetainingOldKeyboardChoice() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var config = Configuration(); config.preferences.setFeature(.commandBar, enabled: true)
@@ -228,6 +234,7 @@ import FrogCore
     }
 
     func testSyntheticCatalogueInteractionTiming() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var config = Configuration(); config.preferences.setFeature(.commandBar, enabled: true)
@@ -286,6 +293,7 @@ import FrogCore
     }
 
     func testWarmCatalogueIsImmediateWhileRefreshWaitsAndPanelRetainsMovedPosition() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var config = Configuration(); config.preferences.setFeature(.commandBar, enabled: true)
@@ -339,6 +347,7 @@ import FrogCore
     }
 
     func testResultIconsLoadOffMainThreadAndSuccessfulActionsBecomeSuggestions() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var configuration = Configuration()
@@ -377,6 +386,7 @@ import FrogCore
     }
 
     func testClosingDuringIndexingRejectsLateAppsAndReleasesResults() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var config = Configuration(); config.preferences.setFeature(.commandBar, enabled: true)
@@ -395,6 +405,7 @@ import FrogCore
     }
 
     func testSensitiveClipboardIsExcludedAndANoteThatPastesUsesNativeDelivery() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var config = Configuration()
@@ -426,6 +437,7 @@ import FrogCore
         _ = await model.flushDocuments()
     }
     func testNativeReturnExecutesCalculatorAndEscapeDismissesWithoutCopy() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var config = Configuration(); config.preferences.setFeature(.commandBar, enabled: true)

@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import FrogTestSupport
 import FrogCore
 import FrogUsage
 @testable import FrogApp
@@ -11,6 +12,7 @@ import FrogUsage
 @MainActor
 final class SidebarScrollTests: XCTestCase {
     func testChoosingAFeatureInViewLeavesTheListWhereItIsAndOneOutOfViewScrollsToTheNextWholeRow() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let model = try makeModel(root)
@@ -69,6 +71,7 @@ final class SidebarScrollTests: XCTestCase {
 
     /// A window that opens on a page whose row is out of view shows that row clear of the fade too.
     func testAWindowOpeningOnAFeatureOutOfViewShowsItsRow() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let model = try makeModel(root)
@@ -90,6 +93,7 @@ final class SidebarScrollTests: XCTestCase {
     /// In the smallest window, on any page, Models, Features and Settings stay pinned under the list and in view,
     /// and no row shows cut at either edge of the list.
     func testTheSmallestWindowKeepsModelsFeaturesAndSettingsPinnedOnEveryPage() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let model = try makeModel(root)
@@ -123,6 +127,7 @@ final class SidebarScrollTests: XCTestCase {
 
     /// The pinned rows stay pinned while the list is scrolled all the way down, and the list's last row shows whole.
     func testScrollingToTheEndOfTheListLeavesThePinnedRowsInPlace() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let model = try makeModel(root)
@@ -156,6 +161,7 @@ final class SidebarScrollTests: XCTestCase {
 
     /// In a tall window everything fits: nothing scrolls, and Settings is pinned under the list.
     func testATallWindowPinsSettingsUnderAListThatFits() async throws {
+        try requireOnScreen()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let model = try makeModel(root)

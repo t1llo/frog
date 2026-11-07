@@ -2,35 +2,42 @@ import AppKit
 import ApplicationServices
 import FrogCore
 import XCTest
+import FrogTestSupport
 @testable import FrogApp
 
 @MainActor
 final class ClipboardHistoryPastePipelineTests: XCTestCase {
     func testOriginalNativeEditorReceivesPasteAfterPopup() async throws {
+        try requireOnScreen()
         try await exerciseNativeEditor(exposesRange: true)
     }
 
     func testOriginalNativeEditorWithoutAXRangeReceivesPasteAfterPopup() async throws {
+        try requireOnScreen()
         try await exerciseNativeEditor(exposesRange: false)
     }
 
     func testExplicitlyEditableWebAreaReceivesPaste() async throws {
+        try requireOnScreen()
         try await exerciseNativeEditor(exposesRange: false, configure: { $0.roleOverride = "AXWebArea" })
     }
 
     func testReadOnlyWebAreaNeverReceivesPasteEvenWithAppPasteMenu() async throws {
+        try requireOnScreen()
         try await exerciseNativeEditor(exposesRange: false, expectedPaste: false, configure: {
             $0.roleOverride = "AXWebArea"; $0.axEditable = false; $0.nativePasteAvailable = true
         })
     }
 
     func testTerminalStyleReadOnlyAXTextAreaWithNativePasteReceivesPaste() async throws {
+        try requireOnScreen()
         try await exerciseNativeEditor(exposesRange: false, configure: {
             $0.axEditable = false; $0.nativePasteAvailable = true
         })
     }
 
     func testXtermStyleSeparateOutputChangesKeepOriginalInputCaretValid() async throws {
+        try requireOnScreen()
         // Observed in an isolated VS Code terminal: the focused helper textarea
         // stays empty with range 0...0 while a separate accessible output tree
         // grows. Keep range validation rather than exempting terminal apps.
@@ -44,48 +51,57 @@ final class ClipboardHistoryPastePipelineTests: XCTestCase {
     }
 
     func testReadOnlyTextWithoutPasteCapabilityStaysCopyOnly() async throws {
+        try requireOnScreen()
         try await exerciseNativeEditor(exposesRange: false, expectedPaste: false, configure: { $0.axEditable = false })
     }
 
     func testOriginalFieldIsRestoredAfterPopupFocusHandoff() async throws {
+        try requireOnScreen()
         try await exerciseNativeEditor(exposesRange: false, afterClose: {
             $0.window.makeFirstResponder(nil)
         })
     }
 
     func testDifferentFieldAfterPopupIsNeverRestoredOrPastedInto() async throws {
+        try requireOnScreen()
         try await exerciseNativeEditor(exposesRange: false, expectedPaste: false, afterClose: {
             $0.window.makeFirstResponder($0.other)
         })
     }
 
     func testChangedApplicationNeverReceivesPaste() async throws {
+        try requireOnScreen()
         try await exerciseNativeEditor(exposesRange: false, expectedPaste: false, afterClose: { $0.frontmostPID += 1 })
     }
 
     func testChangedWindowNeverReceivesPaste() async throws {
+        try requireOnScreen()
         try await exerciseNativeEditor(exposesRange: false, expectedPaste: false, afterClose: { $0.changedWindow = true })
     }
 
     func testChangedSelectionRemainsProtectedWhenRangeIsAvailable() async throws {
+        try requireOnScreen()
         try await exerciseNativeEditor(exposesRange: true, expectedPaste: false, afterClose: {
             $0.editor.setSelectedRange(NSRange(location: 0, length: 0))
         })
     }
 
     func testSecureAndDisabledFieldsStayCopyOnly() async throws {
+        try requireOnScreen()
         try await exerciseNativeEditor(exposesRange: false, expectedPaste: false, configure: { $0.secure = true })
         try await exerciseNativeEditor(exposesRange: false, expectedPaste: false, afterClose: { $0.secure = true })
         try await exerciseNativeEditor(exposesRange: false, expectedPaste: false, afterClose: { $0.editor.isEditable = false })
     }
 
     func testRichAndPlainDeliveryIntoOriginalNativeField() async throws {
+        try requireOnScreen()
         for plain in [false, true] {
             try await exerciseNativeEditor(exposesRange: false, plain: plain, rich: true)
         }
     }
 
     func testFocusRestorationWaitIsBoundedAndCannotRedirectToAnotherField() async throws {
+        try requireOnScreen()
         try await exerciseNativeEditor(exposesRange: false, expectedPaste: false, configure: {
             $0.restoresKeyboardFocus = false
             $0.pause = { await Task.yield() }
@@ -96,6 +112,7 @@ final class ClipboardHistoryPastePipelineTests: XCTestCase {
     }
 
     func testClearDisableCancelAndInputDuringFocusHandoffPreventClipboardWriteAndPaste() async throws {
+        try requireOnScreen()
         for action in ["clear", "disable", "cancel", "input"] {
             let fixture = ClipboardEditorFixture(exposesRange: false)
             defer { fixture.close() }

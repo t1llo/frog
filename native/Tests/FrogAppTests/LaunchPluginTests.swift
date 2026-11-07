@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import FrogTestSupport
 import FrogCore
 @testable import FrogApp
 
@@ -226,6 +227,7 @@ import FrogCore
     }
 
     func testTheBarOpensInOneStepAndReportsHowLongItTook() async throws {
+        try requireOnScreen()
         let model = try await start()
         let bar = CommandBar(model: model, pasteboard: pasteboard, captureTarget: { nil }, waitForRelease: {}, fileSearch: NoCommandFileSearch(),
                              loadSettings: { SystemSettingsCatalog.defaults }, loadApplications: { [] })

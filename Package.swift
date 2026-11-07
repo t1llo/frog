@@ -32,7 +32,9 @@ let package = Package(
         .executableTarget(name: "FrogCLI", dependencies: ["FrogAgent"], path: "native/FrogCLI", swiftSettings: [.swiftLanguageMode(.v6)]),
         .executableTarget(name: "FrogApp", dependencies: ["FrogCore", "FrogUsage", "FrogAgent", .product(name: "Sparkle", package: "Sparkle"), .product(name: "WhisperKit", package: "WhisperKit"), .product(name: "FluidAudio", package: "FluidAudio"), .product(name: "MLXLLM", package: "mlx-swift-lm"), .product(name: "MLXLMCommon", package: "mlx-swift-lm"), .product(name: "Hub", package: "swift-transformers")], path: "native/FrogApp", resources: [.process("Resources")], linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
         // Helpers shared by the test targets; nothing in the app links it.
-        .target(name: "FrogTestSupport", path: "native/Tests/FrogTestSupport"),
+        .target(name: "FrogTestSupport", dependencies: ["FrogTestBoot"], path: "native/Tests/FrogTestSupport"),
+        // Starts FrogTestSupport's on-screen guard when a test bundle loads.
+        .target(name: "FrogTestBoot", path: "native/Tests/FrogTestBoot"),
         .testTarget(name: "FrogCoreTests", dependencies: ["FrogCore"], path: "native/Tests/FrogCoreTests"),
         .testTarget(name: "FrogAppTests", dependencies: ["FrogApp", "FrogCore", "FrogUsage", "FrogAgent", "FrogTestSupport"], path: "native/Tests/FrogAppTests"),
         .testTarget(name: "FrogAgentTests", dependencies: ["FrogAgent"], path: "native/Tests/FrogAgentTests"),

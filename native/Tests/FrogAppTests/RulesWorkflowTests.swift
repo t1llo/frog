@@ -1,16 +1,19 @@
 import AppKit
 import SwiftUI
 import XCTest
+import FrogTestSupport
 import FrogCore
 @testable import FrogApp
 
 @MainActor
 final class RulesWorkflowTests: XCTestCase {
     func testCreateTextRuleFromMainWindow() async throws {
+        try requireOnScreen()
         try await createRule(audio: false)
     }
 
     func testCreateAudioRuleFromMainWindow() async throws {
+        try requireOnScreen()
         try await createRule(audio: true)
     }
 

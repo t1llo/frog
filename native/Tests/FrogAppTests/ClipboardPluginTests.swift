@@ -2,6 +2,7 @@ import AppKit
 import Darwin
 import FrogCore
 import XCTest
+import FrogTestSupport
 @testable import FrogApp
 
 /// The Clipboard plugin: its switch, its config.toml table, and its actions run as `frog run` runs them.
@@ -150,6 +151,7 @@ final class ClipboardPluginTests: XCTestCase {
 
     /// 1000 items of a few hundred characters each: what they cost to keep, and a search over all of them.
     func testThousandItemsMemoryAndSearch() throws {
+        try requireOnScreen()
         plugin?.setItems(ClipboardHistoryStore.maxCapacity)
         let before = Self.heapBytes()
         let recordStart = ContinuousClock.now

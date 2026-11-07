@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import FrogTestSupport
 import FrogCore
 @testable import FrogApp
 
@@ -76,6 +77,7 @@ final class ScrollAppearanceTests: XCTestCase {
         XCTAssertEqual(try hex(FrogStyle.accent, .darkAqua), "5E6AD2")
     }
     func testScrollbarAppearanceDoesNotChangeAfterTheFirstFrame() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let host = NSHostingView(rootView: ScrollView {
             VStack { ForEach(0..<100, id: \.self) { Text("Row \($0)").frame(height: 30) } }.minimalScrollbars()

@@ -9,13 +9,22 @@ final class AppSearchCatalogTests: XCTestCase {
             .appendingPathComponent("../../FrogApp").standardizedFileURL
         let files = FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil)!
             .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" && $0.lastPathComponent != "AppSearch.swift" }
-        let text = try files.map { try String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+        // Collected once: searching the joined sources once per entry took half a minute.
+        var literals = Set<String>(), sections = Set<String>()
+        let literal = try NSRegularExpression(pattern: #""((?:[^"\\\n]|\\.)*)""#)
+        let section = try NSRegularExpression(pattern: #"FrogSection\("((?:[^"\\\n]|\\.)*)""#)
+        for file in files {
+            let text = try String(contentsOf: file, encoding: .utf8) as NSString
+            let range = NSRange(location: 0, length: text.length)
+            for match in literal.matches(in: text as String, range: range) { literals.insert(text.substring(with: match.range(at: 1))) }
+            for match in section.matches(in: text as String, range: range) { sections.insert(text.substring(with: match.range(at: 1))) }
+        }
         for entry in AppSearchCatalog.entries {
-            if let section = entry.section {
-                XCTAssertTrue(text.contains("FrogSection(\"\(section)\""), "No page has a section named \(section)")
+            if let name = entry.section {
+                XCTAssertTrue(sections.contains(name), "No page has a section named \(name)")
             }
             if let row = entry.row {
-                XCTAssertTrue(text.contains("\"\(row)\""), "No page has a row named \(row)")
+                XCTAssertTrue(literals.contains(row), "No page has a row named \(row)")
             }
         }
     }

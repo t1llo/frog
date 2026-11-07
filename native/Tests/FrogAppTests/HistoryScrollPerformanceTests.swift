@@ -2,11 +2,13 @@ import AppKit
 import SwiftUI
 import FrogCore
 import XCTest
+import FrogTestSupport
 @testable import FrogApp
 
 @MainActor
 final class HistoryScrollPerformanceTests: XCTestCase {
     func testLongTranscriptScrollingStaysWithinFrameBudget() async throws {
+        try requireOnScreen()
         _ = NSApplication.shared
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
