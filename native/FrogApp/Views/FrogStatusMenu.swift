@@ -158,7 +158,7 @@ struct PhoneMenuRow: View {
         // status word say whether a phone is connected.
         MenuActionRow(title: "Phone", symbol: PhonePlugin.info.symbol,
                       key: L10n.text(phone.statusText), dot: connected ? FrogStyle.good : nil,
-                      tint: PhonePlugin.info.tint.color, closes: true, action: open)
+                      tint: PhonePlugin.info.tint.color, closes: true, opensPage: true, action: open)
     }
 }
 
@@ -219,6 +219,9 @@ struct MenuActionRow: View {
     var tint: Color = PluginTint.gray.color
     /// Closes the popup first, for rows that open something else.
     var closes = false
+    /// Opens a page of Frog's window: a chevron ends the row, so a row without keys still reads as one that goes
+    /// somewhere.
+    var opensPage = false
     let action: () -> Void
     @Environment(\.dismiss) private var dismiss
     var body: some View {
@@ -230,6 +233,10 @@ struct MenuActionRow: View {
                 if let dot { Circle().fill(dot).frame(width: 6, height: 6) }
                 if let key { Text(key).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
                 if let shortcut, !shortcut.isEmpty { KeyCaps(shortcut) }
+                if opensPage {
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.muted)
+                        .accessibilityHidden(true)
+                }
             }.padding(.horizontal, FrogStyle.rowPadding).frame(height: FrogStyle.menuRowHeight).contentShape(Rectangle())
         }.buttonStyle(MenuRowStyle())
     }
