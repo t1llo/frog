@@ -25,7 +25,7 @@ struct LocalModelSettingsView: View {
                         Text("None").font(FrogType.body).foregroundStyle(FrogStyle.muted)
                     } else {
                         Button("Unload now") { Task { await model.localModels.unload() } }
-                            .frogDisabled(model.dictating ? "Wait for dictation to finish" : model.localModels.busy ? "Frog is busy with a model" : nil)
+                            .frogDisabledShowingReason(model.dictating ? "Wait for dictation to finish" : model.localModels.busy ? "Frog is busy with a model" : nil)
                     }
                 }
                 let root = model.localModels.root

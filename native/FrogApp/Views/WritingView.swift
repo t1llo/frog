@@ -419,7 +419,7 @@ struct WritingTryView: View {
             FrogSheetButtons(padded: false) {
                 // The model menu above carries the mark; this says why Run waits, next to Run.
                 if let waiting {
-                    Text(L10n.text(waiting)).font(FrogType.body).foregroundStyle(FrogStyle.muted)
+                    Text(L10n.text(waiting)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }
             } trailing: {
                 if run != nil {

@@ -100,8 +100,11 @@ struct AddLocalModelView: View {
                 }
             }
             FrogSheetButtons(padded: false) {
+                // Why Check source waits takes the footer's note, the leading side of the sheet's buttons.
                 if loading {
                     FrogLoadingNote(text: "Reading the model's details…")
+                } else if empty {
+                    Text("Paste a link or a model ID first").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 } else {
                     Text("Nothing downloads yet.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
                         .help("Checking reads the model's details only.")
