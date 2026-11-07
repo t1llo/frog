@@ -156,9 +156,14 @@ struct PhoneMenuRow: View {
         let connected = phone.overall != .offline
         // The feature's own green tile in every state, as in the sidebar and the command bar; the dot and the
         // status word say whether a phone is connected.
+        // One paired phone that is away reads as its name and "Offline": the name gives way (cut at its end) so
+        // the row stays one line however long the phone's name is; the whole sentence is the row's tooltip.
+        let away = !connected && phone.phones.count == 1
         MenuActionRow(title: "Phone", symbol: PhonePlugin.info.symbol,
-                      key: L10n.text(phone.statusText), dot: connected ? FrogStyle.good : nil,
+                      key: away ? phone.phones[0].name : L10n.text(phone.statusText),
+                      keyDetail: away ? L10n.text("Offline") : nil, dot: connected ? FrogStyle.good : nil,
                       tint: PhonePlugin.info.tint.color, closes: true, opensPage: true, action: open)
+            .help(L10n.text(phone.statusText))
     }
 }
 
@@ -218,6 +223,8 @@ struct MenuActionRow: View {
     let title: String
     let symbol: String
     var key: String? = nil
+    /// A short word after `key` that never gives way, such as "Offline" after a phone's name: `key` is cut first.
+    var keyDetail: String? = nil
     /// The keys that run it, drawn as caps, one per key.
     var shortcut: String? = nil
     /// A status dot before `key`, such as green for a connected phone.
@@ -235,10 +242,17 @@ struct MenuActionRow: View {
         Button { if closes { dismiss() }; action() } label: {
             HStack(spacing: FrogStyle.space10) {
                 PluginIconTile(symbol: symbol, tint: tint, size: .sidebar)
-                Text(L10n.text(title)).font(FrogType.row)
-                Spacer()
+                // The title keeps its line; a long value beside it is cut on one line, never wrapped, so every
+                // row stays `menuRowHeight` tall.
+                Text(L10n.text(title)).font(FrogType.row).lineLimit(1).fixedSize()
+                Spacer(minLength: FrogStyle.space8)
                 if let dot { Circle().fill(dot).frame(width: 6, height: 6) }
-                if let key { Text(key).font(FrogType.small).foregroundStyle(FrogStyle.muted) }
+                if let key {
+                    HStack(spacing: FrogStyle.space4) {
+                        Text(key).lineLimit(1).truncationMode(.tail)
+                        if let keyDetail { Text("· \(keyDetail)").lineLimit(1).fixedSize() }
+                    }.font(FrogType.small).foregroundStyle(FrogStyle.muted).layoutPriority(1)
+                }
                 if let shortcut, !shortcut.isEmpty { KeyCaps(shortcut) }
                 if opensPage {
                     Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(FrogStyle.muted)
