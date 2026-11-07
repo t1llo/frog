@@ -28,6 +28,11 @@ final class UIShotsTests: XCTestCase {
         self.folder = folder
         only = ProcessInfo.processInfo.environment["FROG_UI_SHOTS_ONLY"]?.split(separator: ",").map(String.init)
         try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        // Every time the pictures show (resets, "ago", "Until", chart ranges, the sample data's own dates) reads one
+        // fixed clock, so two runs draw the same pictures.
+        let previousNow = getenv(FrogClock.variable).map { String(cString: $0) }
+        setenv(FrogClock.variable, Self.fixedNow, 1)
+        defer { if let previousNow { setenv(FrogClock.variable, previousNow, 1) } else { unsetenv(FrogClock.variable) } }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("frog-ui-shots-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
         // System monitor reads made-up figures, never this Mac's, and opens on ten minutes of graph.
@@ -38,7 +43,7 @@ final class UIShotsTests: XCTestCase {
         FrogVersion.override = ("1.0.48", "48")
         defer { FrogVersion.override = nil }
         let sample = try await SampleFrog(root: root, defaults: temporaryDefaults())
-        (sample.model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)?.monitor?.restore(SampleSystemSampler.history())
+        (sample.model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)?.monitor?.restore(SampleSystemSampler.history(now: FrogClock.now))
         defer { sample.stop() }
 
         try await mainWindow(sample)
@@ -52,6 +57,9 @@ final class UIShotsTests: XCTestCase {
         XCTAssertFalse(written.isEmpty, "No surface matched FROG_UI_SHOTS_ONLY")
         print("UI shots: \(written.count) pictures in \(folder)")
     }
+
+    /// The time of every picture: 2026-11-07 13:40 in this Mac's time zone, an afternoon.
+    static let fixedNow = "2026-11-07T13:40:00"
 
     // MARK: The window
 
@@ -116,7 +124,7 @@ final class UIShotsTests: XCTestCase {
             await documents.load()
             let script = UtilityDocument(kind: .script, title: "Morning check",
                                          text: "echo \"Good morning\"\necho \"3 updates waiting\"\necho \"Backup finished at 06:00\"",
-                                         modified: Date())
+                                         modified: FrogClock.now)
             documents.add(script)
             documents.selection[.script] = script.id
             let runner = ScriptRunner()
@@ -650,7 +658,9 @@ private final class SampleFrog {
         configuration.providers = [ProviderConfiguration(name: "Ollama", kind: .ollama)]
         try ConfigurationStore(directory: root).save(configuration)
         // Changed at different times, so the lists' times say something.
-        let now = Date()
+        let now = FrogClock.now
+        // A phone paired a while ago and out of reach now, with the long name the menu row has to fit.
+        try Self.writePairedPhone(in: root)
         try await UtilityDocumentStore(directory: root.appendingPathComponent("Toolkit")).save([
             UtilityDocument(kind: .note, title: "Email signature", text: "Best,\nAnna\n{{date}}", modified: now.addingTimeInterval(-3 * 86_400), pastes: true),
             UtilityDocument(kind: .note, title: "Meeting notes", text: "# Standup\n- Ship the release\n- Update the website", modified: now.addingTimeInterval(-25 * 60)),
@@ -701,16 +711,16 @@ private final class SampleFrog {
         try await Task.sleep(for: .seconds(2))
 
         // History: a writing result, an answer and a dictation.
-        var answer = HistoryEntry(timestamp: Date().addingTimeInterval(-3_600), originalText: "Requests must be idempotent so that retries are safe.",
+        var answer = HistoryEntry(timestamp: now.addingTimeInterval(-3_600), originalText: "Requests must be idempotent so that retries are safe.",
                                   processedText: "Doing it again changes nothing: a request sent twice has the same effect as one.",
                                   ruleName: "Explain", providerName: "OpenAI", model: "gpt-5-mini")
         answer.answer = AnswerRecord(context: nil, application: "Safari", source: nil, followUps: [])
-        var dictated = HistoryEntry(timestamp: Date().addingTimeInterval(-86_400), originalText: "",
+        var dictated = HistoryEntry(timestamp: now.addingTimeInterval(-86_400), originalText: "",
                                     processedText: "Remind me to send the invoice on Friday and book the train to Zurich.",
                                     ruleName: "Dictation", providerName: "Parakeet", model: "parakeet-ultra")
         dictated.category = .audio
         let entries = [
-            HistoryEntry(timestamp: Date().addingTimeInterval(-120), originalText: "i think we should of shipped it yesterday",
+            HistoryEntry(timestamp: now.addingTimeInterval(-120), originalText: "i think we should of shipped it yesterday",
                          processedText: "I think we should have shipped it yesterday.", ruleName: "Proofread", providerName: "Ollama", model: "llama3.2"),
             answer, dictated
         ]
@@ -764,7 +774,7 @@ private final class SampleFrog {
         for feature in FeatureID.allCases { next.setFeature(feature, enabled: preferences.featureEnabled(feature)) }
         try model.savePreferences(next)
         await model.pluginHost.syncAndWait()
-        (model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)?.monitor?.restore(SampleSystemSampler.history())
+        (model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)?.monitor?.restore(SampleSystemSampler.history(now: FrogClock.now))
     }
 
     func stop() {
@@ -790,10 +800,22 @@ private final class SampleFrog {
         try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted]).write(to: file)
     }
 
+    /// "OPPO Find X9 Pro", paired five days ago and offline: Phone's pairing file in the sample's folder, as the app
+    /// writes it. Its secret is never needed, as the sample opens no connection.
+    static func writePairedPhone(in root: URL) throws {
+        let paired = FrogClock.now.addingTimeInterval(-5 * 86_400)
+        let json = """
+        {"macID": "6F3C1A52-2B7E-4D0A-9C41-8E5B7D2F1A90", "phones": [{"id": "0B7E9C14-5A3D-4F21-8B6C-2D9E4A7F3C15", \
+        "name": "OPPO Find X9 Pro", "pairedAt": "\(ISO8601DateFormatter().string(from: paired))"}]}
+        """
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data(json.utf8).write(to: PhonePairingStore.defaultFile(in: root))
+    }
+
     /// A week of Codex sessions, heavier on some days than others, with the plan's limits as Codex logs them: the
     /// activity chart pictures a working week, not a single day's spike.
     private static func writeCodexLog(in fixtures: URL) throws {
-        let now = Date()
+        let now = FrogClock.now
         let format = ISO8601DateFormatter()
         let calendar = Calendar(identifier: .gregorian)
         func line(_ date: Date, _ type: String, _ payload: [String: Any]) throws -> Data {
@@ -857,7 +879,7 @@ private struct SampleSystemSampler: SystemMonitorSampling {
     }
 
     /// Ten minutes of graph, a reading every ten seconds, with a short burst of work in the middle.
-    static func history(now: Date = Date()) -> [SystemMonitorSample] {
+    static func history(now: Date = FrogClock.now) -> [SystemMonitorSample] {
         (0..<60).map { index in
             let t = Double(index)
             let burst = max(0, 1 - abs(t - 34) / 6) * 0.45
