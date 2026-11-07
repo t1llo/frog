@@ -23,6 +23,11 @@ struct RuleIconTile: View {
         name = item.title; symbol = item.symbol; answers = item.answers; self.size = size
     }
 
+    /// A rule known only by its name and glyph, as the shortcut panel lists it.
+    init(name: String, symbol: String, answers: Bool, size: PluginIconTile.Size = .list) {
+        self.name = name; self.symbol = symbol; self.answers = answers; self.size = size
+    }
+
     var body: some View {
         let tint = Self.tint(name: name, symbol: symbol, answers: answers)
         if let code = Self.languageCode(name: name, symbol: symbol) {

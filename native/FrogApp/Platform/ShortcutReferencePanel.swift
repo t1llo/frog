@@ -62,10 +62,13 @@ struct ShortcutReferenceContent: View {
                             // A plugin's action names its plugin, muted, so two plugins' "Refresh" read apart.
                             let label = Self.label(item)
                             ShortcutPanelRow(title: label.title, detail: label.plugin, hotkey: item.hotkey) {
-                                // A layout shows its picture; everything else the coloured tile its feature wears in
-                                // the sidebar, the command bar and the bubble.
+                                // A layout shows its picture; everything else the coloured tile it wears in the
+                                // sidebar, the command bar and the bubble.
                                 if let action = item.windowAction { WindowLayoutGlyph(action: action) }
-                                else { PluginIconTile(symbol: item.symbol ?? "command", tint: Self.tint(item), size: .sidebar) }
+                                // A Writing or Explain rule wears its Writing tile, colour and language code.
+                                else if [.writing, .explain].contains(item.group), let symbol = item.symbol {
+                                    RuleIconTile(name: item.title, symbol: symbol, answers: item.group == .explain, size: .sidebar)
+                                } else { PluginIconTile(symbol: item.symbol ?? "command", tint: Self.tint(item), size: .sidebar) }
                             }
                                 .help(L10n.text(item.title))
                                 .accessibilityLabel(L10n.text(item.title))
