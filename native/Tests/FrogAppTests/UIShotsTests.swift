@@ -3,7 +3,7 @@ import AppKit
 import SwiftUI
 import FrogCore
 import FrogTestSupport
-import FrogUsage
+@testable import FrogUsage
 @testable import FrogApp
 
 /// Pictures of every surface of Frog a user sees, in light and dark, for a design review from one folder: each page of
@@ -205,6 +205,23 @@ final class UIShotsTests: XCTestCase {
 
     // MARK: The menu bar
 
+    /// Two Claude accounts on the Max plan, read a moment and three minutes ago.
+    static func sampleAccounts(now: Date) -> [UsageAccountSummary] {
+        func account(_ label: String, session: Double, sessionReset: TimeInterval, week: Double, weekReset: TimeInterval, age: TimeInterval) -> UsageAccountSummary {
+            UsageAccountSummary(
+                id: "/sample/\(label)", label: label, shortLabel: label,
+                windows: [UsageWindow(id: "five_hour", title: "Session", percentage: session,
+                                      resetsAt: session.isFinite ? now.addingTimeInterval(sessionReset) : nil, duration: 5 * 3600),
+                          UsageWindow(id: "seven_day", title: "Week", percentage: week,
+                                      resetsAt: now.addingTimeInterval(weekReset), duration: 7 * 86_400)],
+                plan: "Max 20×", sources: ["Claude app · Claude-Account-\(label)"], age: now.addingTimeInterval(-age),
+                readingSource: "Claude app", stale: false, status: nil, included: true,
+                needsLiveSetup: false, mergedNote: nil)
+        }
+        return [account("A", session: 37, sessionReset: 2 * 3600, week: 52, weekReset: 5 * 86_400, age: 20),
+                account("B", session: .nan, sessionReset: 0, week: 57, weekReset: 4 * 86_400, age: 180)]
+    }
+
     private func menuBar(_ sample: SampleFrog) async throws {
         let model = sample.model
         try await popup("menu-frog") { FrogStatusMenu(model: model).environment(\.locale, L10n.locale) }
@@ -213,6 +230,10 @@ final class UIShotsTests: XCTestCase {
             try await popup("menu-\(name)") { FrogStatusMenu(model: model, tab: tab.id).environment(\.locale, L10n.locale) }
         }
         try await popup("popup-llm-usage") { UsageStatusPopover(usage: sample.usage, openDashboard: {}) }
+        // Two Claude accounts, as a Mac signed in to two reads them: B's session renewed after its last reading.
+        try await popup("popup-llm-usage-accounts") {
+            UsageStatusPopover(usage: sample.usage, openDashboard: {}, sampleAccounts: Self.sampleAccounts(now: FrogClock.now))
+        }
         if let monitor = (model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin)?.monitor {
             try await popup("popup-system-monitor") { SystemMonitorStatusPopover(monitor: monitor) {} }
         }

@@ -122,26 +122,22 @@ struct FrogChartPlaceholder<Label: View>: View {
 }
 
 /// A horizontal meter: a rounded track, a fill that is its level colour fading from lighter to full with a soft
-/// highlight along the top, and an optional crisp tick. The fill glides to a new value unless Reduce Motion is on.
+/// highlight along the top, and an optional crisp tick. One thickness everywhere, popups and pages alike, so every
+/// meter of a kind reads as the same object. The fill glides to a new value unless Reduce Motion is on.
 struct FrogMeter: View {
-    enum Size {
-        /// Popups.
-        case compact
-        /// Pages, and the system overview in both places.
-        case regular
-        var height: CGFloat { self == .compact ? 5 : 6 }
-    }
+    /// The one thickness of every meter and progress track.
+    static let height: CGFloat = 6
 
     let fraction: Double
     let tint: Color
-    var size: Size = .regular
-    /// Where a tick marks something on the same scale, such as the share of a window's time gone.
+    /// Where a tick marks something on the same scale, such as the share of a window's time gone. It stands a
+    /// little over the track on both sides without making the meter any taller.
     var tick: Double?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let value = fraction.isFinite ? min(1, max(0, fraction)) : 0
-        let height = size.height
+        let height = Self.height
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 Capsule().fill(FrogStyle.track)
@@ -153,11 +149,15 @@ struct FrogMeter: View {
                         }
                         .frame(width: max(height, geometry.size.width * value))
                 }
+            }
+            .frame(height: height)
+            .overlay(alignment: .leading) {
                 if let tick, tick.isFinite {
                     Capsule().fill(FrogStyle.ink.opacity(0.6)).frame(width: 2, height: height + 4)
-                        .offset(x: max(0, min(geometry.size.width - 2, geometry.size.width * tick - 1)))
+                        .offset(x: max(0, min(geometry.size.width - 2, (geometry.size.width * tick - 1).rounded())))
                 }
-            }.animation(reduceMotion ? nil : FrogMotion.reveal, value: value)
+            }
+            .animation(reduceMotion ? nil : FrogMotion.reveal, value: value)
         }.frame(height: height).accessibilityHidden(true)
     }
 }

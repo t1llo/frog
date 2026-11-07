@@ -123,8 +123,7 @@ struct UsageAccountsLimits: View {
                 } else if usage.preferences.claudeAccountsView == "combined" {
                     combined(accounts, now: FrogClock.now(or: context.date))
                 } else if compact {
-                    SectionCaption(text: "Plan limits")
-                    ForEach(accounts.prefix(4)) { UsageAccountRow(account: $0, now: FrogClock.now(or: context.date)) }
+                    UsageCompactAccounts(accounts: accounts, now: FrogClock.now(or: context.date))
                 } else {
                     ForEach(accounts) { UsageAccountLimits(account: $0, now: FrogClock.now(or: context.date)) }
                 }
@@ -231,7 +230,7 @@ struct UsageLimitView: View {
                 Spacer()
                 Text(window.usedText).font(GraphStyle.figure).monospacedDigit()
             }
-            FrogMeter(fraction: fraction, tint: meterColor, size: compact ? .compact : .regular, tick: elapsed)
+            FrogMeter(fraction: fraction, tint: meterColor, tick: elapsed)
                 .help("The tick marks the time gone in this window.")
             // No spacing: the pace brings its own " · ", so the dot sits evenly between the two.
             HStack(spacing: 0) {
@@ -744,8 +743,8 @@ struct UsageTrend {
 }
 
 /// A period's activity. On the page each bucket is a bar on a labelled scale, so days read as a series against one
-/// baseline; the running total, which the figure above already states, is in the chip under the pointer. A popup's
-/// small chart keeps to the running total's line.
+/// baseline; the running total, which the figure above already states, is in the chip under the pointer. A popup
+/// draws the same bars small (`UsageCompactBars`).
 struct UsageTrendChart: View {
     let steps: [UsageTrend.Step]
     let compact: Bool
@@ -755,70 +754,76 @@ struct UsageTrendChart: View {
     let format: (Double) -> String
     /// The scale's labels, which drop a whole figure's cents ("$100"); `format` when nil.
     var axisFormat: ((Double) -> String)? = nil
-    @State private var selectedDate: Date?
 
     var body: some View {
-        if compact { line } else {
+        if compact {
+            UsageCompactBars(steps: steps, hourly: hourly, timeZone: timeZone, format: format)
+        } else {
             UsageBucketChart(steps: steps, hourly: hourly, timeZone: timeZone, format: format, axisFormat: axisFormat ?? format)
         }
     }
+}
 
-    private var line: some View {
-        let selected = selectedDate.flatMap { date in
-            steps.min { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) }
-        }
-        return VStack(spacing: 4) {
-            Chart {
-                FrogChartGrid(values: [0.5])
-                ForEach(steps) { step in
-                    AreaMark(x: .value("Date", step.date), y: .value("Total", step.line))
-                        .interpolationMethod(.monotone).foregroundStyle(FrogChart.areaFill(FrogStyle.series))
-                        .accessibilityHidden(true)
+/// A popup's activity chart: the page's chart made small, one rounded bar per day (or hour) in the accent on one
+/// baseline, the first bar starting on the card's text edge and the last ending on its trailing edge, so the two
+/// dates under them line up with the bars they name. No scale: the figure above states the total, and the chip
+/// under the pointer gives a bar's amount.
+struct UsageCompactBars: View {
+    let steps: [UsageTrend.Step]
+    let hourly: Bool
+    let timeZone: TimeZone
+    let format: (Double) -> String
+    @State private var hovered: Int?
+
+    static let plotHeight: CGFloat = 56
+
+    var body: some View {
+        let peak = steps.map(\.amount).max() ?? 0
+        VStack(spacing: FrogStyle.space6) {
+            GeometryReader { geometry in
+                let count = max(1, steps.count)
+                // Bars take the page's share of each slot (0.56 of it for a week, 0.7 for a month), the first on
+                // the leading edge and the last on the trailing one.
+                let ratio: CGFloat = count > 14 ? 0.7 : 0.56
+                let width = max(2, geometry.size.width * ratio / (CGFloat(count) * ratio + CGFloat(count - 1) * (1 - ratio)))
+                let gap = count > 1 ? (geometry.size.width - width * CGFloat(count)) / CGFloat(count - 1) : 0
+                ZStack(alignment: .bottomLeading) {
+                    Rectangle().fill(FrogStyle.hairline).frame(height: 1)
+                    ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                        if step.amount > 0, peak > 0 {
+                            let share = max(step.amount / peak, UsageBucketChart.minimumShare * 2)
+                            UnevenRoundedRectangle(topLeadingRadius: min(FrogStyle.smallRadius / 2, width / 2),
+                                                   topTrailingRadius: min(FrogStyle.smallRadius / 2, width / 2), style: .continuous)
+                                .fill(FrogStyle.series.opacity(hovered == nil || hovered == index ? 0.9 : 0.35))
+                                .frame(width: width, height: max(2, (geometry.size.height - 1) * share))
+                                .offset(x: CGFloat(index) * (width + gap))
+                        }
+                    }
                 }
-                ForEach(steps) { step in
-                    LineMark(x: .value("Date", step.date), y: .value("Total", step.line))
-                        .interpolationMethod(.monotone).lineStyle(FrogChart.line).foregroundStyle(FrogStyle.series)
-                        .accessibilityLabel("Total by \(UsageBucketChart.label(step.date, hourly: hourly, long: true, timeZone: timeZone))")
-                        .accessibilityValue(format(step.total))
+                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .bottomLeading)
+                .contentShape(Rectangle())
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let point): hovered = min(count - 1, max(0, Int(point.x / (width + gap))))
+                    case .ended: hovered = nil
+                    }
                 }
-                if let last = steps.last {
-                    FrogChartPoint(x: .value("Date", last.date), y: .value("Total", last.line), color: FrogStyle.series)
-                }
-                if let selected {
-                    FrogChartRule(x: .value("Date", selected.date))
-                    FrogChartPoint(x: .value("Date", selected.date), y: .value("Total", selected.line), color: FrogStyle.series)
-                }
-            }
-            .chartXScale(domain: domain(steps), range: .plotDimension(startPadding: FrogChart.endInset, endPadding: FrogChart.endInset))
-            .chartYScale(domain: 0...1, range: .plotDimension(startPadding: 6, endPadding: FrogChart.endInset))
-            .chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
-            .chartXSelection(value: $selectedDate)
-            .frogChartPlot(compact: true)
-            .frame(height: 64)
-            .overlay(alignment: FrogChart.chipAlignment(pointerAt: pointer(selected))) {
-                if let selected {
-                    FrogChartChip {
-                        Text("\(UsageBucketChart.label(selected.date, hourly: hourly, long: true, timeZone: timeZone)) · \(format(selected.amount)) · \(format(selected.total)) total")
+                .overlay(alignment: FrogChart.chipAlignment(pointerAt: hovered.map { Double($0) / Double(max(1, count - 1)) } ?? 0)) {
+                    if let hovered, steps.indices.contains(hovered) {
+                        let step = steps[hovered]
+                        FrogChartChip { Text("\(UsageBucketChart.label(step.date, hourly: hourly, long: true, timeZone: timeZone)) · \(format(step.amount))") }
                     }
                 }
             }
-            .help("The line is the running total for the period.")
+            .frame(height: Self.plotHeight)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(L10n.text(hourly ? "Activity by hour" : "Activity by day"))
+            .help(L10n.text(hourly ? "Each bar is one hour’s amount." : "Each bar is one day’s amount."))
             if let first = steps.first, let last = steps.last {
                 GraphAxis(leading: UsageBucketChart.label(first.date, hourly: hourly, long: false, timeZone: timeZone),
                           trailing: UsageBucketChart.label(last.date, hourly: hourly, long: false, timeZone: timeZone))
             }
         }
-    }
-
-    /// Where the selected bucket lies across the chart, 0 at its left edge and 1 at its right.
-    private func pointer(_ selected: UsageTrend.Step?) -> Double {
-        guard let selected, let first = steps.first?.date, let last = steps.last?.date, last > first else { return 0 }
-        return selected.date.timeIntervalSince(first) / last.timeIntervalSince(first)
-    }
-
-    private func domain(_ steps: [UsageTrend.Step]) -> ClosedRange<Date> {
-        let first = steps.first?.date ?? .now, last = steps.last?.date ?? first
-        return last > first ? first...last : first.addingTimeInterval(-3600)...first.addingTimeInterval(3600)
     }
 }
 
@@ -867,7 +872,7 @@ struct UsageBucketChart: View {
                     // A middle that rounds to the same words as 0 or the top is left out rather than said twice.
                     if let amount = value.as(Double.self),
                        amount == 0 || amount == top || ![zeroLabel, topLabel].contains(axisFormat(amount)) {
-                        Text(amount == 0 ? "0" : axisFormat(amount)).font(FrogType.small).monospacedDigit().foregroundStyle(FrogStyle.muted)
+                        Text(axisFormat(amount)).font(FrogType.small).monospacedDigit().foregroundStyle(FrogStyle.muted)
                     }
                 }
             }

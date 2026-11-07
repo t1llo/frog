@@ -26,11 +26,13 @@ struct UsageMenuTab: View {
     }
 }
 
-/// The two cards the tab and the popup share: the plan limits, then the period's activity.
+/// The two cards the tab and the popup share: the plan limits, then the period's activity. `accounts` stands in
+/// for the model's accounts, for pictures of the popup with several Claude accounts.
 private struct UsageMenuCards: View {
     @ObservedObject var usage: UsageDashboardModel
+    var accounts: [UsageAccountSummary]? = nil
     var body: some View {
-        UsageMenuLimitsBlock(usage: usage).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
+        UsageMenuLimitsBlock(usage: usage, accounts: accounts).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
             .frogTableSurface()
         UsageCompactActivity(usage: usage).padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading)
             .frogTableSurface()
@@ -59,12 +61,14 @@ struct UsageStatusPopover: View {
     var liveSetup: (UsageAccountSummary) -> Void = { _ in }
     /// "Sign in to Claude Code for B…", for an account whose own Claude Code login is gone.
     var accountSignIn: (UsageAccountSummary) -> Void = { _ in }
+    /// Stands in for the model's Claude accounts, for pictures of the popup with two of them.
+    var sampleAccounts: [UsageAccountSummary]? = nil
 
     @ObservedObject private var readiness = UpdateReadiness.shared
 
     var body: some View {
         let provider = usage.preferences.provider
-        let accounts = Self.shownAccounts(usage)
+        let accounts = sampleAccounts ?? Self.shownAccounts(usage)
         let setup = accounts.first(where: \.needsLiveSetup)
         let signInAccount = setup == nil ? accounts.first(where: \.needsSignIn) : nil
         let claudeSignIn = setup == nil && signInAccount == nil && provider == "Claude" && accounts.isEmpty && usage.needsClaudeSignIn
@@ -72,13 +76,14 @@ struct UsageStatusPopover: View {
             // The header and content keep the panel's inset; the footer band below runs to the panel's edges.
             VStack(alignment: .leading, spacing: 0) {
                 FrogPopupHeader(symbol: LLMUsagePlugin.info.symbol, tint: LLMUsagePlugin.info.tint, title: "LLM usage") {
-                    // The choice apart from the two actions, so the header reads as a value and a pair of buttons.
-                    UsageProviderDropdown(usage: usage).padding(.trailing, FrogStyle.space6)
+                    // The header's own 8-point gaps, so with the two actions it fits the popup's width: a wider
+                    // header pushed the cards under it off-centre.
+                    UsageProviderDropdown(usage: usage)
                     UsageRefreshAction(usage: usage, bordered: true)
                     IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", bordered: true, action: openDashboard)
                 }
                 VStack(alignment: .leading, spacing: FrogStyle.panelCardGap) {
-                    UsageMenuCards(usage: usage)
+                    UsageMenuCards(usage: usage, accounts: sampleAccounts)
                     // Only what needs doing: at most one account is offered live readings or a sign-in, the first that needs one.
                     if setup != nil || signInAccount != nil || claudeSignIn || readiness.version != nil {
                         VStack(alignment: .leading, spacing: FrogStyle.space2) {
@@ -100,7 +105,7 @@ struct UsageStatusPopover: View {
                     }
                 }.padding(.bottom, FrogStyle.space8)
             }.padding([.horizontal, .top], FrogStyle.panelCardInset)
-            FrogPopupFooter { UsageMenuStatus(usage: usage) }
+            FrogPopupFooter { UsageMenuStatus(usage: usage, sampleAccounts: sampleAccounts) }
         }
         .frame(width: Self.width).fixedSize(horizontal: false, vertical: true)
         .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).controlSize(.small)
@@ -111,12 +116,10 @@ struct UsageStatusPopover: View {
         .onDisappear { usage.setPresented(false, for: .popup) }
     }
 
-    /// "just now", "12m ago", "10h ago", "3d ago".
+    /// When a reading was made, in the one form every list and footer uses (`RecentTimestamp`): "Just now",
+    /// "12 min ago", "13:14", "Yesterday".
     static func age(of date: Date, at now: Date) -> String {
-        let minutes = max(0, Int(now.timeIntervalSince(date) / 60))
-        if minutes < 1 { return "just now" }
-        if minutes < 60 { return "\(minutes)m ago" }
-        return minutes < 1440 ? "\(minutes / 60)h ago" : "\(minutes / 1440)d ago"
+        RecentTimestamp.text(min(date, now), now: now)
     }
     /// The Claude accounts shown one by one or combined: only while Frog reads each of them and
     /// finds at least two; otherwise every surface shows the one account as always.
@@ -145,13 +148,32 @@ struct UsageProviderDropdown: View {
 /// The popup's limits card: the accounts notice, the plan windows and, when enabled, extra usage.
 private struct UsageMenuLimitsBlock: View {
     @ObservedObject var usage: UsageDashboardModel
+    var accounts: [UsageAccountSummary]? = nil
     var body: some View {
         let provider = usage.preferences.provider
-        let accounts = UsageStatusPopover.shownAccounts(usage)
+        let shown = accounts ?? UsageStatusPopover.shownAccounts(usage)
         VStack(alignment: .leading, spacing: FrogStyle.space16) {
             if provider == "Claude", usage.accountsNoticeVisible { UsageAccountsNotice(usage: usage, compact: true) }
-            if accounts.isEmpty { UsageCompactLimits(usage: usage) } else { UsageAccountsLimits(usage: usage, compact: true) }
+            if let accounts {
+                UsageCompactAccounts(accounts: accounts.filter(\.included), now: FrogClock.now)
+            } else if shown.isEmpty {
+                UsageCompactLimits(usage: usage)
+            } else {
+                UsageAccountsLimits(usage: usage, compact: true)
+            }
             UsageExtraUsageBlock(usage: usage)
+        }
+    }
+}
+
+/// Each Claude account's limits in a popup: the "Plan limits" caption, then one block per account.
+struct UsageCompactAccounts: View {
+    let accounts: [UsageAccountSummary]
+    let now: Date
+    var body: some View {
+        VStack(alignment: .leading, spacing: FrogStyle.space12) {
+            SectionCaption(text: "Plan limits")
+            ForEach(accounts.prefix(4)) { UsageAccountRow(account: $0, now: now) }
         }
     }
 }
@@ -170,7 +192,7 @@ struct UsageExtraUsageBlock: View {
                     Text(extra.used).font(GraphStyle.figure).monospacedDigit()
                 }
                 if let fraction = extra.fraction {
-                    FrogMeter(fraction: fraction, tint: tint, size: .compact)
+                    FrogMeter(fraction: fraction, tint: tint)
                 }
                 HStack(spacing: 4) {
                     Text("This month")
@@ -211,11 +233,15 @@ private struct UsageCompactActivity: View {
     var body: some View {
         let settings = usage.preferences
         let chart = usage.chart(provider: settings.provider, range: settings.range, metric: settings.metric)
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: FrogStyle.space12) {
+            // The period is a choice of two or three, so it is segments, level with the legend's line, as on the
+            // page: every period in view, nothing that reads as a slider.
             HStack(alignment: .top) {
                 UsageActivityTotal(usage: usage, chart: chart)
-                Spacer()
-                UsageRangeDropdown(usage: usage, compact: true)
+                Spacer(minLength: FrogStyle.space8)
+                CompactSegments(values: usage.ranges, selected: settings.range, compact: true, title: { $0 }) { range in
+                    var next = usage.preferences; next.range = range; usage.updatePreferences(next)
+                }.fixedSize().offset(y: -FrogStyle.space4).accessibilityLabel("Activity period")
             }
             UsageActivityChart(usage: usage, chart: chart, compact: true)
             if usage.loaded, chart.hasActivity {
@@ -246,14 +272,18 @@ struct UsageMenuFooterStatus: View {
                 : accounts.map { "\($0.label): \($0.age.map { UsageStatusPopover.age(of: $0, at: FrogClock.now(or: context.date)) } ?? "no reading")" }
             let warning = accounts.isEmpty ? usage.planWarning(provider: provider)
                 : accounts.filter(\.stale).map { "\($0.label): \($0.status ?? "no current reading")" }.joined(separator: "\n").nilIfBlank
-            HStack(spacing: FrogStyle.space4) {
-                Text(age ?? L10n.text("No reading yet")).monospacedDigit().accessibilityLabel(age.map { "Updated \($0)" } ?? L10n.text("No reading yet"))
-                if let warning {
-                    Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning).help(warning).accessibilityLabel(warning)
-                }
-            }
-            .lineLimit(1).help(details.joined(separator: "\n"))
+            FrogFooterStatus(text: age ?? L10n.text("No reading yet"), tone: Self.tone(age: oldest, warning: warning))
+                .accessibilityLabel(age.map { "Updated \($0)" } ?? L10n.text("No reading yet"))
+                .help(([warning].compactMap { $0 } + details).joined(separator: "\n"))
         }
+    }
+}
+
+extension UsageMenuFooterStatus {
+    /// Green while the readings are current, the warning colour when one is old or missing, a hollow ring before
+    /// the first.
+    static func tone(age: Date?, warning: String?) -> FrogFooterStatus.Tone {
+        age == nil ? .off : warning == nil ? .good : .warning
     }
 }
 
@@ -264,74 +294,90 @@ private extension String {
 /// When the limits were read, the source on hover; one entry per account while each is shown.
 struct UsageMenuStatus: View {
     @ObservedObject var usage: UsageDashboardModel
+    var sampleAccounts: [UsageAccountSummary]? = nil
     var body: some View {
         let provider = usage.preferences.provider
-        let accounts = UsageStatusPopover.shownAccounts(usage)
+        let accounts = sampleAccounts ?? UsageStatusPopover.shownAccounts(usage)
         TimelineView(.periodic(from: .now, by: 30)) { context in
             if !accounts.isEmpty {
                 UsageAccountsFooter(accounts: accounts.filter(\.included), now: FrogClock.now(or: context.date))
             } else {
-                HStack(spacing: 4) {
-                    let age = usage.planUpdatedAt(provider: provider).map { UsageStatusPopover.age(of: $0, at: FrogClock.now(or: context.date)) }
-                    // A clock and the age ("15m ago"), short enough for the menu tab's header row beside the provider.
-                    // "Updated" and the source are in the tooltip.
-                    if let age { Image(systemName: "clock").font(FrogType.caption).accessibilityHidden(true) }
-                    Text(age ?? "No plan reading yet")
-                        .help(([age.map { "Updated \($0)" }, usage.planSource(provider: provider), usage.status(provider: provider)]).compactMap { $0 }.joined(separator: "\n"))
-                        .accessibilityLabel(age.map { "Updated \($0)" } ?? "No plan reading yet")
-                    if let warning = usage.planWarning(provider: provider) {
-                        Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning)
-                            .help(warning).accessibilityLabel(warning)
-                    }
-                }.lineLimit(1)
+                // The footer's one status form, a dot and a short word, as Frog's "Ready" and System's "Live":
+                // when the limits were read; "Updated", the source and any warning are in the tooltip.
+                let updated = usage.planUpdatedAt(provider: provider)
+                let age = updated.map { UsageStatusPopover.age(of: $0, at: FrogClock.now(or: context.date)) }
+                let warning = usage.planWarning(provider: provider)
+                FrogFooterStatus(text: age ?? L10n.text("No plan reading yet"), tone: UsageMenuFooterStatus.tone(age: updated, warning: warning))
+                    .help(([warning, age.map { "Updated \($0)" }, usage.planSource(provider: provider), usage.status(provider: provider)]).compactMap { $0 }.joined(separator: "\n"))
+                    .accessibilityLabel(age.map { "Updated \($0)" } ?? "No plan reading yet")
             }
         }
     }
 }
 
-/// One account in the popup: its label, plan, age and two small meters, Session and Week.
+/// One account in the popup: its label, plan and age, then Session and Week each on a line of its own, its name, a
+/// full-width meter with the tick for the time gone, the share used and when it renews, in columns that line up
+/// from account to account.
 struct UsageAccountRow: View {
     let account: UsageAccountSummary
     let now: Date
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: FrogStyle.space8) {
+            HStack(spacing: FrogStyle.space6) {
                 Text(account.label).font(FrogType.bodyMedium).lineLimit(1)
                 if let plan = account.plan { UsagePlanBadge(plan: plan) }
-                Spacer(minLength: 4)
-                Text(account.age.map { UsageStatusPopover.age(of: $0, at: now) } ?? "No reading yet")
-                    .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                Spacer(minLength: FrogStyle.space4)
+                Text(account.age.map { UsageStatusPopover.age(of: $0, at: now) } ?? L10n.text("No reading yet"))
+                    .font(FrogType.caption).monospacedDigit().foregroundStyle(FrogStyle.muted).lineLimit(1)
                 if account.stale {
                     Image(systemName: "exclamationmark.circle").font(FrogType.caption).foregroundStyle(FrogStyle.warning)
                         .accessibilityLabel("No current reading")
                 }
             }
-            HStack(spacing: 12) {
-                UsageMiniMeter(title: "Session", window: account.windows.first { $0.id == "five_hour" }, now: now)
-                UsageMiniMeter(title: "Week", window: account.windows.first { $0.id == "seven_day" }, now: now)
+            VStack(alignment: .leading, spacing: FrogStyle.space6) {
+                UsageAccountWindowLine(title: "Session", window: account.windows.first { $0.id == "five_hour" }, now: now)
+                UsageAccountWindowLine(title: "Week", window: account.windows.first { $0.id == "seven_day" }, now: now)
             }.opacity(account.stale ? 0.55 : 1)
         }.contentShape(Rectangle()).help(account.status ?? "").accessibilityElement(children: .combine)
     }
 }
 
-private struct UsageMiniMeter: View {
+/// "Session  ━━━━━━━──────  37%  15:40": a window of one account, one line high.
+private struct UsageAccountWindowLine: View {
     let title: String
     let window: UsageWindow?
     let now: Date
+    /// The columns, so the meters and figures of every account line up.
+    static let titleWidth: CGFloat = 52
+    static let valueWidth: CGFloat = 34
+    static let resetWidth: CGFloat = 40
+
     var body: some View {
-        let fraction = window.map { $0.percentage.isFinite ? min(1, max(0, $0.percentage / 100)) : 0 } ?? 0
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 4) {
-                Text(title).foregroundStyle(FrogStyle.muted)
-                Spacer(minLength: 2)
-                Text(window?.usedText ?? "—").font(FrogType.label).monospacedDigit()
-                if let reset = window?.resetsAt {
-                    Text(UsageStatusPopover.shortReset(reset, now: now)).foregroundStyle(FrogStyle.muted)
-                        .help(reset.formatted(date: .abbreviated, time: .shortened))
-                }
-            }.font(FrogType.caption).lineLimit(1)
-            FrogMeter(fraction: fraction, tint: FrogStyle.level(fraction, warning: 0.8, critical: 0.95), size: .compact)
-        }.frame(maxWidth: .infinity)
+        let known = window.map { $0.percentage.isFinite } ?? false
+        let fraction = known ? min(1, max(0, (window?.percentage ?? 0) / 100)) : 0
+        HStack(spacing: FrogStyle.space8) {
+            Text(L10n.text(title)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                .frame(width: Self.titleWidth, alignment: .leading)
+            FrogMeter(fraction: fraction, tint: FrogStyle.level(fraction, warning: 0.8, critical: 0.95), tick: elapsed)
+            if known, let window {
+                Text(window.usedText).font(FrogType.label).monospacedDigit().lineLimit(1)
+                    .frame(width: Self.valueWidth, alignment: .trailing)
+                Text(window.resetsAt.map { UsageStatusPopover.shortReset($0, now: now) } ?? "")
+                    .font(FrogType.caption).monospacedDigit().foregroundStyle(FrogStyle.muted).lineLimit(1)
+                    .frame(width: Self.resetWidth, alignment: .trailing)
+                    .help(window.resetsAt.map { "Renews \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "")
+            } else {
+                // A session that renewed after the last reading is not empty: it is unknown until the next one.
+                Text(L10n.text("Renewed")).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                    .frame(width: Self.valueWidth + FrogStyle.space8 + Self.resetWidth, alignment: .trailing)
+                    .help("Renewed since the last reading")
+            }
+        }
+    }
+
+    private var elapsed: Double? {
+        guard let window, window.percentage.isFinite, let reset = window.resetsAt, let duration = window.duration, duration > 0 else { return nil }
+        return min(1, max(0, 1 - reset.timeIntervalSince(now) / duration))
     }
 }
 
@@ -341,14 +387,11 @@ private struct UsageAccountsFooter: View {
     let now: Date
     var body: some View {
         let stale = accounts.filter(\.stale)
-        HStack(spacing: 4) {
-            Text(accounts.map { "\($0.label) \($0.age.map { UsageStatusPopover.age(of: $0, at: now) } ?? "no reading")" }.joined(separator: " · "))
-                .help(accounts.map { "\($0.label): \($0.sources.joined(separator: ", "))" }.joined(separator: "\n"))
-            if !stale.isEmpty {
-                let warning = stale.map { "\($0.label): \($0.status ?? "no current reading")" }.joined(separator: "\n")
-                Image(systemName: "exclamationmark.circle").foregroundStyle(FrogStyle.warning)
-                    .help(warning).accessibilityLabel(warning)
-            }
-        }.font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+        let oldest = accounts.compactMap(\.age).min()
+        let warning = stale.map { "\($0.label): \($0.status ?? "no current reading")" }.joined(separator: "\n")
+        // Each account's age is on its own row above; the footer says the oldest, in the footer's one form.
+        FrogFooterStatus(text: oldest.map { UsageStatusPopover.age(of: $0, at: now) } ?? L10n.text("No reading yet"),
+                         tone: UsageMenuFooterStatus.tone(age: oldest, warning: stale.isEmpty ? nil : warning))
+            .help(([stale.isEmpty ? nil : warning] + accounts.map { "\($0.label): \($0.sources.joined(separator: ", "))" }).compactMap { $0 }.joined(separator: "\n"))
     }
 }
