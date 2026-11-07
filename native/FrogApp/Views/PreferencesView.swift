@@ -21,11 +21,11 @@ struct PreferencesView: View {
                     FrogRow(model.loginStatus) { Button("Open Login Items") { LoginService.openLoginItems() } }
                 }
                 FrogRow("Writing indicator", caption: "A small pill at the bottom of the screen while a rule runs") { Toggle("Writing indicator", isOn: preference(\.showProcessingIndicator)).labelsHidden() }
-                FrogRow("Shortcut reference", caption: "Hold this shortcut to see every rule and its keys.") {
+                FrogRow("Shortcut reference", caption: "Every rule and its keys, while you hold it") {
                     HotkeyRecorder(hotkey: Binding(get: { prefs.shortcutPanelHotkey }, set: { value in update { $0.shortcutPanelHotkey = value } }))
                 }
                 if let issue = model.hotkeyErrors[AppModel.shortcutPanelID] { FrogRowNote(text: issue, tone: FrogStyle.warning) }
-                FrogRow("Setup", caption: "Walk through features, permissions, models and providers again.") { Button("Run setup again") { model.showSetup() } }
+                FrogRow("Setup", caption: "Features, permissions, models and providers, step by step") { Button("Run setup again") { model.showSetup() } }
                 FrogRow("Statistics", caption: "What you did with Frog, counted on this Mac") { Button("Show statistics") { model.toolkit.select(.statistics) } }
             }
             AppearanceSettingsView(model: model)
@@ -44,14 +44,14 @@ struct PreferencesView: View {
                 HistoryLimitsView(model: model)
             }
             FrogSection("Settings file") {
-                FrogRow("config.toml", caption: "Changes apply when you save.") {
+                FrogRow("config.toml", caption: "Read again each time you save it") {
                     HStack(spacing: 8) {
                         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.settingsFile.fileURL]) }
                             .buttonStyle(.frog())
                         Button("Open") { openSettingsFile() }
                     }
                 }
-                FrogRow("Import or export", caption: "API keys stay in Keychain.") {
+                FrogRow("Import or export", caption: "Everything but API keys, which stay in Keychain") {
                     HStack(spacing: 8) {
                         Button("Import…") { chooseConfiguration() }.disabled(model.isProcessing || model.isTestingProvider || model.dictating)
                         Button("Export…") { exportConfiguration() }
