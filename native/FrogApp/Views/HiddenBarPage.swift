@@ -14,8 +14,9 @@ struct HiddenBarPage: View {
                     organizer.configure(enabled: true, settings: plugin.settings.organizer)
                 }
             }
-            // The shortcut shares the hiding card: a card of one row would stand alone under its own heading.
-            FrogSection("Hiding") {
+            // The shortcut shares the hiding card: a card of one row would stand alone under its own heading. The
+            // card is headed only beside the menu bar's picture; alone it is the page's one card.
+            FrogSection(plugin.organizer == nil ? nil : "Hiding") {
                 FrogRow("Show or hide icons") {
                     HotkeyRecorder(hotkey: Binding(get: { plugin.settings.shortcut?.hotkey },
                                                    set: { hotkey in plugin.update { $0.shortcut = hotkey.flatMap { try? Shortcut($0) } } }))
