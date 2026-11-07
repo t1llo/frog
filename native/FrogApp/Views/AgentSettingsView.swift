@@ -143,6 +143,6 @@ private struct AgentSkillRow: View {
 
 private struct AgentInstalledLabel: View {
     var body: some View {
-        Label("Installed", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.accentText)
+        Label("Installed", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
     }
 }
