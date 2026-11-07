@@ -169,8 +169,8 @@ private struct PluginNumberSetting: View {
 
     private var field: some View {
         TextField("", text: $draft).textFieldStyle(.plain).font(FrogType.body.monospacedDigit())
-            .multilineTextAlignment(.trailing).focused($focused)
-            .padding(.horizontal, FrogStyle.space8).frogControlSurface().frame(width: 64)
+            .multilineTextAlignment(.center).focused($focused)
+            .padding(.horizontal, FrogStyle.space6).frogControlSurface().frame(width: fieldWidth)
             .accessibilityLabel(L10n.text(title)).help(range ?? "")
             .onSubmit(save)
             .onKeyPress(.upArrow) { step(by: 1); return .handled }
@@ -185,6 +185,13 @@ private struct PluginNumberSetting: View {
             .onAppear { draft = value.map(String.init) ?? "" }
             .onChange(of: value) { _, new in if !focused { draft = new.map(String.init) ?? "" } }
             .onChange(of: focused) { _, now in if !now { save() } }
+    }
+
+    /// As wide as the longest number the bounds allow, at least two digits and at most six, so 25 does not sit in a
+    /// field made for a sentence.
+    private var fieldWidth: CGFloat {
+        let digits = [minimum, maximum].compactMap { $0 }.map { String($0).count }.max() ?? 4
+        return CGFloat(min(max(digits, 2), 6)) * 8 + FrogStyle.space6 * 2 + 4
     }
 
     /// "1–120", or the one bound the plugin sets.

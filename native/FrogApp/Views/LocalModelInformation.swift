@@ -10,10 +10,11 @@ struct LocalModelInformation: View {
             // A sheet is its own window, so its header keeps the title.
             FrogPageHeader(title: item.name, subtitle: item.kind == .audio ? "A speech model that runs on this Mac once downloaded" : "A text model that runs on this Mac once downloaded")
                 .environment(\.frogToolbarTitle, false)
-            FrogSection {
+            // Every fact one row of one height; what the download size leaves out is the card's footer.
+            FrogSection(footer: "Memory use while it runs can be higher than the download.") {
                 fact("Languages", item.languages)
                 fact("Runtime", item.runtimeName)
-                fact("Download", item.downloadSize, caption: "Memory use while running can be higher.")
+                fact("Download", item.downloadSize)
                 fact("Source", item.repository)
                 if let variant = item.variant { fact("Variant", variant) }
                 if let original = item.originalRepository { fact("Based on", original) }
@@ -35,9 +36,9 @@ struct LocalModelInformation: View {
             .buttonStyle(.frog()).environment(\.locale, L10n.locale)
     }
 
-    /// One fact: the label on the left, with a caption under it when the value needs one, the value on the right.
-    private func fact(_ label: String, _ value: String, caption: String? = nil) -> some View {
-        FrogRow(label, caption: caption) {
+    /// One fact: the label on the left, the value on the right.
+    private func fact(_ label: String, _ value: String) -> some View {
+        FrogRow(label) {
             Text(value).font(FrogType.body).foregroundStyle(FrogStyle.ink).textSelection(.enabled)
                 .lineLimit(1).truncationMode(.middle).help(value)
                 .frame(maxWidth: 300, alignment: .trailing)
@@ -74,17 +75,14 @@ struct AddLocalModelView: View {
                     .accessibilityLabel("Hugging Face link")
                     .disabled(loading).onSubmit { inspect() }
                     .onChange(of: source) { _, _ in candidates = []; issue = nil }
-                // A quiet line on the field's edge, and a plain button that fills the field with it.
+                // What the field takes, which is also why Check source waits, and a button that fills it with an example.
                 HStack(spacing: FrogStyle.space8) {
-                    Text("For example: huggingface.co/mlx-community/Qwen3-0.6B-4bit").font(FrogType.small)
+                    Text("Paste a link or an ID such as mlx-community/Qwen3-0.6B-4bit").font(FrogType.small)
                         .foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                     Spacer(minLength: 0)
-                    // An arrow into the field, so it reads as filling the field and not as the disabled Check source.
-                    Button { source = "https://huggingface.co/mlx-community/Qwen3-0.6B-4bit" } label: {
-                        Label("Use example", systemImage: "arrow.turn.left.up")
-                    }
-                    .buttonStyle(.frog()).disabled(loading)
-                    .help("Put this link in the field")
+                    Button("Use example") { source = "https://huggingface.co/mlx-community/Qwen3-0.6B-4bit" }
+                        .buttonStyle(.frog()).disabled(loading)
+                        .help("Put this model's link in the field")
                 }
             }
             if let issue { InlineIssue(message: issue).textSelection(.enabled) }
@@ -105,7 +103,8 @@ struct AddLocalModelView: View {
                 if loading {
                     FrogLoadingNote(text: "Reading the model's details…")
                 } else {
-                    Text("Checking reads the model's details only; nothing downloads.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    Text("Nothing downloads yet.").font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                        .help("Checking reads the model's details only.")
                 }
             } trailing: {
                 FrogCancelButton { inspection?.cancel(); dismiss() }

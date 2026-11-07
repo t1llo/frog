@@ -304,7 +304,7 @@ struct SystemMonitorOverview: View {
     }
 
     /// CPU or GPU: the dot of its line, the figure now or at the moment under the pointer, and a meter like memory's,
-    /// filled in the line's colour (warning and critical override it).
+    /// filled in its level's colour.
     private func legend(_ title: String, color: Color, recorded: Double??, now: SystemMonitorMetric) -> some View {
         let fraction: Double? = recorded.map { $0 } ?? { if case .value(let value) = now { value } else { nil } }()
         let text = recorded.map { percent($0) } ?? percent(now)
@@ -314,8 +314,9 @@ struct SystemMonitorOverview: View {
             } else {
                 Text(text).font(text.hasSuffix("%") ? GraphStyle.legendValue(page: wide) : FrogType.small)
                     .monospacedDigit().frame(height: wide ? 34 : 24, alignment: .leading)
-                // In its line's colour, like its dot, until the level says something.
-                if let fraction { meter(fraction, color: fraction >= 0.8 ? FrogStyle.level(fraction, warning: 0.8, critical: 0.95) : color) }
+                // A meter is coloured by its level, like memory's and storage's: the accent until it runs high. The
+                // dot beside the title names the line; a grey meter for the second line read as switched off.
+                if let fraction { meter(fraction, color: FrogStyle.level(fraction, warning: 0.8, critical: 0.95)) }
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }

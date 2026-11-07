@@ -26,35 +26,30 @@ struct LocalToolProvidersView: View {
                 else { Button("Refresh") { Task { await refresh() } }.buttonStyle(.frog()) }
             }) {
                 ForEach(statuses) { status in
-                    // The tool's own tile and, at the row's end, its state: Connected once it is signed in, Install
-                    // (its website) while it is missing. Which tool the rules use is chosen in the card below.
+                    // The tool's own tile, its state as the caption's first words, and one control at the row's end:
+                    // Connected once it is signed in, the sign-in command while it is not, Install while it is missing.
+                    // Which tool the rules use is chosen in the card below.
                     FrogRow(status.kind.title, caption: .attributed(Self.caption(status)), icon: {
-                        PluginIconTile(mark: .tool(status.kind)).opacity(status.installed ? 1 : FrogStyle.disabledOpacity)
+                        PluginIconTile(mark: .tool(status.kind))
                     }) {
-                        if status.installed, status.authentication == .signedIn {
-                            state("Connected", dot: FrogStyle.good)
-                        } else if status.installed, status.authentication == .signedOut {
-                            // The sign-in command its caption names, a click away, beside the state it fixes.
-                            HStack(spacing: FrogStyle.space10) {
-                                state("Not signed in", dot: FrogStyle.warning)
-                                if let command = status.kind.commands.first {
-                                    CopyAction(title: "Copy command", labeled: true) { ViewActions.copy(command) }
-                                        .help("Copies \(command)")
-                                }
-                            }
+                        if status.installed, status.authentication == .signedIn, status.supportsTextTransforms {
+                            FrogStatePill(text: "Connected", on: true)
+                        } else if status.installed, status.authentication == .signedOut, let command = status.kind.commands.first {
+                            CopyAction(title: "Copy command", labeled: true) { ViewActions.copy(command) }
+                                .help("Copies \(command)")
                         } else if status.installed {
-                            state("Installed", dot: nil)
-                        } else if !status.installed {
+                            FrogStatePill(text: "Installed", on: false)
+                        } else {
                             Button("Install") { NSWorkspace.shared.open(status.kind.website) }.buttonStyle(.frog())
                                 .help("Opens \(status.kind.title)'s website")
                         }
-                    }
+                    }.help(status.detail)
                 }
                 if statuses.isEmpty, refreshing { FrogLoadingNote(text: "Looking for coding tools…") }
             }
             // Which tool and model Frog's rules use; the tool is named here so the model below is clearly its.
             FrogSection("Use with Frog's rules",
-                        footer: "Coding tools use their own sign-in and your plan's limits; change accounts in the tool itself.") {
+                        footer: "Coding tools use their own sign-in. Change accounts in the tool itself.") {
                 FrogRow("Tool") {
                     FrogDropdown(selection: $selected, options: LocalToolKind.allCases, title: { $0.title })
                 }
@@ -95,26 +90,33 @@ struct LocalToolProvidersView: View {
         }
     }
 
-    /// A tool's state at its row's end: a dot in the state's colour, or a hollow one when it is not known yet, and
-    /// the word in muted text, as Codex's "Connected" reads.
-    private func state(_ title: String, dot: Color?) -> some View {
-        HStack(spacing: FrogStyle.space6) {
-            if let dot {
-                Circle().fill(dot).frame(width: 7, height: 7)
-            } else {
-                Circle().strokeBorder(FrogStyle.muted, lineWidth: 1).frame(width: 7, height: 7)
-            }
-            Text(L10n.text(title)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-        }.accessibilityElement(children: .combine)
-    }
-
-    /// The status line with the commands it names in the code font ("Run `claude auth login` in your terminal").
+    /// One line under the tool's name: its state first, in the warning colour when it needs a step, then that step
+    /// with its command in the code font ("Not signed in · Run `claude auth login` in Terminal"). The whole status is
+    /// the row's tooltip.
     static func caption(_ status: LocalToolStatus) -> AttributedString {
-        var text = status.detail
-        for command in status.kind.commands where !text.contains("`\(command)`") {
-            text = text.replacingOccurrences(of: command, with: "`\(command)`")
+        let state: String
+        var step: String?
+        var warns = false
+        if !status.installed {
+            state = "Not installed"
+        } else if !status.supportsTextTransforms {
+            state = "Needs an update"; warns = true
+            step = "This version cannot rewrite text"
+        } else {
+            switch status.authentication {
+            case .signedIn: state = "Signed in"; step = "Uses your plan's limits"
+            case .signedOut:
+                state = "Not signed in"; warns = true
+                step = status.kind == .opencode ? "Connect a provider with `/connect` in OpenCode"
+                    : status.kind.commands.first.map { "Run `\($0)` in Terminal" } ?? "Sign in to \(status.kind.title)"
+            case .unknown: state = "Installed"; step = "Sign-in could not be checked"
+            case .notChecked: state = "Installed"; step = "Checking the sign-in…"
+            }
         }
-        return InlineCode.attributed(text)
+        var head = AttributedString(L10n.text(state))
+        if warns { head.foregroundColor = FrogStyle.warning }
+        guard let step else { return head }
+        return head + AttributedString(" · ") + InlineCode.attributed(L10n.text(step))
     }
 
     /// Why Use is not available yet, or what it does.

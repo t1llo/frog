@@ -30,9 +30,13 @@ struct ProvidersView: View {
             FrogPageHeader(title: "Models", subtitle: subtitle) {
                 if selectedFilter == "Local models" {
                     FrogAddButton("Add model") { addingLocal = true }
-                } else if selectedFilter == "Providers" {
-                    FrogAddButton("Add provider") { editingStep = 0; editing = ProviderConfiguration() }
+                }
+                // Providers adds from its own list of services below, one click each, so the header repeats no
+                // Add provider; ⌘N still opens the sheet with every service.
+                if selectedFilter == "Providers" {
+                    Button("Add provider") { editingStep = 0; editing = ProviderConfiguration() }
                         .keyboardShortcut("n", modifiers: .command)
+                        .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true).allowsHitTesting(false)
                 }
             }
             VStack(alignment: .leading, spacing: FrogStyle.sectionSpacing) {
@@ -61,7 +65,7 @@ struct ProvidersView: View {
                             FrogSectionHeader("Connected")
                             VStack(spacing: 2) {
                                 ForEach(providers) { provider in
-                                    ProviderRow(provider: provider, edit: { editingStep = 0; editing = $0 }, delete: { deleting = $0 })
+                                    ProviderRow(provider: provider, edit: { editingStep = 1; editing = $0 }, delete: { deleting = $0 })
                                 }
                             }.padding(FrogStyle.listInset).frogTableSurface()
                         }
@@ -275,7 +279,10 @@ struct ProviderEditor: View {
                 }
                 // Where the sheet is in its three steps, rather than tabs: a saved provider can jump to any step,
                 // a new one back to the steps it has done.
-                ProviderSteps(titles: Self.stepTitles, current: step, reachable: isSaved ? Self.stepTitles.count - 1 : step) { step = $0 }
+                // A saved provider keeps its service, so its sheet has only Connection and Models, both a click away.
+                let first = isSaved ? 1 : 0
+                ProviderSteps(titles: Array(Self.stepTitles.dropFirst(first)), current: step - first,
+                              reachable: isSaved ? Self.stepTitles.count - 1 - first : step) { step = $0 + first }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(FrogStyle.sheetPadding)
             // As tall as the step, up to a limit: the short steps leave no empty half, the long one scrolls and
             // fades out above the buttons rather than cutting a line in half.
@@ -375,7 +382,7 @@ struct ProviderEditor: View {
             // A multi-step sheet: Back between Cancel and the main button.
             FrogSheetButtons {
                 FrogCancelButton { testTask?.cancel(); discoveryTask?.cancel(); dismiss() }
-                if step > 0 { Button("Back") { step -= 1 } }
+                if step > (isSaved ? 1 : 0) { Button("Back") { step -= 1 } }
                 FrogPrimaryButton(step < 2 && !isSaved ? "Continue" : "Save",
                                   disabledReason: testing ? "Testing the connection…" : discovering ? "Finding models…"
                                   : (step == 2 || isSaved) ? validation : nil) {
@@ -386,7 +393,10 @@ struct ProviderEditor: View {
         .frame(width: 540).background(FrogStyle.canvas).background(FrogWindowMaterial())
         .foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(.frog())
         // Read before the first frame, so the Connection step does not change its labels once shown.
-        .onAppear { hasSavedKey = model.hasAPIKey(provider.id); isSaved = model.configuration.providers.contains { $0.id == provider.id } }
+        .onAppear {
+            hasSavedKey = model.hasAPIKey(provider.id); isSaved = model.configuration.providers.contains { $0.id == provider.id }
+            if isSaved, step == 0 { step = 1 }
+        }
         .onDisappear { testTask?.cancel(); discoveryTask?.cancel(); apiKey = "" }
         .onChange(of: provider) { _, _ in testResult = nil }
         .onChange(of: apiKey) { _, _ in testResult = nil }
@@ -401,43 +411,42 @@ struct ProviderEditor: View {
         ("Coding tools", [.claudeCode, .codex, .opencode]),
     ]
 
-    /// One service to choose, marked as chosen like a list's selected row.
+    /// One service to choose, marked as chosen like a list's selected row: its mark and name on one line, so all
+    /// nine fit without scrolling. What it is stays in its tooltip, and the footer says it for the chosen one.
     private func serviceChoice(_ kind: ProviderKind) -> some View {
         let chosen = provider.kind == kind
         return Button { provider.kind = kind } label: {
             HStack(spacing: FrogStyle.space12) {
-                PluginIconTile(mark: .provider(kind))
-                VStack(alignment: .leading, spacing: FrogStyle.space2) {
-                    Text(kind.shortTitle).font(FrogType.row)
-                    Text(kind.pitch).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                }
+                PluginIconTile(mark: .provider(kind), size: .sidebar)
+                Text(kind.shortTitle).font(FrogType.row)
                 Spacer(minLength: FrogStyle.space8)
                 if chosen {
                     Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(FrogStyle.accentText)
                         .accessibilityHidden(true)
                 }
             }
-            .padding(.horizontal, FrogStyle.space8).padding(.vertical, FrogStyle.space2).frame(minHeight: FrogStyle.rowHeight)
+            .padding(.horizontal, FrogStyle.space8).frame(minHeight: FrogStyle.menuRowHeight)
             .contentShape(Rectangle())
             .frogRowHighlight(hovering: false, selected: chosen)
         }
         .buttonStyle(.plain).padding(.horizontal, -FrogStyle.space8)
+        .help(kind.pitch)
         .accessibilityLabel(kind.shortTitle).accessibilityHint(kind.pitch)
         .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 
     private var serviceNote: String {
         if provider.kind.localTool != nil { return "Requests run in the background through your installed tool and its own sign-in." }
-        if provider.kind.isLocal { return "\(provider.kind.shortTitle) runs outside Frog; start it before you use it." }
+        if provider.kind.isLocal { return "Start \(provider.kind.shortTitle) before you use it." }
         return "Frog sends the text you run a rule on to \(provider.kind.title), with your API key."
     }
 
     private var endpointHint: String {
         switch provider.kind {
-        case .ollama: "Open Ollama and download a text model (for example: ollama pull llama3.2). Then find installed models below. Frog uses /api/chat."
-        case .lmStudio: "In LM Studio, download a text model and start the server in Developer. Then find installed models below. The default server port is 1234."
-        case .compatible: "Enter your service’s OpenAI-compatible base URL, usually ending in /v1, and add its exact model IDs below. Get API credentials from that service."
-        default: "The default is the official API base URL. Change it only if your connection uses a gateway."
+        case .ollama: "Open Ollama and download a text model, such as with ollama pull llama3.2."
+        case .lmStudio: "In LM Studio, download a text model and start the server in Developer."
+        case .compatible: "Use the service’s OpenAI-compatible base URL, usually ending in /v1."
+        default: "This is the official API. Change it only for a gateway."
         }
     }
 

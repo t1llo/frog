@@ -34,7 +34,7 @@ enum OnboardingPermissionSupport {
 }
 
 /// The centrepiece of setup: one row per permission the chosen plugins need, with its state live. Accessibility is
-/// granted in a list Frog has to be dragged into, so Grant opens that list and a small panel carries Frog's icon to
+/// granted in a list Frog has to be dragged into, so Allow opens that list and a small panel carries Frog's icon to
 /// it. Microphone and Notifications use the system prompt.
 struct OnboardingPermissions: View {
     @EnvironmentObject private var model: AppModel
@@ -66,7 +66,7 @@ struct OnboardingPermissions: View {
             if needed.contains(.accessibility), !granted.contains(.accessibility) {
                 // How the one permission macOS cannot ask for is given, as three short steps.
                 FrogSection("Allowing Accessibility") {
-                    hint(1, "Grant opens Accessibility in System Settings.")
+                    hint(1, "Allow opens Accessibility in System Settings.")
                     hint(2, "Drag Frog's icon from the small panel into the list.")
                     hint(3, "Switch Frog on. This step updates by itself.")
                 }
@@ -94,12 +94,12 @@ struct OnboardingPermissions: View {
 
     @ViewBuilder private func control(for permission: MacPermission) -> some View {
         if granted.contains(permission) {
-            Label("Granted", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
+            Label("Allowed", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
                 .transition(.opacity)
         } else {
-            Button("Grant") { request(permission) }.buttonStyle(.frog(.secondary))
+            Button("Allow") { request(permission) }.buttonStyle(.frog(.secondary))
                 .focused($focused, equals: permission)
-                .accessibilityLabel(Text(L10n.text("Grant \(permission.title)")))
+                .accessibilityLabel(Text(L10n.text("Allow \(permission.title)")))
         }
     }
 
