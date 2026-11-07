@@ -43,7 +43,7 @@ struct WindowsView: View {
         let rules = Dictionary(uniqueKeysWithValues: WindowAction.shortcutRows(configured: model.configuration.rules)
             .compactMap { rule in rule.action?.windowAction.map { ($0, rule) } })
         let assigned = rules.values.filter { $0.hotkey != nil }.count
-        // Grouped as the cheat sheet groups them; a layout without a shortcut shows nothing until pointed at.
+        // Grouped as the cheat sheet groups them; a layout without a shortcut shows a quiet "Record" in its slot.
         return FrogSection("Layouts") {
             Text(verbatim: assigned == 1 ? L10n.text("1 shortcut set") : "\(assigned) \(L10n.text("shortcuts set"))")
                 .font(FrogType.small.monospacedDigit())
@@ -209,7 +209,10 @@ private struct LayoutShortcutCell: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            if let action = rule.action?.windowAction { WindowLayoutGlyph(action: action).frame(width: 22, height: 22) }
+            // Big enough that a quarter's corner and a third's strip read at a glance.
+            if let action = rule.action?.windowAction {
+                WindowLayoutGlyph(action: action, size: CGSize(width: 28, height: 18)).frame(width: 28, height: 22)
+            }
             Text(L10n.text(rule.name)).font(FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .opacity(rule.hotkey != nil && !rule.enabled ? 0.5 : 1)
             if let issue {
@@ -223,9 +226,17 @@ private struct LayoutShortcutCell: View {
                 do { try model.saveRule(updated) } catch { model.report(error) }
             }), emptyTitle: "Record", recordingChanged: { recording = $0 })
             .focused($focused)
-            // An empty slot stays empty: the grid shows only what is assigned, and the Record button appears where
-            // the pointer or keyboard focus is.
+            // An empty slot says "Record" in the placeholder tone, as an empty field shows its placeholder: quiet
+            // beside the caps that are set, yet findable. Pointed at, recording or focused, the same word becomes
+            // the Record button in the same place.
             .opacity(active ? 1 : 0)
+            .overlay(alignment: .trailing) {
+                if !active {
+                    Text(L10n.text("Record")).font(FrogType.label).foregroundStyle(FrogStyle.placeholder)
+                        .padding(.trailing, FrogButtonStyle.horizontalPadding(compact: true))
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                }
+            }
         }
         // Every row the same height, whether or not its caps show.
         .frame(maxWidth: .infinity, minHeight: FrogStyle.rowHeight, maxHeight: FrogStyle.rowHeight)
