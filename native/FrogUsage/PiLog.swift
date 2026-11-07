@@ -19,7 +19,7 @@ actor PiScanner {
     init(root: URL? = nil) { self.root = root }
 
     func scan() -> [TokenRecord] {
-        let now = Date()
+        let now = UsageClock.now
         let cutoff = now.addingTimeInterval(-TokenScanner.horizon)
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
         guard let files = FileManager.default.enumerator(at: root ?? piAgentDirectory.appendingPathComponent("sessions"),

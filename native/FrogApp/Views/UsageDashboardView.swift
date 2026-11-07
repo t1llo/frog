@@ -1,3 +1,4 @@
+import FrogCore
 import SwiftUI
 import Charts
 import FrogUsage
@@ -65,12 +66,12 @@ private struct UsageLimitsSection: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             let provider = usage.preferences.provider
-            let windows = usage.windows(provider: provider, now: context.date)
+            let windows = usage.windows(provider: provider, now: FrogClock.now(or: context.date))
             let status = usage.status(provider: provider)
             FrogSection("Limits") {
                 HStack(spacing: 6) {
                     if let source = usage.planSource(provider: provider), let updated = usage.planUpdatedAt(provider: provider) {
-                        Text("\(source) · \(UsageStatusPopover.age(of: updated, at: context.date))")
+                        Text("\(source) · \(UsageStatusPopover.age(of: updated, at: FrogClock.now(or: context.date)))")
                             .font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                             .help(updated.formatted(date: .abbreviated, time: .shortened))
                     }
@@ -84,7 +85,7 @@ private struct UsageLimitsSection: View {
                 } else {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: FrogStyle.space16 * 2, alignment: .leading), count: windows.count == 1 ? 1 : 2),
                               alignment: .leading, spacing: 18) {
-                        ForEach(windows) { UsageLimitView(window: $0, now: context.date) }
+                        ForEach(windows) { UsageLimitView(window: $0, now: FrogClock.now(or: context.date)) }
                     }.padding(.vertical, 10)
                 }
                 if !normal, !windows.isEmpty, status != UsageDashboardModel.notReading {
@@ -115,17 +116,17 @@ struct UsageAccountsLimits: View {
     var compact = false
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
-            let accounts = usage.accounts(now: context.date).filter(\.included)
+            let accounts = usage.accounts(now: FrogClock.now(or: context.date)).filter(\.included)
             VStack(alignment: .leading, spacing: compact ? 10 : 18) {
                 if accounts.isEmpty {
                     Text("No account is included.").font(FrogType.caption).foregroundStyle(FrogStyle.muted)
                 } else if usage.preferences.claudeAccountsView == "combined" {
-                    combined(accounts, now: context.date)
+                    combined(accounts, now: FrogClock.now(or: context.date))
                 } else if compact {
                     SectionCaption(text: "Plan limits")
-                    ForEach(accounts.prefix(4)) { UsageAccountRow(account: $0, now: context.date) }
+                    ForEach(accounts.prefix(4)) { UsageAccountRow(account: $0, now: FrogClock.now(or: context.date)) }
                 } else {
-                    ForEach(accounts) { UsageAccountLimits(account: $0, now: context.date) }
+                    ForEach(accounts) { UsageAccountLimits(account: $0, now: FrogClock.now(or: context.date)) }
                 }
             }
         }
@@ -603,7 +604,7 @@ private struct UsageAccountSettingsRow: View {
                 UsageAccountLabelField(label: account.label) { usage.renameAccount(account.id, to: $0) }
                 if let plan = account.plan { UsagePlanBadge(plan: plan) }
                 TimelineView(.periodic(from: .now, by: 30)) { context in
-                    Text(reading(at: context.date)).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                    Text(reading(at: FrogClock.now(or: context.date))).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                         .help(account.age?.formatted(date: .abbreviated, time: .shortened) ?? "")
                 }
                 Spacer(minLength: 8)

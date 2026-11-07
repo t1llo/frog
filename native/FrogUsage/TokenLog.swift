@@ -60,7 +60,7 @@ actor TokenScanner {
     /// the charts "Reading token activity…" for half an hour after every launch, while today's
     /// calls are in the few files written last.
     func scan(until deadline: Date?) -> (records: [TokenRecord], complete: Bool) {
-        let cutoff = Date().addingTimeInterval(-Self.horizon)
+        let cutoff = UsageClock.now.addingTimeInterval(-Self.horizon)
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
         var pending: [(url: URL, modified: Date, size: UInt64)] = []
         for root in roots ?? ClaudePaths.transcriptRoots {
@@ -239,7 +239,7 @@ final class TokenStore: ObservableObject {
     private(set) var aggregationTask: Task<Void, Never>?
     private let fixtureRoot: URL?
 
-    init(fixtureRoot: URL? = nil, claudeDirectory: URL = ClaudePaths.directory(), clock: @escaping () -> Date = { Date() }) {
+    init(fixtureRoot: URL? = nil, claudeDirectory: URL = ClaudePaths.directory(), clock: @escaping () -> Date = { UsageClock.now }) {
         self.fixtureRoot = fixtureRoot
         self.clock = clock
         self.claudeDirectory = fixtureRoot?.appendingPathComponent("claude") ?? claudeDirectory
@@ -548,7 +548,7 @@ struct TokenSummary {
 
 /// Share filtering, model names and bucket lookup across all five chart metrics.
 func summarizeMetrics(_ records: [TokenRecord], provider: Provider, range: TokenRange,
-                      now: Date = Date(), calendar cal: Calendar = .current) -> [TokenMetric: TokenSummary] {
+                      now: Date = UsageClock.now, calendar cal: Calendar = .current) -> [TokenMetric: TokenSummary] {
     let last = cal.dateInterval(of: range.unit, for: now)!.start
     let starts = (0..<range.count).map { cal.date(byAdding: range.unit, value: $0 - range.count + 1, to: last)! }
     let inRange = records.filter { $0.provider == provider && $0.date >= starts[0] && $0.date <= now }

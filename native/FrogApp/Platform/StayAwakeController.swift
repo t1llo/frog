@@ -1,3 +1,4 @@
+import FrogCore
 import Foundation
 import Combine
 
@@ -88,7 +89,7 @@ final class StayAwakeController: ObservableObject {
     private var accessObservation: AnyCancellable?
 
     /// The app's controller: assertions only for the real system, so test systems never touch the display.
-    init(system: any StayAwakeSystem = NativeStayAwakeSystem(), directory: URL? = nil, now: @escaping () -> Date = Date.init,
+    init(system: any StayAwakeSystem = NativeStayAwakeSystem(), directory: URL? = nil, now: @escaping () -> Date = { FrogClock.now },
          monitorInterval: Duration = .seconds(60), display: (any DisplayAwakeHolding)? = nil, lidEnabled: Bool = false,
          openGuide: @escaping (StayAwakeSetup.Mode) async throws -> StayAwakeSetup.Session = { try await StayAwakeSetup.open($0) }) {
         self.now = now

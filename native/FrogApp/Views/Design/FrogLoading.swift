@@ -1,3 +1,4 @@
+import FrogCore
 import SwiftUI
 
 /// Frog's one spinner, sized for a row, a button or a pill: eight spokes in the text colour, the newest strongest,
@@ -23,7 +24,7 @@ struct FrogSpinner: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1 / Self.rate)) { context in
-            let step = Int(context.date.timeIntervalSinceReferenceDate * Self.rate) % Self.spokes
+            let step = Int(FrogClock.now(or: context.date).timeIntervalSinceReferenceDate * Self.rate) % Self.spokes
             ZStack {
                 ForEach(0..<Self.spokes, id: \.self) { index in
                     // The spoke `step` points at is the newest; the ones behind it fade out.

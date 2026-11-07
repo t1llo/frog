@@ -70,7 +70,7 @@ public struct ActivityStatisticsSnapshot: Codable, Equatable, Sendable {
     public init() {}
 
     /// Includes today; empty days contribute zero. All-time totals survive daily pruning.
-    public func totals(lastDays: Int, endingAt date: Date = Date(), timeZone: TimeZone = .current) -> ActivityStatisticsTotals {
+    public func totals(lastDays: Int, endingAt date: Date = FrogClock.now, timeZone: TimeZone = .current) -> ActivityStatisticsTotals {
         let range = Self.dayRange(days: min(365, max(1, lastDays)), date: date, timeZone: timeZone)
         return daily.filter { range.contains($0.key) }.values.reduce(into: ActivityStatisticsTotals()) { $0.add($1) }
     }
@@ -86,7 +86,7 @@ public struct ActivityStatisticsSnapshot: Codable, Equatable, Sendable {
     }
 
     /// Counts one completed event in memory. Saving it stays with `ActivityStatisticsPersistence`.
-    public mutating func record(_ event: ActivityStatisticsEvent, at date: Date = Date(), timeZone: TimeZone = .current) throws {
+    public mutating func record(_ event: ActivityStatisticsEvent, at date: Date = FrogClock.now, timeZone: TimeZone = .current) throws {
         guard recordingEnabled else { return }
         let delta = try ActivityStatisticsTotals(event: event)
         allTime.add(delta)
@@ -138,7 +138,7 @@ public final class ActivityStatisticsPersistence: Sendable {
             .appendingPathComponent("Frog", isDirectory: true)
     }
 
-    public func load(at date: Date = Date(), timeZone: TimeZone = .current) throws -> ActivityStatisticsSnapshot {
+    public func load(at date: Date = FrogClock.now, timeZone: TimeZone = .current) throws -> ActivityStatisticsSnapshot {
         activityStatisticsLock.lock(); defer { activityStatisticsLock.unlock() }
         var result = try read()
         result.prune(at: date, timeZone: timeZone)
@@ -146,13 +146,13 @@ public final class ActivityStatisticsPersistence: Sendable {
     }
 
     @discardableResult
-    public func record(_ event: ActivityStatisticsEvent, at date: Date = Date(), timeZone: TimeZone = .current) throws -> ActivityStatisticsSnapshot {
+    public func record(_ event: ActivityStatisticsEvent, at date: Date = FrogClock.now, timeZone: TimeZone = .current) throws -> ActivityStatisticsSnapshot {
         try record([event], at: date, timeZone: timeZone)
     }
 
     /// Events that complete together are saved in one transaction, or not at all.
     @discardableResult
-    public func record(_ events: [ActivityStatisticsEvent], at date: Date = Date(), timeZone: TimeZone = .current) throws -> ActivityStatisticsSnapshot {
+    public func record(_ events: [ActivityStatisticsEvent], at date: Date = FrogClock.now, timeZone: TimeZone = .current) throws -> ActivityStatisticsSnapshot {
         activityStatisticsLock.lock(); defer { activityStatisticsLock.unlock() }
         var result = try read()
         guard result.recordingEnabled, !events.isEmpty else { return result }
@@ -162,7 +162,7 @@ public final class ActivityStatisticsPersistence: Sendable {
     }
 
     @discardableResult
-    public func setRecordingEnabled(_ enabled: Bool, at date: Date = Date(), timeZone: TimeZone = .current) throws -> ActivityStatisticsSnapshot {
+    public func setRecordingEnabled(_ enabled: Bool, at date: Date = FrogClock.now, timeZone: TimeZone = .current) throws -> ActivityStatisticsSnapshot {
         activityStatisticsLock.lock(); defer { activityStatisticsLock.unlock() }
         var result = try read()
         result.setRecordingEnabled(enabled)

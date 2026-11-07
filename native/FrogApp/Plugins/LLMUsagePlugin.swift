@@ -279,7 +279,7 @@ final class LLMUsagePlugin: FrogPlugin, ObservableObject {
 
 /// What `llm-usage.status` answers: per provider, the plan, each limit and where it was read.
 enum LLMUsageReport {
-    @MainActor static func providers(_ usage: UsageDashboardModel, only: String? = nil, now: Date = Date()) -> [Provider] {
+    @MainActor static func providers(_ usage: UsageDashboardModel, only: String? = nil, now: Date = FrogClock.now) -> [Provider] {
         usage.providers.filter { only == nil || $0 == only }.map { provider in
             Provider(provider: provider, plan: usage.planName(provider: provider),
                      limits: usage.windows(provider: provider, now: now).map { Limit($0, now: now) },

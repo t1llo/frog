@@ -1,3 +1,4 @@
+import FrogCore
 import SwiftUI
 import FrogUsage
 
@@ -119,7 +120,7 @@ struct UsageStatusPopover: View {
     }
     /// The Claude accounts shown one by one or combined: only while Frog reads each of them and
     /// finds at least two; otherwise every surface shows the one account as always.
-    @MainActor static func shownAccounts(_ usage: UsageDashboardModel, now: Date = Date()) -> [UsageAccountSummary] {
+    @MainActor static func shownAccounts(_ usage: UsageDashboardModel, now: Date = FrogClock.now) -> [UsageAccountSummary] {
         guard usage.preferences.provider == "Claude", usage.claudeAccountsEnabled else { return [] }
         let accounts = usage.accounts(now: now)
         return accounts.count >= 2 ? accounts : []
@@ -187,7 +188,7 @@ private struct UsageCompactLimits: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             let provider = usage.preferences.provider
-            let windows = usage.windows(provider: provider, now: context.date)
+            let windows = usage.windows(provider: provider, now: FrogClock.now(or: context.date))
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     SectionCaption(text: "Plan limits")
@@ -197,7 +198,7 @@ private struct UsageCompactLimits: View {
                 if windows.isEmpty {
                     Text("No current reading").font(FrogType.bodyMedium).help(usage.status(provider: provider))
                 } else {
-                    ForEach(Array(windows.prefix(4))) { UsageLimitView(window: $0, now: context.date, compact: true) }
+                    ForEach(Array(windows.prefix(4))) { UsageLimitView(window: $0, now: FrogClock.now(or: context.date), compact: true) }
                 }
             }
         }
@@ -239,10 +240,10 @@ struct UsageMenuFooterStatus: View {
         let accounts = UsageStatusPopover.shownAccounts(usage).filter(\.included)
         TimelineView(.periodic(from: .now, by: 30)) { context in
             let oldest = accounts.isEmpty ? usage.planUpdatedAt(provider: provider) : accounts.compactMap(\.age).min()
-            let age = oldest.map { UsageStatusPopover.age(of: $0, at: context.date) }
+            let age = oldest.map { UsageStatusPopover.age(of: $0, at: FrogClock.now(or: context.date)) }
             let details = accounts.isEmpty
                 ? [age.map { "Updated \($0)" }, usage.planSource(provider: provider), usage.status(provider: provider)].compactMap { $0 }
-                : accounts.map { "\($0.label): \($0.age.map { UsageStatusPopover.age(of: $0, at: context.date) } ?? "no reading")" }
+                : accounts.map { "\($0.label): \($0.age.map { UsageStatusPopover.age(of: $0, at: FrogClock.now(or: context.date)) } ?? "no reading")" }
             let warning = accounts.isEmpty ? usage.planWarning(provider: provider)
                 : accounts.filter(\.stale).map { "\($0.label): \($0.status ?? "no current reading")" }.joined(separator: "\n").nilIfBlank
             HStack(spacing: FrogStyle.space4) {
@@ -268,10 +269,10 @@ struct UsageMenuStatus: View {
         let accounts = UsageStatusPopover.shownAccounts(usage)
         TimelineView(.periodic(from: .now, by: 30)) { context in
             if !accounts.isEmpty {
-                UsageAccountsFooter(accounts: accounts.filter(\.included), now: context.date)
+                UsageAccountsFooter(accounts: accounts.filter(\.included), now: FrogClock.now(or: context.date))
             } else {
                 HStack(spacing: 4) {
-                    let age = usage.planUpdatedAt(provider: provider).map { UsageStatusPopover.age(of: $0, at: context.date) }
+                    let age = usage.planUpdatedAt(provider: provider).map { UsageStatusPopover.age(of: $0, at: FrogClock.now(or: context.date)) }
                     // A clock and the age ("15m ago"), short enough for the menu tab's header row beside the provider.
                     // "Updated" and the source are in the tooltip.
                     if let age { Image(systemName: "clock").font(FrogType.caption).accessibilityHidden(true) }

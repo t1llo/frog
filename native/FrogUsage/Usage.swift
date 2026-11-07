@@ -300,7 +300,7 @@ private func isoFormatter(_ options: ISO8601DateFormatter.Options) -> ISO8601Dat
 
 /// "15:40" today, "Thu 09:00" within six days before or after, "4 Oct" further away, each
 /// written the way the person's locale and clock setting write it.
-func resetClock(_ date: Date?, now: Date = Date(), locale: Locale = .autoupdatingCurrent) -> String {
+func resetClock(_ date: Date?, now: Date = UsageClock.now, locale: Locale = .autoupdatingCurrent) -> String {
     guard let date else { return "" }
     if Calendar.current.isDate(date, inSameDayAs: now) { return clock(date, locale: locale) }
     let style = Date.FormatStyle(locale: locale)

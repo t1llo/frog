@@ -112,7 +112,7 @@ func parseCodexCredits(_ any: Any?, asOf: Date, live: Bool) -> CodexCredits? {
                         balance: balance.flatMap { $0.isFinite ? $0 : nil })
 }
 
-func parseCodexUsage(_ json: [String: Any], now: Date = Date()) -> CodexLimits {
+func parseCodexUsage(_ json: [String: Any], now: Date = UsageClock.now) -> CodexLimits {
     var usage = Usage()
     usage.limits = codexWindows(json["rate_limit"] as? [String: Any], prefix: "codex", now: now)
     // Model/feature-specific allowances are separate from the main plan's windows.

@@ -44,7 +44,7 @@ struct StayAwakePage: View {
                 }
                 if settings.menuBarItem {
                     // A session with two hours and twenty minutes of four left.
-                    let deadline = Date().addingTimeInterval(140 * 60 + 30)
+                    let deadline = FrogClock.now.addingTimeInterval(140 * 60 + 30)
                     MenuBarDesignTiles(choices: StayAwakePreferences.menuBarStyles, selected: settings.menuBarStyle,
                                        title: { ["icon": "Cup", "ring": "Ring", "time": "Time left"][$0] ?? $0 }, image: { style, _ in
                         StayAwakeIcon.image(StayAwakeIcon.Face(style: style, deadline: deadline, duration: 4 * 3600))

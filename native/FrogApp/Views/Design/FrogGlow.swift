@@ -27,7 +27,7 @@ struct FrogGlow: View {
                 if moving && !reduceMotion {
                     // 30 frames a second is smooth for a drift this slow and half the work of the display's rate.
                     TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
-                        field(library, time: Self.seconds(context.date), light: light)
+                        field(library, time: Self.seconds(FrogClock.now(or: context.date)), light: light)
                     }
                 } else {
                     field(library, time: 0, light: light)

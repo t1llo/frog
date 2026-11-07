@@ -286,7 +286,7 @@ public struct HistoryEntry: Codable, Identifiable, Equatable, Sendable {
     public var targetLanguage: String
     /// Set for an answer and its follow-ups; `originalText` is then the selection and `processedText` the first answer.
     public var answer: AnswerRecord?
-    public init(id: UUID = UUID(), timestamp: Date = Date(), originalText: String, processedText: String, ruleName: String, providerName: String, model: String, targetLanguage: String = "") {
+    public init(id: UUID = UUID(), timestamp: Date = FrogClock.now, originalText: String, processedText: String, ruleName: String, providerName: String, model: String, targetLanguage: String = "") {
         self.id = id; self.timestamp = timestamp; self.originalText = originalText; self.processedText = processedText
         self.ruleName = ruleName; self.providerName = providerName; self.model = model; self.targetLanguage = targetLanguage
     }

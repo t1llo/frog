@@ -82,7 +82,7 @@ actor CodexScanner {
 
     /// Records inside the horizon, the latest snapshot, and whether Codex has any logs at all.
     func scan() -> (records: [TokenRecord], limits: CodexLimits?, found: Bool) {
-        let cutoff = Date().addingTimeInterval(-TokenScanner.horizon)
+        let cutoff = UsageClock.now.addingTimeInterval(-TokenScanner.horizon)
         let keys: [URLResourceKey] = [.contentModificationDateKey, .fileSizeKey]
         var found = false
         for dir in ["sessions", "archived_sessions"] {

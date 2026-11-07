@@ -409,7 +409,7 @@ final class ClipboardHistoryPanelState {
     /// Changes each time the panel opens, which puts the cursor in the search.
     private(set) var focusRequest = 0
     /// When the panel last opened; its rows count their relative times again from then.
-    private(set) var openedAt = Date()
+    private(set) var openedAt = FrogClock.now
     @ObservationIgnored private var entries: [ClipboardHistoryEntry] = []
 
     var selected: ClipboardHistoryEntry? { visible.indices.contains(selectedIndex) ? visible[selectedIndex] : nil }
@@ -448,6 +448,6 @@ final class ClipboardHistoryPanelState {
         selectedIndex = index
     }
 
-    func focusSearch() { focusRequest &+= 1; openedAt = Date() }
+    func focusSearch() { focusRequest &+= 1; openedAt = FrogClock.now }
     private func refresh() { visible = ClipboardSearch.filter(entries, query: query) }
 }

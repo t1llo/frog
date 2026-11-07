@@ -59,7 +59,7 @@ public enum ClaudeAccountsCombination {
     /// Combines the window with id `window` (such as "five_hour") over the included accounts that
     /// have a current reading of it: Σ wᵢ·usedᵢ / Σ wᵢ, with plan sizes as weights when every
     /// counted plan is known, else equal weights.
-    public static func combine(_ accounts: [Account], window id: String, now: Date = Date()) -> Combined {
+    public static func combine(_ accounts: [Account], window id: String, now: Date = UsageClock.now) -> Combined {
         let included = accounts.filter(\.included)
         var counted: [(account: Account, window: UsageWindow)] = []
         var missing: [String] = []

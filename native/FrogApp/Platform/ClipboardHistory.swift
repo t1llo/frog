@@ -22,7 +22,7 @@ struct ClipboardHistoryEntry: Identifiable, Equatable, Sendable {
 
     static let previewLength = 160
 
-    init(text: String, formatting: [String: Data] = [:], isSensitive: Bool = false, timestamp: Date = Date()) {
+    init(text: String, formatting: [String: Data] = [:], isSensitive: Bool = false, timestamp: Date = FrogClock.now) {
         id = UUID(); self.timestamp = timestamp; self.text = text; self.formatting = formatting; self.isSensitive = isSensitive
         preview = Self.preview(of: text)
         searchKey = ClipboardSearch.fold(text.prefix(ClipboardSearch.keyLength))
@@ -327,7 +327,7 @@ final class ClipboardHistoryStore: ObservableObject {
     /// Explicitly include Frog results even if a subsequent compatibility Copy
     /// temporarily suppresses clipboard polling/restores that same result.
     /// `at` is when it was copied: now, or an earlier moment for sample data.
-    func recordCopiedText(_ text: String, at date: Date = Date()) {
+    func recordCopiedText(_ text: String, at date: Date = FrogClock.now) {
         guard enabled, !text.isEmpty, text.utf8.count <= Self.textLimit, ClipboardSecret.detect(text) == nil else { return }
         epoch = UUID(); pendingCount = nil; pendingAttempts = 0
         record(ClipboardHistoryEntry(text: text, timestamp: date))

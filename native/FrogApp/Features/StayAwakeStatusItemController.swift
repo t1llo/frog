@@ -73,7 +73,7 @@ import FrogCore
         item.button?.setAccessibilityLabel(description)
     }
 
-    static func description(_ power: StayAwakeController, now: Date = Date()) -> String {
+    static func description(_ power: StayAwakeController, now: Date = FrogClock.now) -> String {
         guard let deadline = power.deadline else { return "Stay awake is on until turned off" }
         return "Stay awake is on until \(deadline.formatted(date: .omitted, time: .shortened))"
             + (StayAwakeIcon.left(until: deadline, now: now).map { " · \($0) left" } ?? "")
@@ -108,7 +108,7 @@ enum StayAwakeIcon {
         /// "3h 42m", "42m"; nil for a session without an end or a style without text.
         let text: String?
 
-        init(style: String, deadline: Date?, duration: TimeInterval, now: Date = Date()) {
+        init(style: String, deadline: Date?, duration: TimeInterval, now: Date = FrogClock.now) {
             self.style = StayAwakePreferences.menuBarStyles.contains(style) ? style : "ring"
             if let deadline {
                 let left = max(0, deadline.timeIntervalSince(now))
@@ -122,7 +122,7 @@ enum StayAwakeIcon {
     }
 
     /// "3h 42m" or "42m" until `deadline`, at least "1m"; nil once it has passed.
-    static func left(until deadline: Date, now: Date = Date()) -> String? {
+    static func left(until deadline: Date, now: Date = FrogClock.now) -> String? {
         let minutes = Int((deadline.timeIntervalSince(now) / 60).rounded(.up))
         guard minutes > 0 else { return nil }
         return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"

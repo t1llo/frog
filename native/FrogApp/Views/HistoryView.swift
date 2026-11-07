@@ -339,7 +339,7 @@ struct HistoryDay: Identifiable {
     var id: String { title }
 
     /// The entries, newest first as the feed is, cut where the day changes.
-    static func group(_ entries: [HistoryEntry], now: Date = Date(), calendar: Calendar = .autoupdatingCurrent) -> [HistoryDay] {
+    static func group(_ entries: [HistoryEntry], now: Date = FrogClock.now, calendar: Calendar = .autoupdatingCurrent) -> [HistoryDay] {
         var days: [HistoryDay] = []
         var current: (start: Date, entries: [HistoryEntry])?
         for entry in entries {
@@ -352,7 +352,7 @@ struct HistoryDay: Identifiable {
         return days
     }
 
-    static func title(_ day: Date, now: Date = Date(), calendar: Calendar = .autoupdatingCurrent) -> String {
+    static func title(_ day: Date, now: Date = FrogClock.now, calendar: Calendar = .autoupdatingCurrent) -> String {
         if calendar.isDate(day, inSameDayAs: now) { return L10n.text("Today") }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(day, inSameDayAs: yesterday) {
             return L10n.text("Yesterday")

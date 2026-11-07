@@ -38,7 +38,7 @@ actor OpenCodeReader {
     /// row cursor unreliable. Unchanged DB/WAL pairs reuse counters, not conversation contents.
     func scan() -> (records: [TokenRecord], found: Bool, warning: String?) {
         let dbs = databases
-        let since = Int64((Date().timeIntervalSince1970 - TokenScanner.horizon) * 1000)
+        let since = Int64((UsageClock.now.timeIntervalSince1970 - TokenScanner.horizon) * 1000)
         // Forking a session copies its messages under new ids with identical contents, so dedupe
         // on the contents rather than the id.
         var seen = Set<String>()
