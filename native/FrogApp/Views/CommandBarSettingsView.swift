@@ -10,17 +10,20 @@ struct CommandBarSettingsView: View {
             FrogPageHeader(title: "Command bar", subtitle: "Apps, files, settings and actions as you type") {
                 Button("Open") { plugin.show() }.buttonStyle(.frog())
             }
-            // One card, so no heading: the shortcut, freeing ⌘Space, and learning from choices.
-            FrogSection {
+            // Two cards, both headed: the keys that open the bar, then the order of what it finds.
+            FrogSection("Shortcut") {
                 FrogRow("Open the bar", caption: "Works in any app.") {
                     HotkeyRecorder(hotkey: Binding(get: { plugin.settings.shortcut.hotkey }, set: { key in
                         guard let key, let shortcut = try? Shortcut(key) else { return }
                         plugin.save { $0.shortcut = shortcut }
                     }), showsClearButton: false)
                 }
-                // Using ⌘Space instead of Spotlight is part of choosing the shortcut, so it shares the card;
-                // its own rows say a shortcut problem, so the note is not repeated above them.
+                // Using ⌘Space instead of Spotlight is part of choosing the shortcut, so it shares the card as a
+                // sub-group; its own rows say a shortcut problem, so the note is not repeated above them.
+                SectionCaption(text: "⌘Space instead of Spotlight").padding(.top, FrogStyle.space6)
                 CommandBarSetupView()
+            }
+            FrogSection("Results") {
                 CommandChoicesRows(plugin: plugin, choices: model.commandChoices)
             }
         }
@@ -48,13 +51,13 @@ private struct CommandChoicesRows: View {
                     plugin.save { $0.learnChoices = on }
                 })).labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
             }
-            if plugin.settings.learnChoices || choices.issue != nil {
-                FrogRow(remembered) {
-                    Button("Forget…", role: .destructive) { confirmingForget = true }
-                        .buttonStyle(.frog(.destructive)).disabled(choices.count == 0 && choices.issue == nil)
-                }
-                if let issue = choices.issue { FrogRowNote(text: issue, tone: FrogStyle.warning) }
+            // What was learned stays until it is forgotten, whether learning is on or not, so the row always shows.
+            FrogRow(remembered) {
+                Button("Forget…", role: .destructive) { confirmingForget = true }
+                    .buttonStyle(.frog(.destructive)).disabled(choices.count == 0 && choices.issue == nil)
+                    .help(choices.count == 0 && choices.issue == nil ? L10n.text("Nothing to forget yet") : "")
             }
+            if let issue = choices.issue { FrogRowNote(text: issue, tone: FrogStyle.warning) }
         }
         .confirmationDialog("Forget learned choices?", isPresented: $confirmingForget, titleVisibility: .visible) {
             Button("Forget", role: .destructive) { choices.forget() }
