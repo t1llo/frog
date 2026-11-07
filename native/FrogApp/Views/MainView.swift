@@ -16,6 +16,8 @@ struct MainView: View {
     @State private var permissionsRequest = ScrollRequest()
     /// What the sidebar's search field narrows its rows to.
     @State private var sidebarQuery = ""
+    /// The section or row a search result opened, which the page scrolls to and flashes.
+    @State private var searchFocus: FrogSearchFocus?
     /// The title the open page's header hands up, shown in the toolbar.
     @State private var pageTitle: String?
     /// The one-line subtitle the open page's header hands up, shown under the title.
@@ -37,6 +39,13 @@ struct MainView: View {
     /// Draws this in place of the open route's page, for pictures of a step or tab inside a page (a History entry,
     /// a Models tab) in the whole window. The sidebar still shows the route.
     var pageOverride: AnyView? = nil
+
+    /// `query` and `focus` start the window searching, or on a page a result opened, for pictures of both.
+    init(pageOverride: AnyView? = nil, query: String = "", focus: FrogSearchFocus? = nil) {
+        self.pageOverride = pageOverride
+        _sidebarQuery = State(initialValue: query)
+        _searchFocus = State(initialValue: focus)
+    }
 
     fileprivate struct NavigationItem: Identifiable {
         let id: ToolkitRoute
@@ -89,6 +98,7 @@ struct MainView: View {
                 Color.clear.frame(height: FrogStyle.toolbarHeight)
                 selectedPage.id(section).frame(maxWidth: .infinity, maxHeight: .infinity)
                     .environment(\.frogToolbarTitle, true)
+                    .environment(\.frogSearchFocus, searchFocus?.route == section ? searchFocus : nil)
                     .onPreferenceChange(FrogPageTitleKey.self) { pageTitle = $0 }
                     .onPreferenceChange(FrogPageSubtitleKey.self) { pageSubtitle = $0 }
                     .onPreferenceChange(FrogPageWidthKey.self) { pageWidth = $0 ?? FrogStyle.pageWidth }
@@ -130,6 +140,8 @@ struct MainView: View {
             history.visited(from: previous)
             // A search hides rows and their ⌘1–9; it ends once a page is open.
             sidebarQuery = ""
+            // A result's spot is shown on the page it opened only; another page opens at its top.
+            if searchFocus?.route != section { searchFocus = nil }
         }
         .sheet(isPresented: Binding(get: { model.setupPresented }, set: { if !$0 { model.finishSetup() } })) {
             OnboardingView().environmentObject(model).interactiveDismissDisabled()
@@ -302,6 +314,8 @@ struct MainView: View {
             // 12 under them.
             SearchBox(placeholder: "Search", text: $sidebarQuery)
                 .padding(.horizontal, FrogStyle.sidebarRowInset)
+                // Return opens the first match: a page's row, else the first setting found.
+                .onSubmit(openFirstMatch)
 
             // The list starts one group gap under the field. Its scroll rests only on a row's top edge, so a row
             // never shows cut in half under the field; while it moves, rows fade out through that gap, never cut
@@ -379,7 +393,16 @@ struct MainView: View {
             if !pages.isEmpty && !groups.contains(where: { $0.category == .community }) {
                 sidebarGroup(Self.sidebarTitle(.community), id: PluginCategory.community.rawValue) { pluginPageRows(pages) }
             }
-            if !sidebarQuery.isEmpty && !anyMatch {
+            let results = searchResults
+            if !results.isEmpty {
+                sidebarGroup("In pages", id: "search") {
+                    ForEach(Array(results.enumerated()), id: \.offset) { index, result in
+                        SearchResultRow(result: result) { open(result) }
+                            .sidebarGridRow(AnyHashable("search-\(index)"), in: sidebarGrid, group: AnyHashable("group-search"))
+                    }
+                }
+            }
+            if !sidebarQuery.isEmpty && !anyMatch && results.isEmpty {
                 Text(L10n.text("No matches")).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                     .padding(.horizontal, FrogStyle.space6)
             }
@@ -421,6 +444,46 @@ struct MainView: View {
         }
         .padding(.bottom, FrogStyle.sidebarRowInset)
         .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Frog"))
+    }
+
+    /// The sections and settings of the pages that are on whose names match the search (`AppSearchCatalog`).
+    private var searchResults: [SearchResult] {
+        guard !sidebarQuery.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
+        let available = AppSearchCatalog.entries.filter { page(for: $0.page) != nil }
+        return AppSearchCatalog.search(sidebarQuery, in: available).compactMap { entry in
+            page(for: entry.page).map { SearchResult(entry: entry, page: $0) }
+        }
+    }
+
+    /// The route, name and icon of a page a search entry is on, or nil while that page is not in the app (its
+    /// feature off).
+    private func page(for page: AppSearchPage) -> SearchResult.Page? {
+        switch page {
+        case .settings: return .init(route: .settings, title: "Settings", symbol: "gearshape.fill", tint: PluginTint.gray.color)
+        case .statistics: return .init(route: .statistics, title: "Statistics", symbol: "chart.bar.fill", tint: PluginTint.gray.color)
+        case .models: return .init(route: .models, title: "Models", symbol: "cpu", tint: PluginTint.indigo.color)
+        case .plugin(let id):
+            let host = model.pluginHost
+            guard host.enabled(id), let info = host.descriptor(id)?.info else { return nil }
+            return .init(route: Self.route(for: id), title: info.name, symbol: info.symbol, tint: info.tint.color)
+        }
+    }
+
+    /// Opens a result's page at its section or row.
+    private func open(_ result: SearchResult) {
+        searchFocus = FrogSearchFocus(route: result.page.route, section: result.entry.section, row: result.entry.row)
+        model.toolkit.select(result.page.route)
+        sidebarQuery = ""
+    }
+
+    private func openFirstMatch() {
+        guard !sidebarQuery.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        let plugin = model.pluginHost.sidebar.flatMap(\.plugins).first { matches($0.name) }
+        if let plugin { model.toolkit.select(Self.route(for: plugin.id)); return }
+        if let page = model.pluginPages.first(where: { matches($0.name) }) { model.toolkit.select(.plugin(page.id)); return }
+        if let item = workspaceNavigation.first(where: { matches($0.title) }) { model.toolkit.select(item.id); return }
+        if let result = searchResults.first { open(result); return }
+        if offFeatureMatches { model.toolkit.select(.features) }
     }
 
     private func matches(_ title: String) -> Bool {
@@ -608,6 +671,49 @@ private struct SidebarRow: View {
             .contentShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
         }.buttonStyle(.plain).onHover { hovering = $0 }
             .accessibilityAddTraits(selected ? .isSelected : []).help(item.title)
+    }
+}
+
+/// A section or setting the sidebar's search found, with the page it is on.
+struct SearchResult {
+    struct Page {
+        let route: ToolkitRoute
+        let title: String
+        let symbol: String
+        let tint: Color
+    }
+    let entry: AppSearchEntry
+    let page: Page
+    /// Where it is, under its name: "Settings › General" for a row, the page alone for a section.
+    var location: String {
+        ([page.title] + (entry.row != nil ? [entry.section].compactMap { $0 } : [])).map { L10n.text($0) }.joined(separator: " › ")
+    }
+}
+
+/// A search result in the sidebar: the icon of the page it is on, its name, and under it where it is, since names
+/// such as "Menu bar" are on several pages.
+private struct SearchResultRow: View {
+    let result: SearchResult
+    let action: () -> Void
+    @State private var hovering = false
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: FrogStyle.space10) {
+                PluginIconTile(symbol: result.page.symbol, tint: result.page.tint, size: .sidebar)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(L10n.text(result.entry.title)).font(FrogType.row).lineLimit(1)
+                    Text(result.location).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(FrogStyle.ink)
+            .padding(.horizontal, FrogStyle.space6).padding(.vertical, FrogStyle.space4)
+            .frame(minHeight: FrogStyle.sidebarRowHeight)
+            .background(hovering ? FrogStyle.hover : .clear, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
+        }.buttonStyle(.plain).onHover { hovering = $0 }
+            .help(result.location)
+            .accessibilityLabel("\(L10n.text(result.entry.title)), \(result.location)")
     }
 }
 

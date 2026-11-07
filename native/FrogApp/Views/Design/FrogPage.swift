@@ -11,8 +11,10 @@ struct FrogPage<Content: View>: View {
     var width: CGFloat = FrogStyle.pageWidth
     @ViewBuilder var content: Content
     @Environment(\.frogToolbarTitle) private var titleInToolbar
+    @Environment(\.frogSearchFocus) private var searchFocus
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             // A header that hands everything up to the toolbar takes no room, and no section spacing either.
             FrogPageStack(spacing: FrogStyle.sectionSpacing) { content }
@@ -25,6 +27,14 @@ struct FrogPage<Content: View>: View {
         // A card running on past the window's bottom edge fades out there instead of being cut through; the fade's
         // margin is the page's bottom padding, so scrolled to the end the last card rests clear of it.
         .bottomScrollFade(height: FrogStyle.pageBottomFade)
+        // A search result that opened this page scrolls to its section or row once the page is laid out.
+        .task(id: searchFocus?.token) {
+            guard searchFocus != nil else { return }
+            try? await Task.sleep(for: .milliseconds(60))
+            guard !Task.isCancelled else { return }
+            withAnimation(FrogMotion.reveal) { proxy.scrollTo(FrogSearchFocus.anchor, anchor: .center) }
+        }
+        }
         // The toolbar lines its actions up with the column's trailing edge.
         .preference(key: FrogPageWidthKey.self, value: width)
     }
@@ -187,6 +197,7 @@ struct FrogSection<Content: View, Accessory: View>: View {
          @ViewBuilder content: () -> Content) {
         self.title = title; self.count = count; self.footer = footer; self.accessory = accessory(); self.content = content()
     }
+    @Environment(\.frogSearchFocus) private var searchFocus
 
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.space8) {
@@ -197,11 +208,13 @@ struct FrogSection<Content: View, Accessory: View>: View {
                 .padding(.horizontal, FrogStyle.rowInset).padding(.vertical, FrogStyle.space2)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frogTableSurface()
+                .environment(\.frogSectionTitle, title)
             if let footer {
                 Text(L10n.text(footer)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
                     .fixedSize(horizontal: false, vertical: true).padding(.horizontal, FrogStyle.rowInset)
             }
         }
+        .frogSearchTarget(searchFocus, active: searchFocus?.matchesSection(title) ?? false)
     }
 }
 
@@ -311,7 +324,10 @@ struct FrogRow<Control: View, Icon: View>: View {
         }
         .padding(.vertical, FrogStyle.space6)
         .frame(minHeight: FrogStyle.rowHeight)
+        .frogSearchTarget(searchFocus, active: searchFocus?.matchesRow(title, in: sectionTitle) ?? false)
     }
+    @Environment(\.frogSearchFocus) private var searchFocus
+    @Environment(\.frogSectionTitle) private var sectionTitle
 
     @ViewBuilder private var captionView: some View {
         switch caption {
