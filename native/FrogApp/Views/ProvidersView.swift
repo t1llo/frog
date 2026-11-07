@@ -150,6 +150,54 @@ private struct ProviderRow: View {
     }
 }
 
+/// The provider sheet's steps in a row, each a numbered dot and its name: done steps carry a checkmark, the open
+/// one is filled with the accent, the ones ahead are muted. A step that can be reached is a button.
+private struct ProviderSteps: View {
+    let titles: [String]
+    let current: Int
+    /// The furthest step a click may open.
+    let reachable: Int
+    let choose: (Int) -> Void
+
+    var body: some View {
+        HStack(spacing: FrogStyle.space8) {
+            ForEach(Array(titles.enumerated()), id: \.offset) { index, title in
+                if index > 0 {
+                    // The track between two steps, filled once the step before it is done.
+                    Capsule(style: .continuous).fill(index <= current ? FrogStyle.accent : FrogStyle.track)
+                        .frame(width: 20, height: 2).accessibilityHidden(true)
+                }
+                // The open step stays clickable-looking but does nothing; disabling it would dim the step you are on.
+                Button { if index != current { choose(index) } } label: { step(index, title) }
+                    .buttonStyle(.plain)
+                    .disabled(index > reachable)
+                    .accessibilityLabel(String(format: L10n.text("Step %d of %d: %@"), index + 1, titles.count, L10n.text(title)))
+                    .accessibilityAddTraits(index == current ? .isSelected : [])
+            }
+        }
+        .frame(minHeight: FrogStyle.compactHeight)
+    }
+
+    private func step(_ index: Int, _ title: String) -> some View {
+        let done = index < current
+        let open = index == current
+        return HStack(spacing: FrogStyle.space6) {
+            ZStack {
+                Circle().fill(open || done ? FrogStyle.accent : FrogStyle.control)
+                if done {
+                    Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(FrogStyle.onAccent)
+                } else {
+                    Text("\(index + 1)").font(FrogType.caption.weight(.semibold)).monospacedDigit()
+                        .foregroundStyle(open ? FrogStyle.onAccent : FrogStyle.muted)
+                }
+            }.frame(width: 18, height: 18)
+            Text(L10n.text(title)).font(open ? FrogType.bodyMedium : FrogType.small)
+                .foregroundStyle(open || done ? FrogStyle.ink : FrogStyle.muted).lineLimit(1)
+        }
+        .contentShape(Rectangle())
+    }
+}
+
 /// A link's title with its arrow after it, as in "Open ↗", like the links of a model's information sheet.
 private struct ProviderLinkLabel: View {
     let title: String
@@ -225,7 +273,9 @@ struct ProviderEditor: View {
                         .accessibilityLabel("Connection name").help("Click to rename. Rules and menus show this name.")
                         .frame(minHeight: FrogStyle.controlHeight)
                 }
-                CompactSegments(values: [0, 1, 2], selected: step, title: { ["Service", "Connection", "Models"][$0] }) { step = $0 }
+                // Where the sheet is in its three steps, rather than tabs: a saved provider can jump to any step,
+                // a new one back to the steps it has done.
+                ProviderSteps(titles: Self.stepTitles, current: step, reachable: isSaved ? Self.stepTitles.count - 1 : step) { step = $0 }
             }.frame(maxWidth: .infinity, alignment: .leading).padding(FrogStyle.sheetPadding)
             // As tall as the step, up to a limit: the short steps leave no empty half, the long one scrolls and
             // fades out above the buttons rather than cutting a line in half.
@@ -343,6 +393,8 @@ struct ProviderEditor: View {
         .onChange(of: clearKey) { _, _ in testResult = nil }
     }
 
+    static let stepTitles = ["Service", "Connection", "Models"]
+
     static let serviceGroups: [(title: String, kinds: [ProviderKind])] = [
         ("Cloud", [.openAI, .anthropic, .gemini, .compatible]),
         ("On this Mac", [.ollama, .lmStudio]),
@@ -376,7 +428,7 @@ struct ProviderEditor: View {
 
     private var serviceNote: String {
         if provider.kind.localTool != nil { return "Requests run in the background through your installed tool and its own sign-in." }
-        if provider.kind.isLocal { return "Local servers such as Ollama and LM Studio run outside Frog; start yours before you use it." }
+        if provider.kind.isLocal { return "\(provider.kind.shortTitle) runs outside Frog; start it before you use it." }
         return "Frog sends the text you run a rule on to \(provider.kind.title), with your API key."
     }
 
