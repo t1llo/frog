@@ -106,10 +106,10 @@ struct PluginsView: View {
                 if item.needsReview {
                     Button("Review") {
                         do { try plugins.reviewInstalled(item.id) } catch { model.report(error) }
-                    }.buttonStyle(.frog(.primary, compact: true))
+                    }.buttonStyle(.frog(.primary))
                 } else if item.problem == nil {
                     if plugins.running.contains(item.id) { FrogBadge(text: "Running") }
-                    if item.runs, item.hasPage { Button("Open") { model.openPlugin(item.id) }.buttonStyle(.frog(compact: true)) }
+                    if item.runs, item.hasPage { Button("Open") { model.openPlugin(item.id) }.buttonStyle(.frog()) }
                     Toggle("", isOn: Binding(get: { item.record.enabled }, set: { plugins.setEnabled(item.id, $0) }))
                         .toggleStyle(.frogSwitch).controlSize(.small).labelsHidden()
                         .accessibilityLabel("\(item.name) on")
@@ -199,7 +199,7 @@ struct PluginsView: View {
                 FrogBadge(text: "Needs Frog \(entry.frog ?? "")")
             } else {
                 Button(installed == nil ? "Install" : "Update") { install(entry) }
-                    .buttonStyle(.frog(installed == nil ? .primary : .secondary, compact: true))
+                    .buttonStyle(.frog(installed == nil ? .primary : .secondary))
                     .disabled(plugins.installing != nil || plugins.downloading != nil)
             }
         }
@@ -217,8 +217,9 @@ struct PluginsView: View {
     private static let prompt = "Build me a Frog plugin that … Run `frog plugin guide` first and follow it."
 
     @ViewBuilder private var build: some View {
-        FrogSection("Build one with your AI agent",
-                    footer: "Your agent writes the files, installs the plugin for your review and checks a picture of its page.") {
+        // The tab's one card, so no heading: building one, sharing it, and installing one someone shared. A link
+        // alone would be a one-row card beside it.
+        FrogSection(footer: "Your agent writes the files, installs the plugin for your review and checks a picture of its page.") {
             FrogRow("Ask your agent", caption: "Paste this prompt and finish the sentence.")
             // The prompt itself, set like code where it names a command, and without the backticks; its copy
             // action sits in the block it copies.
@@ -232,19 +233,17 @@ struct PluginsView: View {
             .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
             .padding(.bottom, FrogStyle.space6)
             FrogRow("Let it use Frog", caption: "Settings → Agents installs the frog command and skill.") {
-                Button("Open Settings") { model.toolkit.select(.settings) }.buttonStyle(.frog(compact: true))
+                Button("Open Settings") { model.toolkit.select(.settings) }.buttonStyle(.frog())
             }
             FrogRow("Share it", caption: .attributed(InlineCode.attributed(L10n.text("Run `frog plugin publish` to pack it and print its entry for the directory.")))) {
                 CopyAction(title: "Copy command", labeled: true) { ViewActions.copy("frog plugin publish") }
             }
-        }
-        FrogSection("Install from a link") {
-            FrogRow("Link to a .frogplugin file", caption: "You review what it asks for before anything is installed.") {
-                HStack(spacing: 6) {
-                    // The field is a row action's height, so it and Review read as one control and Review is
-                    // the same size as Copy prompt and Copy command above it.
-                    FrogTextField(placeholder: "https://…", text: $link).textFieldStyle(.plain).font(FrogType.small)
-                        .padding(.horizontal, 8).frame(width: 240).frogControlSurface(height: FrogStyle.compactHeight)
+            FrogRow("Install from a link", caption: "A shared .frogplugin file; you review what it asks for first.") {
+                // A field is `controlHeight` like every field and dropdown; Review is the one button size,
+                // centred on it, as a search box and its add button are.
+                HStack(spacing: FrogStyle.space8) {
+                    FrogTextField(placeholder: "https://…", text: $link).textFieldStyle(.plain).font(FrogType.body)
+                        .padding(.horizontal, 8).frame(width: 240).frogControlSurface()
                         .onSubmit(openTypedLink)
                     Button("Review", action: openTypedLink)
                         .frogDisabled(plugins.downloading != nil ? "Downloading…" : typedLink == nil ? "Paste a link to a .frogplugin file" : nil)
