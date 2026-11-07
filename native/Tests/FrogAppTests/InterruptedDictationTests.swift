@@ -19,6 +19,8 @@ final class InterruptedDictationTests: XCTestCase {
         let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                                                   windowNumber: window.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
         NSApplication.shared.sendEvent(escape)
+        XCTAssertEqual(fixture.controller.phase, .recording, "One Escape only asks for the second")
+        NSApplication.shared.sendEvent(escape)
         XCTAssertEqual(fixture.controller.phase, .idle)
         await fulfillment(of: [started], timeout: 2)
         let id = try XCTUnwrap(fixture.model.history.first?.id)

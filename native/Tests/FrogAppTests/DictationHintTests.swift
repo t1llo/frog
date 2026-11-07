@@ -11,7 +11,7 @@ final class DictationHintTests: XCTestCase {
         fixture.controller.start(rule: fixture.rule, preferences: WorkflowPreferences(), models: fixture.models)
         await fixture.controller.waitForWork()
         XCTAssertEqual(fixture.controller.phase, .recording)
-        XCTAssertEqual(fixture.controller.hint, "⌥Space to stop · Esc to cancel")
+        XCTAssertEqual(fixture.controller.hint, "⌥Space to stop · Esc twice to cancel")
     }
 
     func testHoldRecordingStartedByItsShortcutStopsWhenTheKeyIsReleased() async {
@@ -20,7 +20,7 @@ final class DictationHintTests: XCTestCase {
         fixture.controller.start(rule: fixture.rule, preferences: WorkflowPreferences(), models: fixture.models, shortcutHeld: true)
         await fixture.controller.waitForWork()
         XCTAssertEqual(fixture.controller.phase, .recording)
-        XCTAssertEqual(fixture.controller.hint, "Release ⌥Space to stop · Esc to cancel")
+        XCTAssertEqual(fixture.controller.hint, "Release ⌥Space to stop · Esc twice to cancel")
     }
 
     func testToggleRecordingNamesItsShortcutHoweverItStarted() async {
@@ -29,7 +29,7 @@ final class DictationHintTests: XCTestCase {
             var rule = fixture.rule; rule.action?.recordingMode = .toggle
             fixture.controller.start(rule: rule, preferences: WorkflowPreferences(), models: fixture.models, shortcutHeld: held)
             await fixture.controller.waitForWork()
-            XCTAssertEqual(fixture.controller.hint, "⌥Space to stop · Esc to cancel")
+            XCTAssertEqual(fixture.controller.hint, "⌥Space to stop · Esc twice to cancel")
             fixture.cleanUp()
         }
     }

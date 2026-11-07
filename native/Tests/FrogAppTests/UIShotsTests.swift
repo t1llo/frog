@@ -438,7 +438,8 @@ final class UIShotsTests: XCTestCase {
     // MARK: Dictation
 
     private func dictation(root: URL) async throws {
-        guard wanted("dictation-popup") else { return }
+        let names = ["dictation-popup", "dictation-popup-escape", "dictation-bean", "dictation-bean-escape"]
+        guard names.contains(where: wanted) else { return }
         // The recording reads 0:14 once it is under way, so the timer matches the sentence already transcribed.
         final class SampleClock { var started = false }
         let clock = SampleClock(), start = ContinuousClock.now
@@ -467,7 +468,20 @@ final class UIShotsTests: XCTestCase {
         }
         let frame = DictationPopupLayout.frame(phase: controller.phase, text: controller.liveText,
                                                visibleFrame: CGRect(x: 0, y: 0, width: 1_440, height: 900))
-        try await popup("dictation-popup", size: frame.size) { DictationPopup(controller: controller) }
+        if wanted("dictation-popup") { try await popup("dictation-popup", size: frame.size) { DictationPopup(controller: controller) } }
+        let screen = CGRect(x: 0, y: 0, width: 1_440, height: 900)
+        if wanted("dictation-bean") {
+            let bean = DictationBeanLayout.frame(phase: controller.phase, escapeArmed: false, visibleFrame: screen)
+            try await popup("dictation-bean", size: bean.size) { DictationBean(controller: controller) }
+        }
+        // One Escape: both styles say that a second press cancels.
+        controller.escapeConfirmation = .seconds(3_600)
+        controller.pressEscape()
+        if wanted("dictation-popup-escape") { try await popup("dictation-popup-escape", size: frame.size) { DictationPopup(controller: controller) } }
+        if wanted("dictation-bean-escape") {
+            let bean = DictationBeanLayout.frame(phase: controller.phase, escapeArmed: true, visibleFrame: screen)
+            try await popup("dictation-bean-escape", size: bean.size) { DictationBean(controller: controller) }
+        }
     }
 
     // MARK: Notices
