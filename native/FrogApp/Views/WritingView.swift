@@ -64,6 +64,9 @@ struct WritingView: View {
                        edit: { editing = rule }, tryIt: { trying = rule }, setEnabled: { value in
                            var updated = rule; updated.enabled = value
                            do { try model.saveRule(updated) } catch { model.report(error) }
+                       }, setHotkey: { hotkey in
+                           var updated = rule; updated.hotkey = hotkey
+                           do { try model.saveRule(updated) } catch { model.report(error) }
                        })
     }
 
@@ -452,7 +455,7 @@ struct WritingTryView: View {
     }
 }
 
-/// One rule: its tile, name and model, its shortcut and its switch. Clicking the row opens its editor; Try and Edit
+/// One rule: its tile, name and model, its shortcut (recorded in place) and its switch. Clicking the row opens its editor; Try and Edit
 /// appear where the pointer is, so a list of rules reads as names and shortcuts rather than a column of buttons.
 private struct WritingRuleRow: View {
     let rule: Rule
@@ -463,6 +466,7 @@ private struct WritingRuleRow: View {
     let edit: () -> Void
     let tryIt: () -> Void
     let setEnabled: (Bool) -> Void
+    let setHotkey: (Hotkey?) -> Void
     @State private var hovering = false
 
     var body: some View {
@@ -485,7 +489,10 @@ private struct WritingRuleRow: View {
                         Button { edit() } label: { ProblemMark(help: "No model chosen: click to choose one") }
                             .buttonStyle(.plain)
                     }
-                    if let hotkey = rule.hotkey { KeyCaps(hotkey: hotkey) }
+                    // Every rule has a shortcut slot: its caps, changed with a click, or a Record shortcut button, so
+                    // the column of caps ends on one edge and a rule without keys says it can take some.
+                    HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: setHotkey), showsClearButton: false)
+                    // Cleared in the rule's editor: a clear button here would land on Edit, which shows on hover.
                     Toggle("Enable \(rule.name)", isOn: Binding(get: { rule.enabled }, set: setEnabled))
                         .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
