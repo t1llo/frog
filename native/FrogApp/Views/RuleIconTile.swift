@@ -6,14 +6,26 @@ import SwiftUI
 /// summing up purple, shortening pink, polishing indigo. A translation names its language instead of a globe ("EN",
 /// "DE"), since two globes turned a little differently look alike at list size.
 struct RuleIconTile: View {
-    let rule: Rule
+    /// What the tile is drawn from: the rule's name, its glyph and whether it answers in the panel.
+    let name: String
+    let symbol: String
+    let answers: Bool
     var size: PluginIconTile.Size = .list
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
 
+    init(rule: Rule, size: PluginIconTile.Size = .list) {
+        name = rule.name; symbol = SelectionBubbleItems.symbol(for: rule); answers = rule.answersInPanel; self.size = size
+    }
+
+    /// A rule as the selection bubble lists it, drawn as it is in Writing and the command bar.
+    init(item: BubbleItem, size: PluginIconTile.Size = .sidebar) {
+        name = item.title; symbol = item.symbol; answers = item.answers; self.size = size
+    }
+
     var body: some View {
-        let tint = Self.tint(for: rule)
-        if let code = Self.languageCode(for: rule) {
+        let tint = Self.tint(name: name, symbol: symbol, answers: answers)
+        if let code = Self.languageCode(name: name, symbol: symbol) {
             let shape = RoundedRectangle(cornerRadius: size == .sidebar ? FrogStyle.smallRadius : FrogStyle.controlRadius, style: .continuous)
             let fill = PluginIconTile.fill(for: tint.color, colorScheme: colorScheme, contrast: contrast) ?? tint.color
             Text(code)
@@ -24,18 +36,21 @@ struct RuleIconTile: View {
                 .overlay(shape.strokeBorder(.black.opacity(0.06), lineWidth: 0.5))
                 .accessibilityHidden(true)
         } else {
-            PluginIconTile(symbol: SelectionBubbleItems.symbol(for: rule), tint: tint.color, size: size)
+            PluginIconTile(symbol: symbol, tint: tint.color, size: size)
         }
     }
 
     /// The colour of what the rule does, from the glyph its name gives it; a rule whose name says nothing known wears
     /// its feature's colour (Writing's green, Explain's teal for one that answers in the panel).
     static func tint(for rule: Rule) -> PluginTint {
-        if rule.isExplainRule { return ExplainPlugin.info.tint }
-        if languageCode(for: rule) != nil { return .blue }
-        let symbol = SelectionBubbleItems.symbol(for: rule)
+        tint(name: rule.name, symbol: SelectionBubbleItems.symbol(for: rule), answers: rule.answersInPanel)
+    }
+
+    /// The Explain rule wears `answerSymbol`, whose kind is Explain's colour, so the glyph alone tells it apart.
+    static func tint(name: String, symbol: String, answers: Bool) -> PluginTint {
+        if languageCode(name: name, symbol: symbol) != nil { return .blue }
         if let kind = kinds.first(where: { $0.symbols.contains(symbol) }) { return kind.tint }
-        return rule.answersInPanel ? ExplainPlugin.info.tint : WritingPlugin.info.tint
+        return answers ? ExplainPlugin.info.tint : WritingPlugin.info.tint
     }
 
     /// The colour each kind of glyph wears.
@@ -54,8 +69,13 @@ struct RuleIconTile: View {
     /// The two-letter code of the language a translation names ("Translate to German" is "DE"), or nil for any other
     /// rule and for a translation that names no language Frog knows.
     static func languageCode(for rule: Rule) -> String? {
-        guard !rule.isExplainRule else { return nil }
-        let name = rule.name.lowercased()
+        languageCode(name: rule.name, symbol: SelectionBubbleItems.symbol(for: rule))
+    }
+
+    /// A translation's glyph is never `answerSymbol`, which only the Explain rule and rules with no known name wear.
+    static func languageCode(name: String, symbol: String) -> String? {
+        guard symbol != SelectionBubbleItems.answerSymbol else { return nil }
+        let name = name.lowercased()
         guard ["translat", "übersetz"].contains(where: name.contains) else { return nil }
         return languages.first { entry in entry.words.contains { name.contains($0) } }?.code
     }

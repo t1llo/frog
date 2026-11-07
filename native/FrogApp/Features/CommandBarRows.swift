@@ -48,6 +48,8 @@ struct CommandBarRow {
     var iconPath: String? = nil
     /// The colour of the row's icon tile: the feature's own colour, so a feature looks the same here as in the sidebar.
     var tint: PluginTint? = nil
+    /// The rule a row runs, drawn with its own tile (`RuleIconTile`) as in Writing and the selection bubble.
+    var rule: Rule? = nil
 }
 
 /// A source of command bar rows. The bar asks every provider in its list, in order, and plugins add theirs

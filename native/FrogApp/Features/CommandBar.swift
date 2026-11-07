@@ -493,6 +493,8 @@ import SwiftUI
     }
     /// The colour of a row's icon tile, from its provider.
     func tint(for record: SearchRecord) -> PluginTint? { row(record.id)?.tint }
+    /// The rule a row runs, for its tile.
+    func rule(for record: SearchRecord) -> Rule? { row(record.id)?.rule }
     /// What Return runs on a row, for the footer: "Open", "Paste", "Run".
     func primaryTitle(for record: SearchRecord) -> String? {
         if record.id.hasPrefix("argument:") { return "Run" }
@@ -1117,6 +1119,7 @@ private struct CommandResultIcon: View {
         Group {
             if let icon { Image(nsImage: icon).resizable() }
             else if let action = Self.layout(result) { CommandLayoutTile(action: action) }
+            else if let rule = bar.rule(for: result) { RuleIconTile(rule: rule, size: .sidebar) }
             else { PluginIconTile(symbol: result.symbol, tint: (tint ?? .gray).color, size: .sidebar) }
         }.frame(width: 22, height: 22)
             .task(id: [result.id, key]) {

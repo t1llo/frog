@@ -74,7 +74,7 @@ struct SelectionBubbleView: View {
     /// as far in from the item's edge as from its top, so its corner nests in the item's.
     private func barLabel(_ item: BubbleItem) -> some View {
         HStack(spacing: FrogStyle.space6) {
-            PluginIconTile(symbol: item.symbol, tint: Self.tint(item).color, size: .sidebar)
+            RuleIconTile(item: item)
             Text(item.title).font(FrogType.label).lineLimit(1).truncationMode(.tail).frame(maxWidth: 140, alignment: .leading)
         }
         .padding(.leading, (Self.barItemHeight - PluginIconTile.Size.sidebar.rawValue) / 2).padding(.trailing, 9)
@@ -82,9 +82,6 @@ struct SelectionBubbleView: View {
         .fixedSize(horizontal: true, vertical: false)
         .contentShape(Rectangle())
     }
-
-    /// Rules that answer take Explain's colour, rules that replace the selection Writing's.
-    static func tint(_ item: BubbleItem) -> PluginTint { item.answers ? .teal : .green }
 
     // MARK: List
 
@@ -139,7 +136,7 @@ struct SelectionBubbleView: View {
 
     private func listRow(_ item: BubbleItem) -> some View {
         HStack(spacing: FrogStyle.space8) {
-            PluginIconTile(symbol: item.symbol, tint: Self.tint(item).color, size: .sidebar)
+            RuleIconTile(item: item)
             Text(item.title).font(FrogType.row).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 12)
             if let hotkey = item.hotkey {

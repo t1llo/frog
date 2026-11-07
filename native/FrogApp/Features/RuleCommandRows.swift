@@ -18,7 +18,7 @@ import FrogCore
                                  primary: CommandRowAction(title: "Run") { [weak model] in
                 guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message(CommandBarContext.targetChanged) }
                 model?.runRuleFromCommandBar(rule.id)
-            }, tint: owner.tint)
+            }, tint: owner.tint, rule: rule.category == .text ? rule : nil)
         }
     }
 
