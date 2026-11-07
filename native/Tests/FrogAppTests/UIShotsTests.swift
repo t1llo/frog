@@ -168,7 +168,39 @@ final class UIShotsTests: XCTestCase {
                 CleanerView(cleaner: loading) { _ in }
             }
         }
+        try await hiddenBarSections(sample)
         try await sample.useFeatures(everyFeature)
+    }
+
+    /// Hidden bar's page with its picture of the menu bar, which it shows only beside a running organizer: one with
+    /// status items that never reach this Mac's menu bar, and the always-hidden section on, so both dividers show.
+    /// Afterwards Hidden bar runs again as before, without an organizer.
+    private func hiddenBarSections(_ sample: SampleFrog) async throws {
+        guard wanted("page-hiddenBar-sections") else { return }
+        let model = sample.model
+        var on = model.configuration.preferences, off = on
+        on.setFeature(.menuBar, enabled: true)
+        off.setFeature(.menuBar, enabled: false)
+        // The section is on before the organizer starts, as after a restart: turned on beside a running organizer,
+        // it would open the page arranging.
+        try await sample.useFeatures(on)
+        var plugin = try XCTUnwrap(model.pluginHost.running["hidden-bar"] as? HiddenBarPlugin)
+        let alwaysHidden = plugin.settings.alwaysHiddenSection
+        plugin.update { $0.alwaysHiddenSection = true }
+        try await sample.useFeatures(off)
+        HiddenBarPlugin.makeOrganizer = {
+            MenuBarOrganizer(statusItems: ShotStatusItems(), applications: ShotApplications(), automaticTicks: false, environment: {
+                OrganizerEnvironment(screens: [OrganizerScreen(frame: CGRect(x: 0, y: 0, width: 1_440, height: 900),
+                                                               menuRegions: [CGRect(x: 0, y: 876, width: 1_440, height: 24)])])
+            })
+        }
+        defer { HiddenBarPlugin.makeOrganizer = nil }
+        try await sample.useFeatures(on)
+        plugin = try XCTUnwrap(model.pluginHost.running["hidden-bar"] as? HiddenBarPlugin)
+        model.toolkit.select(.feature(.menuBar))
+        try await page("page-hiddenBar-sections", settle: .milliseconds(500)) { MainView().environmentObject(model) }
+        plugin.update { $0.alwaysHiddenSection = alwaysHidden }
+        try await sample.useFeatures(off)
     }
 
     // MARK: The menu bar
@@ -192,6 +224,16 @@ final class UIShotsTests: XCTestCase {
         PowerSources.hasInternalBattery = true
         defer { PowerSources.hasInternalBattery = hadBattery }
         try await popup("popup-system-monitor-loading") { SystemMonitorStatusPopover(monitor: waiting) {} }
+        // The pages' Menu bar sections on their own, switched on so the style and colour pickers show.
+        if let plugin = model.pluginHost.running["llm-usage"] as? LLMUsagePlugin {
+            try await section("picker-llm-usage-menubar") { UsageMenuBarSection(plugin: plugin, usage: sample.usage) }
+        }
+        if let plugin = model.pluginHost.running["system-monitor"] as? SystemMonitorPlugin {
+            var settings = plugin.settings
+            settings.menuBarItem = true
+            try await section("picker-system-monitor-menubar") { SystemMonitorMenuBarSection(settings: settings) { _ in } }
+        }
+        try await popup("menubar-items") { MenuBarItemsPicture(usage: sample.usage) }
         // Stay awake's menu-bar item opens an NSMenu, which only AppKit draws, on screen.
         try await focusTimerPopup(sample)
     }
@@ -498,6 +540,20 @@ final class UIShotsTests: XCTestCase {
             let png = try await render(view().frame(width: width, height: height).background(FrogStyle.opaqueCanvas)
                                         .overlay(alignment: .topLeading) { WindowButtonsPicture() },
                                        size: CGSize(width: width, height: height), appearance: appearance, backdrop: false, settle: settle)
+            try write(png, "\(name)-\(mode)")
+        }
+    }
+
+    /// One section of a page, as tall as it is, at the width of the page's column in the window (the window beside
+    /// MainView's 208-point sidebar, less the page's padding, no wider than `FrogStyle.pageWidth`), on the window's
+    /// canvas with the page's padding around it.
+    private func section<Content: View>(_ name: String, _ view: () -> Content) async throws {
+        guard wanted(name) else { return }
+        let width = min(FrogStyle.pageWidth, Self.windowSize.width - 208 - FrogStyle.pagePadding * 2)
+        for (appearance, mode) in Self.appearances {
+            let png = try await render(view().frame(width: width, alignment: .leading).padding(FrogStyle.pagePadding)
+                                        .background(FrogStyle.opaqueCanvas),
+                                       size: nil, appearance: appearance, backdrop: false)
             try write(png, "\(name)-\(mode)")
         }
     }
@@ -888,6 +944,133 @@ private struct SampleSystemSampler: SystemMonitorSampling {
             return SystemMonitorSample(time: now.addingTimeInterval(-600 + t * 10), cpu: cpu, gpu: gpu, memory: 0.64 + 0.02 * sin(t / 9))
         }
     }
+}
+
+/// Hidden bar's status items for its page's picture: none reaches this Mac's menu bar.
+@MainActor private final class ShotStatusItems: OrganizerStatusItems {
+    func setMenuAction(_ action: @escaping (OrganizerMenuAction) -> Void) {}
+    func install(_ item: OrganizerItem) {}
+    func remove(_ item: OrganizerItem) {}
+    func setLength(_ length: CGFloat, for item: OrganizerItem) {}
+    func setExpanded(_ expanded: Bool) {}
+    func frame(of item: OrganizerItem) -> CGRect? { nil }
+    func updateMenu(_ state: OrganizerMenuState) {}
+}
+
+@MainActor private final class ShotApplications: OrganizerApplications {
+    func watch(_ changed: @escaping () -> Void) {}
+    func stopWatching() {}
+}
+
+/// Every menu-bar item Frog puts up, drawn by the code its status item draws with, at menu-bar size on strips of
+/// menu bar in its light or dark look, each named under it: Frog's own, LLM usage and System monitor in each style
+/// and colour, Hidden bar's arrow and dividers, and Stay awake's looks. On the plain backdrop, so the light bar shows.
+private struct MenuBarItemsPicture: View {
+    let usage: UsageDashboardModel
+    @Environment(\.colorScheme) private var scheme
+
+    private enum Glyph {
+        case image(NSImage)
+        /// Hidden bar's divider, which its status item draws as a view in the button, single or double.
+        case divider(double: Bool)
+    }
+    private struct Item { let label: String; let glyph: Glyph }
+
+    var body: some View {
+        let dark = scheme == .dark
+        VStack(alignment: .leading, spacing: 14) {
+            group("Frog", [Item(label: "Frog", glyph: .image(FrogMenuIcon.image))])
+            group("LLM usage", MenuBarMeterStyle.allCases.map { style in
+                Item(label: style.title, glyph: .image(usageImage(style: style, palette: .clean, dark: dark)))
+            } + [MenuBarMeterPalette.level, .spectrum].map { palette in
+                Item(label: "\(MenuBarMeterStyle.segments.title), \(palette.title)",
+                     glyph: .image(usageImage(style: .segments, palette: palette, dark: dark)))
+            })
+            group("System monitor", MenuBarMeterStyle.allCases.map { style in
+                Item(label: style.title, glyph: .image(systemImage(style: style, palette: SystemMonitorSettings().menuBarPalette, dark: dark)))
+            } + [MenuBarMeterPalette.clean, .level].map { palette in
+                Item(label: "\(SystemMonitorSettings().menuBarStyle.title), \(palette.title)",
+                     glyph: .image(systemImage(style: SystemMonitorSettings().menuBarStyle, palette: palette, dark: dark)))
+            })
+            group("Hidden bar", [Item(label: "Shown", glyph: .image(NativeOrganizerStatusItems.arrowImage(expanded: true))),
+                                 Item(label: "Hidden", glyph: .image(NativeOrganizerStatusItems.arrowImage(expanded: false))),
+                                 Item(label: "Divider", glyph: .divider(double: false)),
+                                 Item(label: "Always hidden", glyph: .divider(double: true))])
+            // A session with two hours and twenty minutes of four left, as Stay awake's page shows it.
+            let deadline = FrogClock.now.addingTimeInterval(140 * 60 + 30)
+            group("Stay awake", StayAwakePreferences.menuBarStyles.map { style in
+                Item(label: ["icon": "Cup", "ring": "Ring", "time": "Time left"][style] ?? style,
+                     glyph: .image(StayAwakeIcon.image(StayAwakeIcon.Face(style: style, deadline: deadline, duration: 4 * 3600))))
+            })
+        }
+    }
+
+    /// LLM usage's item as it reads the sample's plan limits, in `style` and `palette`.
+    private func usageImage(style: MenuBarMeterStyle, palette: MenuBarMeterPalette, dark: Bool) -> NSImage {
+        var (face, _) = UsageStatusReadout.readout(usage, dark: dark)
+        face.style = style
+        face.palette = palette
+        face.dark = palette != .clean && dark
+        return UsageStatusReadout.image(face)
+    }
+
+    /// System monitor's item with its default readings (CPU and GPU) on the sample's load.
+    private func systemImage(style: MenuBarMeterStyle, palette: MenuBarMeterPalette, dark: Bool) -> NSImage {
+        var settings = SystemMonitorSettings()
+        settings.menuBarStyle = style
+        settings.menuBarPalette = palette
+        let reading = SystemMonitorReading(cpu: .value(0.24), gpu: .value(0.11), memory: .value(0.66))
+        return MenuBarMeter.image(SystemMonitorStatusItemController.face(reading, settings: settings, dark: dark))
+    }
+
+    private func group(_ title: String, _ items: [Item]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    VStack(spacing: 5) {
+                        glyph(item.glyph).frame(height: 24).padding(.horizontal, 10)
+                        Text(item.label).font(.system(size: 10)).foregroundStyle(FrogStyle.muted).lineLimit(1).fixedSize()
+                            .padding(.horizontal, 6)
+                    }
+                }
+            }
+            // The menu bar runs behind every item of the group, 24 points tall.
+            .background(alignment: .top) {
+                Rectangle().fill(scheme == .dark ? Color(white: 0.12).opacity(0.92) : Color.white.opacity(0.78))
+                    .overlay(alignment: .bottom) { Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 0.5) }
+                    .frame(height: 24)
+            }
+        }
+    }
+
+    @ViewBuilder private func glyph(_ glyph: Glyph) -> some View {
+        switch glyph {
+        case .image(let image):
+            // As the status item's button draws it: a template in the menu bar's ink, a coloured one as it is.
+            Image(nsImage: image).renderingMode(image.isTemplate ? .template : .original)
+                .foregroundStyle(scheme == .dark ? Color.white : Color.black)
+                .frame(width: image.size.width, height: image.size.height)
+        case .divider(let double):
+            DividerItemPicture(double: double).frame(width: OrganizerItem.divider.revealedLength(padding: 0), height: 22)
+        }
+    }
+}
+
+/// Hidden bar's divider as its status item draws it: `OrganizerDividerView` in a 22-point button.
+private struct DividerItemPicture: NSViewRepresentable {
+    let double: Bool
+
+    func makeNSView(context: Context) -> NSButton {
+        let width = OrganizerItem.divider.revealedLength(padding: 0)
+        let button = NSButton(frame: NSRect(x: 0, y: 0, width: width, height: 22))
+        button.isBordered = false
+        button.title = ""
+        _ = OrganizerDividerView(button: button, isDouble: double, width: width)
+        return button
+    }
+
+    func updateNSView(_ button: NSButton, context: Context) {}
 }
 
 /// A sampler whose first reading never comes, for the loading picture.

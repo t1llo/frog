@@ -675,7 +675,7 @@ private struct UsageAccountLabelField: View {
 // MARK: Menu bar
 
 /// The menu-bar item's switch, a preview with the current readings, and its looks.
-private struct UsageMenuBarSection: View {
+struct UsageMenuBarSection: View {
     @ObservedObject var plugin: LLMUsagePlugin
     @ObservedObject var usage: UsageDashboardModel
     /// Shown while there is no plan reading, so that the looks can still be compared.
