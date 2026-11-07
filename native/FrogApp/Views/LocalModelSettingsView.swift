@@ -13,7 +13,8 @@ struct LocalModelSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            FrogSection("Memory") {
+            // One card: until a model is installed the folder is storage's only row, which would stand alone.
+            FrogSection("Memory and storage") {
                 FrogRow("Unload idle models") {
                     FrogDropdown(selected: prefs.idleUnloadSeconds, options: [0] + LocalModelSettingsView.idleUnloadChoices,
                                  title: { LocalModelSettings.idleTitle(seconds: $0) }) { seconds in update { $0.idleUnloadSeconds = seconds } }
@@ -21,8 +22,6 @@ struct LocalModelSettingsView: View {
                 FrogRow(model.localModels.loaded.isEmpty ? "No models loaded" : "Models in memory", caption: LocalModelSettings.inMemory(model.localModels.loaded, catalog: model.configuration.modelCatalog)) {
                     Button("Unload now") { Task { await model.localModels.unload() } }.disabled(model.localModels.loaded.isEmpty || model.localModels.busy || model.dictating)
                 }
-            }
-            FrogSection("Storage") {
                 let root = model.localModels.root
                 // The default folder is named by where Frog keeps it for everyone, never by the data folder a test or
                 // another copy of Frog was started with.
