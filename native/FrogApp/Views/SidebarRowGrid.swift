@@ -77,8 +77,10 @@ extension View {
     /// Reports this sidebar row's frame to `grid`, under the ID the list scrolls to, and shows the row only while it
     /// is whole above the list's bottom fade. `group` is the ID of the header the row sits under, which comes into
     /// view with it.
-    func sidebarGridRow(_ id: AnyHashable, in grid: SidebarRowGrid, group: AnyHashable? = nil) -> some View {
-        modifier(SidebarGridRow(id: id, grid: grid, group: group))
+    /// `keepsWith` is the height under the row that must fit with it: a group header passes its first row's, so a
+    /// header never shows alone at the list's bottom edge.
+    func sidebarGridRow(_ id: AnyHashable, in grid: SidebarRowGrid, group: AnyHashable? = nil, keepsWith: CGFloat = 0) -> some View {
+        modifier(SidebarGridRow(id: id, grid: grid, group: group, keepsWith: keepsWith))
     }
 }
 
@@ -89,19 +91,20 @@ private struct SidebarGridRow: ViewModifier {
     let id: AnyHashable
     let grid: SidebarRowGrid
     let group: AnyHashable?
+    let keepsWith: CGFloat
     @Environment(\.sidebarVisibleBottom) private var visibleBottom
     @State private var whole = true
 
     func body(content: Content) -> some View {
         content
-            .opacity(whole ? 1 : 0).allowsHitTesting(whole)
+            .opacity(whole ? 1 : 0).allowsHitTesting(whole).accessibilityHidden(!whole)
             .animation(FrogMotion.reveal, value: whole)
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SidebarRowGrid.content)) } action: {
                 grid.rows[id] = $0
                 grid.groups[id] = group
             }
-            .onGeometryChange(for: Bool.self) { [visibleBottom] proxy in
-                visibleBottom <= 0 || proxy.frame(in: .named(SidebarRowGrid.viewport)).maxY <= visibleBottom + 0.5
+            .onGeometryChange(for: Bool.self) { [visibleBottom, keepsWith] proxy in
+                visibleBottom <= 0 || proxy.frame(in: .named(SidebarRowGrid.viewport)).maxY + keepsWith <= visibleBottom + 0.5
             } action: { fits in
                 if fits != whole { whole = fits }
             }

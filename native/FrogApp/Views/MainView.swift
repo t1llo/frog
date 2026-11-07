@@ -28,8 +28,6 @@ struct MainView: View {
     @State private var pageBack: FrogPageBack?
     /// Where the sidebar list's rows sit, so its scroll rests on row edges.
     @State private var sidebarGrid = SidebarRowGrid()
-    /// The sidebar's list is too long for the window, so Models, Features and Settings scroll with it.
-    @State private var sidebarOverflows = false
     /// Space under the sidebar list's last row that lets it scroll to its end on a row edge.
     @State private var sidebarEndSpace: CGFloat = 0
     /// Heights the sidebar's layout depends on: the list's rows, the pinned rows, and the space below the search.
@@ -150,17 +148,13 @@ struct MainView: View {
         }
     }
 
-    /// Lays the sidebar out for the window's height: Models, Features and Settings pinned under the list while
-    /// everything fits, scrolling at the list's end once it does not, so neither edge of the list ever cuts a row
-    /// next to the search field or the pinned rows. Then the space after the last row that ends the scroll on a row
-    /// edge.
+    /// Works out the space after the list's last row that ends its scroll on a row edge, so scrolled to the end
+    /// the top row is whole too. Models, Features and Settings are pinned under the list at every window height,
+    /// so only the list scrolls.
     private func layOutSidebar() {
         let heights = sidebarHeights
-        guard heights.region > 0 else { return }
-        let gap = FrogStyle.sidebarGroupGap
-        let overflows = gap + heights.list + gap + heights.pinned > heights.region + 0.5
-        if overflows != sidebarOverflows { sidebarOverflows = overflows }
-        let scrollable = overflows ? heights.content + sidebarBottomFade - heights.viewport : 0
+        guard heights.viewport > 0 else { return }
+        let scrollable = max(0, heights.content + sidebarBottomFade - heights.viewport)
         let end = sidebarGrid.endSpace(scrollable: scrollable)
         if abs(end - sidebarEndSpace) > 0.5 { sidebarEndSpace = end }
     }
@@ -280,9 +274,9 @@ struct MainView: View {
     /// between groups and above the pinned rows.
     ///
     /// At the window's default size (`MainView.defaultSize`) the features Frog starts with and the ones setup
-    /// recommends fit, so nothing scrolls. When they do not, the pinned rows join the list's end, the list rests only
-    /// on row edges and fades over the panel's bottom edge, so no row is ever cut under the search field or above the
-    /// pinned rows (`layOutSidebar`).
+    /// recommends fit, so nothing scrolls. When they do not, only the list scrolls: Models, Features and Settings stay
+    /// pinned under it at every window height. The list rests only on row edges, and a row that would be cut above
+    /// the pinned rows stays hidden until all of it fits, so no row is ever cut at either edge.
     private var sidebar: some View {
         let gap = FrogStyle.sidebarGroupGap
         return VStack(alignment: .leading, spacing: 0) {
@@ -307,11 +301,7 @@ struct MainView: View {
             VStack(spacing: 0) {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        VStack(alignment: .leading, spacing: gap) {
-                            sidebarList
-                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sidebarHeights.list = $0; layOutSidebar() }
-                            if sidebarOverflows && !workspace.isEmpty { workspaceGroup(workspace, scrolls: true) }
-                        }
+                        sidebarList
                         .padding(.horizontal, FrogStyle.sidebarRowInset)
                         .coordinateSpace(name: SidebarRowGrid.content)
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SidebarRowGrid.viewport)) } action: { frame in
@@ -336,14 +326,12 @@ struct MainView: View {
                     .onChange(of: section) { _, route in reveal(route, in: proxy) }
                 }
                 .padding(.top, gap)
-                // Models, Features and Settings stay pinned under the list while it fits, so the open one is always
-                // in view and Settings one click away. In a window too short for every row they scroll at the list's
-                // end instead, as Finder's and Mail's sidebars scroll as one list.
-                if !sidebarOverflows && !workspace.isEmpty {
-                    workspaceGroup(workspace, scrolls: false).padding(.horizontal, FrogStyle.sidebarRowInset)
+                // Models, Features and Settings are pinned under the list at every window height, so the main
+                // destinations never scroll away or hide; only the list above them scrolls.
+                if !workspace.isEmpty {
+                    workspaceGroup(workspace).padding(.horizontal, FrogStyle.sidebarRowInset)
                 }
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sidebarHeights.region = $0; layOutSidebar() }
             .onAppear { sidebarGrid.bottomFade = sidebarBottomFade }
         }
         .background(FrogStyle.sidebar, in: RoundedRectangle(cornerRadius: FrogStyle.sidebarRadius, style: .continuous))
@@ -398,7 +386,8 @@ struct MainView: View {
     private func sidebarGroup<Rows: View>(_ title: String, id: String, @ViewBuilder rows: () -> Rows) -> some View {
         VStack(alignment: .leading, spacing: FrogStyle.space2) {
             SidebarGroupHeader(title: title)
-                .id("group-\(id)").sidebarGridRow(AnyHashable("group-\(id)"), in: sidebarGrid)
+                .id("group-\(id)")
+                .sidebarGridRow(AnyHashable("group-\(id)"), in: sidebarGrid, keepsWith: FrogStyle.space2 + FrogStyle.sidebarRowHeight)
             rows()
         }
         .accessibilityElement(children: .contain).accessibilityLabel(L10n.text(title))
@@ -412,22 +401,14 @@ struct MainView: View {
         }
     }
 
-    /// Models, Features and Settings, under the list: pinned while everything fits, at the list's end when not.
-    private func workspaceGroup(_ items: [NavigationItem], scrolls: Bool) -> some View {
+    /// Models, Features and Settings, pinned under the list at every window height.
+    private func workspaceGroup(_ items: [NavigationItem]) -> some View {
         VStack(alignment: .leading, spacing: FrogStyle.space2) {
             // Headed like every other group, so the pinned rows never read as strays of the group above them.
-            if scrolls {
-                SidebarGroupHeader(title: "Frog").id("group-workspace").sidebarGridRow(AnyHashable("group-workspace"), in: sidebarGrid)
-            } else {
-                SidebarGroupHeader(title: "Frog")
-            }
-            ForEach(items) { item in
-                if scrolls { navigationButton(item).id(item.id).sidebarGridRow(AnyHashable(item.id), in: sidebarGrid, group: AnyHashable("group-workspace")) }
-                else { navigationButton(item) }
-            }
+            SidebarGroupHeader(title: "Frog")
+            ForEach(items) { item in navigationButton(item) }
         }
         .padding(.bottom, FrogStyle.sidebarRowInset)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sidebarHeights.pinned = $0; layOutSidebar() }
         .accessibilityElement(children: .contain).accessibilityLabel(L10n.text("Frog"))
     }
 
@@ -470,12 +451,6 @@ struct MainView: View {
 
 /// The heights the sidebar's layout is worked out from (`MainView.layOutSidebar`).
 struct SidebarHeights: Equatable {
-    /// Frog's row, the groups and Community pages.
-    var list: CGFloat = 0
-    /// Models, Features and Settings with the space under them.
-    var pinned: CGFloat = 0
-    /// Everything under the search field.
-    var region: CGFloat = 0
     /// The scroll view and its content.
     var viewport: CGFloat = 0
     var content: CGFloat = 0
