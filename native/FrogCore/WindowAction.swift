@@ -36,6 +36,27 @@ public enum WindowAction: String, Codable, CaseIterable, Identifiable, Sendable 
         case .centeredLarge: "Centered 90%"
         }
     }
+    /// Earlier names and other words for the layout, so search still finds it by them: "quarter" finds Top left,
+    /// "previous size" Restore. The command bar and the layout picker match them along with `title`.
+    public var searchKeywords: String {
+        switch self {
+        case .topLeft: "Top-left quarter"
+        case .topRight: "Top-right quarter"
+        case .bottomLeft: "Bottom-left quarter"
+        case .bottomRight: "Bottom-right quarter"
+        case .maximize: "Maximize on display fill"
+        case .restore: "Restore previous size undo"
+        case .nextDisplay: "Move to next display screen"
+        case .previousDisplay: "Move to previous display screen"
+        case .toggleFullScreen: "Toggle full screen"
+        case .leftTwoThirds: "Left ⅔"
+        case .rightTwoThirds: "Right ⅔"
+        case .centeredSmall: "Centered · 50% small"
+        case .centeredMedium: "Centered · 70% medium"
+        case .centeredLarge: "Centered · 90% large"
+        default: ""
+        }
+    }
     private var ruleNumber: Int {
         switch self {
         case .leftHalf: 1

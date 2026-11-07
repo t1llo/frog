@@ -6,8 +6,8 @@ public struct LayoutPickerModel: Equatable, Sendable {
     public struct Tile: Equatable, Sendable, Identifiable {
         public var action: WindowAction
         public var hotkey: Hotkey?
-        /// The layout's one name (`WindowAction.title`), as every other surface names it. The filter matches it
-        /// and the tile's groups.
+        /// The layout's one name (`WindowAction.title`), as every other surface names it. The filter matches it,
+        /// its earlier names (`WindowAction.searchKeywords`) and the tile's groups.
         public var title: String { action.title }
         public var name: String { action.title }
         public var id: String { action.rawValue }
@@ -100,7 +100,7 @@ public struct LayoutPickerModel: Equatable, Sendable {
                 .map { Tile(action: $0, hotkey: hotkeys[$0]) }
                 .filter { tile in
                     // The cheat sheet's own group too, which More folds in: "undo" still finds Restore.
-                    text.isEmpty || [tile.title, title, WindowCheatSheet.group(for: tile.action)]
+                    text.isEmpty || [tile.title, tile.action.searchKeywords, title, WindowCheatSheet.group(for: tile.action)]
                         .contains { $0.localizedCaseInsensitiveContains(text) }
                 }
             return tiles.isEmpty ? nil : Section(title: title, tiles: tiles)

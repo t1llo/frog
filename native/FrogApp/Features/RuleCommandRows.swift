@@ -35,7 +35,7 @@ import FrogCore
         let model = context.model, frontPID = context.frontPID
         guard model.configuration.preferences.windowActionsEnabled else { return [] }
         return WindowAction.allCases.map { action in
-            CommandBarRow(record: SearchRecord(id: "layout:\(action.rawValue)", title: action.title, subtitle: "Windows", keywords: "window layout arrange front window", symbol: "macwindow"),
+            CommandBarRow(record: SearchRecord(id: "layout:\(action.rawValue)", title: action.title, subtitle: "Windows", keywords: "window layout arrange front window " + action.searchKeywords, symbol: "macwindow"),
                           primary: CommandRowAction(title: "Arrange") { [weak model] in
                 guard NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID else { throw FrogError.message(CommandBarContext.targetChanged) }
                 model?.runWindowAction(action)

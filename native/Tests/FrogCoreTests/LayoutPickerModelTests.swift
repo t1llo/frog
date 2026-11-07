@@ -35,6 +35,11 @@ final class LayoutPickerModelTests: XCTestCase {
         XCTAssertEqual(model.visibleActions, [.restore])
         model.setQuery("displays")
         XCTAssertEqual(model.visibleActions, [.nextDisplay, .previousDisplay])
+        // The names layouts had before still find them.
+        model.setQuery("quarter")
+        XCTAssertEqual(Set(model.visibleActions), [.topLeft, .topRight, .bottomLeft, .bottomRight])
+        model.setQuery("previous size")
+        XCTAssertEqual(model.visibleActions, [.restore])
         model.setQuery("nothing like it")
         XCTAssertEqual(model.sections, [])
         XCTAssertNil(model.selection)

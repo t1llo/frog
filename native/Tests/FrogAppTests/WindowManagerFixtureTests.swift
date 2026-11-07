@@ -92,7 +92,7 @@ final class WindowManagerFixtureTests: XCTestCase {
         access.trusted = true
 
         text = await message { try await manager.perform(.leftHalf, pid: 7, displays: [self.laptop]) }
-        XCTAssertEqual(text, "There is no focused window to \(WindowAction.leftHalf.title.lowercased()).")
+        XCTAssertEqual(text, "There is no focused window for \(WindowAction.leftHalf.title).")
 
         access.add(key, frame: frame, state: WindowState(fullScreen: true))
         text = await message { try await manager.perform(.leftHalf, pid: 7, displays: [self.laptop]) }
