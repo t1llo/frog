@@ -443,10 +443,10 @@ struct ProviderEditor: View {
 
     private var endpointHint: String {
         switch provider.kind {
-        case .ollama: "Open Ollama and download a text model (for example: ollama pull llama3.2). Then find installed models below. Frog uses /api/chat."
-        case .lmStudio: "In LM Studio, download a text model and start the server in Developer. Then find installed models below. The default server port is 1234."
-        case .compatible: "Enter your service’s OpenAI-compatible base URL, usually ending in /v1, and add its exact model IDs below. Get API credentials from that service."
-        default: "The default is the official API base URL. Change it only if your connection uses a gateway."
+        case .ollama: "Open Ollama and download a text model, such as with ollama pull llama3.2."
+        case .lmStudio: "In LM Studio, download a text model and start the server in Developer."
+        case .compatible: "Use the service’s OpenAI-compatible base URL, usually ending in /v1."
+        default: "This is the official API. Change it only for a gateway."
         }
     }
 
