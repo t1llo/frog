@@ -19,8 +19,14 @@ struct LocalModelSettingsView: View {
                     FrogDropdown(selected: prefs.idleUnloadSeconds, options: [0] + LocalModelSettingsView.idleUnloadChoices,
                                  title: { LocalModelSettings.idleTitle(seconds: $0) }) { seconds in update { $0.idleUnloadSeconds = seconds } }
                 }
-                FrogRow(model.localModels.loaded.isEmpty ? "No models loaded" : "Models in memory", caption: LocalModelSettings.inMemory(model.localModels.loaded, catalog: model.configuration.modelCatalog)) {
-                    Button("Unload now") { Task { await model.localModels.unload() } }.disabled(model.localModels.loaded.isEmpty || model.localModels.busy || model.dictating)
+                // A value row while nothing is loaded, like Disk used; Unload now appears once there is something to unload.
+                FrogRow("In memory", caption: LocalModelSettings.inMemory(model.localModels.loaded, catalog: model.configuration.modelCatalog)) {
+                    if model.localModels.loaded.isEmpty {
+                        Text("None").font(FrogType.body).foregroundStyle(FrogStyle.muted)
+                    } else {
+                        Button("Unload now") { Task { await model.localModels.unload() } }
+                            .frogDisabled(model.dictating ? "Wait for dictation to finish" : model.localModels.busy ? "Frog is busy with a model" : nil)
+                    }
                 }
                 let root = model.localModels.root
                 // The default folder is named by where Frog keeps it for everyone, never by the data folder a test or
