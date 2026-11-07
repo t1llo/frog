@@ -77,6 +77,9 @@ enum FrogStyle {
     static let controlHeight: CGFloat = 28
     /// The same controls in popups, panel headers and dense rows.
     static let compactHeight: CGFloat = 24
+    /// The value field of every number stepper (− field +), whatever its bounds, so the minus and plus of rows above
+    /// each other line up: room for six digits in `body`.
+    static let numberFieldWidth: CGFloat = 64
     /// The least height of a `FrogRow` in a `FrogSection` card: a 28-point control with `space6` above and below,
     /// so a row with a dropdown or segments is as tall as one with a switch.
     static let rowHeight: CGFloat = controlHeight + 2 * space6
