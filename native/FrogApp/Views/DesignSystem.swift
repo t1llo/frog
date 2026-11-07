@@ -959,7 +959,7 @@ struct SymbolTile: View {
     var body: some View {
         // The proportions and corners of `PluginIconTile` at the same size.
         let radius = size >= 40 ? FrogStyle.cardRadius : size >= 28 ? FrogStyle.controlRadius : FrogStyle.smallRadius
-        Image(systemName: symbol).font(.system(size: size * 0.52, weight: .medium))
+        OpticalSymbol(name: symbol, size: size * 0.52)
             .foregroundStyle(FrogStyle.muted).frame(width: size, height: size)
             .background(FrogStyle.control, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
             .accessibilityHidden(true)
@@ -1097,11 +1097,11 @@ private struct IconLabel: View {
     let hovering: Bool
     var body: some View {
         if bordered {
-            Image(systemName: symbol).font(FrogType.label).contentTransition(.symbolEffect(.replace))
+            OpticalSymbol(name: symbol, size: 11).contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(destructive ? FrogStyle.critical : FrogStyle.ink)
                 .frame(width: FrogStyle.compactHeight).modifier(CompactActionSurface())
         } else {
-            Image(systemName: symbol).font(.system(size: Self.glyphSize, weight: .medium)).contentTransition(.symbolEffect(.replace))
+            OpticalSymbol(name: symbol, size: Self.glyphSize).contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(destructive ? FrogStyle.critical : hovering ? FrogStyle.ink : FrogStyle.muted)
                 .frame(width: FrogButtonStyle.height(), height: FrogButtonStyle.height())
                 .frogRowHighlight(hovering: hovering)
