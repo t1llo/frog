@@ -261,7 +261,7 @@ struct AppearanceSettingsView: View {
                 Slider(value: Binding(get: { amount }, set: { amount in var value = appearance; set(&value, amount); draft.change(value) }),
                        in: 0...1, onEditingChanged: { if !$0 { draft.commit() } }).frame(width: 145).controlSize(.small)
                     .accessibilityLabel(title)
-                Text("\(Int((amount * 100).rounded()))%").font(FrogType.small).monospacedDigit().frame(width: 32, alignment: .trailing)
+                Text("\(Int((amount * 100).rounded()))%").font(FrogType.small).monospacedDigit().lineLimit(1).frame(width: 38, alignment: .trailing)
             }
         }
     }
