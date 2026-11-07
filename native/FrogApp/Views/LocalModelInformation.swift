@@ -30,7 +30,7 @@ struct LocalModelInformation: View {
             } trailing: {
                 FrogPrimaryButton("Done") { dismiss() }
             }.labelStyle(TrailingIconLabelStyle())
-        }.padding(FrogStyle.sheetPadding).frame(width: 480).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
+        }.padding(FrogStyle.sheetPadding).frame(width: 480).foregroundStyle(FrogStyle.ink).frogSheetSurface()
             .buttonStyle(.frog()).environment(\.locale, L10n.locale)
     }
 
@@ -124,7 +124,7 @@ struct AddLocalModelView: View {
                 FrogPrimaryButton("Check source", disabledReason: loading ? "Reading the model's details…"
                                   : empty ? "Paste a link or a model ID first" : nil) { inspect() }
             }
-        }.padding(FrogStyle.sheetPadding).frame(width: 540).foregroundStyle(FrogStyle.ink).background(FrogStyle.panelSurface)
+        }.padding(FrogStyle.sheetPadding).frame(width: 540).foregroundStyle(FrogStyle.ink).frogSheetSurface()
             .buttonStyle(.frog()).environment(\.locale, L10n.locale)
             .onDisappear { inspection?.cancel() }
     }

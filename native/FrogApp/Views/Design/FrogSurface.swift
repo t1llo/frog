@@ -43,6 +43,15 @@ extension View {
     }
 }
 
+extension View {
+    /// A sheet's background: the main window's page, the same canvas over the same material, so a sheet's
+    /// cards and buttons sit on the colours they have on a page and the sheet reads as part of Frog, not as the
+    /// system's sheet grey.
+    func frogSheetSurface() -> some View {
+        background(FrogStyle.canvas).frogSurface(.window)
+    }
+}
+
 private struct FrogSurfaceModifier: ViewModifier {
     let kind: FrogSurfaceKind
     let radius: CGFloat

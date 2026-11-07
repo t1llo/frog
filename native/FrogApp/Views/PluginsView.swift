@@ -469,7 +469,7 @@ struct PluginReviewSheet: View {
             try? await Task.sleep(for: .seconds(1))
             armed = true
         }
-        .frame(width: 500)
+        .frame(width: 500).frogSheetSurface()
         .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).buttonStyle(FrogButtonStyle())
     }
 

@@ -230,7 +230,7 @@ struct RenameSheet: View {
                 FrogCancelButton { dismiss() }
                 FrogPrimaryButton("Rename", disabledReason: name.trimmingCharacters(in: .whitespaces).isEmpty ? "Enter a name first" : nil) { done() }
             }
-        }.padding(FrogStyle.sheetPadding).frame(width: 340).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
+        }.padding(FrogStyle.sheetPadding).frame(width: 340).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent).frogSheetSurface()
     }
 
     private func done() {

@@ -64,7 +64,7 @@ struct PluginSettingsSheet: View {
             }
             FrogSheetButtons(padded: false) { FrogPrimaryButton("Done", action: done) }
         }
-        .padding(FrogStyle.sheetPadding).frame(width: 520)
+        .padding(FrogStyle.sheetPadding).frame(width: 520).frogSheetSurface()
         .font(FrogType.body).foregroundStyle(FrogStyle.ink).tint(FrogStyle.accent)
     }
 
