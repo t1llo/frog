@@ -199,7 +199,7 @@ struct HistoryView: View {
                         Button("Reveal text") { visibility.revealed.insert(entry.id) }
                     }.frame(maxWidth: .infinity).padding(32).frogTableSurface()
                 } else {
-                    HistoryDetail(entry: entry)
+                    HistoryDetail(entry: entry) { feature in model.toolkit.select(.feature(feature)) }
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
                 .onCopyCommand { hidden(entry) ? [] : [NSItemProvider(object: entry.processedText as NSString)] }
@@ -395,6 +395,8 @@ private struct NoteProgress: Equatable {
 
 private struct HistoryDetail: View {
     let entry: HistoryEntry
+    /// Opens the page of the feature that made the entry.
+    let openFeature: (FeatureID) -> Void
     /// The comparison is worked out once per entry, not on every render.
     @State private var diffs = HistoryDiffMemo()
 
@@ -407,8 +409,43 @@ private struct HistoryDetail: View {
             } else {
                 changes
             }
+            details
         }
         .foregroundStyle(FrogStyle.ink).buttonStyle(FrogButtonStyle())
+    }
+
+    /// What the subtitle has no room for: the feature and rule that made it, with the way to that rule's page, how
+    /// long the texts are, and the whole date.
+    private var details: some View {
+        let feature = HistoryView.feature(entry.kind)
+        return FrogSection("Details") {
+            FrogRow(entry.ruleName, caption: L10n.text(feature.name)) {
+                PluginIconTile(symbol: feature.symbol, tint: feature.tint.color, size: .list)
+            } control: {
+                if let id = FeatureID(rawValue: feature.id) {
+                    Button(String(format: L10n.text("Open %@"), L10n.text(feature.name))) { openFeature(id) }
+                }
+            }
+            if let length = lengthText {
+                FrogRow("Length") { Text(length).font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted) }
+            }
+            FrogRow("Saved") {
+                Text(entry.timestamp.formatted(date: .complete, time: .shortened)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+            }
+        }
+    }
+
+    /// "41 → 43 characters" for a rewrite, the length of the one text otherwise.
+    private var lengthText: String? {
+        func characters(_ count: Int) -> String {
+            count == 1 ? L10n.text("1 character") : String(format: L10n.text("%@ characters"), count.formatted(.number.locale(L10n.locale)))
+        }
+        let original = entry.originalText.count, result = entry.processedText.count
+        if entry.answer == nil, original > 0, result > 0 {
+            return "\(original.formatted(.number.locale(L10n.locale))) → \(characters(result))"
+        }
+        let only = result > 0 ? result : original
+        return only > 0 ? characters(only) : nil
     }
 
     /// A rewrite: the original and the result side by side in one card, with what changed marked in both, so the
@@ -525,9 +562,10 @@ struct HistoryDiff {
         for segment in segments {
             var part = AttributedString(segment.text)
             if segment.changed {
-                part.backgroundColor = color.opacity(0.2)
+                part.backgroundColor = color.opacity(strike ? 0.22 : 0.2)
                 // A line under or through the letters too, so a mark on one narrow letter ("I", ".") still shows.
-                if strike { part.swiftUI.strikethroughStyle = Text.LineStyle(pattern: .solid, color: color); part.foregroundColor = FrogStyle.muted }
+                // Taken-out letters are set in the critical red as well, so even one struck "i" reads as removed.
+                if strike { part.swiftUI.strikethroughStyle = Text.LineStyle(pattern: .solid, color: color); part.foregroundColor = color }
                 else { part.swiftUI.underlineStyle = Text.LineStyle(pattern: .solid, color: color) }
             }
             text += part

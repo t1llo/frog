@@ -13,6 +13,12 @@ enum RecentTimestamp {
             return Duration.seconds(seconds).formatted(.units(allowed: [.minutes], width: .abbreviated)) + " " + L10n.text("ago")
         }
         if calendar.isDate(date, inSameDayAs: now) {
+            // A 24-hour clock keeps its leading zero ("00:09", "09:41"), so an early time never reads as a
+            // duration such as "0:09" beside "4 min ago"; a 12-hour clock says AM or PM, which does the same.
+            if uses24HourClock(locale) {
+                return date.formatted(Date.FormatStyle(locale: locale, calendar: calendar)
+                    .hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
+            }
             return date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, calendar: calendar))
         }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
@@ -24,6 +30,12 @@ enum RecentTimestamp {
         var day = Date.FormatStyle(locale: locale, calendar: calendar).month(.abbreviated).day()
         if !calendar.isDate(date, equalTo: now, toGranularity: .year) { day = day.year() }
         return date.formatted(day)
+    }
+
+    /// Whether the locale, with the Mac's own clock setting, writes the hour on a 24-hour clock.
+    private static func uses24HourClock(_ locale: Locale) -> Bool {
+        let pattern = DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: locale) ?? ""
+        return pattern.contains("H") || pattern.contains("k")
     }
 
     /// The whole date and time, for the tooltip of a short timestamp: "6 Nov 2026 at 19:40".
