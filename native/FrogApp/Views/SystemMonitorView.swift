@@ -104,6 +104,8 @@ struct SystemMonitorOverview: View {
                         SystemMonitorGraph(history: history, inspected: $inspected, sample: sample, wide: wide).equatable().frame(height: wide ? 150 : 54)
                     }
                 }
+                // On the page the scale's 100% label stands clear of the meters above it.
+                .padding(.top, wide ? FrogStyle.space16 : 0)
                 GraphAxis(leading: GraphStyle.ago(SystemMonitorGraph.span), trailing: "Now")
                     .padding(.leading, wide ? FrogChart.scaleGutter : 0)
             }.modifier(OverviewCard(wide: wide))
@@ -163,19 +165,19 @@ struct SystemMonitorOverview: View {
     /// One block of the memory and storage card: its title, what is used ("312 GB used of 494 GB") and a meter of it.
     private func usage(title: String, symbol: String, used: Int64?, total: Int64?, fraction: Double?,
                        level: (Double) -> Color, format: (Int64) -> String, recordedWithout: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        // Laid out like CPU and GPU above: the name on its own line, the figure under it with what it is out of, then
+        // the meter, so the three never run together on one baseline.
+        VStack(alignment: .leading, spacing: 6) {
+            cardTitle(title, symbol: symbol)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                cardTitle(title, symbol: symbol)
                 if let used, let total {
                     Text(format(used)).font(GraphStyle.figure).monospacedDigit()
-                    Text("used of \(format(total))").font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                    Text("of \(format(total))").font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
                 } else if recordedWithout {
-                    Text("—").font(FrogType.small)
+                    Text("—").font(GraphStyle.figure)
                 } else {
-                    // Where the figure goes, beside the title, as tall as the figure's line.
-                    FrogSkeleton(width: 64, height: 14)
-                        // Centred on the title's line rather than standing on its baseline.
-                        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                    // Where the figure goes, as tall as the figure's line.
+                    FrogSkeleton(width: 64, height: 14).frame(height: 20)
                 }
             }
             meter(fraction ?? 0, color: fraction.map(level) ?? FrogStyle.accent)
@@ -186,7 +188,7 @@ struct SystemMonitorOverview: View {
     /// overview is headed alike: a small muted symbol where the legend has its dot, and a small muted name.
     private func cardTitle(_ title: String, symbol: String) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: symbol).font(FrogType.caption).accessibilityHidden(true)
+            Image(systemName: symbol).font(FrogType.small).accessibilityHidden(true)
             Text(L10n.text(title)).font(FrogType.small).lineLimit(1)
         }.foregroundStyle(FrogStyle.muted).fixedSize()
     }
@@ -201,15 +203,16 @@ struct SystemMonitorOverview: View {
         guard power.batteryPercent != nil || power.systemWatts != nil || !notes.isEmpty else { return nil }
         let stats = powerStats
         return AnyView(VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
+                // The name and its state on one line, the charge under it, as memory and storage are laid out.
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     cardTitle("Battery", symbol: power.charging ? "battery.100.bolt" : "battery.75")
-                    if let percent = power.batteryPercent {
-                        Text("\(percent)%").font(GraphStyle.figure).monospacedDigit()
-                    }
                     Spacer(minLength: 4)
                     Text(([batteryState].compactMap { $0 } + notes).joined(separator: " · "))
-                        .font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                        .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                }
+                if let percent = power.batteryPercent {
+                    Text("\(percent)%").font(GraphStyle.figure).monospacedDigit()
                 }
                 if let percent = power.batteryPercent {
                     meter(Double(percent) / 100, color: power.charging ? FrogStyle.good
@@ -220,11 +223,11 @@ struct SystemMonitorOverview: View {
                 HStack(alignment: .top, spacing: 8) {
                     ForEach(stats, id: \.title) { stat in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(stat.title).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                            Text(stat.title).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
                             HStack(alignment: .firstTextBaseline, spacing: 4) {
                                 Text(stat.value).font(FrogType.bodyMedium).monospacedDigit().lineLimit(1)
                                 if let detail = stat.detail {
-                                    Text(detail).font(FrogType.caption).foregroundStyle(stat.tint).lineLimit(1)
+                                    Text(detail).font(FrogType.small).foregroundStyle(stat.tint).lineLimit(1)
                                 }
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading)
@@ -239,18 +242,15 @@ struct SystemMonitorOverview: View {
     /// two figures under it, each line as tall as the loaded card's.
     private var batterySkeleton: some View {
         VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .center, spacing: 6) {
-                    cardTitle("Battery", symbol: "battery.75")
-                    FrogSkeleton(width: 40, height: 14).frame(height: 18)
-                    Spacer(minLength: 4)
-                }
+            VStack(alignment: .leading, spacing: 6) {
+                cardTitle("Battery", symbol: "battery.75")
+                FrogSkeleton(width: 40, height: 14).frame(height: 20)
                 meter(0, color: FrogStyle.accent)
             }
             HStack(alignment: .top, spacing: 8) {
                 ForEach(["Mac draws", "Temperature"], id: \.self) { title in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(L10n.text(title)).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                        Text(L10n.text(title)).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
                         FrogSkeleton(width: 48, height: 12).frame(height: 16)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }
