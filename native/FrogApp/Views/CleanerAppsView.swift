@@ -40,10 +40,23 @@ struct CleanerAppsView: View {
                         open(row)
                         return .handled
                     }
+                    dropHint
                 }
                 .padding(.top, FrogStyle.sectionSpacing - 10)
             }
         }
+    }
+
+    /// The other way in, under the list: an app dragged from Finder onto the page opens its review, as one picked here does.
+    private var dropHint: some View {
+        HStack(spacing: FrogStyle.space10) {
+            Image(systemName: "arrow.down.app").font(.system(size: 15)).foregroundStyle(FrogStyle.muted).accessibilityHidden(true)
+            Text("Or drag an app from Finder onto this page").font(FrogType.body).foregroundStyle(FrogStyle.muted)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, FrogStyle.rowInset).frame(minHeight: FrogStyle.rowHeight + FrogStyle.space8)
+        .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.cardRadius, style: .continuous))
+        .padding(.top, FrogStyle.space8)
     }
 
     /// The list as it will look, its rows drawn as skeletons, under the heading that says how far the load is, so
@@ -97,7 +110,7 @@ struct CleanerAppsView: View {
                 ApplicationIcon(path: identity.path, size: 28)
                 Text(identity.name).font(FrogType.body).lineLimit(1)
                 if let version = identity.version {
-                    Text(version).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                    Text(version).font(FrogType.body).monospacedDigit().foregroundStyle(FrogStyle.muted).lineLimit(1)
                 }
                 if identity.isAppStore { FrogBadge(text: "App Store") }
                 if identity.owner == .administrator { FrogBadge(text: "Needs password") }

@@ -115,7 +115,7 @@ struct CleanerReviewView: View {
                     HStack(spacing: 0) {
                         Text(parts.folder).lineLimit(1).truncationMode(.middle)
                         Text(" · " + item.reason).lineLimit(1).layoutPriority(1)
-                    }.font(FrogType.caption).foregroundStyle(FrogStyle.muted)
+                    }.font(FrogType.small).foregroundStyle(FrogStyle.muted)
                 }.help(path)
                 Spacer(minLength: 8)
                 size(of: item)
@@ -163,8 +163,9 @@ struct CleanerReviewFooter: View {
             Button(allTicked ? "Deselect all" : "Select all") { cleaner.setAll(selected: !allTicked) }
                 .buttonStyle(.frog())
             Spacer()
-            Button("Move to Trash…") { Task { await cleaner.prepareRemoval() } }
-                .buttonStyle(.frog(.destructive))
+            // The page's one main action; the sheet it opens names what moves and holds the confirmation.
+            Button("Move to Trash…", systemImage: "trash") { Task { await cleaner.prepareRemoval() } }
+                .buttonStyle(.frog(.primary))
                 // After a removal that left the app, the review stays open with the phase back at idle.
                 .frogDisabled(count == 0 ? "Tick the files to move first" : ![.reviewing, .idle].contains(cleaner.phase) ? "Frog is still working" : nil)
         }
