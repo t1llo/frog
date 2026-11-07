@@ -19,6 +19,8 @@ final class SidebarRowGrid: @unchecked Sendable {
     var viewportHeight: CGFloat = 0
     /// The height of the fade at the list's bottom edge, which a revealed row stays clear of.
     var bottomFade: CGFloat = 0
+    /// The header of each row's group, by the row's ID.
+    var groups: [AnyHashable: AnyHashable] = [:]
 
     /// The offsets the list may rest at: each row's top edge, from the first.
     var stops: [CGFloat] {
@@ -41,15 +43,19 @@ final class SidebarRowGrid: @unchecked Sendable {
     }
 
     /// The row to scroll to the top to show `id` clear of both edges with the least scrolling, or nil when it is in
-    /// view already (or not in the list, as a pinned row).
+    /// view already (or not in the list, as a pinned row). The row's group header comes into view with it whenever
+    /// both fit, so the open page never shows under a group it does not belong to.
     func revealTarget(_ id: AnyHashable) -> AnyHashable? {
         guard let frame = rows[id], viewportHeight > 0 else { return nil }
         let visible = viewportHeight - bottomFade
+        // The top of what must show: the group's header when the header and the row fit together.
+        let header = groups[id].flatMap { rows[$0] }
+        let top = header.map { frame.maxY - $0.minY <= visible + 0.5 ? $0.minY : frame.minY } ?? frame.minY
         let stop: CGFloat
-        if frame.minY < offset - 0.5 {
-            stop = frame.minY
+        if top < offset - 0.5 {
+            stop = top
         } else if frame.maxY > offset + visible + 0.5 {
-            stop = stops.first { $0 >= frame.maxY - visible - 0.5 } ?? frame.minY
+            stop = min(stops.first { $0 >= frame.maxY - visible - 0.5 } ?? frame.minY, top)
         } else {
             return nil
         }
@@ -69,8 +75,12 @@ struct SidebarRowSnap: ScrollTargetBehavior {
 
 extension View {
     /// Reports this sidebar row's frame to `grid`, under the ID the list scrolls to.
-    func sidebarGridRow(_ id: AnyHashable, in grid: SidebarRowGrid) -> some View {
-        onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SidebarRowGrid.content)) } action: { grid.rows[id] = $0 }
-            .onDisappear { grid.rows[id] = nil }
+    /// `group` is the ID of the header the row sits under, which comes into view with it.
+    func sidebarGridRow(_ id: AnyHashable, in grid: SidebarRowGrid, group: AnyHashable? = nil) -> some View {
+        onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SidebarRowGrid.content)) } action: {
+            grid.rows[id] = $0
+            grid.groups[id] = group
+        }
+            .onDisappear { grid.rows[id] = nil; grid.groups[id] = nil }
     }
 }

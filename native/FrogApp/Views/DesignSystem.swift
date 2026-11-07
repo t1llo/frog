@@ -98,8 +98,9 @@ enum FrogStyle {
     static let sidebarHeaderHeight: CGFloat = 18
     /// How far the main window's sidebar panel floats in from the window's edges.
     static let sidebarInset: CGFloat = 8
-    /// The bar above a page that holds back and forward and the page's title.
-    static let toolbarHeight: CGFloat = 52
+    /// The bar above a page that holds its title, subtitle and actions: the title's line centred on the window's
+    /// buttons (26 points down), the subtitle under it, and a little room below.
+    static let toolbarHeight: CGFloat = 60
     /// How far below the toolbar its veil fades out over a scrolled page: the gap above a page's first section,
     /// so at rest the veil covers nothing.
     static let toolbarFade: CGFloat = space12
@@ -701,15 +702,17 @@ struct FrogButtonStyle: ButtonStyle {
         case destructive
     }
     var kind: Kind = .secondary
-    /// 24 points tall, for popups, panel headers and dense rows.
+    /// Kept for older call sites. Every button is one size wherever it stands (a row, the toolbar, a sheet, a
+    /// popup), so `compact` no longer changes it.
     var compact = false
 
     init(_ kind: Kind = .secondary, compact: Bool = false) { self.kind = kind; self.compact = compact }
-    /// The space either side of a button's label.
-    static func horizontalPadding(compact: Bool) -> CGFloat { compact ? 10 : 12 }
-    /// How tall a button is: `compactHeight` (24) when compact or in a row (`frogRowAccessory`), else
-    /// `controlHeight` (28), the height of every page header and sheet action.
-    static func height(compact: Bool) -> CGFloat { compact ? FrogStyle.compactHeight : FrogStyle.controlHeight }
+    /// The space either side of a button's label: one value, as there is one button size.
+    static func horizontalPadding(compact: Bool = false) -> CGFloat { 12 }
+    /// How tall a button is: `compactHeight` (24) everywhere, so a page header's Open, a row's Keyboard Settings, a
+    /// sheet's Save and a popup's Retry are one size. Choices and text (dropdowns, fields, search, segments) are
+    /// `controlHeight` (28).
+    static func height(compact: Bool = false) -> CGFloat { FrogStyle.compactHeight }
     init(primary: Bool) { kind = primary ? .primary : .secondary }
 
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
@@ -741,7 +744,6 @@ private struct FrogButtonBody: View {
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.frogKeyboardSurface) private var keyboardSurface
-    @Environment(\.frogRowAccessory) private var inRow
     @Environment(\.frogTrailingGhost) private var trailingGhost
     @State private var hovering = false
 
@@ -749,14 +751,13 @@ private struct FrogButtonBody: View {
     var body: some View {
         // Rex's buttons are capsules.
         let shape = Capsule(style: .continuous)
-        let compact = compact || inRow
-        let height = FrogButtonStyle.height(compact: compact)
+        let height = FrogButtonStyle.height()
         let pressed = configuration.isPressed && enabled
         let hovered = hovering && enabled
         let fade = FrogMotion.hover(hovered || pressed, keyboardSurface: keyboardSurface)
         let label = configuration.label
-            .font(compact ? FrogType.label : FrogType.bodyMedium).lineLimit(1)
-            .padding(.horizontal, FrogButtonStyle.horizontalPadding(compact: compact))
+            .font(FrogType.bodyMedium).lineLimit(1)
+            .padding(.horizontal, FrogButtonStyle.horizontalPadding())
             .foregroundStyle(foreground)
             .frame(minHeight: height)
         Group {
@@ -780,7 +781,7 @@ private struct FrogButtonBody: View {
         // Only the scale springs: whatever the action changes inside the button on release stays an instant cut.
         .animation(keyboardSurface ? nil : FrogMotion.press) { $0.scaleEffect(pressed && !reduceMotion && !keyboardSurface ? 0.97 : 1) }
         .onHover { hovering = $0 }
-        .padding(.trailing, kind == .ghost && trailingGhost ? -FrogButtonStyle.horizontalPadding(compact: compact) : 0)
+        .padding(.trailing, kind == .ghost && trailingGhost ? -FrogButtonStyle.horizontalPadding() : 0)
     }
 
     private var foreground: Color {
@@ -1043,14 +1044,13 @@ struct IconMenu<Items: View>: View {
 }
 
 /// The icon of `IconAction` and `IconMenu`: on a 24-point control surface when `bordered`, else a muted symbol
-/// that darkens on a hover fill, 28 points (24 in a row, beside its other actions).
+/// that darkens on a hover fill, 24 points like every button.
 private struct IconLabel: View {
     static let glyphSize: CGFloat = 13
     let symbol: String
     let destructive: Bool
     let bordered: Bool
     let hovering: Bool
-    @Environment(\.frogRowAccessory) private var inRow
     var body: some View {
         if bordered {
             Image(systemName: symbol).font(FrogType.label).contentTransition(.symbolEffect(.replace))
@@ -1059,7 +1059,7 @@ private struct IconLabel: View {
         } else {
             Image(systemName: symbol).font(.system(size: Self.glyphSize, weight: .medium)).contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(destructive ? FrogStyle.critical : hovering ? FrogStyle.ink : FrogStyle.muted)
-                .frame(width: FrogButtonStyle.height(compact: inRow), height: FrogButtonStyle.height(compact: inRow))
+                .frame(width: FrogButtonStyle.height(), height: FrogButtonStyle.height())
                 .frogRowHighlight(hovering: hovering)
         }
     }
