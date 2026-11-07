@@ -17,8 +17,9 @@ struct ShortcutsSettingsView: View {
             if let unreadable = plugin.unreadable { FrogRowNote(text: unreadable, tone: FrogStyle.warning) }
             if apps.isEmpty, actions.isEmpty, catalog.scanned {
                 // Nothing yet: one quiet card with both ways to start, not two empty sections.
-                FrogEmptyState(symbol: "command", title: "No shortcuts yet",
-                               message: "Open apps and run actions with keys of your own, from anywhere.") {
+                FrogEmptyState(symbol: ShortcutsPlugin.info.symbol, title: "No shortcuts yet",
+                               message: "Open apps and run actions with keys of your own, from anywhere.",
+                               tint: ShortcutsPlugin.info.tint) {
                     HStack(spacing: FrogStyle.space8) {
                         ShortcutAddButton(title: "Add app", list: appList, primary: false)
                         ShortcutAddButton(title: "Add action", list: actionList, primary: false)
