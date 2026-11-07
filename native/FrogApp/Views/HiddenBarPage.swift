@@ -89,14 +89,14 @@ private struct HiddenBarArrangement: View {
         HStack(spacing: 14) {
             if alwaysHidden {
                 Image(systemName: "ellipsis").foregroundStyle(FrogStyle.muted)
-                Text("‖").foregroundStyle(FrogStyle.muted)
+                Image(nsImage: OrganizerMark.dividerImage(double: true))
             }
             HStack(spacing: 14) {
                 Image(systemName: "cloud")
                 Image(systemName: "externaldrive")
                 Image(systemName: "headphones")
             }.frame(maxWidth: .infinity).opacity(organizer.isExpanded ? 1 : 0.25)
-            Text("|").foregroundStyle(FrogStyle.muted)
+            Image(nsImage: OrganizerMark.dividerImage(double: false))
             HStack(spacing: 14) {
                 Image(nsImage: FrogMenuIcon.image).renderingMode(.template)
                 Image(systemName: "wifi")
