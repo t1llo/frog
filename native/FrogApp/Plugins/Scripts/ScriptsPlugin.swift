@@ -185,8 +185,9 @@ struct ScriptsPage: View {
             }
         } content: { script in
             DocumentTextEditor(text: documents.binding(script.id, \.text), font: FrogType.mono)
-            // Once the script has run, what it printed, under a caption, or that it printed nothing.
-            if runner.resultID == script.id { output }
+            // What the script printed, under a caption, or that it printed nothing; before it has run, the same
+            // block says what will show there, so the card has its final shape and nothing jumps on the first run.
+            output(ran: runner.resultID == script.id)
         } footer: { script in
             // For every script: Frog stops one that runs longer.
             // The label sits right against its value: the dropdown takes only the width its title needs.
@@ -200,13 +201,17 @@ struct ScriptsPage: View {
         }
     }
 
-    /// What the last run printed, in an inset block under the script with its caption.
-    private var output: some View {
+    /// What the last run printed, in an inset block under the script with its caption; one height before and after
+    /// a run, so the editor keeps its size.
+    private func output(ran: Bool) -> some View {
         VStack(alignment: .leading, spacing: FrogStyle.space6) {
             SectionCaption(text: "Output")
             ScrollView {
                 Group {
-                    if runner.output.isEmpty {
+                    if !ran {
+                        Text("What it prints shows here when it runs, from here, the command bar or its shortcut.")
+                            .font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    } else if runner.output.isEmpty {
                         Text(runner.running != nil ? "Waiting for output…" : "No output").foregroundStyle(FrogStyle.muted)
                     } else {
                         Text(runner.output).textSelection(.enabled)
@@ -215,7 +220,7 @@ struct ScriptsPage: View {
                 .font(FrogType.mono).frame(maxWidth: .infinity, alignment: .leading).padding(FrogStyle.space10)
             }
             .minimalScrollbars()
-            .frame(height: runner.output.isEmpty ? 40 : 150)
+            .frame(height: 150)
             .background(FrogStyle.inset, in: RoundedRectangle(cornerRadius: FrogStyle.controlRadius, style: .continuous))
         }
     }

@@ -156,7 +156,7 @@ struct DocumentsPage<Toolbar: View, Content: View, Footer: View>: View {
         }
         let time = RecentTimestamp.text(item.modified)
         guard let first else { return time + " · " + L10n.text(item.files.isEmpty ? "Empty" : "Files") }
-        return time + " · " + first
+        return time + " · " + (item.kind == .note ? MarkdownPreview.plain(first) : first)
     }
 
     /// The chosen item: its actions along the top, its text filling the card, its footer band at the bottom.
@@ -252,6 +252,25 @@ struct DocumentsPage<Toolbar: View, Content: View, Footer: View>: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try item.text.write(to: url, atomically: true, encoding: .utf8) }
         catch { NSAlert(error: error).runModal() }
+    }
+}
+
+/// A note's first line as the list previews it: the words without their Markdown, so "# Standup" reads "Standup"
+/// and "- [ ] **Call** [Anna](…)" reads "Call Anna".
+extension MarkdownPreview {
+    static func plain(_ line: String) -> String {
+        var text = line
+        // Block marks at the start: headings, quotes, list bullets, numbers and task boxes.
+        for pattern in [#"^#{1,6}\s+"#, #"^(>\s*)+"#, #"^[-*+]\s+(\[[ xX]\]\s+)?"#, #"^\d+[.)]\s+(\[[ xX]\]\s+)?"#] {
+            text = text.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+        }
+        // Links and images keep their text; emphasis and code lose their marks.
+        text = text.replacingOccurrences(of: #"!?\[([^\]]*)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
+        for pattern in [#"(\*\*|__)(.+?)\1"#, #"(?<!\w)(\*|_)(.+?)\1(?!\w)"#, #"(~~)(.+?)\1"#, #"(`)(.+?)\1"#] {
+            text = text.replacingOccurrences(of: pattern, with: "$2", options: .regularExpression)
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? line : trimmed
     }
 }
 
