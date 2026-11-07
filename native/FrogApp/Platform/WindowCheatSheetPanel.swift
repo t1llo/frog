@@ -73,9 +73,7 @@ struct WindowCheatSheetContent: View {
                         ForEach(section.items) { item in
                             ShortcutPanelRow(title: item.title, hotkey: item.hotkey) {
                                 if let action = item.action { WindowLayoutGlyph(action: action) }
-                                else if let command = item.command {
-                                    Image(systemName: command.symbol).font(.system(size: 13)).foregroundStyle(FrogStyle.muted)
-                                }
+                                else if let command = item.command { ShortcutPanelSymbol(name: command.symbol) }
                             }
                             .accessibilityLabel(item.title)
                         }

@@ -61,7 +61,10 @@ struct ShortcutReferenceContent: View {
                         ForEach(section.items) { item in
                             // A plugin's action names its plugin, muted, so two plugins' "Refresh" read apart.
                             let label = Self.label(item)
-                            ShortcutPanelRow(title: label.title, detail: label.plugin, hotkey: item.hotkey) { EmptyView() }
+                            ShortcutPanelRow(title: label.title, detail: label.plugin, hotkey: item.hotkey) {
+                                if let action = item.windowAction { WindowLayoutGlyph(action: action) }
+                                else { ShortcutPanelSymbol(name: item.symbol ?? "command") }
+                            }
                                 .help(L10n.text(item.title))
                                 .accessibilityLabel(L10n.text(item.title))
                         }
@@ -122,8 +125,9 @@ struct ShortcutPanelRow<Leading: View>: View {
     var body: some View {
         HStack(spacing: FrogStyle.space10) {
             if Leading.self != EmptyView.self { leading.frame(width: 22) }
-            Text(title).font(FrogType.row).lineLimit(1).layoutPriority(1)
-            if let detail { Text(detail).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1) }
+            Text(title).font(FrogType.row).lineLimit(1)
+            // The detail is short (a plugin's name) and always whole; a long title is the one to shorten.
+            if let detail { Text(detail).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).fixedSize() }
             Spacer(minLength: FrogStyle.space8)
             KeyCaps(hotkey: hotkey)
         }
@@ -134,13 +138,24 @@ struct ShortcutPanelRow<Leading: View>: View {
     }
 }
 
+/// A row's symbol in a shortcut panel, in the slot a window layout's picture takes, muted like the cheat sheet's.
+struct ShortcutPanelSymbol: View {
+    let name: String
+    var body: some View {
+        Image(systemName: name).font(.system(size: 13)).foregroundStyle(FrogStyle.muted).accessibilityHidden(true)
+    }
+}
+
 extension ShortcutReferenceContent {
-    /// "Focus timer: Start or pause the focus timer" as the action, "Start or pause the focus timer", and its plugin.
+    /// "Focus timer: Start or pause the focus timer" as the action, "Start or pause the focus timer", and its plugin,
+    /// unless the action already names it.
     static func label(_ item: ShortcutReferenceItem) -> (title: String, plugin: String?) {
         let title = L10n.text(item.title)
         guard item.group == .plugins, let colon = title.range(of: ": ") else { return (title, nil) }
         let action = String(title[colon.upperBound...])
-        return (action.prefix(1).uppercased() + action.dropFirst(), String(title[..<colon.lowerBound]))
+        let plugin = String(title[..<colon.lowerBound])
+        return (action.prefix(1).uppercased() + action.dropFirst(),
+                action.localizedCaseInsensitiveContains(plugin) ? nil : plugin)
     }
 }
 
