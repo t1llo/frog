@@ -188,11 +188,8 @@ struct PermissionDragHelperView: View {
                 .accessibilityAction(named: Text(L10n.text("Open \(pane.title) settings")), open)
                 .help(L10n.text("Drag into the list"))
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(L10n.text("Drag Frog into the list")).font(FrogType.rowMedium).lineLimit(1)
-                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 15)).foregroundStyle(FrogStyle.accent)
-                        .accessibilityHidden(true)
-                }
+                // The icon beside it is what to drag; the words say where, with no extra badge to decode.
+                Text(L10n.text("Drag Frog into the list")).font(FrogType.rowMedium).lineLimit(1)
                 Text(L10n.text("Then switch it on.")).font(FrogType.small).foregroundStyle(FrogStyle.muted)
             }
             Spacer(minLength: 0)
