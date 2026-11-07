@@ -389,6 +389,7 @@ final class AppModel: ObservableObject {
         refreshSystemStatus()
         if registerShortcuts { FrogAppearance.shared.apply(configuration.preferences.appearance ?? AppearancePreferences()) }
         localModels.idleSeconds = configuration.preferences.workflowSettings.idleUnloadSeconds
+        localModels.speechIdleSeconds = configuration.preferences.workflowSettings.speechIdleUnloadSeconds
         if registerShortcuts { localModels.unloadUnderMemoryPressure() }
         localModels.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &observations)
         toolkit.apply(configuration.preferences)
@@ -429,6 +430,7 @@ final class AppModel: ObservableObject {
         ClipboardPlugin.adoptLegacySettings(self); PhonePlugin.adoptLegacySettings(self)
         configurationLoadError = nil
         localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds
+        localModels.speechIdleSeconds = candidate.preferences.workflowSettings.speechIdleUnloadSeconds
         if !candidate.preferences.historyEnabled { invalidateHistoryRecovery() }
         if !candidate.preferences.showProcessingIndicator { processingIndicator.hide() }
         registerHotkeys(); shortcutPanel.hide()
@@ -951,6 +953,7 @@ final class AppModel: ObservableObject {
         if !preferences.showProcessingIndicator { processingIndicator.hide() }
         configureWindowSwitcher()
         localModels.idleSeconds = preferences.workflowSettings.idleUnloadSeconds
+        localModels.speechIdleSeconds = preferences.workflowSettings.speechIdleUnloadSeconds
         if Self.registersShortcutsAgain(previous: previous, current: configuration, failed: !hotkeyErrors.isEmpty, holding: hotkeys.isHolding) { registerHotkeys(); shortcutPanel.hide() }
         // Only these settings decide what is kept; any other save need not read the history file.
         if historyChanged { refreshHistory() }
@@ -1093,6 +1096,7 @@ final class AppModel: ObservableObject {
         ClipboardPlugin.adoptLegacySettings(self); PhonePlugin.adoptLegacySettings(self)
         configurationLoadError = nil
         localModels.idleSeconds = candidate.preferences.workflowSettings.idleUnloadSeconds
+        localModels.speechIdleSeconds = candidate.preferences.workflowSettings.speechIdleUnloadSeconds
         errorMessage = nil
         invalidateHistoryRecovery()
         registerHotkeys()

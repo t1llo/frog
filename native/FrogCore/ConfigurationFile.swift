@@ -177,8 +177,9 @@ public enum ConfigurationFile {
         guard configuration.localModel(workflow.audioModelID)?.kind == .audio,
               configuration.localModel(workflow.cleanupModelID)?.kind == .text,
               workflow.defaultLocalTextModelID == nil || configuration.localModel(workflow.defaultLocalTextModelID!)?.kind == .text,
-              (0...3600).contains(workflow.idleUnloadSeconds) else {
-            throw FrogError.message("Choose valid local models and an unload delay between 0 and 3600 seconds.")
+              WorkflowPreferences.idleUnloadRange.contains(workflow.idleUnloadSeconds),
+              WorkflowPreferences.idleUnloadRange.contains(workflow.effectiveSpeechIdleUnloadSeconds) else {
+            throw FrogError.message("Choose valid local models and an unload delay between 0 and 28800 seconds, or -1 to keep them loaded.")
         }
         guard (1...200).contains(preferences.historyLimit), (1...30).contains(preferences.historyRetentionDays) else {
             throw FrogError.message("History must keep 1–200 entries for 1–30 days.")

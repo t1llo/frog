@@ -3,13 +3,16 @@ import FrogCore
 @testable import FrogApp
 
 final class LocalModelSettingsTests: XCTestCase {
-    /// `model-idle-seconds` takes any number of seconds up to an hour, not only the menu's choices.
+    /// `model-idle-seconds` takes any number of seconds up to eight hours, not only the menu's choices.
     func testTheIdleTimeIsShownAsItIsSaved() {
         XCTAssertEqual(LocalModelSettings.idleTitle(seconds: 0), "Immediately")
         XCTAssertEqual(LocalModelSettings.idleTitle(seconds: 45), "45 sec", "Less than a minute is not 0 min")
         XCTAssertEqual(LocalModelSettings.idleTitle(seconds: 90), "1 min 30 sec", "A minute and a half is not 1 min")
         XCTAssertEqual(LocalModelSettings.idleTitle(seconds: 3599), "59 min 59 sec")
-        XCTAssertEqual(LocalModelSettings.idleTitle(seconds: 3600), "60 min")
+        XCTAssertEqual(LocalModelSettings.idleTitle(seconds: 3600), "1 hour")
+        XCTAssertEqual(LocalModelSettings.idleTitle(seconds: 5400), "90 min")
+        XCTAssertEqual(LocalModelSettings.idleTitle(seconds: 28800), "8 hours")
+        XCTAssertEqual(LocalModelSettings.idleTitle(seconds: WorkflowPreferences.keepLoaded), "Keep loaded")
     }
 
     func testTheChoicesOfTheMenuReadAsBefore() {

@@ -115,6 +115,7 @@ public struct ConfigMigration: Sendable {
         table["history-limit"] = .integer(preferences.historyLimit)
         table["history-retention-days"] = .integer(preferences.historyRetentionDays)
         table["model-idle-seconds"] = .integer(preferences.workflowSettings.idleUnloadSeconds)
+        if let speech = preferences.workflowSettings.speechIdleUnloadSeconds { table["speech-model-idle-seconds"] = .integer(speech) }
         table["agent-access"] = .bool(toolkit.agentAccess ?? false)
         table["hidden-sidebar-items"] = ids(toolkit.hiddenSidebarItems, sorted: true)
         table["pinned-sidebar-items"] = ids(toolkit.pinnedSidebarItems, sorted: true)
