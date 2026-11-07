@@ -148,11 +148,14 @@ enum NoteTokenStyle {
     static func apply(to storage: NSTextStorage, token: NSRange, word: NSRange, filled: Bool) {
         let fill = filled ? NSColor(FrogStyle.accentSoft) : NSColor(FrogStyle.muted.opacity(0.15))
         storage.addAttributes([.backgroundColor: fill, tokenKey: true], range: token)
-        storage.addAttribute(.foregroundColor, value: filled ? NSColor(FrogStyle.accentText) : NSColor.secondaryLabelColor, range: word)
-        // The two braces on each side are drawn clear and pulled together, so they leave only a little padding
-        // inside the token instead of showing.
+        // The word reads as a field's name, a size under the text and a weight above it, so it sits in its chip as a
+        // label does in a tag rather than as a coloured word.
+        storage.addAttributes([.foregroundColor: filled ? NSColor(FrogStyle.accentText) : NSColor.secondaryLabelColor,
+                               .font: NSFont.systemFont(ofSize: 12, weight: .medium), .baselineOffset: 0.5], range: word)
+        // The two braces on each side are drawn clear and pulled together, so they leave an even padding inside the
+        // token instead of showing.
         for brace in [NSRange(location: token.location, length: 2), NSRange(location: NSMaxRange(word), length: 2)] {
-            storage.addAttributes([.foregroundColor: NSColor.clear, .kern: -3.0], range: brace)
+            storage.addAttributes([.foregroundColor: NSColor.clear, .kern: -2.0], range: brace)
         }
     }
 }
@@ -166,12 +169,18 @@ final class NoteTokenLayoutManager: NSLayoutManager {
             super.fillBackgroundRectArray(rects, count: count, forCharacterRange: range, color: color)
             return
         }
-        color.setFill()
         for index in 0..<count {
-            // The line's own height, without the paragraph's extra spacing under it.
+            // The line's own height, without the paragraph's extra spacing under it, a little inset so the chip
+            // sits inside the line, with a hairline of its own colour that holds its edge on either appearance.
             var rect = rects[index]
             rect.size.height -= 3
-            NSBezierPath(roundedRect: rect.insetBy(dx: 0, dy: 0.5), xRadius: 4, yRadius: 4).fill()
+            let chip = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 1.5), xRadius: 5, yRadius: 5)
+            color.setFill()
+            chip.fill()
+            let alpha = color.usingColorSpace(.sRGB)?.alphaComponent ?? 0.2
+            color.withAlphaComponent(min(1, alpha * 2.5)).setStroke()
+            chip.lineWidth = 0.5
+            chip.stroke()
         }
     }
 }
