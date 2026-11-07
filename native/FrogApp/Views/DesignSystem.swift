@@ -320,9 +320,15 @@ enum FrogStyle {
         guard settings.effectiveTheme == .minimal, usesThemeAccent, !custom else { return accent }
         return adaptive(light: 0x5E6AD2, dark: 0x7B84EC)
     }
-    /// The second line of a graph: a soft ink, which reads against the accent of every theme in light and dark.
-    /// Warning and critical colours stay with meters.
-    static var seriesSecondary: Color { ink.opacity(0.55) }
+    /// The second line or bar of a graph (GPU beside CPU): a teal that stands apart from the indigo or theme accent
+    /// in light and dark, never a grey that reads as disabled. Beside an accent that is green or teal itself it
+    /// turns indigo, so the two series never look alike. Warning and critical colours stay with meters.
+    static var seriesSecondary: Color {
+        let hue = NSColor(series).usingColorSpace(.sRGB)?.hueComponent ?? 0.66
+        let saturated = (NSColor(series).usingColorSpace(.sRGB)?.saturationComponent ?? 1) > 0.15
+        if saturated && (0.22...0.55).contains(hue) { return adaptive(light: 0x5E6AD2, dark: 0x8C94F0) }
+        return adaptive(light: 0x14928F, dark: 0x4FC4BE)
+    }
 
     private struct Tones {
         var good, warning, critical: (light: UInt32, dark: UInt32)
@@ -701,26 +707,31 @@ struct FrogButtonStyle: ButtonStyle {
         /// Removes or deletes something: the critical colour on the grey pill.
         case destructive
     }
-    /// Every button is one size wherever it stands (a row, the toolbar, a sheet, a popup).
+    /// Every button is one size wherever it stands (a row, the toolbar, a sheet, a popup), except inside a 36-point
+    /// notice pill, where `small` keeps it to the pill's text size and concentric with its ends.
     var kind: Kind = .secondary
+    var small = false
 
-    init(_ kind: Kind = .secondary) { self.kind = kind }
+    init(_ kind: Kind = .secondary, small: Bool = false) { self.kind = kind; self.small = small }
     /// The space either side of a button's label: one value, as there is one button size.
     static func horizontalPadding() -> CGFloat { 12 }
     /// How tall a button is: `compactHeight` (24) everywhere, so a page header's Open, a row's Keyboard Settings, a
     /// sheet's Save and a popup's Retry are one size. Choices and text (dropdowns, fields, search, segments) are
     /// `controlHeight` (28).
     static func height() -> CGFloat { FrogStyle.compactHeight }
+    /// The button inside a notice pill (Show details, Retry): 20 tall with the pill's `label` text, 8 in from the
+    /// pill's 36-point ends, so its curve shares their centre.
+    static let smallHeight: CGFloat = 20
     init(primary: Bool) { kind = primary ? .primary : .secondary }
 
     func makeBody(configuration: ButtonStyleConfiguration) -> some View {
-        FrogButtonBody(configuration: configuration, kind: kind)
+        FrogButtonBody(configuration: configuration, kind: kind, small: small)
     }
 }
 
 extension ButtonStyle where Self == FrogButtonStyle {
-    static func frog(_ kind: FrogButtonStyle.Kind = .secondary) -> FrogButtonStyle {
-        FrogButtonStyle(kind)
+    static func frog(_ kind: FrogButtonStyle.Kind = .secondary, small: Bool = false) -> FrogButtonStyle {
+        FrogButtonStyle(kind, small: small)
     }
 }
 
@@ -733,11 +744,26 @@ extension View {
             .help(reason.map { L10n.text($0) } ?? "")
             .accessibilityHint(reason.map { L10n.text($0) } ?? "")
     }
+
+    /// Disables an action and shows why right beside it, as a muted line on its leading side ("Load a model
+    /// first" before a dimmed Unload now), so the reason never hides in a footer or a tooltip. `reason` nil
+    /// enables it and shows nothing. For an action that stands on its own in a row, sheet footer or header; the
+    /// reason is a fragment without a full stop, one line, and is also the tooltip and VoiceOver hint.
+    func frogDisabledShowingReason(_ reason: String?) -> some View {
+        HStack(spacing: FrogStyle.space8) {
+            if let reason {
+                Text(L10n.text(reason)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                    .lineLimit(1).truncationMode(.tail).accessibilityHidden(true)
+            }
+            frogDisabled(reason)
+        }
+    }
 }
 
 private struct FrogButtonBody: View {
     let configuration: ButtonStyleConfiguration
     let kind: FrogButtonStyle.Kind
+    var small = false
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.frogKeyboardSurface) private var keyboardSurface
@@ -748,13 +774,13 @@ private struct FrogButtonBody: View {
     var body: some View {
         // Rex's buttons are capsules.
         let shape = Capsule(style: .continuous)
-        let height = FrogButtonStyle.height()
+        let height = small ? FrogButtonStyle.smallHeight : FrogButtonStyle.height()
         let pressed = configuration.isPressed && enabled
         let hovered = hovering && enabled
         let fade = FrogMotion.hover(hovered || pressed, keyboardSurface: keyboardSurface)
         let label = configuration.label
-            .font(FrogType.bodyMedium).lineLimit(1)
-            .padding(.horizontal, FrogButtonStyle.horizontalPadding())
+            .font(small ? FrogType.label : FrogType.bodyMedium).lineLimit(1)
+            .padding(.horizontal, small ? FrogStyle.space10 : FrogButtonStyle.horizontalPadding())
             .foregroundStyle(foreground)
             .frame(minHeight: height)
         Group {

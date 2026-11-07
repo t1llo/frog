@@ -178,9 +178,10 @@ struct FrogNoticePill: View {
                     .padding(.leading, -FrogStyle.space4)
             }
             if let action {
-                // The pill's one button, a grey pill like every secondary action, ending 6 in from the capsule's end.
-                Button(L10n.text(action.title), action: action.run).buttonStyle(.frog()).fixedSize()
-                    .padding(.leading, FrogStyle.space4).padding(.trailing, -(FrogStyle.space16 - FrogStyle.space6))
+                // The pill's one button, the small grey pill at the message's own text size, ending 8 in from the
+                // capsule's end so its curve follows the capsule's.
+                Button(L10n.text(action.title), action: action.run).buttonStyle(.frog(small: true)).fixedSize()
+                    .padding(.leading, FrogStyle.space2).padding(.trailing, -(FrogStyle.space16 - FrogStyle.space8))
             }
         }
         .padding(.horizontal, FrogStyle.space16)
