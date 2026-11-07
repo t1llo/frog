@@ -365,16 +365,11 @@ struct HistoryDay: Identifiable {
         return day.formatted(calendar.isDate(day, equalTo: now, toGranularity: .year) ? date : date.year())
     }
 
-    /// The time of day in the Mac's own clock: "09:41" on a 24-hour clock, "9:41 AM" on a 12-hour one.
-    static func time(_ date: Date) -> String { timeFormatter.string(from: date) }
-
-    /// Made once: a list of entries asks it for every row.
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = .autoupdatingCurrent
-        formatter.setLocalizedDateFormatFromTemplate("jmm")
-        return formatter
-    }()
+    /// The time of day in the Mac's own clock: "09:41" on a 24-hour clock, "9:41 AM" on a 12-hour one. A format
+    /// style, not a cached formatter, so a change of time zone or clock while Frog runs shows at once.
+    static func time(_ date: Date) -> String {
+        date.formatted(Date.FormatStyle(locale: L10n.locale, timeZone: .autoupdatingCurrent).hour().minute())
+    }
 }
 
 /// What the page says in place of an empty list.
@@ -486,7 +481,7 @@ private struct HistoryDetail: View {
             }
             FrogRow("Saved") {
                 // The day in full, at the time of day the list shows for it.
-                Text(String(format: L10n.text("%@ at %@"), entry.timestamp.formatted(.dateTime.weekday(.wide).day().month(.wide).year()),
+                Text(String(format: L10n.text("%@ at %@"), entry.timestamp.formatted(Date.FormatStyle(locale: L10n.locale, timeZone: .autoupdatingCurrent).weekday(.wide).day().month(.wide).year()),
                             HistoryDay.time(entry.timestamp)))
                     .font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)
             }
