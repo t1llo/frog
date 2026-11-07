@@ -164,18 +164,20 @@ struct SystemMonitorOverview: View {
     private func usage(title: String, symbol: String, used: Int64?, total: Int64?, fraction: Double?,
                        level: (Double) -> Color, format: (Int64) -> String, recordedWithout: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
+            // Headed like the CPU and GPU legends above: the muted title on its own line, then the figure under it,
+            // so the title, the figure and "used of" never run together on one baseline.
+            VStack(alignment: .leading, spacing: FrogStyle.space2) {
                 cardTitle(title, symbol: symbol)
-                if let used, let total {
-                    Text(format(used)).font(GraphStyle.figure).monospacedDigit()
-                    Text("used of \(format(total))").font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
-                } else if recordedWithout {
-                    Text("—").font(FrogType.small)
-                } else {
-                    // Where the figure goes, beside the title, as tall as the figure's line.
-                    FrogSkeleton(width: 64, height: 14)
-                        // Centred on the title's line rather than standing on its baseline.
-                        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                HStack(alignment: .firstTextBaseline, spacing: FrogStyle.space6) {
+                    if let used, let total {
+                        Text(format(used)).font(GraphStyle.figure).monospacedDigit()
+                        Text("used of \(format(total))").font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1)
+                    } else if recordedWithout {
+                        Text("—").font(GraphStyle.figure).foregroundStyle(FrogStyle.muted)
+                    } else {
+                        // Where the figure goes, as tall as the figure's line.
+                        Text(verbatim: "0").font(GraphStyle.figure).hidden().overlay(alignment: .leading) { FrogSkeleton(width: 64, height: 14) }
+                    }
                 }
             }
             meter(fraction ?? 0, color: fraction.map(level) ?? FrogStyle.accent)
