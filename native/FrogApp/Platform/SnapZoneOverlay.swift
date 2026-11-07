@@ -85,10 +85,11 @@ struct SnapZoneOverlayView: View {
                         .fill(highlighted ? accent.opacity(0.22) : Color.black.opacity(0.06))
                         .overlay(shape.strokeBorder(highlighted ? accent : Color.primary.opacity(0.3), lineWidth: highlighted ? 2 : 1))
                         .overlay {
+                            // Sized for a zone a third of a display wide, read at arm's length while dragging.
                             Text(zone.action.title)
-                                .font(FrogType.bodyMedium)
+                                .font(FrogType.title)
                                 .foregroundStyle(highlighted ? FrogStyle.onAccent : FrogStyle.ink)
-                                .padding(.horizontal, 10).frame(height: FrogStyle.compactHeight)
+                                .padding(.horizontal, FrogStyle.space16).padding(.vertical, FrogStyle.space6)
                                 .background(highlighted ? AnyShapeStyle(accent) : AnyShapeStyle(.regularMaterial), in: Capsule())
                         }
                         .frame(width: max(0, local.width), height: max(0, local.height))
