@@ -927,8 +927,9 @@ struct CommandBarView: View {
                 }
                 // `.never`, not `.hidden`: with "Show scroll bars: Always" macOS shows a hidden indicator anyway.
                 .scrollIndicators(.never)
-                // A row cut by the bottom edge fades out, so it reads as more below rather than as clipped.
-                .bottomScrollFade(height: FrogStyle.space16)
+                // A row cut by the bottom edge fades out over a whole row's height, so it reads as more below rather
+                // than as clipped under the footer.
+                .bottomScrollFade(height: Self.rowHeight)
                 .onChange(of: bar.selection) { previous, value in
                     guard bar.results.indices.contains(value) else { return }
                     let id = bar.results[value].id
