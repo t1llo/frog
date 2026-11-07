@@ -77,7 +77,24 @@ struct RuleIconTile: View {
         guard symbol != SelectionBubbleItems.answerSymbol else { return nil }
         let name = name.lowercased()
         guard ["translat", "übersetz"].contains(where: name.contains) else { return nil }
-        return languages.first { entry in entry.words.contains { name.contains($0) } }?.code
+        // The language translated into: the one after "to", "into", "nach" or "ins" ("Translate English to German"
+        // is "DE"), else the last one the name gives.
+        let markers = [" to ", " into ", " nach ", " ins ", " in "]
+        let target = markers.compactMap { name.range(of: $0, options: .backwards)?.upperBound }.max()
+        let tail = target.map { String(name[$0...]) }
+        if let tail, let code = firstLanguage(in: tail) { return code }
+        return languages.compactMap { entry -> (index: String.Index, code: String)? in
+            let found = entry.words.compactMap { name.range(of: $0, options: .backwards)?.lowerBound }.max()
+            return found.map { ($0, entry.code) }
+        }.max { $0.index < $1.index }?.code
+    }
+
+    /// The language named first in `text`.
+    private static func firstLanguage(in text: String) -> String? {
+        languages.compactMap { entry -> (index: String.Index, code: String)? in
+            let found = entry.words.compactMap { text.range(of: $0)?.lowerBound }.min()
+            return found.map { ($0, entry.code) }
+        }.min { $0.index < $1.index }?.code
     }
 
     private static let languages: [(words: [String], code: String)] = [
