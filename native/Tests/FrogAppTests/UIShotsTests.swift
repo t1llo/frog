@@ -106,6 +106,21 @@ final class UIShotsTests: XCTestCase {
             try await page("page-cleaner-review", settle: .milliseconds(500)) { MainView().environmentObject(model) }
             cleaner.closeReview()
         }
+        // The moment before the app list arrives: a cleaner whose catalogue never answers, so its skeleton stays.
+        if let cleaner = model.cleanerPlugin?.cleaner, wanted("page-cleaner-loading") {
+            try await sample.useRealisticFeatures(plus: .cleaner)
+            var dependencies = cleaner.dependencies
+            dependencies.applications = {
+                try? await Task.sleep(for: .seconds(3600))
+                return []
+            }
+            let loading = CleanerModel(dependencies: dependencies)
+            let load = Task { await loading.loadApps() }
+            defer { load.cancel() }
+            try await step("page-cleaner-loading", .feature(.cleaner)) {
+                CleanerView(cleaner: loading) { _ in }
+            }
+        }
         try await sample.useFeatures(everyFeature)
     }
 
