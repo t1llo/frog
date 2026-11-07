@@ -26,9 +26,20 @@ struct WindowSwitcherView: View {
                 } else if plugin.status.isIssue {
                     FrogRowNote(text: plugin.status.text, tone: FrogStyle.warning)
                 }
-                ForEach(WindowSwitcherKey.all) { key in
-                    FrogRow(key.title) { KeyCaps(key.keys) }
-                }
+                // The keys the open panel answers to, two to a line as a cheat sheet sets them: six full rows read
+                // as six settings, and none of them can be changed.
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: FrogStyle.space16 + FrogStyle.space8), GridItem(.flexible())],
+                          alignment: .leading, spacing: 0) {
+                    ForEach(WindowSwitcherKey.all) { key in
+                        HStack(spacing: FrogStyle.space8) {
+                            Text(L10n.text(key.title)).font(FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                            Spacer(minLength: FrogStyle.space8)
+                            KeyCaps(key.keys)
+                        }
+                        .frame(height: FrogStyle.menuRowHeight + FrogStyle.space4)
+                        .accessibilityElement(children: .combine)
+                    }
+                }.padding(.vertical, FrogStyle.space6)
             }
             VStack(alignment: .leading, spacing: FrogStyle.space8) {
                 FrogSectionHeader("Preview")
