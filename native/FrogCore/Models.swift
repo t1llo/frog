@@ -6,7 +6,7 @@ public enum ProviderKind: String, Codable, CaseIterable, Identifiable, Sendable 
     public var title: String {
         switch self {
         case .openAI: return "OpenAI"
-        case .anthropic: return "Anthropic / Claude"
+        case .anthropic: return "Anthropic"
         case .gemini: return "Google Gemini"
         case .ollama: return "Ollama (local)"
         case .lmStudio: return "LM Studio (local)"
