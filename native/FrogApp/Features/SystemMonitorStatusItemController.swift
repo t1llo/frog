@@ -132,13 +132,6 @@ struct SystemMonitorStatusPopover: View {
 struct SystemMonitorLiveStatus: View {
     @ObservedObject var monitor: SystemMonitor
     var body: some View {
-        if monitor.history.count >= 2 {
-            HStack(spacing: FrogStyle.space6) {
-                Circle().fill(FrogStyle.good).frame(width: 6, height: 6)
-                Text(L10n.text("Live"))
-            }
-        } else {
-            Text(L10n.text("Measuring…"))
-        }
+        FrogFooterStatus(text: monitor.history.count >= 2 ? "Live" : "Measuring…", tone: monitor.history.count >= 2 ? .good : .off)
     }
 }

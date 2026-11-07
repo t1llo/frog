@@ -96,10 +96,10 @@ struct FrogStatusMenu: View {
     }
 
     /// Processing, Needs attention or Setup not finished; nothing while Frog is simply ready.
-    private var status: (text: String, color: Color)? {
-        model.isProcessing ? ("Processing", FrogStyle.accent)
-            : model.errorMessage != nil ? ("Needs attention", FrogStyle.warning)
-            : model.setupPresented ? ("Setup not finished", FrogStyle.warning) : nil
+    private var status: (text: String, tone: FrogFooterStatus.Tone)? {
+        model.isProcessing ? ("Processing", .active)
+            : model.errorMessage != nil ? ("Needs attention", .warning)
+            : model.setupPresented ? ("Setup not finished", .warning) : nil
     }
 
     /// The footer every popup has: the open tab's status on the leading side (Frog's own state on Frog's tab), and
@@ -108,9 +108,8 @@ struct FrogStatusMenu: View {
         FrogFooter {
             if let tabStatus { tabStatus() }
             else if frog {
-                let state = status ?? ("Ready", FrogStyle.good)
-                Circle().fill(state.color).frame(width: 6, height: 6)
-                Text(L10n.text(state.text))
+                let state = status ?? ("Ready", .good)
+                FrogFooterStatus(text: state.text, tone: state.tone)
             }
         } actions: {
             FrogFooterHint(model.setupPresented ? "Set up Frog" : "Settings", keys: "\u{2318},") {
