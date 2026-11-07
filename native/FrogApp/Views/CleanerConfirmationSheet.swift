@@ -105,7 +105,7 @@ struct CleanerConfirmationSheet: View {
             if item.owner == .administrator { FrogBadge(text: "Needs password") }
             else if removal.route == .finder { FrogBadge(text: "Moved by Finder").help("Finder moves this item to the Trash, so it can ask for permission") }
             Spacer(minLength: 8)
-            Text(size(of: item)).font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)
+            Text(size(of: item)).font(FrogType.body.monospacedDigit()).foregroundStyle(FrogStyle.muted)
         }.padding(.horizontal, FrogStyle.rowPadding).frame(minHeight: 30)
     }
 
