@@ -96,6 +96,7 @@ struct OnboardingView: View {
                     Text(L10n.text(Step.welcome.subtitle)).font(FrogType.lead).foregroundStyle(FrogStyle.muted)
                         .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true).frame(maxWidth: 380)
                 }
+                OnboardingWelcomeFeatures().padding(.top, FrogStyle.space12)
             }
             VStack(spacing: FrogStyle.space10) {
                 // The one hero action: taller and wider than a page's buttons.
@@ -107,7 +108,7 @@ struct OnboardingView: View {
                     Button("Skip setup") { model.finishSetup() }.buttonStyle(.frog(.ghost))
                 }
                 if let issue { InlineIssue(message: issue) }
-            }.padding(.top, 40)
+            }.padding(.top, 36)
             Spacer(minLength: 0)
             Spacer(minLength: 0).frame(maxHeight: 40)
         }.padding(.horizontal, FrogStyle.pagePadding + 4).padding(.vertical, FrogStyle.pagePadding + 4)
@@ -141,7 +142,7 @@ struct OnboardingView: View {
         guard step == .done, let open = openSteps else { return step.subtitle }
         if accessibilityMissing {
             // Accessibility is the one step Frog needs; it is said first, and the rest stay optional.
-            return open > 1 ? "Allow Accessibility so Frog can work with your text. The other steps are optional."
+            return open > 1 ? "Allow Accessibility so Frog can work with text. The rest is optional."
                 : "Allow Accessibility so Frog can work with your text."
         }
         return open == 0 ? "Everything is ready. You can change it any time in Settings."
@@ -289,7 +290,9 @@ private struct OnboardingDone: View {
     private func row(_ title: String, _ detail: String, done: Bool, required: Bool = false, step: OnboardingView.Step) -> some View {
         FrogRow(title, caption: detail, icon: {
             Image(systemName: done ? "checkmark.circle.fill" : "circle.dashed").font(.system(size: 18))
-                .foregroundStyle(done ? FrogStyle.good : FrogStyle.muted).frame(width: 28, height: 28)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(done ? FrogStyle.onAccent : FrogStyle.muted, done ? FrogStyle.accent : FrogStyle.muted)
+                .frame(width: 28, height: 28)
                 .accessibilityHidden(true)
         }, control: {
             if required { Button("Allow") { jump(step) }.buttonStyle(.frog(.primary)) }
@@ -304,9 +307,20 @@ private struct OnboardingDone: View {
 private struct OnboardingPlugins: View {
     @EnvironmentObject private var model: AppModel
     @State private var pending = Set<String>()
-    /// Three equal columns in every group, so the tiles of Write, Find & launch and Mac line up down the step
-    /// whatever their count, as the sidebar's rows line up under their group headers.
-    private static let columns = Array(repeating: GridItem(.flexible(), spacing: FrogStyle.space6), count: 3)
+    /// At most three tiles a row, spread evenly over the rows (four as two and two, five as three and two), so no
+    /// group ends on a lone tile beside empty space.
+    static func rows<T>(_ items: [T], perRow limit: Int = 3) -> [[T]] {
+        guard !items.isEmpty else { return [] }
+        let count = (items.count + limit - 1) / limit
+        let base = items.count / count, extra = items.count % count
+        var rows: [[T]] = [], start = 0
+        for index in 0..<count {
+            let size = base + (index < extra ? 1 : 0)
+            rows.append(Array(items[start..<start + size]))
+            start += size
+        }
+        return rows
+    }
 
     var body: some View {
         let host = model.pluginHost
@@ -316,10 +330,14 @@ private struct OnboardingPlugins: View {
                 if !plugins.isEmpty {
                     VStack(alignment: .leading, spacing: FrogStyle.space8) {
                         FrogSectionHeader(category.title)
-                        LazyVGrid(columns: Self.columns, alignment: .leading, spacing: FrogStyle.space6) {
-                            ForEach(plugins) { plugin in
-                                OnboardingPluginTile(plugin: plugin, on: host.enabled(plugin.id), busy: pending.contains(plugin.id)) {
-                                    toggle(plugin.id, to: !host.enabled(plugin.id))
+                        VStack(spacing: FrogStyle.space6) {
+                            ForEach(Array(Self.rows(plugins).enumerated()), id: \.offset) { _, row in
+                                HStack(spacing: FrogStyle.space6) {
+                                    ForEach(row) { plugin in
+                                        OnboardingPluginTile(plugin: plugin, on: host.enabled(plugin.id), busy: pending.contains(plugin.id)) {
+                                            toggle(plugin.id, to: !host.enabled(plugin.id))
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -335,6 +353,28 @@ private struct OnboardingPlugins: View {
             defer { pending.remove(id) }
             do { try await model.pluginHost.setEnabled(id, on) } catch { model.report(error) }
         }
+    }
+}
+
+/// A few of Frog's features under the welcome, so the cover shows what the app does before setup begins.
+private struct OnboardingWelcomeFeatures: View {
+    @EnvironmentObject private var model: AppModel
+    private static let ids = ["windows", "writing", "dictation", "command-bar", "clipboard", "system-monitor"]
+
+    var body: some View {
+        let infos = model.pluginHost.descriptors.map(\.info)
+        let shown = Self.ids.compactMap { id in infos.first { $0.id == id } }
+        HStack(alignment: .top, spacing: FrogStyle.space16) {
+            ForEach(shown) { plugin in
+                VStack(spacing: FrogStyle.space6) {
+                    PluginIconTile(symbol: plugin.symbol, tint: plugin.tint.color, size: .header)
+                    Text(L10n.text(plugin.name)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+                        .lineLimit(1).fixedSize()
+                }
+                .frame(width: 72).help(L10n.text(plugin.summary))
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
