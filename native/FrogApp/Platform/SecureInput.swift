@@ -79,7 +79,7 @@ enum SecureInput {
     }
 
     static func summary(_ holder: Holder) -> String {
-        "Window switcher paused: \(holder.name ?? "another app") needs a password"
+        "Paused: \(holder.name ?? "another app") wants a password"
     }
 
     static func status(_ holder: Holder) -> String {
