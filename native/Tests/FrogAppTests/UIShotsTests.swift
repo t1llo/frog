@@ -93,6 +93,16 @@ final class UIShotsTests: XCTestCase {
             let page = AnyView(content().environmentObject(model))
             try await self.page(name, settle: settle) { MainView(pageOverride: page).environmentObject(model) }
         }
+        if wanted("page-search") {
+            // The sidebar's search finding settings on every page, and the page a result opens, scrolled to it.
+            try await sample.useRealisticFeatures(plus: .systemMonitor)
+            model.toolkit.select(.features)
+            try await page("page-search-results", settle: .milliseconds(500)) { MainView(query: "menu").environmentObject(model) }
+            model.toolkit.select(.settings)
+            let focus = FrogSearchFocus(route: .settings, section: "Updates", row: "Check automatically")
+            try await page("page-search-opened", settle: .milliseconds(700)) { MainView(focus: focus).environmentObject(model) }
+            try await sample.useRealisticFeatures(plus: nil)
+        }
         if let entry = model.history.first {
             try await step("page-history-detail", .history) { HistoryView(viewing: entry.id) }
         }
