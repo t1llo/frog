@@ -10,11 +10,12 @@ struct UsageMenuTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: FrogStyle.panelCardGap) {
-            // The provider and the actions on the trailing side, as in the LLM usage popup's header.
+            // The provider leads the row, on the cards' text edge, so it reads as what the cards below are about;
+            // refresh and the way to the page end it, boxed as in the LLM usage popup's header.
             HStack(spacing: FrogStyle.space6) {
+                // Its name on the cards' text edge; only the hover fill reaches past it.
+                UsageProviderDropdown(usage: usage).padding(.leading, -7)
                 Spacer(minLength: FrogStyle.space6)
-                UsageProviderDropdown(usage: usage)
-                // Boxed, as the same actions are in the LLM usage popup's header.
                 UsageRefreshAction(usage: usage, bordered: true)
                 IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", bordered: true, action: openPage)
             }.padding(.leading, FrogStyle.cardPadding).padding(.trailing, FrogStyle.space6).padding(.bottom, FrogStyle.space4)
@@ -70,7 +71,8 @@ struct UsageStatusPopover: View {
             // The header and content keep the panel's inset; the footer band below runs to the panel's edges.
             VStack(alignment: .leading, spacing: 0) {
                 FrogPopupHeader(symbol: LLMUsagePlugin.info.symbol, tint: LLMUsagePlugin.info.tint, title: "LLM usage") {
-                    UsageProviderDropdown(usage: usage)
+                    // The choice apart from the two actions, so the header reads as a value and a pair of buttons.
+                    UsageProviderDropdown(usage: usage).padding(.trailing, FrogStyle.space6)
                     UsageRefreshAction(usage: usage, bordered: true)
                     IconAction(title: "Open LLM usage", symbol: "arrow.up.forward.app", bordered: true, action: openDashboard)
                 }
@@ -132,9 +134,10 @@ struct UsageStatusPopover: View {
 struct UsageProviderDropdown: View {
     @ObservedObject var usage: UsageDashboardModel
     var body: some View {
+        // Only as wide as the provider's name, so the gap to the actions beside it is the same for every provider.
         FrogDropdown(selected: usage.preferences.provider, options: usage.providers, width: 92, compact: true, title: { $0 }) {
             usage.selectProvider($0)
-        }.accessibilityLabel("Provider")
+        }.fitToContent().accessibilityLabel("Provider")
     }
 }
 
