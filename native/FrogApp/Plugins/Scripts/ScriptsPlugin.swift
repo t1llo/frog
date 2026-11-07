@@ -191,7 +191,7 @@ struct ScriptsPage: View {
             // empty space between the code and what it printed.
             DocumentTextEditor(text: documents.binding(script.id, \.text), font: FrogType.mono)
                 .frame(minHeight: 72, maxHeight: .infinity)
-            output(ran: runner.resultID == script.id)
+            output(ran: runner.resultID == script.id, script: script.id)
         } footer: { script in
             // For every script: Frog stops one that runs longer.
             // The label sits right against its value: the dropdown takes only the width its title needs.
@@ -207,11 +207,11 @@ struct ScriptsPage: View {
 
     /// What the last run printed, in an inset panel under the script that folds open and shut under its caption.
     /// It opens by itself on a run of this script and stays as the person leaves it.
-    private func output(ran: Bool) -> some View {
+    private func output(ran: Bool, script: UtilityDocument.ID) -> some View {
         let open = outputOpen ?? ran
         return VStack(alignment: .leading, spacing: FrogStyle.space6) {
             Button {
-                withAnimation(.snappy(duration: 0.2)) { outputOpen = !open }
+                withAnimation(FrogMotion.reveal) { outputOpen = !open }
             } label: {
                 HStack(spacing: FrogStyle.space6) {
                     Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
@@ -246,7 +246,9 @@ struct ScriptsPage: View {
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
-        .onChange(of: runner.resultID) { _, _ in outputOpen = nil }
+        // Every run, a rerun of the same script too, and another script hand the panel back to the script.
+        .onChange(of: runner.running) { _, running in if running != nil { outputOpen = nil } }
+        .onChange(of: script) { _, _ in outputOpen = nil }
     }
 
     /// The first line a run printed, shown beside the shut panel's caption.
