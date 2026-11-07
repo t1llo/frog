@@ -17,37 +17,41 @@ struct StatisticsView: View {
         }
     }
 
+    /// The switch that counts, and Reset once there is something to clear.
+    @ViewBuilder private var recordingRows: some View {
+        FrogRow("Record statistics", caption: "Counts only, kept on this Mac") {
+            Toggle("Record statistics", isOn: Binding(get: { statistics.snapshot.recordingEnabled }, set: statistics.setRecordingEnabled))
+                .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).disabled(!statistics.loaded)
+        }
+        if !statistics.snapshot.recordingEnabled {
+            FrogRowNote(text: "Paused. Existing totals remain until you reset them.")
+        }
+        // Resetting sits with the switch that records; with nothing counted there is nothing to clear.
+        if statistics.loaded, !Self.isEmpty(statistics.snapshot.allTime) {
+            FrogRow("Clear all counts") {
+                Button("Reset…", role: .destructive) { confirmingReset = true }.buttonStyle(.frog(.destructive))
+            }
+        }
+        if let issue = statistics.issue { InlineIssue(message: issue) }
+    }
+
     var body: some View {
         FrogPage {
             // The toolbar's Back (⌘[) returns to Settings, which opens this page (MainView offers the step).
             FrogPageHeader(title: "Statistics", subtitle: "What you did with Frog, counted on this Mac")
-            FrogSection("Local statistics") {
-                FrogRow("Record statistics", caption: "Counts only, kept on this Mac") {
-                    Toggle("Record statistics", isOn: Binding(get: { statistics.snapshot.recordingEnabled }, set: statistics.setRecordingEnabled))
-                        .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).disabled(!statistics.loaded)
-                }
-                if !statistics.snapshot.recordingEnabled {
-                    FrogRowNote(text: "Paused. Existing totals remain until you reset them.")
-                }
-                // Resetting sits with the switch that records; with nothing counted there is nothing to clear.
-                if statistics.loaded, !Self.isEmpty(statistics.snapshot.allTime) {
-                    FrogRow("Clear all counts") {
-                        Button("Reset…", role: .destructive) { confirmingReset = true }.buttonStyle(.frog(.destructive))
-                    }
-                }
-                if let issue = statistics.issue { InlineIssue(message: issue) }
-            }
             if statistics.loaded, Self.isEmpty(statistics.snapshot.allTime) {
-                // Rows of zeros say nothing; one calm note says when numbers arrive.
-                VStack(alignment: .leading, spacing: FrogStyle.space8) {
-                    FrogSectionHeader("Activity")
+                // Nothing counted yet: one card, no heading. Rows of zeros say nothing; one calm note says when
+                // numbers arrive, and the switch that counts them sits under it.
+                FrogSection {
                     FrogEmptyState(symbol: "chart.bar.fill", title: "Nothing recorded yet",
                                    message: statistics.snapshot.recordingEnabled
                                        ? "Statistics appear after your first dictation or rule run."
                                        : "Turn on Record statistics to start counting.", tint: .gray)
-                        .frogTableSurface()
+                        .padding(.bottom, -FrogStyle.space16)
+                    recordingRows
                 }
             } else {
+                FrogSection("Local statistics") { recordingRows }
                 VStack(alignment: .leading, spacing: FrogStyle.space12) {
                     CompactSegments(values: Period.allCases, selected: period, title: { $0.rawValue }) { period = $0 }
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: FrogStyle.space10), GridItem(.flexible())], spacing: FrogStyle.space10) {
