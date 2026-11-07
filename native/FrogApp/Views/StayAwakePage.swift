@@ -1,7 +1,7 @@
 import SwiftUI
 import FrogCore
 
-/// Stay awake's page: the session, the separate lid-closed mode, and the menu-bar cup.
+/// Stay awake's page: where the Mac stands with the switch that changes it, then the session and the menu-bar cup.
 struct StayAwakePage: View {
     @ObservedObject var power: StayAwakeController
     @ObservedObject var plugin: StayAwakePlugin
@@ -10,38 +10,35 @@ struct StayAwakePage: View {
 
     var body: some View {
         FrogPage {
-            FrogPageHeader(title: "Stay awake", subtitle: "Keep your Mac from sleeping, for a while or until you stop it.") {
-                // Where the Mac stands at a glance, on or off, beside the title.
-                FrogStatePill(text: power.isEnabled ? power.statusText : "Sleeps as usual", on: power.isEnabled)
-            }
-            // One card, so no heading: the session, the lid and the menu-bar icon. The first row says where the
-            // session stands ("On until 17:30", or that the Mac sleeps as usual).
-            FrogSection {
-                FrogRow("Keep this Mac awake", caption: power.isEnabled ? power.statusText : "Off. Your Mac sleeps as usual.") {
-                    Toggle("Keep this Mac awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
-                        .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
-                }
-                // While off, these set up the next session: they can still be changed, but read as resting, faded
-                // like a disabled control, so an "on" switch never claims the screen is kept on while nothing runs.
+            FrogPageHeader(title: "Stay awake", subtitle: "Keep your Mac from sleeping, for a while or until you stop it.")
+            // Where the Mac stands, at a glance, with the one switch that changes it.
+            StayAwakeStatusCard(power: power, keepScreenOn: settings.keepScreenOn)
+            FrogSection("Session") {
+                // Duration sets up the next session as well as the running one, so it stays fully available.
                 FrogRow("Duration") {
                     FrogDropdown(selected: settings.duration, options: StayAwakeController.DurationChoice.allCases, title: { $0.title }) { choice in
                         change(reveal: true) { settings in settings.duration = choice }
-                    }.opacity(sessionOpacity)
+                    }
                 }
                 if settings.duration == .untilTime {
                     FrogRow("Until") {
                         FrogDropdown(selected: settings.until, options: Self.times(including: settings.until), searchPrompt: "Time",
                                      title: Self.title(of:)) { time in change { $0.until = time } }
-                        .opacity(sessionOpacity)
                     }
                 }
-                FrogRow("Keep the screen on", caption: !power.isEnabled ? "For the next session." : settings.keepScreenOn ? "The display stays lit as well." : "The display can sleep while apps keep running.") {
+                // Only a running session keeps a screen lit, so while none runs the switch is disabled, drawn as
+                // macOS draws a switch that cannot be changed, and its caption says what it waits for.
+                FrogRow("Keep the screen on", caption: !power.isEnabled ? "Available while this Mac is kept awake."
+                        : settings.keepScreenOn ? "The display stays lit as well." : "The display can sleep while apps keep running.") {
                     Toggle("Keep the screen on", isOn: Binding(get: { settings.keepScreenOn }, set: { on in change { $0.keepScreenOn = on } }))
-                        .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).opacity(sessionOpacity)
+                        .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small).disabled(!power.isEnabled)
                 }
+                // Keeping awake with the lid closed is a way of keeping awake too, so it sits with the session.
                 LidClosedRows(power: power, lid: power.lid, on: settings.lidClosed) { on in change(reveal: true) { $0.lidClosed = on } }
-                FrogRow("Menu bar icon", caption: "Shows in the menu bar while this Mac is kept awake.") {
-                    Toggle("Menu bar icon", isOn: Binding(get: { settings.menuBarItem }, set: { on in change(reveal: true) { $0.menuBarItem = on } }))
+            }
+            FrogSection("Menu bar") {
+                FrogRow("Show in the menu bar", caption: "While this Mac is kept awake.") {
+                    Toggle("Show in the menu bar", isOn: Binding(get: { settings.menuBarItem }, set: { on in change(reveal: true) { $0.menuBarItem = on } }))
                         .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 }
                 if settings.menuBarItem {
@@ -58,9 +55,6 @@ struct StayAwakePage: View {
         .task { await power.refresh() }
     }
 
-    /// The session's own settings rest at the disabled fade while no session runs.
-    private var sessionOpacity: Double { power.isEnabled ? 1 : FrogStyle.disabledOpacity }
-
     private func change(reveal: Bool = false, _ edit: (inout StayAwakeSettings) -> Void) {
         withAnimation(reveal && !reduceMotion ? FrogMotion.reveal : nil) { plugin.update(edit) }
     }
@@ -76,6 +70,50 @@ struct StayAwakePage: View {
         guard case .until(let hour, let minute) = StayAwakeLength("until \(time)"),
               let date = Calendar.current.date(from: DateComponents(hour: hour, minute: minute)) else { return time }
         return date.formatted(date: .omitted, time: .shortened)
+    }
+}
+
+/// The top of the page: the feature's tile (a full cup while a session runs, as in Frog's menu), the state in the page's large type ("Awake
+/// until 17:30", "Sleeps as usual"), what it means under it, and the switch that starts or ends the session.
+private struct StayAwakeStatusCard: View {
+    @ObservedObject var power: StayAwakeController
+    let keepScreenOn: Bool
+
+    var body: some View {
+        let on = power.isEnabled
+        FrogSection {
+            HStack(spacing: FrogStyle.space12) {
+                PluginIconTile(symbol: on ? "cup.and.saucer.fill" : "cup.and.saucer", tint: StayAwakePlugin.info.tint.color,
+                               size: .header)
+                VStack(alignment: .leading, spacing: FrogStyle.space2) {
+                    Text(L10n.text(title)).font(FrogType.title).foregroundStyle(FrogStyle.ink).lineLimit(1)
+                    // The time left counts down by the minute while a session with an end runs.
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        Text(caption(at: FrogClock.now(or: context.date))).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(2)
+                    }
+                }
+                Spacer(minLength: FrogStyle.space8)
+                Toggle("Keep this Mac awake", isOn: Binding(get: { power.isEnabled }, set: power.setEnabled))
+                    .labelsHidden().toggleStyle(.frogSwitch)
+            }
+            .padding(.vertical, FrogStyle.space12)
+            .accessibilityElement(children: .contain)
+        }
+    }
+
+    private var title: String {
+        guard power.isEnabled else { return "Sleeps as usual" }
+        guard let deadline = power.deadline else { return "Awake until turned off" }
+        return "Awake until \(deadline.formatted(date: .omitted, time: .shortened))"
+    }
+
+    private func caption(at now: Date) -> String {
+        guard power.isEnabled else { return L10n.text("Your Mac sleeps when idle. Turn this on to keep it awake.") }
+        let screen = L10n.text(keepScreenOn ? "The screen stays on." : "The screen can sleep.")
+        guard let deadline = power.deadline else { return screen }
+        let left = Duration.seconds(max(60, deadline.timeIntervalSince(now)))
+            .formatted(.units(allowed: [.hours, .minutes], width: .abbreviated, fractionalPart: .hide))
+        return "\(left) \(L10n.text("left")). \(screen)"
     }
 }
 
