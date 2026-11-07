@@ -210,9 +210,14 @@ final class UIShotsTests: XCTestCase {
         // macOS's own apps, so the rows show real icons as they do on a Mac.
         for (pid, path) in [(1, "/Applications/Safari.app"), (2, "/System/Applications/Notes.app"), (3, "/System/Applications/Utilities/Terminal.app"),
                             (4, "/System/Applications/Mail.app"), (5, "/System/Applications/Calendar.app")] where FileManager.default.fileExists(atPath: path) {
-            switcher.icons[pid_t(pid)] = NSWorkspace.shared.icon(forFile: path)
+            // The running app's icon, as the switcher reads it: no alias arrow from Safari's symlink in /Applications.
+            switcher.icons[pid_t(pid)] = NSWorkspace.shared.icon(forFile: URL(fileURLWithPath: path).resolvingSymlinksInPath().path)
         }
+        // Apps given a shortcut in Shortcuts show it; a person who uses them has several, not one.
+        switcher.shortcuts[1] = "⌥S"
         switcher.shortcuts[2] = "⌥N"
+        switcher.shortcuts[3] = "⌥T"
+        switcher.shortcuts[4] = "⌥M"
         try await popup("window-switcher", size: WindowSwitcherLayout.size(windowCount: switcher.windows.count)) {
             WindowSwitcherOverlay(model: switcher, choose: { _ in }, hover: { _ in })
         }
@@ -310,7 +315,7 @@ final class UIShotsTests: XCTestCase {
         overDefine.location = CGPoint(x: 60, y: 76)
         try await popup("selection-bubble-expanded") {
             SelectionBubbleView(visible: Array(items.prefix(3)), more: Array(items.dropFirst(3)), expanded: true, pointer: overDefine,
-                                select: { _ in }, expand: {})
+                                select: { _ in }, expand: {}, editRules: {})
         }
     }
 

@@ -37,7 +37,9 @@ private actor ApplicationIconCache {
         // so scrolling never has to resolve or decode a newly visible application's icon.
         // A bundle without a runnable executable (half-removed, or a stub) gets Finder's "prohibited"
         // badge; the generic app icon reads as an app instead of an error.
-        let icon = Self.isLaunchable(path) ? NSWorkspace.shared.icon(forFile: path)
+        // A symlinked app (Safari in /Applications points into the system's cryptex) would carry Finder's alias
+        // arrow; the app it points to has its plain icon.
+        let icon = Self.isLaunchable(path) ? NSWorkspace.shared.icon(forFile: URL(fileURLWithPath: path).resolvingSymlinksInPath().path)
             : NSWorkspace.shared.icon(for: .applicationBundle)
         guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 56, pixelsHigh: 56,
                                             bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
