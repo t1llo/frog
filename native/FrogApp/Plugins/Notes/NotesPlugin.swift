@@ -153,7 +153,7 @@ struct NotesPage: View {
             }
         } footer: { note in
             // What picking the note in the command bar does: a setting of this note.
-            Text("Paste when picked in the command bar").foregroundStyle(FrogStyle.ink).lineLimit(1)
+            Text("Paste from command bar").foregroundStyle(FrogStyle.ink).lineLimit(1)
             Toggle("Paste when picked in the command bar", isOn: documents.binding(note.id, \.pastes))
                 .labelsHidden().toggleStyle(.frogSwitch).controlSize(.small)
                 .help("Choosing it in the command bar pastes its text, with {{date}}, {{time}} and {{clipboard}} filled in")
