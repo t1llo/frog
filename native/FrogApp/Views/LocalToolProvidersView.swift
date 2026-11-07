@@ -32,10 +32,18 @@ struct LocalToolProvidersView: View {
                         PluginIconTile(mark: .tool(status.kind)).opacity(status.installed ? 1 : FrogStyle.disabledOpacity)
                     }) {
                         if status.installed, status.authentication == .signedIn {
-                            HStack(spacing: FrogStyle.space6) {
-                                Circle().fill(FrogStyle.good).frame(width: 7, height: 7)
-                                Text("Connected").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                            }.accessibilityElement(children: .combine)
+                            state("Connected", dot: FrogStyle.good)
+                        } else if status.installed, status.authentication == .signedOut {
+                            // The sign-in command its caption names, a click away, beside the state it fixes.
+                            HStack(spacing: FrogStyle.space10) {
+                                state("Not signed in", dot: FrogStyle.warning)
+                                if let command = status.kind.commands.first {
+                                    CopyAction(title: "Copy command", labeled: true) { ViewActions.copy(command) }
+                                        .help("Copies \(command)")
+                                }
+                            }
+                        } else if status.installed {
+                            state("Installed", dot: nil)
                         } else if !status.installed {
                             Button("Install") { NSWorkspace.shared.open(status.kind.website) }.buttonStyle(.frog(compact: true))
                                 .help("Opens \(status.kind.title)'s website")
@@ -85,6 +93,19 @@ struct LocalToolProvidersView: View {
             if statuses.first(where: { $0.kind == selected })?.installed != true,
                let installed = statuses.first(where: { $0.installed && $0.supportsTextTransforms }) { selected = installed.kind }
         }
+    }
+
+    /// A tool's state at its row's end: a dot in the state's colour, or a hollow one when it is not known yet, and
+    /// the word in muted text, as Codex's "Connected" reads.
+    private func state(_ title: String, dot: Color?) -> some View {
+        HStack(spacing: FrogStyle.space6) {
+            if let dot {
+                Circle().fill(dot).frame(width: 7, height: 7)
+            } else {
+                Circle().strokeBorder(FrogStyle.muted, lineWidth: 1).frame(width: 7, height: 7)
+            }
+            Text(L10n.text(title)).font(FrogType.small).foregroundStyle(FrogStyle.muted)
+        }.accessibilityElement(children: .combine)
     }
 
     /// The status line with the commands it names in the code font ("Run `claude auth login` in your terminal").

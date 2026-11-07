@@ -40,11 +40,20 @@ struct ServiceMark: Equatable {
         case .mlx:
             let repository = (descriptor.originalRepository ?? descriptor.repository).lowercased()
             let name = descriptor.name.lowercased() + " " + repository
-            if name.contains("qwen") { return ServiceMark(symbol: "brain", tint: .purple) }
+            // A family keeps its tint; its smallest sizes (a billion parameters or fewer) wear the hare, so two
+            // sizes of one family side by side are told apart at a glance.
+            if name.contains("qwen") { return ServiceMark(symbol: isSmall(name) ? "hare.fill" : "brain", tint: .purple) }
             if name.contains("llama") { return ServiceMark(symbol: "mountain.2.fill", tint: .indigo) }
             if name.contains("gemma") { return ServiceMark(symbol: "diamond.fill", tint: .blue) }
             return ServiceMark(symbol: "text.alignleft", tint: .green)
         }
+    }
+
+    /// Whether a model's name says it has at most a billion parameters ("0.8B", "1B").
+    private static func isSmall(_ name: String) -> Bool {
+        guard let range = name.range(of: #"\d+(\.\d+)?\s?b\b"#, options: .regularExpression) else { return false }
+        let number = name[range].filter { $0.isNumber || $0 == "." }
+        return Double(number).map { $0 <= 1 } ?? false
     }
 
     var color: Color { tint.color }
