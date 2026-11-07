@@ -42,7 +42,7 @@ struct WindowsView: View {
         let rules = Dictionary(uniqueKeysWithValues: WindowAction.shortcutRows(configured: model.configuration.rules)
             .compactMap { rule in rule.action?.windowAction.map { ($0, rule) } })
         let assigned = rules.values.filter { $0.hotkey != nil }.count
-        // Grouped as the cheat sheet groups them; a layout without a shortcut shows a quiet "Record" in its slot.
+        // Grouped as the cheat sheet groups them; a layout without a shortcut shows the Record shortcut button.
         return FrogSection("Layouts") {
             Text(verbatim: assigned == 1 ? L10n.text("1 shortcut set") : "\(assigned) \(L10n.text("shortcuts set"))")
                 .font(FrogType.small.monospacedDigit())
@@ -200,11 +200,6 @@ private struct LayoutShortcutCell: View {
     let rule: Rule
     let issue: String?
     @ObservedObject var model: AppModel
-    /// A layout without a shortcut shows nothing in its slot, so the grid says what is assigned and stays quiet; pointed
-    /// at, recording or focused from the keyboard, the slot becomes the Record button.
-    @State private var hovering = false
-    @State private var recording = false
-    @FocusState private var focused: Bool
 
     var body: some View {
         HStack(spacing: 10) {
@@ -212,34 +207,25 @@ private struct LayoutShortcutCell: View {
             if let action = rule.action?.windowAction {
                 WindowLayoutGlyph(action: action, size: CGSize(width: 28, height: 18)).frame(width: 28, height: 22)
             }
-            Text(L10n.text(rule.name)).font(FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
+            // The layout's one name, as the picker and the cheat sheet show it, even where an older version saved
+            // the rule under another.
+            Text(L10n.text(rule.action?.windowAction?.title ?? rule.name)).font(FrogType.body).foregroundStyle(FrogStyle.ink).lineLimit(1)
                 .opacity(rule.hotkey != nil && !rule.enabled ? 0.5 : 1)
             if let issue {
                 Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10)).foregroundStyle(FrogStyle.warning).help(issue)
             }
             // Room for the recorder's hover clear button, so it never covers the name in a narrow column.
             Spacer(minLength: HotkeyRecorder.clearButtonRoom)
-            let active = rule.hotkey != nil || hovering || recording || focused
+            // The shared recorder, as in every other shortcut row: the caps when one is set, the Record shortcut
+            // button when not, both ending on the row's trailing edge.
             HotkeyRecorder(hotkey: Binding(get: { rule.hotkey }, set: { value in
                 var updated = rule; updated.hotkey = value; updated.enabled = value != nil
                 do { try model.saveRule(updated) } catch { model.report(error) }
-            }), emptyTitle: "Record", recordingChanged: { recording = $0 })
-            .focused($focused)
-            // An empty slot says "Record" in the placeholder tone, as an empty field shows its placeholder: quiet
-            // beside the caps that are set, yet findable. Pointed at, recording or focused, the same word becomes
-            // the Record button in the same place.
-            .opacity(active ? 1 : 0)
-            .overlay(alignment: .trailing) {
-                if !active {
-                    Text(L10n.text("Record")).font(FrogType.label).foregroundStyle(FrogStyle.placeholder)
-                        .padding(.trailing, FrogButtonStyle.horizontalPadding())
-                        .allowsHitTesting(false).accessibilityHidden(true)
-                }
-            }
+            }))
+            .frogRowAccessory()
         }
         // Every row the same height, whether or not its caps show.
         .frame(maxWidth: .infinity, minHeight: FrogStyle.rowHeight, maxHeight: FrogStyle.rowHeight)
         .contentShape(Rectangle())
-        .onHover { hovering = $0 }
     }
 }
