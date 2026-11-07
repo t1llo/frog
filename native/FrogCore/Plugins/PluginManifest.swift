@@ -45,7 +45,7 @@ public enum PluginPermission: String, Codable, CaseIterable, Comparable, Sendabl
         case .links: "Opens web links in your default browser, which can send what is in the link to that site."
         case .menubar: "Shows its own item in the menu bar, with a popup. Turning the plugin off removes it."
         case .hotkeys: "Gives the actions listed below keyboard shortcuts that work in every app. You can change or clear them in its settings."
-        case .background: "Starts with Frog and keeps running while its page is closed: its timers run, and it hears when the Mac wakes, the app in front changes or, with clipboard access, the clipboard changes."
+        case .background: "Starts with Frog and keeps running while its page is closed. It notices when the Mac wakes or you switch apps."
         case .files: "Reads, writes and moves to the Trash files in the folders you pick for it, and only those."
         case .network: "Sends requests to the sites listed below, and only those. It can send them anything the plugin can read."
         case .ai: "Sends text to the model your Writing rules use by default. A cloud model's provider bills you for it."
