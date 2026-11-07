@@ -23,7 +23,7 @@ struct NoteTextEditor: NSViewRepresentable {
         container.lineFragmentPadding = 0
         layout.addTextContainer(container)
 
-        let textView = NSTextView(frame: .zero, textContainer: container)
+        let textView = NoteTextView(frame: .zero, textContainer: container)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
@@ -41,6 +41,9 @@ struct NoteTextEditor: NSViewRepresentable {
         storage.delegate = context.coordinator
         context.coordinator.textView = textView
         context.coordinator.fillsTokens = fillsTokens
+        context.coordinator.appearance = FrogAppearance.shared.settings
+        // Token colours are fixed once applied, so light and dark redraw them in the new appearance's colours.
+        textView.appearanceChanged = { [weak coordinator = context.coordinator] in coordinator?.restyleAll() }
         textView.string = text
 
         let scroll = NSScrollView()
@@ -57,16 +60,25 @@ struct NoteTextEditor: NSViewRepresentable {
         let coordinator = context.coordinator
         coordinator.text = $text
         guard let textView = coordinator.textView else { return }
-        if coordinator.fillsTokens != fillsTokens {
+        // Whether tokens fill in, and the theme or accent, change every token's colours: the one whole restyle.
+        let appearance = FrogAppearance.shared.settings
+        if coordinator.fillsTokens != fillsTokens || coordinator.appearance != appearance {
             coordinator.fillsTokens = fillsTokens
-            if let storage = textView.textStorage { coordinator.restyle(storage) }
+            coordinator.appearance = appearance
+            coordinator.restyleAll()
         }
-        if textView.string != text {
-            // A different note, or the text changed elsewhere: replace it, keeping the caret where it can stay.
+        if textView.string != text, let storage = textView.textStorage {
+            // A different note, or the text changed elsewhere: replace it, keeping the caret where it can stay. The
+            // old text's undo steps point into text that is gone, so they go with it.
             let selection = textView.selectedRanges
-            textView.string = text
+            storage.replaceCharacters(in: NSRange(location: 0, length: storage.length), with: text)
+            textView.undoManager?.removeAllActions(withTarget: textView)
+            textView.undoManager?.removeAllActions(withTarget: storage)
             let length = (text as NSString).length
-            textView.selectedRanges = selection.map { NSValue(range: NSIntersectionRange($0.rangeValue, NSRange(location: 0, length: length))) }
+            textView.selectedRanges = selection.map {
+                let location = min($0.rangeValue.location, length)
+                return NSValue(range: NSRange(location: location, length: min($0.rangeValue.length, length - location)))
+            }
         }
     }
 
@@ -74,6 +86,7 @@ struct NoteTextEditor: NSViewRepresentable {
         var text: Binding<String>
         weak var textView: NSTextView?
         var fillsTokens = true
+        var appearance = AppearancePreferences()
 
         init(text: Binding<String>) { self.text = text }
 
@@ -84,19 +97,39 @@ struct NoteTextEditor: NSViewRepresentable {
 
         func textStorage(_ storage: NSTextStorage, didProcessEditing mask: NSTextStorageEditActions, range: NSRange, changeInLength delta: Int) {
             guard mask.contains(.editedCharacters) else { return }
-            restyle(storage)
+            // Text still being composed (an input method's marked text) is styled once it is committed.
+            if textView?.hasMarkedText() == true { return }
+            // Only the edited paragraphs: a token never spans a line, so the rest of a long note keeps its styling.
+            restyle(storage, in: (storage.string as NSString).paragraphRange(for: range))
         }
 
-        /// Styles the whole note: notes are short, and a token's braces can be typed one at a time anywhere.
-        func restyle(_ storage: NSTextStorage) {
-            let whole = NSRange(location: 0, length: storage.length)
+        func restyleAll() {
+            guard let textView, let storage = textView.textStorage else { return }
+            // Resolved in the text view's own appearance, so light and dark each get their token colours.
+            textView.effectiveAppearance.performAsCurrentDrawingAppearance {
+                restyle(storage, in: NSRange(location: 0, length: storage.length))
+            }
+        }
+
+        /// Styles `range` afresh: the base look, then every token in it.
+        func restyle(_ storage: NSTextStorage, in range: NSRange) {
+            guard range.length > 0 else { return }
             storage.beginEditing()
-            storage.setAttributes(NoteTokenStyle.base, range: whole)
-            for match in NoteTokenStyle.pattern.matches(in: storage.string, range: whole) {
+            storage.setAttributes(NoteTokenStyle.base, range: range)
+            for match in NoteTokenStyle.pattern.matches(in: storage.string, range: range) {
                 NoteTokenStyle.apply(to: storage, token: match.range, word: match.range(at: 1), filled: fillsTokens)
             }
             storage.endEditing()
         }
+    }
+}
+
+/// The note's text view, which says when light or dark changes so the tokens can take the new colours.
+final class NoteTextView: NSTextView {
+    var appearanceChanged: (() -> Void)?
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        appearanceChanged?()
     }
 }
 
