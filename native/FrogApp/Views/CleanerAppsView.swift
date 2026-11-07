@@ -113,7 +113,7 @@ struct CleanerAppsView: View {
                     Text(version).font(FrogType.body).monospacedDigit().foregroundStyle(FrogStyle.muted).lineLimit(1)
                 }
                 if identity.isAppStore { FrogBadge(text: "App Store") }
-                if identity.owner == .administrator { FrogBadge(text: "Needs password") }
+                if identity.owner == .administrator { FrogStatusLabel("Needs password", tone: .warning) }
                 Spacer(minLength: 8)
                 if let size = row.size {
                     Text(CleanerFormat.bytes(size.bytes)).font(FrogType.small.monospacedDigit()).foregroundStyle(FrogStyle.muted)

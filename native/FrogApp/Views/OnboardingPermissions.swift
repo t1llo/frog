@@ -94,7 +94,7 @@ struct OnboardingPermissions: View {
 
     @ViewBuilder private func control(for permission: MacPermission) -> some View {
         if granted.contains(permission) {
-            Label("Allowed", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
+            FrogStatusLabel("Allowed")
                 .transition(.opacity)
         } else {
             Button("Allow") { request(permission) }.buttonStyle(.frog(.secondary))

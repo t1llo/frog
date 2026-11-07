@@ -106,8 +106,8 @@ struct CleanerReviewView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(parts.name).font(FrogType.body).lineLimit(1).truncationMode(.middle).layoutPriority(1)
-                        if item.owner == .administrator { FrogBadge(text: "Needs password") }
-                        if review.needsFullDiskAccessToMove(item) { FrogBadge(text: "Needs Full Disk Access") }
+                        if item.owner == .administrator { FrogStatusLabel("Needs password", tone: .warning) }
+                        if review.needsFullDiskAccessToMove(item) { FrogStatusLabel("Needs Full Disk Access", tone: .warning) }
                         if !item.sharedWith.isEmpty {
                             FrogBadge(text: "Also used by \(item.sharedWith.formatted(.list(type: .and)))")
                         }

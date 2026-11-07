@@ -160,7 +160,7 @@ struct PluginsView: View {
             PluginIconTile(symbol: PluginSymbol.name(entry.displaySymbol), tint: PluginTint.purple.color)
         } control: {
             if let installed, installed.record.sha256 == entry.sha256.lowercased() || !Self.isNewer(entry, than: installed) {
-                FrogBadge(text: "Installed")
+                FrogStatusLabel("Installed")
             } else if plugins.installing == entry.id {
                 FrogSpinner().frame(width: 60)
             } else if !entry.runs(on: AppVersion.current) {
@@ -281,7 +281,7 @@ private struct InstalledPluginRow: View {
                     if let version = item.manifest?.version, !version.isEmpty {
                         Text(version).font(FrogType.caption).foregroundStyle(FrogStyle.muted).lineLimit(1)
                     }
-                    if running { FrogBadge(text: "Running") }
+                    if running { FrogStatusLabel("Running", tone: .active) }
                 }
                 // Up to two lines, so a plugin's one-sentence description reads to its end instead of breaking off.
                 Text(L10n.text(item.problem ?? item.manifest?.description.taglineInCaption ?? ""))

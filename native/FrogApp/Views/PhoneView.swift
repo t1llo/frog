@@ -126,7 +126,7 @@ private struct PhoneRow: View {
     var body: some View {
         FrogRow(paired.name, icon: { SymbolTile(symbol: "iphone", size: 28) }) {
             HStack(spacing: 8) {
-                FrogBadge(text: connection.label, active: connection != .offline)
+                FrogStatusLabel(connection.label, tone: connection == .offline ? .off : .good)
                 IconAction(title: "Unpair", symbol: "xmark", destructive: true, action: unpair)
             }
         }

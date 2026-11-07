@@ -113,8 +113,7 @@ struct PreferencesView: View {
     private func permission(_ title: String, allowed: Bool, action: @escaping () -> Void) -> some View {
         FrogRow(title) {
             HStack(spacing: 10) {
-                Label(allowed ? "Allowed" : "Permission needed", systemImage: allowed ? "checkmark.circle.fill" : "exclamationmark.circle")
-                    .font(FrogType.small).foregroundStyle(allowed ? FrogStyle.accentText : FrogStyle.warning)
+                FrogStatusLabel(allowed ? "Allowed" : "Permission needed", tone: allowed ? .good : .warning)
                 Button(allowed ? "Manage…" : "Allow…", action: action)
             }
         }
@@ -166,8 +165,7 @@ private struct SettingsHero: View {
                 Button("Check for Updates") { updater.check() }
             } else {
                 // While Frog checks, or where it cannot, a dimmed button says less than plain words.
-                Label("Up to date", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.muted)
-                    .labelStyle(.titleAndIcon)
+                FrogStatusLabel("Up to date")
             }
         }
         .padding(FrogStyle.cardPadding).frame(maxWidth: .infinity, alignment: .leading).frogTableSurface()

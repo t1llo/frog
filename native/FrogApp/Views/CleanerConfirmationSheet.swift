@@ -102,8 +102,8 @@ struct CleanerConfirmationSheet: View {
                 Text(parts.name).font(FrogType.body).lineLimit(1).layoutPriority(1)
                 Text(parts.folder).font(FrogType.small).foregroundStyle(FrogStyle.muted).lineLimit(1).truncationMode(.middle)
             }.help(roots.shownPath(item.url))
-            if item.owner == .administrator { FrogBadge(text: "Needs password") }
-            else if removal.route == .finder { FrogBadge(text: "Moved by Finder").help("Finder moves this item to the Trash, so it can ask for permission") }
+            if item.owner == .administrator { FrogStatusLabel("Needs password", tone: .warning) }
+            else if removal.route == .finder { FrogStatusLabel("Moved by Finder", tone: .off).help("Finder moves this item to the Trash, so it can ask for permission") }
             Spacer(minLength: 8)
             Text(size(of: item)).font(FrogType.body.monospacedDigit()).foregroundStyle(FrogStyle.muted)
         }.padding(.horizontal, FrogStyle.rowPadding).frame(minHeight: 30)

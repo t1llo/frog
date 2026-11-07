@@ -439,7 +439,7 @@ private struct OnboardingModels: View {
                 }, control: {
                     HStack(spacing: 8) {
                         if local.installed.contains(item.id) {
-                            Label("Ready", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
+                            FrogStatusLabel("Ready")
                         } else if let progress = local.progress[item.id] {
                             ModelDownloadProgress(fraction: progress.fraction, preparing: local.preparing.contains(item.id), width: 90)
                             Button("Cancel") { local.cancelDownload(item.id) }.buttonStyle(.frog())
@@ -502,7 +502,7 @@ private struct OnboardingProviders: View {
                             PluginIconTile(mark: .provider(item.kind))
                         }, control: {
                             if configured(item.kind) {
-                                Label("Added", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
+                                FrogStatusLabel("Added")
                             } else {
                                 Button("Use") { add(item) }.buttonStyle(.frog(.secondary))
                             }
@@ -556,7 +556,7 @@ private struct OnboardingAgents: View {
                 PluginIconTile(symbol: "wand.and.stars", tint: PluginTint.purple.color, size: .list)
             }, control: {
                 if access && installable.isEmpty && !toolMissing {
-                    Label("On", systemImage: "checkmark.circle.fill").font(FrogType.small).foregroundStyle(FrogStyle.good)
+                    FrogStatusLabel("On")
                 } else {
                     Button(access ? "Install" : "Turn on", action: turnOn).buttonStyle(.frog(.secondary))
                 }
