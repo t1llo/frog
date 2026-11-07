@@ -85,6 +85,13 @@ Kept across rounds. Root causes, not symptoms. Status: `open`, `fixed, unconfirm
 - **Done when:** the list keeps a clear gap under the search field; rows scrolled away fade out under it (as at the bottom edge), never a hard cut; selecting a page never leaves a row half under the field.
 - **Status:** reopened (round 1 judge #4 and both comparisons: the new edge shade under the search field and above the pinned group renders as a blurred grey smudge (light: dirty streak, dark: haze), and doesn't read as a scroll edge. Done when also: the edge reads as content fading under the field (as native sidebars do), with no visible band over empty space). Earlier: (round 1: 10 pt gap under search, fade instead of hard cut (212baa5)). Seen: owner, round 1, round 1.
 
+### O14. Frog menu: switching the Frog / System / Usage tabs is over-animated and stutters
+- **Owner's words:** "when i swith between these options the animation is way to over the top also it lags/bugs a bit arround when switching" (with a crop of the tab control in the menu's header).
+- **Root cause (reading of the code, to confirm):** `CompactSegments` (`Views/CompactControls.swift:209-245`) slides one thumb with `matchedGeometryEffect` on `FrogMotion.slide` while the popup swaps its whole tab body (`Views/FrogStatusMenu.swift:33-49`); the tabs have different heights, so the popup window resizes in the same frames as the thumb moves and the label colours change. Several moving things at once read as busy, and the resize plus rebuilding the new tab drops frames.
+- **Where:** Frog menu-bar popup header, every tab switch, light and dark.
+- **Done when:** a tab switch is one calm, short movement (the thumb only, about 150-200 ms, no overshoot), the content and the popup height change without a visible jump or stutter, and no frame shows the thumb between labels with a label still in the old colour. Checked in a running debug instance (a frame sequence or recording), not only in stills.
+- **Status:** open. Seen: owner, round 1.
+
 ## From judges
 
 ### J1. Meters of one kind come in two thicknesses
