@@ -81,8 +81,9 @@ struct WindowSwitcherPreview: View {
         display.windows = apps.map {
             SwitcherWindow(id: UUID(), pid: $0.pid, appName: $0.name, title: $0.title, minimized: $0.minimized, hidden: false)
         }
+        // Resolved like ApplicationIcon, so a symlinked app never shows Finder's alias arrow.
         display.icons = Dictionary(uniqueKeysWithValues: apps.compactMap { app in
-            FileManager.default.fileExists(atPath: app.path) ? (app.pid, NSWorkspace.shared.icon(forFile: app.path)) : nil
+            FileManager.default.fileExists(atPath: app.path) ? (app.pid, NSWorkspace.shared.icon(forFile: URL(fileURLWithPath: app.path).resolvingSymlinksInPath().path)) : nil
         })
         display.selected = display.windows.dropFirst().first?.id
         return display
