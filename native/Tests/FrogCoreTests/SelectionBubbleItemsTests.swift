@@ -56,10 +56,12 @@ final class SelectionBubbleItemsTests: XCTestCase {
     func testRulesWearTheGlyphTheirNameSays() {
         XCTAssertEqual(SelectionBubbleItems.symbol(for: Rule.explainPreset), SelectionBubbleItems.answerSymbol)
         XCTAssertEqual(SelectionBubbleItems.symbol(for: answer("Define")), "book.closed")
-        XCTAssertEqual(SelectionBubbleItems.symbol(for: writing("Translate to German")), "globe")
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: writing("Translate to German")), "globe.europe.africa")
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: writing("Translate to English")), "globe.americas")
+        XCTAssertEqual(SelectionBubbleItems.symbol(for: writing("Translate")), "translate")
         XCTAssertEqual(SelectionBubbleItems.symbol(for: writing("Polish email")), "envelope")
         let presets = Rule.presets.map(SelectionBubbleItems.symbol(for:))
-        XCTAssertEqual(Set(presets.dropLast()).count, presets.count - 1, "the presets, but the two translations, each have their own")
+        XCTAssertEqual(Set(presets).count, presets.count, "every preset, the two translations too, has its own")
     }
 
     func testRulesWithoutAKnownNameWearTheirFeaturesGlyph() {

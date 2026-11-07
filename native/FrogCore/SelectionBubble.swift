@@ -435,9 +435,17 @@ public enum SelectionBubbleItems {
 
     /// What a rule's name says it does, first match wins, so two rules side by side in the bubble, Writing or the
     /// command bar (Explain and Define, Proofread and Translate) never share a glyph.
+    /// A translation's glyph by the language it names: the globe turned to where that language is spoken most.
+    static let translationSymbols: [(words: [String], symbol: String)] = [
+        (["english", "englisch", "spanish", "spanisch", "portugu"], "globe.americas"),
+        (["german", "deutsch", "french", "französisch", "italian", "italienisch", "dutch", "polish", "swedish", "arabic"],
+         "globe.europe.africa"),
+        (["japanese", "chinese", "korean", "hindi", "thai", "vietnamese", "indonesian"], "globe.asia.australia")
+    ]
+
     static let namedSymbols: [(words: [String], symbol: String)] = [
         (["define", "definition", "dictionary", "meaning"], "book.closed"),
-        (["translat", "übersetz"], "globe"),
+        (["translat", "übersetz"], "translate"),
         (["email", "e-mail", "mail", "reply"], "envelope"),
         (["spelling", "typo"], "text.magnifyingglass"),
         (["proofread", "grammar", "correct", "korrigier"], "checkmark.circle"),
@@ -451,6 +459,11 @@ public enum SelectionBubbleItems {
     public static func symbol(for rule: Rule) -> String {
         if rule.isExplainRule { return answerSymbol }
         let name = rule.name.lowercased()
+        // Translations side by side (to English, to German) each wear the globe of their language's part of the world.
+        if ["translat", "übersetz"].contains(where: name.contains),
+           let target = translationSymbols.first(where: { entry in entry.words.contains { name.contains($0) } }) {
+            return target.symbol
+        }
         if let named = namedSymbols.first(where: { entry in entry.words.contains { name.contains($0) } }) { return named.symbol }
         return rule.answersInPanel ? answerSymbol : writingSymbol
     }
