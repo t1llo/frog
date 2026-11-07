@@ -1,0 +1,26 @@
+Panel movement check: drag by ~200 pt, close, reopen. Frames are x, y, width, height in points,
+from the top-left of the panel's screen (the Cocoa frame in brackets: origin bottom-left of the primary display).
+
+command-bar
+  how:           emulated: setFrameOrigin by +200,-120 pt as performDrag would, then the panel's own WindowDragRegion.DragView.dragEnded() (what DragView.mouseDown runs after performDrag; it calls PanelFamilyPlacer.finishDrag) - 3 drag regions in the panel; no synthetic events allowed
+  isMovable: True, isMovableByWindowBackground: False
+  before drag:   620, 266, 680 x 460   [620, 354]
+  after drag:    820, 386, 680 x 460   [820, 234]
+  after reopen:  820, 386, 680 x 460   [820, 234]
+  result:        moved, reopens where it was moved to
+
+clipboard
+  how:           emulated: setFrameOrigin by +200,-120 pt as performDrag would, then the panel's own WindowDragRegion.DragView.dragEnded() (what DragView.mouseDown runs after performDrag; it calls PanelFamilyPlacer.finishDrag) - 3 drag regions in the panel; no synthetic events allowed
+  isMovable: True, isMovableByWindowBackground: False
+  before drag:   620, 266, 680 x 460   [620, 354]
+  after drag:    820, 386, 680 x 460   [820, 234]
+  after reopen:  820, 386, 680 x 460   [820, 234]
+  result:        moved, reopens where it was moved to
+
+window-switcher
+  how:           emulated: setFrameOrigin by +200,-120 pt as performDrag would, then the panel's own WindowDragRegion.DragView.dragEnded() (what DragView.mouseDown runs after performDrag; it calls PanelFamilyPlacer.finishDrag) - 3 drag regions in the panel; no synthetic events allowed
+  isMovable: True, isMovableByWindowBackground: False
+  before drag:   620, 266, 680 x 314   [620, 500]
+  after drag:    820, 386, 680 x 314   [820, 380]
+  after reopen:  820, 386, 680 x 314   [820, 380]
+  result:        moved, reopens where it was moved to
