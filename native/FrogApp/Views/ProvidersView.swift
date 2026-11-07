@@ -324,19 +324,28 @@ struct ProviderEditor: View {
                         }
                     } else {
                     FrogSection("Connection") {
-                        LabeledField(title: "Base endpoint") { FrogTextField(placeholder: "Base endpoint", text: $provider.endpoint).labelsHidden() }
-                        HStack(alignment: .top, spacing: 16) {
-                            Text(endpointHint)
-                                .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineSpacing(3)
-                            Spacer(minLength: 0)
-                            Button("Reset endpoint") {
-                                provider.endpoint = provider.kind.endpoint
-                            }.buttonStyle(.frog()).fixedSize()
+                        // Reset sits beside the field it resets; the hint gets the full width below, so it never wraps
+                        // around a button.
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Base endpoint").font(FrogType.bodyMedium).foregroundStyle(FrogStyle.ink)
+                            HStack(spacing: FrogStyle.space8) {
+                                FrogTextField(placeholder: "Base endpoint", text: $provider.endpoint).labelsHidden()
+                                    .font(FrogType.body).padding(.horizontal, 8).padding(.vertical, 6).frogControlSurface()
+                                Button("Reset") {
+                                    provider.endpoint = provider.kind.endpoint
+                                }.buttonStyle(.frog()).fixedSize()
+                                    .disabled(provider.endpoint == provider.kind.endpoint)
+                                    .accessibilityLabel(Text(L10n.text("Reset endpoint")))
+                            }
                         }
+                        Text(endpointHint)
+                            .font(FrogType.small).foregroundStyle(FrogStyle.muted).lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, FrogStyle.space4)
                     }.disabled(testing || discovering)
                     FrogSection("Credentials") {
                         LabeledField(title: hasSavedKey ? "Replacement API key" : "API key") {
-                            SecureField("API key", text: $apiKey).disabled(clearKey)
+                            SecureField(hasSavedKey ? "Leave blank to keep the saved key" : (provider.kind.isLocal ? "Optional" : "Paste your key"), text: $apiKey).disabled(clearKey)
                         }
                         if !provider.kind.isLocal && provider.kind != .compatible {
                             Link(destination: provider.kind.setupURL) {
