@@ -77,7 +77,8 @@ struct PluginsView: View {
             }.frogTableSurface()
         } else {
             // One list under its tab, like the Directory beside it: a heading would only repeat the tab's name.
-            FrogSection {
+            // The footer says where more come from, so a short list does not end in a blank page.
+            FrogSection(footer: "Find more in the Directory, or have your AI agent build one under Build your own.") {
                 ForEach(plugins.items) { installedRow($0) }
             }
         }
@@ -97,7 +98,7 @@ struct PluginsView: View {
                 }
                 Text(L10n.text(item.problem ?? item.manifest?.description ?? ""))
                     .font(FrogType.small).foregroundStyle(item.problem == nil ? FrogStyle.muted : FrogStyle.warning)
-                    .lineLimit(1).truncationMode(.tail)
+                    .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .help(item.problem ?? [item.manifest?.description, caption(item)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n"))
@@ -149,8 +150,10 @@ struct PluginsView: View {
         Group {
             if plugins.registryKeys.isEmpty {
                 FrogEmptyState(symbol: CommunityPlugin.info.symbol, title: "No plugins listed yet",
-                               message: "Shared plugins appear here once the directory lists them.",
-                               tint: CommunityPlugin.info.tint).frogTableSurface()
+                               message: "Shared plugins appear here once the directory lists them; until then, your AI agent can build one.",
+                               tint: CommunityPlugin.info.tint) {
+                    Button("Build your own") { tab = .build }.buttonStyle(.frog(.primary))
+                }.frogTableSurface()
             } else if plugins.loadingRegistry, plugins.registry.isEmpty {
                 FrogLoadingNote(text: "Loading the directory…").frame(maxWidth: .infinity).padding(.vertical, 36).frogTableSurface()
             } else if let error = plugins.registryError, plugins.registry.isEmpty {
@@ -160,7 +163,12 @@ struct PluginsView: View {
             } else if plugins.registry.isEmpty {
                 FrogEmptyState(symbol: CommunityPlugin.info.symbol, title: "Nothing listed yet",
                                message: "Plugins people share appear here once frog.beffa.xyz/plugins lists them.",
-                               tint: CommunityPlugin.info.tint).frogTableSurface()
+                               tint: CommunityPlugin.info.tint) {
+                    HStack(spacing: FrogStyle.space8) {
+                        Button("Check again") { Task { await plugins.loadRegistry() } }
+                        Button("Build your own") { tab = .build }.buttonStyle(.frog(.primary))
+                    }
+                }.frogTableSurface()
             } else if shown.isEmpty {
                 FrogEmptyState(symbol: "magnifyingglass", title: "Nothing matches", message: "Try another word.").frogTableSurface()
             } else {
@@ -233,13 +241,14 @@ struct PluginsView: View {
         FrogSection("Install from a link") {
             FrogRow("Link to a .frogplugin file", caption: "You review what it asks for before anything is installed.") {
                 HStack(spacing: 6) {
-                    FrogTextField(placeholder: "https://…", text: $link).textFieldStyle(.plain).font(FrogType.body)
-                        .padding(.horizontal, 8).frame(width: 240).frogControlSurface()
+                    // The field is a row action's height, so it and Review read as one control and Review is
+                    // the same size as Copy prompt and Copy command above it.
+                    FrogTextField(placeholder: "https://…", text: $link).textFieldStyle(.plain).font(FrogType.small)
+                        .padding(.horizontal, 8).frame(width: 240).frogControlSurface(height: FrogStyle.compactHeight)
                         .onSubmit(openTypedLink)
-                    // As tall as the field it goes with, so the two read as one control.
-                    Button("Review", action: openTypedLink).buttonStyle(.frog())
+                    Button("Review", action: openTypedLink)
                         .frogDisabled(plugins.downloading != nil ? "Downloading…" : typedLink == nil ? "Paste a link to a .frogplugin file" : nil)
-                }.frogRowAccessory(false)
+                }
             }
         }
     }
@@ -316,7 +325,11 @@ struct PluginReviewSheet: View {
                 if !review.compatible {
                     InlineIssue(message: "It needs Frog \(manifest.frog ?? "") or later. Update Frog first.")
                 }
-            }.padding([.horizontal, .top], FrogStyle.sheetPadding).padding(.bottom, FrogStyle.space16)
+            }
+            // The header's icon, title and description start where the sections' headings and rows' text do,
+            // `rowInset` inside the cards, so the sheet reads down one left edge.
+            .padding(.horizontal, FrogStyle.sheetPadding + FrogStyle.rowInset).padding(.top, FrogStyle.sheetPadding)
+            .padding(.bottom, FrogStyle.space16)
             FrogSheetScroll {
                 VStack(alignment: .leading, spacing: FrogStyle.space16) {
                     if manifest.permissions.isEmpty {
@@ -335,23 +348,15 @@ struct PluginReviewSheet: View {
                         }
                     }
                     if !manifest.actions.isEmpty {
-                        // What an action may change is said once per group: in the heading when every action shares
-                        // it, otherwise as a caption above each group inside the card.
-                        let effects = Set(manifest.actions.map(\.effect)).sorted()
+                        // Each action says in a plain sentence what it may do, under its name, rather than through
+                        // a legend to decode; the ones that change nothing come first.
                         FrogSection("Actions you and your agents can run") {
-                            if effects.count == 1, let effect = effects.first { effectLabel(effect) }
-                        } content: {
-                            ForEach(effects, id: \.self) { effect in
-                                if effects.count > 1 {
-                                    effectLabel(effect).padding(.top, FrogStyle.space8)
-                                }
-                                ForEach(manifest.actions.filter { $0.effect == effect }, id: \.id) { action in
-                                    FrogRow(action.title, icon: { EmptyView() }, control: {
-                                        if let shortcut = action.shortcut, let parsed = try? Shortcut(shortcut) {
-                                            ShortcutBadge(text: HotkeyManager.display(parsed.hotkey))
-                                        }
-                                    })
-                                }
+                            ForEach(manifest.actions.sorted { $0.effect < $1.effect }, id: \.id) { action in
+                                FrogRow(action.title, caption: action.effect.sentence) {
+                                    if let shortcut = action.shortcut, let parsed = try? Shortcut(shortcut) {
+                                        ShortcutBadge(text: HotkeyManager.display(parsed.hotkey))
+                                    }
+                                }.help(action.effect.explanation)
                             }
                         }
                     }
@@ -454,10 +459,6 @@ struct PluginReviewSheet: View {
         }.frame(minHeight: 32)
     }
 
-    private func effectLabel(_ effect: PluginManifestAction.Effect) -> some View {
-        Label(effect.title, systemImage: effect.symbol).font(FrogType.small).foregroundStyle(FrogStyle.muted)
-            .help(effect.explanation)
-    }
 }
 
 /// One permission: its symbol and its one-line title with a Caution or New badge beside it. Its explanation opens
@@ -598,20 +599,12 @@ struct PluginWebContainer: NSViewRepresentable {
 }
 
 extension PluginManifestAction.Effect {
-    /// How the review names what an action may do.
-    var title: String {
+    /// What an action may do, in the review's caption under the action's name.
+    var sentence: String {
         switch self {
-        case .read: "Reads only"
-        case .write: "Can change data"
-        case .network: "Uses the internet"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .read: "eye"
-        case .write: "pencil"
-        case .network: "network"
+        case .read: "Only reads; it changes nothing."
+        case .write: "Can change what the plugin keeps, the clipboard or notifications."
+        case .network: "Can change what the plugin keeps and reach the internet."
         }
     }
 
