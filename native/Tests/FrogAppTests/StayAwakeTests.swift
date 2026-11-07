@@ -97,6 +97,48 @@ final class StayAwakeTests: XCTestCase {
         XCTAssertEqual(display.held, false)
     }
 
+    func testCustomLengthsTakeWholeMinutesOrHoursUpToAWeek() {
+        XCTAssertEqual(StayAwakeController.customMinutes("45", hours: false), 45)
+        XCTAssertEqual(StayAwakeController.customMinutes(" 2 ", hours: true), 120)
+        XCTAssertEqual(StayAwakeController.customMinutes("168", hours: true), 7 * 24 * 60)
+        for (text, hours) in [("0", false), ("", false), ("abc", true), ("-5", false), ("169", true), ("10081", false), ("99999999999999999999", false)] {
+            XCTAssertNil(StayAwakeController.customMinutes(text, hours: hours), "\(text) \(hours ? "h" : "min")")
+        }
+        XCTAssertEqual(StayAwakeController.title(minutes: 1), "1 minute")
+        XCTAssertEqual(StayAwakeController.title(minutes: 45), "45 minutes")
+        XCTAssertEqual(StayAwakeController.title(minutes: 60), "1 hour")
+        XCTAssertEqual(StayAwakeController.title(minutes: 120), "2 hours")
+        XCTAssertEqual(StayAwakeController.title(minutes: 90), "1 h 30 min")
+        XCTAssertEqual(StayAwakePage.durationOptions(.hour), StayAwakeController.DurationChoice.presets)
+        XCTAssertEqual(StayAwakePage.durationOptions(.custom).last, .custom, "The custom length in use is listed, with its checkmark")
+        XCTAssertEqual(StayAwakePage.title(of: .custom, until: "18:00", minutes: 45, short: true), "45 minutes")
+    }
+
+    func testACustomDurationIsSavedAndCountsARunningSessionFromNow() async throws {
+        var now = Date(timeIntervalSince1970: 1000)
+        let power = StayAwakeController(system: PowerFixture(), directory: directory(), now: { now })
+        let model = AppModel(dataDirectory: directory(), registerShortcuts: false, powerController: power)
+        defer { model.shutdown() }
+        await model.pluginHost.syncAndWait()
+        let plugin = try XCTUnwrap(model.pluginHost.running["stay-awake"] as? StayAwakePlugin)
+        plugin.chooseCustom(45)
+        XCTAssertEqual(plugin.settings.duration, .custom)
+        XCTAssertEqual(power.chosenLength, .minutes(45))
+        let saved = try model.settingsFile.section("stay-awake", as: StayAwakeSettings.self).value
+        XCTAssertEqual(saved.duration, .custom)
+        XCTAssertEqual(saved.customMinutes, 45)
+        power.turnOn()
+        XCTAssertEqual(power.deadline, now.addingTimeInterval(45 * 60))
+        now.addTimeInterval(600)
+        plugin.chooseCustom(120)
+        XCTAssertEqual(power.deadline, now.addingTimeInterval(2 * 3600), "A new length counts the running session again from now")
+        power.turnOff()
+        var wild = StayAwakeSettings(); wild.customMinutes = 0
+        XCTAssertEqual(wild.normalized.customMinutes, 1)
+        wild.customMinutes = 1_000_000
+        XCTAssertEqual(wild.normalized.customMinutes, StayAwakeController.maxCustomMinutes)
+    }
+
     func testNothingIsReadOrPolledUnlessLidClosedModeNeedsIt() async throws {
         let system = PowerFixture()
         let power = StayAwakeController(system: system, directory: directory(), monitorInterval: .milliseconds(5))

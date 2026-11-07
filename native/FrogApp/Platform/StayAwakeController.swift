@@ -63,10 +63,36 @@ final class StayAwakeController: ObservableObject {
     /// The choices the page and the popup offer.
     enum DurationChoice: String, CaseIterable, Identifiable, Codable, Sendable {
         case untilOff = "until-off", hour = "1h", threeHours = "3h", untilTime = "until-time"
+        /// A length typed in, in minutes: `customMinutes`.
+        case custom
         var id: Self { self }
         var title: String {
-            switch self { case .untilOff: "No limit"; case .hour: "1 hour"; case .threeHours: "3 hours"; case .untilTime: "Until a time" }
+            switch self {
+            case .untilOff: "No limit"; case .hour: "1 hour"; case .threeHours: "3 hours"; case .untilTime: "Until a time"
+            case .custom: "Custom"
+            }
         }
+        /// The fixed choices a list shows; a custom length is typed in under them.
+        static let presets: [Self] = [.untilOff, .hour, .threeHours, .untilTime]
+    }
+
+    /// The longest custom session: a week, as `StayAwakeLength` allows.
+    nonisolated static let maxCustomMinutes = 7 * 24 * 60
+
+    /// "45 minutes", "2 hours", "1 h 30 min".
+    nonisolated static func title(minutes: Int) -> String {
+        let hours = minutes / 60, rest = minutes % 60
+        if hours == 0 { return minutes == 1 ? "1 minute" : "\(minutes) minutes" }
+        if rest == 0 { return hours == 1 ? "1 hour" : "\(hours) hours" }
+        return "\(hours) h \(rest) min"
+    }
+
+    /// What the custom field holds, in `unit`: a whole number from 1 up to a week, or nil.
+    nonisolated static func customMinutes(_ text: String, hours: Bool) -> Int? {
+        guard let value = Int(text.trimmingCharacters(in: .whitespaces)), value > 0 else { return nil }
+        let unit = hours ? 60 : 1
+        guard value <= maxCustomMinutes / unit else { return nil }
+        return value * unit
     }
 
     @Published private(set) var isEnabled = false
@@ -76,6 +102,8 @@ final class StayAwakeController: ObservableObject {
     @Published var duration: DurationChoice = .untilOff
     /// "HH:MM" for `.untilTime`.
     @Published var untilTime = "18:00"
+    /// Minutes for `.custom`.
+    @Published var customMinutes = 90
     /// The cup has a menu-bar item of its own, so Frog's icon leaves out its small one.
     @Published var hasOwnMenuBarIcon = false
     @Published private(set) var keepScreenOn = true
@@ -116,6 +144,7 @@ final class StayAwakeController: ObservableObject {
         case .hour: .minutes(60)
         case .threeHours: .minutes(180)
         case .untilTime: StayAwakeLength("until \(untilTime)") ?? .untilOff
+        case .custom: .minutes(customMinutes)
         }
     }
 

@@ -6,14 +6,16 @@ import FrogCore
 struct StayAwakeSettings: ConfigSection {
     var duration: StayAwakeController.DurationChoice = .untilOff
     var until = "18:00"
+    var customMinutes = 90
     var keepScreenOn = true
     var lidClosed = false
     var menuBarItem = false
     var menuBarStyle = "ring"
 
     static let comments = [
-        "duration": "How long a session lasts: until-off, 1h, 3h or until-time",
+        "duration": "How long a session lasts: until-off, 1h, 3h, until-time or custom",
         "until": "When until-time ends, as HH:MM",
+        "custom-minutes": "How long a custom session lasts, in minutes",
         "keep-screen-on": "Keep the display on too, so the screen does not lock",
         "lid-closed": "Also stay awake with the lid closed; needs a one-time setup",
         "menu-bar-item": "Show a cup in the menu bar while a session runs",
@@ -30,6 +32,7 @@ struct StayAwakeSettings: ConfigSection {
         var value = self
         if !StayAwakePreferences.menuBarStyles.contains(menuBarStyle) { value.menuBarStyle = "ring" }
         if StayAwakeLength("until \(until)") == nil { value.until = "18:00" }
+        value.customMinutes = min(max(customMinutes, 1), StayAwakeController.maxCustomMinutes)
         return value
     }
 }
@@ -66,12 +69,17 @@ final class StayAwakePlugin: LegacyPlugin, FrogPlugin, ObservableObject {
         change(&value)
         value = value.normalized
         guard value != settings else { return }
-        let recount = (value.duration, value.until) != (settings.duration, settings.until)
+        let recount = (value.duration, value.until, value.customMinutes) != (settings.duration, settings.until, settings.customMinutes)
         settings = value
         do { try context.save(value) } catch { context.report(error) }
         apply()
         // A new duration or end time applies to the session that is running, counted from now.
         if recount, power.isEnabled { power.turnOn() }
+    }
+
+    /// A length typed into the duration list: the session's duration from now on.
+    func chooseCustom(_ minutes: Int) {
+        update { settings in settings.duration = .custom; settings.customMinutes = minutes }
     }
 
     /// The preferences keep a copy of the cup's two settings, which a Reload or Import of the old `config` reads.
@@ -85,6 +93,7 @@ final class StayAwakePlugin: LegacyPlugin, FrogPlugin, ObservableObject {
         mirror()
         if power.duration != settings.duration { power.duration = settings.duration }
         if power.untilTime != settings.until { power.untilTime = settings.until }
+        if power.customMinutes != settings.customMinutes { power.customMinutes = settings.customMinutes }
         power.configure(keepScreenOn: settings.keepScreenOn, lidClosed: settings.lidClosed)
         let shows = settings.menuBarItem && model.registerShortcuts
         if shows {
@@ -99,7 +108,8 @@ final class StayAwakePlugin: LegacyPlugin, FrogPlugin, ObservableObject {
 
     var menu: [MenuContribution] {
         [MenuContribution(id: "stay-awake.switch", order: 0) { [power, weak self] in
-            AnyView(StayAwakeMenuRow(power: power) { choice in self?.update { settings in settings.duration = choice } })
+            AnyView(StayAwakeMenuRow(power: power, choose: { choice in self?.update { settings in settings.duration = choice } },
+                                     chooseCustom: { minutes in self?.chooseCustom(minutes) }))
         }]
     }
 
